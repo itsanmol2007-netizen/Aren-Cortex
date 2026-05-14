@@ -1,0 +1,587 @@
+/* ============================================================
+   LAYOUT.CSS — app shell, topbar, workflow grid, columns
+   AREN Cortex Phase 1
+   ============================================================ */
+
+.app-shell {
+    max-width: 1720px;
+    margin: 0 auto;
+    padding: 14px 18px 24px;
+}
+
+/* ── Topbar ─────────────────────────────────────────────── */
+
+.topbar {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+/* shared surface treatment for header children */
+.brand-mark,
+.patient-card,
+.doctor-pill {
+    background: var(--surface);
+    box-shadow: var(--shadow-low);
+    backdrop-filter: blur(16px);
+}
+
+/* ── Brand mark ─────────────────────────────────────────── */
+
+.brand-mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+}
+
+.logo-pill {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--blue);
+    color: white;
+    font-size: 12px;
+    font-weight: 850;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.logo-pill img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.brand-mark strong {
+    display: block;
+    font-size: 16px;
+    letter-spacing: 0;
+}
+
+.brand-mark strong span {
+    color: var(--blue);
+}
+
+.brand-mark small {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+/* ── Patient strip (active consult card) ────────────────── */
+
+.patient-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 54px;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+}
+
+/* dark blue active treatment */
+.patient-strip {
+    border: 1px solid rgba(18, 104, 232, 0.25);
+    background: linear-gradient(135deg, #0f2444 0%, #0d1a36 60%, #0e1e38 100%);
+}
+
+.active-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+}
+
+.avatar {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 850;
+    flex-shrink: 0;
+}
+
+.patient-strip .avatar {
+    background: rgba(37, 99, 235, 0.25);
+    color: #93c5fd;
+    border: 1px solid rgba(37, 99, 235, 0.35);
+}
+
+.patient-identity {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.patient-identity strong,
+.patient-identity span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.patient-identity strong {
+    color: #08245a;
+    font-size: 15px;
+}
+
+.patient-strip .patient-identity strong {
+    color: #e2e8f0;
+}
+
+.patient-identity span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.patient-strip .patient-identity span {
+    color: #6b9ab8;
+}
+
+.identity-label {
+    color: var(--green);
+    font-size: 10px;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.patient-strip .identity-label {
+    color: #4ade80;
+}
+
+/* ── Inline vitals (inside patient strip) ───────────────── */
+
+.vitals-inline {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.vital-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 4px 9px;
+    background: rgba(10, 25, 41, 0.55);
+    border: 1px solid #1e3a5a;
+    border-radius: 5px;
+    min-width: 52px;
+}
+
+.vital-chip-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #4a6280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.vital-chip-input {
+    width: 100%;
+    height: auto;
+    border: 0 !important;
+    background: transparent !important;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    padding: 0;
+    box-shadow: none !important;
+}
+
+.vital-chip-input:focus {
+    color: #93c5fd;
+    outline: none;
+}
+
+.vital-chip-input::placeholder {
+    color: #2a4a6a;
+}
+
+/* ── Past visits rail (inside patient strip) ───────────── */
+
+.past-visits-rail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 220px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.past-visits-label {
+    font-size: 9px;
+    font-weight: 800;
+    color: #4a6a8a;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.past-visits-scroll {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 1px;
+}
+
+.past-visits-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.visit-chip {
+    flex-shrink: 0;
+    padding: 3px 9px;
+    border-radius: 20px;
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    background: rgba(168, 85, 247, 0.1);
+    color: #c084fc;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.visit-chip:hover {
+    background: rgba(168, 85, 247, 0.22);
+    border-color: rgba(168, 85, 247, 0.6);
+    color: #e879f9;
+}
+
+/* ── Past visit popup ───────────────────────────────────── */
+
+.visit-popup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(5, 10, 24, 0.55);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 90px;
+}
+
+.visit-popup {
+    width: 360px;
+    background: linear-gradient(145deg, #0f1f3d 0%, #0d1830 100%);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    border-radius: 12px;
+    padding: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.visit-popup-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.visit-popup-date {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #c084fc;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 3px;
+}
+
+.visit-popup-diagnosis {
+    display: block;
+    font-size: 16px;
+    font-weight: 800;
+    color: #e2e8f0;
+}
+
+.visit-popup-summary {
+    font-size: 13px;
+    color: #7a9ab8;
+    margin-bottom: 14px;
+    line-height: 1.5;
+}
+
+.visit-popup-meds-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    color: #4a6a8a;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 7px;
+}
+
+.visit-popup-meds ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 0;
+    margin: 0;
+}
+
+.visit-popup-meds li {
+    font-size: 13px;
+    color: #93c5fd;
+    padding: 5px 10px;
+    background: rgba(37, 99, 235, 0.12);
+    border-radius: 6px;
+    border-left: 2px solid rgba(37, 99, 235, 0.5);
+}
+
+/* ── Top action bar ─────────────────────────────────────── */
+
+.top-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+}
+
+.doctor-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 36px;
+    padding: 0 11px;
+    border-radius: var(--radius);
+    color: #1b386b;
+    font-size: 13px;
+    font-weight: 750;
+    background: var(--surface);
+    box-shadow: var(--shadow-low);
+    backdrop-filter: blur(16px);
+}
+
+.action-button,
+.icon-button,
+.selected-count {
+    border: 1px solid var(--line-soft);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #19325d;
+}
+
+.action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 760;
+}
+
+.action-button.primary {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: white;
+    box-shadow: 0 8px 18px rgba(18, 104, 232, 0.2);
+}
+
+.cancel-consult-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 7px;
+    border: 1px solid rgba(217, 64, 64, 0.3);
+    background: transparent;
+    color: var(--danger);
+    font-size: 13px;
+    font-weight: 700;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.cancel-consult-btn:hover {
+    background: rgba(217, 64, 64, 0.07);
+    border-color: rgba(217, 64, 64, 0.5);
+}
+
+.cancel-consult-btn.armed {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: white;
+    animation: pulse-danger 0.35s ease;
+}
+
+@keyframes pulse-danger {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.04);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ── Workflow canvas ────────────────────────────────────── */
+
+.workflow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid rgba(191, 205, 226, 0.48);
+    border-radius: 12px;
+    background: var(--worktop);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.76),
+        0 20px 58px rgba(34, 54, 92, 0.09);
+}
+
+.main-column,
+.preview-column {
+    display: grid;
+    gap: 10px;
+}
+
+/* ── Section / panel shared structure ───────────────────── */
+
+.panel {
+    background: var(--surface);
+    box-shadow: var(--shadow-low);
+    backdrop-filter: blur(16px);
+    border-radius: var(--radius);
+    padding: 12px;
+    border: 1px solid transparent;
+}
+
+.panel:hover {
+    border-color: rgba(176, 194, 220, 0.45);
+}
+
+.section-head,
+.panel-title {
+    display: flex;
+    align-items: center;
+}
+
+.section-head {
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 9px;
+}
+
+.panel-title {
+    gap: 7px;
+}
+
+.panel-title svg {
+    color: var(--blue);
+}
+
+.selected-count {
+    padding: 5px 8px;
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 780;
+}
+
+/* ── Sub-layouts inside main column ─────────────────────── */
+
+.two-column-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.medicine-workspace {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+}
+
+/* ── Right sidebar (preview/tests column) ───────────────── */
+
+.preview-column {
+    opacity: 0.92;
+}
+
+.preview-panel {
+    position: sticky;
+    top: 12px;
+    padding: 11px;
+}
+
+/* ── Responsive breakpoints ─────────────────────────────── */
+
+@media (max-width: 1320px) {
+    body {
+        min-width: 1000px;
+    }
+
+    .topbar {
+        grid-template-columns: 180px minmax(0, 1fr);
+    }
+
+    .top-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+
+    .vitals-inline {
+        display: none;
+        /* too cramped — vitals hidden at this width */
+    }
+
+    .workflow {
+        grid-template-columns: 1fr;
+    }
+
+    .preview-panel {
+        position: static;
+    }
+}
+
+@media (max-width: 1120px) {
+    body {
+        min-width: 0;
+    }
+
+    .app-shell {
+        padding: 10px;
+    }
+
+    .topbar,
+    .workflow,
+    .two-column-row,
+    .medicine-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .patient-card {
+        flex-wrap: wrap;
+    }
+}
