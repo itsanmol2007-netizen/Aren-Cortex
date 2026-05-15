@@ -1,14 +1,13 @@
 import { ClipboardCheck, HeartPulse } from "lucide-react";
 import { useMemo, useState } from "react";
-import { doctors, existingPatients, findings as findingOptions, medicines, symptoms as symptomOptions, tests as testOptions } from "./data/mockData";
+import { doctors, existingPatients, findings as findingOptions, medicines, symptoms as symptomOptions, testGroups } from "./data/mockData";
 import { ChipSearchPanel } from "./components/ChipSearchPanel";
+import { MedicineInspector } from "./components/MedicineInspector";
 import { MedicineSuggestions } from "./components/MedicineSuggestions";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { PrescriptionPanel } from "./components/PrescriptionPanel";
 import { PreviewPanel } from "./components/PreviewPanel";
-import { TestsPanel } from "./components/TestsPanel";
-import { VitalsStrip } from "./components/VitalsStrip";
 import type { Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 
 const initialPatient: Patient = {
@@ -90,7 +89,11 @@ function App() {
   };
 
   const updateMedicine = (updatedMedicine: PrescriptionMedicine) => {
-    setPrescription((current) => current.map((medicine) => (medicine.id === updatedMedicine.id ? updatedMedicine : medicine)));
+    setPrescription((current) =>
+      current.map((medicine) =>
+        medicine.id === updatedMedicine.id ? updatedMedicine : medicine
+      )
+    );
   };
 
   const removeMedicine = (id: string) => {
@@ -137,23 +140,25 @@ function App() {
           </div>
 
           <div className="medicine-workspace">
-            <MedicineSuggestions medicines={medicines} selectedIds={prescription.map((medicine) => medicine.id)} onAdd={addMedicine} />
+            <MedicineSuggestions
+              medicines={medicines}
+              selectedIds={prescription.map((medicine) => medicine.id)}
+              onAdd={addMedicine}
+            />
             <PrescriptionPanel
               medicines={prescription}
               selectedId={selectedMedicineId}
-              selectedMedicine={selectedMedicine}
               symptoms={selectedSymptoms}
               findings={selectedFindings}
               onSelect={setSelectedMedicineId}
-              onUpdate={updateMedicine}
               onRemove={removeMedicine}
               onCloseEditor={() => setSelectedMedicineId(null)}
             />
           </div>
 
-          <TestsPanel tests={testOptions} selectedTests={selectedTests} selectedLab={selectedLab} onTestsChange={setSelectedTests} onLabChange={setSelectedLab} />
         </div>
 
+        {/* RIGHT SIDEBAR */}
         <PreviewPanel
           patient={patient}
           vitals={vitals}
@@ -163,11 +168,34 @@ function App() {
           tests={selectedTests}
           lab={selectedLab}
           onSave={saveDraft}
+          testGroups={testGroups}
+          selectedTests={selectedTests}
+          selectedLab={selectedLab}
+          onTestsChange={setSelectedTests}
+          onLabChange={setSelectedLab}
+          onReviewRx={() => setToast("Preview modal coming in Step 5")}
         />
       </main>
 
+      {selectedMedicine && (
+        <MedicineInspector
+          medicine={selectedMedicine}
+          symptoms={selectedSymptoms}
+          findings={selectedFindings}
+          onUpdate={updateMedicine}
+          onClose={() => setSelectedMedicineId(null)}
+        />
+      )}
+
       {toast && <div className="toast">{toast}</div>}
-      {patientModalOpen && <PatientModal patients={existingPatients} onClose={() => setPatientModalOpen(false)} onConfirm={resetConsultForPatient} />}
+
+      {patientModalOpen && (
+        <PatientModal
+          patients={existingPatients}
+          onClose={() => setPatientModalOpen(false)}
+          onConfirm={resetConsultForPatient}
+        />
+      )}
     </div>
   );
 }

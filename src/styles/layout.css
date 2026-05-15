@@ -16,10 +16,9 @@
     grid-template-columns: 190px minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 0;
 }
 
-/* shared surface treatment for header children */
 .brand-mark,
 .patient-card,
 .doctor-pill {
@@ -28,15 +27,29 @@
     backdrop-filter: blur(16px);
 }
 
-/* ── Brand mark ─────────────────────────────────────────── */
+/* ── Brand mark — gradient accent stripe on top ─────────── */
 
 .brand-mark {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 54px;
+    min-height: 64px;
     padding: 8px 10px;
     border-radius: var(--radius);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Approved location: brand mark top stripe */
+.brand-mark::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+    border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .logo-pill {
@@ -45,7 +58,8 @@
     height: 34px;
     place-items: center;
     border-radius: 8px;
-    background: var(--blue);
+    /* Approved location: logo pill gradient */
+    background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
     color: white;
     font-size: 12px;
     font-weight: 850;
@@ -75,56 +89,156 @@
     font-weight: 650;
 }
 
-/* ── Patient strip (active consult card) ────────────────── */
+/* ── Patient strip — cinematic layered atmosphere ───────── */
 
 .patient-card {
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 54px;
-    padding: 8px 14px;
+    min-height: 64px;
+    padding: 10px 16px;
     border-radius: var(--radius);
 }
 
-/* dark blue active treatment */
 .patient-strip {
-    border: 1px solid rgba(18, 104, 232, 0.25);
-    background: linear-gradient(135deg, #0f2444 0%, #0d1a36 60%, #0e1e38 100%);
+    min-height: 72px;
+    /* BUG 2: slightly taller */
+    border: 1px solid rgba(99, 60, 180, 0.28);
+
+    /* Layered atmospheric dark navy — lighter, richer than before */
+    background:
+        /* Layer 1 — soft pink orb top-right */
+        radial-gradient(ellipse 280px 120px at 92% -10%,
+            rgba(244, 114, 182, 0.09) 0%,
+            transparent 70%),
+        /* Layer 2 — blue-purple orb mid-left */
+        radial-gradient(ellipse 320px 200px at -5% 60%,
+            rgba(99, 102, 241, 0.10) 0%,
+            transparent 65%),
+        /* Layer 3 — deeper violet bloom center-right */
+        radial-gradient(ellipse 200px 160px at 70% 110%,
+            rgba(139, 92, 246, 0.08) 0%,
+            transparent 60%),
+        /* Base — slightly lighter navy, smoother tonal blend */
+        linear-gradient(135deg,
+            #0e1c38 0%,
+            /* slightly lighter than before */
+            #13102b 38%,
+            #180e2a 62%,
+            #0c1628 100%);
+
+    box-shadow:
+        0 8px 22px rgba(20, 35, 66, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+
+    position: relative;
+    overflow: hidden;
 }
 
+/* Approved location: patient strip top edge gradient stripe */
+.patient-strip::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+    /* Feathered glow below the stripe for cinematic depth */
+    box-shadow: 0 1px 8px rgba(168, 85, 247, 0.35);
+}
+
+/* Ambient blurred shape cluster — replaces single corner glow.
+   Two overlapping orbs: one warm violet top-right, one cool blue bottom-right.
+   Creates depth without being distracting. */
+.patient-strip::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        /* Warm violet orb — top-right */
+        radial-gradient(ellipse 180px 140px at 95% 0%,
+            rgba(168, 85, 247, 0.13) 0%,
+            transparent 70%),
+        /* Cool blue orb — bottom-right, offset */
+        radial-gradient(ellipse 140px 100px at 88% 120%,
+            rgba(59, 130, 246, 0.09) 0%,
+            transparent 65%);
+    pointer-events: none;
+}
+
+/* ── Patient strip text colors — confirmed ──────────────── */
+
+.patient-strip .patient-identity strong {
+    color: #f1f5f9;
+    font-size: 15px;
+    font-weight: 750;
+}
+
+.patient-strip .patient-identity span {
+    color: #7a90b4;
+}
+
+.patient-strip .identity-label {
+    color: #4ade80;
+    letter-spacing: 0.06em;
+}
+
+/* ── Active dot ─────────────────────────────────────────── */
+
 .active-dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: #22c55e;
     flex-shrink: 0;
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+    box-shadow:
+        0 0 0 3px rgba(34, 197, 94, 0.2),
+        0 0 8px rgba(34, 197, 94, 0.4);
+    animation: dot-pulse 2.4s ease-in-out infinite;
 }
+
+@keyframes dot-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2), 0 0 8px rgba(34, 197, 94, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.1), 0 0 14px rgba(34, 197, 94, 0.3);
+    }
+}
+
+/* ── Avatar ─────────────────────────────────────────────── */
 
 .avatar {
     display: grid;
-    width: 34px;
-    height: 34px;
+    width: 38px;
+    height: 38px;
     place-items: center;
     border-radius: 50%;
     background: var(--blue-soft);
     color: var(--blue);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 850;
     flex-shrink: 0;
 }
 
 .patient-strip .avatar {
-    background: rgba(37, 99, 235, 0.25);
-    color: #93c5fd;
-    border: 1px solid rgba(37, 99, 235, 0.35);
+    background: rgba(168, 85, 247, 0.2);
+    color: #d8b4fe;
+    border: 1px solid rgba(168, 85, 247, 0.35);
 }
+
+/* ── Patient identity ───────────────────────────────────── */
 
 .patient-identity {
     display: grid;
     gap: 2px;
     min-width: 0;
-    flex: 1;
+    flex-shrink: 0;
 }
 
 .patient-identity strong,
@@ -139,18 +253,10 @@
     font-size: 15px;
 }
 
-.patient-strip .patient-identity strong {
-    color: #e2e8f0;
-}
-
 .patient-identity span {
     color: var(--muted);
     font-size: 11px;
     font-weight: 600;
-}
-
-.patient-strip .patient-identity span {
-    color: #6b9ab8;
 }
 
 .identity-label {
@@ -161,72 +267,16 @@
     letter-spacing: 0.04em;
 }
 
-.patient-strip .identity-label {
-    color: #4ade80;
-}
-
-/* ── Inline vitals (inside patient strip) ───────────────── */
-
-.vitals-inline {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    margin-left: auto;
-    flex-shrink: 0;
-}
-
-.vital-chip {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    padding: 4px 9px;
-    background: rgba(10, 25, 41, 0.55);
-    border: 1px solid #1e3a5a;
-    border-radius: 5px;
-    min-width: 52px;
-}
-
-.vital-chip-label {
-    font-size: 9px;
-    font-weight: 700;
-    color: #4a6280;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
-
-.vital-chip-input {
-    width: 100%;
-    height: auto;
-    border: 0 !important;
-    background: transparent !important;
-    color: #e2e8f0;
-    font-size: 13px;
-    font-weight: 700;
-    text-align: center;
-    padding: 0;
-    box-shadow: none !important;
-}
-
-.vital-chip-input:focus {
-    color: #93c5fd;
-    outline: none;
-}
-
-.vital-chip-input::placeholder {
-    color: #2a4a6a;
-}
-
-/* ── Past visits rail (inside patient strip) ───────────── */
+/* ── Past visits rail ───────────────────────────────────── */
 
 .past-visits-rail {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 220px;
-    flex-shrink: 0;
-    overflow: hidden;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+    padding-left: 12px;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .past-visits-label {
@@ -234,41 +284,69 @@
     font-weight: 800;
     color: #4a6a8a;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.08em;
     white-space: nowrap;
-    flex-shrink: 0;
 }
 
+/* BUG 2: latest visit leftmost — flex-direction row + no reverse needed,
+   ensure mockData feeds newest first. Scroll is left-to-right. */
 .past-visits-scroll {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     overflow-x: auto;
     scrollbar-width: none;
-    padding-bottom: 1px;
+    padding-bottom: 2px;
 }
 
 .past-visits-scroll::-webkit-scrollbar {
     display: none;
 }
 
+/* BUG 2: slightly taller visit chips */
 .visit-chip {
     flex-shrink: 0;
-    padding: 3px 9px;
-    border-radius: 20px;
-    border: 1px solid rgba(168, 85, 247, 0.35);
-    background: rgba(168, 85, 247, 0.1);
-    color: #c084fc;
-    font-size: 11px;
-    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 7px 11px;
+    /* was 6px 10px */
+    border-radius: 8px;
+    border: 1px solid rgba(168, 85, 247, 0.25);
+    background: rgba(168, 85, 247, 0.08);
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s, border-color 0.15s;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    min-width: 84px;
+    /* was 80px */
 }
 
 .visit-chip:hover {
-    background: rgba(168, 85, 247, 0.22);
-    border-color: rgba(168, 85, 247, 0.6);
-    color: #e879f9;
+    background: rgba(168, 85, 247, 0.18);
+    border-color: rgba(168, 85, 247, 0.5);
+    transform: translateY(-1px);
+}
+
+.visit-chip:active {
+    transform: translateY(0) scale(0.97);
+}
+
+.visit-chip-date {
+    font-size: 10px;
+    font-weight: 800;
+    color: #c084fc;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.visit-chip-diag {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ── Past visit popup ───────────────────────────────────── */
@@ -289,9 +367,12 @@
     width: 360px;
     background: linear-gradient(145deg, #0f1f3d 0%, #0d1830 100%);
     border: 1px solid rgba(168, 85, 247, 0.3);
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 18px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.04);
+    animation: mi-enter 0.2s cubic-bezier(0.34, 1.46, 0.64, 1);
 }
 
 .visit-popup-head {
@@ -321,7 +402,7 @@
 .visit-popup-summary {
     font-size: 13px;
     color: #7a9ab8;
-    margin-bottom: 14px;
+    margin: 0 0 14px;
     line-height: 1.5;
 }
 
@@ -353,7 +434,7 @@
     border-left: 2px solid rgba(37, 99, 235, 0.5);
 }
 
-/* ── Top action bar ─────────────────────────────────────── */
+/* ── Top actions ────────────────────────────────────────── */
 
 .top-actions {
     display: flex;
@@ -377,6 +458,7 @@
     backdrop-filter: blur(16px);
 }
 
+/* BUG 1 FIX: selected-count, action-button, icon-button base */
 .action-button,
 .icon-button,
 .selected-count {
@@ -395,13 +477,30 @@
     padding: 0 12px;
     font-size: 13px;
     font-weight: 760;
+    transition: background 0.12s, transform 0.1s, box-shadow 0.12s;
 }
 
+.action-button:hover {
+    background: rgba(255, 255, 255, 0.96);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.action-button:active {
+    transform: scale(0.97);
+}
+
+/* Review Rx button in topbar — approved gradient location */
 .action-button.primary {
-    border-color: var(--blue);
-    background: var(--blue);
+    border: none;
+    background: linear-gradient(135deg, #f472b6 0%, #a855f7 55%, #6366f1 100%);
     color: white;
-    box-shadow: 0 8px 18px rgba(18, 104, 232, 0.2);
+    box-shadow: 0 4px 14px rgba(168, 85, 247, 0.35);
+}
+
+.action-button.primary:hover {
+    opacity: 0.92;
+    box-shadow: 0 6px 18px rgba(168, 85, 247, 0.45);
 }
 
 .cancel-consult-btn {
@@ -415,12 +514,16 @@
     color: var(--danger);
     font-size: 13px;
     font-weight: 700;
-    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
 }
 
 .cancel-consult-btn:hover {
     background: rgba(217, 64, 64, 0.07);
     border-color: rgba(217, 64, 64, 0.5);
+}
+
+.cancel-consult-btn:active {
+    transform: scale(0.97);
 }
 
 .cancel-consult-btn.armed {
@@ -448,10 +551,11 @@
 
 .workflow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) 290px;
     align-items: start;
     gap: 10px;
     padding: 10px;
+    margin-top: 8px;
     border: 1px solid rgba(191, 205, 226, 0.48);
     border-radius: 12px;
     background: var(--worktop);
@@ -466,7 +570,7 @@
     gap: 10px;
 }
 
-/* ── Section / panel shared structure ───────────────────── */
+/* ── Panel shared structure ─────────────────────────────── */
 
 .panel {
     background: var(--surface);
@@ -475,12 +579,41 @@
     border-radius: var(--radius);
     padding: 12px;
     border: 1px solid transparent;
+    transition: border-color 0.15s;
+    position: relative;
+    overflow: hidden;
 }
 
+/* BUG 4 FIX — Option B:
+   Remove ::before gradient stripe from generic .panel hover.
+   Only the sidebar-tests-panel keeps the always-visible stripe
+   (approved location). Other panels get a clean hover. */
 .panel:hover {
-    border-color: rgba(176, 194, 220, 0.45);
+    border-color: rgba(168, 85, 247, 0.15);
 }
 
+/* Sidebar panel — always shows the atmospheric top stripe.
+   Approved location per design system. */
+.sidebar-tests-panel {
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar-tests-panel::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+            rgba(244, 114, 182, 0.5) 0%,
+            rgba(168, 85, 247, 0.5) 50%,
+            rgba(99, 102, 241, 0.5) 100%);
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* BUG 1 FIX: panel-title svg — blue (operational) */
 .section-head,
 .panel-title {
     display: flex;
@@ -501,14 +634,7 @@
     color: var(--blue);
 }
 
-.selected-count {
-    padding: 5px 8px;
-    color: var(--blue);
-    font-size: 11px;
-    font-weight: 780;
-}
-
-/* ── Sub-layouts inside main column ─────────────────────── */
+/* ── Sub-layouts ─────────────────────────────────────────── */
 
 .two-column-row {
     display: grid;
@@ -518,12 +644,12 @@
 
 .medicine-workspace {
     display: grid;
-    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-columns: 320px minmax(0, 1fr);
     gap: 10px;
     align-items: stretch;
 }
 
-/* ── Right sidebar (preview/tests column) ───────────────── */
+/* ── Right sidebar ──────────────────────────────────────── */
 
 .preview-column {
     opacity: 0.92;
@@ -535,7 +661,15 @@
     padding: 11px;
 }
 
-/* ── Responsive breakpoints ─────────────────────────────── */
+.sidebar-column {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    flex-shrink: 0;
+}
+
+/* ── Responsive ─────────────────────────────────────────── */
 
 @media (max-width: 1320px) {
     body {
@@ -549,11 +683,6 @@
     .top-actions {
         grid-column: 1 / -1;
         justify-content: flex-start;
-    }
-
-    .vitals-inline {
-        display: none;
-        /* too cramped — vitals hidden at this width */
     }
 
     .workflow {

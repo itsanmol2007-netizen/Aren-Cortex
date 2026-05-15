@@ -1,6 +1,7 @@
 import { Plus, Stethoscope, X } from "lucide-react";
 import { useState } from "react";
-import type { Doctor, Patient } from "../types";
+import logo from "../assets/aren-logo.png";
+import type { Doctor, Patient, Vitals } from "../types";
 import { ActionButton } from "./ActionButton";
 
 type PastVisit = {
@@ -13,6 +14,8 @@ type PastVisit = {
 type PatientHeaderProps = {
   patient: Patient;
   doctor: Doctor;
+  vitals: Vitals;
+  onVitalsChange: (v: Vitals) => void;
   onOpenPatientModal: () => void;
   onReviewRx: () => void;
   onCancelConsult: () => void;
@@ -52,20 +55,78 @@ const mockPastVisits: PastVisit[] = [
   },
 ];
 
+const VITAL_FIELDS: {
+  key: keyof Vitals;
+  label: string;
+  placeholder: string;
+  warn?: (v: string) => boolean;
+}[] = [
+    {
+      key: "bp",
+      label: "BP",
+      placeholder: "120/80",
+      warn: (v) => {
+        const sys = parseInt(v.split("/")[0]);
+        return !isNaN(sys) && (sys > 140 || sys < 90);
+      },
+    },
+    {
+      key: "pulse",
+      label: "Pulse",
+      placeholder: "72",
+      warn: (v) => {
+        const n = parseInt(v);
+        return !isNaN(n) && (n > 100 || n < 50);
+      },
+    },
+    {
+      key: "temp",
+      label: "Temp",
+      placeholder: "98.6",
+      warn: (v) => {
+        const n = parseFloat(v);
+        return !isNaN(n) && (n > 99.5 || n < 96);
+      },
+    },
+    {
+      key: "spo2",
+      label: "SpO₂",
+      placeholder: "98",
+      warn: (v) => {
+        const n = parseInt(v);
+        return !isNaN(n) && n < 95;
+      },
+    },
+    {
+      key: "weight",
+      label: "Wt",
+      placeholder: "65 kg",
+    },
+  ];
+
 export function PatientHeader({
   patient,
   doctor,
+  vitals,
+  onVitalsChange,
   onOpenPatientModal,
   onReviewRx,
   onCancelConsult,
   pastVisits = mockPastVisits,
 }: PatientHeaderProps) {
   const [cancelArmed, setCancelArmed] = useState(false);
-  const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [cancelTimer, setCancelTimer] =
+    useState<ReturnType<typeof setTimeout> | null>(null);
+
   const [activeVisit, setActiveVisit] = useState<PastVisit | null>(null);
 
   const initials = patient.name
-    ? patient.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+    ? patient.name
+      .split(" ")
+      .map((p) => p[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase()
     : "NP";
 
   const details = [
@@ -79,10 +140,15 @@ export function PatientHeader({
   const handleCancelClick = () => {
     if (!cancelArmed) {
       setCancelArmed(true);
-      const t = setTimeout(() => setCancelArmed(false), 3000);
+
+      const t = setTimeout(() => {
+        setCancelArmed(false);
+      }, 3000);
+
       setCancelTimer(t);
     } else {
       if (cancelTimer) clearTimeout(cancelTimer);
+
       setCancelArmed(false);
       onCancelConsult();
     }
@@ -92,31 +158,55 @@ export function PatientHeader({
     <>
       <header className="topbar">
 
-        {/* Brand mark — left column */}
+        {/* Brand mark */}
         <div className="brand-mark">
-          <div className="logo-pill">AC</div>
+
+          <div className="logo-pill">
+            <img src={logo} alt="AREN Logo" />
+          </div>
+
           <div>
-            <strong>AREN <span>Cortex</span></strong>
+            <strong>
+              AREN <span>Cortex</span>
+            </strong>
+
             <small>Phase 1 workflow</small>
           </div>
+
         </div>
 
-        {/* Patient strip — middle column */}
-        <section className="patient-card patient-strip" aria-label="Active patient">
+        {/* Patient strip */}
+        <section
+          className="patient-card patient-strip"
+          aria-label="Active patient"
+        >
           <span className="active-dot" aria-hidden="true" />
 
           <div className="avatar">{initials}</div>
 
           <div className="patient-identity">
-            <span className="identity-label">Active consult</span>
-            <strong>{patient.name || "No patient selected"}</strong>
-            <span>{details || "Create or search a patient to begin"}</span>
+            <span className="identity-label">
+              Active consult
+            </span>
+
+            <strong>
+              {patient.name || "No patient selected"}
+            </strong>
+
+            <span>
+              {details || "Create or search a patient to begin"}
+            </span>
           </div>
 
           {pastVisits.length > 0 && (
             <div className="past-visits-rail">
-              <span className="past-visits-label">Past</span>
+
+              <span className="past-visits-label">
+                Past visits
+              </span>
+
               <div className="past-visits-scroll">
+
                 {pastVisits.map((visit) => (
                   <button
                     key={visit.date}
@@ -125,17 +215,30 @@ export function PatientHeader({
                     onClick={() => setActiveVisit(visit)}
                     title={visit.summary}
                   >
-                    {visit.date}
+                    <span className="visit-chip-date">
+                      {visit.date}
+                    </span>
+
+                    {visit.diagnosis && (
+                      <span className="visit-chip-diag">
+                        {visit.diagnosis}
+                      </span>
+                    )}
                   </button>
                 ))}
+
               </div>
             </div>
           )}
         </section>
 
-        {/* Action buttons — right column */}
+        {/* Actions */}
         <div className="top-actions">
-          <ActionButton icon={<Plus size={18} />} onClick={onOpenPatientModal}>
+
+          <ActionButton
+            icon={<Plus size={18} />}
+            onClick={onOpenPatientModal}
+          >
             Patient
           </ActionButton>
 
@@ -149,17 +252,65 @@ export function PatientHeader({
             className={`cancel-consult-btn${cancelArmed ? " armed" : ""}`}
             onClick={handleCancelClick}
           >
-            {cancelArmed ? "Sure? Click again" : "Cancel"}
+            {cancelArmed
+              ? "Sure? Click again"
+              : "Cancel"}
           </button>
 
-          <ActionButton variant="primary" onClick={onReviewRx}>
+          <ActionButton
+            variant="primary"
+            onClick={onReviewRx}
+          >
             Review Rx
           </ActionButton>
-        </div>
 
+        </div>
       </header>
 
-      {/* Past visit detail popup */}
+      {/* Vitals bar */}
+      <div className="vitals-bar">
+
+        <span className="vitals-bar-label">
+          Vitals
+        </span>
+
+        {VITAL_FIELDS.map((field, i) => {
+          const val = vitals[field.key];
+
+          const isWarn = field.warn
+            ? field.warn(val)
+            : false;
+
+          return (
+            <div
+              key={field.key}
+              className={`vital-pill${isWarn ? " warn" : ""}`}
+            >
+              <span className="vital-pill-label">
+                {field.label}
+              </span>
+
+              <input
+                value={val}
+                placeholder={field.placeholder}
+                onChange={(e) =>
+                  onVitalsChange({
+                    ...vitals,
+                    [field.key]: e.target.value,
+                  })
+                }
+                aria-label={field.label}
+              />
+
+              {i < VITAL_FIELDS.length - 1 && (
+                <span className="vital-sep" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Past visit popup */}
       {activeVisit && (
         <div
           className="visit-popup-overlay"
@@ -170,12 +321,17 @@ export function PatientHeader({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="visit-popup-head">
+
               <div>
-                <span className="visit-popup-date">{activeVisit.date}</span>
+                <span className="visit-popup-date">
+                  {activeVisit.date}
+                </span>
+
                 <strong className="visit-popup-diagnosis">
                   {activeVisit.diagnosis}
                 </strong>
               </div>
+
               <button
                 type="button"
                 className="icon-button"
@@ -185,20 +341,26 @@ export function PatientHeader({
               </button>
             </div>
 
-            <p className="visit-popup-summary">{activeVisit.summary}</p>
+            <p className="visit-popup-summary">
+              {activeVisit.summary}
+            </p>
 
-            {activeVisit.medicines && activeVisit.medicines.length > 0 && (
-              <div className="visit-popup-meds">
-                <span className="visit-popup-meds-label">
-                  Medicines prescribed
-                </span>
-                <ul>
-                  {activeVisit.medicines.map((med) => (
-                    <li key={med}>{med}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {activeVisit.medicines &&
+              activeVisit.medicines.length > 0 && (
+                <div className="visit-popup-meds">
+
+                  <span className="visit-popup-meds-label">
+                    Medicines prescribed
+                  </span>
+
+                  <ul>
+                    {activeVisit.medicines.map((med) => (
+                      <li key={med}>{med}</li>
+                    ))}
+                  </ul>
+
+                </div>
+              )}
           </div>
         </div>
       )}

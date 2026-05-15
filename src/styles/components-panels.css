@@ -1,0 +1,619 @@
+/* ============================================================
+   COMPONENTS-PANELS.CSS
+   AREN Cortex Phase 1
+   Working panels: medicine suggestions, prescription,
+   sidebar tests, preview overlay
+   Import order: 2 of 3
+   ============================================================ */
+
+/* ── Medicine suggestions ───────────────────────────────── */
+
+.medicine-search {
+    grid-template-columns: 22px 1fr;
+    height: 34px;
+    margin-bottom: 5px;
+}
+
+.suggestions-panel {
+    min-height: 430px;
+}
+
+.medicine-suggestion-list {
+    display: grid;
+    gap: 3px;
+}
+
+.suggestion-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 68px 30px;
+    align-items: center;
+    gap: 7px;
+    min-height: 46px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* BUG 1 FIX: blue-soft hover — doctor is clicking this */
+.suggestion-row:hover {
+    border-color: rgba(37, 99, 235, 0.18);
+    background: var(--blue-soft);
+}
+
+/* BUG 1 FIX: blue rank badge — operational emphasis */
+.rank {
+    display: grid;
+    width: 23px;
+    height: 23px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--blue);
+    color: white;
+    font-size: 11px;
+    font-weight: 850;
+}
+
+.suggestion-copy,
+.medicine-select span {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.suggestion-copy strong,
+.medicine-select strong {
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.suggestion-copy small,
+.medicine-select small {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* BUG 1 FIX: match bar — blue fill, blue label */
+.match {
+    display: grid;
+    gap: 4px;
+}
+
+.match span {
+    color: var(--blue);
+    font-size: 9px;
+    font-weight: 850;
+}
+
+.match i {
+    display: block;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--blue);
+}
+
+/* ── Prescription panel ─────────────────────────────────── */
+
+.prescription-panel {
+    min-height: 430px;
+    position: relative;
+    overflow: hidden;
+    /* BUG 1 FIX: blue-tinted border — this is an operational panel */
+    border-color: rgba(37, 99, 235, 0.15);
+    box-shadow: var(--shadow-active);
+}
+
+.prescription-list {
+    display: grid;
+    gap: 3px;
+}
+
+/* BUG 1 FIX: empty state — blue-soft tones */
+.empty-prescription {
+    display: grid;
+    min-height: 286px;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+    border: 1px dashed rgba(37, 99, 235, 0.2);
+    border-radius: 8px;
+    background: var(--blue-soft);
+    color: var(--muted);
+    text-align: center;
+}
+
+.rx-empty-icon {
+    display: grid;
+    width: 52px;
+    height: 52px;
+    place-items: center;
+    border-radius: 14px;
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--blue);
+    font-size: 22px;
+    font-weight: 900;
+}
+
+.empty-prescription strong {
+    color: var(--text);
+    font-size: 17px;
+}
+
+.prescription-row {
+    display: grid;
+    grid-template-columns: 1fr 34px;
+    gap: 6px;
+    min-height: 46px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.75);
+}
+
+.prescription-row:hover {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(37, 99, 235, 0.12);
+}
+
+/* BUG 1 FIX: selected row — blue border + blue-soft bg */
+.prescription-row.selected {
+    border-color: rgba(37, 99, 235, 0.4);
+    background: var(--blue-soft);
+}
+
+.medicine-select {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.medicine-select svg {
+    color: #b89ad4;
+}
+
+.danger-icon {
+    align-self: center;
+    margin-right: 5px;
+    color: var(--danger);
+}
+
+/* ── Medicine editor popover ────────────────────────────── */
+
+.medicine-editor-popover {
+    position: absolute;
+    right: 12px;
+    bottom: 42px;
+    z-index: 5;
+    width: min(560px, calc(100% - 24px));
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 24px 70px rgba(13, 31, 62, 0.22);
+    padding: 12px;
+}
+
+.popover-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.popover-head div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.popover-head span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+}
+
+.popover-head strong {
+    overflow: hidden;
+    font-size: 15px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.popover-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+@media (max-width: 1120px) {
+    .popover-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* ── Sidebar tests panel ────────────────────────────────── */
+
+.sidebar-tests-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+
+/* Tests search — purple is fine here, it's the atmospheric sidebar */
+.tests-search-box {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    border: 1px solid rgba(168, 85, 247, 0.18);
+    border-radius: 8px;
+    background: rgba(250, 245, 255, 0.7);
+    padding: 0 10px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tests-search-box:focus-within {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
+    background: white;
+}
+
+.tests-search-icon {
+    color: #a855f7;
+    flex-shrink: 0;
+}
+
+.tests-search-input {
+    flex: 1;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 12px;
+    color: #0f172a;
+    min-width: 0;
+}
+
+.tests-search-input::placeholder {
+    color: #b4a7d4;
+}
+
+.tests-search-clear {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(168, 85, 247, 0.12);
+    color: #7c3aed;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+/* Scrollable groups container */
+.test-groups-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    max-height: 340px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 85, 247, 0.2) transparent;
+    padding-right: 2px;
+}
+
+.test-groups-scroll::-webkit-scrollbar {
+    width: 3px;
+}
+
+.test-groups-scroll::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.25);
+    border-radius: 999px;
+}
+
+/* Individual group */
+.test-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* Group divider label */
+.test-group-divider {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(168, 85, 247, 0.12);
+}
+
+.test-group-icon {
+    font-size: 11px;
+    line-height: 1;
+}
+
+.test-group-label {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a855f7;
+}
+
+/* Chip row inside a group */
+.tg-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+/* Individual test chip */
+.tg-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 999px;
+    background: rgba(250, 245, 255, 0.8);
+    color: #5b21b6;
+    font-size: 11px;
+    font-weight: 650;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    white-space: nowrap;
+}
+
+.tg-chip:hover {
+    border-color: rgba(168, 85, 247, 0.5);
+    background: rgba(243, 232, 255, 0.9);
+    color: #7c3aed;
+    transform: translateY(-1px);
+}
+
+.tg-chip:active {
+    transform: translateY(0) scale(0.96);
+}
+
+/* Rare tests — dimmer, smaller, dashed */
+.tg-chip.rare {
+    font-size: 10px;
+    height: 21px;
+    opacity: 0.6;
+    border-style: dashed;
+    background: transparent;
+}
+
+.tg-chip.rare:hover {
+    opacity: 1;
+    background: rgba(243, 232, 255, 0.7);
+}
+
+/* Selected state — filled purple (atmospheric sidebar, intentional) */
+.tg-chip.selected {
+    background: linear-gradient(135deg, rgba(244, 114, 182, 0.15) 0%, rgba(168, 85, 247, 0.2) 100%);
+    border-color: #a855f7;
+    color: #7c3aed;
+    font-weight: 750;
+    opacity: 1;
+}
+
+.tg-chip.selected:hover {
+    background: linear-gradient(135deg, rgba(244, 114, 182, 0.25) 0%, rgba(168, 85, 247, 0.3) 100%);
+    border-color: #9333ea;
+}
+
+/* No results */
+.tests-no-results {
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 0;
+    padding: 8px 0;
+}
+
+/* Selected tests strip */
+.selected-tests-strip {
+    padding-top: 8px;
+    border-top: 1px solid rgba(168, 85, 247, 0.12);
+}
+
+.selected-tests-label {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a855f7;
+}
+
+/* Lab selector */
+.sidebar-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.sidebar-test-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 999px;
+    background: rgba(250, 245, 255, 0.8);
+    color: #5b21b6;
+    font-size: 11px;
+    font-weight: 650;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    white-space: nowrap;
+}
+
+.sidebar-test-chip:hover:not(:disabled) {
+    border-color: rgba(168, 85, 247, 0.45);
+    background: rgba(243, 232, 255, 0.9);
+    color: #7c3aed;
+}
+
+.sidebar-test-chip.chip-selected,
+.sidebar-test-chip:disabled {
+    background: rgba(168, 85, 247, 0.12);
+    border-color: rgba(168, 85, 247, 0.3);
+    color: #7c3aed;
+    opacity: 0.65;
+    cursor: default;
+}
+
+.sidebar-lab-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.sidebar-lab-label {
+    font-size: 9px;
+    font-weight: 800;
+    color: #a855f7;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.sidebar-lab-select {
+    height: 32px;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 8px;
+    background: rgba(250, 245, 255, 0.7);
+    font-size: 12px;
+    color: #1e293b;
+    padding: 0 8px;
+    width: 100%;
+}
+
+.sidebar-lab-select:focus {
+    outline: none;
+    border-color: #a855f7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
+}
+
+/* Review Rx button — full gradient, atmospheric (approved location) */
+.review-rx-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    height: 42px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f472b6 0%, #a855f7 55%, #6366f1 100%);
+    color: white;
+    font-size: 13px;
+    font-weight: 750;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(168, 85, 247, 0.35);
+    transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+    flex-shrink: 0;
+}
+
+.review-rx-btn:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(168, 85, 247, 0.45);
+}
+
+.review-rx-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.3);
+}
+
+/* ── Preview / Rx modal overlay ─────────────────────────── */
+
+.preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.overlay-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(9, 20, 43, 0.34);
+    backdrop-filter: blur(6px);
+}
+
+.preview-modal {
+    position: relative;
+    z-index: 1;
+    width: min(720px, 100%);
+    max-height: min(82vh, 760px);
+    overflow: auto;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 28px 90px rgba(7, 18, 38, 0.32);
+    padding: 16px;
+}
+
+.preview-sheet {
+    display: grid;
+    gap: 9px;
+    border-radius: 8px;
+    background: rgba(248, 251, 255, 0.72);
+    padding: 11px;
+}
+
+.preview-sheet header,
+.preview-line,
+.preview-block {
+    display: grid;
+    gap: 3px;
+}
+
+.preview-sheet header {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.preview-sheet strong {
+    font-size: 12px;
+}
+
+.preview-sheet span,
+.preview-sheet p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.38;
+}
+
+/* BUG 1 FIX: selected-count — blue text, blue-soft bg */
+.selected-count {
+    padding: 5px 8px;
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 780;
+    background: var(--blue-soft);
+    border-color: rgba(37, 99, 235, 0.2);
+    border-radius: 7px;
+}

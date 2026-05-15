@@ -22,6 +22,7 @@ export type Medicine = {
   category: string;
   use: string;
   match: number;
+  composition: string;
 };
 
 export type PrescriptionMedicine = Medicine & {
@@ -35,4 +36,11 @@ export type Doctor = {
   id: string;
   name: string;
   specialty: string;
+};
+
+export type TestGroup = {
+  id: string;
+  label: string;
+  icon: string;
+  tests: { name: string; rare?: boolean }[];
 };

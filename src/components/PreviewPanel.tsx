@@ -1,123 +1,172 @@
-import { CheckCircle2, Eye, MessageCircle, Printer, Save } from "lucide-react";
-import { useState } from "react";
-import type { Patient, PrescriptionMedicine, Vitals } from "../types";
-import { ActionButton } from "./ActionButton";
+import { useState, useMemo } from "react";
+import { FlaskConical, Search, FileText, X, Plus } from "lucide-react";
+import { Tag } from "./Tag";
+import { labs } from "../data/mockData";
+import type { TestGroup } from "../types";
 
 type PreviewPanelProps = {
-  patient: Patient;
-  vitals: Vitals;
-  symptoms: string[];
-  findings: string[];
-  medicines: PrescriptionMedicine[];
-  tests: string[];
-  lab: string;
-  onSave: () => void;
+  testGroups: TestGroup[];
+  selectedTests: string[];
+  selectedLab: string;
+  onTestsChange: (tests: string[]) => void;
+  onLabChange: (lab: string) => void;
+  onReviewRx: () => void;
 };
 
-export function PreviewPanel({ patient, vitals, symptoms, findings, medicines, tests, lab, onSave }: PreviewPanelProps) {
-  const [previewOpen, setPreviewOpen] = useState(false);
+export function PreviewPanel({
+  testGroups,
+  selectedTests,
+  selectedLab,
+  onTestsChange,
+  onLabChange,
+  onReviewRx,
+}: PreviewPanelProps) {
+  const [query, setQuery] = useState("");
+
+  const toggleTest = (name: string) => {
+    if (selectedTests.includes(name)) {
+      onTestsChange(selectedTests.filter((t) => t !== name));
+    } else {
+      onTestsChange([...selectedTests, name]);
+    }
+  };
+
+  // When searching: flatten all tests and filter
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    const all = testGroups.flatMap((g) => g.tests);
+    return all.filter((t) => t.name.toLowerCase().includes(q));
+  }, [query, testGroups]);
 
   return (
-    <aside className="preview-column">
-      <section className="panel quick-actions">
-        <div className="panel-title compact-title">
-          <Eye size={16} />
-          <h2>Output</h2>
-        </div>
-        <div className="action-grid">
-          <ActionButton icon={<Printer size={18} />}>Print</ActionButton>
-          <ActionButton icon={<MessageCircle size={18} />}>WhatsApp</ActionButton>
-          <ActionButton icon={<Save size={18} />} onClick={onSave}>Save</ActionButton>
-          <ActionButton variant="primary" icon={<CheckCircle2 size={18} />} onClick={onSave}>Complete</ActionButton>
-        </div>
-      </section>
+    <aside className="sidebar-column">
+      <section className="panel sidebar-tests-panel">
 
-      <section className="panel preview-panel">
+        {/* Header */}
         <div className="section-head">
           <div className="panel-title">
-            <Eye size={18} />
-            <h2>Consult Summary</h2>
+            <FlaskConical size={15} />
+            <h2>Tests & Lab</h2>
           </div>
-          <button className="selected-count" type="button" onClick={() => setPreviewOpen(true)}>Preview</button>
+          {selectedTests.length > 0 && (
+            <span className="selected-count">{selectedTests.length} selected</span>
+          )}
         </div>
 
-        <div className="summary-metrics">
-          <SummaryItem label="Symptoms" value={symptoms.length} />
-          <SummaryItem label="Findings" value={findings.length} />
-          <SummaryItem label="Medicines" value={medicines.length} />
-          <SummaryItem label="Tests" value={tests.length} />
+        {/* Search */}
+        <div className="tests-search-box">
+          <Search size={13} className="tests-search-icon" />
+          <input
+            className="tests-search-input"
+            placeholder="Search tests..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              className="tests-search-clear"
+              onClick={() => setQuery("")}
+              type="button"
+            >
+              <X size={11} />
+            </button>
+          )}
         </div>
 
-        <div className="summary-patient">
-          <strong>{patient.name || "New Patient"}</strong>
-          <span>{[patient.age && `${patient.age}y`, patient.gender, patient.phone].filter(Boolean).join(" · ") || "Patient details pending"}</span>
+        {/* Groups or search results */}
+        <div className="test-groups-scroll">
+          {searchResults ? (
+            // Search mode: flat filtered list, no group headers
+            <div className="test-group">
+              {searchResults.length === 0 ? (
+                <p className="tests-no-results">No tests match "{query}"</p>
+              ) : (
+                <div className="tg-chip-row">
+                  {searchResults.map((t) => {
+                    const selected = selectedTests.includes(t.name);
+                    return (
+                      <button
+                        key={t.name}
+                        type="button"
+                        className={`tg-chip${t.rare ? " rare" : ""}${selected ? " selected" : ""}`}
+                        onClick={() => toggleTest(t.name)}
+                      >
+                        {selected ? <X size={9} /> : <Plus size={9} />}
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Normal grouped mode
+            testGroups.map((group) => (
+              <div key={group.id} className="test-group">
+                <div className="test-group-divider">
+                  <span className="test-group-icon">{group.icon}</span>
+                  <span className="test-group-label">{group.label}</span>
+                </div>
+                <div className="tg-chip-row">
+                  {group.tests.map((t) => {
+                    const selected = selectedTests.includes(t.name);
+                    return (
+                      <button
+                        key={t.name}
+                        type="button"
+                        className={`tg-chip${t.rare ? " rare" : ""}${selected ? " selected" : ""}`}
+                        onClick={() => toggleTest(t.name)}
+                      >
+                        {selected ? <X size={9} /> : <Plus size={9} />}
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
         </div>
+
+        {/* Selected tests as removable tags */}
+        {selectedTests.length > 0 && (
+          <div className="selected-tests-strip">
+            <span className="selected-tests-label">Selected</span>
+            <div className="tag-row" style={{ marginTop: 4 }}>
+              {selectedTests.map((test) => (
+                <Tag
+                  key={test}
+                  label={test}
+                  tone="violet"
+                  onRemove={() => onTestsChange(selectedTests.filter((t) => t !== test))}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Lab selector */}
+        <div className="sidebar-lab-field">
+          <label className="sidebar-lab-label">Preferred lab</label>
+          <select
+            className="sidebar-lab-select"
+            value={selectedLab}
+            onChange={(e) => onLabChange(e.target.value)}
+          >
+            {labs.map((lab) => (
+              <option key={lab}>{lab}</option>
+            ))}
+          </select>
+        </div>
+
       </section>
 
-      {previewOpen && (
-        <div className="preview-overlay" role="dialog" aria-label="Prescription preview">
-          <button className="overlay-backdrop" type="button" onClick={() => setPreviewOpen(false)} aria-label="Close preview" />
-          <div className="preview-modal">
-            <div className="section-head">
-              <div className="panel-title">
-                <Eye size={18} />
-                <h2>Prescription Preview</h2>
-              </div>
-              <button className="selected-count" type="button" onClick={() => setPreviewOpen(false)}>Close</button>
-            </div>
-            <PreviewSheet patient={patient} vitals={vitals} symptoms={symptoms} findings={findings} medicines={medicines} tests={tests} lab={lab} />
-          </div>
-        </div>
-      )}
+      {/* Review button */}
+      <button type="button" className="review-rx-btn" onClick={onReviewRx}>
+        <FileText size={15} />
+        Review Prescription
+      </button>
     </aside>
-  );
-}
-
-function SummaryItem({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
-  );
-}
-
-type PreviewSheetProps = Omit<PreviewPanelProps, "onSave">;
-
-function PreviewSheet({ patient, vitals, symptoms, findings, medicines, tests, lab }: PreviewSheetProps) {
-  return (
-    <div className="preview-sheet">
-      <header>
-        <strong>{patient.name || "New Patient"}</strong>
-        <span>{[patient.age && `${patient.age}y`, patient.gender, patient.phone].filter(Boolean).join(" · ") || "Patient details pending"}</span>
-      </header>
-
-      <PreviewLine label="Vitals" value={`BP ${vitals.bp || "-"}, Pulse ${vitals.pulse || "-"}, Temp ${vitals.temp || "-"}, SpO2 ${vitals.spo2 || "-"}`} />
-      <PreviewLine label="Symptoms" value={symptoms.join(", ") || "-"} />
-      <PreviewLine label="Findings" value={findings.join(", ") || "-"} />
-
-      <div className="preview-block">
-        <strong>Rx</strong>
-        {medicines.length ? (
-          medicines.map((medicine) => (
-            <p key={medicine.id}>{medicine.name} - {medicine.dosage || "dose"} / {medicine.frequency || "frequency"} / {medicine.duration || "duration"}</p>
-          ))
-        ) : (
-          <p>-</p>
-        )}
-      </div>
-
-      <PreviewLine label="Tests" value={tests.join(", ") || "-"} />
-      <PreviewLine label="Preferred lab" value={lab} />
-    </div>
-  );
-}
-
-function PreviewLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="preview-line">
-      <strong>{label}</strong>
-      <span>{value}</span>
-    </div>
   );
 }
