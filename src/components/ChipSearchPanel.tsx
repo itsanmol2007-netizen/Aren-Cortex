@@ -12,9 +12,10 @@ type ChipSearchPanelProps = {
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   onChange: (items: string[]) => void;
+  className?: string;
 };
 
-export function ChipSearchPanel({ title, tone, icon, items, selected, collapsed, onToggleCollapsed, onChange }: ChipSearchPanelProps) {
+export function ChipSearchPanel({ title, tone, icon, items, selected, collapsed, onToggleCollapsed, onChange, className = "" }: ChipSearchPanelProps) {
   const [query, setQuery] = useState("");
   const filteredItems = useMemo(() => fuzzyFilter(items, query, (item) => item).slice(0, 8), [items, query]);
 
@@ -25,10 +26,18 @@ export function ChipSearchPanel({ title, tone, icon, items, selected, collapsed,
     }
     onChange([...selected, normalized]);
     setQuery("");
+
+    setTimeout(() => {
+      const el = document.getElementById(`chip-${normalized}`);
+      if (el) {
+        el.classList.add("chip-selected-anim");
+        setTimeout(() => el.classList.remove("chip-selected-anim"), 250);
+      }
+    }, 10);
   };
 
   return (
-    <section className={`panel chip-panel ${collapsed ? "collapsed" : ""}`}>
+    <section className={`panel chip-panel ${className} ${collapsed ? "collapsed" : ""}`.trim()}>
       <div className="section-head">
         <div className="panel-title">
           {icon}
@@ -64,7 +73,7 @@ export function ChipSearchPanel({ title, tone, icon, items, selected, collapsed,
 
           <div className="tag-row">
             {selected.map((item) => (
-              <Tag key={item} label={item} tone={tone} onRemove={() => onChange(selected.filter((selectedItem) => selectedItem !== item))} />
+              <Tag key={item} id={`chip-${item}`} label={item} tone={tone} onRemove={() => onChange(selected.filter((selectedItem) => selectedItem !== item))} />
             ))}
           </div>
 

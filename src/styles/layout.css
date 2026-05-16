@@ -9,456 +9,644 @@
     padding: 14px 18px 24px;
 }
 
-/* ── Topbar ─────────────────────────────────────────────── */
 
-.topbar {
-    display: grid;
-    grid-template-columns: 190px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 0;
-}
+/* ════════════════════════════════════════════════════════════
+   TOPBAR — unified single-bar design
+   ════════════════════════════════════════════════════════════ */
 
-.brand-mark,
-.patient-card,
-.doctor-pill {
-    background: var(--surface);
-    box-shadow: var(--shadow-low);
-    backdrop-filter: blur(16px);
-}
-
-/* ── Brand mark — gradient accent stripe on top ─────────── */
-
-.brand-mark {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 64px;
-    padding: 8px 10px;
-    border-radius: var(--radius);
+.topbar-unified {
     position: relative;
-    overflow: hidden;
-}
-
-/* Approved location: brand mark top stripe */
-.brand-mark::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
-    border-radius: var(--radius) var(--radius) 0 0;
-}
-
-.logo-pill {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    place-items: center;
-    border-radius: 8px;
-    /* Approved location: logo pill gradient */
-    background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
-    color: white;
-    font-size: 12px;
-    font-weight: 850;
-    flex-shrink: 0;
-    overflow: hidden;
-}
-
-.logo-pill img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
-.brand-mark strong {
-    display: block;
-    font-size: 16px;
-    letter-spacing: 0;
-}
-
-.brand-mark strong span {
-    color: var(--blue);
-}
-
-.brand-mark small {
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 650;
-}
-
-/* ── Patient strip — cinematic layered atmosphere ───────── */
-
-.patient-card {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    min-height: 64px;
-    padding: 10px 16px;
-    border-radius: var(--radius);
-}
+    align-items: stretch;
+    height: 72px;
+    overflow: hidden;
+    border-radius: 10px 10px 0 0;
 
-.patient-strip {
-    min-height: 72px;
-    /* BUG 2: slightly taller */
-    border: 1px solid rgba(99, 60, 180, 0.28);
-
-    /* Layered atmospheric dark navy — lighter, richer than before */
     background:
-        /* Layer 1 — soft pink orb top-right */
-        radial-gradient(ellipse 280px 120px at 92% -10%,
-            rgba(244, 114, 182, 0.09) 0%,
-            transparent 70%),
-        /* Layer 2 — blue-purple orb mid-left */
-        radial-gradient(ellipse 320px 200px at -5% 60%,
-            rgba(99, 102, 241, 0.10) 0%,
-            transparent 65%),
-        /* Layer 3 — deeper violet bloom center-right */
-        radial-gradient(ellipse 200px 160px at 70% 110%,
-            rgba(139, 92, 246, 0.08) 0%,
-            transparent 60%),
-        /* Base — slightly lighter navy, smoother tonal blend */
+        radial-gradient(ellipse 320px 140px at 18% -20%,
+            rgba(244, 114, 182, 0.10) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 200px at 50% 120%,
+            rgba(139, 92, 246, 0.10) 0%, transparent 65%),
+        radial-gradient(ellipse 260px 160px at 88% -10%,
+            rgba(99, 102, 241, 0.11) 0%, transparent 60%),
         linear-gradient(135deg,
             #0e1c38 0%,
-            /* slightly lighter than before */
             #13102b 38%,
             #180e2a 62%,
             #0c1628 100%);
 
     box-shadow:
-        0 8px 22px rgba(20, 35, 66, 0.18),
-        inset 0 1px 0 rgba(255, 255, 255, 0.07),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+        0 4px 24px rgba(10, 20, 50, 0.22),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.25);
 
-    position: relative;
-    overflow: hidden;
+    margin-bottom: 0;
 }
 
-/* Approved location: patient strip top edge gradient stripe */
-.patient-strip::before {
-    content: "";
+/* Pink→purple→indigo accent stripe */
+.topbar-stripe {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     height: 3px;
     background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
-    /* Feathered glow below the stripe for cinematic depth */
-    box-shadow: 0 1px 8px rgba(168, 85, 247, 0.35);
-}
-
-/* Ambient blurred shape cluster — replaces single corner glow.
-   Two overlapping orbs: one warm violet top-right, one cool blue bottom-right.
-   Creates depth without being distracting. */
-.patient-strip::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-        /* Warm violet orb — top-right */
-        radial-gradient(ellipse 180px 140px at 95% 0%,
-            rgba(168, 85, 247, 0.13) 0%,
-            transparent 70%),
-        /* Cool blue orb — bottom-right, offset */
-        radial-gradient(ellipse 140px 100px at 88% 120%,
-            rgba(59, 130, 246, 0.09) 0%,
-            transparent 65%);
+    box-shadow: 0 1px 10px rgba(168, 85, 247, 0.5);
+    z-index: 2;
     pointer-events: none;
 }
 
-/* ── Patient strip text colors — confirmed ──────────────── */
+/* Atmospheric SVG waveform layer */
+.topbar-atmo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
 
-.patient-strip .patient-identity strong {
-    color: #f1f5f9;
+/* ── Brand section ──────────────────────────────────────── */
+.tb-brand {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    flex-shrink: 0;
+}
+
+.tb-logo-pill {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.4);
+}
+
+.tb-logo-pill img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.tb-brand-text strong {
+    display: block;
     font-size: 15px;
     font-weight: 750;
+    color: #f1f5f9;
+    letter-spacing: -0.2px;
 }
 
-.patient-strip .patient-identity span {
-    color: #7a90b4;
+.tb-brand-text strong span {
+    color: #60a5fa;
 }
 
-.patient-strip .identity-label {
-    color: #4ade80;
-    letter-spacing: 0.06em;
+.tb-brand-text small {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: #3a5070;
+    margin-top: 1px;
 }
 
-/* ── Active dot ─────────────────────────────────────────── */
+/* ── Vertical dividers ──────────────────────────────────── */
+.tb-divider {
+    width: 1px;
+    align-self: stretch;
+    background: rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+    z-index: 1;
+    margin: 14px 0;
+}
 
-.active-dot {
-    width: 8px;
-    height: 8px;
+/* ── Patient identity zone ──────────────────────────────── */
+.tb-patient-identity {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 20px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+/* Warm orb behind avatar */
+.tb-identity-orb {
+    position: absolute;
+    top: -20px;
+    left: 8px;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+            rgba(168, 85, 247, 0.14) 0%,
+            transparent 70%);
+    pointer-events: none;
+}
+
+/* ── Active pulse dot ───────────────────────────────────── */
+.tb-active-dot {
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: #22c55e;
     flex-shrink: 0;
     box-shadow:
-        0 0 0 3px rgba(34, 197, 94, 0.2),
-        0 0 8px rgba(34, 197, 94, 0.4);
+        0 0 0 2px rgba(34, 197, 94, 0.2),
+        0 0 8px rgba(34, 197, 94, 0.5);
     animation: dot-pulse 2.4s ease-in-out infinite;
 }
 
-@keyframes dot-pulse {
+/* ── Avatar — improved with gradient fill + glow ring ───── */
+.tb-avatar {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    z-index: 1;
+}
+
+.tb-avatar-inner {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 50%;
+    /* Gradient fill instead of flat purple */
+    background: linear-gradient(135deg, #7c3aed 0%, #c026d3 60%, #db2777 100%);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    position: relative;
+    z-index: 1;
+    /* Inset highlight for depth */
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        0 2px 10px rgba(168, 85, 247, 0.45);
+}
+
+/* Animated glow ring around avatar */
+.tb-avatar-ring {
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(168, 85, 247, 0.5);
+    box-shadow:
+        0 0 0 1px rgba(244, 114, 182, 0.15),
+        0 0 10px rgba(168, 85, 247, 0.25);
+    animation: avatar-ring-pulse 3s ease-in-out infinite;
+}
+
+@keyframes avatar-ring-pulse {
 
     0%,
     100% {
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2), 0 0 8px rgba(34, 197, 94, 0.4);
+        border-color: rgba(168, 85, 247, 0.5);
+        box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.1), 0 0 10px rgba(168, 85, 247, 0.2);
     }
 
     50% {
-        box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.1), 0 0 14px rgba(34, 197, 94, 0.3);
+        border-color: rgba(244, 114, 182, 0.6);
+        box-shadow: 0 0 0 2px rgba(244, 114, 182, 0.12), 0 0 16px rgba(168, 85, 247, 0.35);
     }
 }
 
-/* ── Avatar ─────────────────────────────────────────────── */
-
-.avatar {
-    display: grid;
-    width: 38px;
-    height: 38px;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--blue-soft);
-    color: var(--blue);
-    font-size: 13px;
-    font-weight: 850;
-    flex-shrink: 0;
-}
-
-.patient-strip .avatar {
-    background: rgba(168, 85, 247, 0.2);
-    color: #d8b4fe;
-    border: 1px solid rgba(168, 85, 247, 0.35);
-}
-
-/* ── Patient identity ───────────────────────────────────── */
-
-.patient-identity {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-    flex-shrink: 0;
-}
-
-.patient-identity strong,
-.patient-identity span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.patient-identity strong {
-    color: #08245a;
-    font-size: 15px;
-}
-
-.patient-identity span {
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.identity-label {
-    color: var(--green);
-    font-size: 10px;
-    font-weight: 850;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-/* ── Past visits rail ───────────────────────────────────── */
-
-.past-visits-rail {
+/* ── Patient text info ──────────────────────────────────── */
+.tb-patient-info {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    flex: 1;
-    min-width: 0;
-    padding-left: 12px;
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 2px;
+    position: relative;
+    z-index: 1;
 }
 
-.past-visits-label {
+.tb-active-label {
     font-size: 9px;
     font-weight: 800;
-    color: #4a6a8a;
+    color: #4ade80;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+}
+
+.tb-patient-name {
+    display: block;
+    font-size: 15px;
+    font-weight: 750;
+    color: #f1f5f9;
+    letter-spacing: -0.2px;
     white-space: nowrap;
 }
 
-/* BUG 2: latest visit leftmost — flex-direction row + no reverse needed,
-   ensure mockData feeds newest first. Scroll is left-to-right. */
-.past-visits-scroll {
+.tb-patient-meta {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #5a7499;
+    white-space: nowrap;
+}
+
+/* ── Past visits zone ───────────────────────────────────── */
+.tb-visits-zone {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    padding: 0 16px;
+    overflow: hidden;
+}
+
+.tb-visits-label {
+    font-size: 9px;
+    font-weight: 800;
+    color: #2d4060;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    white-space: nowrap;
+}
+
+.tb-visits-scroll {
     display: flex;
     gap: 6px;
     overflow-x: auto;
     scrollbar-width: none;
-    padding-bottom: 2px;
+    padding-bottom: 1px;
 }
 
-.past-visits-scroll::-webkit-scrollbar {
+.tb-visits-scroll::-webkit-scrollbar {
     display: none;
 }
 
-/* BUG 2: slightly taller visit chips */
-.visit-chip {
+.tb-visit-chip {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 3px;
-    padding: 7px 11px;
-    /* was 6px 10px */
+    gap: 2px;
+    padding: 5px 11px;
     border-radius: 8px;
-    border: 1px solid rgba(168, 85, 247, 0.25);
-    background: rgba(168, 85, 247, 0.08);
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    background: rgba(168, 85, 247, 0.06);
     cursor: pointer;
-    white-space: nowrap;
     transition: background 0.15s, border-color 0.15s, transform 0.1s;
-    min-width: 84px;
-    /* was 80px */
+    min-width: 80px;
 }
 
-.visit-chip:hover {
+.tb-visit-chip.latest {
+    border-color: rgba(168, 85, 247, 0.38);
+    background: rgba(168, 85, 247, 0.12);
+}
+
+.tb-visit-chip:hover {
     background: rgba(168, 85, 247, 0.18);
     border-color: rgba(168, 85, 247, 0.5);
     transform: translateY(-1px);
 }
 
-.visit-chip:active {
+.tb-visit-chip:active {
     transform: translateY(0) scale(0.97);
 }
 
-.visit-chip-date {
+.tb-visit-date {
     font-size: 10px;
     font-weight: 800;
-    color: #c084fc;
+    color: #a78bfa;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
 }
 
-.visit-chip-diag {
+.tb-visit-chip.latest .tb-visit-date {
+    color: #d8b4fe;
+}
+
+.tb-visit-diag {
     font-size: 11px;
     font-weight: 600;
-    color: #94a3b8;
-    max-width: 110px;
+    color: #6a8099;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* ── Past visit popup ───────────────────────────────────── */
+/* ── Actions zone ───────────────────────────────────────── */
+.tb-actions {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 16px;
+    flex-shrink: 0;
+}
 
-.visit-popup-overlay {
+.tb-doctor-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.05);
+    color: #7a90b4;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.tb-cancel-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 13px;
+    border-radius: 7px;
+    border: 1px solid rgba(217, 64, 64, 0.25);
+    background: transparent;
+    color: #f87171;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.tb-cancel-btn:hover {
+    background: rgba(217, 64, 64, 0.09);
+    border-color: rgba(217, 64, 64, 0.45);
+}
+
+.tb-cancel-btn:active {
+    transform: scale(0.97);
+}
+
+.tb-cancel-btn.armed {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: white;
+    animation: pulse-danger 0.35s ease;
+}
+
+/*
+  Review Rx — toned down during active consult.
+  End-state cognition: present but not dominant.
+  Uses a muted ghost style. Full gradient only in Review Modal.
+*/
+.tb-review-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(168, 85, 247, 0.4);
+    background: rgba(168, 85, 247, 0.10);
+    color: #c084fc;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tb-review-btn:hover {
+    background: rgba(168, 85, 247, 0.18);
+    border-color: rgba(168, 85, 247, 0.6);
+    color: #d8b4fe;
+}
+
+.tb-review-btn:active {
+    transform: scale(0.97);
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   PAST VISIT POPUP — redesigned to match topbar tone
+   ════════════════════════════════════════════════════════════ */
+
+.vp-overlay {
     position: fixed;
     inset: 0;
     z-index: 40;
-    background: rgba(5, 10, 24, 0.55);
-    backdrop-filter: blur(4px);
+    background: rgba(5, 10, 24, 0.5);
+    backdrop-filter: blur(6px);
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding-top: 90px;
+    padding-top: 88px;
+    animation: vp-overlay-in 0.15s ease;
 }
 
-.visit-popup {
-    width: 360px;
-    background: linear-gradient(145deg, #0f1f3d 0%, #0d1830 100%);
-    border: 1px solid rgba(168, 85, 247, 0.3);
-    border-radius: 14px;
-    padding: 18px;
+@keyframes vp-overlay-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.vp-card {
+    position: relative;
+    width: 380px;
+    overflow: hidden;
+    border-radius: 16px;
+    /* Same dark navy base as topbar */
+    background:
+        radial-gradient(ellipse 200px 120px at 90% 0%,
+            rgba(168, 85, 247, 0.15) 0%, transparent 70%),
+        radial-gradient(ellipse 160px 100px at 10% 100%,
+            rgba(99, 102, 241, 0.10) 0%, transparent 65%),
+        linear-gradient(145deg, #111c35 0%, #0f122a 50%, #0c1628 100%);
+    border: 1px solid rgba(168, 85, 247, 0.25);
     box-shadow:
-        0 24px 60px rgba(0, 0, 0, 0.5),
-        0 0 0 1px rgba(255, 255, 255, 0.04);
-    animation: mi-enter 0.2s cubic-bezier(0.34, 1.46, 0.64, 1);
+        0 24px 60px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    animation: vp-card-in 0.2s cubic-bezier(0.34, 1.46, 0.64, 1);
+    padding: 0 0 16px;
 }
 
-.visit-popup-head {
+@keyframes vp-card-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Matching accent stripe */
+.vp-stripe {
+    height: 3px;
+    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+    box-shadow: 0 1px 8px rgba(168, 85, 247, 0.35);
+}
+
+/* Ambient orb inside card */
+.vp-orb {
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+            rgba(168, 85, 247, 0.12) 0%,
+            transparent 70%);
+    pointer-events: none;
+}
+
+.vp-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: 12px;
+    gap: 12px;
+    padding: 14px 16px 10px;
 }
 
-.visit-popup-date {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
+.vp-header-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.vp-icon-wrap {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(135deg,
+            rgba(244, 114, 182, 0.2) 0%,
+            rgba(168, 85, 247, 0.2) 100%);
+    border: 1px solid rgba(168, 85, 247, 0.25);
+    color: #c084fc;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.vp-eyebrow {
+    margin: 0 0 3px;
+    font-size: 9px;
+    font-weight: 800;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+}
+
+.vp-diagnosis {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 750;
+    color: #f1f5f9;
+    letter-spacing: -0.2px;
+    line-height: 1.2;
+}
+
+.vp-close {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #5a7499;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+}
+
+.vp-close:hover {
+    background: rgba(244, 114, 182, 0.12);
+    border-color: rgba(244, 114, 182, 0.3);
+    color: #f472b6;
+}
+
+.vp-date-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vp-date {
+    font-size: 10px;
+    font-weight: 800;
     color: #c084fc;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    margin-bottom: 3px;
+    white-space: nowrap;
+    background: rgba(168, 85, 247, 0.12);
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(168, 85, 247, 0.2);
 }
 
-.visit-popup-diagnosis {
-    display: block;
-    font-size: 16px;
+.vp-summary {
+    font-size: 12px;
+    color: #5a7499;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.vp-meds {
+    padding: 12px 16px 0;
+}
+
+.vp-meds-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 8px;
+    font-size: 9px;
     font-weight: 800;
-    color: #e2e8f0;
-}
-
-.visit-popup-summary {
-    font-size: 13px;
-    color: #7a9ab8;
-    margin: 0 0 14px;
-    line-height: 1.5;
-}
-
-.visit-popup-meds-label {
-    display: block;
-    font-size: 10px;
-    font-weight: 800;
-    color: #4a6a8a;
+    color: #3d5a7a;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    margin-bottom: 7px;
+    letter-spacing: 0.08em;
 }
 
-.visit-popup-meds ul {
+.vp-meds-header svg {
+    color: #5a7499;
+}
+
+.vp-meds-list {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
     padding: 0;
     margin: 0;
 }
 
-.visit-popup-meds li {
-    font-size: 13px;
+.vp-meds-list li {
+    font-size: 12px;
+    font-weight: 600;
     color: #93c5fd;
     padding: 5px 10px;
-    background: rgba(37, 99, 235, 0.12);
-    border-radius: 6px;
-    border-left: 2px solid rgba(37, 99, 235, 0.5);
+    background: rgba(37, 99, 235, 0.10);
+    border-radius: 7px;
+    border-left: 2px solid rgba(37, 99, 235, 0.4);
 }
 
-/* ── Top actions ────────────────────────────────────────── */
 
-.top-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 7px;
-}
+/* ════════════════════════════════════════════════════════════
+   ACTION BUTTONS (used by ActionButton.tsx in topbar)
+   ════════════════════════════════════════════════════════════ */
 
-.doctor-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    height: 36px;
-    padding: 0 11px;
-    border-radius: var(--radius);
-    color: #1b386b;
-    font-size: 13px;
-    font-weight: 750;
-    background: var(--surface);
-    box-shadow: var(--shadow-low);
-    backdrop-filter: blur(16px);
-}
-
-/* BUG 1 FIX: selected-count, action-button, icon-button base */
 .action-button,
 .icon-button,
 .selected-count {
@@ -473,9 +661,9 @@
     align-items: center;
     justify-content: center;
     gap: 7px;
-    min-height: 36px;
+    min-height: 34px;
     padding: 0 12px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 760;
     transition: background 0.12s, transform 0.1s, box-shadow 0.12s;
 }
@@ -490,7 +678,7 @@
     transform: scale(0.97);
 }
 
-/* Review Rx button in topbar — approved gradient location */
+/* Primary variant — kept for non-topbar uses (e.g. modals) */
 .action-button.primary {
     border: none;
     background: linear-gradient(135deg, #f472b6 0%, #a855f7 55%, #6366f1 100%);
@@ -503,34 +691,32 @@
     box-shadow: 0 6px 18px rgba(168, 85, 247, 0.45);
 }
 
-.cancel-consult-btn {
-    display: inline-flex;
+.top-actions {
+    display: flex;
     align-items: center;
-    height: 36px;
-    padding: 0 12px;
-    border-radius: 7px;
-    border: 1px solid rgba(217, 64, 64, 0.3);
-    background: transparent;
-    color: var(--danger);
-    font-size: 13px;
-    font-weight: 700;
-    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+    justify-content: flex-end;
+    gap: 7px;
 }
 
-.cancel-consult-btn:hover {
-    background: rgba(217, 64, 64, 0.07);
-    border-color: rgba(217, 64, 64, 0.5);
-}
 
-.cancel-consult-btn:active {
-    transform: scale(0.97);
-}
+/* ════════════════════════════════════════════════════════════
+   KEYFRAMES
+   ════════════════════════════════════════════════════════════ */
 
-.cancel-consult-btn.armed {
-    background: var(--danger);
-    border-color: var(--danger);
-    color: white;
-    animation: pulse-danger 0.35s ease;
+@keyframes dot-pulse {
+
+    0%,
+    100% {
+        box-shadow:
+            0 0 0 2px rgba(34, 197, 94, 0.2),
+            0 0 8px rgba(34, 197, 94, 0.4);
+    }
+
+    50% {
+        box-shadow:
+            0 0 0 4px rgba(34, 197, 94, 0.1),
+            0 0 14px rgba(34, 197, 94, 0.3);
+    }
 }
 
 @keyframes pulse-danger {
@@ -547,18 +733,83 @@
     }
 }
 
-/* ── Workflow canvas ────────────────────────────────────── */
+/* Chip select micro-bounce — add to any .tg-chip, .tag on click */
+@keyframes chip-select-bounce {
+    0% {
+        transform: scale(1);
+    }
+
+    40% {
+        transform: scale(0.93);
+    }
+
+    70% {
+        transform: scale(1.06);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.chip-selected-anim {
+    animation: chip-select-bounce 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Toast success pulse */
+@keyframes toast-glow {
+
+    0%,
+    100% {
+        box-shadow: 0 4px 16px rgba(16, 185, 129, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 4px 24px rgba(16, 185, 129, 0.45);
+    }
+}
+
+.toast {
+    animation: toast-glow 2s ease-in-out infinite;
+}
+
+/* mi-enter used by visit popup and medicine inspector */
+@keyframes mi-enter {
+    from {
+        opacity: 0;
+        transform: scale(0.93) translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   WORKFLOW CANVAS — wider sidebar, environmental lighting
+   ════════════════════════════════════════════════════════════ */
 
 .workflow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 290px;
+    /* Sidebar bumped from 290px → 360px */
+    grid-template-columns: minmax(0, 1fr) 360px;
     align-items: start;
     gap: 10px;
     padding: 10px;
-    margin-top: 8px;
+    margin-top: 0;
     border: 1px solid rgba(191, 205, 226, 0.48);
-    border-radius: 12px;
-    background: var(--worktop);
+    border-radius: 0 0 12px 12px;
+
+    /* Environmental ambient lighting — very subtle radial glow */
+    background:
+        radial-gradient(ellipse 500px 300px at 30% 0%,
+            rgba(37, 99, 235, 0.025) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 250px at 80% 100%,
+            rgba(168, 85, 247, 0.02) 0%, transparent 70%),
+        var(--worktop);
+
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.76),
         0 20px 58px rgba(34, 54, 92, 0.09);
@@ -570,7 +821,10 @@
     gap: 10px;
 }
 
-/* ── Panel shared structure ─────────────────────────────── */
+
+/* ════════════════════════════════════════════════════════════
+   PANEL SHARED STRUCTURE
+   ════════════════════════════════════════════════════════════ */
 
 .panel {
     background: var(--surface);
@@ -584,16 +838,11 @@
     overflow: hidden;
 }
 
-/* BUG 4 FIX — Option B:
-   Remove ::before gradient stripe from generic .panel hover.
-   Only the sidebar-tests-panel keeps the always-visible stripe
-   (approved location). Other panels get a clean hover. */
 .panel:hover {
-    border-color: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.12);
 }
 
-/* Sidebar panel — always shows the atmospheric top stripe.
-   Approved location per design system. */
+/* Sidebar panel — always-visible atmospheric top stripe */
 .sidebar-tests-panel {
     position: relative;
     overflow: hidden;
@@ -613,7 +862,6 @@
     border-radius: var(--radius) var(--radius) 0 0;
 }
 
-/* BUG 1 FIX: panel-title svg — blue (operational) */
 .section-head,
 .panel-title {
     display: flex;
@@ -634,7 +882,126 @@
     color: var(--blue);
 }
 
-/* ── Sub-layouts ─────────────────────────────────────────── */
+
+/* ════════════════════════════════════════════════════════════
+   SYMPTOMS vs FINDINGS — different cognitive weight
+   ════════════════════════════════════════════════════════════ */
+
+/*
+  Symptoms = patient-origin cognition → warm rose/amber tint
+  Findings = clinical evaluation cognition → cool blue/teal tint
+  Difference is subtle: left border accent + header icon color override
+*/
+
+/* Symptoms panel — warm patient-origin feel */
+.panel.symptoms-panel {
+    border-color: rgba(251, 113, 133, 0.12);
+    border-left: 2px solid rgba(251, 113, 133, 0.35);
+}
+
+.panel.symptoms-panel .panel-title svg {
+    color: #f43f5e;
+}
+
+.panel.symptoms-panel:hover {
+    border-color: rgba(251, 113, 133, 0.22);
+    border-left-color: rgba(251, 113, 133, 0.5);
+}
+
+/* Findings panel — cool clinical evaluation feel */
+.panel.findings-panel {
+    border-color: rgba(20, 184, 166, 0.12);
+    border-left: 2px solid rgba(20, 184, 166, 0.35);
+}
+
+.panel.findings-panel .panel-title svg {
+    color: #0d9488;
+}
+
+.panel.findings-panel:hover {
+    border-color: rgba(20, 184, 166, 0.22);
+    border-left-color: rgba(20, 184, 166, 0.5);
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   TESTS SIDEBAR — visual rhythm variation
+   ════════════════════════════════════════════════════════════ */
+
+/*
+  Override tg-chip font-size rhythm:
+  Normal chips: 11px (default)
+  First chip in each group gets slightly heavier weight → anchor chip
+  Rare chips: 10px, dimmer (already done)
+  This creates visual rhythm without changing layout.
+*/
+
+.tg-chip-row .tg-chip:first-child {
+    font-weight: 700;
+    border-color: rgba(168, 85, 247, 0.28);
+}
+
+/* Group label — more architectural, stronger presence */
+.test-group-divider {
+    padding-bottom: 5px;
+    margin-bottom: 1px;
+}
+
+.test-group-label {
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    color: #8b5cf6;
+}
+
+/* Slight background tint alternation on groups for breathing room */
+.test-group:nth-child(even) {
+    padding: 4px 5px;
+    margin: 0 -5px;
+    border-radius: 6px;
+    background: rgba(168, 85, 247, 0.025);
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   REVIEW PRESCRIPTION BUTTON — toned down
+   Active consult = end-state. Present, not dominant.
+   ════════════════════════════════════════════════════════════ */
+
+.review-rx-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    height: 38px;
+    /* was 42px — slightly smaller */
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    border-radius: 10px;
+    /* Muted — not full gradient. Gradient is earned at Review Modal. */
+    background: rgba(168, 85, 247, 0.10);
+    color: #a78bfa;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.review-rx-btn:hover {
+    background: rgba(168, 85, 247, 0.18);
+    border-color: rgba(168, 85, 247, 0.55);
+    color: #c084fc;
+    transform: translateY(-1px);
+}
+
+.review-rx-btn:active {
+    transform: translateY(0);
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   SUB-LAYOUTS
+   ════════════════════════════════════════════════════════════ */
 
 .two-column-row {
     display: grid;
@@ -649,10 +1016,14 @@
     align-items: stretch;
 }
 
-/* ── Right sidebar ──────────────────────────────────────── */
+
+/* ════════════════════════════════════════════════════════════
+   RIGHT SIDEBAR
+   ════════════════════════════════════════════════════════════ */
 
 .preview-column {
-    opacity: 0.92;
+    opacity: 1;
+    /* was 0.92 — full presence now sidebar is wider */
 }
 
 .preview-panel {
@@ -669,15 +1040,24 @@
     flex-shrink: 0;
 }
 
-/* ── Responsive ─────────────────────────────────────────── */
+
+/* ════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1420px) {
+    .workflow {
+        grid-template-columns: minmax(0, 1fr) 320px;
+    }
+}
 
 @media (max-width: 1320px) {
     body {
         min-width: 1000px;
     }
 
-    .topbar {
-        grid-template-columns: 180px minmax(0, 1fr);
+    .tb-visits-zone {
+        display: none;
     }
 
     .top-actions {
@@ -703,14 +1083,19 @@
         padding: 10px;
     }
 
-    .topbar,
+    .topbar-unified {
+        height: auto;
+        flex-wrap: wrap;
+        padding-bottom: 10px;
+    }
+
+    .tb-divider {
+        display: none;
+    }
+
     .workflow,
     .two-column-row,
     .medicine-workspace {
         grid-template-columns: 1fr;
-    }
-
-    .patient-card {
-        flex-wrap: wrap;
     }
 }

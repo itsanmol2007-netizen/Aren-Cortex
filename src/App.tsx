@@ -120,6 +120,7 @@ function App() {
 
           <div className="two-column-row">
             <ChipSearchPanel
+              className="symptoms-panel"
               title="Symptoms"
               tone="blue"
               icon={<HeartPulse size={18} />}
@@ -128,6 +129,7 @@ function App() {
               onChange={setSelectedSymptoms}
             />
             <ChipSearchPanel
+              className="findings-panel"
               title="Findings"
               tone="pink"
               icon={<ClipboardCheck size={18} />}

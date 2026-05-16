@@ -4,11 +4,12 @@ type TagProps = {
   label: string;
   tone?: "blue" | "pink" | "teal" | "violet";
   onRemove: () => void;
+  id?: string;
 };
 
-export function Tag({ label, tone = "blue", onRemove }: TagProps) {
+export function Tag({ label, tone = "blue", onRemove, id }: TagProps) {
   return (
-    <button className={`tag tag-${tone}`} type="button" onClick={onRemove} aria-label={`Remove ${label}`}>
+    <button id={id} className={`tag tag-${tone}`} type="button" onClick={onRemove} aria-label={`Remove ${label}`}>
       <span>{label}</span>
       <X size={14} />
     </button>
