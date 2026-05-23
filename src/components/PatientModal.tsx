@@ -1,45 +1,71 @@
-import { Search, UserCheck, X, User, Phone, MapPin, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Search, UserCheck, X, User, Phone, MapPin, Sparkles, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { searchPatients, findPatientByPhone, type DBPatient } from "../lib/db";
 import type { Gender, Patient } from "../types";
 
 type PatientModalProps = {
-  patients: Patient[];
   onClose: () => void;
   onConfirm: (patient: Patient) => void;
 };
 
-const emptyDraft: Patient = {
-  name: "",
-  age: "",
-  gender: "",
-  phone: "",
-  address: "",
-};
+const emptyDraft: Patient = { name: "", age: "", gender: "", phone: "", address: "" };
 
-export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps) {
+function dbToUiPatient(p: DBPatient): Patient {
+  return { id: p.id, name: p.name, age: String(p.age), gender: p.gender as Gender, phone: p.phone };
+}
+
+export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
   const [draft, setDraft] = useState<Patient>(emptyDraft);
-  const [matchedPatient, setMatchedPatient] = useState<Patient | null>(null);
+  const [matchedPatient, setMatchedPatient] = useState<DBPatient | null>(null);
   const [mode, setMode] = useState<"search" | "create">("search");
+
+  // Search mode state
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<DBPatient[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
-  const searchMatches = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q || q.length < 2) return [];
-    return patients
-      .filter((p) => p.name.toLowerCase().includes(q) || p.phone.includes(q))
-      .slice(0, 5);
-  }, [patients, searchQuery]);
+  // Phone duplicate check state
+  const [phoneCheckLoading, setPhoneCheckLoading] = useState(false);
 
-  // Phone handler: strip leading +91 or 0, then check for duplicates
-  const handlePhoneChange = (raw: string) => {
-    // Only allow digits
+  // Live search — 300ms debounce
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setSearchError("");
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError("");
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchPatients(searchQuery.trim());
+        setSearchResults(results);
+      } catch (err: any) {
+        setSearchError("Search failed. Check connection.");
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Phone change — strip non-digits, check duplicate at 10 digits
+  const handlePhoneChange = async (raw: string) => {
     const digits = raw.replace(/\D/g, "").slice(0, 10);
     setDraft((d) => ({ ...d, phone: digits }));
+    setMatchedPatient(null);
     if (digits.length === 10) {
-      const match = patients.find((p) => p.phone.replace(/\D/g, "").slice(-10) === digits);
-      setMatchedPatient(match ?? null);
-    } else {
-      setMatchedPatient(null);
+      setPhoneCheckLoading(true);
+      try {
+        const existing = await findPatientByPhone(digits);
+        if (existing) setMatchedPatient(existing);
+      } catch {
+        // non-fatal — just skip duplicate check
+      } finally {
+        setPhoneCheckLoading(false);
+      }
     }
   };
 
@@ -57,16 +83,12 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
       <button className="pm-backdrop" type="button" onClick={onClose} aria-label="Close" />
 
       <div className="pm-card">
-
-        {/* Decorative top stripe */}
         <div className="pm-top-stripe" />
 
         {/* Header */}
         <div className="pm-header">
           <div className="pm-header-left">
-            <div className="pm-header-icon">
-              <Sparkles size={14} />
-            </div>
+            <div className="pm-header-icon"><Sparkles size={14} /></div>
             <div>
               <p className="pm-eyebrow">Patient intake</p>
               <h3 className="pm-title">Find or create patient</h3>
@@ -79,18 +101,10 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
 
         {/* Mode toggle */}
         <div className="pm-toggle">
-          <button
-            type="button"
-            className={`pm-toggle-btn ${mode === "search" ? "active" : ""}`}
-            onClick={() => setMode("search")}
-          >
+          <button type="button" className={`pm-toggle-btn ${mode === "search" ? "active" : ""}`} onClick={() => setMode("search")}>
             Search existing
           </button>
-          <button
-            type="button"
-            className={`pm-toggle-btn ${mode === "create" ? "active" : ""}`}
-            onClick={() => setMode("create")}
-          >
+          <button type="button" className={`pm-toggle-btn ${mode === "create" ? "active" : ""}`} onClick={() => setMode("create")}>
             New patient
           </button>
         </div>
@@ -99,7 +113,10 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
         {mode === "search" && (
           <div className="pm-section">
             <div className="pm-search-box">
-              <Search size={14} className="pm-search-icon" />
+              {searchLoading
+                ? <Loader2 size={14} className="pm-search-icon pm-spin" />
+                : <Search size={14} className="pm-search-icon" />
+              }
               <input
                 autoFocus
                 value={searchQuery}
@@ -109,7 +126,11 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
               />
             </div>
 
-            {searchQuery.length >= 2 && searchMatches.length === 0 && (
+            {searchError && (
+              <p className="pm-no-results" style={{ color: "#f87171" }}>{searchError}</p>
+            )}
+
+            {!searchLoading && searchQuery.length >= 2 && searchResults.length === 0 && !searchError && (
               <p className="pm-no-results">
                 No patient found.{" "}
                 <button type="button" className="pm-link-btn" onClick={() => setMode("create")}>
@@ -118,14 +139,14 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
               </p>
             )}
 
-            {searchMatches.length > 0 && (
+            {searchResults.length > 0 && (
               <div className="pm-match-list">
-                {searchMatches.map((p) => (
+                {searchResults.map((p) => (
                   <button
-                    key={p.phone}
+                    key={p.id}
                     type="button"
                     className="pm-match-row"
-                    onClick={() => onConfirm(p)}
+                    onClick={() => onConfirm(dbToUiPatient(p))}
                   >
                     <div className="pm-avatar">
                       {p.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
@@ -146,7 +167,6 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
         {mode === "create" && (
           <div className="pm-section">
 
-            {/* 1. Full name — FIRST */}
             <div className="pm-field">
               <label className="pm-label">
                 <User size={12} className="pm-label-icon" />
@@ -161,12 +181,9 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
               />
             </div>
 
-            {/* 2. Age + Sex row */}
             <div className="pm-row-two">
               <div className="pm-field">
-                <label className="pm-label">
-                  Age <span className="pm-required">*</span>
-                </label>
+                <label className="pm-label">Age <span className="pm-required">*</span></label>
                 <input
                   className="pm-input"
                   inputMode="numeric"
@@ -177,9 +194,7 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
                 />
               </div>
               <div className="pm-field">
-                <label className="pm-label">
-                  Sex <span className="pm-required">*</span>
-                </label>
+                <label className="pm-label">Sex <span className="pm-required">*</span></label>
                 <select
                   className="pm-input pm-select"
                   value={draft.gender}
@@ -193,7 +208,6 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
               </div>
             </div>
 
-            {/* 3. Phone — with +91 prefix */}
             <div className="pm-field">
               <label className="pm-label">
                 <Phone size={12} className="pm-label-icon" />
@@ -209,6 +223,7 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
                   placeholder="10-digit mobile"
                   onChange={(e) => handlePhoneChange(e.target.value)}
                 />
+                {phoneCheckLoading && <Loader2 size={13} className="pm-spin" style={{ color: "#6b7280", marginLeft: 6 }} />}
               </div>
             </div>
 
@@ -226,7 +241,7 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
                   </div>
                 </div>
                 <div className="pm-duplicate-actions">
-                  <button type="button" className="pm-btn-primary" onClick={() => onConfirm(matchedPatient)}>
+                  <button type="button" className="pm-btn-primary" onClick={() => onConfirm(dbToUiPatient(matchedPatient))}>
                     Use this patient
                   </button>
                   <button type="button" className="pm-btn-ghost" onClick={() => setMatchedPatient(null)}>
@@ -236,7 +251,6 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
               </div>
             )}
 
-            {/* 4. Address — optional */}
             {!matchedPatient && (
               <>
                 <div className="pm-field">
@@ -251,18 +265,9 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
                     onChange={(e) => setDraft((d) => ({ ...d, address: e.target.value }))}
                   />
                 </div>
-
-                {/* Actions */}
                 <div className="pm-actions">
-                  <button type="button" className="pm-btn-ghost" onClick={onClose}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="pm-btn-primary"
-                    disabled={!isFormValid}
-                    onClick={handleConfirm}
-                  >
+                  <button type="button" className="pm-btn-ghost" onClick={onClose}>Cancel</button>
+                  <button type="button" className="pm-btn-primary" disabled={!isFormValid} onClick={handleConfirm}>
                     Start consult →
                   </button>
                 </div>
@@ -270,7 +275,6 @@ export function PatientModal({ patients, onClose, onConfirm }: PatientModalProps
             )}
           </div>
         )}
-
       </div>
     </div>
   );

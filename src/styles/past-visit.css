@@ -1,0 +1,384 @@
+/* ═══════════════════════════════════════════════════════════════
+   PAST VISIT STYLES  —  pv-* prefix
+   Used by: PatientHeader (scroll strip + popup)
+   ═══════════════════════════════════════════════════════════════ */
+
+.tb-visits-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Arrow scroll buttons */
+.tb-visits-arrow {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+}
+
+.tb-visits-arrow:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.tb-visits-arrow:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
+/* Scrollable row — hidden scrollbar, snaps per chip */
+.tb-visits-scroll {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scroll-snap-type: x mandatory;
+    flex: 1;
+    min-width: 0;
+}
+
+.tb-visits-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* Individual visit chip */
+.tb-visit-chip {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: 4px 9px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.055);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    min-width: 64px;
+    max-width: 110px;
+}
+
+.tb-visit-chip:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.20);
+}
+
+.tb-visit-chip.latest {
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(99, 102, 241, 0.10);
+}
+
+.tb-visit-date {
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.75);
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.tb-visit-diag {
+    font-size: 9.5px;
+    color: rgba(255, 255, 255, 0.42);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 94px;
+}
+
+/* ── Past visit popup overlay ────────────────────────────────── */
+.pv-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding-top: 0;
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    animation: pv-fade-in 0.15s ease;
+}
+
+@keyframes pv-fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.pv-card {
+    position: relative;
+    width: 420px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 120px);
+    border-radius: 14px;
+    background: #0f1629;
+    border: 1px solid rgba(99, 102, 241, 0.22);
+    box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: pv-slide-in 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+@keyframes pv-slide-in {
+    from {
+        transform: translateY(-12px) scale(0.97);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+/* Top accent stripe */
+.pv-stripe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #6366f1, #a855f7, #f472b6);
+    border-radius: 14px 14px 0 0;
+}
+
+/* Ambient glow orb */
+.pv-orb {
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+/* ── Card header ─────────────────────────────────────────────── */
+.pv-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 18px 18px 0;
+    gap: 12px;
+}
+
+.pv-header-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.pv-icon-wrap {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    color: #818cf8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.pv-eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.35);
+    margin: 0 0 3px;
+}
+
+.pv-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.92);
+    margin: 0;
+    line-height: 1.25;
+}
+
+.pv-close {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.pv-close:hover {
+    background: rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* ── Meta row (date + doctor) ────────────────────────────────── */
+.pv-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px 0;
+    flex-wrap: wrap;
+}
+
+.pv-date-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.22);
+    border-radius: 5px;
+    padding: 2px 8px;
+    letter-spacing: 0.02em;
+}
+
+.pv-doctor {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pv-doctor-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+}
+
+/* ── Scrollable body ─────────────────────────────────────────── */
+.pv-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+}
+
+.pv-body::-webkit-scrollbar {
+    width: 4px;
+}
+
+.pv-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.pv-body::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 4px;
+}
+
+/* Section */
+.pv-section-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.28);
+    margin: 0 0 6px;
+}
+
+/* Symptom chips */
+.pv-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.pv-chip {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.pv-chip.abnormal {
+    border-color: rgba(244, 63, 94, 0.30);
+    color: #fb7185;
+    background: rgba(244, 63, 94, 0.08);
+}
+
+.pv-chip.normal {
+    border-color: rgba(13, 148, 136, 0.30);
+    color: #2dd4bf;
+    background: rgba(13, 148, 136, 0.08);
+}
+
+/* Medicine rows */
+.pv-med-row {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pv-med-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.pv-med-detail {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.38);
+    letter-spacing: 0.01em;
+}
+
+/* Divider */
+.pv-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.06);
+    border: none;
+    margin: 0;
+}
+
+/* Empty state */
+.pv-empty {
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.28);
+    font-style: italic;
+}

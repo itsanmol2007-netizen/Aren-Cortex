@@ -9,21 +9,31 @@ import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { PrescriptionPanel } from "./components/PrescriptionPanel";
 import { PreviewPanel } from "./components/PreviewPanel";
+import { ReviewModal } from "./components/ReviewModal";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchSymptoms, fetchFindings,
   createPatient, findPatientByPhone, createVisit,
   replaceVisitSymptoms, replaceVisitFindings,
-  rankMedicines, saveConsult,
+  rankMedicines, saveConsult, runLearningLoop,
+  freqSlotToLabel, freqLabelToSlot,
+  fetchPatientVisits,
   type DBSymptom, type DBFinding, type RankedMedicine,
+  type SaveConsultMedicine, type RealVisit,
 } from "./lib/db";
 import type { Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 
 const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
 const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
 
-// Convert DB ranked result → UI Medicine shape
-function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & { _dosageDefaults: RankedMedicine["dosage_defaults"] } {
+// ── Convert DB ranked result → UI Medicine shape ───────────────────────────────
+function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
+  _dosageDefaults: RankedMedicine["dosage_defaults"];
+  _dosage_mg: number | null;
+  _duration_days: number | null;
+  _route: string;
+} {
+  const defaults = r.dosage_defaults;
   return {
     id: String(r.medicine_id),
     medicine_id: r.medicine_id,
@@ -33,23 +43,21 @@ function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & { _dosage
     use: "",
     match: maxScore > 0 ? Math.round((r.score / maxScore) * 100) : 50,
     composition: r.composition_names,
-    _dosageDefaults: r.dosage_defaults,
+    _dosageDefaults: defaults,
+    _dosage_mg: defaults?.dosage_mg ?? null,
+    _duration_days: defaults?.duration_days ?? null,
+    _route: defaults?.route ?? "oral",
   };
 }
 
-// Convert timesPerDay → frequency string for MedicineInspector slot system
-function timesPerDayToFreq(n: number): string {
-  if (n >= 4) return "Four times a day";
-  if (n === 3) return "Three times a day";
-  if (n === 2) return "Twice a day";
-  return "Once daily (Morning)";
-}
-
+// ── App ───────────────────────────────────────────────────────────────────────
 function App() {
+  // ── DB bootstrap ────────────────────────────────────────────────────────────
   const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
   const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
   const [dbReady, setDbReady] = useState(false);
 
+  // ── Active consult ───────────────────────────────────────────────────────────
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
   const [vitals, setVitals] = useState<Vitals>(emptyVitals);
@@ -61,17 +69,25 @@ function App() {
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [selectedLab, setSelectedLab] = useState("No preferred lab");
 
+  // ── Ranking ──────────────────────────────────────────────────────────────────
   const [rankedMedicines, setRankedMedicines] = useState<Medicine[]>([]);
+  const [rankedCompositionIds, setRankedCompositionIds] = useState<number[]>([]);
   const [rankLoading, setRankLoading] = useState(false);
 
-  // Medicine being staged (clicked from suggestions, not yet in prescription)
-  const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
+  // ── Past visits ──────────────────────────────────────────────────────────────
+  const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
+  const [pastVisitsLoading, setPastVisitsLoading] = useState(false);
 
+  // ── UI state ─────────────────────────────────────────────────────────────────
+  const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
   const [toast, setToast] = useState("");
   const [patientModalOpen, setPatientModalOpen] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Derived maps ─────────────────────────────────────────────────────────────
   const symptomNameToId = useMemo(() => {
     const map = new Map<string, number>();
     allSymptoms.forEach((s) => map.set(s.name, s.id));
@@ -86,7 +102,7 @@ function App() {
 
   const symptomNames = useMemo(() => allSymptoms.map((s) => s.name), [allSymptoms]);
 
-  // Load symptoms + findings from DB on mount
+  // ── Load symptoms + findings on mount ────────────────────────────────────────
   useEffect(() => {
     Promise.all([fetchSymptoms(), fetchFindings()])
       .then(([symptoms, findings]) => {
@@ -97,7 +113,7 @@ function App() {
       .catch((err) => showToast(`DB load failed: ${err.message}`));
   }, []);
 
-  // Re-rank on symptom/finding change (300ms debounce)
+  // ── Re-rank on symptom/finding change (300ms debounce) ───────────────────────
   useEffect(() => {
     if (!visitId) return;
     if (rankTimer.current) clearTimeout(rankTimer.current);
@@ -117,6 +133,7 @@ function App() {
 
       if (!symptomPayload.length && !findingPayload.length) {
         setRankedMedicines([]);
+        setRankedCompositionIds([]);
         return;
       }
 
@@ -125,6 +142,7 @@ function App() {
         const results = await rankMedicines({ symptoms: symptomPayload, findingIds: findingPayload });
         const maxScore = results[0]?.score ?? 1;
         setRankedMedicines(results.map((r) => toUIMedicine(r, maxScore)));
+        setRankedCompositionIds(results.map((r) => r.primary_composition_id));
       } catch (err: any) {
         showToast(`Ranking failed: ${err.message}`);
       } finally {
@@ -135,20 +153,42 @@ function App() {
     return () => { if (rankTimer.current) clearTimeout(rankTimer.current); };
   }, [selectedSymptoms, selectedFindings, visitId, symptomNameToId, findingNameToId]);
 
+  // ── Helpers ──────────────────────────────────────────────────────────────────
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(""), 2400);
   };
 
+  const resetConsultState = () => {
+    setPatient(null);
+    setVisitId(null);
+    setVitals(emptyVitals);
+    setSelectedSymptoms([]);
+    setSelectedFindings([]);
+    setPrescription([]);
+    setSelectedMedicineId(null);
+    setSelectedTests([]);
+    setSelectedLab("No preferred lab");
+    setRankedMedicines([]);
+    setRankedCompositionIds([]);
+    setPastVisits([]);
+  };
+
+  // ── Patient confirm: find/create patient → create visit → load past visits ───
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
     try {
       let dbPatient: Patient;
+
       if (incoming.id) {
         dbPatient = incoming;
       } else {
         const existing = await findPatientByPhone(incoming.phone);
         if (existing) {
-          dbPatient = { ...existing, age: String(existing.age), gender: existing.gender as Patient["gender"] };
+          dbPatient = {
+            ...existing,
+            age: String(existing.age),
+            gender: existing.gender as Patient["gender"],
+          };
         } else {
           const created = await createPatient({
             name: incoming.name,
@@ -156,9 +196,14 @@ function App() {
             gender: incoming.gender,
             phone: incoming.phone,
           });
-          dbPatient = { ...created, age: String(created.age), gender: created.gender as Patient["gender"] };
+          dbPatient = {
+            ...created,
+            age: String(created.age),
+            gender: created.gender as Patient["gender"],
+          };
         }
       }
+
       const visit = await createVisit(dbPatient.id!);
       setVisitId(visit.id);
       setPatient(dbPatient);
@@ -170,36 +215,54 @@ function App() {
       setSelectedTests([]);
       setSelectedLab("No preferred lab");
       setRankedMedicines([]);
+      setRankedCompositionIds([]);
       setPatientModalOpen(false);
       showToast(`Consult started for ${dbPatient.name}`);
+
+      // Fetch past visits — non-blocking, non-fatal
+      setPastVisitsLoading(true);
+      fetchPatientVisits(dbPatient.id!)
+        .then(setPastVisits)
+        .catch(() => { })
+        .finally(() => setPastVisitsLoading(false));
+
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
   }, []);
 
-  // Click on suggestion → open inspector in "staging" mode, not yet in prescription
+  // ── Medicine staging ─────────────────────────────────────────────────────────
   const handleSuggestionClick = (medicine: Medicine) => {
+    // If already in prescription, just open inspector
     if (prescription.some((m) => m.id === medicine.id)) {
       setSelectedMedicineId(medicine.id);
       return;
     }
-    const defaults = (medicine as any)._dosageDefaults;
+    const ext = medicine as ReturnType<typeof toUIMedicine>;
+    const defaults = ext._dosageDefaults;
     const staged: PrescriptionMedicine = {
       ...medicine,
+      // UI display fields (shown in inspector)
       dosage: defaults?.dosage_mg ? `${defaults.dosage_mg}mg` : "1 tab",
-      frequency: defaults?.timesPerDay ? timesPerDayToFreq(defaults.timesPerDay) : "Twice a day",
+      frequency: defaults?.frequency ? freqSlotToLabel(defaults.frequency) : "Morning and Night",
       duration: defaults?.duration_days ? `${defaults.duration_days} days` : "5 days",
       notes: defaults?.notes ?? "After food",
+      // DB persistence fields
+      dosage_mg: defaults?.dosage_mg ?? null,
+      duration_days: defaults?.duration_days ?? null,
+      route: defaults?.route ?? "oral",
+      instructions: "",
+      is_sos: false,
+      sort_order: prescription.length,
     };
     setStagedMedicine(staged);
   };
 
-  // Confirm from inspector when in staging mode → add to prescription
   const confirmStagedMedicine = () => {
     if (!stagedMedicine) return;
-    setPrescription((curr) => [...curr, stagedMedicine]);
+    setPrescription((curr) => [...curr, { ...stagedMedicine, sort_order: curr.length }]);
     setStagedMedicine(null);
-    setSelectedMedicineId(null); // ensure inspector closes fully
+    setSelectedMedicineId(null);
   };
 
   const updateMedicine = (updated: PrescriptionMedicine) => {
@@ -215,41 +278,68 @@ function App() {
     if (selectedMedicineId === id) setSelectedMedicineId(null);
   };
 
-  const saveDraft = async () => {
+  // ── Save consult + learning loop ─────────────────────────────────────────────
+  const handleConfirmAndSave = async () => {
     if (!visitId) { showToast("No active consult to save"); return; }
+    setIsSaving(true);
     try {
+      const medicineRows: SaveConsultMedicine[] = prescription.map((m, i) => ({
+        medicine_id: m.medicine_id,
+        composition_id: m.composition_id,
+        dosage_mg: m.dosage_mg ?? null,
+        frequency: freqLabelToSlot(m.frequency),  // label → slot string for DB
+        duration_days: m.duration_days ?? null,
+        route: m.route ?? "oral",
+        notes: m.notes ?? "",
+        instructions: m.instructions ?? "",
+        is_sos: m.is_sos ?? false,
+        sort_order: i,
+      }));
+
       await saveConsult({
         visitId,
-        medicines: prescription.map((m) => ({
-          medicine_id: m.medicine_id,
-          composition_id: m.composition_id,
-          dosage: m.dosage,
-          frequency: m.frequency,
-          duration: m.duration,
-          notes: m.notes,
-        })),
+        medicines: medicineRows,
         tests: selectedTests,
         vitals,
         findingsText: selectedFindings.join(", "),
       });
-      showToast("Consult saved");
+
+      // Learning loop — fire and forget
+      const tagSignature = allSymptoms
+        .filter((s) => selectedSymptoms.includes(s.name))
+        .map((s) => s.id)
+        .sort((a, b) => a - b)
+        .join("-");
+
+      runLearningLoop({
+        visitId,
+        tagSignature,
+        selectedCompositionIds: prescription.map((m) => m.composition_id),
+        rankedCompositionIds,
+      }).catch((e) => console.warn("Learning loop failed (non-fatal):", e));
+
+      setIsReviewOpen(false);
+      showToast("Prescription saved ✓");
     } catch (err: any) {
       showToast(`Save failed: ${err.message}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
+  // ── Derived inspector target ──────────────────────────────────────────────────
   const selectedMedicine = useMemo(
     () => prescription.find((m) => m.id === selectedMedicineId),
     [prescription, selectedMedicineId]
   );
 
-  // Inspector shows either staged medicine or selected prescription medicine
   const inspectorMedicine = stagedMedicine
     ? stagedMedicine
     : selectedMedicineId && !stagedMedicine
       ? selectedMedicine
       : null;
 
+  // ── Loading screen ────────────────────────────────────────────────────────────
   if (!dbReady) {
     return (
       <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
@@ -261,6 +351,7 @@ function App() {
     );
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
       <PatientHeader
@@ -269,12 +360,10 @@ function App() {
         vitals={vitals}
         onVitalsChange={setVitals}
         onOpenPatientModal={() => setPatientModalOpen(true)}
-        onReviewRx={() => showToast("Review modal coming in Step 5")}
-        onCancelConsult={() => {
-          setPatient(null); setVisitId(null); setVitals(emptyVitals);
-          setSelectedSymptoms([]); setSelectedFindings([]);
-          setPrescription([]); setRankedMedicines([]); setSelectedTests([]);
-        }}
+        onReviewRx={() => setIsReviewOpen(true)}
+        onCancelConsult={resetConsultState}
+        pastVisits={pastVisits}
+        pastVisitsLoading={pastVisitsLoading}
       />
 
       <main className="workflow">
@@ -325,17 +414,16 @@ function App() {
           medicines={prescription}
           tests={selectedTests}
           lab={selectedLab}
-          onSave={saveDraft}
+          onSave={handleConfirmAndSave}
           testGroups={testGroups}
           selectedTests={selectedTests}
           selectedLab={selectedLab}
           onTestsChange={setSelectedTests}
           onLabChange={setSelectedLab}
-          onReviewRx={() => showToast("Review modal coming in Step 5")}
+          onReviewRx={() => setIsReviewOpen(true)}
         />
       </main>
 
-      {/* Inspector — staged (pre-add) or editing existing */}
       {inspectorMedicine && (
         <MedicineInspector
           medicine={inspectorMedicine}
@@ -344,10 +432,7 @@ function App() {
           isStaging={!!stagedMedicine}
           onUpdate={updateMedicine}
           onConfirmStaged={confirmStagedMedicine}
-          onClose={() => {
-            setStagedMedicine(null);
-            setSelectedMedicineId(null);
-          }}
+          onClose={() => { setStagedMedicine(null); setSelectedMedicineId(null); }}
         />
       )}
 
@@ -355,9 +440,31 @@ function App() {
 
       {patientModalOpen && (
         <PatientModal
-          patients={[]}
           onClose={() => setPatientModalOpen(false)}
           onConfirm={handlePatientConfirm}
+        />
+      )}
+
+      {isReviewOpen && patient && (
+        <ReviewModal
+          patient={patient}
+          doctor={{
+            name: DOCTOR_NAME,
+            specialization: DOCTOR_SPECIALIZATION,
+            qualification: null,
+            registration_number: null,
+          }}
+          hospital={null}
+          vitals={vitals}
+          symptoms={selectedSymptoms}
+          findings={selectedFindings}
+          allFindings={allFindings}
+          prescription={prescription}
+          tests={selectedTests}
+          isSaving={isSaving}
+          onEdit={() => setIsReviewOpen(false)}
+          onSave={handleConfirmAndSave}
+          onClose={() => setIsReviewOpen(false)}
         />
       )}
     </div>

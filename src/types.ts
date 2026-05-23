@@ -1,12 +1,18 @@
-export type Gender = "Female" | "Male" | "Other" | "";
+export type Gender = "Male" | "Female" | "Other" | "";
 
 export type Patient = {
-  id?: string;        // DB uuid — present after save, absent for fresh draft
+  id?: string;
   name: string;
   age: string;
   gender: Gender;
   phone: string;
   address?: string;
+};
+
+export type Doctor = {
+  id: string;
+  name: string;
+  specialty: string;
 };
 
 export type Vitals = {
@@ -17,34 +23,29 @@ export type Vitals = {
   weight: string;
 };
 
-// UI medicine type — used in MedicineSuggestions
 export type Medicine = {
-  id: string;           // stringified medicine_id from DB e.g. "4521"
-  medicine_id: number;  // raw DB integer
+  id: string;
+  medicine_id: number;
   composition_id: number;
   name: string;
-  category: string;     // composition_names from ranking engine
-  use: string;          // kept for UI compat — will be empty string from DB
-  match: number;        // score normalised to 0–100
-  composition: string;  // composition_names
+  category: string;
+  use: string;
+  match: number;
+  composition: string;
 };
 
 export type PrescriptionMedicine = Medicine & {
-  dosage: string;
-  frequency: string;
-  duration: string;
-  notes: string;
-};
+  // ── UI display fields (shown to doctor) ──
+  dosage: string;        // e.g. "500mg" — display string
+  frequency: string;     // e.g. "Morning and Night" — human label
+  duration: string;      // e.g. "5 days" — display string
+  notes: string;         // e.g. "After food"
 
-export type Doctor = {
-  id: string;
-  name: string;
-  specialty: string;
-};
-
-export type TestGroup = {
-  id: string;
-  label: string;
-  icon: string;
-  tests: { name: string; rare?: boolean }[];
+  // ── DB persistence fields (saved to prescription_medicines) ──
+  dosage_mg: number | null;       // integer mg value
+  duration_days: number | null;   // integer days
+  route: string;                  // "oral" | "tablet" | "syrup" | "topical" | etc.
+  instructions: string;           // additional instructions text
+  is_sos: boolean;                // SOS/as-needed flag
+  sort_order: number;             // display order in prescription
 };

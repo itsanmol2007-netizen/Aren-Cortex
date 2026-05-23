@@ -20,11 +20,74 @@ export type RankedMedicine = {
   primary_composition_id: number;
   dosage_defaults: {
     dosage_mg: number | null;
-    timesPerDay: number;
+    frequency: string;       // raw slot string e.g. "1-0-1-0"
     duration_days: number;
+    route: string;
     notes: string;
   } | null;
 };
+
+// Frequency slot string → human label
+// Format: morning-afternoon-evening-night (each 0 or 1)
+export function freqSlotToLabel(slot: string): string {
+  const map: Record<string, string> = {
+    "1-1-1-1": "Four times a day",
+    "1-1-1-0": "Morning, Afternoon & Evening",
+    "1-1-0-1": "Morning, Afternoon & Night",
+    "1-0-1-1": "Morning, Evening & Night",
+    "0-1-1-1": "Afternoon, Evening & Night",
+    "1-1-0-0": "Morning and Afternoon",
+    "1-0-1-0": "Morning and Evening",
+    "1-0-0-1": "Morning and Night",
+    "0-1-0-1": "Afternoon and Night",
+    "0-0-1-1": "Evening and Night",
+    "1-0-0-0": "Once daily (Morning)",
+    "0-1-0-0": "Once daily (Afternoon)",
+    "0-0-1-0": "Once daily (Evening)",
+    "0-0-0-1": "Once daily (Night)",
+    "0-1-1-0": "Afternoon and Evening",
+  };
+  return map[slot] ?? slot;
+}
+
+// Human label → slot string (for saving back)
+export function freqLabelToSlot(label: string): string {
+  const map: Record<string, string> = {
+    "Four times a day": "1-1-1-1",
+    "Morning, Afternoon & Evening": "1-1-1-0",
+    "Morning, Afternoon & Night": "1-1-0-1",
+    "Morning, Evening & Night": "1-0-1-1",
+    "Afternoon, Evening & Night": "0-1-1-1",
+    "Morning and Afternoon": "1-1-0-0",
+    "Morning and Evening": "1-0-1-0",
+    "Morning and Night": "1-0-0-1",
+    "Afternoon and Night": "0-1-0-1",
+    "Evening and Night": "0-0-1-1",
+    "Once daily (Morning)": "1-0-0-0",
+    "Once daily (Afternoon)": "0-1-0-0",
+    "Once daily (Evening)": "0-0-1-0",
+    "Once daily (Night)": "0-0-0-1",
+    "Afternoon and Evening": "0-1-1-0",
+    "Twice a day": "1-0-1-0",
+    "Three times a day": "1-1-0-1",
+  };
+  return map[label] ?? label;
+}
+
+// All frequency options for the inspector dropdown
+export const FREQUENCY_OPTIONS = [
+  "Once daily (Morning)",
+  "Once daily (Night)",
+  "Once daily (Evening)",
+  "Morning and Night",
+  "Morning and Evening",
+  "Morning, Afternoon & Evening",
+  "Four times a day",
+  "Morning, Afternoon & Night",
+  "Afternoon and Evening",
+  "Afternoon and Night",
+  "Evening and Night",
+];
 
 // ── SYMPTOMS ───────────────────────────────────────────────────────────────────
 export async function fetchSymptoms(): Promise<DBSymptom[]> {
@@ -48,12 +111,13 @@ export async function fetchFindings(): Promise<DBFinding[]> {
 
 // ── PATIENTS ───────────────────────────────────────────────────────────────────
 export async function searchPatients(query: string): Promise<DBPatient[]> {
-  if (!query || query.length < 2) return [];
+  if (!query || query.trim().length < 2) return [];
+  const q = query.trim();
   const { data, error } = await supabase
     .from("patients")
     .select("id, name, age, gender, phone")
-    .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
-    .limit(5);
+    .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
+    .limit(8);
   if (error) throw new Error(`searchPatients: ${error.message}`);
   return data ?? [];
 }
@@ -164,25 +228,36 @@ export async function rankMedicines(opts: {
 }
 
 // ── SAVE PRESCRIPTION ──────────────────────────────────────────────────────────
+export type SaveConsultMedicine = {
+  medicine_id: number;
+  composition_id: number;
+  dosage_mg: number | null;      // integer → dosage_mg column
+  frequency: string;             // slot string e.g. "1-0-1-0"
+  duration_days: number | null;  // integer → duration_days column
+  route: string;
+  notes: string;
+  instructions: string;
+  is_sos: boolean;
+  sort_order: number;
+};
+
 export async function saveConsult(opts: {
   visitId: string;
-  medicines: {
-    medicine_id: number;
-    composition_id: number;
-    dosage: string;
-    frequency: string;
-    duration: string;
-    notes: string;
-  }[];
+  medicines: SaveConsultMedicine[];
   tests: string[];
   vitals: Record<string, string>;
   findingsText: string;
-}): Promise<void> {
-  // 1. Save vitals to visit
-  await supabase
+}): Promise<{ prescriptionId: string }> {
+  // 1. Save vitals + mark visit completed
+  const { error: visitErr } = await supabase
     .from("visits")
-    .update({ vitals: opts.vitals, status: "completed", completed_at: new Date().toISOString() })
+    .update({
+      vitals: opts.vitals,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    })
     .eq("id", opts.visitId);
+  if (visitErr) throw new Error(`updateVisit: ${visitErr.message}`);
 
   // 2. Create prescription row
   const { data: rx, error: rxErr } = await supabase
@@ -196,14 +271,25 @@ export async function saveConsult(opts: {
     .single();
   if (rxErr) throw new Error(`createPrescription: ${rxErr.message}`);
 
-  // 3. Prescription medicines
+  // 3. Prescription medicines — full dosage data
   if (opts.medicines.length) {
     const rows = opts.medicines.map((m) => ({
       prescription_id: rx.id,
       medicine_id: m.medicine_id,
       composition_id: m.composition_id,
+      dosage_mg: m.dosage_mg,
+      frequency: m.frequency,          // stored as slot string "1-0-1-0"
+      duration_days: m.duration_days,
+      route: m.route,
+      notes: m.notes,
+      instructions: m.instructions,
+      is_sos: m.is_sos,
+      sort_order: m.sort_order,
     }));
-    await supabase.from("prescription_medicines").insert(rows);
+    const { error: medErr } = await supabase
+      .from("prescription_medicines")
+      .insert(rows);
+    if (medErr) throw new Error(`insertPrescriptionMedicines: ${medErr.message}`);
   }
 
   // 4. Diagnostic orders
@@ -214,6 +300,245 @@ export async function saveConsult(opts: {
       test_name: name,
       status: "ordered",
     }));
-    await supabase.from("diagnostic_orders").insert(rows);
+    const { error: testErr } = await supabase
+      .from("diagnostic_orders")
+      .insert(rows);
+    if (testErr) throw new Error(`insertDiagnosticOrders: ${testErr.message}`);
   }
+
+  return { prescriptionId: rx.id };
+}
+
+// ── LEARNING LOOP (Bug 2 fix) ──────────────────────────────────────────────────
+// Called after saveConsult with the ranked composition IDs at time of ranking
+// and which ones the doctor actually selected.
+export async function runLearningLoop(opts: {
+  visitId: string;
+  tagSignature: string;           // joined sorted tag ids from symptoms/findings
+  selectedCompositionIds: number[];
+  rankedCompositionIds: number[];  // full ranked list shown to doctor
+}): Promise<void> {
+  if (!opts.selectedCompositionIds.length && !opts.rankedCompositionIds.length) return;
+
+  const now = new Date().toISOString();
+
+  // 1. Upsert bias for selected compositions (reward)
+  for (const compositionId of opts.selectedCompositionIds) {
+    const { error } = await supabase
+      .from("doctor_composition_bias")
+      .upsert(
+        {
+          doctor_id: DOCTOR_ID,
+          tag_signature: opts.tagSignature,
+          composition_id: compositionId,
+          bias_score: 1.0,
+          selection_count: 1,
+          skip_count: 0,
+          updated_at: now,
+        },
+        {
+          onConflict: "doctor_id,tag_signature,composition_id",
+          ignoreDuplicates: false,
+        }
+      );
+    // Non-fatal: log but don't throw
+    if (error) console.warn(`learningLoop upsert bias: ${error.message}`);
+  }
+
+  // 2. Log to doctor_logs for each selected medicine
+  const selectedSet = new Set(opts.selectedCompositionIds);
+  const logRows = opts.selectedCompositionIds.map((compositionId, i) => ({
+    doctor_id: DOCTOR_ID,
+    visit_id: opts.visitId,
+    selected_composition_id: compositionId,
+    selected_medicine_id: null,   // medicine_id not tracked here yet
+    composition_rank_at_selection: opts.rankedCompositionIds.indexOf(compositionId) + 1,
+    total_compositions_shown: opts.rankedCompositionIds.length,
+  }));
+
+  if (logRows.length) {
+    const { error: logErr } = await supabase
+      .from("doctor_logs")
+      .insert(logRows);
+    if (logErr) console.warn(`learningLoop doctor_logs: ${logErr.message}`);
+  }
+
+  // 3. Upsert doctor_medicine_bias — track which brand the doctor picked
+  // (medicine_id tracking: passed via selectedMedicines if available)
+}
+
+// ── DOCTOR PROFILE ─────────────────────────────────────────────────────────────
+export type DBDoctor = {
+  id: string;
+  name: string;
+  specialization: string | null;
+  qualification: string | null;
+  registration_number: string | null;
+  phone: string | null;
+  signature_image_url: string | null;
+  hospital_id: string | null;
+};
+
+export async function fetchDoctor(doctorId: string): Promise<DBDoctor | null> {
+  const { data, error } = await supabase
+    .from("doctors")
+    .select("id, name, specialization, qualification, registration_number, phone, signature_image_url, hospital_id")
+    .eq("id", doctorId)
+    .maybeSingle();
+  if (error) throw new Error(`fetchDoctor: ${error.message}`);
+  return data;
+}
+
+// ── HOSPITAL / CLINIC PROFILE ──────────────────────────────────────────────────
+export type DBHospital = {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  tagline: string | null;       // Added via ALTER TABLE migration
+  logo_url: string | null;      // Added via ALTER TABLE migration
+  accent_color: string | null;  // Added via ALTER TABLE migration
+  is_branded: boolean;          // Added via ALTER TABLE migration
+};
+
+export async function fetchHospital(hospitalId: string): Promise<DBHospital | null> {
+  const { data, error } = await supabase
+    .from("hospitals")
+    .select("id, name, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded")
+    .eq("id", hospitalId)
+    .maybeSingle();
+  if (error) throw new Error(`fetchHospital: ${error.message}`);
+  return data;
+}
+
+// ── PAST VISITS ────────────────────────────────────────────────────────────────
+export type RealVisitMedicine = {
+  name: string;
+  dosage_mg: number | null;
+  frequency: string | null;   // slot string — convert to label in UI
+  duration_days: number | null;
+  route: string | null;
+};
+
+export type RealVisit = {
+  id: string;
+  created_at: string;
+  doctor_name: string | null;
+  symptoms: string[];
+  findings: { name: string; is_abnormal: boolean }[];
+  medicines: RealVisitMedicine[];
+};
+
+export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
+  // Step 1: fetch only completed visits
+  const { data: visits, error: visitErr } = await supabase
+    .from("visits")
+    .select("id, created_at, assigned_doctor_id")
+    .eq("patient_id", patientId)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (visitErr) throw new Error(`fetchPatientVisits: ${visitErr.message}`);
+  if (!visits || visits.length === 0) return [];
+
+  const visitIds = visits.map((v) => v.id);
+
+  // Step 2: doctor names
+  const doctorIds = [...new Set(visits.map((v) => v.assigned_doctor_id).filter(Boolean))];
+  const doctorMap = new Map<string, string>();
+  if (doctorIds.length) {
+    const { data: docs } = await supabase
+      .from("doctors").select("id, name").in("id", doctorIds);
+    (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
+  }
+
+  // Step 3: symptom IDs per visit (flat — no join)
+  const { data: vsRows } = await supabase
+    .from("visit_symptoms")
+    .select("visit_id, symptom_id")
+    .in("visit_id", visitIds);
+
+  const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
+  const symptomById = new Map<number, string>();
+  if (allSymptomIds.length) {
+    const { data: symps } = await supabase
+      .from("symptoms").select("id, name").in("id", allSymptomIds);
+    (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
+  }
+
+  // Step 4: finding IDs per visit (flat — no join)
+  const { data: vfRows } = await supabase
+    .from("visit_findings")
+    .select("visit_id, finding_id")
+    .in("visit_id", visitIds);
+
+  const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
+  const findingById = new Map<number, { name: string; is_abnormal: boolean }>();
+  if (allFindingIds.length) {
+    const { data: finds } = await supabase
+      .from("findings").select("id, name, is_abnormal").in("id", allFindingIds);
+    (finds ?? []).forEach((f: any) => findingById.set(f.id, { name: f.name, is_abnormal: f.is_abnormal }));
+  }
+
+  // Step 5: prescriptions for these visits
+  const { data: rxRows } = await supabase
+    .from("prescriptions")
+    .select("id, visit_id")
+    .in("visit_id", visitIds);
+
+  const rxByVisit = new Map<string, string>();
+  (rxRows ?? []).forEach((r: any) => rxByVisit.set(r.visit_id, r.id));
+  const rxIds = (rxRows ?? []).map((r: any) => r.id);
+
+  // Step 6: prescription medicines + medicine names (flat — no join)
+  const medsByRx = new Map<string, RealVisitMedicine[]>();
+  if (rxIds.length) {
+    const { data: pmRows } = await supabase
+      .from("prescription_medicines")
+      .select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route")
+      .in("prescription_id", rxIds);
+
+    const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
+    const medNameById = new Map<number, string>();
+    if (allMedIds.length) {
+      const { data: meds } = await supabase
+        .from("medicines").select("id, name").in("id", allMedIds);
+      (meds ?? []).forEach((m: any) => medNameById.set(m.id, m.name));
+    }
+
+    for (const pm of (pmRows ?? [])) {
+      const list = medsByRx.get(pm.prescription_id) ?? [];
+      list.push({
+        name: medNameById.get(Number(pm.medicine_id)) ?? "Unknown",
+        dosage_mg: pm.dosage_mg,
+        frequency: pm.frequency,
+        duration_days: pm.duration_days,
+        route: pm.route,
+      });
+      medsByRx.set(pm.prescription_id, list);
+    }
+  }
+
+  // Step 7: assemble
+  return visits.map((v) => {
+    const rxId = rxByVisit.get(v.id);
+    return {
+      id: v.id,
+      created_at: v.created_at,
+      doctor_name: doctorMap.get(v.assigned_doctor_id) ?? null,
+      symptoms: (vsRows ?? [])
+        .filter((r: any) => r.visit_id === v.id)
+        .map((r: any) => symptomById.get(Number(r.symptom_id)))
+        .filter(Boolean) as string[],
+      findings: (vfRows ?? [])
+        .filter((r: any) => r.visit_id === v.id)
+        .map((r: any) => findingById.get(Number(r.finding_id)))
+        .filter(Boolean) as { name: string; is_abnormal: boolean }[],
+      medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
+    };
+  });
 }
