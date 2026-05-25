@@ -1,6 +1,6 @@
 /* ============================================================
    LAYOUT.CSS — AREN Cortex Phase 1
-   v3 — cinematic depth, environmental continuity
+   v4 — Step 5d: 65/35 medicine workspace + bottom strip
    ============================================================ */
 
 .app-shell {
@@ -20,7 +20,6 @@
     align-items: stretch;
     height: 72px;
     overflow: hidden;
-    /* Rounded top corners — connects flush to workflow below */
     border-radius: 12px 12px 0 0;
 
     background:
@@ -39,18 +38,15 @@
     box-shadow:
         0 4px 32px rgba(8, 16, 44, 0.30),
         inset 0 -1px 0 rgba(0, 0, 0, 0.30),
-        /* Warm edge glow — bottom edge bleeds into workspace */
         0 6px 40px rgba(99, 102, 241, 0.06);
 }
 
-/* Sticky topbar — pure CSS shadow transition, zero layout cost */
 .topbar-unified {
     position: sticky;
     top: 0;
     z-index: 30;
 }
 
-/* When stuck (sentinel has left viewport): deepen shadow, subtle border */
 .topbar-unified.is-stuck {
     box-shadow:
         0 6px 40px rgba(8, 16, 44, 0.48),
@@ -147,7 +143,7 @@
     margin: 10px 0;
 }
 
-/* ── Patient identity — active cognition anchor ───────────── */
+/* ── Patient identity ─────────────────────────────────────── */
 .tb-patient-identity {
     position: relative;
     z-index: 1;
@@ -159,7 +155,6 @@
     overflow: visible;
 }
 
-/* Primary violet orb — behind avatar */
 .tb-identity-orb {
     position: absolute;
     top: 50%;
@@ -176,7 +171,6 @@
     filter: blur(2px);
 }
 
-/* Secondary pink echo orb — offset */
 .tb-identity-orb-2 {
     position: absolute;
     top: -20px;
@@ -205,7 +199,7 @@
     animation: dot-pulse 2.4s ease-in-out infinite;
 }
 
-/* ── Avatar — gradient fill + glow ring + outer scatter ────── */
+/* ── Avatar ───────────────────────────────────────────────── */
 .tb-avatar {
     position: relative;
     width: 42px;
@@ -214,13 +208,11 @@
     z-index: 2;
 }
 
-/* Avatar — rounded square, cool blue-to-indigo, clinical active feel */
 .tb-avatar-inner {
     display: grid;
     width: 42px;
     height: 42px;
     place-items: center;
-    /* Rounded square — matches UI grammar, not circle */
     border-radius: 10px;
     background: linear-gradient(145deg,
             #1e3a5f 0%,
@@ -239,7 +231,6 @@
         0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
-/* Avatar ring — matches rounded square shape */
 .tb-avatar-ring {
     position: absolute;
     inset: -3px;
@@ -249,7 +240,6 @@
     animation: avatar-ring-pulse 3.2s ease-in-out infinite;
 }
 
-/* Avatar glow — cool blue instead of purple */
 .tb-avatar-glow {
     position: absolute;
     inset: -10px;
@@ -383,6 +373,7 @@
     color: #9f7aea;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    white-space: nowrap;
 }
 
 .tb-visit-chip.latest .tb-visit-date {
@@ -455,7 +446,6 @@
     animation: pulse-danger 0.35s ease;
 }
 
-/* Review Rx — end-state cognition, present but not pulling focus */
 .tb-review-btn {
     display: inline-flex;
     align-items: center;
@@ -485,21 +475,15 @@
 
 
 /* ════════════════════════════════════════════════════════════
-   VITALS BAR — slim environmental bridge
+   VITALS BAR
    ════════════════════════════════════════════════════════════ */
 
-/*
-  The vitals bar sits between the dark header and light workspace.
-  It should feel like a soft transition zone, not a hard cut.
-  Slight blue tint on left side fades to white.
-*/
 .vitals-bar {
     background: linear-gradient(to right,
             rgba(238, 242, 255, 0.95) 0%,
             rgba(255, 255, 255, 0.97) 30%,
             rgba(255, 255, 255, 0.97) 100%);
     border-bottom: 1px solid rgba(191, 205, 226, 0.5);
-    /* Slight top shadow that bleeds from topbar */
     box-shadow:
         inset 0 1px 0 rgba(168, 85, 247, 0.06),
         0 1px 4px rgba(34, 54, 92, 0.05);
@@ -872,7 +856,7 @@
 
 
 /* ════════════════════════════════════════════════════════════
-   WORKFLOW CANVAS — environmental depth, atmospheric body
+   WORKFLOW CANVAS
    ════════════════════════════════════════════════════════════ */
 
 .workflow {
@@ -909,14 +893,13 @@
 
 
 /* ════════════════════════════════════════════════════════════
-   PANEL SHARED — elevation hierarchy
+   PANEL SHARED
    ════════════════════════════════════════════════════════════ */
 
 .panel {
     background: var(--surface);
     box-shadow:
         var(--shadow-low),
-        /* Subtle inner highlight top edge — surface elevation */
         inset 0 1px 0 rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(16px);
     border-radius: var(--radius);
@@ -934,7 +917,6 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
-/* Sidebar tests panel */
 .sidebar-tests-panel {
     position: relative;
     overflow: hidden;
@@ -976,15 +958,9 @@
 
 
 /* ════════════════════════════════════════════════════════════
-   SYMPTOMS vs FINDINGS — different cognitive weight
+   SYMPTOMS vs FINDINGS
    ════════════════════════════════════════════════════════════ */
 
-/*
-  ChipSearchPanel renders: <section class="panel chip-panel symptoms-panel">
-  So .symptoms-panel and .findings-panel work directly.
-*/
-
-/* ── Symptoms panel — patient-origin cognition ────────────── */
 .symptoms-panel {
     border-left: 3px solid rgba(251, 113, 133, 0.65);
     border-color: rgba(251, 113, 133, 0.18);
@@ -1003,9 +979,6 @@
         inset 3px 0 18px rgba(244, 63, 94, 0.04);
 }
 
-/* No ::before — corner brackets removed, they conflict with border-radius */
-
-/* ECG fragment — bottom right, away from all UI elements */
 .symptoms-panel::after {
     content: "";
     position: absolute;
@@ -1019,7 +992,6 @@
     z-index: 0;
 }
 
-/* ── Findings panel — clinical evaluation cognition ───────── */
 .findings-panel {
     border-left: 3px solid rgba(20, 184, 166, 0.60);
     border-color: rgba(20, 184, 166, 0.15);
@@ -1038,9 +1010,6 @@
         inset 3px 0 18px rgba(13, 148, 136, 0.04);
 }
 
-/* No ::before — scanlines removed, too busy with chip content */
-
-/* Dot grid — bottom right, away from all UI elements */
 .findings-panel::after {
     content: "";
     position: absolute;
@@ -1059,13 +1028,11 @@
    TESTS SIDEBAR RHYTHM
    ════════════════════════════════════════════════════════════ */
 
-/* First chip per group — anchor chip, slightly more weight */
 .tg-chip-row .tg-chip:first-child {
     font-weight: 700;
     border-color: rgba(168, 85, 247, 0.26);
 }
 
-/* Group label — stronger architectural presence */
 .test-group-divider {
     padding-bottom: 5px;
     margin-bottom: 2px;
@@ -1077,7 +1044,6 @@
     color: #8b5cf6;
 }
 
-/* Breathing room between groups via padding on even ones */
 .test-group {
     padding-bottom: 2px;
 }
@@ -1091,7 +1057,7 @@
 
 
 /* ════════════════════════════════════════════════════════════
-   REVIEW PRESCRIPTION BUTTON — toned down
+   REVIEW PRESCRIPTION BUTTON
    ════════════════════════════════════════════════════════════ */
 
 .review-rx-btn {
@@ -1136,12 +1102,16 @@
     gap: 10px;
 }
 
+/* ── Medicine workspace: 65% ranked + 35% frequent picks ──── */
 .medicine-workspace {
     display: grid;
-    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.86fr) minmax(0, 1fr);
     gap: 10px;
-    align-items: stretch;
+    align-items: start;
 }
+
+/* ── Selected medicines strip sits below medicine-workspace ── */
+/* Handled by main-column gap: 10px — no extra wrapper needed */
 
 
 /* ════════════════════════════════════════════════════════════

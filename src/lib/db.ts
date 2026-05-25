@@ -416,9 +416,10 @@ export async function fetchHospital(hospitalId: string): Promise<DBHospital | nu
 
 // ── PAST VISITS ────────────────────────────────────────────────────────────────
 export type RealVisitMedicine = {
+  medicine_id: number;        // ← added
   name: string;
   dosage_mg: number | null;
-  frequency: string | null;   // slot string — convert to label in UI
+  frequency: string | null;
   duration_days: number | null;
   route: string | null;
 };
@@ -513,6 +514,7 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     for (const pm of (pmRows ?? [])) {
       const list = medsByRx.get(pm.prescription_id) ?? [];
       list.push({
+        medicine_id: Number(pm.medicine_id),   // ← added
         name: medNameById.get(Number(pm.medicine_id)) ?? "Unknown",
         dosage_mg: pm.dosage_mg,
         frequency: pm.frequency,
@@ -541,4 +543,233 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
       medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
     };
   });
+}
+
+// ── MEDICINE LIBRARY SEARCH (Bug 7) ───────────────────────────────────────────
+export type DBMedicineSearchResult = {
+  medicine_id: number;
+  medicine_name: string;
+  composition_names: string;
+  primary_composition_id: number;
+};
+
+export async function searchMedicinesDB(query: string): Promise<DBMedicineSearchResult[]> {
+  if (!query || query.trim().length < 2) return [];
+  const q = query.trim();
+
+  // Search medicines by name, join primary composition for display
+  const { data, error } = await supabase
+    .from("medicines")
+    .select(`
+      id,
+      name,
+      medicine_composition_map!inner(
+        composition_id,
+        is_primary,
+        compositions(id, name)
+      )
+    `)
+    .ilike("name", `%${q}%`)
+    .eq("medicine_composition_map.is_primary", true)
+    .limit(10);
+
+  if (error) throw new Error(`searchMedicinesDB: ${error.message}`);
+
+  return (data ?? []).map((row: any) => {
+    const mcm = Array.isArray(row.medicine_composition_map)
+      ? row.medicine_composition_map[0]
+      : row.medicine_composition_map;
+    const comp = mcm?.compositions;
+    return {
+      medicine_id: row.id,
+      medicine_name: row.name,
+      composition_names: comp?.name ?? "",
+      primary_composition_id: mcm?.composition_id ?? 0,
+    };
+  });
+}
+
+// ── SYNAPSE: FREQUENT PICKS ────────────────────────────────────────────────────
+
+export type FrequentPick = {
+  medicine_id: number;
+  medicine_name: string;
+  composition_id: number;
+  composition_name: string;
+  hint_label: string;
+  clinical_reason: string;
+  source: "hint" | "personal";
+};
+
+export async function fetchFrequentPicks(opts: {
+  activeTagIds: number[];
+  excludeCompositionIds: number[];
+  doctorId: string;
+}): Promise<FrequentPick[]> {
+  if (!opts.activeTagIds.length) return [];
+
+  // Step A: get hints triggered by active tags
+  const { data: hints, error: hintErr } = await supabase
+    .from("composition_coprescription_hints")
+    .select("hint_composition_id, hint_label, clinical_reason, priority")
+    .in("trigger_tag_id", opts.activeTagIds)
+    .eq("is_global", true)
+    .order("priority", { ascending: true });
+
+  if (hintErr) {
+    console.warn("fetchFrequentPicks hints:", hintErr.message);
+    return [];
+  }
+  if (!hints || hints.length === 0) return [];
+
+  // Step B: deduplicate hint compositions + exclude already ranked ones
+  const seen = new Set<number>(opts.excludeCompositionIds);
+  const deduped: { composition_id: number; hint_label: string; clinical_reason: string }[] = [];
+  for (const h of hints) {
+    if (!seen.has(h.hint_composition_id)) {
+      seen.add(h.hint_composition_id);
+      deduped.push({
+        composition_id: h.hint_composition_id,
+        hint_label: h.hint_label,
+        clinical_reason: h.clinical_reason ?? "",
+      });
+    }
+  }
+  if (!deduped.length) return [];
+
+  // Step C: get composition names
+  const compIds = deduped.map((d) => d.composition_id);
+  const { data: comps } = await supabase
+    .from("compositions")
+    .select("id, name")
+    .in("id", compIds);
+  const compNameById = new Map<number, string>();
+  (comps ?? []).forEach((c: any) => compNameById.set(c.id, c.name));
+
+  // Step D: for each composition, resolve best medicine
+  const results: FrequentPick[] = [];
+
+  for (const item of deduped) {
+    let medicine_id: number | null = null;
+
+    // Try doctor_medicine_bias first
+    const { data: biasRow } = await supabase
+      .from("doctor_medicine_bias")
+      .select("medicine_id")
+      .eq("doctor_id", opts.doctorId)
+      .eq("composition_id", item.composition_id)
+      .order("selection_count", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (biasRow?.medicine_id) {
+      medicine_id = biasRow.medicine_id;
+    } else {
+      // Fallback: medicine_composition_map primary
+      const { data: mcmRow } = await supabase
+        .from("medicine_composition_map")
+        .select("medicine_id")
+        .eq("composition_id", item.composition_id)
+        .eq("is_primary", true)
+        .limit(1)
+        .maybeSingle();
+      if (mcmRow?.medicine_id) medicine_id = mcmRow.medicine_id;
+    }
+
+    if (!medicine_id) continue;
+
+    // Get medicine name
+    const { data: medRow } = await supabase
+      .from("medicines")
+      .select("name")
+      .eq("id", medicine_id)
+      .maybeSingle();
+
+    if (!medRow?.name) continue;
+
+    results.push({
+      medicine_id,
+      medicine_name: medRow.name,
+      composition_id: item.composition_id,
+      composition_name: compNameById.get(item.composition_id) ?? "",
+      hint_label: item.hint_label,
+      clinical_reason: item.clinical_reason,
+      source: "hint",
+    });
+
+    if (results.length >= 8) break;
+  }
+
+  return results;
+}
+
+// ── SYNAPSE: LOG CO-PRESCRIPTION OBSERVATIONS ─────────────────────────────────
+
+export async function logCoprescriptionObservations(opts: {
+  visitId: string;
+  doctorId: string;
+  tagSignature: string;
+  compositionIds: number[];
+}): Promise<void> {
+  if (opts.compositionIds.length < 2) return;
+
+  const rows: {
+    doctor_id: string;
+    visit_id: string;
+    primary_composition_id: number;
+    coprescribed_composition_id: number;
+    tag_signature: string;
+  }[] = [];
+
+  for (let i = 0; i < opts.compositionIds.length; i++) {
+    for (let j = i + 1; j < opts.compositionIds.length; j++) {
+      rows.push({
+        doctor_id: opts.doctorId,
+        visit_id: opts.visitId,
+        primary_composition_id: opts.compositionIds[i],
+        coprescribed_composition_id: opts.compositionIds[j],
+        tag_signature: opts.tagSignature,
+      });
+    }
+  }
+
+  const { error } = await supabase
+    .from("coprescription_observations")
+    .insert(rows);
+
+  if (error) console.warn("logCoprescriptionObservations (non-fatal):", error.message);
+}
+
+// ── SYNAPSE: DYNAMIC TEST HINTS ────────────────────────────────────────────────
+
+export type DynamicTestHint = {
+  test_name: string;
+  test_group: string;
+  clinical_reason: string;
+  priority: number;
+};
+
+export async function fetchDynamicTests(activeTagIds: number[]): Promise<DynamicTestHint[]> {
+  if (!activeTagIds.length) return [];
+
+  const { data, error } = await supabase
+    .from("symptom_cluster_test_hints")
+    .select("test_name, test_group, clinical_reason, priority")
+    .in("trigger_tag_id", activeTagIds)
+    .eq("is_global", true)
+    .order("priority", { ascending: true })
+    .limit(20);
+
+  if (error) {
+    console.warn("fetchDynamicTests (non-fatal):", error.message);
+    return [];
+  }
+
+  // Deduplicate by test_name, keep lowest priority
+  const seen = new Map<string, DynamicTestHint>();
+  for (const row of (data ?? [])) {
+    if (!seen.has(row.test_name)) seen.set(row.test_name, row as DynamicTestHint);
+  }
+
+  return Array.from(seen.values());
 }

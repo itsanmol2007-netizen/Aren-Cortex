@@ -1,32 +1,33 @@
-import { HeartPulse } from "lucide-react";
+import { HeartPulse, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { testGroups } from "./data/mockData";
 import { ChipSearchPanel } from "./components/ChipSearchPanel";
 import { FindingsPanel } from "./components/FindingsPanel";
+import { FrequentPicksPanel } from "./components/FrequentPicksPanel";
 import { MedicineInspector } from "./components/MedicineInspector";
 import { MedicineSuggestions } from "./components/MedicineSuggestions";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
-import { PrescriptionPanel } from "./components/PrescriptionPanel";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { ReviewModal } from "./components/ReviewModal";
+import { SelectedMedicinesBar } from "./components/SelectedMedicinesBar";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchSymptoms, fetchFindings,
   createPatient, findPatientByPhone, createVisit,
   replaceVisitSymptoms, replaceVisitFindings,
   rankMedicines, saveConsult, runLearningLoop,
+  fetchFrequentPicks, logCoprescriptionObservations,
   freqSlotToLabel, freqLabelToSlot,
   fetchPatientVisits,
   type DBSymptom, type DBFinding, type RankedMedicine,
-  type SaveConsultMedicine, type RealVisit,
+  type SaveConsultMedicine, type RealVisit, type FrequentPick,
 } from "./lib/db";
 import type { Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 
 const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
 const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
 
-// ── Convert DB ranked result → UI Medicine shape ───────────────────────────────
 function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
   _dosageDefaults: RankedMedicine["dosage_defaults"];
   _dosage_mg: number | null;
@@ -50,14 +51,13 @@ function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
   };
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
 function App() {
-  // ── DB bootstrap ────────────────────────────────────────────────────────────
+  // ── DB bootstrap ─────────────────────────────────────────────────────────────
   const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
   const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
   const [dbReady, setDbReady] = useState(false);
 
-  // ── Active consult ───────────────────────────────────────────────────────────
+  // ── Active consult ────────────────────────────────────────────────────────────
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
   const [vitals, setVitals] = useState<Vitals>(emptyVitals);
@@ -69,25 +69,32 @@ function App() {
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [selectedLab, setSelectedLab] = useState("No preferred lab");
 
-  // ── Ranking ──────────────────────────────────────────────────────────────────
+  // ── Ranking ───────────────────────────────────────────────────────────────────
   const [rankedMedicines, setRankedMedicines] = useState<Medicine[]>([]);
   const [rankedCompositionIds, setRankedCompositionIds] = useState<number[]>([]);
   const [rankLoading, setRankLoading] = useState(false);
 
-  // ── Past visits ──────────────────────────────────────────────────────────────
+  // ── Frequent picks (Synapse) ──────────────────────────────────────────────────
+  const [frequentPicks, setFrequentPicks] = useState<FrequentPick[]>([]);
+  const [picksLoading, setPicksLoading] = useState(false);
+  const [activeTagIds, setActiveTagIds] = useState<number[]>([]);
+  const picksTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Past visits ───────────────────────────────────────────────────────────────
   const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
   const [pastVisitsLoading, setPastVisitsLoading] = useState(false);
 
-  // ── UI state ─────────────────────────────────────────────────────────────────
+  // ── UI state ──────────────────────────────────────────────────────────────────
   const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
   const [toast, setToast] = useState("");
+  const [repeatRxBanner, setRepeatRxBanner] = useState<string | null>(null);
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Derived maps ─────────────────────────────────────────────────────────────
+  // ── Derived maps ──────────────────────────────────────────────────────────────
   const symptomNameToId = useMemo(() => {
     const map = new Map<string, number>();
     allSymptoms.forEach((s) => map.set(s.name, s.id));
@@ -102,7 +109,7 @@ function App() {
 
   const symptomNames = useMemo(() => allSymptoms.map((s) => s.name), [allSymptoms]);
 
-  // ── Load symptoms + findings on mount ────────────────────────────────────────
+  // ── Load symptoms + findings on mount ─────────────────────────────────────────
   useEffect(() => {
     Promise.all([fetchSymptoms(), fetchFindings()])
       .then(([symptoms, findings]) => {
@@ -113,7 +120,7 @@ function App() {
       .catch((err) => showToast(`DB load failed: ${err.message}`));
   }, []);
 
-  // ── Re-rank on symptom/finding change (300ms debounce) ───────────────────────
+  // ── Re-rank on symptom/finding change (300ms debounce) ────────────────────────
   useEffect(() => {
     if (!visitId) return;
     if (rankTimer.current) clearTimeout(rankTimer.current);
@@ -134,6 +141,7 @@ function App() {
       if (!symptomPayload.length && !findingPayload.length) {
         setRankedMedicines([]);
         setRankedCompositionIds([]);
+        setActiveTagIds([]);
         return;
       }
 
@@ -143,6 +151,11 @@ function App() {
         const maxScore = results[0]?.score ?? 1;
         setRankedMedicines(results.map((r) => toUIMedicine(r, maxScore)));
         setRankedCompositionIds(results.map((r) => r.primary_composition_id));
+
+        // Derive active tag IDs from selected symptoms via symptom_tag_map
+        // We proxy this through the symptom IDs we already have
+        const sIds = symptomPayload.map((s) => s.id);
+        setActiveTagIds(sIds); // tag resolution happens inside fetchFrequentPicks via DB
       } catch (err: any) {
         showToast(`Ranking failed: ${err.message}`);
       } finally {
@@ -153,7 +166,61 @@ function App() {
     return () => { if (rankTimer.current) clearTimeout(rankTimer.current); };
   }, [selectedSymptoms, selectedFindings, visitId, symptomNameToId, findingNameToId]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // ── Fetch frequent picks when ranked compositions are ready ───────────────────
+  useEffect(() => {
+    if (!visitId) return;
+    if (picksTimer.current) clearTimeout(picksTimer.current);
+
+    picksTimer.current = setTimeout(async () => {
+      if (!rankedCompositionIds.length && !selectedSymptoms.length) {
+        setFrequentPicks([]);
+        return;
+      }
+
+      // Resolve tag IDs from selected symptom IDs via symptom_tag_map
+      const symptomIds = selectedSymptoms
+        .map((name) => symptomNameToId.get(name))
+        .filter((id): id is number => id !== undefined);
+
+      if (!symptomIds.length) {
+        setFrequentPicks([]);
+        return;
+      }
+
+      // We need to fetch the actual tag IDs from symptom_tag_map
+      // Import supabase directly for this one-off query
+      const { supabase } = await import("./lib/supabase");
+      const { data: tagRows } = await supabase
+        .from("symptom_tag_map")
+        .select("tag_id")
+        .in("symptom_id", symptomIds);
+
+      const tagIds = [...new Set((tagRows ?? []).map((r: any) => Number(r.tag_id)))];
+      if (!tagIds.length) {
+        setFrequentPicks([]);
+        return;
+      }
+
+      setPicksLoading(true);
+      try {
+        const picks = await fetchFrequentPicks({
+          activeTagIds: tagIds,
+          excludeCompositionIds: rankedCompositionIds,
+          doctorId: DOCTOR_ID,
+        });
+        setFrequentPicks(picks);
+      } catch (err: any) {
+        console.warn("fetchFrequentPicks (non-fatal):", err.message);
+        setFrequentPicks([]);
+      } finally {
+        setPicksLoading(false);
+      }
+    }, 500); // slightly longer debounce than ranking
+
+    return () => { if (picksTimer.current) clearTimeout(picksTimer.current); };
+  }, [rankedCompositionIds, selectedSymptoms, visitId, symptomNameToId]);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(""), 2400);
@@ -171,10 +238,13 @@ function App() {
     setSelectedLab("No preferred lab");
     setRankedMedicines([]);
     setRankedCompositionIds([]);
+    setFrequentPicks([]);
+    setActiveTagIds([]);
     setPastVisits([]);
+    setRepeatRxBanner(null);
   };
 
-  // ── Patient confirm: find/create patient → create visit → load past visits ───
+  // ── Patient confirm ───────────────────────────────────────────────────────────
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
     try {
       let dbPatient: Patient;
@@ -216,10 +286,12 @@ function App() {
       setSelectedLab("No preferred lab");
       setRankedMedicines([]);
       setRankedCompositionIds([]);
+      setFrequentPicks([]);
+      setActiveTagIds([]);
+      setRepeatRxBanner(null);
       setPatientModalOpen(false);
       showToast(`Consult started for ${dbPatient.name}`);
 
-      // Fetch past visits — non-blocking, non-fatal
       setPastVisitsLoading(true);
       fetchPatientVisits(dbPatient.id!)
         .then(setPastVisits)
@@ -231,9 +303,8 @@ function App() {
     }
   }, []);
 
-  // ── Medicine staging ─────────────────────────────────────────────────────────
+  // ── Medicine staging (from ranked list) ──────────────────────────────────────
   const handleSuggestionClick = (medicine: Medicine) => {
-    // If already in prescription, just open inspector
     if (prescription.some((m) => m.id === medicine.id)) {
       setSelectedMedicineId(medicine.id);
       return;
@@ -242,15 +313,43 @@ function App() {
     const defaults = ext._dosageDefaults;
     const staged: PrescriptionMedicine = {
       ...medicine,
-      // UI display fields (shown in inspector)
       dosage: defaults?.dosage_mg ? `${defaults.dosage_mg}mg` : "1 tab",
       frequency: defaults?.frequency ? freqSlotToLabel(defaults.frequency) : "Morning and Night",
       duration: defaults?.duration_days ? `${defaults.duration_days} days` : "5 days",
       notes: defaults?.notes ?? "After food",
-      // DB persistence fields
       dosage_mg: defaults?.dosage_mg ?? null,
       duration_days: defaults?.duration_days ?? null,
       route: defaults?.route ?? "oral",
+      instructions: "",
+      is_sos: false,
+      sort_order: prescription.length,
+    };
+    setStagedMedicine(staged);
+  };
+
+  // ── Medicine staging (from frequent picks) ────────────────────────────────────
+  const handlePickAdd = (pick: FrequentPick) => {
+    const existingId = String(pick.medicine_id);
+    if (prescription.some((m) => m.id === existingId)) {
+      setSelectedMedicineId(existingId);
+      return;
+    }
+    const staged: PrescriptionMedicine = {
+      id: existingId,
+      medicine_id: pick.medicine_id,
+      composition_id: pick.composition_id,
+      name: pick.medicine_name,
+      category: pick.composition_name,
+      use: "",
+      match: 0,
+      composition: pick.composition_name,
+      dosage: "1 tab",
+      frequency: "Morning and Night",
+      duration: "5 days",
+      notes: "After food",
+      dosage_mg: null,
+      duration_days: null,
+      route: "oral",
       instructions: "",
       is_sos: false,
       sort_order: prescription.length,
@@ -278,7 +377,51 @@ function App() {
     if (selectedMedicineId === id) setSelectedMedicineId(null);
   };
 
-  // ── Save consult + learning loop ─────────────────────────────────────────────
+  // ── Repeat Rx ─────────────────────────────────────────────────────────────────
+  const handleRepeatRx = (visit: RealVisit) => {
+    const validSymptoms = visit.symptoms.filter((s) =>
+      allSymptoms.some((a) => a.name === s)
+    );
+
+    const validFindings = visit.findings
+      .map((f) => f.name)
+      .filter((name) => allFindings.some((a) => a.name === name));
+
+    const importedMeds: PrescriptionMedicine[] = visit.medicines.map((med, i) => ({
+      id: `repeat-${med.medicine_id}-${i}`,
+      medicine_id: med.medicine_id,
+      composition_id: 0,
+      name: med.name,
+      category: "",
+      use: "",
+      match: 0,
+      composition: "",
+      dosage: med.dosage_mg ? `${med.dosage_mg}mg` : "1 tab",
+      frequency: med.frequency ? freqSlotToLabel(med.frequency) : "Morning and Night",
+      duration: med.duration_days ? `${med.duration_days} days` : "5 days",
+      notes: "",
+      dosage_mg: med.dosage_mg,
+      duration_days: med.duration_days,
+      route: med.route ?? "oral",
+      instructions: "",
+      is_sos: false,
+      sort_order: i,
+    }));
+
+    setSelectedSymptoms(validSymptoms);
+    setSelectedFindings(validFindings);
+    setPrescription(importedMeds);
+    setSelectedMedicineId(null);
+    setStagedMedicine(null);
+
+    const dateLabel = new Date(visit.created_at).toLocaleDateString("en-IN", {
+      day: "numeric", month: "short", year: "numeric",
+    });
+    setRepeatRxBanner(`Repeat Rx from ${dateLabel}, Please review and edit before saving`);
+    setTimeout(() => setRepeatRxBanner(null), 6000);
+  };
+
+  // ── Save consult ──────────────────────────────────────────────────────────────
   const handleConfirmAndSave = async () => {
     if (!visitId) { showToast("No active consult to save"); return; }
     setIsSaving(true);
@@ -287,7 +430,7 @@ function App() {
         medicine_id: m.medicine_id,
         composition_id: m.composition_id,
         dosage_mg: m.dosage_mg ?? null,
-        frequency: freqLabelToSlot(m.frequency),  // label → slot string for DB
+        frequency: freqLabelToSlot(m.frequency),
         duration_days: m.duration_days ?? null,
         route: m.route ?? "oral",
         notes: m.notes ?? "",
@@ -304,13 +447,13 @@ function App() {
         findingsText: selectedFindings.join(", "),
       });
 
-      // Learning loop — fire and forget
       const tagSignature = allSymptoms
         .filter((s) => selectedSymptoms.includes(s.name))
         .map((s) => s.id)
         .sort((a, b) => a - b)
         .join("-");
 
+      // Learning loop (existing)
       runLearningLoop({
         visitId,
         tagSignature,
@@ -318,7 +461,19 @@ function App() {
         rankedCompositionIds,
       }).catch((e) => console.warn("Learning loop failed (non-fatal):", e));
 
+      // Co-prescription observations (Synapse Layer 2)
+      const compositionIds = prescription
+        .map((m) => m.composition_id)
+        .filter((id) => id > 0);
+      logCoprescriptionObservations({
+        visitId,
+        doctorId: DOCTOR_ID,
+        tagSignature,
+        compositionIds,
+      }).catch((e) => console.warn("logCoprescriptionObservations (non-fatal):", e));
+
       setIsReviewOpen(false);
+      setRepeatRxBanner(null);
       showToast("Prescription saved ✓");
     } catch (err: any) {
       showToast(`Save failed: ${err.message}`);
@@ -338,6 +493,12 @@ function App() {
     : selectedMedicineId && !stagedMedicine
       ? selectedMedicine
       : null;
+
+  // ── Composition IDs already in prescription (for fp panel) ───────────────────
+  const prescriptionCompositionIds = useMemo(
+    () => prescription.map((m) => m.composition_id),
+    [prescription]
+  );
 
   // ── Loading screen ────────────────────────────────────────────────────────────
   if (!dbReady) {
@@ -364,6 +525,7 @@ function App() {
         onCancelConsult={resetConsultState}
         pastVisits={pastVisits}
         pastVisitsLoading={pastVisitsLoading}
+        onRepeatRx={handleRepeatRx}
       />
 
       <main className="workflow">
@@ -387,6 +549,7 @@ function App() {
             />
           </div>
 
+          {/* Medicine workspace — 65% ranked suggestions + 35% frequent picks */}
           <div className="medicine-workspace">
             <MedicineSuggestions
               medicines={rankedMedicines}
@@ -394,16 +557,21 @@ function App() {
               loading={rankLoading}
               onAdd={handleSuggestionClick}
             />
-            <PrescriptionPanel
-              medicines={prescription}
-              selectedId={selectedMedicineId}
-              symptoms={selectedSymptoms}
-              findings={selectedFindings}
-              onSelect={setSelectedMedicineId}
-              onRemove={removeMedicine}
-              onCloseEditor={() => setSelectedMedicineId(null)}
+            <FrequentPicksPanel
+              picks={frequentPicks}
+              loading={picksLoading}
+              addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
+              onAdd={handlePickAdd}
             />
           </div>
+
+          {/* Selected medicines bar — replaces PrescriptionPanel */}
+          <SelectedMedicinesBar
+            medicines={prescription}
+            selectedId={selectedMedicineId}
+            onSelect={setSelectedMedicineId}
+            onRemove={removeMedicine}
+          />
         </div>
 
         <PreviewPanel
@@ -434,6 +602,15 @@ function App() {
           onConfirmStaged={confirmStagedMedicine}
           onClose={() => { setStagedMedicine(null); setSelectedMedicineId(null); }}
         />
+      )}
+
+      {/* Repeat Rx amber banner */}
+      {repeatRxBanner && (
+        <div className="repeat-rx-banner">
+          <RefreshCw size={13} />
+          <span>{repeatRxBanner}</span>
+          <button type="button" onClick={() => setRepeatRxBanner(null)} aria-label="Dismiss">×</button>
+        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}

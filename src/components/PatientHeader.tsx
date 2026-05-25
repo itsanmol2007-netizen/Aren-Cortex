@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Calendar, Pill, Stethoscope, Plus, X, Activity } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Pill, Stethoscope, Plus, X, Activity, RefreshCw } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient, Vitals } from "../types";
@@ -16,6 +16,7 @@ type PatientHeaderProps = {
   onCancelConsult: () => void;
   pastVisits?: RealVisit[];
   pastVisitsLoading?: boolean;
+  onRepeatRx?: (visit: RealVisit) => void;   // ← NEW
 };
 
 const VITAL_FIELDS: {
@@ -52,6 +53,7 @@ export function PatientHeader({
   patient, doctor, vitals, onVitalsChange,
   onOpenPatientModal, onReviewRx, onCancelConsult,
   pastVisits = [], pastVisitsLoading = false,
+  onRepeatRx,
 }: PatientHeaderProps) {
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -63,7 +65,6 @@ export function PatientHeader({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Sticky detection
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -75,7 +76,6 @@ export function PatientHeader({
     return () => obs.disconnect();
   }, []);
 
-  // Track scroll position to enable/disable arrows
   const updateArrows = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -83,9 +83,7 @@ export function PatientHeader({
     setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
   };
 
-  useEffect(() => {
-    updateArrows();
-  }, [pastVisits]);
+  useEffect(() => { updateArrows(); }, [pastVisits]);
 
   const scrollBy = (dir: "left" | "right") => {
     const el = scrollRef.current;
@@ -112,6 +110,18 @@ export function PatientHeader({
     }
   };
 
+  const handleRepeatClick = () => {
+    if (!activeVisit || !onRepeatRx) return;
+    onRepeatRx(activeVisit.visit);
+    setActiveVisit(null);
+  };
+
+  const hasImportable =
+    activeVisit &&
+    (activeVisit.visit.symptoms.length > 0 ||
+      activeVisit.visit.findings.length > 0 ||
+      activeVisit.visit.medicines.length > 0);
+
   return (
     <>
       <div ref={sentinelRef} style={{ height: 1, marginBottom: -1 }} aria-hidden="true" />
@@ -119,7 +129,6 @@ export function PatientHeader({
       <header className={`topbar-unified${isStuck ? " is-stuck" : ""}`}>
         <div className="topbar-stripe" aria-hidden="true" />
 
-        {/* Atmospheric SVG — unchanged from original */}
         <svg className="topbar-atmo" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1400 72" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <radialGradient id="bloom-a" cx="50%" cy="50%" r="50%">
@@ -216,34 +225,25 @@ export function PatientHeader({
         {/* Past visits strip */}
         <div className="tb-visits-zone">
           <span className="tb-visits-label">Past visits</span>
-
           {pastVisitsLoading ? (
             <span style={{ fontSize: 10, color: "rgba(255,255,255,0.28)", fontStyle: "italic" }}>Loading…</span>
           ) : pastVisits.length === 0 ? (
             <span style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontStyle: "italic" }}>No past visits</span>
           ) : (
             <>
-              <button
-                className="tb-visits-arrow"
-                type="button"
-                onClick={() => scrollBy("left")}
-                disabled={!canScrollLeft}
-                aria-label="Scroll left"
-              >
+              <button className="tb-visits-arrow" type="button" onClick={() => scrollBy("left")} disabled={!canScrollLeft} aria-label="Scroll left">
                 <ChevronLeft size={13} />
               </button>
-
-              <div
-                ref={scrollRef}
-                className="tb-visits-scroll"
-                onScroll={updateArrows}
-              >
+              <div ref={scrollRef} className="tb-visits-scroll" onScroll={updateArrows}>
                 {pastVisits.map((visit, i) => (
                   <button
                     key={visit.id}
                     className={`tb-visit-chip${i === 0 ? " latest" : ""}`}
                     type="button"
-                    onClick={(e) => { const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActiveVisit({ visit, x: rect.left + rect.width / 2 }); }}
+                    onClick={(e) => {
+                      const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                      setActiveVisit({ visit, x: rect.left + rect.width / 2 });
+                    }}
                     title={visit.symptoms.slice(0, 3).join(", ") || "Visit details"}
                   >
                     <span className="tb-visit-date">{formatVisitDate(visit.created_at)}</span>
@@ -253,14 +253,7 @@ export function PatientHeader({
                   </button>
                 ))}
               </div>
-
-              <button
-                className="tb-visits-arrow"
-                type="button"
-                onClick={() => scrollBy("right")}
-                disabled={!canScrollRight}
-                aria-label="Scroll right"
-              >
+              <button className="tb-visits-arrow" type="button" onClick={() => scrollBy("right")} disabled={!canScrollRight} aria-label="Scroll right">
                 <ChevronRight size={13} />
               </button>
             </>
@@ -305,7 +298,15 @@ export function PatientHeader({
       {/* Past visit popup */}
       {activeVisit && (
         <div className="pv-overlay" onClick={() => setActiveVisit(null)}>
-          <div className="pv-card" onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: 90, left: Math.min(Math.max(activeVisit.x - 210, 12), window.innerWidth - 432) }}>
+          <div
+            className="pv-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: 90,
+              left: Math.min(Math.max(activeVisit.x - 210, 12), window.innerWidth - 432),
+            }}
+          >
             <div className="pv-stripe" aria-hidden="true" />
             <div className="pv-orb" aria-hidden="true" />
 
@@ -329,7 +330,7 @@ export function PatientHeader({
               </button>
             </div>
 
-            {/* Meta: date + doctor */}
+            {/* Meta */}
             <div className="pv-meta">
               <span className="pv-date-badge">{formatVisitDate(activeVisit.visit.created_at)}</span>
               {activeVisit.visit.doctor_name && (
@@ -342,8 +343,6 @@ export function PatientHeader({
 
             {/* Scrollable body */}
             <div className="pv-body">
-
-              {/* Symptoms */}
               {activeVisit.visit.symptoms.length > 0 && (
                 <div>
                   <p className="pv-section-label">Symptoms noted</p>
@@ -355,7 +354,6 @@ export function PatientHeader({
                 </div>
               )}
 
-              {/* Findings */}
               {activeVisit.visit.findings.length > 0 && (
                 <>
                   <hr className="pv-divider" />
@@ -363,10 +361,7 @@ export function PatientHeader({
                     <p className="pv-section-label">Clinical findings</p>
                     <div className="pv-chips">
                       {activeVisit.visit.findings.map((f) => (
-                        <span
-                          key={f.name}
-                          className={`pv-chip ${f.is_abnormal ? "abnormal" : "normal"}`}
-                        >
+                        <span key={f.name} className={`pv-chip ${f.is_abnormal ? "abnormal" : "normal"}`}>
                           {f.name}
                         </span>
                       ))}
@@ -375,7 +370,6 @@ export function PatientHeader({
                 </>
               )}
 
-              {/* Medicines */}
               {activeVisit.visit.medicines.length > 0 && (
                 <>
                   <hr className="pv-divider" />
@@ -405,6 +399,23 @@ export function PatientHeader({
                   <p className="pv-empty">No detailed records found for this visit.</p>
                 )}
             </div>
+
+            {/* ── Repeat Rx footer ── */}
+            {hasImportable && onRepeatRx && (
+              <div className="pv-footer">
+                <button
+                  type="button"
+                  className="pv-repeat-btn"
+                  onClick={handleRepeatClick}
+                >
+                  <RefreshCw size={13} />
+                  Repeat Rx
+                </button>
+                <span className="pv-repeat-hint">
+                  Pre-fills symptoms, medicines &amp; findings
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

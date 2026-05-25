@@ -382,3 +382,74 @@
     color: rgba(255, 255, 255, 0.28);
     font-style: italic;
 }
+
+/* ── Repeat Rx footer ─────────────────────────────────────── */
+.pv-footer {
+    padding: 12px 16px 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.pv-repeat-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #1268e8;
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+
+.pv-repeat-btn:hover {
+    background: #0f55c8;
+}
+
+.pv-repeat-hint {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.35);
+    line-height: 1.4;
+}
+
+/* ── Repeat Rx amber banner ───────────────────────────────── */
+.repeat-rx-banner {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: hsl(225, 79%, 25%);
+    border: 1px solid #1d036a;
+    color: #fef3c7;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 9000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    max-width: 480px;
+}
+
+.repeat-rx-banner button {
+    background: none;
+    border: none;
+    color: #fef3c7;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    margin-left: 4px;
+    opacity: 0.7;
+}
+
+.repeat-rx-banner button:hover {
+    opacity: 1;
+}
