@@ -1,4 +1,4 @@
-import { Loader2, Plus, Search } from "lucide-react";
+import { Heart, Loader2, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchMedicinesDB, type DBMedicineSearchResult } from "../lib/db";
 import type { Medicine } from "../types";
@@ -9,15 +9,17 @@ type Props = {
   selectedIds: string[];
   loading?: boolean;
   onAdd: (medicine: Medicine) => void;
+  favouriteIds: Set<number>;
+  onToggleFavourite: (medicine: Medicine) => void;
 };
 
-// Convert a DB search result into the Medicine UI shape
-// score=0, match=0 since these aren't ranked
 function dbResultToMedicine(r: DBMedicineSearchResult): Medicine {
   return {
     id: String(r.medicine_id),
     medicine_id: r.medicine_id,
     composition_id: r.primary_composition_id,
+    composition_ids: r.composition_ids,
+    primary_composition_id: r.primary_composition_id,
     name: r.medicine_name,
     category: r.composition_names,
     use: "",
@@ -26,38 +28,32 @@ function dbResultToMedicine(r: DBMedicineSearchResult): Medicine {
   };
 }
 
-export function MedicineSuggestions({ medicines, selectedIds, loading, onAdd }: Props) {
+export function MedicineSuggestions({
+  medicines, selectedIds, loading, onAdd, favouriteIds, onToggleFavourite,
+}: Props) {
   const [query, setQuery] = useState("");
   const [dbResults, setDbResults] = useState<Medicine[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Ranked results filtered by query (in-memory)
   const filteredRanked = useMemo(
     () => fuzzyFilter(medicines, query, (m) => m.name + " " + m.category),
     [medicines, query]
   );
 
-  // IDs already in ranked results — used to deduplicate DB results
   const rankedIds = useMemo(
     () => new Set(medicines.map((m) => m.id)),
     [medicines]
   );
 
-  // DB search — fires when query >= 2 chars, debounced 350ms
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (query.trim().length < 2) {
-      setDbResults([]);
-      return;
-    }
+    if (query.trim().length < 2) { setDbResults([]); return; }
 
     debounceRef.current = setTimeout(async () => {
       setDbLoading(true);
       try {
         const raw = await searchMedicinesDB(query.trim());
-        // Exclude medicines already in ranked list
         const deduped = raw
           .filter((r) => !rankedIds.has(String(r.medicine_id)))
           .map(dbResultToMedicine);
@@ -70,22 +66,14 @@ export function MedicineSuggestions({ medicines, selectedIds, loading, onAdd }: 
       }
     }, 350);
 
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, rankedIds]);
 
-  // Clear DB results when query is cleared
-  useEffect(() => {
-    if (!query) setDbResults([]);
-  }, [query]);
+  useEffect(() => { if (!query) setDbResults([]); }, [query]);
 
   const hasQuery = query.trim().length > 0;
   const showRanked = !hasQuery || filteredRanked.length > 0;
   const showDbSection = hasQuery && (dbLoading || dbResults.length > 0);
-
-  // Flat list for Enter-key: ranked first, then DB
-  const allVisible = [...filteredRanked, ...dbResults];
 
   return (
     <section className="panel suggestions-panel">
@@ -110,13 +98,6 @@ export function MedicineSuggestions({ medicines, selectedIds, loading, onAdd }: 
           placeholder="Search by name or composition..."
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && allVisible[0]) {
-              e.preventDefault();
-              if (!selectedIds.includes(allVisible[0].id)) {
-                onAdd(allVisible[0]);
-              }
-              setQuery("");
-            }
             if (e.key === "Escape") setQuery("");
           }}
         />
@@ -132,8 +113,10 @@ export function MedicineSuggestions({ medicines, selectedIds, loading, onAdd }: 
         )}
       </div>
 
-      <div className="medicine-suggestion-list">
-        {/* ── RANKED RESULTS ───────────────────────────────── */}
+      {/* Scrollable list */}
+      <div className={`medicine-suggestion-list${hasQuery ? " is-searching" : ""}`}>
+
+        {/* ── RANKED ── */}
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="suggestion-skeleton">
@@ -157,21 +140,24 @@ export function MedicineSuggestions({ medicines, selectedIds, loading, onAdd }: 
             )}
             {filteredRanked.map((medicine, index) => {
               const added = selectedIds.includes(medicine.id);
+              const isFav = favouriteIds.has(medicine.medicine_id);
               return (
                 <MedicineRow
                   key={medicine.id}
                   medicine={medicine}
                   rank={index + 1}
                   added={added}
+                  isFav={isFav}
                   showBar
-                  onAdd={() => !added && onAdd(medicine)}
+                  onAdd={() => onAdd(medicine)}
+                  onToggleFav={() => onToggleFavourite(medicine)}
                 />
               );
             })}
           </>
         ) : null}
 
-        {/* ── DB LIBRARY RESULTS ───────────────────────────── */}
+        {/* ── DB LIBRARY ── */}
         {showDbSection && (
           <>
             <div className="med-section-label med-section-library">
@@ -183,59 +169,60 @@ export function MedicineSuggestions({ medicines, selectedIds, loading, onAdd }: 
                 `Library results (${dbResults.length})`
               )}
             </div>
-            {!dbLoading &&
-              dbResults.map((medicine) => {
-                const added = selectedIds.includes(medicine.id);
-                return (
-                  <MedicineRow
-                    key={medicine.id}
-                    medicine={medicine}
-                    rank={null}
-                    added={added}
-                    showBar={false}
-                    onAdd={() => !added && onAdd(medicine)}
-                  />
-                );
-              })}
+            {!dbLoading && dbResults.map((medicine) => {
+              const added = selectedIds.includes(medicine.id);
+              const isFav = favouriteIds.has(medicine.medicine_id);
+              return (
+                <MedicineRow
+                  key={medicine.id}
+                  medicine={medicine}
+                  rank={null}
+                  added={added}
+                  isFav={isFav}
+                  showBar={false}
+                  onAdd={() => onAdd(medicine)}
+                  onToggleFav={() => onToggleFavourite(medicine)}
+                />
+              );
+            })}
           </>
         )}
 
-        {/* ── NO RESULTS AT ALL ────────────────────────────── */}
-        {hasQuery &&
-          !loading &&
-          !dbLoading &&
-          filteredRanked.length === 0 &&
-          dbResults.length === 0 && (
-            <div className="suggestions-empty">
-              <p>No medicines found for "{query}"</p>
-            </div>
-          )}
+        {/* ── NO RESULTS ── */}
+        {hasQuery && !loading && !dbLoading && filteredRanked.length === 0 && dbResults.length === 0 && (
+          <div className="suggestions-empty">
+            <p>No medicines found for "{query}"</p>
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
-// ── Sub-component: single medicine row ────────────────────────────────────────
+// ── Single medicine row ───────────────────────────────────────────────────────
 type RowProps = {
   medicine: Medicine;
   rank: number | null;
   added: boolean;
+  isFav: boolean;
   showBar: boolean;
   onAdd: () => void;
+  onToggleFav: () => void;
 };
 
-function MedicineRow({ medicine, rank, added, showBar, onAdd }: RowProps) {
+function MedicineRow({ medicine, rank, added, isFav, showBar, onAdd, onToggleFav }: RowProps) {
   return (
-    <button
-      className={`suggestion-row ${added ? "already-added" : ""} ${rank === null ? "lib-row" : ""}`}
-      type="button"
+    <div
+      className={`suggestion-row${added ? " already-added" : ""}${rank === null ? " lib-row" : ""}`}
       onClick={onAdd}
-      disabled={added}
+      role="button"
+      tabIndex={-1}
+      title={added ? "Already in prescription" : `Add ${medicine.name}`}
     >
       {rank !== null ? (
         <span className="rank">{rank}</span>
       ) : (
-        <span className="rank rank-lib">+</span>
+        <span className="rank rank-lib">o</span>
       )}
       <span className="suggestion-copy">
         <strong>{medicine.name}</strong>
@@ -247,13 +234,30 @@ function MedicineRow({ medicine, rank, added, showBar, onAdd }: RowProps) {
           <i style={{ width: `${medicine.match}%` }} />
         </span>
       )}
-      {added ? (
-        <span className="added-indicator">✓</span>
-      ) : (
-        <span className="add-icon">
-          <Plus size={18} />
-        </span>
-      )}
-    </button>
+      <div className="row-actions">
+        <button
+          className={`row-fav-btn${isFav ? " is-fav" : ""}`}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleFav(); }}
+          aria-label={isFav ? "Remove favourite" : "Add to favourites"}
+          title={isFav ? "Remove favourite" : "Favourite"}
+        >
+          <Heart size={14} fill={isFav ? "currentColor" : "none"} />
+        </button>
+        {added ? (
+          <span className="added-indicator" onClick={(e) => e.stopPropagation()}>✓</span>
+        ) : (
+          <button
+            className="row-add-btn"
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onAdd(); }}
+            aria-label="Add medicine"
+            title="Add to prescription"
+          >
+            <Plus size={15} />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

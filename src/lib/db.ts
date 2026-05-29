@@ -230,10 +230,10 @@ export async function rankMedicines(opts: {
 // ── SAVE PRESCRIPTION ──────────────────────────────────────────────────────────
 export type SaveConsultMedicine = {
   medicine_id: number;
-  composition_id: number;
-  dosage_mg: number | null;      // integer → dosage_mg column
+  composition_ids: number[];     // all composition IDs (1 for single, 2+ for combos)
+  dosage_mg: number | null;
   frequency: string;             // slot string e.g. "1-0-1-0"
-  duration_days: number | null;  // integer → duration_days column
+  duration_days: number | null;
   route: string;
   notes: string;
   instructions: string;
@@ -276,9 +276,10 @@ export async function saveConsult(opts: {
     const rows = opts.medicines.map((m) => ({
       prescription_id: rx.id,
       medicine_id: m.medicine_id,
-      composition_id: m.composition_id,
+      composition_ids: m.composition_ids,          // integer[] array column
+      composition_id: m.composition_ids[0] ?? null, // keep legacy column as primary
       dosage_mg: m.dosage_mg,
-      frequency: m.frequency,          // stored as slot string "1-0-1-0"
+      frequency: m.frequency,
       duration_days: m.duration_days,
       route: m.route,
       notes: m.notes,
@@ -309,20 +310,18 @@ export async function saveConsult(opts: {
   return { prescriptionId: rx.id };
 }
 
-// ── LEARNING LOOP (Bug 2 fix) ──────────────────────────────────────────────────
-// Called after saveConsult with the ranked composition IDs at time of ranking
-// and which ones the doctor actually selected.
+// ── LEARNING LOOP ──────────────────────────────────────────────────────────────
 export async function runLearningLoop(opts: {
   visitId: string;
-  tagSignature: string;           // joined sorted tag ids from symptoms/findings
-  selectedCompositionIds: number[];
-  rankedCompositionIds: number[];  // full ranked list shown to doctor
+  tagSignature: string;
+  selectedCompositionIds: number[];   // all composition IDs across all selected medicines
+  rankedCompositionIds: number[];
 }): Promise<void> {
   if (!opts.selectedCompositionIds.length && !opts.rankedCompositionIds.length) return;
 
   const now = new Date().toISOString();
 
-  // 1. Upsert bias for selected compositions (reward)
+  // Upsert bias for each selected composition
   for (const compositionId of opts.selectedCompositionIds) {
     const { error } = await supabase
       .from("doctor_composition_bias")
@@ -341,30 +340,23 @@ export async function runLearningLoop(opts: {
           ignoreDuplicates: false,
         }
       );
-    // Non-fatal: log but don't throw
     if (error) console.warn(`learningLoop upsert bias: ${error.message}`);
   }
 
-  // 2. Log to doctor_logs for each selected medicine
-  const selectedSet = new Set(opts.selectedCompositionIds);
-  const logRows = opts.selectedCompositionIds.map((compositionId, i) => ({
+  // Log to doctor_logs
+  const logRows = opts.selectedCompositionIds.map((compositionId) => ({
     doctor_id: DOCTOR_ID,
     visit_id: opts.visitId,
     selected_composition_id: compositionId,
-    selected_medicine_id: null,   // medicine_id not tracked here yet
+    selected_medicine_id: null,
     composition_rank_at_selection: opts.rankedCompositionIds.indexOf(compositionId) + 1,
     total_compositions_shown: opts.rankedCompositionIds.length,
   }));
 
   if (logRows.length) {
-    const { error: logErr } = await supabase
-      .from("doctor_logs")
-      .insert(logRows);
+    const { error: logErr } = await supabase.from("doctor_logs").insert(logRows);
     if (logErr) console.warn(`learningLoop doctor_logs: ${logErr.message}`);
   }
-
-  // 3. Upsert doctor_medicine_bias — track which brand the doctor picked
-  // (medicine_id tracking: passed via selectedMedicines if available)
 }
 
 // ── DOCTOR PROFILE ─────────────────────────────────────────────────────────────
@@ -398,10 +390,10 @@ export type DBHospital = {
   phone: string | null;
   email: string | null;
   address: string | null;
-  tagline: string | null;       // Added via ALTER TABLE migration
-  logo_url: string | null;      // Added via ALTER TABLE migration
-  accent_color: string | null;  // Added via ALTER TABLE migration
-  is_branded: boolean;          // Added via ALTER TABLE migration
+  tagline: string | null;
+  logo_url: string | null;
+  accent_color: string | null;
+  is_branded: boolean;
 };
 
 export async function fetchHospital(hospitalId: string): Promise<DBHospital | null> {
@@ -416,7 +408,7 @@ export async function fetchHospital(hospitalId: string): Promise<DBHospital | nu
 
 // ── PAST VISITS ────────────────────────────────────────────────────────────────
 export type RealVisitMedicine = {
-  medicine_id: number;        // ← added
+  medicine_id: number;
   name: string;
   dosage_mg: number | null;
   frequency: string | null;
@@ -434,7 +426,6 @@ export type RealVisit = {
 };
 
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
-  // Step 1: fetch only completed visits
   const { data: visits, error: visitErr } = await supabase
     .from("visits")
     .select("id, created_at, assigned_doctor_id")
@@ -448,7 +439,6 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
 
   const visitIds = visits.map((v) => v.id);
 
-  // Step 2: doctor names
   const doctorIds = [...new Set(visits.map((v) => v.assigned_doctor_id).filter(Boolean))];
   const doctorMap = new Map<string, string>();
   if (doctorIds.length) {
@@ -457,7 +447,6 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
   }
 
-  // Step 3: symptom IDs per visit (flat — no join)
   const { data: vsRows } = await supabase
     .from("visit_symptoms")
     .select("visit_id, symptom_id")
@@ -471,7 +460,6 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
   }
 
-  // Step 4: finding IDs per visit (flat — no join)
   const { data: vfRows } = await supabase
     .from("visit_findings")
     .select("visit_id, finding_id")
@@ -485,7 +473,6 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     (finds ?? []).forEach((f: any) => findingById.set(f.id, { name: f.name, is_abnormal: f.is_abnormal }));
   }
 
-  // Step 5: prescriptions for these visits
   const { data: rxRows } = await supabase
     .from("prescriptions")
     .select("id, visit_id")
@@ -495,7 +482,6 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
   (rxRows ?? []).forEach((r: any) => rxByVisit.set(r.visit_id, r.id));
   const rxIds = (rxRows ?? []).map((r: any) => r.id);
 
-  // Step 6: prescription medicines + medicine names (flat — no join)
   const medsByRx = new Map<string, RealVisitMedicine[]>();
   if (rxIds.length) {
     const { data: pmRows } = await supabase
@@ -514,7 +500,7 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     for (const pm of (pmRows ?? [])) {
       const list = medsByRx.get(pm.prescription_id) ?? [];
       list.push({
-        medicine_id: Number(pm.medicine_id),   // ← added
+        medicine_id: Number(pm.medicine_id),
         name: medNameById.get(Number(pm.medicine_id)) ?? "Unknown",
         dosage_mg: pm.dosage_mg,
         frequency: pm.frequency,
@@ -525,7 +511,6 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     }
   }
 
-  // Step 7: assemble
   return visits.map((v) => {
     const rxId = rxByVisit.get(v.id);
     return {
@@ -545,11 +530,12 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
   });
 }
 
-// ── MEDICINE LIBRARY SEARCH (Bug 7) ───────────────────────────────────────────
+// ── MEDICINE LIBRARY SEARCH ────────────────────────────────────────────────────
 export type DBMedicineSearchResult = {
   medicine_id: number;
   medicine_name: string;
-  composition_names: string;
+  composition_names: string;   // "Amoxicillin + Clavulanic Acid" for combos
+  composition_ids: number[];   // all composition IDs
   primary_composition_id: number;
 };
 
@@ -557,40 +543,44 @@ export async function searchMedicinesDB(query: string): Promise<DBMedicineSearch
   if (!query || query.trim().length < 2) return [];
   const q = query.trim();
 
-  // Search medicines by name, join primary composition for display
   const { data, error } = await supabase
     .from("medicines")
     .select(`
       id,
       name,
-      medicine_composition_map!inner(
+      medicine_composition_map(
         composition_id,
         is_primary,
         compositions(id, name)
       )
     `)
     .ilike("name", `%${q}%`)
-    .eq("medicine_composition_map.is_primary", true)
-    .limit(10);
+    .limit(20);
 
   if (error) throw new Error(`searchMedicinesDB: ${error.message}`);
 
   return (data ?? []).map((row: any) => {
-    const mcm = Array.isArray(row.medicine_composition_map)
-      ? row.medicine_composition_map[0]
-      : row.medicine_composition_map;
-    const comp = mcm?.compositions;
+    const maps: any[] = Array.isArray(row.medicine_composition_map)
+      ? row.medicine_composition_map
+      : [];
+    // Prefer primary composition for dosage lookup; fall back to first available
+    const primary = maps.find((m) => m.is_primary) ?? maps[0];
     return {
       medicine_id: row.id,
       medicine_name: row.name,
-      composition_names: comp?.name ?? "",
-      primary_composition_id: mcm?.composition_id ?? 0,
+      composition_names: maps
+        .map((m: any) => m.compositions?.name)
+        .filter(Boolean)
+        .join(" + "),
+      composition_ids: maps
+        .map((m: any) => m.composition_id)
+        .filter(Boolean),
+      primary_composition_id: primary?.composition_id ?? 0,
     };
   });
 }
 
 // ── SYNAPSE: FREQUENT PICKS ────────────────────────────────────────────────────
-
 export type FrequentPick = {
   medicine_id: number;
   medicine_name: string;
@@ -608,7 +598,6 @@ export async function fetchFrequentPicks(opts: {
 }): Promise<FrequentPick[]> {
   if (!opts.activeTagIds.length) return [];
 
-  // Step A: get hints triggered by active tags
   const { data: hints, error: hintErr } = await supabase
     .from("composition_coprescription_hints")
     .select("hint_composition_id, hint_label, clinical_reason, priority")
@@ -622,7 +611,6 @@ export async function fetchFrequentPicks(opts: {
   }
   if (!hints || hints.length === 0) return [];
 
-  // Step B: deduplicate hint compositions + exclude already ranked ones
   const seen = new Set<number>(opts.excludeCompositionIds);
   const deduped: { composition_id: number; hint_label: string; clinical_reason: string }[] = [];
   for (const h of hints) {
@@ -637,7 +625,6 @@ export async function fetchFrequentPicks(opts: {
   }
   if (!deduped.length) return [];
 
-  // Step C: get composition names
   const compIds = deduped.map((d) => d.composition_id);
   const { data: comps } = await supabase
     .from("compositions")
@@ -646,13 +633,11 @@ export async function fetchFrequentPicks(opts: {
   const compNameById = new Map<number, string>();
   (comps ?? []).forEach((c: any) => compNameById.set(c.id, c.name));
 
-  // Step D: for each composition, resolve best medicine
   const results: FrequentPick[] = [];
 
   for (const item of deduped) {
     let medicine_id: number | null = null;
 
-    // Try doctor_medicine_bias first
     const { data: biasRow } = await supabase
       .from("doctor_medicine_bias")
       .select("medicine_id")
@@ -665,7 +650,6 @@ export async function fetchFrequentPicks(opts: {
     if (biasRow?.medicine_id) {
       medicine_id = biasRow.medicine_id;
     } else {
-      // Fallback: medicine_composition_map primary
       const { data: mcmRow } = await supabase
         .from("medicine_composition_map")
         .select("medicine_id")
@@ -678,7 +662,6 @@ export async function fetchFrequentPicks(opts: {
 
     if (!medicine_id) continue;
 
-    // Get medicine name
     const { data: medRow } = await supabase
       .from("medicines")
       .select("name")
@@ -704,7 +687,6 @@ export async function fetchFrequentPicks(opts: {
 }
 
 // ── SYNAPSE: LOG CO-PRESCRIPTION OBSERVATIONS ─────────────────────────────────
-
 export async function logCoprescriptionObservations(opts: {
   visitId: string;
   doctorId: string;
@@ -741,7 +723,6 @@ export async function logCoprescriptionObservations(opts: {
 }
 
 // ── SYNAPSE: DYNAMIC TEST HINTS ────────────────────────────────────────────────
-
 export type DynamicTestHint = {
   test_name: string;
   test_group: string;
@@ -765,11 +746,51 @@ export async function fetchDynamicTests(activeTagIds: number[]): Promise<Dynamic
     return [];
   }
 
-  // Deduplicate by test_name, keep lowest priority
   const seen = new Map<string, DynamicTestHint>();
   for (const row of (data ?? [])) {
     if (!seen.has(row.test_name)) seen.set(row.test_name, row as DynamicTestHint);
   }
 
   return Array.from(seen.values());
+}
+
+// ── FAVOURITES ─────────────────────────────────────────────────────────────────
+export async function fetchDoctorFavourites(
+  doctorId: string
+): Promise<{ medicine_id: number; composition_id: number }[]> {
+  const { data, error } = await supabase
+    .from("doctor_medicine_bias")
+    .select("medicine_id, composition_id")
+    .eq("doctor_id", doctorId)
+    .eq("is_favourite", true);
+  if (error) {
+    console.warn("fetchDoctorFavourites (non-fatal):", error.message);
+    return [];
+  }
+  return (data ?? []).map((r: any) => ({
+    medicine_id: Number(r.medicine_id),
+    composition_id: Number(r.composition_id),
+  }));
+}
+
+export async function toggleFavouriteMedicine(opts: {
+  doctorId: string;
+  medicineId: number;
+  compositionId: number;
+  setFav: boolean;
+}): Promise<void> {
+  const { error } = await supabase
+    .from("doctor_medicine_bias")
+    .upsert(
+      {
+        doctor_id: opts.doctorId,
+        medicine_id: opts.medicineId,
+        composition_id: opts.compositionId,
+        is_favourite: opts.setFav,
+        selection_count: opts.setFav ? 999 : 1,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "doctor_id,composition_id,medicine_id" }
+    );
+  if (error) throw new Error(`toggleFavouriteMedicine: ${error.message}`);
 }

@@ -1,4 +1,5 @@
 import { FlaskConical, Stethoscope, X } from "lucide-react";
+import { useEffect } from "react";
 import type { PrescriptionMedicine } from "../types";
 
 type Props = {
@@ -12,9 +13,9 @@ type Props = {
 };
 
 const SLOTS = [
-  { key: "M", label: "Morning" },
-  { key: "A", label: "Afternoon" },
-  { key: "E", label: "Evening" },
+  { key: "M", label: "Morn" },
+  { key: "A", label: "Noon" },
+  { key: "E", label: "Eve" },
   { key: "N", label: "Night" },
 ];
 
@@ -48,8 +49,32 @@ function fromSlots(slots: string[]): string {
   return sorted.join("-");
 }
 
-export function MedicineInspector({ medicine, symptoms, findings, isStaging, onUpdate, onConfirmStaged, onClose }: Props) {
+export function MedicineInspector({
+  medicine, symptoms, findings, isStaging,
+  onUpdate, onConfirmStaged, onClose,
+}: Props) {
   const activeSlots = toSlots(medicine.frequency);
+
+  // Escape closes the inspector
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+      // Enter on staging confirms and adds
+      if (e.key === "Enter" && isStaging && onConfirmStaged) {
+        const tag = (e.target as HTMLElement).tagName;
+        // Don't intercept Enter inside textarea or slot buttons
+        if (tag === "TEXTAREA" || tag === "BUTTON") return;
+        e.preventDefault();
+        onConfirmStaged();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, isStaging, onConfirmStaged]);
 
   const toggleSlot = (key: string) => {
     const next = activeSlots.includes(key)

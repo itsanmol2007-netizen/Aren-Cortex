@@ -1,0 +1,280 @@
+/* ============================================================
+   COMPONENTS-PICKS.CSS
+   AREN Cortex Phase 1
+   Frequently Prescribed (Synapse) panel — fp-* classes
+   Purple = atmospheric accent
+   ============================================================ */
+
+/* ── Panel shell ─────────────────────────────────────────── */
+
+.fp-panel {
+    min-height: unset;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-color: rgba(168, 85, 247, 0.14);
+    overflow: hidden;
+}
+
+.fp-panel .panel-title svg {
+    color: #a855f7;
+}
+
+/* ── Scrollable list — CAPPED ────────────────────────────── */
+
+.fp-list-wrap {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Cap so panel never pushes selected medicines bar off screen */
+    max-height: 400px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 85, 247, 0.14) transparent;
+    padding-right: 2px;
+    /* Fade hint at bottom */
+    -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+}
+
+.fp-list-wrap::-webkit-scrollbar {
+    width: 3px;
+}
+
+.fp-list-wrap::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.20);
+    border-radius: 999px;
+}
+
+.fp-list-wrap::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.42);
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.30);
+}
+
+/* ── Skeleton ────────────────────────────────────────────── */
+
+.fp-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 0;
+}
+
+.fp-skel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 6px;
+    border-radius: 8px;
+    background: rgba(168, 85, 247, 0.03);
+    animation: skel-pulse 1.4s ease-in-out infinite;
+}
+
+.fp-skel-row:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.fp-skel-row:nth-child(3) {
+    animation-delay: 0.30s;
+}
+
+.fp-skel-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.fp-skel-badge {
+    height: 10px;
+    width: 60px;
+    border-radius: 4px;
+    background: rgba(168, 85, 247, 0.12);
+}
+
+.fp-skel-name {
+    height: 12px;
+    width: 75%;
+    border-radius: 4px;
+    background: var(--worktop);
+}
+
+.fp-skel-sub {
+    height: 9px;
+    width: 50%;
+    border-radius: 4px;
+    background: var(--worktop);
+}
+
+.fp-skel-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--worktop);
+    flex-shrink: 0;
+}
+
+/* ── Loading / empty states ──────────────────────────────── */
+
+.fp-loading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 12px 4px;
+}
+
+.fp-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 8px;
+    padding: 32px 12px;
+    text-align: center;
+}
+
+.fp-empty-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 12px;
+    background: rgba(168, 85, 247, 0.07);
+    color: #a855f7;
+    opacity: 0.45;
+}
+
+.fp-empty-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+    opacity: 0.55;
+}
+
+.fp-empty-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── List + rows ─────────────────────────────────────────── */
+
+.fp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+.fp-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.fp-row:hover {
+    background: rgba(250, 245, 255, 0.90);
+    border-color: rgba(168, 85, 247, 0.20);
+    box-shadow: 0 2px 10px rgba(168, 85, 247, 0.09),
+        0 0 20px rgba(168, 85, 247, 0.04);
+}
+
+.fp-row--added {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.fp-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Purple label badge — atmospheric */
+.fp-label-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #7c3aed;
+    background: rgba(168, 85, 247, 0.10);
+    border: 1px solid rgba(168, 85, 247, 0.22);
+    border-radius: 4px;
+    padding: 1px 5px;
+    width: fit-content;
+    margin-bottom: 1px;
+}
+
+.fp-med-name {
+    font-size: 12.5px;
+    font-weight: 750;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fp-comp-name {
+    font-size: 10.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fp-reason {
+    font-size: 10px;
+    color: var(--muted);
+    margin: 2px 0 0;
+    line-height: 1.4;
+    opacity: 0.8;
+}
+
+/* Add button — purple glow on hover */
+.fp-add-btn {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    border: 1px solid rgba(168, 85, 247, 0.22);
+    background: rgba(168, 85, 247, 0.06);
+    color: #7c3aed;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: background 0.12s, border-color 0.12s,
+        transform 0.1s, box-shadow 0.12s;
+}
+
+.fp-add-btn:hover:not(:disabled) {
+    background: rgba(168, 85, 247, 0.14);
+    border-color: rgba(168, 85, 247, 0.44);
+    transform: scale(1.1);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.28),
+        0 0 22px rgba(168, 85, 247, 0.12);
+}
+
+.fp-add-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    border-style: dashed;
+}
+
+.fp-added-tick {
+    font-size: 13px;
+    color: #10b981;
+    font-weight: 700;
+}

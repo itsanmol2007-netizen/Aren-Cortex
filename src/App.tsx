@@ -20,6 +20,8 @@ import {
   fetchFrequentPicks, logCoprescriptionObservations,
   freqSlotToLabel, freqLabelToSlot,
   fetchPatientVisits,
+  fetchDoctorFavourites,
+  toggleFavouriteMedicine,
   type DBSymptom, type DBFinding, type RankedMedicine,
   type SaveConsultMedicine, type RealVisit, type FrequentPick,
 } from "./lib/db";
@@ -35,10 +37,15 @@ function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
   _route: string;
 } {
   const defaults = r.dosage_defaults;
+  const compositionIds: number[] = (r as any).compositions?.length
+    ? (r as any).compositions
+    : [r.primary_composition_id].filter(Boolean);
+
   return {
     id: String(r.medicine_id),
     medicine_id: r.medicine_id,
-    composition_id: r.primary_composition_id,
+    composition_ids: compositionIds,
+    primary_composition_id: r.primary_composition_id,
     name: r.medicine_name,
     category: r.composition_names,
     use: "",
@@ -52,7 +59,7 @@ function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
 }
 
 function App() {
-  // ── DB bootstrap ─────────────────────────────────────────────────────────────
+  // ── DB bootstrap ──────────────────────────────────────────────────────────────
   const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
   const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
   const [dbReady, setDbReady] = useState(false);
@@ -73,6 +80,9 @@ function App() {
   const [rankedMedicines, setRankedMedicines] = useState<Medicine[]>([]);
   const [rankedCompositionIds, setRankedCompositionIds] = useState<number[]>([]);
   const [rankLoading, setRankLoading] = useState(false);
+
+  // ── Favourites ────────────────────────────────────────────────────────────────
+  const [favouriteIds, setFavouriteIds] = useState<Set<number>>(new Set());
 
   // ── Frequent picks (Synapse) ──────────────────────────────────────────────────
   const [frequentPicks, setFrequentPicks] = useState<FrequentPick[]>([]);
@@ -109,12 +119,13 @@ function App() {
 
   const symptomNames = useMemo(() => allSymptoms.map((s) => s.name), [allSymptoms]);
 
-  // ── Load symptoms + findings on mount ─────────────────────────────────────────
+  // ── Load symptoms + findings + favourites on mount ────────────────────────────
   useEffect(() => {
-    Promise.all([fetchSymptoms(), fetchFindings()])
-      .then(([symptoms, findings]) => {
+    Promise.all([fetchSymptoms(), fetchFindings(), fetchDoctorFavourites(DOCTOR_ID)])
+      .then(([symptoms, findings, favs]) => {
         setAllSymptoms(symptoms);
         setAllFindings(findings);
+        setFavouriteIds(new Set(favs.map((f) => f.medicine_id)));
         setDbReady(true);
       })
       .catch((err) => showToast(`DB load failed: ${err.message}`));
@@ -151,11 +162,8 @@ function App() {
         const maxScore = results[0]?.score ?? 1;
         setRankedMedicines(results.map((r) => toUIMedicine(r, maxScore)));
         setRankedCompositionIds(results.map((r) => r.primary_composition_id));
-
-        // Derive active tag IDs from selected symptoms via symptom_tag_map
-        // We proxy this through the symptom IDs we already have
         const sIds = symptomPayload.map((s) => s.id);
-        setActiveTagIds(sIds); // tag resolution happens inside fetchFrequentPicks via DB
+        setActiveTagIds(sIds);
       } catch (err: any) {
         showToast(`Ranking failed: ${err.message}`);
       } finally {
@@ -177,7 +185,6 @@ function App() {
         return;
       }
 
-      // Resolve tag IDs from selected symptom IDs via symptom_tag_map
       const symptomIds = selectedSymptoms
         .map((name) => symptomNameToId.get(name))
         .filter((id): id is number => id !== undefined);
@@ -187,8 +194,6 @@ function App() {
         return;
       }
 
-      // We need to fetch the actual tag IDs from symptom_tag_map
-      // Import supabase directly for this one-off query
       const { supabase } = await import("./lib/supabase");
       const { data: tagRows } = await supabase
         .from("symptom_tag_map")
@@ -215,7 +220,7 @@ function App() {
       } finally {
         setPicksLoading(false);
       }
-    }, 500); // slightly longer debounce than ranking
+    }, 500);
 
     return () => { if (picksTimer.current) clearTimeout(picksTimer.current); };
   }, [rankedCompositionIds, selectedSymptoms, visitId, symptomNameToId]);
@@ -243,6 +248,31 @@ function App() {
     setPastVisits([]);
     setRepeatRxBanner(null);
   };
+
+  // ── Toggle favourite ──────────────────────────────────────────────────────────
+  const handleToggleFavourite = useCallback(async (medicine: Medicine) => {
+    const medId = medicine.medicine_id;
+    const compId = medicine.primary_composition_id ?? medicine.composition_ids?.[0] ?? 0;
+    if (!medId || !compId) return;
+
+    const isFav = favouriteIds.has(medId);
+    const next = new Set(favouriteIds);
+    if (isFav) next.delete(medId); else next.add(medId);
+    setFavouriteIds(next); // optimistic update
+
+    try {
+      await toggleFavouriteMedicine({
+        doctorId: DOCTOR_ID,
+        medicineId: medId,
+        compositionId: compId,
+        setFav: !isFav,
+      });
+    } catch (err: any) {
+      // rollback
+      setFavouriteIds(favouriteIds);
+      showToast(`Favourite update failed: ${err.message}`);
+    }
+  }, [favouriteIds]);
 
   // ── Patient confirm ───────────────────────────────────────────────────────────
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
@@ -303,7 +333,7 @@ function App() {
     }
   }, []);
 
-  // ── Medicine staging (from ranked list) ──────────────────────────────────────
+  // ── Medicine staging (from ranked list) ───────────────────────────────────────
   const handleSuggestionClick = (medicine: Medicine) => {
     if (prescription.some((m) => m.id === medicine.id)) {
       setSelectedMedicineId(medicine.id);
@@ -337,7 +367,8 @@ function App() {
     const staged: PrescriptionMedicine = {
       id: existingId,
       medicine_id: pick.medicine_id,
-      composition_id: pick.composition_id,
+      composition_ids: [pick.composition_id],
+      primary_composition_id: pick.composition_id,
       name: pick.medicine_name,
       category: pick.composition_name,
       use: "",
@@ -382,7 +413,6 @@ function App() {
     const validSymptoms = visit.symptoms.filter((s) =>
       allSymptoms.some((a) => a.name === s)
     );
-
     const validFindings = visit.findings
       .map((f) => f.name)
       .filter((name) => allFindings.some((a) => a.name === name));
@@ -390,7 +420,8 @@ function App() {
     const importedMeds: PrescriptionMedicine[] = visit.medicines.map((med, i) => ({
       id: `repeat-${med.medicine_id}-${i}`,
       medicine_id: med.medicine_id,
-      composition_id: 0,
+      composition_ids: [],
+      primary_composition_id: 0,
       name: med.name,
       category: "",
       use: "",
@@ -428,7 +459,7 @@ function App() {
     try {
       const medicineRows: SaveConsultMedicine[] = prescription.map((m, i) => ({
         medicine_id: m.medicine_id,
-        composition_id: m.composition_id,
+        composition_ids: m.composition_ids ?? [],
         dosage_mg: m.dosage_mg ?? null,
         frequency: freqLabelToSlot(m.frequency),
         duration_days: m.duration_days ?? null,
@@ -453,23 +484,22 @@ function App() {
         .sort((a, b) => a - b)
         .join("-");
 
-      // Learning loop (existing)
+      const allSelectedCompositionIds = prescription.flatMap(
+        (m) => m.composition_ids?.length ? m.composition_ids : (m.primary_composition_id ? [m.primary_composition_id] : [])
+      ).filter((id) => id > 0);
+
       runLearningLoop({
         visitId,
         tagSignature,
-        selectedCompositionIds: prescription.map((m) => m.composition_id),
+        selectedCompositionIds: allSelectedCompositionIds,
         rankedCompositionIds,
       }).catch((e) => console.warn("Learning loop failed (non-fatal):", e));
 
-      // Co-prescription observations (Synapse Layer 2)
-      const compositionIds = prescription
-        .map((m) => m.composition_id)
-        .filter((id) => id > 0);
       logCoprescriptionObservations({
         visitId,
         doctorId: DOCTOR_ID,
         tagSignature,
-        compositionIds,
+        compositionIds: [...new Set(allSelectedCompositionIds)],
       }).catch((e) => console.warn("logCoprescriptionObservations (non-fatal):", e));
 
       setIsReviewOpen(false);
@@ -494,9 +524,9 @@ function App() {
       ? selectedMedicine
       : null;
 
-  // ── Composition IDs already in prescription (for fp panel) ───────────────────
+  // ── Composition IDs already in prescription ───────────────────────────────────
   const prescriptionCompositionIds = useMemo(
-    () => prescription.map((m) => m.composition_id),
+    () => prescription.flatMap((m) => m.composition_ids ?? []),
     [prescription]
   );
 
@@ -549,13 +579,14 @@ function App() {
             />
           </div>
 
-          {/* Medicine workspace — 65% ranked suggestions + 35% frequent picks */}
           <div className="medicine-workspace">
             <MedicineSuggestions
               medicines={rankedMedicines}
               selectedIds={prescription.map((m) => m.id)}
               loading={rankLoading}
               onAdd={handleSuggestionClick}
+              favouriteIds={favouriteIds}
+              onToggleFavourite={handleToggleFavourite}
             />
             <FrequentPicksPanel
               picks={frequentPicks}
@@ -565,7 +596,6 @@ function App() {
             />
           </div>
 
-          {/* Selected medicines bar — replaces PrescriptionPanel */}
           <SelectedMedicinesBar
             medicines={prescription}
             selectedId={selectedMedicineId}
@@ -604,7 +634,6 @@ function App() {
         />
       )}
 
-      {/* Repeat Rx amber banner */}
       {repeatRxBanner && (
         <div className="repeat-rx-banner">
           <RefreshCw size={13} />

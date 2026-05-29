@@ -26,7 +26,8 @@ export type Vitals = {
 export type Medicine = {
   id: string;
   medicine_id: number;
-  composition_id: number;
+  composition_ids: number[];        // all compositions (1 or 2+)
+  primary_composition_id: number;   // for dosage lookup
   name: string;
   category: string;
   use: string;
@@ -35,17 +36,17 @@ export type Medicine = {
 };
 
 export type PrescriptionMedicine = Medicine & {
-  // ── UI display fields (shown to doctor) ──
-  dosage: string;        // e.g. "500mg" — display string
-  frequency: string;     // e.g. "Morning and Night" — human label
-  duration: string;      // e.g. "5 days" — display string
-  notes: string;         // e.g. "After food"
+  // ── UI display fields ──
+  dosage: string;
+  frequency: string;
+  duration: string;
+  notes: string;
 
-  // ── DB persistence fields (saved to prescription_medicines) ──
-  dosage_mg: number | null;       // integer mg value
-  duration_days: number | null;   // integer days
-  route: string;                  // "oral" | "tablet" | "syrup" | "topical" | etc.
-  instructions: string;           // additional instructions text
-  is_sos: boolean;                // SOS/as-needed flag
-  sort_order: number;             // display order in prescription
+  // ── DB persistence fields ──
+  dosage_mg: number | null;
+  duration_days: number | null;
+  route: string;
+  instructions: string;
+  is_sos: boolean;
+  sort_order: number;
 };
