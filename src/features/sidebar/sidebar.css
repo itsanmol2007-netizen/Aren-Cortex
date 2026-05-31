@@ -1,0 +1,569 @@
+/* ============================================================
+   SIDEBAR — AREN Cortex
+   Overlay panel. Logo morphs in from topbar on open.
+   Blue = operational, Purple = atmospheric
+   ============================================================ */
+
+/* ── Backdrop ─────────────────────────────────────────────── */
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(6, 8, 18, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 240ms ease;
+}
+
+.sidebar-backdrop.is-open {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* ── Panel ────────────────────────────────────────────────── */
+.sidebar-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 201;
+    width: 272px;
+    height: 100vh;
+    background: linear-gradient(168deg,
+            #0f1128 0%,
+            #0b0e1f 40%,
+            #090c1a 100%);
+    border-right: 1px solid rgba(99, 102, 241, 0.22);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    transform: translateX(-100%);
+    opacity: 0;
+    transition:
+        transform 280ms cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 220ms ease;
+    will-change: transform, opacity;
+}
+
+.sidebar-panel.is-open {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+/* ── Atmospheric SVG background ───────────────────────────── */
+.sidebar-atmo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ── Right edge glow line ─────────────────────────────────── */
+.sidebar-panel::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(to bottom,
+            rgba(99, 102, 241, 0.55) 0%,
+            rgba(168, 85, 247, 0.35) 35%,
+            rgba(168, 85, 247, 0.12) 70%,
+            transparent 100%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* ── Header zone ──────────────────────────────────────────── */
+.sidebar-header {
+    flex-shrink: 0;
+    padding: 0 16px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    position: relative;
+    z-index: 1;
+    overflow: visible;
+    /* allow logo to escape during morph */
+}
+
+.sidebar-header::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 16px;
+    right: 16px;
+    height: 1px;
+    background: linear-gradient(to right,
+            transparent,
+            rgba(168, 85, 247, 0.50) 25%,
+            rgba(99, 102, 241, 0.40) 65%,
+            transparent);
+}
+
+/* ── Logo pill — morphs in from topbar ────────────────────── */
+/*
+   On open, JS sets on the panel:
+     --morph-dx:    X offset from sidebar logo to topbar logo center
+     --morph-dy:    Y offset from sidebar logo to topbar logo center
+     --morph-scale: size ratio (topbarLogoWidth / sidebarLogoWidth)
+
+   The .sidebar-logo-pill starts at the topbar logo position
+   (via translateX/Y + scale) and animates to its natural
+   position (translate 0, scale 1) = the morph effect.
+*/
+.sidebar-logo-pill {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg,
+            rgba(99, 102, 241, 0.22) 0%,
+            rgba(168, 85, 247, 0.16) 100%);
+    border: 1px solid rgba(168, 85, 247, 0.40);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow:
+        0 0 18px rgba(168, 85, 247, 0.35),
+        0 0 5px rgba(99, 102, 241, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.09);
+
+    /* Default: invisible so it doesn't flash before morph */
+    opacity: 0;
+    transform: translate(var(--morph-dx, 0px), var(--morph-dy, 0px)) scale(var(--morph-scale, 1));
+}
+
+.sidebar-logo-pill img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+/* When is-morphing is added by JS, animate from topbar → sidebar */
+@keyframes logo-morph-in {
+    0% {
+        opacity: 0.85;
+        transform: translate(var(--morph-dx), var(--morph-dy)) scale(var(--morph-scale));
+        border-radius: 9px;
+        box-shadow:
+            0 0 0 rgba(168, 85, 247, 0),
+            0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    40% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1);
+        border-radius: 10px;
+        box-shadow:
+            0 0 18px rgba(168, 85, 247, 0.35),
+            0 0 5px rgba(99, 102, 241, 0.28),
+            inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    }
+}
+
+.sidebar-logo-pill.is-morphing {
+    animation: logo-morph-in 340ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Brand text ───────────────────────────────────────────── */
+.sidebar-brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.sidebar-brand-text strong {
+    font-size: 13.5px;
+    font-weight: 700;
+    /* Full white — this is the product name, needs to be sharp */
+    color: rgba(255, 255, 255, 0.97);
+    letter-spacing: 0.01em;
+    line-height: 1;
+}
+
+.sidebar-brand-text strong span {
+    color: #a855f7;
+}
+
+/* "PHASE 1 WORKFLOW" — was 0.35, now legible */
+.sidebar-brand-text small {
+    font-size: 9px;
+    /* Bumped from 0.35 → 0.62 so it's actually readable */
+    color: rgba(255, 255, 255, 0.62);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    line-height: 1;
+}
+
+/* ── Close button ─────────────────────────────────────────── */
+.sidebar-close-btn {
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    /* Was 0.55, now clearly visible */
+    color: rgba(255, 255, 255, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease,
+        border-color 150ms ease, box-shadow 150ms ease;
+    flex-shrink: 0;
+}
+
+.sidebar-close-btn:hover {
+    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: rgba(239, 68, 68, 0.95);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.18);
+}
+
+/* ── Scrollable nav body ───────────────────────────────────── */
+.sidebar-nav-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0 24px;
+    position: relative;
+    z-index: 1;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(99, 102, 241, 0.30) transparent;
+}
+
+.sidebar-nav-body::-webkit-scrollbar {
+    width: 3px;
+}
+
+.sidebar-nav-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-nav-body::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.30);
+    border-radius: 2px;
+}
+
+/* ── Divider ──────────────────────────────────────────────── */
+.sidebar-divider {
+    height: 1px;
+    margin: 5px 14px;
+    background: linear-gradient(to right,
+            transparent,
+            rgba(255, 255, 255, 0.11) 20%,
+            rgba(255, 255, 255, 0.11) 80%,
+            transparent);
+}
+
+/* ── Nav items ────────────────────────────────────────────── */
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 0 14px 0 18px;
+    height: 40px;
+    border: none;
+    background: transparent;
+    /* Was 0.55 — bumped to 0.78 so nav items are clearly readable */
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    text-align: left;
+    position: relative;
+    transition: color 140ms ease, background 140ms ease;
+}
+
+.sidebar-nav-item:hover {
+    color: rgba(255, 255, 255, 0.97);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Consult action — Blue = operational ─────────────────── */
+.sidebar-nav-item.variant-action {
+    color: #fff;
+    font-weight: 650;
+    font-size: 13.5px;
+    margin: 6px 8px 2px;
+    width: calc(100% - 16px);
+    border-radius: 9px;
+    padding: 0 14px;
+    height: 44px;
+    background: linear-gradient(135deg,
+            rgba(18, 104, 232, 0.28) 0%,
+            rgba(99, 102, 241, 0.20) 100%);
+    border: 1px solid rgba(18, 104, 232, 0.42);
+    box-shadow:
+        0 0 16px rgba(18, 104, 232, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    letter-spacing: 0.01em;
+}
+
+.sidebar-nav-item.variant-action .sidebar-nav-icon {
+    color: #5fa3ff;
+}
+
+.sidebar-nav-item.variant-action:hover {
+    background: linear-gradient(135deg,
+            rgba(18, 104, 232, 0.40) 0%,
+            rgba(99, 102, 241, 0.30) 100%);
+    border-color: rgba(18, 104, 232, 0.62);
+    color: #fff;
+    box-shadow:
+        0 0 24px rgba(18, 104, 232, 0.32),
+        inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+/* ── Active page ─────────────────────────────────────────── */
+.sidebar-nav-item.is-active {
+    color: rgba(255, 255, 255, 0.97);
+    background: rgba(99, 102, 241, 0.13);
+}
+
+.sidebar-nav-item.is-active .sidebar-nav-icon {
+    color: #a855f7;
+}
+
+.sidebar-nav-item.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 7px;
+    bottom: 7px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: linear-gradient(to bottom, #a855f7, #6366f1);
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.65);
+}
+
+/* ── Soon badge ──────────────────────────────────────────── */
+.sidebar-soon-badge {
+    margin-left: auto;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    /* Was 0.65 on badge text — bumped to solid purple */
+    color: rgba(192, 132, 252, 0.90);
+    background: rgba(168, 85, 247, 0.14);
+    border: 1px solid rgba(168, 85, 247, 0.30);
+    border-radius: 4px;
+    padding: 2px 6px;
+    line-height: 1.3;
+}
+
+/* ── Nav icons ──────────────────────────────────────────── */
+.sidebar-nav-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    /* Was 0.35 — now clearly visible at 0.60 */
+    color: rgba(255, 255, 255, 0.60);
+    transition: color 140ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-nav-item:hover .sidebar-nav-icon {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* ── Sub-items (Practice children) ──────────────────────── */
+.sidebar-nav-item.is-sub {
+    padding-left: 44px;
+    height: 36px;
+    font-size: 12.5px;
+    /* Was 0.42 — nearly invisible. Now 0.68 */
+    color: rgba(255, 255, 255, 0.68);
+    font-weight: 450;
+}
+
+.sidebar-nav-item.is-sub:hover {
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-nav-item.is-sub .sidebar-nav-icon {
+    width: 14px;
+    height: 14px;
+    /* Sub icons: slightly dimmer than nav icons, but still legible */
+    color: rgba(255, 255, 255, 0.48);
+}
+
+.sidebar-nav-item.is-sub:hover .sidebar-nav-icon {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+/* ── Practice parent toggle ─────────────────────────────── */
+.sidebar-parent-arrow {
+    margin-left: auto;
+    /* Was 0.25 — bumped */
+    color: rgba(255, 255, 255, 0.42);
+    transition: transform 200ms ease, color 140ms ease;
+    flex-shrink: 0;
+}
+
+.sidebar-nav-item.is-open-parent .sidebar-parent-arrow {
+    transform: rotate(90deg);
+    color: rgba(168, 85, 247, 0.85);
+}
+
+.sidebar-sub-items {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sidebar-sub-items.is-open {
+    max-height: 220px;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.sidebar-footer {
+    flex-shrink: 0;
+    padding: 12px 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    position: relative;
+    z-index: 1;
+}
+
+.sidebar-doctor-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+}
+
+.sidebar-doctor-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1268e8, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+    box-shadow: 0 0 12px rgba(18, 104, 232, 0.40);
+}
+
+.sidebar-doctor-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.sidebar-doctor-name {
+    font-size: 12px;
+    font-weight: 600;
+    /* Was 0.82 — fine, leaving it */
+    color: rgba(255, 255, 255, 0.92);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* "General" — was 0.35 → now 0.60 so it reads clearly */
+.sidebar-doctor-spec {
+    font-size: 10.5px;
+    color: rgba(255, 255, 255, 0.60);
+    text-transform: capitalize;
+    letter-spacing: 0.02em;
+}
+
+/* ── Topbar logo: fade+shift out when sidebar opens ──────── */
+.tb-logo-pill {
+    cursor: pointer;
+    transition:
+        opacity 200ms ease,
+        transform 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.tb-logo-pill:hover {
+    opacity: 0.82;
+    transform: scale(0.96);
+}
+
+.topbar-unified.is-sidebar-open .tb-logo-pill {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.88);
+    pointer-events: none;
+}
+
+/* ── Coming soon page ─────────────────────────────────────── */
+.coming-soon-page {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 60px 24px;
+    text-align: center;
+}
+
+.coming-soon-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+    background: rgba(99, 102, 241, 0.10);
+    border: 1px solid rgba(99, 102, 241, 0.24);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(168, 85, 247, 0.85);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.14);
+}
+
+/* Was 0.78 — bumped to full white */
+.coming-soon-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.92);
+    margin: 0;
+}
+
+/* Was 0.35 — bumped to 0.58 */
+.coming-soon-sub {
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.58);
+    margin: 0;
+    max-width: 260px;
+    line-height: 1.65;
+}
+
+.coming-soon-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(192, 132, 252, 0.90);
+    background: rgba(168, 85, 247, 0.12);
+    border: 1px solid rgba(168, 85, 247, 0.28);
+    border-radius: 20px;
+    padding: 4px 14px;
+}

@@ -11,6 +11,10 @@ import { PatientModal } from "./components/PatientModal";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { ReviewModal } from "./components/ReviewModal";
 import { SelectedMedicinesBar } from "./components/SelectedMedicinesBar";
+import { Sidebar } from "./features/sidebar/Sidebar";
+import type { SidebarPage } from "./features/sidebar/SidebarNav";
+import { PatientsPage } from "./features/patients/PatientsPage";
+import { ComingSoonPage } from "./components/ComingSoonPage";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchSymptoms, fetchFindings,
@@ -29,6 +33,17 @@ import type { Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 
 const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
 const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
+
+// Title + subtitle for every coming-soon feature page
+const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
+  prescriptions: { title: "Prescriptions", subtitle: "Rx history & templates" },
+  investigations: { title: "Investigations", subtitle: "Lab orders & results" },
+  communication: { title: "Communication", subtitle: "Patient messages & follow-ups" },
+  practice: { title: "Practice", subtitle: "Preferences & clinical tools" },
+  clinic: { title: "Clinic", subtitle: "Staff, schedule & operations" },
+  settings: { title: "Settings", subtitle: "Account & configuration" },
+  support: { title: "Support", subtitle: "Help & documentation" },
+};
 
 function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
   _dosageDefaults: RankedMedicine["dosage_defaults"];
@@ -58,13 +73,27 @@ function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
   };
 }
 
+function hasActiveConsult(
+  patient: Patient | null,
+  prescription: PrescriptionMedicine[],
+  selectedSymptoms: string[],
+  selectedFindings: string[]
+): boolean {
+  return !!(
+    patient &&
+    (prescription.length > 0 ||
+      selectedSymptoms.length > 0 ||
+      selectedFindings.length > 0)
+  );
+}
+
 function App() {
-  // ── DB bootstrap ──────────────────────────────────────────────────────────────
+  const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+
   const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
   const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
   const [dbReady, setDbReady] = useState(false);
 
-  // ── Active consult ────────────────────────────────────────────────────────────
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
   const [vitals, setVitals] = useState<Vitals>(emptyVitals);
@@ -76,25 +105,20 @@ function App() {
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [selectedLab, setSelectedLab] = useState("No preferred lab");
 
-  // ── Ranking ───────────────────────────────────────────────────────────────────
   const [rankedMedicines, setRankedMedicines] = useState<Medicine[]>([]);
   const [rankedCompositionIds, setRankedCompositionIds] = useState<number[]>([]);
   const [rankLoading, setRankLoading] = useState(false);
 
-  // ── Favourites ────────────────────────────────────────────────────────────────
   const [favouriteIds, setFavouriteIds] = useState<Set<number>>(new Set());
 
-  // ── Frequent picks (Synapse) ──────────────────────────────────────────────────
   const [frequentPicks, setFrequentPicks] = useState<FrequentPick[]>([]);
   const [picksLoading, setPicksLoading] = useState(false);
   const [activeTagIds, setActiveTagIds] = useState<number[]>([]);
   const picksTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Past visits ───────────────────────────────────────────────────────────────
   const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
   const [pastVisitsLoading, setPastVisitsLoading] = useState(false);
 
-  // ── UI state ──────────────────────────────────────────────────────────────────
   const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
   const [toast, setToast] = useState("");
   const [repeatRxBanner, setRepeatRxBanner] = useState<string | null>(null);
@@ -102,9 +126,11 @@ function App() {
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activePage, setActivePage] = useState<SidebarPage | null>(null);
+
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Derived maps ──────────────────────────────────────────────────────────────
   const symptomNameToId = useMemo(() => {
     const map = new Map<string, number>();
     allSymptoms.forEach((s) => map.set(s.name, s.id));
@@ -119,7 +145,6 @@ function App() {
 
   const symptomNames = useMemo(() => allSymptoms.map((s) => s.name), [allSymptoms]);
 
-  // ── Load symptoms + findings + favourites on mount ────────────────────────────
   useEffect(() => {
     Promise.all([fetchSymptoms(), fetchFindings(), fetchDoctorFavourites(DOCTOR_ID)])
       .then(([symptoms, findings, favs]) => {
@@ -131,7 +156,6 @@ function App() {
       .catch((err) => showToast(`DB load failed: ${err.message}`));
   }, []);
 
-  // ── Re-rank on symptom/finding change (300ms debounce) ────────────────────────
   useEffect(() => {
     if (!visitId) return;
     if (rankTimer.current) clearTimeout(rankTimer.current);
@@ -174,7 +198,6 @@ function App() {
     return () => { if (rankTimer.current) clearTimeout(rankTimer.current); };
   }, [selectedSymptoms, selectedFindings, visitId, symptomNameToId, findingNameToId]);
 
-  // ── Fetch frequent picks when ranked compositions are ready ───────────────────
   useEffect(() => {
     if (!visitId) return;
     if (picksTimer.current) clearTimeout(picksTimer.current);
@@ -189,10 +212,7 @@ function App() {
         .map((name) => symptomNameToId.get(name))
         .filter((id): id is number => id !== undefined);
 
-      if (!symptomIds.length) {
-        setFrequentPicks([]);
-        return;
-      }
+      if (!symptomIds.length) { setFrequentPicks([]); return; }
 
       const { supabase } = await import("./lib/supabase");
       const { data: tagRows } = await supabase
@@ -201,10 +221,7 @@ function App() {
         .in("symptom_id", symptomIds);
 
       const tagIds = [...new Set((tagRows ?? []).map((r: any) => Number(r.tag_id)))];
-      if (!tagIds.length) {
-        setFrequentPicks([]);
-        return;
-      }
+      if (!tagIds.length) { setFrequentPicks([]); return; }
 
       setPicksLoading(true);
       try {
@@ -225,7 +242,6 @@ function App() {
     return () => { if (picksTimer.current) clearTimeout(picksTimer.current); };
   }, [rankedCompositionIds, selectedSymptoms, visitId, symptomNameToId]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────────
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(""), 2400);
@@ -249,7 +265,60 @@ function App() {
     setRepeatRxBanner(null);
   };
 
-  // ── Toggle favourite ──────────────────────────────────────────────────────────
+  const handleOpenSidebar = () => {
+    if (hasActiveConsult(patient, prescription, selectedSymptoms, selectedFindings)) {
+      showToast("Consult in progress — your work is safe");
+    }
+    setSidebarOpen(true);
+  };
+
+  const handleSidebarNavigate = (page: SidebarPage) => {
+    if (hasActiveConsult(patient, prescription, selectedSymptoms, selectedFindings)) {
+      showToast("Consult paused — saved as draft");
+    }
+    setActivePage(page);
+    setSidebarOpen(false);
+  };
+
+  const handleSidebarConsult = () => {
+    setActivePage(null);
+    setSidebarOpen(false);
+    if (!hasActiveConsult(patient, prescription, selectedSymptoms, selectedFindings)) {
+      setPatientModalOpen(true);
+    }
+  };
+
+  const handleStartConsultFromRecord = useCallback(async (incomingPatient: Patient) => {
+    try {
+      const visit = await createVisit(incomingPatient.id!);
+      setVisitId(visit.id);
+      setPatient(incomingPatient);
+      setVitals(emptyVitals);
+      setSelectedSymptoms([]);
+      setSelectedFindings([]);
+      setPrescription([]);
+      setSelectedMedicineId(null);
+      setSelectedTests([]);
+      setSelectedLab("No preferred lab");
+      setRankedMedicines([]);
+      setRankedCompositionIds([]);
+      setFrequentPicks([]);
+      setActiveTagIds([]);
+      setRepeatRxBanner(null);
+      setActivePage(null);
+      setSidebarOpen(false);
+      showToast(`Consult started for ${incomingPatient.name}`);
+
+      setPastVisitsLoading(true);
+      fetchPatientVisits(incomingPatient.id!)
+        .then(setPastVisits)
+        .catch(() => { })
+        .finally(() => setPastVisitsLoading(false));
+    } catch (err: any) {
+      showToast(`Error starting consult: ${err.message}`);
+    }
+  }, []);
+
   const handleToggleFavourite = useCallback(async (medicine: Medicine) => {
     const medId = medicine.medicine_id;
     const compId = medicine.primary_composition_id ?? medicine.composition_ids?.[0] ?? 0;
@@ -258,7 +327,7 @@ function App() {
     const isFav = favouriteIds.has(medId);
     const next = new Set(favouriteIds);
     if (isFav) next.delete(medId); else next.add(medId);
-    setFavouriteIds(next); // optimistic update
+    setFavouriteIds(next);
 
     try {
       await toggleFavouriteMedicine({
@@ -268,13 +337,11 @@ function App() {
         setFav: !isFav,
       });
     } catch (err: any) {
-      // rollback
       setFavouriteIds(favouriteIds);
       showToast(`Favourite update failed: ${err.message}`);
     }
   }, [favouriteIds]);
 
-  // ── Patient confirm ───────────────────────────────────────────────────────────
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
     try {
       let dbPatient: Patient;
@@ -320,6 +387,7 @@ function App() {
       setActiveTagIds([]);
       setRepeatRxBanner(null);
       setPatientModalOpen(false);
+      setActivePage(null);
       showToast(`Consult started for ${dbPatient.name}`);
 
       setPastVisitsLoading(true);
@@ -327,13 +395,11 @@ function App() {
         .then(setPastVisits)
         .catch(() => { })
         .finally(() => setPastVisitsLoading(false));
-
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
   }, []);
 
-  // ── Medicine staging (from ranked list) ───────────────────────────────────────
   const handleSuggestionClick = (medicine: Medicine) => {
     if (prescription.some((m) => m.id === medicine.id)) {
       setSelectedMedicineId(medicine.id);
@@ -357,7 +423,6 @@ function App() {
     setStagedMedicine(staged);
   };
 
-  // ── Medicine staging (from frequent picks) ────────────────────────────────────
   const handlePickAdd = (pick: FrequentPick) => {
     const existingId = String(pick.medicine_id);
     if (prescription.some((m) => m.id === existingId)) {
@@ -408,7 +473,6 @@ function App() {
     if (selectedMedicineId === id) setSelectedMedicineId(null);
   };
 
-  // ── Repeat Rx ─────────────────────────────────────────────────────────────────
   const handleRepeatRx = (visit: RealVisit) => {
     const validSymptoms = visit.symptoms.filter((s) =>
       allSymptoms.some((a) => a.name === s)
@@ -452,7 +516,6 @@ function App() {
     setTimeout(() => setRepeatRxBanner(null), 6000);
   };
 
-  // ── Save consult ──────────────────────────────────────────────────────────────
   const handleConfirmAndSave = async () => {
     if (!visitId) { showToast("No active consult to save"); return; }
     setIsSaving(true);
@@ -505,6 +568,7 @@ function App() {
       setIsReviewOpen(false);
       setRepeatRxBanner(null);
       showToast("Prescription saved ✓");
+      setPatientModalOpen(true);
     } catch (err: any) {
       showToast(`Save failed: ${err.message}`);
     } finally {
@@ -512,7 +576,6 @@ function App() {
     }
   };
 
-  // ── Derived inspector target ──────────────────────────────────────────────────
   const selectedMedicine = useMemo(
     () => prescription.find((m) => m.id === selectedMedicineId),
     [prescription, selectedMedicineId]
@@ -524,13 +587,11 @@ function App() {
       ? selectedMedicine
       : null;
 
-  // ── Composition IDs already in prescription ───────────────────────────────────
   const prescriptionCompositionIds = useMemo(
     () => prescription.flatMap((m) => m.composition_ids ?? []),
     [prescription]
   );
 
-  // ── Loading screen ────────────────────────────────────────────────────────────
   if (!dbReady) {
     return (
       <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
@@ -542,138 +603,193 @@ function App() {
     );
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── The one rule: feature pages get the full viewport, no topbar, no vitals ──
+  const isFeaturePage = activePage !== null;
+
+  // Resolve coming-soon page meta (fallback for any unmapped page)
+  const comingSoonMeta = activePage
+    ? (COMING_SOON_META[activePage] ?? {
+      title: activePage.charAt(0).toUpperCase() + activePage.slice(1),
+      subtitle: "Coming soon",
+    })
+    : null;
+
   return (
     <div className="app-shell">
-      <PatientHeader
-        patient={patient ?? { name: "—", age: "—", gender: "", phone: "" }}
+
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        activePage={activePage}
+        onNavigate={handleSidebarNavigate}
+        onConsult={handleSidebarConsult}
         doctor={DOCTOR}
-        vitals={vitals}
-        onVitalsChange={setVitals}
-        onOpenPatientModal={() => setPatientModalOpen(true)}
-        onReviewRx={() => setIsReviewOpen(true)}
-        onCancelConsult={resetConsultState}
-        pastVisits={pastVisits}
-        pastVisitsLoading={pastVisitsLoading}
-        onRepeatRx={handleRepeatRx}
+        logoRef={logoRef}
       />
 
-      <main className="workflow">
-        <div className="main-column">
-          <div className="two-column-row">
-            <ChipSearchPanel
-              className="symptoms-panel"
-              title="Symptoms"
-              tone="blue"
-              icon={<HeartPulse size={18} />}
-              items={symptomNames}
-              selected={selectedSymptoms}
-              onChange={setSelectedSymptoms}
-            />
-            <FindingsPanel
-              findings={allFindings}
-              selected={selectedFindings}
-              collapsed={findingsCollapsed}
-              onToggleCollapsed={() => setFindingsCollapsed((c) => !c)}
-              onChange={setSelectedFindings}
-            />
-          </div>
-
-          <div className="medicine-workspace">
-            <MedicineSuggestions
-              medicines={rankedMedicines}
-              selectedIds={prescription.map((m) => m.id)}
-              loading={rankLoading}
-              onAdd={handleSuggestionClick}
-              favouriteIds={favouriteIds}
-              onToggleFavourite={handleToggleFavourite}
-            />
-            <FrequentPicksPanel
-              picks={frequentPicks}
-              loading={picksLoading}
-              addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
-              onAdd={handlePickAdd}
-            />
-          </div>
-
-          <SelectedMedicinesBar
-            medicines={prescription}
-            selectedId={selectedMedicineId}
-            onSelect={setSelectedMedicineId}
-            onRemove={removeMedicine}
-          />
-        </div>
-
-        <PreviewPanel
+      {/* Topbar and vitals only render on the consult workspace */}
+      {!isFeaturePage && (
+        <PatientHeader
           patient={patient ?? { name: "—", age: "—", gender: "", phone: "" }}
+          doctor={DOCTOR}
           vitals={vitals}
-          symptoms={selectedSymptoms}
-          findings={selectedFindings}
-          medicines={prescription}
-          tests={selectedTests}
-          lab={selectedLab}
-          onSave={handleConfirmAndSave}
-          testGroups={testGroups}
-          selectedTests={selectedTests}
-          selectedLab={selectedLab}
-          onTestsChange={setSelectedTests}
-          onLabChange={setSelectedLab}
+          onVitalsChange={setVitals}
+          onOpenPatientModal={() => setPatientModalOpen(true)}
           onReviewRx={() => setIsReviewOpen(true)}
-        />
-      </main>
-
-      {inspectorMedicine && (
-        <MedicineInspector
-          medicine={inspectorMedicine}
-          symptoms={selectedSymptoms}
-          findings={selectedFindings}
-          isStaging={!!stagedMedicine}
-          onUpdate={updateMedicine}
-          onConfirmStaged={confirmStagedMedicine}
-          onClose={() => { setStagedMedicine(null); setSelectedMedicineId(null); }}
+          onCancelConsult={resetConsultState}
+          onOpenSidebar={handleOpenSidebar}
+          isSidebarOpen={sidebarOpen}
+          pastVisits={pastVisits}
+          pastVisitsLoading={pastVisitsLoading}
+          onRepeatRx={handleRepeatRx}
+          logoRef={logoRef}
         />
       )}
 
-      {repeatRxBanner && (
-        <div className="repeat-rx-banner">
-          <RefreshCw size={13} />
-          <span>{repeatRxBanner}</span>
-          <button type="button" onClick={() => setRepeatRxBanner(null)} aria-label="Dismiss">×</button>
-        </div>
-      )}
-
-      {toast && <div className="toast">{toast}</div>}
-
-      {patientModalOpen && (
-        <PatientModal
-          onClose={() => setPatientModalOpen(false)}
-          onConfirm={handlePatientConfirm}
+      {/* Feature pages */}
+      {activePage === "patients" ? (
+        <PatientsPage
+          onStartConsult={handleStartConsultFromRecord}
+          logoRef={logoRef}
+          onOpenSidebar={handleOpenSidebar}
         />
-      )}
-
-      {isReviewOpen && patient && (
-        <ReviewModal
-          patient={patient}
-          doctor={{
-            name: DOCTOR_NAME,
-            specialization: DOCTOR_SPECIALIZATION,
-            qualification: null,
-            registration_number: null,
-          }}
-          hospital={null}
-          vitals={vitals}
-          symptoms={selectedSymptoms}
-          findings={selectedFindings}
-          allFindings={allFindings}
-          prescription={prescription}
-          tests={selectedTests}
-          isSaving={isSaving}
-          onEdit={() => setIsReviewOpen(false)}
-          onSave={handleConfirmAndSave}
-          onClose={() => setIsReviewOpen(false)}
+      ) : isFeaturePage && comingSoonMeta ? (
+        <ComingSoonPage
+          logoRef={logoRef}
+          onOpenSidebar={handleOpenSidebar}
+          title={comingSoonMeta.title}
+          subtitle={comingSoonMeta.subtitle}
         />
-      )}
+      ) : (
+        /* Consult workspace */
+        <div className="app-shell-body">
+        <main className="workflow">
+          <div className="main-column">
+            <div className="two-column-row">
+              <ChipSearchPanel
+                className="symptoms-panel"
+                title="Symptoms"
+                tone="blue"
+                icon={<HeartPulse size={18} />}
+                items={symptomNames}
+                selected={selectedSymptoms}
+                onChange={setSelectedSymptoms}
+              />
+              <FindingsPanel
+                findings={allFindings}
+                selected={selectedFindings}
+                collapsed={findingsCollapsed}
+                onToggleCollapsed={() => setFindingsCollapsed((c) => !c)}
+                onChange={setSelectedFindings}
+              />
+            </div>
+
+            <div className="medicine-workspace">
+              <MedicineSuggestions
+                medicines={rankedMedicines}
+                selectedIds={prescription.map((m) => m.id)}
+                loading={rankLoading}
+                onAdd={handleSuggestionClick}
+                favouriteIds={favouriteIds}
+                onToggleFavourite={handleToggleFavourite}
+              />
+              <FrequentPicksPanel
+                picks={frequentPicks}
+                loading={picksLoading}
+                addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
+                onAdd={handlePickAdd}
+              />
+            </div>
+
+            <SelectedMedicinesBar
+              medicines={prescription}
+              selectedId={selectedMedicineId}
+              onSelect={setSelectedMedicineId}
+              onRemove={removeMedicine}
+            />
+          </div >
+
+    <PreviewPanel
+      patient={patient ?? { name: "—", age: "—", gender: "", phone: "" }}
+      vitals={vitals}
+      symptoms={selectedSymptoms}
+      findings={selectedFindings}
+      medicines={prescription}
+      tests={selectedTests}
+      lab={selectedLab}
+      onSave={handleConfirmAndSave}
+      testGroups={testGroups}
+      selectedTests={selectedTests}
+      selectedLab={selectedLab}
+      onTestsChange={setSelectedTests}
+      onLabChange={setSelectedLab}
+      onReviewRx={() => setIsReviewOpen(true)}
+    />
+        </main >
+        </div >
+      )
+}
+
+{
+  inspectorMedicine && (
+    <MedicineInspector
+      medicine={inspectorMedicine}
+      symptoms={selectedSymptoms}
+      findings={selectedFindings}
+      isStaging={!!stagedMedicine}
+      onUpdate={updateMedicine}
+      onConfirmStaged={confirmStagedMedicine}
+      onClose={() => { setStagedMedicine(null); setSelectedMedicineId(null); }}
+    />
+  )
+}
+
+{
+  repeatRxBanner && (
+    <div className="repeat-rx-banner">
+      <RefreshCw size={13} />
+      <span>{repeatRxBanner}</span>
+      <button type="button" onClick={() => setRepeatRxBanner(null)} aria-label="Dismiss">×</button>
     </div>
+  )
+}
+
+{ toast && <div className="toast">{toast}</div> }
+
+{
+  patientModalOpen && (
+    <PatientModal
+      onClose={() => setPatientModalOpen(false)}
+      onConfirm={handlePatientConfirm}
+    />
+  )
+}
+
+{
+  isReviewOpen && patient && (
+    <ReviewModal
+      patient={patient}
+      doctor={{
+        name: DOCTOR_NAME,
+        specialization: DOCTOR_SPECIALIZATION,
+        qualification: null,
+        registration_number: null,
+      }}
+      hospital={null}
+      vitals={vitals}
+      symptoms={selectedSymptoms}
+      findings={selectedFindings}
+      allFindings={allFindings}
+      prescription={prescription}
+      tests={selectedTests}
+      isSaving={isSaving}
+      onEdit={() => setIsReviewOpen(false)}
+      onSave={handleConfirmAndSave}
+      onClose={() => setIsReviewOpen(false)}
+    />
+  )
+}
+    </div >
   );
 }
 

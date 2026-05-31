@@ -11,7 +11,8 @@ import "./styles/components-panels.css"
 import "./styles/components-modals.css"
 import "./styles/rx-modal.css"
 import "./styles/past-visit.css"
-
+import "./features/sidebar/sidebar.css"
+import "./styles/workspace-header.css"
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

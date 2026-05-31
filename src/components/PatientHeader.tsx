@@ -14,9 +14,12 @@ type PatientHeaderProps = {
   onOpenPatientModal: () => void;
   onReviewRx: () => void;
   onCancelConsult: () => void;
+  onOpenSidebar: () => void;
+  isSidebarOpen: boolean;
+  logoRef: React.RefObject<HTMLDivElement>;
   pastVisits?: RealVisit[];
   pastVisitsLoading?: boolean;
-  onRepeatRx?: (visit: RealVisit) => void;   // ← NEW
+  onRepeatRx?: (visit: RealVisit) => void;
 };
 
 const VITAL_FIELDS: {
@@ -52,8 +55,10 @@ function buildMedDetail(med: RealVisit["medicines"][0]): string {
 export function PatientHeader({
   patient, doctor, vitals, onVitalsChange,
   onOpenPatientModal, onReviewRx, onCancelConsult,
+  onOpenSidebar, isSidebarOpen,
   pastVisits = [], pastVisitsLoading = false,
   onRepeatRx,
+  logoRef,
 }: PatientHeaderProps) {
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -126,7 +131,7 @@ export function PatientHeader({
     <>
       <div ref={sentinelRef} style={{ height: 1, marginBottom: -1 }} aria-hidden="true" />
 
-      <header className={`topbar-unified${isStuck ? " is-stuck" : ""}`}>
+      <header className={`topbar-unified${isStuck ? " is-stuck" : ""}${isSidebarOpen ? " is-sidebar-open" : ""}`}>
         <div className="topbar-stripe" aria-hidden="true" />
 
         <svg className="topbar-atmo" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1400 72" xmlns="http://www.w3.org/2000/svg">
@@ -190,9 +195,18 @@ export function PatientHeader({
           <rect x="195" y="0" width="55" height="72" fill="rgba(168,85,247,0.06)" />
         </svg>
 
-        {/* Brand */}
+        {/* Brand — logo pill is the sidebar trigger */}
         <div className="tb-brand">
-          <div className="tb-logo-pill">
+          <div
+            ref={logoRef}
+            className="tb-logo-pill"
+            onClick={onOpenSidebar}
+            role="button"
+            tabIndex={0}
+            aria-label="Open navigation menu"
+            title="Open menu"
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpenSidebar(); }}
+          >
             <img src={logo} alt="AREN Logo" />
           </div>
           <div className="tb-brand-text">
@@ -310,7 +324,6 @@ export function PatientHeader({
             <div className="pv-stripe" aria-hidden="true" />
             <div className="pv-orb" aria-hidden="true" />
 
-            {/* Header */}
             <div className="pv-header">
               <div className="pv-header-left">
                 <div className="pv-icon-wrap"><Calendar size={14} /></div>
@@ -330,7 +343,6 @@ export function PatientHeader({
               </button>
             </div>
 
-            {/* Meta */}
             <div className="pv-meta">
               <span className="pv-date-badge">{formatVisitDate(activeVisit.visit.created_at)}</span>
               {activeVisit.visit.doctor_name && (
@@ -341,7 +353,6 @@ export function PatientHeader({
               )}
             </div>
 
-            {/* Scrollable body */}
             <div className="pv-body">
               {activeVisit.visit.symptoms.length > 0 && (
                 <div>
@@ -400,14 +411,9 @@ export function PatientHeader({
                 )}
             </div>
 
-            {/* ── Repeat Rx footer ── */}
             {hasImportable && onRepeatRx && (
               <div className="pv-footer">
-                <button
-                  type="button"
-                  className="pv-repeat-btn"
-                  onClick={handleRepeatClick}
-                >
+                <button type="button" className="pv-repeat-btn" onClick={handleRepeatClick}>
                   <RefreshCw size={13} />
                   Repeat Rx
                 </button>

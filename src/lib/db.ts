@@ -794,3 +794,148 @@ export async function toggleFavouriteMedicine(opts: {
     );
   if (error) throw new Error(`toggleFavouriteMedicine: ${error.message}`);
 }
+
+// ── PATIENT RECORDS PAGE — TODAY'S PATIENTS ────────────────────────────────────
+export type PatientRecordRow = {
+  patient_id: string;
+  patient_name: string;
+  age: number;
+  gender: string;
+  phone: string;
+  visit_id: string;
+  visit_status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  symptom_names: string[];
+};
+
+export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const { data: visits, error } = await supabase
+    .from("visits")
+    .select("id, patient_id, status, started_at, completed_at")
+    .eq("assigned_doctor_id", DOCTOR_ID)
+    .gte("started_at", todayStart.toISOString())
+    .order("started_at", { ascending: false });
+
+  if (error) throw new Error(`fetchTodayPatients: ${error.message}`);
+  if (!visits || visits.length === 0) return [];
+
+  const patientIds = [...new Set(visits.map((v: any) => v.patient_id))];
+  const visitIds = visits.map((v: any) => v.id);
+
+  const { data: patients } = await supabase
+    .from("patients")
+    .select("id, name, age, gender, phone")
+    .in("id", patientIds);
+
+  const patMap = new Map<string, any>();
+  (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
+
+  const { data: vsRows } = await supabase
+    .from("visit_symptoms")
+    .select("visit_id, symptom_id")
+    .in("visit_id", visitIds);
+
+  const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
+  const symptomById = new Map<number, string>();
+  if (allSymptomIds.length) {
+    const { data: symps } = await supabase
+      .from("symptoms")
+      .select("id, name")
+      .in("id", allSymptomIds);
+    (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
+  }
+
+  return visits.map((v: any) => {
+    const pat = patMap.get(v.patient_id) ?? {};
+    const symptomNames = (vsRows ?? [])
+      .filter((r: any) => r.visit_id === v.id)
+      .map((r: any) => symptomById.get(Number(r.symptom_id)))
+      .filter(Boolean) as string[];
+
+    return {
+      patient_id: v.patient_id,
+      patient_name: pat.name ?? "Unknown",
+      age: pat.age ?? 0,
+      gender: pat.gender ?? "",
+      phone: pat.phone ?? "",
+      visit_id: v.id,
+      visit_status: v.status,
+      started_at: v.started_at,
+      completed_at: v.completed_at,
+      symptom_names: symptomNames,
+    };
+  });
+}
+
+// ── PATIENT RECORDS PAGE — ALL RECENT PATIENTS ────────────────────────────────
+export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[]> {
+  const { data: visits, error } = await supabase
+    .from("visits")
+    .select("id, patient_id, status, started_at, completed_at")
+    .eq("assigned_doctor_id", DOCTOR_ID)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(`fetchRecentPatients: ${error.message}`);
+  if (!visits || visits.length === 0) return [];
+
+  const patientIds = [...new Set(visits.map((v: any) => v.patient_id))];
+  const visitIds = visits.map((v: any) => v.id);
+
+  const { data: patients } = await supabase
+    .from("patients")
+    .select("id, name, age, gender, phone")
+    .in("id", patientIds);
+
+  const patMap = new Map<string, any>();
+  (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
+
+  const { data: vsRows } = await supabase
+    .from("visit_symptoms")
+    .select("visit_id, symptom_id")
+    .in("visit_id", visitIds);
+
+  const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
+  const symptomById = new Map<number, string>();
+  if (allSymptomIds.length) {
+    const { data: symps } = await supabase
+      .from("symptoms")
+      .select("id, name")
+      .in("id", allSymptomIds);
+    (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
+  }
+
+  // Deduplicate: keep only the most recent visit per patient
+  const seenPatients = new Set<string>();
+  const deduped: PatientRecordRow[] = [];
+
+  for (const v of visits) {
+    if (seenPatients.has(v.patient_id)) continue;
+    seenPatients.add(v.patient_id);
+
+    const pat = patMap.get(v.patient_id) ?? {};
+    const symptomNames = (vsRows ?? [])
+      .filter((r: any) => r.visit_id === v.id)
+      .map((r: any) => symptomById.get(Number(r.symptom_id)))
+      .filter(Boolean) as string[];
+
+    deduped.push({
+      patient_id: v.patient_id,
+      patient_name: pat.name ?? "Unknown",
+      age: pat.age ?? 0,
+      gender: pat.gender ?? "",
+      phone: pat.phone ?? "",
+      visit_id: v.id,
+      visit_status: v.status,
+      started_at: v.started_at,
+      completed_at: v.completed_at,
+      symptom_names: symptomNames,
+    });
+  }
+
+  return deduped;
+}

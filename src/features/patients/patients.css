@@ -1,0 +1,12 @@
+/* ── patients.css — MASTER IMPORT ────────────────────────────────────────────
+   Split by concern. Edit the specific partial, not this file.
+
+   Load order matters — shell vars first, then list, then detail.
+──────────────────────────────────────────────────────────────────────────── */
+
+@import "./patients-shell.css";
+/* Page shell · header · search · body scroll */
+@import "./patients-list.css";
+/* Today cards · patient rows · chips · pills  */
+@import "./patients-detail.css";
+/* Record view · identity · stats · visits     */
