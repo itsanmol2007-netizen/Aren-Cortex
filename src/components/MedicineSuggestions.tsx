@@ -17,7 +17,6 @@ function dbResultToMedicine(r: DBMedicineSearchResult): Medicine {
   return {
     id: String(r.medicine_id),
     medicine_id: r.medicine_id,
-    composition_id: r.primary_composition_id,
     composition_ids: r.composition_ids,
     primary_composition_id: r.primary_composition_id,
     name: r.medicine_name,

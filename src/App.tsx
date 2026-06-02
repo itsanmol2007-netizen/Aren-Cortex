@@ -9,7 +9,7 @@ import { MedicineSuggestions } from "./components/MedicineSuggestions";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { PreviewPanel } from "./components/PreviewPanel";
-import { ReviewModal } from "./components/ReviewModal";
+import ReviewModal from "./components/ReviewModal";
 import { SelectedMedicinesBar } from "./components/SelectedMedicinesBar";
 import { Sidebar } from "./features/sidebar/Sidebar";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
@@ -26,8 +26,10 @@ import {
   fetchPatientVisits,
   fetchDoctorFavourites,
   toggleFavouriteMedicine,
+  fetchDoctor, fetchHospital,
   type DBSymptom, type DBFinding, type RankedMedicine,
   type SaveConsultMedicine, type RealVisit, type FrequentPick,
+  type DBDoctor, type DBHospital,
 } from "./lib/db";
 import type { Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 
@@ -93,6 +95,8 @@ function App() {
   const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
   const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
   const [dbReady, setDbReady] = useState(false);
+  const [doctorProfile, setDoctorProfile] = useState<DBDoctor | null>(null);
+  const [hospitalProfile, setHospitalProfile] = useState<DBHospital | null>(null);
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
@@ -125,6 +129,8 @@ function App() {
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [followUpDays, setFollowUpDays] = useState<number | null>(null);
+  const [adviceNotes, setAdviceNotes] = useState<string>("");
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
@@ -146,11 +152,19 @@ function App() {
   const symptomNames = useMemo(() => allSymptoms.map((s) => s.name), [allSymptoms]);
 
   useEffect(() => {
-    Promise.all([fetchSymptoms(), fetchFindings(), fetchDoctorFavourites(DOCTOR_ID)])
-      .then(([symptoms, findings, favs]) => {
+    Promise.all([
+      fetchSymptoms(),
+      fetchFindings(),
+      fetchDoctorFavourites(DOCTOR_ID),
+      fetchDoctor(DOCTOR_ID),
+      fetchHospital("38bd8da3-0dd2-43a5-ad09-2d3194c95ba9"),
+    ])
+      .then(([symptoms, findings, favs, doctor, hospital]) => {
         setAllSymptoms(symptoms);
         setAllFindings(findings);
         setFavouriteIds(new Set(favs.map((f) => f.medicine_id)));
+        setDoctorProfile(doctor);
+        setHospitalProfile(hospital);
         setDbReady(true);
       })
       .catch((err) => showToast(`DB load failed: ${err.message}`));
@@ -263,6 +277,8 @@ function App() {
     setActiveTagIds([]);
     setPastVisits([]);
     setRepeatRxBanner(null);
+    setFollowUpDays(null);
+    setAdviceNotes("");
   };
 
   const handleOpenSidebar = () => {
@@ -305,6 +321,8 @@ function App() {
       setFrequentPicks([]);
       setActiveTagIds([]);
       setRepeatRxBanner(null);
+      setFollowUpDays(null);
+      setAdviceNotes("");
       setActivePage(null);
       setSidebarOpen(false);
       showToast(`Consult started for ${incomingPatient.name}`);
@@ -386,6 +404,8 @@ function App() {
       setFrequentPicks([]);
       setActiveTagIds([]);
       setRepeatRxBanner(null);
+      setFollowUpDays(null);
+      setAdviceNotes("");
       setPatientModalOpen(false);
       setActivePage(null);
       showToast(`Consult started for ${dbPatient.name}`);
@@ -539,6 +559,8 @@ function App() {
         tests: selectedTests,
         vitals,
         findingsText: selectedFindings.join(", "),
+        followUpDays,
+        adviceNotes,
       });
 
       const tagSignature = allSymptoms
@@ -663,132 +685,129 @@ function App() {
       ) : (
         /* Consult workspace */
         <div className="app-shell-body">
-        <main className="workflow">
-          <div className="main-column">
-            <div className="two-column-row">
-              <ChipSearchPanel
-                className="symptoms-panel"
-                title="Symptoms"
-                tone="blue"
-                icon={<HeartPulse size={18} />}
-                items={symptomNames}
-                selected={selectedSymptoms}
-                onChange={setSelectedSymptoms}
-              />
-              <FindingsPanel
-                findings={allFindings}
-                selected={selectedFindings}
-                collapsed={findingsCollapsed}
-                onToggleCollapsed={() => setFindingsCollapsed((c) => !c)}
-                onChange={setSelectedFindings}
-              />
-            </div>
+          <main className="workflow">
+            <div className="main-column">
+              <div className="two-column-row">
+                <ChipSearchPanel
+                  className="symptoms-panel"
+                  title="Symptoms"
+                  tone="blue"
+                  icon={<HeartPulse size={18} />}
+                  items={symptomNames}
+                  selected={selectedSymptoms}
+                  onChange={setSelectedSymptoms}
+                />
+                <FindingsPanel
+                  findings={allFindings}
+                  selected={selectedFindings}
+                  collapsed={findingsCollapsed}
+                  onToggleCollapsed={() => setFindingsCollapsed((c) => !c)}
+                  onChange={setSelectedFindings}
+                />
+              </div>
 
-            <div className="medicine-workspace">
-              <MedicineSuggestions
-                medicines={rankedMedicines}
-                selectedIds={prescription.map((m) => m.id)}
-                loading={rankLoading}
-                onAdd={handleSuggestionClick}
-                favouriteIds={favouriteIds}
-                onToggleFavourite={handleToggleFavourite}
-              />
-              <FrequentPicksPanel
-                picks={frequentPicks}
-                loading={picksLoading}
-                addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
-                onAdd={handlePickAdd}
-              />
-            </div>
+              <div className="medicine-workspace">
+                <MedicineSuggestions
+                  medicines={rankedMedicines}
+                  selectedIds={prescription.map((m) => m.id)}
+                  loading={rankLoading}
+                  onAdd={handleSuggestionClick}
+                  favouriteIds={favouriteIds}
+                  onToggleFavourite={handleToggleFavourite}
+                />
+                <FrequentPicksPanel
+                  picks={frequentPicks}
+                  loading={picksLoading}
+                  addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
+                  onAdd={handlePickAdd}
+                />
+              </div>
 
-            <SelectedMedicinesBar
-              medicines={prescription}
-              selectedId={selectedMedicineId}
-              onSelect={setSelectedMedicineId}
-              onRemove={removeMedicine}
+              <SelectedMedicinesBar
+                medicines={prescription}
+                selectedId={selectedMedicineId}
+                onSelect={setSelectedMedicineId}
+                onRemove={removeMedicine}
+              />
+            </div >
+
+            <PreviewPanel
+              testGroups={testGroups}
+              selectedTests={selectedTests}
+              selectedLab={selectedLab}
+              onTestsChange={setSelectedTests}
+              onLabChange={setSelectedLab}
+              onReviewRx={() => setIsReviewOpen(true)}
             />
-          </div >
-
-    <PreviewPanel
-      patient={patient ?? { name: "—", age: "—", gender: "", phone: "" }}
-      vitals={vitals}
-      symptoms={selectedSymptoms}
-      findings={selectedFindings}
-      medicines={prescription}
-      tests={selectedTests}
-      lab={selectedLab}
-      onSave={handleConfirmAndSave}
-      testGroups={testGroups}
-      selectedTests={selectedTests}
-      selectedLab={selectedLab}
-      onTestsChange={setSelectedTests}
-      onLabChange={setSelectedLab}
-      onReviewRx={() => setIsReviewOpen(true)}
-    />
-        </main >
+          </main >
         </div >
       )
-}
+      }
 
-{
-  inspectorMedicine && (
-    <MedicineInspector
-      medicine={inspectorMedicine}
-      symptoms={selectedSymptoms}
-      findings={selectedFindings}
-      isStaging={!!stagedMedicine}
-      onUpdate={updateMedicine}
-      onConfirmStaged={confirmStagedMedicine}
-      onClose={() => { setStagedMedicine(null); setSelectedMedicineId(null); }}
-    />
-  )
-}
+      {
+        inspectorMedicine && (
+          <MedicineInspector
+            medicine={inspectorMedicine}
+            symptoms={selectedSymptoms}
+            findings={selectedFindings}
+            isStaging={!!stagedMedicine}
+            onUpdate={updateMedicine}
+            onConfirmStaged={confirmStagedMedicine}
+            onClose={() => { setStagedMedicine(null); setSelectedMedicineId(null); }}
+          />
+        )
+      }
 
-{
-  repeatRxBanner && (
-    <div className="repeat-rx-banner">
-      <RefreshCw size={13} />
-      <span>{repeatRxBanner}</span>
-      <button type="button" onClick={() => setRepeatRxBanner(null)} aria-label="Dismiss">×</button>
-    </div>
-  )
-}
+      {
+        repeatRxBanner && (
+          <div className="repeat-rx-banner">
+            <RefreshCw size={13} />
+            <span>{repeatRxBanner}</span>
+            <button type="button" onClick={() => setRepeatRxBanner(null)} aria-label="Dismiss">×</button>
+          </div>
+        )
+      }
 
-{ toast && <div className="toast">{toast}</div> }
+      {toast && <div className="toast">{toast}</div>}
 
-{
-  patientModalOpen && (
-    <PatientModal
-      onClose={() => setPatientModalOpen(false)}
-      onConfirm={handlePatientConfirm}
-    />
-  )
-}
+      {
+        patientModalOpen && (
+          <PatientModal
+            onClose={() => setPatientModalOpen(false)}
+            onConfirm={handlePatientConfirm}
+          />
+        )
+      }
 
-{
-  isReviewOpen && patient && (
-    <ReviewModal
-      patient={patient}
-      doctor={{
-        name: DOCTOR_NAME,
-        specialization: DOCTOR_SPECIALIZATION,
-        qualification: null,
-        registration_number: null,
-      }}
-      hospital={null}
-      vitals={vitals}
-      symptoms={selectedSymptoms}
-      findings={selectedFindings}
-      allFindings={allFindings}
-      prescription={prescription}
-      tests={selectedTests}
-      isSaving={isSaving}
-      onEdit={() => setIsReviewOpen(false)}
-      onSave={handleConfirmAndSave}
-      onClose={() => setIsReviewOpen(false)}
-    />
-  )
-}
+      {
+        isReviewOpen && patient && (
+          <ReviewModal
+            patient={patient}
+            doctor={{
+              name: doctorProfile?.name ?? DOCTOR_NAME,
+              specialization: doctorProfile?.specialization ?? DOCTOR_SPECIALIZATION,
+              qualification: doctorProfile?.qualification ?? null,
+              registration_number: doctorProfile?.registration_number ?? null,
+              signature_image_url: doctorProfile?.signature_image_url ?? null,
+              avatar_url: (doctorProfile as any)?.avatar_url ?? null,
+            }}
+            hospital={hospitalProfile}
+            vitals={vitals}
+            symptoms={selectedSymptoms}
+            findings={selectedFindings}
+            allFindings={allFindings}
+            prescription={prescription}
+            tests={selectedTests}
+            isSaving={isSaving}
+            onEdit={() => setIsReviewOpen(false)}
+            onSave={handleConfirmAndSave}
+            onClose={() => setIsReviewOpen(false)}
+            followUpDays={followUpDays}
+            adviceNotes={adviceNotes}
+            visitId={visitId ?? undefined}
+          />
+        )
+      }
     </div >
   );
 }

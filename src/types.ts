@@ -35,6 +35,18 @@ export type Medicine = {
   composition: string;
 };
 
+export type Test = {
+  name: string;
+  rare?: boolean;
+};
+
+export type TestGroup = {
+  id: string;
+  label: string;
+  icon: string;
+  tests: Test[];
+};
+
 export type PrescriptionMedicine = Medicine & {
   // ── UI display fields ──
   dosage: string;

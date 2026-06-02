@@ -30,36 +30,43 @@ export const medicines: Medicine[] = [
     id: "med-1", name: "Paracetamol 500mg",
     category: "Analgesic", use: "Antipyretic", match: 92,
     composition: "Paracetamol 500mg",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
   {
     id: "med-2", name: "Ibuprofen 400mg",
     category: "NSAID", use: "Pain relief", match: 87,
     composition: "Ibuprofen 400mg",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
   {
     id: "med-3", name: "Amoxicillin 500mg",
     category: "Antibiotic", use: "Broad spectrum", match: 78,
     composition: "Amoxicillin trihydrate 500mg",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
   {
     id: "med-4", name: "Cetirizine 10mg",
     category: "Antihistamine", use: "Allergy", match: 65,
     composition: "Cetirizine hydrochloride 10mg",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
   {
     id: "med-5", name: "Ondansetron 4mg",
     category: "Antiemetic", use: "Vomiting", match: 62,
     composition: "Ondansetron hydrochloride 4mg",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
   {
     id: "med-6", name: "Pantoprazole 40mg",
     category: "PPI", use: "Acidity", match: 58,
     composition: "Pantoprazole sodium sesquihydrate 40mg",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
   {
     id: "med-7", name: "ORS Sachet",
     category: "Supportive", use: "Hydration", match: 54,
     composition: "Sodium chloride 2.6g, Glucose 13.5g, Potassium chloride 1.5g",
+    medicine_id: 0, composition_ids: [], primary_composition_id: 0,
   },
 ];
 

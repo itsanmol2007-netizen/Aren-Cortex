@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────────
 export const DOCTOR_ID = "5cd330d2-5a48-4098-b865-ed3393e08698";
-export const DOCTOR_NAME = "SK Pandey";
+export const DOCTOR_NAME = "Anmol Pandey";
 export const DOCTOR_SPECIALIZATION = "general";
 export const HOSPITAL_ID: string | null = null;
 
@@ -247,6 +247,8 @@ export async function saveConsult(opts: {
   tests: string[];
   vitals: Record<string, string>;
   findingsText: string;
+  followUpDays?: number | null;
+  adviceNotes?: string | null;
 }): Promise<{ prescriptionId: string }> {
   // 1. Save vitals + mark visit completed
   const { error: visitErr } = await supabase
@@ -266,6 +268,8 @@ export async function saveConsult(opts: {
       visit_id: opts.visitId,
       assigned_doctor_id: DOCTOR_ID,
       findings_text: opts.findingsText,
+      follow_up_days: opts.followUpDays ?? null,
+      advice_notes: opts.adviceNotes ?? null,
     })
     .select("id")
     .single();
@@ -419,6 +423,7 @@ export type RealVisitMedicine = {
 export type RealVisit = {
   id: string;
   created_at: string;
+  status: string;
   doctor_name: string | null;
   symptoms: string[];
   findings: { name: string; is_abnormal: boolean }[];
@@ -428,7 +433,7 @@ export type RealVisit = {
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
   const { data: visits, error: visitErr } = await supabase
     .from("visits")
-    .select("id, created_at, assigned_doctor_id")
+    .select("id, created_at, assigned_doctor_id, status")
     .eq("patient_id", patientId)
     .eq("status", "completed")
     .order("created_at", { ascending: false })
@@ -516,6 +521,7 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     return {
       id: v.id,
       created_at: v.created_at,
+      status: v.status,
       doctor_name: doctorMap.get(v.assigned_doctor_id) ?? null,
       symptoms: (vsRows ?? [])
         .filter((r: any) => r.visit_id === v.id)
@@ -807,8 +813,12 @@ export type PatientRecordRow = {
   started_at: string | null;
   completed_at: string | null;
   symptom_names: string[];
+  finding_names: string[];
+  medicine_names: string[];
+  test_names: string[];
+  visit_count: number;
+  last_visit_at: string | null;
 };
-
 export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -826,34 +836,108 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
   const patientIds = [...new Set(visits.map((v: any) => v.patient_id))];
   const visitIds = visits.map((v: any) => v.id);
 
+  // patients
   const { data: patients } = await supabase
     .from("patients")
     .select("id, name, age, gender, phone")
     .in("id", patientIds);
-
   const patMap = new Map<string, any>();
   (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
 
+  // visit count per patient (all time)
+  const { data: allVisitCounts } = await supabase
+    .from("visits")
+    .select("patient_id, started_at")
+    .in("patient_id", patientIds)
+    .eq("assigned_doctor_id", DOCTOR_ID)
+    .order("started_at", { ascending: false });
+  const visitCountMap = new Map<string, number>();
+  const lastVisitMap = new Map<string, string>();
+  (allVisitCounts ?? []).forEach((v: any) => {
+    visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
+    if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.started_at);
+  });
+
+  // symptoms
   const { data: vsRows } = await supabase
     .from("visit_symptoms")
     .select("visit_id, symptom_id")
     .in("visit_id", visitIds);
-
   const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
   const symptomById = new Map<number, string>();
   if (allSymptomIds.length) {
     const { data: symps } = await supabase
-      .from("symptoms")
-      .select("id, name")
-      .in("id", allSymptomIds);
+      .from("symptoms").select("id, name").in("id", allSymptomIds);
     (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
   }
+
+  // findings
+  const { data: vfRows } = await supabase
+    .from("visit_findings")
+    .select("visit_id, finding_id")
+    .in("visit_id", visitIds);
+  const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
+  const findingById = new Map<number, string>();
+  if (allFindingIds.length) {
+    const { data: finds } = await supabase
+      .from("findings").select("id, name").in("id", allFindingIds);
+    (finds ?? []).forEach((f: any) => findingById.set(f.id, f.name));
+  }
+
+  // medicines
+  // prescriptions → prescription_medicines (no visit_id on pm table)
+  const { data: rxRows } = await supabase
+    .from("prescriptions")
+    .select("id, visit_id")
+    .in("visit_id", visitIds);
+  const rxByVisitId = new Map<string, string>();
+  (rxRows ?? []).forEach((r: any) => rxByVisitId.set(r.visit_id, r.id));
+  const rxIds = (rxRows ?? []).map((r: any) => r.id);
+
+  const pmByVisitId = new Map<string, number[]>();
+  const medById = new Map<number, string>();
+  if (rxIds.length) {
+    const { data: pmRows } = await supabase
+      .from("prescription_medicines")
+      .select("prescription_id, medicine_id")
+      .in("prescription_id", rxIds);
+    const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
+    if (allMedIds.length) {
+      const { data: meds } = await supabase
+        .from("medicines").select("id, name").in("id", allMedIds);
+      (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
+    }
+    for (const pm of (pmRows ?? [])) {
+      const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
+      if (!visitId) continue;
+      const list = pmByVisitId.get(visitId) ?? [];
+      list.push(Number(pm.medicine_id));
+      pmByVisitId.set(visitId, list);
+    }
+  }
+
+  // tests
+  const { data: doRows } = await supabase
+    .from("diagnostic_orders")
+    .select("visit_id, test_name")
+    .in("visit_id", visitIds);
 
   return visits.map((v: any) => {
     const pat = patMap.get(v.patient_id) ?? {};
     const symptomNames = (vsRows ?? [])
       .filter((r: any) => r.visit_id === v.id)
       .map((r: any) => symptomById.get(Number(r.symptom_id)))
+      .filter(Boolean) as string[];
+    const findingNames = (vfRows ?? [])
+      .filter((r: any) => r.visit_id === v.id)
+      .map((r: any) => findingById.get(Number(r.finding_id)))
+      .filter(Boolean) as string[];
+    const medicineNames = (pmByVisitId.get(v.id) ?? [])
+      .map((medId) => medById.get(medId))
+      .filter(Boolean) as string[];
+    const testNames = (doRows ?? [])
+      .filter((r: any) => r.visit_id === v.id)
+      .map((r: any) => r.test_name)
       .filter(Boolean) as string[];
 
     return {
@@ -867,16 +951,23 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
       started_at: v.started_at,
       completed_at: v.completed_at,
       symptom_names: symptomNames,
+      finding_names: findingNames,
+      medicine_names: medicineNames,
+      test_names: testNames,
+      visit_count: visitCountMap.get(v.patient_id) ?? 1,
+      last_visit_at: lastVisitMap.get(v.patient_id) ?? v.started_at,
     };
   });
 }
 
+// ── PATIENT RECORDS PAGE — ALL RECENT PATIENTS ────────────────────────────────
 // ── PATIENT RECORDS PAGE — ALL RECENT PATIENTS ────────────────────────────────
 export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[]> {
   const { data: visits, error } = await supabase
     .from("visits")
     .select("id, patient_id, status, started_at, completed_at")
     .eq("assigned_doctor_id", DOCTOR_ID)
+    .eq("status", "completed")
     .order("started_at", { ascending: false })
     .limit(limit);
 
@@ -886,30 +977,92 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
   const patientIds = [...new Set(visits.map((v: any) => v.patient_id))];
   const visitIds = visits.map((v: any) => v.id);
 
+  // patients
   const { data: patients } = await supabase
     .from("patients")
     .select("id, name, age, gender, phone")
     .in("id", patientIds);
-
   const patMap = new Map<string, any>();
   (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
 
+  // visit count per patient (all time)
+  const { data: allVisitCounts } = await supabase
+    .from("visits")
+    .select("patient_id, started_at")
+    .in("patient_id", patientIds)
+    .eq("assigned_doctor_id", DOCTOR_ID)
+    .order("started_at", { ascending: false });
+  const visitCountMap = new Map<string, number>();
+  const lastVisitMap = new Map<string, string>();
+  (allVisitCounts ?? []).forEach((v: any) => {
+    visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
+    if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.started_at);
+  });
+
+  // symptoms
   const { data: vsRows } = await supabase
     .from("visit_symptoms")
     .select("visit_id, symptom_id")
     .in("visit_id", visitIds);
-
   const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
   const symptomById = new Map<number, string>();
   if (allSymptomIds.length) {
     const { data: symps } = await supabase
-      .from("symptoms")
-      .select("id, name")
-      .in("id", allSymptomIds);
+      .from("symptoms").select("id, name").in("id", allSymptomIds);
     (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
   }
 
-  // Deduplicate: keep only the most recent visit per patient
+  // findings
+  const { data: vfRows } = await supabase
+    .from("visit_findings")
+    .select("visit_id, finding_id")
+    .in("visit_id", visitIds);
+  const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
+  const findingById = new Map<number, string>();
+  if (allFindingIds.length) {
+    const { data: finds } = await supabase
+      .from("findings").select("id, name").in("id", allFindingIds);
+    (finds ?? []).forEach((f: any) => findingById.set(f.id, f.name));
+  }
+
+  // prescriptions → prescription_medicines (no visit_id on pm table)
+  const { data: rxRows } = await supabase
+    .from("prescriptions")
+    .select("id, visit_id")
+    .in("visit_id", visitIds);
+  const rxByVisitId = new Map<string, string>();
+  (rxRows ?? []).forEach((r: any) => rxByVisitId.set(r.visit_id, r.id));
+  const rxIds = (rxRows ?? []).map((r: any) => r.id);
+
+  const pmByVisitId = new Map<string, number[]>();
+  const medById = new Map<number, string>();
+  if (rxIds.length) {
+    const { data: pmRows } = await supabase
+      .from("prescription_medicines")
+      .select("prescription_id, medicine_id")
+      .in("prescription_id", rxIds);
+    const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
+    if (allMedIds.length) {
+      const { data: meds } = await supabase
+        .from("medicines").select("id, name").in("id", allMedIds);
+      (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
+    }
+    for (const pm of (pmRows ?? [])) {
+      const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
+      if (!visitId) continue;
+      const list = pmByVisitId.get(visitId) ?? [];
+      list.push(Number(pm.medicine_id));
+      pmByVisitId.set(visitId, list);
+    }
+  }
+
+  // tests
+  const { data: doRows } = await supabase
+    .from("diagnostic_orders")
+    .select("visit_id, test_name")
+    .in("visit_id", visitIds);
+
+  // deduplicate: keep only most recent completed visit per patient
   const seenPatients = new Set<string>();
   const deduped: PatientRecordRow[] = [];
 
@@ -921,6 +1074,17 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
     const symptomNames = (vsRows ?? [])
       .filter((r: any) => r.visit_id === v.id)
       .map((r: any) => symptomById.get(Number(r.symptom_id)))
+      .filter(Boolean) as string[];
+    const findingNames = (vfRows ?? [])
+      .filter((r: any) => r.visit_id === v.id)
+      .map((r: any) => findingById.get(Number(r.finding_id)))
+      .filter(Boolean) as string[];
+    const medicineNames = (pmByVisitId.get(v.id) ?? [])
+      .map((medId) => medById.get(medId))
+      .filter(Boolean) as string[];
+    const testNames = (doRows ?? [])
+      .filter((r: any) => r.visit_id === v.id)
+      .map((r: any) => r.test_name)
       .filter(Boolean) as string[];
 
     deduped.push({
@@ -934,6 +1098,11 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
       started_at: v.started_at,
       completed_at: v.completed_at,
       symptom_names: symptomNames,
+      finding_names: findingNames,
+      medicine_names: medicineNames,
+      test_names: testNames,
+      visit_count: visitCountMap.get(v.patient_id) ?? 1,
+      last_visit_at: lastVisitMap.get(v.patient_id) ?? v.started_at,
     });
   }
 
