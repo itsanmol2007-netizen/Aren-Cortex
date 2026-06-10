@@ -100,9 +100,9 @@
 .tag-blue,
 .tag-pink,
 .tag-violet {
-    border-color: rgba(168, 85, 247, 0.25);
-    background: rgba(243, 232, 255, 0.75);
-    color: #7c3aed;
+    border-color: rgba(18, 104, 232, 0.25);
+    background: rgba(237, 246, 255, 0.75);
+    color: #1268e8;
     transition: background 0.12s, border-color 0.12s,
         transform 0.1s, box-shadow 0.12s;
 }
@@ -110,9 +110,9 @@
 .tag-blue:hover,
 .tag-pink:hover,
 .tag-violet:hover {
-    background: rgba(237, 220, 255, 0.90);
-    border-color: rgba(168, 85, 247, 0.40);
-    box-shadow: 0 1px 5px rgba(168, 85, 247, 0.12);
+    background: rgba(219, 237, 255, 0.90);
+    border-color: rgba(18, 104, 232, 0.40);
+    box-shadow: 0 1px 5px rgba(18, 104, 232, 0.12);
 }
 
 .tag-teal {

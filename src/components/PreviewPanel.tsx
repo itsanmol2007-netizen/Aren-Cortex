@@ -11,6 +11,7 @@ type PreviewPanelProps = {
   onTestsChange: (tests: string[]) => void;
   onLabChange: (lab: string) => void;
   onReviewRx: () => void;
+  searchRef?: React.RefObject<HTMLInputElement | null>;
 };
 
 export function PreviewPanel({
@@ -20,6 +21,7 @@ export function PreviewPanel({
   onTestsChange,
   onLabChange,
   onReviewRx,
+  searchRef,
 }: PreviewPanelProps) {
   const [query, setQuery] = useState("");
 
@@ -58,6 +60,7 @@ export function PreviewPanel({
         <div className="tests-search-box">
           <Search size={13} className="tests-search-icon" />
           <input
+            ref={searchRef}
             className="tests-search-input"
             placeholder="Search tests..."
             value={query}

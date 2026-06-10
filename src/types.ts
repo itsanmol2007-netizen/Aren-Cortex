@@ -35,9 +35,16 @@ export type Medicine = {
   composition: string;
 };
 
-export type Test = {
+export type SelectedSymptom = {
   name: string;
-  rare?: boolean;
+  intensity: "mild" | "moderate" | "severe";
+};
+
+export type Test = {
+  id: string;
+  name: string;
+  category: string;
+  common?: boolean;
 };
 
 export type TestGroup = {

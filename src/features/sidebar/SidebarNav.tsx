@@ -82,21 +82,21 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Patients",
             icon: <Users size={14} />,
             page: "patients",
-            soon: true,
+            soon: false,
         },
         {
             type: "page",
             label: "Prescriptions",
             icon: <FileText size={14} />,
             page: "prescriptions",
-            soon: true,
+            soon: false,
         },
         {
             type: "page",
             label: "Investigations",
             icon: <FlaskConical size={14} />,
             page: "investigations",
-            soon: true,
+            soon: false,
         },
         { type: "divider" },
         {
@@ -104,7 +104,7 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Communication",
             icon: <MessageSquare size={14} />,
             page: "communication",
-            soon: true,
+            soon: false,
         },
         { type: "divider" },
         {
@@ -145,21 +145,21 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Clinic",
             icon: <Building2 size={14} />,
             page: "clinic",
-            soon: true,
+            soon: false,
         },
         {
             type: "page",
             label: "Support",
             icon: <HelpCircle size={14} />,
             page: "support",
-            soon: true,
+            soon: false,
         },
         {
             type: "page",
             label: "Settings",
             icon: <Settings size={14} />,
             page: "settings",
-            soon: true,
+            soon: false,
         },
     ];
 

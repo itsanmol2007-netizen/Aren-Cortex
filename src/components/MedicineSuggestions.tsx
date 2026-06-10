@@ -11,6 +11,7 @@ type Props = {
   onAdd: (medicine: Medicine) => void;
   favouriteIds: Set<number>;
   onToggleFavourite: (medicine: Medicine) => void;
+  searchRef?: React.RefObject<HTMLInputElement>;
 };
 
 function dbResultToMedicine(r: DBMedicineSearchResult): Medicine {
@@ -28,12 +29,14 @@ function dbResultToMedicine(r: DBMedicineSearchResult): Medicine {
 }
 
 export function MedicineSuggestions({
-  medicines, selectedIds, loading, onAdd, favouriteIds, onToggleFavourite,
+  medicines, selectedIds, loading, onAdd, favouriteIds, onToggleFavourite, searchRef,
 }: Props) {
   const [query, setQuery] = useState("");
   const [dbResults, setDbResults] = useState<Medicine[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const internalRef = useRef<HTMLInputElement>(null);
+  const inputRef = (searchRef ?? internalRef) as React.RefObject<HTMLInputElement>;
 
   const filteredRanked = useMemo(
     () => fuzzyFilter(medicines, query, (m) => m.name + " " + m.category),
@@ -93,6 +96,7 @@ export function MedicineSuggestions({
       <div className="search-box medicine-search">
         <Search size={17} />
         <input
+          ref={inputRef}
           value={query}
           placeholder="Search by name or composition..."
           onChange={(e) => setQuery(e.target.value)}
@@ -112,10 +116,8 @@ export function MedicineSuggestions({
         )}
       </div>
 
-      {/* Scrollable list */}
       <div className={`medicine-suggestion-list${hasQuery ? " is-searching" : ""}`}>
 
-        {/* ── RANKED ── */}
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="suggestion-skeleton">
@@ -156,7 +158,6 @@ export function MedicineSuggestions({
           </>
         ) : null}
 
-        {/* ── DB LIBRARY ── */}
         {showDbSection && (
           <>
             <div className="med-section-label med-section-library">
@@ -187,7 +188,6 @@ export function MedicineSuggestions({
           </>
         )}
 
-        {/* ── NO RESULTS ── */}
         {hasQuery && !loading && !dbLoading && filteredRanked.length === 0 && dbResults.length === 0 && (
           <div className="suggestions-empty">
             <p>No medicines found for "{query}"</p>
@@ -198,7 +198,6 @@ export function MedicineSuggestions({
   );
 }
 
-// ── Single medicine row ───────────────────────────────────────────────────────
 type RowProps = {
   medicine: Medicine;
   rank: number | null;
@@ -221,7 +220,7 @@ function MedicineRow({ medicine, rank, added, isFav, showBar, onAdd, onToggleFav
       {rank !== null ? (
         <span className="rank">{rank}</span>
       ) : (
-        <span className="rank rank-lib">o</span>
+        <span className="rank rank-lib">○</span>
       )}
       <span className="suggestion-copy">
         <strong>{medicine.name}</strong>

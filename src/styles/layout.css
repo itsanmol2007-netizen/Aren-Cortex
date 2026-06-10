@@ -983,6 +983,19 @@
     color: #f43f5e;
 }
 
+.symptoms-panel:focus-within {
+    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.35), 0 0 32px 10px rgba(236, 72, 153, 0.13);
+}
+
+.findings-panel:focus-within {
+    box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.35), 0 0 32px 10px rgba(13, 148, 136, 0.13);
+    border-left-color: rgba(13, 148, 136, 0.8) !important;
+}
+
+.sidebar-tests-panel:focus-within {
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35), 0 0 32px 10px rgba(124, 58, 237, 0.13);
+}
+
 .symptoms-panel:hover {
     border-color: rgba(251, 113, 133, 0.28);
     border-left-color: rgba(251, 113, 133, 0.80);
@@ -1199,4 +1212,13 @@
     .medicine-workspace {
         grid-template-columns: 1fr;
     }
+}
+
+.medicine-zone {
+    display: contents;
+}
+
+.medicine-zone:focus-within .suggestions-panel,
+.medicine-zone:focus-within .frequent-picks-panel {
+    box-shadow: 0 0 0 2px rgba(18, 104, 232, 0.35), 0 0 32px 10px rgba(18, 104, 232, 0.13);
 }

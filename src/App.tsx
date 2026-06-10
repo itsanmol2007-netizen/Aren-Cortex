@@ -8,13 +8,16 @@ import { MedicineInspector } from "./components/MedicineInspector";
 import { MedicineSuggestions } from "./components/MedicineSuggestions";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
+import { ActiveConsultGuard } from "./components/ActiveConsultGuard";
 import { PreviewPanel } from "./components/PreviewPanel";
 import ReviewModal from "./components/ReviewModal";
 import { SelectedMedicinesBar } from "./components/SelectedMedicinesBar";
 import { Sidebar } from "./features/sidebar/Sidebar";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
+import type { SelectedSymptom, Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
+import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchSymptoms, fetchFindings,
@@ -25,13 +28,13 @@ import {
   freqSlotToLabel, freqLabelToSlot,
   fetchPatientVisits,
   fetchDoctorFavourites,
+  fetchFavouriteMedicines,
   toggleFavouriteMedicine,
   fetchDoctor, fetchHospital,
   type DBSymptom, type DBFinding, type RankedMedicine,
   type SaveConsultMedicine, type RealVisit, type FrequentPick,
   type DBDoctor, type DBHospital,
 } from "./lib/db";
-import type { Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 
 const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
 const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
@@ -82,15 +85,16 @@ function hasActiveConsult(
   selectedFindings: string[]
 ): boolean {
   return !!(
-    patient &&
-    (prescription.length > 0 ||
-      selectedSymptoms.length > 0 ||
-      selectedFindings.length > 0)
+    patient
   );
 }
 
 function App() {
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+  const symptomsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  const findingsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  const medicinesSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  const testsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
 
   const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
   const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
@@ -102,8 +106,8 @@ function App() {
   const [visitId, setVisitId] = useState<string | null>(null);
   const [vitals, setVitals] = useState<Vitals>(emptyVitals);
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
+  const [selectedSymptomsWithIntensity, setSelectedSymptomsWithIntensity] = useState<SelectedSymptom[]>([]);
   const [selectedFindings, setSelectedFindings] = useState<string[]>([]);
-  const [findingsCollapsed, setFindingsCollapsed] = useState(false);
   const [prescription, setPrescription] = useState<PrescriptionMedicine[]>([]);
   const [selectedMedicineId, setSelectedMedicineId] = useState<string | null>(null);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
@@ -114,6 +118,7 @@ function App() {
   const [rankLoading, setRankLoading] = useState(false);
 
   const [favouriteIds, setFavouriteIds] = useState<Set<number>>(new Set());
+  const [favouritePicks, setFavouritePicks] = useState<FrequentPick[]>([]);
 
   const [frequentPicks, setFrequentPicks] = useState<FrequentPick[]>([]);
   const [picksLoading, setPicksLoading] = useState(false);
@@ -126,16 +131,30 @@ function App() {
   const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
   const [toast, setToast] = useState("");
   const [repeatRxBanner, setRepeatRxBanner] = useState<string | null>(null);
-  const [patientModalOpen, setPatientModalOpen] = useState(false);
+  const [patientModalOpen, setPatientModalOpen] = useState(true);
+  const [activeConsultGuardOpen, setActiveConsultGuardOpen] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [followUpDays, setFollowUpDays] = useState<number | null>(null);
   const [adviceNotes, setAdviceNotes] = useState<string>("");
+  const [lastSnapshot, setLastSnapshot] = useState<{ symptoms: string[]; findings: string[] } | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
 
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useConsultKeyboard({
+    symptomsRef: symptomsSearchRef,
+    findingsRef: findingsSearchRef,
+    medicinesRef: medicinesSearchRef,
+    testsRef: testsSearchRef,
+    medicineCount: prescription.length,
+    onNewPatient: () => setPatientModalOpen(true),
+    onReviewRx: () => setIsReviewOpen(true),
+    onUndoSnapshot: handleUndoSnapshot,
+    isAnyModalOpen: patientModalOpen || isReviewOpen || activeConsultGuardOpen,
+  });
 
   const symptomNameToId = useMemo(() => {
     const map = new Map<string, number>();
@@ -156,13 +175,15 @@ function App() {
       fetchSymptoms(),
       fetchFindings(),
       fetchDoctorFavourites(DOCTOR_ID),
+      fetchFavouriteMedicines(DOCTOR_ID),
       fetchDoctor(DOCTOR_ID),
       fetchHospital("38bd8da3-0dd2-43a5-ad09-2d3194c95ba9"),
     ])
-      .then(([symptoms, findings, favs, doctor, hospital]) => {
+      .then(([symptoms, findings, favs, favPicks, doctor, hospital]) => {
         setAllSymptoms(symptoms);
         setAllFindings(findings);
         setFavouriteIds(new Set(favs.map((f) => f.medicine_id)));
+        setFavouritePicks(favPicks);
         setDoctorProfile(doctor);
         setHospitalProfile(hospital);
         setDbReady(true);
@@ -178,13 +199,17 @@ function App() {
       const symptomPayload = selectedSymptoms
         .map((name) => symptomNameToId.get(name))
         .filter((id): id is number => id !== undefined)
-        .map((id) => ({ id, intensity: "moderate" as const }));
+        .map((id) => {
+          const name = [...symptomNameToId.entries()].find(([, v]) => v === id)?.[0];
+          const intensity = selectedSymptomsWithIntensity.find((s) => s.name === name)?.intensity ?? "moderate";
+          return { id, intensity: intensity as "mild" | "moderate" | "severe" };
+        });
 
       const findingPayload = selectedFindings
         .map((name) => findingNameToId.get(name))
         .filter((id): id is number => id !== undefined);
 
-      replaceVisitSymptoms(visitId, symptomPayload.map((s) => s.id)).catch(() => { });
+      replaceVisitSymptoms(visitId, symptomPayload.map((s) => s.id), symptomPayload.map((s) => s.intensity)).catch(() => { });
       replaceVisitFindings(visitId, findingPayload).catch(() => { });
 
       if (!symptomPayload.length && !findingPayload.length) {
@@ -210,7 +235,7 @@ function App() {
     }, 300);
 
     return () => { if (rankTimer.current) clearTimeout(rankTimer.current); };
-  }, [selectedSymptoms, selectedFindings, visitId, symptomNameToId, findingNameToId]);
+  }, [selectedSymptoms, selectedSymptomsWithIntensity, selectedFindings, visitId, symptomNameToId, findingNameToId]);
 
   useEffect(() => {
     if (!visitId) return;
@@ -260,10 +285,10 @@ function App() {
     setToast(msg);
     window.setTimeout(() => setToast(""), 2400);
   };
-
   const resetConsultState = () => {
     setPatient(null);
     setVisitId(null);
+    setSelectedSymptomsWithIntensity([]);
     setVitals(emptyVitals);
     setSelectedSymptoms([]);
     setSelectedFindings([]);
@@ -279,6 +304,7 @@ function App() {
     setRepeatRxBanner(null);
     setFollowUpDays(null);
     setAdviceNotes("");
+    setPatientModalOpen(true);
   };
 
   const handleOpenSidebar = () => {
@@ -308,6 +334,7 @@ function App() {
     try {
       const visit = await createVisit(incomingPatient.id!);
       setVisitId(visit.id);
+      setSelectedSymptomsWithIntensity([]);
       setPatient(incomingPatient);
       setVitals(emptyVitals);
       setSelectedSymptoms([]);
@@ -394,6 +421,7 @@ function App() {
       setPatient(dbPatient);
       setVitals(emptyVitals);
       setSelectedSymptoms([]);
+      setSelectedSymptomsWithIntensity([]);
       setSelectedFindings([]);
       setPrescription([]);
       setSelectedMedicineId(null);
@@ -588,9 +616,8 @@ function App() {
       }).catch((e) => console.warn("logCoprescriptionObservations (non-fatal):", e));
 
       setIsReviewOpen(false);
-      setRepeatRxBanner(null);
+      resetConsultState();
       showToast("Prescription saved ✓");
-      setPatientModalOpen(true);
     } catch (err: any) {
       showToast(`Save failed: ${err.message}`);
     } finally {
@@ -613,6 +640,14 @@ function App() {
     () => prescription.flatMap((m) => m.composition_ids ?? []),
     [prescription]
   );
+
+  function handleUndoSnapshot() {
+    if (!lastSnapshot) return;
+    setSelectedSymptoms((curr) => curr.filter((s) => !lastSnapshot.symptoms.includes(s)));
+    setSelectedSymptomsWithIntensity((curr) => curr.filter((s) => !lastSnapshot.symptoms.includes(s.name)));
+    setSelectedFindings((curr) => curr.filter((f) => !lastSnapshot.findings.includes(f)));
+    setLastSnapshot(null);
+  }
 
   if (!dbReady) {
     return (
@@ -656,7 +691,13 @@ function App() {
           doctor={DOCTOR}
           vitals={vitals}
           onVitalsChange={setVitals}
-          onOpenPatientModal={() => setPatientModalOpen(true)}
+          onOpenPatientModal={() => {
+            if (patient && visitId) {
+              setActiveConsultGuardOpen(true);
+            } else {
+              setPatientModalOpen(true);
+            }
+          }}
           onReviewRx={() => setIsReviewOpen(true)}
           onCancelConsult={resetConsultState}
           onOpenSidebar={handleOpenSidebar}
@@ -696,31 +737,38 @@ function App() {
                   items={symptomNames}
                   selected={selectedSymptoms}
                   onChange={setSelectedSymptoms}
+                  selectedWithIntensity={selectedSymptomsWithIntensity}
+                  onChangeWithIntensity={setSelectedSymptomsWithIntensity}
+                  searchRef={symptomsSearchRef}
                 />
                 <FindingsPanel
                   findings={allFindings}
                   selected={selectedFindings}
-                  collapsed={findingsCollapsed}
-                  onToggleCollapsed={() => setFindingsCollapsed((c) => !c)}
                   onChange={setSelectedFindings}
+                  selectedSymptoms={selectedSymptoms}
+                  searchRef={findingsSearchRef}
                 />
               </div>
 
               <div className="medicine-workspace">
-                <MedicineSuggestions
-                  medicines={rankedMedicines}
-                  selectedIds={prescription.map((m) => m.id)}
-                  loading={rankLoading}
-                  onAdd={handleSuggestionClick}
-                  favouriteIds={favouriteIds}
-                  onToggleFavourite={handleToggleFavourite}
-                />
-                <FrequentPicksPanel
-                  picks={frequentPicks}
-                  loading={picksLoading}
-                  addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
-                  onAdd={handlePickAdd}
-                />
+                <div className="medicine-zone">
+                  <MedicineSuggestions
+                    medicines={rankedMedicines}
+                    selectedIds={prescription.map((m) => m.id)}
+                    loading={rankLoading}
+                    onAdd={handleSuggestionClick}
+                    favouriteIds={favouriteIds}
+                    onToggleFavourite={handleToggleFavourite}
+                    searchRef={medicinesSearchRef}
+                  />
+                  <FrequentPicksPanel
+                    picks={frequentPicks}
+                    loading={picksLoading}
+                    addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
+                    onAdd={handlePickAdd}
+                    favouritePicks={favouritePicks}
+                  />
+                </div>
               </div>
 
               <SelectedMedicinesBar
@@ -738,6 +786,7 @@ function App() {
               onTestsChange={setSelectedTests}
               onLabChange={setSelectedLab}
               onReviewRx={() => setIsReviewOpen(true)}
+              searchRef={testsSearchRef}
             />
           </main >
         </div >
@@ -771,9 +820,28 @@ function App() {
       {toast && <div className="toast">{toast}</div>}
 
       {
+        activeConsultGuardOpen && (
+          <ActiveConsultGuard
+            visitId={visitId!}  // ← ADD THIS LINE (the ! means "I promise it's not null")
+            patientName={patient?.name ?? "this patient"}
+            onDiscard={() => {
+              resetConsultState();
+              setActiveConsultGuardOpen(false);
+            }}
+            onComplete={() => {
+              // After saving as draft/referral, reset and start new consult
+              resetConsultState();
+              setActiveConsultGuardOpen(false);
+              setPatientModalOpen(true); // Open modal to start new consult
+            }}
+            onClose={() => setActiveConsultGuardOpen(false)}
+          />
+        )
+      }
+      {
         patientModalOpen && (
           <PatientModal
-            onClose={() => setPatientModalOpen(false)}
+            onClose={patient ? () => setPatientModalOpen(false) : () => { }}
             onConfirm={handlePatientConfirm}
           />
         )

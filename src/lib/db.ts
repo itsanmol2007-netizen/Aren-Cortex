@@ -2,9 +2,9 @@ import { supabase } from "./supabase";
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────────
 export const DOCTOR_ID = "5cd330d2-5a48-4098-b865-ed3393e08698";
-export const DOCTOR_NAME = "Anmol Pandey";
+export const DOCTOR_NAME = "SK Pandey";
 export const DOCTOR_SPECIALIZATION = "general";
-export const HOSPITAL_ID: string | null = null;
+export const HOSPITAL_ID = "38bd8da3-0dd2-43a5-ad09-2d3194c95ba9";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBSymptom = { id: number; name: string };
@@ -167,13 +167,14 @@ export async function createVisit(patientId: string): Promise<DBVisit> {
 // ── VISIT SYMPTOMS ─────────────────────────────────────────────────────────────
 export async function saveVisitSymptoms(
   visitId: string,
-  symptomIds: number[]
+  symptomIds: number[],
+  intensities?: string[]
 ): Promise<void> {
   if (!symptomIds.length) return;
-  const rows = symptomIds.map((id) => ({
+  const rows = symptomIds.map((id, index) => ({
     visit_id: visitId,
     symptom_id: id,
-    intensity: "moderate",
+    intensity: intensities?.[index] ?? "moderate",
   }));
   const { error } = await supabase.from("visit_symptoms").insert(rows);
   if (error) throw new Error(`saveVisitSymptoms: ${error.message}`);
@@ -181,10 +182,11 @@ export async function saveVisitSymptoms(
 
 export async function replaceVisitSymptoms(
   visitId: string,
-  symptomIds: number[]
+  symptomIds: number[],
+  intensities?: string[]
 ): Promise<void> {
   await supabase.from("visit_symptoms").delete().eq("visit_id", visitId);
-  if (symptomIds.length) await saveVisitSymptoms(visitId, symptomIds);
+  if (symptomIds.length) await saveVisitSymptoms(visitId, symptomIds, intensities);
 }
 
 // ── VISIT FINDINGS ─────────────────────────────────────────────────────────────
@@ -692,6 +694,32 @@ export async function fetchFrequentPicks(opts: {
   return results;
 }
 
+export async function fetchFavouriteMedicines(doctorId: string): Promise<FrequentPick[]> {
+  const { data, error } = await supabase
+    .from("doctor_medicine_bias")
+    .select(`
+      medicine_id,
+      composition_id,
+      medicines!inner(name),
+      compositions!inner(name)
+    `)
+    .eq("doctor_id", doctorId)
+    .eq("is_favourite", true)
+    .order("selection_count", { ascending: false });
+
+  if (error || !data) return [];
+
+  return data.map((row: any) => ({
+    medicine_id: row.medicine_id,
+    medicine_name: row.medicines.name,
+    composition_id: row.composition_id,
+    composition_name: row.compositions.name,
+    hint_label: "Favourite",
+    clinical_reason: "",
+    source: "personal" as const,
+  }));
+}
+
 // ── SYNAPSE: LOG CO-PRESCRIPTION OBSERVATIONS ─────────────────────────────────
 export async function logCoprescriptionObservations(opts: {
   visitId: string;
@@ -1107,4 +1135,85 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
   }
 
   return deduped;
+}
+
+/// ── VISIT STATUS MANAGEMENT ────────────────────────────────────────────────────
+// Update visit status (draft, referred, discarded) while preserving existing data
+export async function updateVisitStatus(
+  visitId: string,
+  status: 'draft' | 'referred' | 'discarded'
+): Promise<void> {
+  const { error } = await supabase
+    .from("visits")
+    .update({
+      status: status
+      // removed updated_at since your table doesn't have this column
+    })
+    .eq("id", visitId);
+
+  if (error) throw new Error(`updateVisitStatus: ${error.message}`);
+}
+
+// Optional: Get all draft visits for a doctor
+export async function fetchDraftVisits(doctorId: string): Promise<DBVisit[]> {
+  const { data, error } = await supabase
+    .from("visits")
+    .select("id, patient_id, assigned_doctor_id, status, started_at")
+    .eq("assigned_doctor_id", doctorId)
+    .in("status", ['draft', 'referred'])
+    .order("started_at", { ascending: false });
+
+  if (error) throw new Error(`fetchDraftVisits: ${error.message}`);
+  return data ?? [];
+}
+
+// Optional: Get a single visit with its symptoms and findings
+export async function fetchVisitWithDetails(visitId: string): Promise<{
+  visit: DBVisit;
+  symptoms: DBSymptom[];
+  findings: DBFinding[];
+}> {
+  // Get visit
+  const { data: visit, error: visitErr } = await supabase
+    .from("visits")
+    .select("*")
+    .eq("id", visitId)
+    .single();
+  if (visitErr) throw new Error(`fetchVisitWithDetails: ${visitErr.message}`);
+
+  // Get symptoms for this visit
+  const { data: symptomRows, error: symErr } = await supabase
+    .from("visit_symptoms")
+    .select("symptom_id")
+    .eq("visit_id", visitId);
+  if (symErr) throw new Error(`fetchVisitWithDetails symptoms: ${symErr.message}`);
+
+  const symptomIds = symptomRows?.map(s => s.symptom_id) ?? [];
+  let symptoms: DBSymptom[] = [];
+  if (symptomIds.length) {
+    const { data: symData, error: symDataErr } = await supabase
+      .from("symptoms")
+      .select("id, name")
+      .in("id", symptomIds);
+    if (!symDataErr && symData) symptoms = symData;
+  }
+
+  // Get findings for this visit
+  const { data: findingRows, error: findErr } = await supabase
+    .from("visit_findings")
+    .select("finding_id")
+    .eq("visit_id", visitId);
+  if (findErr) throw new Error(`fetchVisitWithDetails findings: ${findErr.message}`);
+
+  const findingIds = findingRows?.map(f => f.finding_id) ?? [];
+  let findings: DBFinding[] = [];
+  if (findingIds.length) {
+    const { data: findData, error: findDataErr } = await supabase
+      .from("findings")
+      .select("id, name, group_name, is_abnormal")
+      .in("id", findingIds);
+    if (!findDataErr && findData) findings = findData;
+  }
+
+  return { visit, symptoms, findings };
 }
