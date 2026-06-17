@@ -1,4 +1,4 @@
-import { Search, UserCheck, X, User, Phone, MapPin, Sparkles, Loader2 } from "lucide-react";
+import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { searchPatients, findPatientByPhone, type DBPatient } from "../lib/db";
 import type { Gender, Patient } from "../types";
@@ -85,7 +85,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
       <div className="pm-card">
         <div className="pm-top-stripe" />
 
-        {/* Header */}
+        {/* Header — no close button: patient intake is mandatory, not dismissable */}
         <div className="pm-header">
           <div className="pm-header-left">
             <div className="pm-header-icon"><Sparkles size={14} /></div>
@@ -94,9 +94,6 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
               <h3 className="pm-title">Find or create patient</h3>
             </div>
           </div>
-          <button className="pm-close-btn" type="button" onClick={onClose} aria-label="Close">
-            <X size={14} />
-          </button>
         </div>
 
         {/* Mode toggle */}

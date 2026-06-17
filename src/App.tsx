@@ -13,6 +13,7 @@ import { PreviewPanel } from "./components/PreviewPanel";
 import ReviewModal from "./components/ReviewModal";
 import { SelectedMedicinesBar } from "./components/SelectedMedicinesBar";
 import { Sidebar } from "./features/sidebar/Sidebar";
+import { GlobalLogoTrigger } from "./components/GlobalLogoTrigger";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import type { SelectedSymptom, Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 import { PatientsPage } from "./features/patients/PatientsPage";
@@ -30,10 +31,10 @@ import {
   fetchDoctorFavourites,
   fetchFavouriteMedicines,
   toggleFavouriteMedicine,
-  fetchDoctor, fetchHospital,
+  fetchDoctor, fetchHospital, fetchSnapshotSuggestions,
   type DBSymptom, type DBFinding, type RankedMedicine,
   type SaveConsultMedicine, type RealVisit, type FrequentPick,
-  type DBDoctor, type DBHospital,
+  type DBDoctor, type DBHospital, type ClinicalSnapshot,
 } from "./lib/db";
 
 const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
@@ -138,7 +139,7 @@ function App() {
   const [followUpDays, setFollowUpDays] = useState<number | null>(null);
   const [adviceNotes, setAdviceNotes] = useState<string>("");
   const [lastSnapshot, setLastSnapshot] = useState<{ symptoms: string[]; findings: string[] } | null>(null);
-
+  const [recentSnapshots, setRecentSnapshots] = useState<ClinicalSnapshot[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
 
@@ -178,14 +179,16 @@ function App() {
       fetchFavouriteMedicines(DOCTOR_ID),
       fetchDoctor(DOCTOR_ID),
       fetchHospital("38bd8da3-0dd2-43a5-ad09-2d3194c95ba9"),
+      fetchSnapshotSuggestions("fever"),
     ])
-      .then(([symptoms, findings, favs, favPicks, doctor, hospital]) => {
+      .then(([symptoms, findings, favs, favPicks, doctor, hospital, snapshots]) => {
         setAllSymptoms(symptoms);
         setAllFindings(findings);
         setFavouriteIds(new Set(favs.map((f) => f.medicine_id)));
         setFavouritePicks(favPicks);
         setDoctorProfile(doctor);
         setHospitalProfile(hospital);
+        setRecentSnapshots((snapshots as ClinicalSnapshot[]).slice(0, 3));
         setDbReady(true);
       })
       .catch((err) => showToast(`DB load failed: ${err.message}`));
@@ -320,6 +323,11 @@ function App() {
     }
     setActivePage(page);
     setSidebarOpen(false);
+    // Any consult-only overlay must die the moment we leave the consult screen —
+    // it has no business surviving on Patients/Prescriptions/etc.
+    setPatientModalOpen(false);
+    setIsReviewOpen(false);
+    setActiveConsultGuardOpen(false);
   };
 
   const handleSidebarConsult = () => {
@@ -597,22 +605,33 @@ function App() {
         .sort((a, b) => a - b)
         .join("-");
 
-      const allSelectedCompositionIds = prescription.flatMap(
-        (m) => m.composition_ids?.length ? m.composition_ids : (m.primary_composition_id ? [m.primary_composition_id] : [])
-      ).filter((id) => id > 0);
+      // Build {medicineId, compositionId} pairs — one entry per medicine added.
+      // For combos (e.g. Augmentin), we use primary_composition_id as the signal.
+      const selectedMedicinesForLoop = prescription
+        .filter((m) => m.medicine_id && (m.primary_composition_id || m.composition_ids?.length))
+        .map((m) => ({
+          medicineId: m.medicine_id,
+          compositionId: m.primary_composition_id ?? m.composition_ids?.[0] ?? 0,
+        }))
+        .filter((m) => m.compositionId > 0);
 
+      // rankedMedicines is already sorted by score — map to medicine_id order.
+      const rankedMedicineIds = rankedMedicines
+        .map((m) => m.medicine_id)
+        .filter(Boolean);
       runLearningLoop({
-        visitId,
         tagSignature,
-        selectedCompositionIds: allSelectedCompositionIds,
-        rankedCompositionIds,
+        symptoms: selectedSymptomsWithIntensity,
+        findingIds: selectedFindings.map((f) => f.id),
+        selectedMedicines: selectedMedicinesForLoop,
+        rankedMedicineIds,
       }).catch((e) => console.warn("Learning loop failed (non-fatal):", e));
 
       logCoprescriptionObservations({
         visitId,
         doctorId: DOCTOR_ID,
         tagSignature,
-        compositionIds: [...new Set(allSelectedCompositionIds)],
+        compositionIds: [...new Set(prescriptionCompositionIds)],
       }).catch((e) => console.warn("logCoprescriptionObservations (non-fatal):", e));
 
       setIsReviewOpen(false);
@@ -640,6 +659,31 @@ function App() {
     () => prescription.flatMap((m) => m.composition_ids ?? []),
     [prescription]
   );
+
+  function handleSnapshotSelect(snapshot: ClinicalSnapshot) {
+    // Save current state so Ctrl+Z can undo the whole bundle
+    setLastSnapshot({
+      symptoms: snapshot.symptoms.map((s) => s.name),
+      findings: snapshot.findings.map((f) => f.name),
+    });
+
+    // Merge snapshot symptoms into selected (no duplicates)
+    const newSymptomNames = snapshot.symptoms.map((s) => s.name);
+    setSelectedSymptoms((curr) => [...new Set([...curr, ...newSymptomNames])]);
+    setSelectedSymptomsWithIntensity((curr) => {
+      const existing = new Set(curr.map((s) => s.name));
+      const toAdd = newSymptomNames
+        .filter((name) => !existing.has(name))
+        .map((name) => ({ name, intensity: "moderate" as const }));
+      return [...curr, ...toAdd];
+    });
+
+    // Merge snapshot findings into selected (no duplicates)
+    const newFindingNames = snapshot.findings.map((f) => f.name);
+    setSelectedFindings((curr) => [...new Set([...curr, ...newFindingNames])]);
+
+    showToast(`${snapshot.name} applied — ${newSymptomNames.length} symptoms added`);
+  }
 
   function handleUndoSnapshot() {
     if (!lastSnapshot) return;
@@ -682,6 +726,17 @@ function App() {
         onConsult={handleSidebarConsult}
         doctor={DOCTOR}
         logoRef={logoRef}
+      />
+
+      {/* Invisible, always-reachable click target that mirrors wherever the
+          real logo currently is. Lives outside every header's stacking
+          context, so it stays clickable even while the patient modal (or
+          any other overlay) is covering the screen. See component for why. */}
+      <GlobalLogoTrigger
+        logoRef={logoRef}
+        onOpenSidebar={handleOpenSidebar}
+        sidebarOpen={sidebarOpen}
+        active={patientModalOpen || isReviewOpen || activeConsultGuardOpen}
       />
 
       {/* Topbar and vitals only render on the consult workspace */}
@@ -740,12 +795,17 @@ function App() {
                   selectedWithIntensity={selectedSymptomsWithIntensity}
                   onChangeWithIntensity={setSelectedSymptomsWithIntensity}
                   searchRef={symptomsSearchRef}
+                  onSnapshotSelect={handleSnapshotSelect}
+                  recentSnapshots={recentSnapshots}
                 />
                 <FindingsPanel
                   findings={allFindings}
                   selected={selectedFindings}
                   onChange={setSelectedFindings}
                   selectedSymptoms={selectedSymptoms}
+                  symptomIds={selectedSymptomsWithIntensity.map(s =>
+                    allSymptoms.find(sym => sym.name === s.name)?.id
+                  ).filter(Boolean) as number[]}
                   searchRef={findingsSearchRef}
                 />
               </div>
@@ -820,7 +880,7 @@ function App() {
       {toast && <div className="toast">{toast}</div>}
 
       {
-        activeConsultGuardOpen && (
+        !isFeaturePage && activeConsultGuardOpen && (
           <ActiveConsultGuard
             visitId={visitId!}  // ← ADD THIS LINE (the ! means "I promise it's not null")
             patientName={patient?.name ?? "this patient"}
@@ -839,7 +899,7 @@ function App() {
         )
       }
       {
-        patientModalOpen && (
+        !isFeaturePage && patientModalOpen && (
           <PatientModal
             onClose={patient ? () => setPatientModalOpen(false) : () => { }}
             onConfirm={handlePatientConfirm}
@@ -848,7 +908,7 @@ function App() {
       }
 
       {
-        isReviewOpen && patient && (
+        !isFeaturePage && isReviewOpen && patient && (
           <ReviewModal
             patient={patient}
             doctor={{

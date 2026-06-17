@@ -195,7 +195,10 @@ export function PatientHeader({
           <rect x="195" y="0" width="55" height="72" fill="rgba(168,85,247,0.06)" />
         </svg>
 
-        {/* Brand — logo pill is the sidebar trigger */}
+        {/* Brand — purely visual here now. The actual click target that opens
+            the sidebar is GlobalLogoTrigger (rendered at the App level), which
+            tracks this element's position but lives outside this header's
+            stacking context so it stays clickable under any overlay. */}
         <div className="tb-brand">
           <div
             ref={logoRef}
