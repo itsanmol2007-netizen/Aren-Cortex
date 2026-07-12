@@ -1,0 +1,1326 @@
+/* ── PATIENT RECORDS — LIST, TODAY CARDS, ROWS ───────────────────────────────
+   Hierarchy pass. Strong section titles. Chips are annotations, not stars.
+   Cards are white on tinted ground — clearly layered.
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Section headers ─────────────────────────────────────────────────────────── */
+
+.prec-list-section {
+    margin-bottom: 20px;
+}
+
+.prec-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 0 2px;
+}
+
+/* Strong section title — commands the section */
+.prec-section-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: #374151;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Extending rule — clean separation */
+.prec-section-header::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #d0d8e8;
+}
+
+.prec-section-count {
+    font-size: 10px;
+    font-weight: 700;
+    color: #5b21b6;
+    background: rgba(124, 58, 237, 0.08);
+    border: 1px solid rgba(124, 58, 237, 0.18);
+    border-radius: 10px;
+    padding: 1px 7px;
+    flex-shrink: 0;
+}
+
+/* ── Today cards ─────────────────────────────────────────────────────────────── */
+
+.prec-today-scroll {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scrollbar-width: none;
+}
+
+.prec-today-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* White card on tinted ground — clear elevation without shadow theatrics */
+.prec-today-card {
+    flex-shrink: 0;
+    width: 144px;
+    background: #ffffff;
+    border: 1px solid #d0d8e8;
+    /* Left accent communicates patient status at a glance */
+    border-left: 3px solid #1268e8;
+    border-radius: 10px;
+    padding: 10px 11px 9px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.13s, box-shadow 0.13s, transform 0.13s;
+    position: relative;
+}
+
+.prec-today-card:hover {
+    border-color: #1268e8;
+    box-shadow: 0 2px 10px rgba(18, 104, 232, 0.12);
+    transform: translateY(-1px);
+}
+
+.prec-today-card.is-selected {
+    border-color: #1268e8;
+    background: #f0f6ff;
+    box-shadow: 0 0 0 2px rgba(18, 104, 232, 0.15);
+}
+
+.prec-today-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 7px;
+    position: relative;
+}
+
+/* Patient name inside card — dominant */
+.prec-today-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+    margin-bottom: 1px;
+    letter-spacing: -0.01em;
+}
+
+.prec-today-sub {
+    font-size: 10px;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+/* Chief complaint — annotation, not headline */
+.prec-today-chief {
+    font-size: 9px;
+    font-weight: 600;
+    color: #1268e8;
+    background: #eff5ff;
+    border: 1px solid rgba(18, 104, 232, 0.20);
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+}
+
+.prec-today-chief--empty {
+    color: #94a3b8;
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    font-weight: 400;
+    font-style: italic;
+}
+
+.prec-today-time {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: #94a3b8;
+}
+
+/* ── Patient rows ───────────────────────────────────────────────────────────── */
+
+.prec-patient-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+/* White card. Clear border. No decorative gradients. */
+.prec-patient-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    background: #ffffff;
+    border: 1px solid #d0d8e8;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Left accent bar — slides in on hover, gives directional hierarchy */
+.prec-patient-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #1268e8;
+    opacity: 0;
+    transition: opacity 0.13s;
+    border-radius: 0 2px 2px 0;
+}
+
+.prec-patient-row:hover {
+    background: #f7f9ff;
+    border-color: #a8bee8;
+    box-shadow: 0 1px 6px rgba(18, 104, 232, 0.09);
+}
+
+.prec-patient-row:hover::before {
+    opacity: 1;
+}
+
+.prec-patient-row.is-selected {
+    background: #eff5ff;
+    border-color: #1268e8;
+    box-shadow: 0 0 0 1px rgba(18, 104, 232, 0.15);
+}
+
+.prec-patient-row.is-selected::before {
+    opacity: 1;
+}
+
+.prec-row-main {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Tier 1 — Name: dominant, dark, commands row */
+.prec-row-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #111827;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 2px;
+    letter-spacing: -0.015em;
+    line-height: 1.3;
+}
+
+/* Tier 2 — Demographics: clearly subordinate */
+.prec-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.prec-row-phone {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.prec-row-meta-sep {
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #c0cce0;
+    flex-shrink: 0;
+}
+
+/* Tier 3 — Chips: annotations, barely visible until needed */
+.prec-row-symptoms {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.prec-row-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.prec-row-time {
+    font-size: 10px;
+    color: #94a3b8;
+}
+
+.prec-row-arrow {
+    color: #c0cce0;
+    transition: transform 0.12s, color 0.12s;
+}
+
+.prec-patient-row:hover .prec-row-arrow,
+.prec-patient-row.is-selected .prec-row-arrow {
+    color: #1268e8;
+    transform: translateX(3px);
+}
+
+/* ── Avatar ─────────────────────────────────────────────────────────────────── */
+
+/* Strong, defined. Initials are readable. Purple text on blue-grey tint. */
+.prec-avatar {
+    border-radius: 50%;
+    background: #e8eeff;
+    border: 1.5px solid #b8c8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: #3730a3;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+
+/* ── Active dot ─────────────────────────────────────────────────────────────── */
+
+.prec-active-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #16a34a;
+    box-shadow: 0 0 5px rgba(22, 163, 74, 0.50);
+    animation: prec-pulse 2.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+.prec-active-dot--card {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+}
+
+@keyframes prec-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.40;
+    }
+}
+
+/* ── Status pill ─────────────────────────────────────────────────────────────── */
+
+.prec-status-pill {
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 2px 8px;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+
+.prec-status-pill.is-done {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.prec-status-pill.is-active {
+    background: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+
+/* ── Chips — annotation level, not primary visual ────────────────────────────── */
+
+/* Symptom chips: small, tinted, clearly secondary */
+.prec-symptom-chip {
+    font-size: 9px;
+    font-weight: 600;
+    background: #eff5ff;
+    border: 1px solid rgba(18, 104, 232, 0.20);
+    color: #1e60c8;
+    border-radius: 4px;
+    padding: 1px 5px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    letter-spacing: 0.01em;
+}
+
+/* Faded for previous-visit context */
+.prec-symptom-chip--faded {
+    opacity: 0.50;
+}
+
+/* Finding chips: neutral, clearly tertiary */
+.prec-finding-chip {
+    font-size: 9px;
+    font-weight: 500;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    border-radius: 4px;
+    padding: 1px 5px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Abnormal finding — deserves attention, red accent */
+.prec-finding-chip.is-abnormal {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.prec-symptom-more {
+    font-size: 9px;
+    color: #94a3b8;
+    padding: 1px 3px;
+    white-space: nowrap;
+}
+
+/* ── Loading & empty states ─────────────────────────────────────────────────── */
+
+.prec-loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.prec-loading-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #93c5fd;
+    animation: prec-pulse 1.2s ease-in-out infinite;
+}
+
+.prec-loading-dot:nth-child(2) {
+    animation-delay: 0.18s;
+}
+
+.prec-loading-dot:nth-child(3) {
+    animation-delay: 0.36s;
+}
+
+.prec-empty-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 0;
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+/* ── PATIENTS LIST — TABLE + TODAY CARD ATMOSPHERIC TREATMENT ─────────────────
+   Add this block to the BOTTOM of patients-list.css
+   Owns: .prec-table-*, .prec-today-card glow/footer/status additions
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Today card — atmospheric overrides ─────────────────────────────────────
+   The base .prec-today-card styles stay in patients-list.css.
+   These additions layer the atmospheric SVG glow + footer + status chip.
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-today-card {
+    position: relative;
+    overflow: hidden;
+    /* Subtle purple-tinted border upgrade */
+    border: 1px solid rgba(139, 92, 246, 0.18);
+    background: linear-gradient(160deg, #ffffff 60%, rgba(237, 233, 254, 0.35) 100%);
+    transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s;
+}
+
+.prec-today-card:hover {
+    border-color: rgba(139, 92, 246, 0.35);
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.10), 0 1px 4px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+/* Active card — warm pink tint */
+.prec-today-card.is-active {
+    border-color: rgba(244, 114, 182, 0.30);
+    background: linear-gradient(160deg, #ffffff 55%, rgba(253, 242, 248, 0.50) 100%);
+}
+
+.prec-today-card.is-active:hover {
+    border-color: rgba(244, 114, 182, 0.55);
+    box-shadow: 0 4px 20px rgba(219, 39, 119, 0.10), 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* Atmospheric SVG glow — positioned at card top, pointer-events off */
+.prec-today-card-glow {
+    position: absolute;
+    top: -8px;
+    left: 0;
+    width: 100%;
+    height: 90px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.85;
+}
+
+/* All direct children of today-card sit above the glow */
+.prec-today-card>*:not(.prec-today-card-glow) {
+    position: relative;
+    z-index: 1;
+}
+
+/* Footer row — time + status chip inline */
+.prec-today-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    gap: 6px;
+}
+
+.prec-today-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #94a3b8;
+}
+
+/* Status chip on today card */
+.prec-today-status-chip {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 20px;
+    flex-shrink: 0;
+}
+
+.prec-today-status-chip.is-active {
+    background: rgba(244, 114, 182, 0.14);
+    color: #be185d;
+    border: 1px solid rgba(244, 114, 182, 0.30);
+}
+
+.prec-today-status-chip.is-done {
+    background: rgba(22, 163, 74, 0.09);
+    color: #15803d;
+    border: 1px solid rgba(22, 163, 74, 0.20);
+}
+
+/* ── Dense Patient Table ─────────────────────────────────────────────────────
+   Replaces simple .prec-patient-row list in the All Patients section.
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid #d0d8e8;
+    background: #ffffff;
+    scrollbar-width: thin;
+    scrollbar-color: #c0cce0 transparent;
+}
+
+.prec-table-wrap::-webkit-scrollbar {
+    height: 4px;
+}
+
+.prec-table-wrap::-webkit-scrollbar-thumb {
+    background: #c0cce0;
+    border-radius: 2px;
+}
+
+.prec-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 760px;
+}
+
+/* ── Table head ── */
+
+.prec-table-head-row {
+    background: #f7f9fc;
+    border-bottom: 1px solid #d0d8e8;
+}
+
+.prec-table-th {
+    padding: 9px 12px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #64748b;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid #d0d8e8;
+}
+
+.prec-table-th--center {
+    text-align: center;
+}
+
+.prec-table-th--arrow {
+    width: 32px;
+    padding: 0;
+}
+
+.prec-table-th--patient {
+    min-width: 180px;
+}
+
+/* ── Table rows ── */
+
+.prec-table-row {
+    cursor: pointer;
+    border-bottom: 1px solid #edf0f7;
+    transition: background 0.10s;
+}
+
+.prec-table-row:last-child {
+    border-bottom: none;
+}
+
+.prec-table-row:hover {
+    background: #f4f7ff;
+}
+
+/* Active row — subtle blue-left accent */
+.prec-table-row.is-active {
+    background: #fefbff;
+}
+
+.prec-table-row.is-active:hover {
+    background: #fdf4ff;
+}
+
+/* Zebra — every even row slightly tinted */
+.prec-table-row:nth-child(even) {
+    background: #fafbfd;
+}
+
+.prec-table-row:nth-child(even):hover {
+    background: #f4f7ff;
+}
+
+/* ── Table cells ── */
+
+.prec-table-cell {
+    padding: 10px 12px;
+    vertical-align: middle;
+    color: #1e293b;
+}
+
+.prec-table-cell--patient {
+    padding-left: 14px;
+}
+
+.prec-table-cell--status {
+    white-space: nowrap;
+}
+
+.prec-table-cell--count {
+    text-align: center;
+}
+
+.prec-table-cell--arrow {
+    padding: 0 8px;
+    width: 32px;
+}
+
+.prec-table-cell--visit {
+    white-space: nowrap;
+}
+
+/* ── Patient cell ── */
+
+.prec-table-patient-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.prec-table-avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.prec-table-active-dot {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    border: 1.5px solid #ffffff;
+    animation: prec-pulse 2s ease-in-out infinite;
+}
+
+.prec-table-patient-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.prec-table-patient-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prec-table-patient-meta {
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.prec-table-meta-sep {
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    margin: 0 2px;
+}
+
+/* ── Chip cells ── */
+
+.prec-table-chip-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+
+.prec-table-chip {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prec-table-chip--blue {
+    background: #eff5ff;
+    color: #1d4ed8;
+    border: 1px solid rgba(18, 104, 232, 0.18);
+}
+
+.prec-table-chip--purple {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid rgba(109, 40, 217, 0.15);
+}
+
+.prec-table-chip--green {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid rgba(22, 163, 74, 0.18);
+}
+
+.prec-table-chip-more {
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* ── Medicine cell ── */
+
+.prec-table-med-cell {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.prec-table-med-icon {
+    color: #1268e8;
+    flex-shrink: 0;
+}
+
+.prec-table-med-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+}
+
+/* ── Test cell ── */
+
+.prec-table-test-icon {
+    color: #7c3aed;
+    flex-shrink: 0;
+}
+
+.prec-table-test-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+}
+
+/* Nil / empty state in cell */
+.prec-table-nil {
+    font-size: 11px;
+    color: #cbd5e1;
+    font-weight: 500;
+}
+
+/* ── Last visit cell ── */
+
+.prec-table-visit-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.prec-table-visit-sub {
+    display: block;
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 1px;
+}
+
+/* ── Visit count cell ── */
+
+.prec-table-count {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.prec-table-count-label {
+    display: block;
+    font-size: 9px;
+    color: #94a3b8;
+    font-weight: 500;
+    margin-top: 1px;
+}
+
+/* ── Status cell ── */
+
+.prec-table-status-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.prec-table-time-ago {
+    font-size: 10px;
+    color: #94a3b8;
+}
+
+/* ── Arrow cell ── */
+
+.prec-table-arrow {
+    color: #cbd5e1;
+    transition: color 0.12s, transform 0.12s;
+}
+
+.prec-table-row:hover .prec-table-arrow {
+    color: #1268e8;
+    transform: translateX(2px);
+}
+
+/* ── Inactive status pill variant ── */
+
+.prec-status-pill.is-inactive {
+    background: rgba(100, 116, 139, 0.10);
+    color: #475569;
+    border: 1px solid rgba(100, 116, 139, 0.20);
+}
+
+/* ── PATIENTS LIST — TABLE + TODAY CARD TREATMENT ────────────────────────────
+   Append entire contents to BOTTOM of patients-list.css
+   Owns: .prec-table-*, .prec-today-card atmospheric additions,
+         .prec-today-footer, .prec-today-status-chip, .prec-today-card-topbar
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Today card — atmospheric top-bar treatment ─────────────────────────────
+   Replaces the SVG blob approach. A 3px colored bar at card top + subtle
+   background tint. Clearly intentional, never looks like a loading artifact.
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-today-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(139, 92, 246, 0.16);
+    background: #ffffff;
+    transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s;
+}
+
+.prec-today-card:hover {
+    border-color: rgba(139, 92, 246, 0.32);
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.10), 0 1px 4px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px);
+}
+
+/* The atmospheric top bar — 3px gradient stripe */
+.prec-today-card-topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%);
+    border-radius: 10px 10px 0 0;
+}
+
+/* Active card — warm pink dominant */
+.prec-today-card.is-active {
+    border-color: rgba(244, 114, 182, 0.28);
+}
+
+.prec-today-card.is-active .prec-today-card-topbar {
+    background: linear-gradient(90deg, #ec4899 0%, #f472b6 50%, #fb923c 100%);
+}
+
+.prec-today-card.is-active:hover {
+    border-color: rgba(244, 114, 182, 0.50);
+    box-shadow: 0 4px 16px rgba(219, 39, 119, 0.10), 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Footer row — time + status chip side by side */
+.prec-today-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    gap: 4px;
+}
+
+.prec-today-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #475569;
+}
+
+/* Status chip on today card */
+.prec-today-status-chip {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 20px;
+    flex-shrink: 0;
+}
+
+.prec-today-status-chip.is-active {
+    background: rgba(244, 114, 182, 0.13);
+    color: #be185d;
+    border: 1px solid rgba(244, 114, 182, 0.28);
+}
+
+.prec-today-status-chip.is-done {
+    background: rgba(22, 163, 74, 0.08);
+    color: #15803d;
+    border: 1px solid rgba(22, 163, 74, 0.18);
+}
+
+/* ── Dense Patient Table ─────────────────────────────────────────────────────
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid #d0d8e8;
+    background: #ffffff;
+    scrollbar-width: thin;
+    scrollbar-color: #c0cce0 transparent;
+}
+
+.prec-table-wrap::-webkit-scrollbar {
+    height: 4px;
+}
+
+.prec-table-wrap::-webkit-scrollbar-thumb {
+    background: #c0cce0;
+    border-radius: 2px;
+}
+
+.prec-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 760px;
+}
+
+/* Head */
+.prec-table-head-row {
+    background: #f7f9fc;
+    border-bottom: 1px solid #d0d8e8;
+}
+
+.prec-table-th {
+    padding: 9px 12px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #64748b;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid #d0d8e8;
+}
+
+.prec-table-th--center {
+    text-align: center;
+}
+
+.prec-table-th--arrow {
+    width: 32px;
+    padding: 0;
+}
+
+.prec-table-th--patient {
+    min-width: 180px;
+}
+
+/* Rows */
+.prec-table-row {
+    cursor: pointer;
+    border-bottom: 1px solid #edf0f7;
+    transition: background 0.10s;
+}
+
+.prec-table-row:last-child {
+    border-bottom: none;
+}
+
+.prec-table-row:hover {
+    background: #f4f7ff;
+}
+
+.prec-table-row:nth-child(even) {
+    background: #fafbfd;
+}
+
+.prec-table-row:nth-child(even):hover {
+    background: #f4f7ff;
+}
+
+.prec-table-row.is-active {
+    background: #fefbff;
+}
+
+.prec-table-row.is-active:hover {
+    background: #fdf4ff;
+}
+
+/* Cells */
+.prec-table-cell {
+    padding: 10px 12px;
+    vertical-align: middle;
+    color: #1e293b;
+}
+
+.prec-table-cell--patient {
+    padding-left: 14px;
+}
+
+.prec-table-cell--status {
+    white-space: nowrap;
+}
+
+.prec-table-cell--count {
+    text-align: center;
+}
+
+.prec-table-cell--arrow {
+    padding: 0 8px;
+    width: 32px;
+}
+
+.prec-table-cell--visit {
+    white-space: nowrap;
+}
+
+/* Patient cell */
+.prec-table-patient-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.prec-table-avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.prec-table-active-dot {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    border: 1.5px solid #ffffff;
+}
+
+.prec-table-patient-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.prec-table-patient-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prec-table-patient-meta {
+    font-size: 11px;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.prec-table-meta-sep {
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #94a3b8;
+    margin: 0 2px;
+}
+
+/* Chip cells */
+.prec-table-chip-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+
+.prec-table-chip {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prec-table-chip--blue {
+    background: #eff5ff;
+    color: #1d4ed8;
+    border: 1px solid rgba(18, 104, 232, 0.18);
+}
+
+.prec-table-chip--purple {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid rgba(109, 40, 217, 0.15);
+}
+
+.prec-table-chip--green {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid rgba(22, 163, 74, 0.18);
+}
+
+.prec-table-chip-more {
+    font-size: 10px;
+    font-weight: 600;
+    color: #475569;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Medicine cell */
+.prec-table-med-cell {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.prec-table-med-icon {
+    color: #1268e8;
+    flex-shrink: 0;
+}
+
+.prec-table-med-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+}
+
+/* Test cell */
+.prec-table-test-icon {
+    color: #7c3aed;
+    flex-shrink: 0;
+}
+
+.prec-table-test-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+}
+
+/* Nil — empty dash */
+.prec-table-nil {
+    font-size: 12px;
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+/* VOID — intentional label for no tests ordered */
+.prec-table-void {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Last visit cell — bold label, normal sub */
+.prec-table-visit-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.prec-table-visit-sub {
+    display: block;
+    font-size: 11px;
+    color: #374151;
+    margin-top: 1px;
+    font-weight: 400;
+}
+
+/* Visit count */
+.prec-table-count {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.prec-table-count-label {
+    display: block;
+    font-size: 9px;
+    color: #64748b;
+    font-weight: 500;
+    margin-top: 1px;
+}
+
+/* Status cell */
+.prec-table-status-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+/* Status pill — tighter, less dominant */
+.prec-status-pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.prec-status-pill.is-done {
+    background: rgba(22, 163, 74, 0.08);
+    color: #15803d;
+    border: 1px solid rgba(22, 163, 74, 0.20);
+}
+
+.prec-status-pill.is-active {
+    background: rgba(234, 179, 8, 0.10);
+    color: #a16207;
+    border: 1px solid rgba(234, 179, 8, 0.25);
+}
+
+.prec-status-pill.is-inactive {
+    background: rgba(100, 116, 139, 0.08);
+    color: #475569;
+    border: 1px solid rgba(100, 116, 139, 0.18);
+}
+
+.prec-table-time-ago {
+    font-size: 10px;
+    color: #64748b;
+}
+
+/* Arrow */
+.prec-table-arrow {
+    color: #94a3b8;
+    transition: color 0.12s, transform 0.12s;
+}
+
+.prec-table-row:hover .prec-table-arrow {
+    color: #1268e8;
+    transform: translateX(2px);
+}

@@ -1,0 +1,5 @@
+/* src/features/patients/patients-detail.css */
+@import "./patients-detail-identity.css";
+@import "./patients-detail-summary.css";
+@import "./patients-detail-timeline.css";
+@import "./patients-detail-sidebar.css";

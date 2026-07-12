@@ -1,0 +1,482 @@
+/* ============================================================
+   COMPONENTS-BASE.CSS
+   AREN Cortex Phase 1 — v3
+   Atoms: tags, chips, search boxes, vitals bar, action buttons
+   Import order: 1 of 3
+   ============================================================ */
+
+/* ── Chip search panels (Symptoms / Findings) ───────────── */
+
+.chip-panel {
+    min-height: 146px;
+}
+
+.chip-panel.collapsed {
+    min-height: 54px;
+}
+
+.search-box {
+    display: grid;
+    grid-template-columns: 22px 1fr 36px;
+    align-items: center;
+    height: 36px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-box:focus-within {
+    border-color: rgba(18, 104, 232, 0.45);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.08);
+    background: white;
+}
+
+.search-box svg {
+    margin-left: 10px;
+    color: var(--muted);
+    transition: color 0.12s;
+}
+
+.search-box:focus-within svg {
+    color: var(--blue);
+}
+
+.search-box input {
+    height: 100%;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 13px;
+}
+
+.search-box button {
+    height: 100%;
+    border: 0;
+    border-left: 1px solid var(--line-soft);
+    background: rgba(248, 251, 255, 0.7);
+    color: var(--blue);
+    transition: background 0.12s, color 0.12s;
+}
+
+.search-box button:hover {
+    background: var(--blue-soft);
+    color: var(--blue);
+}
+
+/* ── Tag rows ───────────────────────────────────────────── */
+
+.tag-row,
+.compact-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tag-row {
+    min-height: 31px;
+    margin-top: 9px;
+}
+
+.tag,
+.compact-chip-row button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 27px;
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 720;
+    transition: transform 0.1s, box-shadow 0.12s;
+}
+
+/*
+  Selected symptom/finding tags — atmospheric purple is correct here.
+  These live inside the symptom/findings panel, not operational buttons.
+*/
+.tag-blue,
+.tag-pink,
+.tag-violet {
+    border-color: rgba(18, 104, 232, 0.25);
+    background: rgba(237, 246, 255, 0.75);
+    color: #1268e8;
+    transition: background 0.12s, border-color 0.12s,
+        transform 0.1s, box-shadow 0.12s;
+}
+
+.tag-blue:hover,
+.tag-pink:hover,
+.tag-violet:hover {
+    background: rgba(219, 237, 255, 0.90);
+    border-color: rgba(18, 104, 232, 0.40);
+    box-shadow: 0 1px 5px rgba(18, 104, 232, 0.12);
+}
+
+.tag-teal {
+    border-color: rgba(15, 159, 154, 0.22);
+    background: var(--cyan-soft);
+    color: var(--cyan);
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.tag-teal:hover {
+    background: rgba(209, 250, 249, 0.9);
+    border-color: rgba(15, 159, 154, 0.38);
+}
+
+/* Chip select bounce animation — triggered via JS */
+.chip-selected-anim {
+    animation: chip-select-bounce 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes chip-select-bounce {
+    0% {
+        transform: scale(1);
+    }
+
+    40% {
+        transform: scale(0.91);
+    }
+
+    70% {
+        transform: scale(1.08);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ── Compact chip row (unselected option buttons) ───────── */
+/*
+  BUG 1 FIX: neutral grey — not purple-tinted.
+  These are clickable options, not selected state.
+  Operational intent on hover → blue.
+*/
+
+.compact-chip-row {
+    margin-top: 8px;
+}
+
+.compact-chip-row button {
+    background: rgba(241, 245, 249, 0.90);
+    color: #334155;
+    border-color: rgba(0, 0, 0, 0.08);
+    transition: background 0.12s, border-color 0.12s,
+        color 0.12s, transform 0.1s, box-shadow 0.12s;
+}
+
+.compact-chip-row button:hover {
+    background: var(--blue-soft);
+    border-color: rgba(37, 99, 235, 0.22);
+    color: var(--blue);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08);
+}
+
+.compact-chip-row button:active {
+    transform: translateY(0) scale(0.97);
+}
+
+/* ── Vitals bar ─────────────────────────────────────────── */
+
+.vitals-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    /* Layout.css now controls background/border for env continuity */
+    overflow-x: auto;
+    scrollbar-width: none;
+    min-height: 40px;
+}
+
+.vitals-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.vitals-bar-label {
+    font-size: 10px;
+    font-weight: 750;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+    margin-right: 4px;
+}
+
+.vital-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    border-radius: 999px;
+    background: white;
+    padding: 0 10px 0 8px;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    cursor: text;
+}
+
+.vital-pill:focus-within {
+    border-color: rgba(18, 104, 232, 0.38);
+    box-shadow:
+        0 0 0 3px rgba(18, 104, 232, 0.07),
+        0 1px 4px rgba(0, 0, 0, 0.05);
+    background: rgba(255, 255, 255, 1);
+}
+
+.vital-pill-label {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    transition: color 0.15s;
+}
+
+.vital-pill:focus-within .vital-pill-label {
+    color: var(--blue);
+}
+
+/* Dark readable text on white vitals pill */
+.vital-pill input {
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e293b;
+    width: 52px;
+    padding: 0;
+    text-align: left;
+}
+
+.vital-pill input:focus {
+    outline: none;
+}
+
+.vital-pill input::placeholder {
+    color: #c0cfe0;
+}
+
+/* Warn state — amber */
+.vital-pill.warn {
+    border-color: rgba(245, 158, 11, 0.38);
+    background: rgba(255, 251, 235, 0.95);
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.08);
+}
+
+.vital-pill.warn .vital-pill-label {
+    color: #d97706;
+}
+
+.vital-pill.warn input {
+    color: #92400e;
+}
+
+.vital-pill.warn:focus-within {
+    border-color: rgba(245, 158, 11, 0.60);
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.10);
+}
+
+.vital-sep {
+    width: 1px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.07);
+    flex-shrink: 0;
+}
+
+/* ── Action / icon buttons ──────────────────────────────── */
+
+.add-icon,
+.icon-button {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 7px;
+    transition: background 0.12s, border-color 0.12s,
+        transform 0.1s, box-shadow 0.12s;
+}
+
+/* Blue border + blue color — operational */
+.add-icon {
+    border: 1px solid rgba(37, 99, 235, 0.28);
+    color: var(--blue);
+    background: transparent;
+}
+
+.add-icon:hover {
+    background: var(--blue-soft);
+    border-color: rgba(37, 99, 235, 0.45);
+    transform: scale(1.05);
+}
+
+.add-icon:active {
+    transform: scale(0.96);
+}
+
+.icon-button {
+    border: 1px solid var(--line-soft);
+    color: var(--muted);
+}
+
+.icon-button:hover {
+    background: rgba(255, 255, 255, 0.97);
+    color: var(--text);
+    border-color: var(--line);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.icon-button:active {
+    transform: scale(0.95);
+}
+
+/* ── Tag component ──────────────────────────────────────── */
+
+.shortcut-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+/* ── Lab select (legacy tests panel) ────────────────────── */
+
+.tests-panel .compact-chip-row {
+    margin-top: 0;
+}
+
+.lab-select {
+    max-width: 310px;
+    margin-top: 11px;
+}
+
+/* ── Quick actions sidebar block ────────────────────────── */
+
+.quick-actions {
+    gap: 9px;
+    padding: 11px;
+}
+
+.compact-title h2 {
+    font-size: 11px;
+}
+
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.action-grid .action-button {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 12px;
+}
+
+/* ── Summary metrics ────────────────────────────────────── */
+
+.summary-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.summary-metrics div {
+    display: grid;
+    gap: 2px;
+    border-radius: 7px;
+    background: rgba(248, 251, 255, 0.72);
+    padding: 9px;
+}
+
+.summary-metrics strong {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.summary-metrics span,
+.summary-patient span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.summary-patient {
+    display: grid;
+    gap: 2px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-soft);
+}
+
+.summary-patient strong,
+.summary-patient span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Toast notification — upgraded ─────────────────────── */
+
+.toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    border: 1px solid rgba(15, 159, 154, 0.22);
+    border-radius: 10px;
+    background: linear-gradient(135deg,
+            rgba(236, 253, 245, 0.97) 0%,
+            rgba(238, 250, 249, 0.97) 100%);
+    color: #0f766e;
+    padding: 11px 16px;
+    font-weight: 800;
+    font-size: 13px;
+    z-index: 50;
+    box-shadow:
+        0 8px 24px rgba(15, 159, 154, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    animation: toast-in 0.20s cubic-bezier(0.34, 1.46, 0.64, 1),
+        toast-glow 2.4s ease-in-out 0.2s infinite;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes toast-glow {
+
+    0%,
+    100% {
+        box-shadow: 0 8px 24px rgba(15, 159, 154, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    50% {
+        box-shadow: 0 8px 32px rgba(15, 159, 154, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+}
+
+/* ── Microcopy ───────────────────────────────────────────── */
+
+.microcopy {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 650;
+}

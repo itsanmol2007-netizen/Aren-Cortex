@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AREN Front Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   AREN FRONT DESK — v2 reference prototype
+   Structure note: styles are grouped by COMPONENT, not by type,
+   so each block (launcher / statcard / visitrow / doctorcard /
+   requests / modal) maps 1:1 to a future React component that
+   owns its own markup + styles + state + events.
+   ============================================================ */
+
+:root{
+  /* neutral scale — ~90% of the UI lives here */
+  --page-bg:#f5f6f9;
+  --surface:#ffffff;
+  --surface-2:#fafbfc;
+  --border:#e4e7ee;
+  --border-soft:#eef0f5;
+  --border-strong:#d5dae4;
+  --text-strong:#161d29;
+  --text-mid:#5a6472;
+  --text-soft:#8a91a0;
+  --text-faint:#a8aeba;
+
+  /* semantic — ~10%, used only to communicate state */
+  --blue:#2f6bed;
+  --blue-dark:#1d51c9;
+  --blue-tint:rgba(47,107,237,0.055);
+  --blue-chip:#e9f0fe;
+  --amber:#c9791a;
+  --amber-tint:rgba(224,145,32,0.06);
+  --amber-chip:#fbeed9;
+  --green:#1c8a4d;
+  --green-tint:rgba(28,157,85,0.055);
+  --green-chip:#e4f5eb;
+  --red:#d23b34;
+  --red-tint:rgba(210,59,52,0.05);
+  --red-chip:#fbe8e7;
+  /* the single purple accent in Front Desk — Cortex kinship, focus only */
+  --violet-ring:rgba(99,102,241,0.28);
+
+  --shadow-low:0 1px 2px rgba(20,30,50,0.05);
+  --shadow-hover:0 2px 6px rgba(20,30,50,0.07);
+  --shadow-modal:0 24px 60px rgba(16,24,40,0.24);
+  --radius:13px;
+  --radius-sm:9px;
+  --radius-xs:7px;
+  --tap:44px; /* minimum finger target */
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--page-bg);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  color:var(--text-strong);
+  -webkit-font-smoothing:antialiased;
+  font-size:14px;
+}
+.display{font-family:'Manrope',sans-serif;}
+button{font-family:inherit;}
+::selection{background:var(--blue-chip);}
+
+.app{max-width:1480px;margin:0 auto;padding:18px 24px 48px;}
+
+/* ============================================================
+   COMPONENT: Header
+   ============================================================ */
+.hdr{
+  display:flex;align-items:center;gap:18px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px 20px;
+  box-shadow:var(--shadow-low);margin-bottom:14px;
+}
+.hdr-brand{display:flex;align-items:center;gap:11px;flex-shrink:0;}
+.hdr-mark{
+  width:38px;height:38px;border-radius:10px;
+  background:linear-gradient(155deg,#3572f0,#1d51c9);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 8px rgba(47,107,237,0.26);
+}
+.hdr-mark svg{width:21px;height:21px;}
+.hdr-title{font-family:'Manrope';font-weight:800;font-size:16px;letter-spacing:-0.01em;line-height:1.1;}
+.hdr-sub{font-size:11.5px;color:var(--text-faint);font-weight:500;margin-top:1px;}
+.hdr-spacer{flex:1;}
+.hdr-right{display:flex;align-items:center;gap:14px;flex-shrink:0;}
+.hdr-clinic{font-size:13px;font-weight:600;white-space:nowrap;}
+.hdr-clock{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-mid);font-weight:500;white-space:nowrap;}
+.hdr-div{width:1px;height:24px;background:var(--border);}
+.hdr-user{
+  width:34px;height:34px;border-radius:9px;
+  background:var(--blue-chip);color:var(--blue-dark);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:12px;flex-shrink:0;
+}
+
+/* language dropdown (component: LangSelect) */
+.lang{position:relative;}
+.lang-btn{
+  display:flex;align-items:center;gap:6px;height:34px;padding:0 11px;
+  border:1px solid var(--border);border-radius:var(--radius-xs);
+  background:var(--surface);color:var(--text-mid);font-size:12.5px;font-weight:600;
+  cursor:pointer;transition:border-color .12s,background .12s;
+}
+.lang-btn:hover{border-color:var(--border-strong);background:var(--surface-2);}
+.lang-btn svg{color:var(--text-faint);transition:transform .15s;}
+.lang-btn.open svg{transform:rotate(180deg);}
+.lang-menu{
+  position:absolute;top:calc(100% + 6px);right:0;min-width:150px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-modal);padding:5px;z-index:80;display:none;
+}
+.lang-menu.open{display:block;}
+.lang-opt{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:8px 10px;border-radius:var(--radius-xs);font-size:13px;font-weight:500;
+  color:var(--text-mid);cursor:pointer;
+}
+.lang-opt:hover{background:var(--page-bg);}
+.lang-opt.active{color:var(--blue-dark);font-weight:600;background:var(--blue-tint);}
+.lang-opt .tick{opacity:0;color:var(--blue);}
+.lang-opt.active .tick{opacity:1;}
+.lang-opt .soon{font-size:10px;color:var(--text-faint);font-weight:500;}
+
+/* ============================================================
+   COMPONENT: PatientLauncher — its own dominant row
+   ============================================================ */
+.launcher{position:relative;margin-bottom:14px;}
+.launcher-bar{
+  display:flex;align-items:center;gap:12px;
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--radius);padding:11px 12px 11px 18px;
+  box-shadow:var(--shadow-low);transition:border-color .14s,box-shadow .14s;
+}
+.launcher-bar:focus-within{
+  border-color:var(--blue);
+  box-shadow:0 0 0 4px var(--violet-ring); /* the one purple accent */
+}
+.launcher-bar > svg{flex-shrink:0;color:var(--text-soft);}
+.launcher-input{
+  flex:1;border:none;background:transparent;outline:none;
+  font-size:16px;font-weight:450;color:var(--text-strong);padding:6px 0;
+}
+.launcher-input::placeholder{color:var(--text-soft);font-weight:450;}
+.launcher-add{
+  width:var(--tap);height:var(--tap);border-radius:11px;border:none;
+  background:var(--blue);color:#fff;flex-shrink:0;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .13s,transform .08s;
+}
+.launcher-add:hover{background:var(--blue-dark);}
+.launcher-add:active{transform:scale(0.92);}
+
+.launcher-drop{
+  position:absolute;top:calc(100% + 7px);left:0;right:0;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-modal);z-index:70;overflow:hidden;display:none;
+  max-height:380px;overflow-y:auto;
+}
+.launcher-drop.open{display:block;}
+.drop-head{
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;
+  color:var(--text-faint);padding:11px 16px 5px;
+}
+.drop-item{
+  display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;
+  min-height:var(--tap);
+}
+.drop-item:hover{background:var(--page-bg);}
+.drop-av{
+  width:36px;height:36px;border-radius:9px;flex-shrink:0;
+  background:var(--blue-chip);color:var(--blue-dark);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;
+}
+.drop-info{flex:1;min-width:0;}
+.drop-name{font-size:14px;font-weight:600;}
+.drop-meta{font-size:12px;color:var(--text-mid);margin-top:1px;}
+.drop-meta .sep{color:var(--text-faint);margin:0 5px;}
+.drop-divider{height:1px;background:var(--border-soft);margin:4px 0;}
+.drop-create{
+  display:flex;align-items:center;gap:11px;padding:12px 16px;cursor:pointer;
+  color:var(--blue);font-weight:600;font-size:13.5px;min-height:var(--tap);
+}
+.drop-create:hover{background:var(--blue-tint);}
+.drop-create .plus{
+  width:26px;height:26px;border-radius:7px;background:var(--blue-chip);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.drop-empty{padding:18px 16px;text-align:center;color:var(--text-faint);font-size:13px;}
+
+/* ============================================================
+   COMPONENT: StatCard row
+   ============================================================ */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+.stat{
+  display:flex;align-items:center;gap:13px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:15px 17px;box-shadow:var(--shadow-low);
+}
+.stat-ic{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.stat-ic.n{background:#eef0f5;color:var(--text-mid);}
+.stat-ic.a{background:var(--amber-chip);color:var(--amber);}
+.stat-ic.b{background:var(--blue-chip);color:var(--blue-dark);}
+.stat-ic.g{background:var(--green-chip);color:var(--green);}
+.stat-label{font-size:12px;color:var(--text-mid);font-weight:500;}
+.stat-num{font-family:'Manrope';font-size:26px;font-weight:800;line-height:1.15;letter-spacing:-0.01em;}
+.stat-num.a{color:var(--amber);}
+.stat-num.b{color:var(--blue-dark);}
+.stat-num.g{color:var(--green);}
+
+/* ============================================================
+   LAYOUT: main grid (queue + sidebar)
+   ============================================================ */
+.grid{display:grid;grid-template-columns:1fr 296px;gap:14px;align-items:start;}
+
+/* ============================================================
+   COMPONENT: QueuePanel
+   ============================================================ */
+.queue{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-low);overflow:hidden;}
+.queue-head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px 0;}
+.queue-head h2{font-family:'Manrope';font-size:16px;font-weight:800;margin:0;}
+.tabs{display:flex;gap:6px;padding:13px 20px;flex-wrap:wrap;}
+.tab{
+  display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:8px;
+  border:1px solid var(--border);background:var(--surface);
+  font-size:12.5px;font-weight:600;color:var(--text-mid);cursor:pointer;
+  transition:border-color .12s,background .12s,color .12s;
+}
+.tab:hover{border-color:var(--border-strong);}
+.tab.active{background:var(--blue-tint);border-color:var(--blue);color:var(--blue-dark);}
+.tab-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.tab-dot.a{background:var(--amber);}
+.tab-dot.b{background:var(--blue);}
+.tab-dot.g{background:var(--green);}
+.tab-cnt{color:var(--text-faint);font-weight:600;}
+.tab.active .tab-cnt{color:var(--blue-dark);}
+
+.qlist{max-height:none;}
+
+/* COMPONENT: VisitRow */
+.vrow{
+  display:grid;
+  grid-template-columns:60px 1.7fr 1.5fr 1fr 0.9fr 118px 34px;
+  align-items:center;gap:12px;
+  padding:12px 20px;min-height:var(--tap);
+  border-top:1px solid var(--border-soft);
+  border-left:3px solid transparent;
+  cursor:pointer;position:relative;
+  transition:background .12s,box-shadow .12s,border-color .12s;
+}
+.vrow:hover{background:var(--surface-2);box-shadow:var(--shadow-hover);border-top-color:var(--border);}
+.vrow.selected{background:var(--blue-tint);}
+.vrow.w{border-left-color:var(--amber);background:var(--amber-tint);}
+.vrow.w:hover{background:rgba(224,145,32,0.1);}
+.vrow.c{border-left-color:var(--blue);background:var(--blue-tint);}
+.vrow.c:hover{background:rgba(47,107,237,0.09);}
+.vrow.d{border-left-color:var(--green);background:var(--green-tint);}
+.vrow.d:hover{background:rgba(28,157,85,0.09);}
+.vrow.cx{border-left-color:var(--text-faint);opacity:0.6;}
+
+.v-token{font-family:'Manrope';font-weight:800;font-size:16px;color:var(--text-strong);letter-spacing:-0.02em;}
+.v-token .h{color:var(--text-faint);font-weight:700;font-size:12px;}
+.v-name{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:7px;line-height:1.25;}
+.v-phone{font-size:12px;color:var(--text-soft);margin-top:1px;font-variant-numeric:tabular-nums;}
+.v-symptoms{font-size:13px;color:var(--text-mid);line-height:1.35;}
+.v-symptoms .more{
+  color:var(--blue-dark);font-weight:600;cursor:help;
+  border-bottom:1px dashed var(--border-strong);
+}
+.v-doctor{font-size:12.5px;color:var(--text-mid);font-weight:500;cursor:help;}
+.v-last{font-size:12px;color:var(--text-faint);font-variant-numeric:tabular-nums;}
+
+/* returning badge */
+.badge-ret{
+  font-size:10px;font-weight:600;letter-spacing:.01em;
+  color:var(--text-mid);background:var(--page-bg);border:1px solid var(--border);
+  padding:2px 7px;border-radius:5px;cursor:help;white-space:nowrap;
+}
+
+/* status — reduced to near-monochrome text, row tint carries the signal */
+.v-status{font-size:11.5px;font-weight:600;letter-spacing:.01em;display:flex;align-items:center;gap:6px;}
+.v-status .sd{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.v-status.w{color:var(--amber);}      .v-status.w .sd{background:var(--amber);}
+.v-status.c{color:var(--blue-dark);}  .v-status.c .sd{background:var(--blue);}
+.v-status.d{color:var(--green);}      .v-status.d .sd{background:var(--green);}
+.v-status.cx{color:var(--text-soft);} .v-status.cx .sd{background:var(--text-soft);}
+
+/* three-dot menu trigger (component: RowMenu) */
+.v-more{
+  width:32px;height:32px;border-radius:8px;border:none;background:transparent;
+  color:var(--text-faint);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .12s,background .12s;
+}
+.vrow:hover .v-more{opacity:1;}
+.v-more:hover{background:var(--border-soft);color:var(--text-mid);}
+.v-more.forced{opacity:1;}
+
+.rowmenu{
+  position:fixed;min-width:190px;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-modal);padding:5px;z-index:120;display:none;
+}
+.rowmenu.open{display:block;}
+.rowmenu-item{
+  display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--radius-xs);
+  font-size:13px;font-weight:500;color:var(--text-mid);cursor:pointer;
+}
+.rowmenu-item:hover{background:var(--page-bg);color:var(--text-strong);}
+.rowmenu-item.danger{color:var(--red);}
+.rowmenu-item.danger:hover{background:var(--red-tint);}
+.rowmenu-item svg{flex-shrink:0;opacity:.7;}
+.rowmenu-sep{height:1px;background:var(--border-soft);margin:4px 0;}
+
+/* empty + skeleton */
+.q-empty{padding:60px 20px;text-align:center;}
+.q-empty svg{color:#cbd2df;margin-bottom:12px;}
+.q-empty p{margin:0;color:var(--text-faint);font-size:13.5px;font-weight:500;}
+.skel-row{
+  display:grid;grid-template-columns:60px 1.7fr 1.5fr 1fr 0.9fr 118px 34px;
+  gap:12px;padding:14px 20px;border-top:1px solid var(--border-soft);align-items:center;
+}
+.skel{background:linear-gradient(90deg,#eef0f4 25%,#e4e7ee 37%,#eef0f4 63%);
+  background-size:400% 100%;animation:shimmer 1.3s ease infinite;border-radius:6px;height:12px;}
+.skel.tall{height:32px;}
+.skel.w70{width:70%;}.skel.w50{width:50%;}.skel.w90{width:90%;}
+@keyframes shimmer{0%{background-position:100% 0;}100%{background-position:-100% 0;}}
+
+/* ============================================================
+   COMPONENT: Sidebar cards
+   ============================================================ */
+.side-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-low);padding:16px 18px;margin-bottom:12px;}
+.side-card h3{font-family:'Manrope';font-size:13.5px;font-weight:800;margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;}
+
+/* Today's Summary */
+.sum-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--border-soft);}
+.sum-row:first-of-type{border-top:none;padding-top:0;}
+.sum-label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-mid);font-weight:500;}
+.sum-label svg{color:var(--text-soft);}
+.sum-val{font-family:'Manrope';font-weight:800;font-size:15px;}
+.sum-val.token{color:var(--blue-dark);font-size:17px;}
+
+/* Doctors */
+.doc{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid var(--border-soft);border-radius:8px;}
+.doc:first-of-type{border-top:none;padding-top:2px;}
+.doc-av{
+  width:38px;height:38px;border-radius:10px;flex-shrink:0;position:relative;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;
+  background:var(--blue-chip);color:var(--blue-dark);
+}
+.doc.busy .doc-av{background:var(--blue-chip);}
+.doc.free .doc-av{background:#eef0f5;color:var(--text-mid);}
+.doc.off .doc-av{background:#eef0f5;color:var(--text-faint);}
+.doc-status-dot{width:9px;height:9px;border-radius:50%;border:2px solid var(--surface);position:absolute;bottom:-1px;right:-1px;}
+.doc.busy .doc-status-dot{background:var(--blue);}
+.doc.free .doc-status-dot{background:var(--green);}
+.doc.off .doc-status-dot{background:var(--text-faint);}
+.doc-info{flex:1;min-width:0;}
+.doc-name{font-size:13px;font-weight:600;}
+.doc-activity{font-size:11.5px;margin-top:1px;}
+.doc.busy .doc-activity{color:var(--blue-dark);}
+.doc.free .doc-activity{color:var(--green);}
+.doc.off .doc-activity{color:var(--text-faint);}
+.doc-queue{text-align:right;flex-shrink:0;}
+.doc-queue b{font-family:'Manrope';font-size:15px;color:var(--text-strong);display:block;line-height:1.1;}
+.doc.off .doc-queue b{color:var(--text-faint);}
+.doc-queue span{font-size:10px;color:var(--text-faint);}
+
+/* Doctor Requests (active) */
+.req-empty{font-size:12.5px;color:var(--text-faint);text-align:center;padding:14px 0 6px;font-weight:500;}
+.req-item{
+  display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:var(--radius-sm);
+  background:var(--amber-tint);border:1px solid var(--amber-chip);margin-bottom:8px;
+  animation:reqIn .18s ease;
+}
+.req-item.pulse{animation:reqIn .18s ease, reqPulse 1.4s ease infinite;}
+@keyframes reqIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
+@keyframes reqPulse{0%,100%{box-shadow:0 0 0 0 rgba(224,145,32,0);}50%{box-shadow:0 0 0 4px rgba(224,145,32,0.14);}}
+.req-ic{width:32px;height:32px;border-radius:8px;background:var(--amber-chip);color:var(--amber);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.req-info{flex:1;min-width:0;}
+.req-doc{font-size:11px;color:var(--text-soft);font-weight:600;}
+.req-text{font-size:13px;font-weight:600;color:var(--text-strong);margin-top:1px;}
+.req-ack{
+  width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface);
+  color:var(--green);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  transition:background .12s;
+}
+.req-ack:hover{background:var(--green-chip);}
+
+.sim-btn{
+  width:100%;margin-top:4px;padding:8px;border:1px dashed var(--border-strong);border-radius:var(--radius-xs);
+  background:transparent;color:var(--text-faint);font-size:11px;font-weight:600;cursor:pointer;
+}
+.sim-btn:hover{background:var(--page-bg);color:var(--text-mid);}
+
+/* ============================================================
+   COMPONENT: Modal (visit detail + create)
+   ============================================================ */
+.overlay{
+  position:fixed;inset:0;z-index:200;display:none;
+  align-items:flex-start;justify-content:center;padding:6vh 20px 20px;overflow-y:auto;
+  background:rgba(20,26,40,0.32);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+}
+.overlay.open{display:flex;}
+.modal{
+  width:100%;max-width:580px;background:var(--surface);border-radius:var(--radius);
+  box-shadow:var(--shadow-modal);animation:modalIn .16s ease;
+}
+@keyframes modalIn{from{opacity:0;transform:scale(0.965);}to{opacity:1;transform:scale(1);}}
+.modal-top{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border-soft);}
+.modal-back{
+  display:flex;align-items:center;gap:6px;height:34px;padding:0 11px 0 8px;border-radius:var(--radius-xs);
+  border:1px solid var(--border);background:var(--surface);color:var(--text-mid);
+  font-size:12.5px;font-weight:600;cursor:pointer;transition:background .12s;
+}
+.modal-back:hover{background:var(--page-bg);}
+.modal-title{font-family:'Manrope';font-weight:800;font-size:15px;flex:1;}
+
+.modal-body{padding:20px;}
+/* detail view */
+.det-name{font-family:'Manrope';font-size:22px;font-weight:800;letter-spacing:-0.01em;line-height:1.15;}
+.det-name.w{color:var(--amber);} .det-name.c{color:var(--blue-dark);} .det-name.d{color:var(--green);}
+.det-meta{font-size:13px;color:var(--text-mid);margin-top:4px;}
+.det-meta .sep{color:var(--text-faint);margin:0 7px;}
+.det-section{margin-top:18px;}
+.det-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:var(--text-faint);margin-bottom:6px;}
+.det-symptoms{font-size:14px;color:var(--text-strong);line-height:1.4;}
+.det-docsel{position:relative;}
+.field-sel{
+  width:100%;height:var(--tap);padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  font-family:inherit;font-size:14px;color:var(--text-strong);background:var(--surface);cursor:pointer;outline:none;
+  transition:border-color .12s,box-shadow .12s;
+}
+.field-sel:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--violet-ring);}
+
+.status-bar{display:flex;gap:9px;margin-top:6px;}
+.st-btn{
+  flex:1;height:var(--tap);border-radius:var(--radius-sm);border:1.5px solid var(--border);
+  background:var(--surface);color:var(--text-mid);font-size:13px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:6px;transition:all .12s;
+}
+.st-btn:hover{border-color:var(--border-strong);}
+.st-btn.primary.c{background:var(--blue);border-color:var(--blue);color:#fff;}
+.st-btn.primary.c:hover{background:var(--blue-dark);}
+.st-btn.primary.d{background:var(--green);border-color:var(--green);color:#fff;}
+.st-btn.primary.d:hover{filter:brightness(0.95);}
+.st-btn.current{background:var(--page-bg);border-color:var(--border);color:var(--text-faint);cursor:default;}
+.st-btn.danger:hover{border-color:var(--red);color:var(--red);background:var(--red-tint);}
+
+/* past visits strip */
+.pv{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border-soft);
+  border-radius:var(--radius-sm);margin-bottom:7px;cursor:pointer;transition:background .12s,border-color .12s;}
+.pv:hover{background:var(--surface-2);border-color:var(--border);}
+.pv-left{font-size:13px;font-weight:600;}
+.pv-date{font-size:12px;color:var(--text-soft);margin-top:1px;font-weight:500;}
+.pv-arrow{color:var(--text-faint);}
+.det-foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--border-soft);}
+.det-fulllink{display:inline-flex;align-items:center;gap:6px;color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;background:none;border:none;padding:0;}
+.det-fulllink:hover{color:var(--blue-dark);}
+
+/* create form */
+.prefill{
+  display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:var(--radius-sm);
+  background:var(--blue-tint);border:1px solid var(--blue-chip);margin-bottom:18px;
+}
+.prefill-av{width:36px;height:36px;border-radius:9px;background:var(--blue-chip);color:var(--blue-dark);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;}
+.prefill-name{font-size:14px;font-weight:700;}
+.prefill-meta{font-size:12px;color:var(--text-mid);margin-top:1px;}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.field{margin-bottom:13px;}
+.field.full{grid-column:1/-1;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--text-mid);margin-bottom:6px;}
+.field input,.field select{
+  width:100%;height:var(--tap);padding:0 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  font-family:inherit;font-size:14px;color:var(--text-strong);background:var(--surface);outline:none;
+  transition:border-color .12s,box-shadow .12s;
+}
+.field input:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--violet-ring);}
+.field input.err{border-color:var(--red);}
+
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:15px 20px;border-top:1px solid var(--border-soft);}
+.btn{height:var(--tap);padding:0 20px;border-radius:var(--radius-sm);font-size:14px;font-weight:700;cursor:pointer;border:1.5px solid transparent;transition:all .12s;}
+.btn:active{transform:scale(0.98);}
+.btn-primary{background:var(--blue);color:#fff;}
+.btn-primary:hover{background:var(--blue-dark);}
+.btn-ghost{background:var(--surface);color:var(--text-mid);border-color:var(--border);}
+.btn-ghost:hover{border-color:var(--border-strong);}
+
+/* ============================================================
+   COMPONENT: Toast + Undo (fade only, countdown ring)
+   ============================================================ */
+.toast{
+  position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:13px;
+  background:var(--text-strong);color:#fff;padding:12px 14px 12px 18px;border-radius:11px;
+  font-size:13.5px;font-weight:600;box-shadow:var(--shadow-modal);z-index:300;
+  opacity:0;pointer-events:none;transition:opacity .13s ease;
+}
+.toast.show{opacity:1;pointer-events:auto;}
+.toast-msg{white-space:nowrap;}
+.toast-undo{
+  display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.12);
+  border:none;color:#fff;font-family:inherit;font-size:13px;font-weight:700;
+  padding:6px 12px 6px 10px;border-radius:8px;cursor:pointer;transition:background .12s;
+}
+.toast-undo:hover{background:rgba(255,255,255,0.2);}
+.toast-ring{width:16px;height:16px;flex-shrink:0;}
+.toast-ring circle{fill:none;stroke-width:2.5;}
+.toast-ring .bg{stroke:rgba(255,255,255,0.25);}
+.toast-ring .fg{stroke:#fff;stroke-linecap:round;transform:rotate(-90deg);transform-origin:center;
+  stroke-dasharray:44;animation:ring 5s linear forwards;}
+@keyframes ring{from{stroke-dashoffset:0;}to{stroke-dashoffset:44;}}
+
+@media (max-width:1040px){
+  .grid{grid-template-columns:1fr;}
+  .stats{grid-template-columns:repeat(2,1fr);}
+  .vrow,.skel-row{grid-template-columns:52px 1.5fr 1fr 110px 34px;}
+  .v-symptoms,.v-last{display:none;}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<!-- Overlays live at body level -->
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="rowmenu" id="rowmenu"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   i18n — ALL user-facing strings live here.
+   Adding a language later = add a key. No markup touched.
+   ============================================================ */
+const STRINGS = {
+  en: {
+    _label:"English",
+    appTitle:"AREN Front Desk", appSub:"Reception Workspace",
+    launcherPlaceholder:"Search or create patient by name or phone…",
+    existingPatients:"Existing Patients",
+    registerNew:(q)=> q ? `Register new patient “${q}”` : "Register new patient",
+    noMatch:"No matching patients",
+    statTotal:"Today's Visits", statWaiting:"Waiting", statConsult:"In Consultation", statCompleted:"Completed",
+    queueTitle:"Today's Visits",
+    tabAll:"All", tabWaiting:"Waiting", tabConsult:"In Consultation", tabCompleted:"Completed",
+    stWaiting:"Waiting", stConsult:"In Consultation", stCompleted:"Completed", stCancelled:"Cancelled",
+    returning:"Returning", lastVisit:"Last visit", visits:"visits", visit:"visit",
+    emptyQueue:"No patients in this view",
+    sumTitle:"Today's Summary", currentToken:"Current Token", avgWait:"Average Wait", min:"min",
+    doctorsTitle:"Doctors", queue:"Queue",
+    docBusy:(t)=>`With #${t}`, docFree:"Free", docOff:"Off duty",
+    requestsTitle:"Doctor Requests", noRequests:"No requests right now", simulate:"⚡ Simulate a doctor request",
+    back:"Back",
+    newVisit:"New Visit", registerVisit:"Register Patient",
+    prefillFrom:(n)=>`From ${n} past visit${n>1?'s':''}`,
+    fldName:"Full Name", fldPhone:"Phone Number", fldAge:"Age", fldGender:"Gender", fldAddress:"Address (optional)",
+    fldSymptoms:"Today's Symptoms", fldDoctor:"Assigned Doctor",
+    phName:"e.g. Ramesh Kumar", phPhone:"10-digit mobile", phAge:"e.g. 34", phAddr:"Locality, city", phSymp:"e.g. Lower Back Pain, Stiffness",
+    selectGender:"Select", male:"Male", female:"Female", other:"Other",
+    cancel:"Cancel", save:"Save Visit",
+    detSymptoms:"Symptoms", detDoctor:"Assigned Doctor", detStatus:"Change Status", detPast:"Recent Visits", detFullHistory:"Open full patient history",
+    menuOpen:"Open Patient", menuMove:"Move to Another Doctor", menuComplete:"Mark Completed", menuCancel:"Cancel Visit",
+    toastCreated:(t,n)=>`${n} added · #${t}`, undo:"Undo", toastUndone:"Visit removed",
+    toastStatus:(n,s)=>`${n} → ${s}`, toastAck:"Request cleared",
+  },
+  hinglish: {
+    _label:"Hinglish",
+    appTitle:"AREN Front Desk", appSub:"Reception Workspace",
+    launcherPlaceholder:"Patient search karo ya naya add karo…",
+    existingPatients:"Purane Patients",
+    registerNew:(q)=> q ? `Naya patient add karo “${q}”` : "Naya patient add karo",
+    noMatch:"Koi patient nahi mila",
+    statTotal:"Aaj ke Visits", statWaiting:"Waiting", statConsult:"Andar", statCompleted:"Ho gaya",
+    queueTitle:"Aaj ke Visits",
+    tabAll:"Sab", tabWaiting:"Waiting", tabConsult:"Andar", tabCompleted:"Ho gaya",
+    stWaiting:"Waiting", stConsult:"Andar", stCompleted:"Ho gaya", stCancelled:"Cancel",
+    returning:"Purana", lastVisit:"Pichhli baar", visits:"baar aaye", visit:"baar aaye",
+    emptyQueue:"Yahan koi patient nahi hai",
+    sumTitle:"Aaj ka Hisaab", currentToken:"Abhi chal raha", avgWait:"Average Wait", min:"min",
+    doctorsTitle:"Doctors", queue:"Line",
+    docBusy:(t)=>`#${t} ke saath`, docFree:"Free", docOff:"Aaj nahi",
+    requestsTitle:"Doctor ne Manga", noRequests:"Abhi kuch nahi", simulate:"⚡ Doctor request test karo",
+    back:"Wapas",
+    newVisit:"Naya Visit", registerVisit:"Patient Add Karo",
+    prefillFrom:(n)=>`${n} baar pehle aaye hain`,
+    fldName:"Poora Naam", fldPhone:"Phone Number", fldAge:"Umar", fldGender:"Gender", fldAddress:"Address (optional)",
+    fldSymptoms:"Aaj ki Problem", fldDoctor:"Doctor",
+    phName:"jaise Ramesh Kumar", phPhone:"10 digit mobile", phAge:"jaise 34", phAddr:"Ilaka, sheher", phSymp:"jaise Lower Back Pain, Stiffness",
+    selectGender:"Chuno", male:"Male", female:"Female", other:"Other",
+    cancel:"Rehne do", save:"Save Karo",
+    detSymptoms:"Problem", detDoctor:"Doctor", detStatus:"Status Badlo", detPast:"Pichhle Visits", detFullHistory:"Poori history dekho",
+    menuOpen:"Patient Kholo", menuMove:"Doosre Doctor ko do", menuComplete:"Ho gaya Mark karo", menuCancel:"Cancel karo",
+    toastCreated:(t,n)=>`${n} add ho gaya · #${t}`, undo:"Wapas", toastUndone:"Visit hata diya",
+    toastStatus:(n,s)=>`${n} → ${s}`, toastAck:"Ho gaya",
+  },
+};
+let LANG = "en";
+const t = (k,...a)=>{ const v = STRINGS[LANG][k]; return typeof v==="function" ? v(...a) : v; };
+
+/* ============================================================
+   MOCK DATA (swap for Supabase later — same shapes)
+   ============================================================ */
+let tokenSeq = 36;
+const minsAgo = m => new Date(Date.now()-m*60000);
+
+const DOCTORS = [
+  { name:"Dr Amit Sharma", initials:"AS" },
+  { name:"Dr Neha Singh",  initials:"NS" },
+];
+
+const patients = [
+  {id:1,name:"Ramesh Kumar",phone:"9876543210",age:52,gender:"Male",address:"Assi Ghat, Varanasi",lastVisit:"12 Jun 2026",lastDoctor:"Dr Amit Sharma",visitCount:4,past:[{s:"Back Pain, Neck Pain",d:"12 Jun 2026"},{s:"Back Pain",d:"28 May 2026"},{s:"Stiffness",d:"14 May 2026"}]},
+  {id:2,name:"Sunita Verma",phone:"9453210987",age:41,gender:"Female",address:"Lanka, Varanasi",lastVisit:"08 Jun 2026",lastDoctor:"Dr Neha Singh",visitCount:2,past:[{s:"Knee Pain",d:"08 Jun 2026"}]},
+  {id:3,name:"Ajay Singh",phone:"8927654321",age:29,gender:"Male",address:"Sigra, Varanasi",lastVisit:"15 May 2026",lastDoctor:"Dr Amit Sharma",visitCount:3,past:[{s:"Shoulder Pain",d:"15 May 2026"},{s:"Shoulder Pain",d:"02 May 2026"}]},
+  {id:4,name:"Pooja Sharma",phone:"9123456780",age:36,gender:"Female",address:"Bhelupur, Varanasi",lastVisit:"05 Jun 2026",lastDoctor:"Dr Neha Singh",visitCount:1,past:[]},
+  {id:5,name:"Vikram Patel",phone:"9988776655",age:47,gender:"Male",address:"Cantonment, Varanasi",lastVisit:"28 May 2026",lastDoctor:"Dr Amit Sharma",visitCount:2,past:[{s:"Neck Pain",d:"28 May 2026"}]},
+  {id:6,name:"Neha Gupta",phone:"8675432109",age:31,gender:"Female",address:"Mahmoorganj",lastVisit:"09 Jun 2026",lastDoctor:"Dr Neha Singh",visitCount:5,past:[{s:"Knee Pain",d:"09 Jun 2026"},{s:"Knee Pain",d:"22 May 2026"},{s:"Swelling",d:"08 May 2026"}]},
+  {id:7,name:"Anita Singh",phone:"8877665544",age:58,gender:"Female",address:"Nadesar",lastVisit:"11 May 2026",lastDoctor:"Dr Neha Singh",visitCount:2,past:[{s:"Shoulder Pain",d:"11 May 2026"}]},
+  {id:8,name:"Manoj Tiwari",phone:"7766554433",age:44,gender:"Male",address:"Sunderpur",lastVisit:"06 Jun 2026",lastDoctor:"Dr Amit Sharma",visitCount:1,past:[]},
+  {id:9,name:"Ram Singh",phone:"9811223344",age:39,gender:"Male",address:"Chetganj",lastVisit:"Yesterday",lastDoctor:"Dr Amit Sharma",visitCount:2,past:[{s:"Ankle Sprain",d:"Yesterday"}]},
+];
+
+let visits = [
+  {token:27,patientId:1,symptomList:["Back Pain","Neck Pain","Stiffness","Headache"],doctor:"Dr Amit Sharma",status:"waiting",createdAt:minsAgo(6)},
+  {token:28,patientId:2,symptomList:["Knee Pain","Swelling"],doctor:"Dr Neha Singh",status:"consult",createdAt:minsAgo(22)},
+  {token:29,patientId:3,symptomList:["Shoulder Pain"],doctor:"Dr Amit Sharma",status:"completed",createdAt:minsAgo(95)},
+  {token:30,patientId:4,symptomList:["Lower Back Pain","Stiffness","Fatigue"],doctor:"Dr Neha Singh",status:"waiting",createdAt:minsAgo(14)},
+  {token:31,patientId:5,symptomList:["Neck Pain","Headache"],doctor:"Dr Amit Sharma",status:"waiting",createdAt:minsAgo(9)},
+  {token:32,patientId:6,symptomList:["Knee Pain","Swelling","Stiffness"],doctor:"Dr Neha Singh",status:"consult",createdAt:minsAgo(18)},
+  {token:33,patientId:8,symptomList:["Back Pain"],doctor:"Dr Amit Sharma",status:"waiting",createdAt:minsAgo(4)},
+  {token:34,patientId:7,symptomList:["Shoulder Pain","Stiffness"],doctor:"Dr Neha Singh",status:"completed",createdAt:minsAgo(140)},
+  {token:35,patientId:9,symptomList:["Lower Back Pain","Sciatica","Numbness"],doctor:"Dr Amit Sharma",status:"waiting",createdAt:minsAgo(2)},
+];
+
+let requests = []; // {id, doctor, text, ts}
+const REQUEST_POOL = [
+  {doctor:"Dr Amit Sharma",text:"Chai bhijwao"},
+  {doctor:"Dr Neha Singh",text:"Ramesh ki purani file laao"},
+  {doctor:"Dr Amit Sharma",text:"Next patient bhejo"},
+  {doctor:"Dr Neha Singh",text:"Wheelchair chahiye"},
+  {doctor:"Dr Amit Sharma",text:"Payment clarify karo"},
+];
+
+/* helpers */
+const getPatient = id => patients.find(p=>p.id===id);
+const initials = n => n.split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
+const maskPhone = p => p.slice(0,4)+"XXXXXX";
+const STATUS_CLASS = {waiting:"w",consult:"c",completed:"d",cancelled:"cx"};
+const STATUS_KEY   = {waiting:"stWaiting",consult:"stConsult",completed:"stCompleted",cancelled:"stCancelled"};
+
+/* app-level view state */
+let currentFilter = "all";
+let selectedVisitToken = null;
+
+/* ============================================================
+   RENDER — top-level composition
+   ============================================================ */
+function render(){
+  document.getElementById("app").innerHTML =
+    Header() + Launcher() + Stats() +
+    `<div class="grid"><div>${Queue()}</div><div>${Sidebar()}</div></div>`;
+  bindHeader(); bindLauncher(); bindQueue(); bindSidebar();
+}
+
+/* ---------- Header ---------- */
+function Header(){
+  return `<header class="hdr">
+    <div class="hdr-brand">
+      <div class="hdr-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3L20 9V21H4V9L12 3Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 21V13H15V21" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+      <div><div class="hdr-title">${t("appTitle")}</div><div class="hdr-sub">${t("appSub")}</div></div>
+    </div>
+    <div class="hdr-spacer"></div>
+    <div class="hdr-right">
+      <div class="hdr-clinic">Sunrise Physiotherapy Clinic</div>
+      <div class="hdr-div"></div>
+      <div class="hdr-clock"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 7V12L15.5 14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span id="clock">${clockStr()}</span></div>
+      <div class="lang">
+        <button class="lang-btn" id="langBtn">${STRINGS[LANG]._label}<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="lang-menu" id="langMenu">
+          <div class="lang-opt ${LANG==='en'?'active':''}" data-lang="en">English <svg class="tick" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="lang-opt ${LANG==='hinglish'?'active':''}" data-lang="hinglish">Hinglish <svg class="tick" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="lang-opt" data-lang="hi" style="cursor:default;opacity:.55;"><span>हिन्दी</span><span class="soon">soon</span></div>
+        </div>
+      </div>
+      <div class="hdr-user">RS</div>
+    </div>
+  </header>`;
+}
+function clockStr(){ const n=new Date();let h=n.getHours();const m=String(n.getMinutes()).padStart(2,"0");const ap=h>=12?"PM":"AM";h=h%12||12;return `${h}:${m} ${ap}`; }
+function bindHeader(){
+  const btn=document.getElementById("langBtn"), menu=document.getElementById("langMenu");
+  btn.onclick=e=>{e.stopPropagation();btn.classList.toggle("open");menu.classList.toggle("open");};
+  menu.querySelectorAll(".lang-opt").forEach(o=>{
+    o.onclick=()=>{const l=o.dataset.lang;if(l==="hi")return;LANG=l;render();};
+  });
+}
+
+/* ---------- Patient Launcher ---------- */
+function Launcher(){
+  return `<div class="launcher">
+    <div class="launcher-bar">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input class="launcher-input" id="launcherInput" type="text" placeholder="${t("launcherPlaceholder")}" autocomplete="off">
+      <button class="launcher-add" id="launcherAdd" title="${t("registerNew","")}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 5V19M5 12H19" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="launcher-drop" id="launcherDrop"></div>
+  </div>`;
+}
+function bindLauncher(){
+  const input=document.getElementById("launcherInput"), drop=document.getElementById("launcherDrop"), add=document.getElementById("launcherAdd");
+  const renderDrop=q=>{
+    const query=q.trim().toLowerCase();
+    if(!query){drop.classList.remove("open");drop.innerHTML="";return;}
+    const matches=patients.filter(p=>p.name.toLowerCase().includes(query)||p.phone.includes(query)).slice(0,5);
+    let h="";
+    if(matches.length){
+      h+=`<div class="drop-head">${t("existingPatients")}</div>`;
+      h+=matches.map(p=>`<div class="drop-item" data-pid="${p.id}">
+        <div class="drop-av">${initials(p.name)}</div>
+        <div class="drop-info"><div class="drop-name">${p.name}</div>
+        <div class="drop-meta">${p.phone}<span class="sep">·</span>${t("lastVisit")} ${p.lastVisit}<span class="sep">·</span>${p.lastDoctor}</div></div>
+      </div>`).join("");
+      h+=`<div class="drop-divider"></div>`;
+    } else { h+=`<div class="drop-empty">${t("noMatch")}</div>`; }
+    h+=`<div class="drop-create" id="dropCreate"><span class="plus"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>${t("registerNew",q.trim())}</div>`;
+    drop.innerHTML=h; drop.classList.add("open");
+    drop.querySelectorAll(".drop-item").forEach(it=>it.onclick=()=>{openCreateModal(getPatient(+it.dataset.pid));closeDrop();});
+    document.getElementById("dropCreate").onclick=()=>{openCreateModal(null,input.value.trim());closeDrop();};
+  };
+  const closeDrop=()=>{drop.classList.remove("open");input.value="";};
+  input.oninput=e=>renderDrop(e.target.value);
+  input.onfocus=()=>{if(input.value.trim())renderDrop(input.value);};
+  add.onclick=()=>openCreateModal(null,"");
+  document.addEventListener("click",e=>{if(!e.target.closest(".launcher"))drop.classList.remove("open");});
+}
+
+/* ---------- Stats ---------- */
+function Stats(){
+  const total=visits.filter(v=>v.status!=="cancelled").length;
+  const w=visits.filter(v=>v.status==="waiting").length;
+  const c=visits.filter(v=>v.status==="consult").length;
+  const d=visits.filter(v=>v.status==="completed").length;
+  const card=(ic,cls,label,num,ncls)=>`<div class="stat"><div class="stat-ic ${cls}">${ic}</div><div><div class="stat-label">${label}</div><div class="stat-num ${ncls||''}">${num}</div></div></div>`;
+  return `<div class="stats">
+    ${card(`<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M22 21v-2a4 4 0 00-3-3.87" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,"n",t("statTotal"),total)}
+    ${card(`<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7V12L15.5 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,"a",t("statWaiting"),w,"a")}
+    ${card(`<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4.8 3h14.4a1.8 1.8 0 011.8 1.8v14.4a1.8 1.8 0 01-1.8 1.8H4.8A1.8 1.8 0 013 19.2V4.8A1.8 1.8 0 014.8 3z" stroke="currentColor" stroke-width="1.6"/><path d="M8 12.5L11 15.5L16 9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,"b",t("statConsult"),c,"b")}
+    ${card(`<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5L10.5 15L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,"g",t("statCompleted"),d,"g")}
+  </div>`;
+}
+
+/* ---------- Queue ---------- */
+function Queue(){
+  const cnt=s=>visits.filter(v=>v.status===s).length;
+  const total=visits.filter(v=>v.status!=="cancelled").length;
+  const tab=(f,label,dot,n)=>`<div class="tab ${currentFilter===f?'active':''}" data-filter="${f}">${dot?`<span class="tab-dot ${dot}"></span>`:''}${label} <span class="tab-cnt">(${n})</span></div>`;
+  return `<div class="queue">
+    <div class="queue-head"><h2>${t("queueTitle")}</h2></div>
+    <div class="tabs">
+      ${tab("all",t("tabAll"),"",total)}
+      ${tab("waiting",t("tabWaiting"),"a",cnt("waiting"))}
+      ${tab("consult",t("tabConsult"),"b",cnt("consult"))}
+      ${tab("completed",t("tabCompleted"),"g",cnt("completed"))}
+    </div>
+    <div class="qlist" id="qlist">${QueueRows()}</div>
+  </div>`;
+}
+function QueueRows(){
+  let list = currentFilter==="all" ? visits.filter(v=>v.status!=="cancelled") : visits.filter(v=>v.status===currentFilter);
+  const order={waiting:0,consult:1,completed:2,cancelled:3};
+  list=[...list].sort((a,b)=>order[a.status]-order[b.status]||a.createdAt-b.createdAt);
+  if(!list.length) return `<div class="q-empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.4"/><path d="M8.5 15C9.4 15.6 10.6 16 12 16C13.4 16 14.6 15.6 15.5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 10h.01M15 10h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><p>${t("emptyQueue")}</p></div>`;
+  return list.map(VisitRow).join("");
+}
+function VisitRow(v){
+  const p=getPatient(v.patientId);
+  const cls=STATUS_CLASS[v.status];
+  const returning=p&&p.visitCount>1;
+  const shown=v.symptomList.slice(0,2).join(", ");
+  const extra=v.symptomList.length-2;
+  const moreTip=extra>0?v.symptomList.slice(2).join(", "):"";
+  const sel=selectedVisitToken===v.token?"selected":"";
+  return `<div class="vrow ${cls} ${sel}" data-token="${v.token}" role="option" aria-selected="${sel?'true':'false'}" tabindex="0">
+    <div class="v-token"><span class="h">#</span>${String(v.token).padStart(3,"0")}</div>
+    <div>
+      <div class="v-name">${p.name}${returning?`<span class="badge-ret" data-tip="ret" data-vc="${p.visitCount}" data-lv="${p.lastVisit}">${t("returning")}</span>`:""}</div>
+      <div class="v-phone">${maskPhone(p.phone)}</div>
+    </div>
+    <div class="v-symptoms">${shown}${extra>0?` <span class="more" data-tip="sym" data-more="${moreTip}">+${extra}</span>`:""}</div>
+    <div class="v-doctor" data-tip="doc" data-doc="${v.doctor}">${v.doctor}</div>
+    <div class="v-last">${p.lastVisit}</div>
+    <div class="v-status ${cls}"><span class="sd"></span>${t(STATUS_KEY[v.status])}</div>
+    <button class="v-more" data-more-btn="${v.token}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg></button>
+  </div>`;
+}
+function bindQueue(){
+  document.querySelectorAll(".tab").forEach(tb=>tb.onclick=()=>{currentFilter=tb.dataset.filter;showSkeletonThenRerenderQueue();});
+  document.querySelectorAll(".vrow").forEach(row=>{
+    const token=+row.dataset.token;
+    row.onclick=e=>{ if(e.target.closest("[data-more-btn]")||e.target.closest("[data-tip]"))return; openDetailModal(token); };
+    row.querySelector("[data-more-btn]").onclick=e=>{e.stopPropagation();openRowMenu(token,e.currentTarget);};
+  });
+  bindTooltips();
+}
+function showSkeletonThenRerenderQueue(){
+  const qlist=document.getElementById("qlist");
+  qlist.innerHTML=Array.from({length:5}).map(()=>`<div class="skel-row"><div class="skel tall"></div><div><div class="skel w70"></div><div class="skel w50" style="margin-top:6px"></div></div><div class="skel w90"></div><div class="skel w70"></div><div class="skel w50"></div><div class="skel w70"></div><div></div></div>`).join("");
+  // re-render tabs active state immediately
+  document.querySelectorAll(".tab").forEach(tb=>tb.classList.toggle("active",tb.dataset.filter===currentFilter));
+  setTimeout(()=>{ qlist.innerHTML=QueueRows(); rebindRowsOnly(); },600);
+}
+function rebindRowsOnly(){
+  document.querySelectorAll(".vrow").forEach(row=>{
+    const token=+row.dataset.token;
+    row.onclick=e=>{ if(e.target.closest("[data-more-btn]")||e.target.closest("[data-tip]"))return; openDetailModal(token); };
+    row.querySelector("[data-more-btn]").onclick=e=>{e.stopPropagation();openRowMenu(token,e.currentTarget);};
+  });
+  bindTooltips();
+}
+
+/* ---------- Tooltips (lightweight, shared) ---------- */
+let tipEl=null;
+function bindTooltips(){
+  document.querySelectorAll("[data-tip]").forEach(el=>{
+    el.onmouseenter=()=>{
+      let txt="";
+      if(el.dataset.tip==="sym") txt=el.dataset.more;
+      if(el.dataset.tip==="doc") txt=el.dataset.doc;
+      if(el.dataset.tip==="ret") txt=`${el.dataset.vc} ${t("visits")} · ${t("lastVisit")} ${el.dataset.lv}`;
+      showTip(el,txt);
+    };
+    el.onmouseleave=hideTip;
+  });
+}
+function showTip(el,txt){
+  hideTip();
+  tipEl=document.createElement("div");
+  tipEl.textContent=txt;
+  Object.assign(tipEl.style,{position:"fixed",background:"#161d29",color:"#fff",fontSize:"12px",fontWeight:"600",padding:"6px 10px",borderRadius:"7px",zIndex:400,pointerEvents:"none",boxShadow:"0 4px 14px rgba(0,0,0,.2)",maxWidth:"220px"});
+  document.body.appendChild(tipEl);
+  const r=el.getBoundingClientRect();
+  tipEl.style.left=Math.max(8,r.left)+"px";
+  tipEl.style.top=(r.top-tipEl.offsetHeight-8)+"px";
+}
+function hideTip(){ if(tipEl){tipEl.remove();tipEl=null;} }
+
+/* ---------- Row context menu ---------- */
+function openRowMenu(token,anchor){
+  const v=visits.find(x=>x.token===token);
+  const menu=document.getElementById("rowmenu");
+  const ic=d=>`<svg width="15" height="15" viewBox="0 0 24 24" fill="none">${d}</svg>`;
+  menu.innerHTML=`
+    <div class="rowmenu-item" data-act="open">${ic('<path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>')}${t("menuOpen")}</div>
+    <div class="rowmenu-item" data-act="move">${ic('<path d="M4 12h16M14 6l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>')}${t("menuMove")}</div>
+    ${v.status!=="completed"?`<div class="rowmenu-item" data-act="complete">${ic('<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>')}${t("menuComplete")}</div>`:""}
+    <div class="rowmenu-sep"></div>
+    <div class="rowmenu-item danger" data-act="cancel">${ic('<path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')}${t("menuCancel")}</div>`;
+  menu.classList.add("open");
+  const r=anchor.getBoundingClientRect();
+  menu.style.top=(r.bottom+4)+"px";
+  menu.style.left=Math.min(r.left-150,window.innerWidth-210)+"px";
+  menu.querySelectorAll(".rowmenu-item").forEach(it=>it.onclick=()=>{rowAction(token,it.dataset.act);closeRowMenu();});
+  setTimeout(()=>document.addEventListener("click",closeRowMenuOnce),0);
+}
+function closeRowMenu(){document.getElementById("rowmenu").classList.remove("open");}
+function closeRowMenuOnce(e){ if(!e.target.closest("#rowmenu")){closeRowMenu();document.removeEventListener("click",closeRowMenuOnce);} }
+function rowAction(token,act){
+  const v=visits.find(x=>x.token===token); const p=getPatient(v.patientId);
+  if(act==="complete"){ v.status="completed"; toast(t("toastStatus",p.name,t("stCompleted"))); render(); }
+  else if(act==="cancel"){ v.status="cancelled"; toast(t("toastStatus",p.name,t("stCancelled"))); render(); }
+  else if(act==="open"){ openDetailModal(token); }
+  else { console.log("[stub] row action:",act,token); toast(t("menuMove")); }
+}
+
+/* ---------- Sidebar ---------- */
+function Sidebar(){
+  return SummaryCard()+DoctorsCard()+RequestsCard();
+}
+function SummaryCard(){
+  const active=visits.filter(v=>v.status==="consult").sort((a,b)=>b.createdAt-a.createdAt);
+  const curTok=active.length?"#"+String(active[0].token).padStart(3,"0"):"—";
+  const waiting=visits.filter(v=>v.status==="waiting");
+  let avg="—";
+  if(waiting.length){const ms=waiting.reduce((s,v)=>s+(Date.now()-v.createdAt),0)/waiting.length;avg=Math.round(ms/60000)+" "+t("min");}
+  return `<div class="side-card">
+    <h3>${t("sumTitle")}</h3>
+    <div class="sum-row"><div class="sum-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 7V12L15.5 14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>${t("currentToken")}</div><div class="sum-val token">${curTok}</div></div>
+    <div class="sum-row"><div class="sum-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/></svg>${t("avgWait")}</div><div class="sum-val">${avg}</div></div>
+  </div>`;
+}
+function DoctorsCard(){
+  const rows=DOCTORS.map(d=>{
+    const withV=visits.find(v=>v.doctor===d.name&&v.status==="consult");
+    const q=visits.filter(v=>v.doctor===d.name&&v.status==="waiting").length;
+    const state=withV?"busy":"free";
+    const activity=withV?t("docBusy",String(withV.token).padStart(3,"0")):t("docFree");
+    return `<div class="doc ${state}">
+      <div class="doc-av">${d.initials}<span class="doc-status-dot"></span></div>
+      <div class="doc-info"><div class="doc-name">${d.name}</div><div class="doc-activity">${activity}</div></div>
+      <div class="doc-queue"><b>${q}</b><span>${t("queue")}</span></div>
+    </div>`;
+  }).join("");
+  return `<div class="side-card"><h3>${t("doctorsTitle")}</h3>${rows}</div>`;
+}
+function RequestsCard(){
+  const body = requests.length
+    ? requests.map(r=>`<div class="req-item pulse" data-req="${r.id}">
+        <div class="req-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.7 21a2 2 0 01-3.4 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+        <div class="req-info"><div class="req-doc">${r.doctor}</div><div class="req-text">${r.text}</div></div>
+        <button class="req-ack" data-ack="${r.id}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>`).join("")
+    : `<div class="req-empty">${t("noRequests")}</div>`;
+  return `<div class="side-card"><h3>${t("requestsTitle")}</h3>${body}
+    <button class="sim-btn" id="simReq">${t("simulate")}</button></div>`;
+}
+function bindSidebar(){
+  const sim=document.getElementById("simReq");
+  if(sim) sim.onclick=()=>{
+    const pick=REQUEST_POOL[Math.floor(Math.random()*REQUEST_POOL.length)];
+    requests.unshift({id:Date.now(),doctor:pick.doctor,text:pick.text});
+    render(); playChime();
+  };
+  document.querySelectorAll("[data-ack]").forEach(b=>b.onclick=()=>{
+    requests=requests.filter(r=>r.id!=b.dataset.ack); toast(t("toastAck")); render();
+  });
+}
+function playChime(){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const notes=[880,1174.7];
+    notes.forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type="sine";o.frequency.value=f;o.connect(g);g.connect(ctx.destination);const s=ctx.currentTime+i*0.12;g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(0.12,s+0.02);g.gain.exponentialRampToValueAtTime(0.001,s+0.35);o.start(s);o.stop(s+0.36);});
+  }catch(e){}
+}
+
+/* ============================================================
+   MODAL — detail + create (component owns its own render)
+   ============================================================ */
+const overlay=document.getElementById("overlay"), modal=document.getElementById("modal");
+function openModalShell(html){ modal.innerHTML=html; overlay.classList.add("open"); }
+function closeModal(){ overlay.classList.remove("open"); modal.innerHTML=""; }
+overlay.onclick=e=>{ if(e.target===overlay) closeModal(); };
+document.addEventListener("keydown",e=>{ if(e.key==="Escape")closeModal(); });
+
+function openDetailModal(token){
+  const v=visits.find(x=>x.token===token); if(!v)return;
+  selectedVisitToken=token;
+  const p=getPatient(v.patientId); const cls=STATUS_CLASS[v.status];
+  const docOpts=DOCTORS.map(d=>`<option ${d.name===v.doctor?"selected":""}>${d.name}</option>`).join("");
+  // status bar: highlight likely next action based on current status
+  let statusBar="";
+  if(v.status==="waiting"){
+    statusBar=`<button class="st-btn primary c" data-set="consult">${t("stConsult")}</button>
+               <button class="st-btn danger" data-set="cancelled">${t("stCancelled")}</button>`;
+  } else if(v.status==="consult"){
+    statusBar=`<button class="st-btn primary d" data-set="completed">${t("stCompleted")}</button>
+               <button class="st-btn danger" data-set="cancelled">${t("stCancelled")}</button>`;
+  } else {
+    statusBar=`<button class="st-btn current" disabled>${t(STATUS_KEY[v.status])}</button>`;
+  }
+  const past=(p.past||[]).slice(0,3);
+  const pastHtml=past.length?past.map(pv=>`<div class="pv"><div><div class="pv-left">${pv.s}</div><div class="pv-date">${pv.d}</div></div><span class="pv-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>`).join(""):"";
+
+  openModalShell(`
+    <div class="modal-top">
+      <button class="modal-back" id="mBack"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${t("back")}</button>
+      <div class="modal-title">#${String(v.token).padStart(3,"0")}</div>
+    </div>
+    <div class="modal-body">
+      <div class="det-name ${cls}">${p.name}</div>
+      <div class="det-meta">${p.phone}<span class="sep">·</span>${p.age}${p.gender?", "+p.gender[0]:""}<span class="sep">·</span>${p.address||""}</div>
+
+      <div class="det-section"><div class="det-lbl">${t("detSymptoms")}</div><div class="det-symptoms">${v.symptomList.join(", ")}</div></div>
+
+      <div class="det-section"><div class="det-lbl">${t("detDoctor")}</div>
+        <select class="field-sel" id="detDoc">${docOpts}</select></div>
+
+      <div class="det-section"><div class="det-lbl">${t("detStatus")}</div>
+        <div class="status-bar">${statusBar}</div></div>
+
+      ${pastHtml?`<div class="det-section"><div class="det-lbl">${t("detPast")}</div>${pastHtml}</div>`:""}
+
+      <div class="det-foot"><button class="det-fulllink">${t("detFullHistory")}<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+    </div>`);
+
+  document.getElementById("mBack").onclick=closeModal;
+  document.getElementById("detDoc").onchange=e=>{v.doctor=e.target.value;};
+  modal.querySelectorAll("[data-set]").forEach(b=>b.onclick=()=>{
+    v.status=b.dataset.set;
+    if(v.status==="consult"&&!v.startedAt)v.startedAt=new Date();
+    toast(t("toastStatus",p.name,t(STATUS_KEY[v.status])));
+    closeModal(); render();
+  });
+  modal.querySelector(".det-fulllink").onclick=()=>{console.log("[stub] open full history for patient",p.id);toast(t("detFullHistory"));};
+}
+
+function openCreateModal(patient,prefillName){
+  const existing=!!patient;
+  const docOpts=DOCTORS.map(d=>`<option ${(existing&&patient.lastDoctor===d.name)?"selected":""}>${d.name}</option>`).join("");
+  const demoFields = existing ? "" : `
+    <div class="fgrid">
+      <div class="field full"><label>${t("fldName")}</label><input id="fName" value="${prefillName||""}" placeholder="${t("phName")}"></div>
+      <div class="field"><label>${t("fldPhone")}</label><input id="fPhone" placeholder="${t("phPhone")}" inputmode="numeric"></div>
+      <div class="field"><label>${t("fldAge")}</label><input id="fAge" placeholder="${t("phAge")}" inputmode="numeric"></div>
+      <div class="field"><label>${t("fldGender")}</label><select id="fGender"><option value="">${t("selectGender")}</option><option>${t("male")}</option><option>${t("female")}</option><option>${t("other")}</option></select></div>
+      <div class="field"><label>${t("fldAddress")}</label><input id="fAddress" placeholder="${t("phAddr")}"></div>
+    </div>`;
+  const prefillBanner = existing ? `<div class="prefill"><div class="prefill-av">${initials(patient.name)}</div><div><div class="prefill-name">${patient.name}</div><div class="prefill-meta">${patient.phone}<span class="sep" style="color:var(--text-faint);margin:0 6px">·</span>${t("prefillFrom",patient.visitCount)}</div></div></div>` : "";
+
+  openModalShell(`
+    <div class="modal-top">
+      <button class="modal-back" id="mBack"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${t("back")}</button>
+      <div class="modal-title">${existing?t("newVisit"):t("registerVisit")}</div>
+    </div>
+    <div class="modal-body">
+      ${prefillBanner}
+      ${demoFields}
+      <div class="field full"><label>${t("fldSymptoms")}</label><input id="fSymptoms" placeholder="${t("phSymp")}"></div>
+      <div class="field full"><label>${t("fldDoctor")}</label><select id="fDoctor">${docOpts}</select></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="mCancel">${t("cancel")}</button>
+      <button class="btn btn-primary" id="mSave">${t("save")}</button>
+    </div>`);
+
+  document.getElementById("mBack").onclick=closeModal;
+  document.getElementById("mCancel").onclick=closeModal;
+  setTimeout(()=>{const f=document.getElementById(existing?"fSymptoms":"fName");if(f)f.focus();},60);
+
+  document.getElementById("mSave").onclick=()=>{
+    const symptoms=document.getElementById("fSymptoms").value.trim();
+    const doctor=document.getElementById("fDoctor").value;
+    let ok=true;
+    if(!existing){
+      const name=document.getElementById("fName"), phone=document.getElementById("fPhone");
+      if(!name.value.trim()){name.classList.add("err");ok=false;} else name.classList.remove("err");
+      if(!phone.value.trim()){phone.classList.add("err");ok=false;} else phone.classList.remove("err");
+    }
+    const symp=document.getElementById("fSymptoms");
+    if(!symptoms){symp.classList.add("err");ok=false;} else symp.classList.remove("err");
+    if(!ok)return;
+
+    tokenSeq++;
+    let pid, pname, createdNewPatient=false;
+    if(existing){ pid=patient.id; pname=patient.name; }
+    else {
+      const np={id:patients.length+100,name:document.getElementById("fName").value.trim(),phone:document.getElementById("fPhone").value.trim(),age:document.getElementById("fAge").value||"—",gender:document.getElementById("fGender").value||"",address:document.getElementById("fAddress").value||"",lastVisit:"—",lastDoctor:doctor,visitCount:1,past:[]};
+      patients.push(np); pid=np.id; pname=np.name; createdNewPatient=true;
+    }
+    const newVisit={token:tokenSeq,patientId:pid,symptomList:symptoms.split(",").map(s=>s.trim()).filter(Boolean),doctor,status:"waiting",createdAt:new Date()};
+    visits.push(newVisit);
+    closeModal(); render();
+    toast(t("toastCreated",String(tokenSeq).padStart(3,"0"),pname),()=>{
+      visits=visits.filter(v=>v.token!==newVisit.token);
+      if(createdNewPatient)patients=patients.filter(p=>p.id!==pid);
+      tokenSeq--; render(); toast(t("toastUndone"));
+    });
+  };
+}
+
+/* ============================================================
+   TOAST + UNDO (fade only; countdown ring on undo)
+   ============================================================ */
+let toastTimer;
+function toast(msg,undoFn){
+  const el=document.getElementById("toast");
+  const undoHtml = undoFn ? `<button class="toast-undo" id="toastUndo">
+      <svg class="toast-ring" viewBox="0 0 16 16"><circle class="bg" cx="8" cy="8" r="7"/><circle class="fg" cx="8" cy="8" r="7"/></svg>${t("undo")}</button>` : "";
+  el.innerHTML=`<span class="toast-msg">${msg}</span>${undoHtml}`;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  const dur = undoFn?5000:2600;
+  toastTimer=setTimeout(()=>el.classList.remove("show"),dur);
+  if(undoFn){
+    document.getElementById("toastUndo").onclick=()=>{clearTimeout(toastTimer);el.classList.remove("show");undoFn();};
+  }
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+render();
+setInterval(()=>{const c=document.getElementById("clock");if(c)c.textContent=clockStr();},20000);
+</script>
+</body>
+</html>

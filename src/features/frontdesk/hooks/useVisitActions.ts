@@ -1,0 +1,139 @@
+import type { Dispatch, SetStateAction } from "react";
+import { toast } from "sonner";
+import {
+    createPatient,
+    findPatientByPhone,
+    createVisit,
+    markVisitServing,
+    updateVisitStatus,
+    reassignVisitDoctor,
+    saveVisitSymptoms,
+    type DBPatient,
+} from "@/lib/db";
+import type { TodayVisit } from "../types/frontdesk";
+import { useT } from "../i18n/i18n";
+import { padToken } from "../utils";
+
+type UseVisitActionsArgs = {
+    visits: TodayVisit[];
+    setVisits: Dispatch<SetStateAction<TodayVisit[]>>;
+    refetch: () => void;
+};
+
+// Optimistically patches the in-memory queue, then reconciles against the
+// server. On failure, the queue is rolled back to its pre-action snapshot —
+// the next silent 25s refresh will also self-correct either way.
+export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsArgs) {
+    const t = useT();
+
+    const patch = (visitId: string, fields: Partial<TodayVisit>) => {
+        setVisits((vs) => vs.map((v) => (v.visit_id === visitId ? { ...v, ...fields } : v)));
+    };
+
+    const startConsultation = async (visit: TodayVisit) => {
+        const prev = visits;
+        patch(visit.visit_id, { status: "serving" });
+        try {
+            await markVisitServing(visit.visit_id);
+            toast.success(t("toastStatus", { name: visit.patient_name, status: t("stConsult") }));
+        } catch (err: any) {
+            setVisits(prev);
+            toast.error(`Could not start consultation: ${err.message}`);
+        }
+    };
+
+    const completeVisit = async (visit: TodayVisit) => {
+        const prev = visits;
+        patch(visit.visit_id, { status: "completed" });
+        try {
+            await updateVisitStatus(visit.visit_id, "completed");
+            toast.success(t("toastStatus", { name: visit.patient_name, status: t("stCompleted") }));
+        } catch (err: any) {
+            setVisits(prev);
+            toast.error(`Could not complete visit: ${err.message}`);
+        }
+    };
+
+    const cancelVisit = async (visit: TodayVisit, silent = false) => {
+        const prev = visits;
+        patch(visit.visit_id, { status: "discarded" });
+        try {
+            await updateVisitStatus(visit.visit_id, "discarded");
+            if (!silent) toast(t("toastStatus", { name: visit.patient_name, status: t("stCancelled") }));
+        } catch (err: any) {
+            setVisits(prev);
+            toast.error(`Could not cancel visit: ${err.message}`);
+        }
+    };
+
+    const reassignDoctor = async (visit: TodayVisit, doctorId: string, doctorName: string) => {
+        const prev = visits;
+        patch(visit.visit_id, { assigned_doctor_id: doctorId, doctor_name: doctorName });
+        try {
+            await reassignVisitDoctor(visit.visit_id, doctorId);
+        } catch (err: any) {
+            setVisits(prev);
+            toast.error(`Could not reassign doctor: ${err.message}`);
+        }
+    };
+
+    const createNewVisit = async (opts: {
+        existingPatient: DBPatient | null;
+        name: string;
+        phone: string;
+        age: string;
+        gender: string;
+        symptomIds: number[];
+        doctorId: string;
+    }): Promise<{ patientName: string } | null> => {
+        try {
+            let patient = opts.existingPatient;
+            if (!patient) {
+                const byPhone = await findPatientByPhone(opts.phone.trim());
+                patient =
+                    byPhone ??
+                    (await createPatient({
+                        name: opts.name.trim(),
+                        age: Number(opts.age) || 0,
+                        gender: opts.gender,
+                        phone: opts.phone.trim(),
+                    }));
+            }
+
+            const visit = await createVisit(patient.id, "waiting", opts.doctorId);
+
+            // Symptoms are structured entities picked from the `symptoms` catalog
+            // (they feed Cortex, ranking, and future specialty logic) — the picker
+            // hands us real IDs, so they persist directly. Best-effort: a failure
+            // here must not lose the visit itself.
+            if (opts.symptomIds.length) {
+                saveVisitSymptoms(visit.id, opts.symptomIds).catch((err) =>
+                    console.warn("saveVisitSymptoms failed (non-fatal):", err)
+                );
+            }
+
+            refetch();
+
+            const patientName = patient.name;
+            toast.success(t("toastCreated", { name: patientName, t: padToken(visit.token_number ?? null) }), {
+                action: {
+                    label: t("undo"),
+                    onClick: () => {
+                        cancelVisit(
+                            { visit_id: visit.id, patient_name: patientName } as TodayVisit,
+                            true
+                        );
+                        toast(t("toastUndone"));
+                    },
+                },
+            });
+
+            return { patientName };
+        } catch (err: any) {
+            toast.error(`Could not create visit: ${err.message}`);
+            return null;
+        }
+    };
+
+    return { startConsultation, completeVisit, cancelVisit, reassignDoctor, createNewVisit };
+}

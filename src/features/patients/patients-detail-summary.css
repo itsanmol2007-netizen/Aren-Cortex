@@ -1,0 +1,514 @@
+/* ── PATIENT DETAIL — SUMMARY PANEL + SNAPSHOT ───────────────────────────────
+   Owns: .prec-summary-panel-v2, .prec-snapshot-card-v2,
+         .prec-snapshot-header-v2, .prec-freq-*, .prec-signal-*
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PATIENT SUMMARY — tight, dense, 5 columns
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.prec-summary-panel-v2 {
+    display: flex;
+    align-items: stretch;
+    margin: 8px 16px 0;
+    background: #ffffff;
+    border: 1px solid #e8ecf4;
+    border-radius: 10px;
+    overflow: hidden;
+    width: calc(100% - 32px);
+}
+
+/* Left label — vertical stethoscope strip */
+.prec-summary-panel-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 14px 10px;
+    background: #fafbfe;
+    border-right: 1px solid #edf0f7;
+    color: #7c3aed;
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    text-align: center;
+    min-width: 54px;
+    max-width: 54px;
+    flex-shrink: 0;
+}
+
+/* Content columns */
+.prec-summary-panel-col {
+    padding: 12px 16px;
+    border-right: 1px solid #edf0f7;
+    min-width: 0;
+    flex: 1;
+}
+
+.prec-summary-panel-col:last-child {
+    border-right: none;
+}
+
+.prec-summary-panel-col--freq {
+    flex: 0 0 148px;
+}
+
+.prec-summary-panel-col--signals {
+    flex: 0 0 210px;
+    position: relative;
+    padding-bottom: 28px;
+}
+
+/* Column title — secondary hierarchy */
+.prec-summary-panel-col-title {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+    white-space: nowrap;
+}
+
+.prec-summary-panel-col-sub {
+    font-weight: 500;
+    color: #b0b8c8;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 8px;
+}
+
+/* Chips in summary */
+.prec-summary-panel-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+}
+
+.prec-summary-panel-chips .prec-symptom-chip {
+    background: #f8f9fc;
+    border-color: #e2eaf4;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+}
+
+.prec-summary-panel-chips .prec-symptom-more {
+    font-size: 10px;
+    font-weight: 600;
+    color: #7c3aed;
+    cursor: pointer;
+}
+
+/* Medicines */
+.prec-summary-panel-med-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.prec-summary-panel-med-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.prec-summary-panel-med-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    line-height: 1.7;
+}
+
+.prec-summary-panel-med-count {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1268e8;
+    min-width: 18px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+/* Tests */
+.prec-summary-panel-test-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.prec-summary-panel-test-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.prec-summary-panel-test-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    line-height: 1.7;
+}
+
+.prec-summary-panel-test-count {
+    font-size: 10px;
+    font-weight: 700;
+    color: #16a34a;
+    min-width: 18px;
+    text-align: right;
+}
+
+/* View all links inside summary */
+.prec-summary-view-all {
+    display: block;
+    margin-top: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #1268e8;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+
+/* ── Visit Frequency ── */
+
+.prec-freq-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.prec-freq-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 48px;
+}
+
+.prec-freq-bar-col {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+}
+
+.prec-freq-bar {
+    width: 100%;
+    background: linear-gradient(180deg, #9f7aea 0%, #7c3aed 100%);
+    border-radius: 2px 2px 0 0;
+    opacity: 0.75;
+    transition: opacity 0.12s;
+}
+
+.prec-freq-bar:hover {
+    opacity: 1;
+}
+
+.prec-freq-summary {
+    font-size: 9px;
+    color: #64748b;
+    font-weight: 500;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.prec-freq-most-active {
+    font-size: 9px;
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+.prec-freq-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.prec-freq-big {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0a0f1e;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+}
+
+.prec-freq-big-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+/* ── Clinical Signals ── */
+
+.prec-signals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 6px;
+}
+
+.prec-signal-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+}
+
+.prec-signal-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.prec-signal-dot--blue {
+    background: #1268e8;
+}
+
+.prec-signal-dot--pink {
+    background: #c026a0;
+}
+
+.prec-signal-dot--amber {
+    background: #d97706;
+}
+
+.prec-signal-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #1e293b;
+    line-height: 1.4;
+}
+
+.prec-signal-sub {
+    display: block;
+    font-size: 9px;
+    font-weight: 400;
+    color: #94a3b8;
+    margin-top: 1px;
+}
+
+.prec-signals-view-all {
+    font-size: 10px;
+    font-weight: 600;
+    color: #c026a0;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+    position: absolute;
+    bottom: 12px;
+    right: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLINICAL SNAPSHOT — primary clinical section, most important
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.prec-snapshot-card-v2 {
+    margin: 8px 16px 0;
+    background: #ffffff;
+    border: 1px solid #e8ecf4;
+    border-radius: 10px;
+    overflow: hidden;
+    /* Slightly stronger shadow to visually elevate it */
+    box-shadow: 0 2px 12px rgba(18, 40, 100, 0.06);
+}
+
+/* Header row — clean, light, not colored */
+.prec-snapshot-header-v2 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px 9px;
+    border-bottom: 1px solid #edf2fb;
+    background: #fafbff;
+}
+
+.prec-snapshot-title-v2 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.prec-snapshot-title-v2 svg {
+    color: #ec4899;
+}
+
+.prec-snapshot-timestamp {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 400;
+    background: #f1f5f9;
+    border: 1px solid #e2eaf4;
+    border-radius: 20px;
+    padding: 2px 10px;
+}
+
+/* 5 columns */
+.prec-snapshot-cols {
+    display: flex;
+    align-items: flex-start;
+}
+
+.prec-snapshot-col {
+    flex: 1;
+    padding: 10px 14px 12px;
+    min-width: 0;
+    overflow: hidden;
+    border-right: 1px solid #edf0f7;
+}
+
+.prec-snapshot-col:last-child,
+.prec-snapshot-col--last {
+    border-right: none;
+}
+
+.prec-snapshot-col--date {
+    flex: 0 0 130px;
+    flex-shrink: 0;
+}
+
+.prec-snapshot-col-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #94a3b8;
+    margin-bottom: 7px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.prec-snapshot-col-label svg {
+    opacity: 0.7;
+}
+
+.prec-snapshot-col-label-count {
+    font-size: 8px;
+    font-weight: 700;
+    color: #1268e8;
+    background: #eef4ff;
+    border: 1px solid #c7d9f8;
+    border-radius: 8px;
+    padding: 0 5px;
+}
+
+.prec-snapshot-col-date-val {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0a0f1e;
+    margin-bottom: 3px;
+    line-height: 1.2;
+}
+
+.prec-snapshot-col-ago {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+.prec-snapshot-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.prec-snapshot-empty {
+    font-size: 11px;
+    color: #b0bcc8;
+    font-style: normal;
+    font-weight: 400;
+}
+
+/* Prescription rows */
+.prec-snapshot-rx {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.prec-snapshot-rx-row {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+}
+
+.prec-snapshot-rx-icon {
+    color: #1268e8;
+    flex-shrink: 0;
+    opacity: 0.5;
+    position: relative;
+    top: 1px;
+}
+
+.prec-snapshot-rx-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0a0f1e;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prec-snapshot-rx-dose {
+    font-size: 9px;
+    color: #334155;
+    background: #eef4ff;
+    border: 1px solid #c7d9f8;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.prec-snapshot-rx-freq {
+    font-size: 10px;
+    color: #64748b;
+    font-weight: 400;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Test list */
+.prec-snapshot-test-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.prec-snapshot-test-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #16a34a;
+}

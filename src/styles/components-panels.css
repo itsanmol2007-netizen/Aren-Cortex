@@ -1,0 +1,583 @@
+/* ============================================================
+   COMPONENTS-PANELS.CSS
+   AREN Cortex Phase 1
+   Findings panel, Tests/sidebar panel, Preview overlay,
+   Prescription panel (legacy), misc shared
+   ============================================================ */
+
+/* ══ PRESCRIPTION PANEL (legacy — kept, not rendered) ══════ */
+
+.prescription-panel {
+    min-height: 430px;
+    position: relative;
+    overflow: hidden;
+    border-color: rgba(37, 99, 235, 0.14);
+    box-shadow: var(--shadow-active), inset 0 1px 0 rgba(255, 255, 255, 0.90);
+}
+
+.prescription-list {
+    display: grid;
+    gap: 3px;
+}
+
+.empty-prescription {
+    display: grid;
+    min-height: 286px;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+    border: 1px dashed rgba(37, 99, 235, 0.18);
+    border-radius: 8px;
+    background: linear-gradient(160deg,
+            rgba(237, 245, 255, 0.7) 0%,
+            rgba(248, 251, 255, 0.5) 100%);
+    color: var(--muted);
+    text-align: center;
+}
+
+/* ══ SIDEBAR TESTS PANEL ════════════════════════════════════ */
+
+.sidebar-tests-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.tests-search-box {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    border: 1px solid rgba(168, 85, 247, 0.16);
+    border-radius: 8px;
+    background: rgba(250, 245, 255, 0.65);
+    padding: 0 10px;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.tests-search-box:focus-within {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.09);
+    background: white;
+}
+
+.tests-search-icon {
+    color: #a855f7;
+    flex-shrink: 0;
+}
+
+.tests-search-input {
+    flex: 1;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 12px;
+    color: #0f172a;
+    min-width: 0;
+}
+
+.tests-search-input::placeholder {
+    color: #b4a7d4;
+}
+
+.tests-search-clear {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(168, 85, 247, 0.10);
+    color: #7c3aed;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    transition: background 0.12s;
+}
+
+.tests-search-clear:hover {
+    background: rgba(168, 85, 247, 0.20);
+}
+
+.test-groups-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    max-height: 380px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 85, 247, 0.18) transparent;
+    padding-right: 2px;
+}
+
+.test-groups-scroll::-webkit-scrollbar {
+    width: 3px;
+}
+
+.test-groups-scroll::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.22);
+    border-radius: 999px;
+}
+
+.test-groups-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.42);
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.28);
+}
+
+.test-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 2px;
+}
+
+.test-group:nth-child(even) {
+    padding: 5px 6px;
+    margin: 0 -6px;
+    border-radius: 7px;
+    background: rgba(168, 85, 247, 0.022);
+}
+
+.test-group-divider {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid rgba(168, 85, 247, 0.10);
+    margin-bottom: 1px;
+}
+
+.test-group-icon {
+    font-size: 11px;
+    line-height: 1;
+}
+
+.test-group-label {
+    font-size: 9.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: #8b5cf6;
+}
+
+.tg-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.tg-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    border: 1px solid rgba(168, 85, 247, 0.18);
+    border-radius: 999px;
+    background: rgba(250, 245, 255, 0.75);
+    color: #5b21b6;
+    font-size: 11px;
+    font-weight: 650;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s,
+        transform 0.1s, box-shadow 0.12s;
+    white-space: nowrap;
+}
+
+.tg-chip-row .tg-chip:first-child {
+    font-weight: 700;
+    border-color: rgba(168, 85, 247, 0.26);
+}
+
+.tg-chip:hover {
+    border-color: rgba(168, 85, 247, 0.48);
+    background: rgba(243, 232, 255, 0.9);
+    color: #7c3aed;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(168, 85, 247, 0.12);
+}
+
+.tg-chip:active {
+    transform: translateY(0) scale(0.96);
+}
+
+.tg-chip.rare {
+    font-size: 10px;
+    height: 21px;
+    opacity: 0.55;
+    border-style: dashed;
+    background: transparent;
+}
+
+.tg-chip.rare:hover {
+    opacity: 0.9;
+    background: rgba(243, 232, 255, 0.7);
+}
+
+.tg-chip.selected {
+    background: linear-gradient(135deg,
+            rgba(244, 114, 182, 0.14) 0%,
+            rgba(168, 85, 247, 0.18) 100%);
+    border-color: #a855f7;
+    color: #7c3aed;
+    font-weight: 750;
+    opacity: 1;
+    box-shadow: 0 1px 5px rgba(168, 85, 247, 0.15);
+}
+
+.tg-chip.selected:hover {
+    background: linear-gradient(135deg,
+            rgba(244, 114, 182, 0.22) 0%,
+            rgba(168, 85, 247, 0.28) 100%);
+    border-color: #9333ea;
+}
+
+.tests-no-results {
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 0;
+    padding: 8px 0;
+}
+
+.selected-tests-strip {
+    padding-top: 8px;
+    border-top: 1px solid rgba(168, 85, 247, 0.10);
+}
+
+.selected-tests-label {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #8b5cf6;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.sidebar-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.sidebar-test-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    border: 1px solid rgba(168, 85, 247, 0.18);
+    border-radius: 999px;
+    background: rgba(250, 245, 255, 0.75);
+    color: #5b21b6;
+    font-size: 11px;
+    font-weight: 650;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    white-space: nowrap;
+}
+
+.sidebar-test-chip:hover:not(:disabled) {
+    border-color: rgba(168, 85, 247, 0.45);
+    background: rgba(243, 232, 255, 0.9);
+    color: #7c3aed;
+}
+
+.sidebar-test-chip.chip-selected,
+.sidebar-test-chip:disabled {
+    background: rgba(168, 85, 247, 0.10);
+    border-color: rgba(168, 85, 247, 0.28);
+    color: #7c3aed;
+    opacity: 0.65;
+    cursor: default;
+}
+
+.sidebar-lab-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.sidebar-lab-label {
+    font-size: 9px;
+    font-weight: 800;
+    color: #8b5cf6;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+}
+
+.sidebar-lab-select {
+    height: 32px;
+    border: 1px solid rgba(168, 85, 247, 0.18);
+    border-radius: 8px;
+    background: rgba(250, 245, 255, 0.65);
+    font-size: 12px;
+    color: #1e293b;
+    padding: 0 8px;
+    width: 100%;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sidebar-lab-select:focus {
+    outline: none;
+    border-color: #a855f7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.09);
+}
+
+/* ══ PREVIEW OVERLAY ════════════════════════════════════════ */
+
+.preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.overlay-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(9, 20, 43, 0.34);
+    backdrop-filter: blur(6px);
+}
+
+.preview-modal {
+    position: relative;
+    z-index: 1;
+    width: min(720px, 100%);
+    max-height: min(82vh, 760px);
+    overflow: auto;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 28px 90px rgba(7, 18, 38, 0.32);
+    padding: 16px;
+}
+
+.preview-sheet {
+    display: grid;
+    gap: 9px;
+    border-radius: 8px;
+    background: rgba(248, 251, 255, 0.72);
+    padding: 11px;
+}
+
+.preview-sheet header,
+.preview-line,
+.preview-block {
+    display: grid;
+    gap: 3px;
+}
+
+.preview-sheet header {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.preview-sheet strong {
+    font-size: 12px;
+}
+
+.preview-sheet span,
+.preview-sheet p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.38;
+}
+
+/* ══ BACKDROP FIX ═══════════════════════════════════════════ */
+
+.mi-overlay,
+.pm-overlay {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: none !important;
+}
+
+/* ══ SHOW MORE CHIP ══════════════════════════════════════════ */
+
+.show-more-chip {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: transparent;
+    border: 1px dashed var(--blue);
+    color: var(--blue);
+    cursor: pointer;
+    transition: background 0.13s;
+    white-space: nowrap;
+}
+
+.show-more-chip:hover {
+    background: color-mix(in srgb, var(--blue) 8%, transparent);
+}
+
+.show-more-chip.show-less {
+    border-color: var(--muted);
+    color: var(--muted);
+}
+
+/* ══ FINDINGS PANEL ══════════════════════════════════════════ */
+
+.findings-selected-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 6px 0 4px;
+    border-bottom: 1px solid color-mix(in srgb, var(--muted) 15%, transparent);
+    margin-bottom: 6px;
+}
+
+.findings-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin: 4px 0 5px;
+    opacity: 0.7;
+}
+
+.findings-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 6px;
+}
+
+.findings-no-results {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 6px 0;
+}
+
+.finding-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.13s;
+    white-space: nowrap;
+}
+
+.finding-chip.finding-normal {
+    background: color-mix(in srgb, #0d9488 9%, transparent);
+    color: #0d9488;
+    border-color: color-mix(in srgb, #0d9488 22%, transparent);
+}
+
+.finding-chip.finding-abnormal {
+    background: color-mix(in srgb, #f43f5e 9%, transparent);
+    color: #be123c;
+    border-color: color-mix(in srgb, #f43f5e 22%, transparent);
+}
+
+.finding-chip.finding-selected {
+    font-weight: 700;
+    box-shadow: 0 0 0 2px currentColor;
+}
+
+.finding-chip.finding-normal:hover {
+    background: color-mix(in srgb, #0d9488 16%, transparent);
+}
+
+.finding-chip.finding-abnormal:hover {
+    background: color-mix(in srgb, #f43f5e 16%, transparent);
+}
+
+.finding-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.normal-dot {
+    background: #0d9488;
+}
+
+.abnormal-dot {
+    background: #f43f5e;
+}
+
+.findings-advanced-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    background: transparent;
+    border: 1px dashed color-mix(in srgb, var(--muted) 35%, transparent);
+    cursor: pointer;
+    transition: all 0.13s;
+}
+
+.findings-advanced-btn:hover {
+    color: var(--blue);
+    border-color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 6%, transparent);
+}
+
+.findings-advanced-body {
+    margin-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 12%, transparent);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.findings-group {}
+
+.findings-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 5px 6px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.12s;
+    margin-bottom: 3px;
+}
+
+.findings-group-header:hover {
+    background: color-mix(in srgb, var(--muted) 8%, transparent);
+}
+
+.findings-group-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    opacity: 0.75;
+}
+
+.findings-group-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+}
+
+.findings-group-count {
+    font-size: 10px;
+    background: color-mix(in srgb, var(--muted) 15%, transparent);
+    padding: 1px 6px;
+    border-radius: 10px;
+}

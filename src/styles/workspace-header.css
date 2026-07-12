@@ -1,0 +1,279 @@
+/* ═══════════════════════════════════════════════════════════════
+   WORKSPACE HEADER — AREN CORTEX
+   Hybrid architecture:
+     Layer 1 — deep navy base (#050916)
+     Layer 2 — aren-nebula.svg (centered-right nebula; peaks ~x=856)
+     Layer 3 — CSS radial gradient left vignette for extra depth
+     Layer 4 — UI content above all layers
+
+   IMPORTANT: aren-nebula.svg must exist at:
+     src/assets/aren-nebula.svg
+
+   CSS ownership: workspace-header.css ONLY.
+   ═══════════════════════════════════════════════════════════════ */
+
+.ws-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    width: 100%;
+    height: 64px;
+
+    /* Layer 1: deep navy base */
+    background-color: #050916;
+
+    /* Layer 3: CSS depth vignette — punches in from left, subtle */
+    /* Sits above the SVG via stacking; the SVG already fades itself */
+    background-image:
+        radial-gradient(ellipse 360px 64px at -40px 50%,
+            rgba(4, 8, 18, 0.72) 0%,
+            rgba(4, 8, 18, 0.0) 100%);
+
+    border-bottom: 1px solid rgba(147, 51, 234, 0.22);
+    box-shadow:
+        0 1px 0 rgba(0, 0, 0, 0.50),
+        0 2px 0 rgba(147, 51, 234, 0.06),
+        0 4px 32px rgba(0, 0, 0, 0.32),
+        0 8px 48px rgba(5, 9, 22, 0.28);
+
+    scrollbar-gutter: stable;
+    overflow: visible;
+}
+
+/* ── Nebula asset — absolutely positioned behind all content ── */
+.ws-nebula-asset {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    pointer-events: none;
+    z-index: 0;
+    display: block;
+    /* Slight blur softens the SVG's own sharp composite into the
+       background — 0.6px is enough to remove any raster edge */
+    filter: blur(0.6px);
+    /* Keeps it from being too hot; the SVG is already rich */
+    opacity: 0.92;
+}
+
+/* ── Inner layout ──────────────────────────────────────────────
+   Full-width flex row. No max-width — that terminated the old
+   nebula mid-bar.
+───────────────────────────────────────────────────────────────── */
+.ws-header-inner {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0 20px;
+    box-sizing: border-box;
+    gap: 0;
+}
+
+/* ── Logo pill ─────────────────────────────────────────────── */
+
+.ws-logo-pill {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 12px 6px 7px;
+    border-radius: 11px;
+    border: 1px solid rgba(139, 92, 246, 0.42);
+    background: rgba(5, 9, 22, 0.76);
+    box-shadow:
+        0 0 0 1px rgba(139, 92, 246, 0.10),
+        0 0 22px rgba(139, 92, 246, 0.30),
+        0 0 48px rgba(168, 85, 247, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.18s;
+    flex-shrink: 0;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.ws-logo-pill:hover {
+    background: rgba(22, 10, 50, 0.84);
+    border-color: rgba(167, 139, 250, 0.65);
+    box-shadow:
+        0 0 0 1px rgba(139, 92, 246, 0.22),
+        0 0 28px rgba(139, 92, 246, 0.50),
+        0 0 56px rgba(168, 85, 247, 0.20),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.ws-logo-pill:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.50);
+}
+
+.ws-logo-img {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.ws-logo-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+    gap: 3px;
+}
+
+.ws-logo-name {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.10em;
+    color: rgba(255, 255, 255, 0.97);
+}
+
+.ws-logo-sub {
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    color: rgba(196, 167, 250, 0.94);
+}
+
+/* ── Divider ───────────────────────────────────────────────── */
+
+.ws-header-divider {
+    width: 1px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.11);
+    margin: 0 18px;
+    flex-shrink: 0;
+}
+
+/* ── Workspace identity ────────────────────────────────────── */
+
+.ws-header-identity {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.ws-header-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.97);
+    letter-spacing: -0.015em;
+    white-space: nowrap;
+    /* Multi-layer text shadow — helps punch through the nebula
+       if the arc passes directly behind title text */
+    text-shadow:
+        0 1px 10px rgba(5, 9, 22, 0.90),
+        0 0 20px rgba(5, 9, 22, 0.70),
+        0 2px 4px rgba(0, 0, 0, 0.60);
+}
+
+.ws-header-subtitle {
+    font-size: 12px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.42);
+    white-space: nowrap;
+    text-shadow:
+        0 1px 8px rgba(5, 9, 22, 0.85),
+        0 0 12px rgba(5, 9, 22, 0.65);
+}
+
+/* ── Right slot ────────────────────────────────────────────── */
+
+.ws-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    padding-right: 4px;
+}
+
+/* ── Stat pills — dark-outlined capsules ───────────────────── */
+
+.ws-stat-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 13px;
+    border-radius: 20px;
+    background: rgba(5, 9, 22, 0.68);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    white-space: nowrap;
+    /* Small shadow to ensure readability even on nebula fringe */
+    box-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+
+.ws-stat-pill--active {
+    background: rgba(5, 9, 22, 0.68);
+    border-color: rgba(74, 222, 128, 0.42);
+    box-shadow:
+        0 1px 8px rgba(0, 0, 0, 0.35),
+        0 0 14px rgba(74, 222, 128, 0.10);
+}
+
+.ws-stat-value {
+    font-size: 13px;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: -0.01em;
+    line-height: 1;
+}
+
+.ws-stat-pill--active .ws-stat-value {
+    color: rgba(134, 239, 172, 0.98);
+}
+
+.ws-stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.44);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.ws-stat-pill--active .ws-stat-label {
+    color: rgba(134, 239, 172, 0.65);
+}
+
+/* Active pulse dot */
+.ws-active-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 7px rgba(74, 222, 128, 0.72);
+    animation: ws-pulse 2.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes ws-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 7px rgba(74, 222, 128, 0.72);
+    }
+
+    50% {
+        opacity: 0.50;
+        box-shadow: 0 0 3px rgba(74, 222, 128, 0.30);
+    }
+}
+
+/* Right slot divider */
+.ws-right-divider {
+    width: 1px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.11);
+    flex-shrink: 0;
+    margin: 0 2px;
+}
