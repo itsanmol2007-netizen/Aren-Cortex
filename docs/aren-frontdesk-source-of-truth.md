@@ -1,0 +1,742 @@
+# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Session 36)
+
+Last consolidated: 2026-07-13 · Branch: `master` · Route: `/app/frontdesk`
+
+## 0. How to read this document
+
+This is the **one file to open first** for anything Front Desk. It folds together
+five older docs and two handoffs into a single, current, non-contradictory
+reference. Where two older docs disagreed, this file states the winning version
+and the reason.
+
+If you only read one thing: **Front Desk is a receptionist's visit-management
+workspace, built as a Tailwind-only feature under `src/features/frontdesk/`,
+sharing one app / one deployment / one Supabase DB with the doctor workspace
+(Cortex). The queue is the product. Architecture and visual direction are both
+FROZEN — execute them, don't redesign.**
+
+### Source documents this consolidates (still on disk, for deep dives)
+
+| Doc | What it still owns | Trust level |
+|---|---|---|
+| `aren-architecture-handoff.md` | Product philosophy, Visit model, Solo Mode, workspace split | FROZEN, authoritative |
+| `aren-frontdesk-brief.md` | Layout inventory, what's frozen vs free, non-negotiables | FROZEN, authoritative |
+| `aren-frontdesk-design-direction.md` | v2 "Bhor" visual system (ink/thread/paper) | FROZEN — **except §10.2 modals**, superseded by session 36 |
+| `aren-session35-handoff.md` | Why v1→v2, structured symptoms, Tailwind layer trap | Current for everything except modal surface |
+| `aren-session36-handoff.md` | ModalShell, catalog symptom picker, field system upgrade | **Newest — wins on anything modal-related** |
+| `aren-frontdesk-inspiration.md` | Mood/reference notes | Background only |
+| `design/aren-frontdesk-v2.html` | Workflow reference prototype | Workflow only — **do NOT copy its visuals** |
+| `docs/Patient intake model ss.png` | Cortex intake screenshot — craftsmanship reference for modals | Craft, not layout |
+
+Stale, do not trust on styling: `aren-session33-handoff.md`, `aren-session34-handoff.md`
+(accurate only on early plumbing/i18n/hooks history).
+
+---
+
+# PART A — PRODUCT & ARCHITECTURE (frozen)
+
+## 1. What AREN is
+
+AREN is a lightweight **clinical operating system** for small/medium clinics —
+not a hospital management system. Philosophy: reduce friction, reduce clicks,
+reduce cognitive load. Every screen exists because someone is completing a real
+task.
+
+Two operational workspaces live in **one app, one deployment, one database**:
+
+- **Cortex** (`/app/cortex`, `src/App.tsx`) — the doctor's clinical decision
+  workspace (history, findings, diagnosis, medicines, prescription).
+- **Front Desk** (`/app/frontdesk`, `src/features/frontdesk/FrontDeskPage.tsx`)
+  — the receptionist's visit-management workspace.
+
+Fixed identifiers (single-clinic MVP, hardcoded in `src/lib/db/reference.ts`):
+
+- Hospital ID: `38bd8da3-0dd2-43a5-ad09-2d3194c95ba9`
+- Doctor: **SK Pandey**, ID `5cd330d2-5a48-4098-b865-ed3393e08698`, specialization `general`
+
+## 2. The Visit is everything
+
+`Patient ≠ Visit`. One patient has many visits. Every interaction creates or
+modifies a **Visit**. A Visit carries: patient, doctor, status, symptoms,
+findings, medicines, tests, prescription, timeline, notes.
+
+**Front Desk owns only the front half of a visit's life**: identify/create
+patient → create visit → manage queue → assign doctor → collect presenting
+symptoms → change status. Receptionists never prescribe, never consult.
+
+## 3. Universal workflow (the loop)
+
+```
+Patient arrives
+  → Reception identifies or creates patient        (Patient Launcher)
+  → Visit created, status = waiting                 (CreateVisitModal → createVisit)
+  → Patient enters queue                            (QueuePanel row)
+  → Doctor starts consultation, status = serving    (markVisitServing)   ← see gap in §17
+  → Doctor completes, status = completed            (updateVisitStatus)
+  → Prescription generated (Cortex side)
+  → Visit completed
+```
+
+`Cancelled` (stored as `discarded`) is terminal. Nothing outside this flow
+should interrupt it.
+
+## 4. Visit status vocabulary
+
+Real values in `visits.status` (plain TEXT column, no DB enum):
+
+| Stored value | UI label (en) | Tab? | Meaning |
+|---|---|---|---|
+| `waiting` | Waiting | yes | In queue, not yet called |
+| `serving` | In Consultation | yes | With the doctor |
+| `completed` | Completed | yes | Done |
+| `discarded` | Cancelled | no (shows in "All" list only) | Terminal cancel |
+| `referred` | Referred | no | Referred out (Cortex concept) |
+| `draft` | — | no | Cortex-side working state; Front Desk never creates it |
+
+Front Desk queue tabs surface only waiting / serving / completed (+ All).
+`discarded`/`referred` still render correctly in "All" and in a row, they just
+have no dedicated tab. Defined in `types/frontdesk.ts` + `statusStyle.ts`.
+
+## 5. Solo Mode (architecture supports, not yet wired in Front Desk)
+
+Some clinics have no receptionist. Controlled by clinic config
+`Reception Available = true/false`. When false, reception tasks appear inside
+Cortex (a "New Patient" button lets the doctor create the visit directly). The
+architecture never changes — only the actor. **`clinic_mode` is currently
+unread** (see §17). Panels never branch on `specialty`/`clinicMode` internally;
+that decision happens at page/route level only.
+
+---
+
+# PART B — FROZEN LAYOUT & DESIGN
+
+## 6. Layout inventory (FROZEN — do not redesign)
+
+Top to bottom, the Front Desk page is:
+
+1. **Ink header band** (full-bleed) — brand mark + wordmark, clinic name,
+   date/time, language dropdown, user chip.
+2. **Patient Launcher** — its own dedicated 64px row (search-or-create bar + `+`).
+3. **Stat strip** — 4 cards: Today's Visits / Waiting / In Consultation / Completed.
+4. **Two-column grid** (`1fr / 296px`, collapses to 1 col ≤1040px):
+   - **Left — Queue panel**: title, tabs (All / Waiting / In Consultation /
+     Completed with counts), sorted rows.
+   - **Right — Sidebar**: Today's Summary card, Doctors card, Doctor Requests card.
+5. **Modals** (portal): Visit Detail, Create Visit.
+
+Row content order (frozen): token → name(+phone, returning badge) → symptoms →
+doctor → last visit → status → kebab menu.
+
+Frozen rules: single click everywhere (no double-click); modal for editing
+(never inline expansion); undo instead of confirm where safe; skeleton loading
+(no spinners); minimal toasts; Doctor Requests is **mock-only, no DB**.
+
+## 7. Visual direction v2 — codename "Bhor" (भोर, daybreak) — FROZEN
+
+The one-sentence test for every visual choice:
+**"ink frames, thread stitches, paper works."**
+
+The story: *Cortex is the night shift of the brand; Front Desk is its morning.*
+Same ink sky and same gradient thread as Cortex, but warmed toward dawn
+(apricot/pink/violet), with the thread at the **bottom** (horizon) instead of
+the top (crown).
+
+### 7.1 Three vocabularies — NEVER mixed
+
+- **Ink** (the frame): header band, Now Serving card, toast. Dark, atmospheric,
+  carries the thread at full strength.
+- **Paper** (the work): every white surface. Near-monochrome; decoration only
+  where this doc grants it.
+- **Semantic color** (the data): amber = waiting, blue = consulting, green =
+  done, red = danger. Nothing else. **Violet/pink NEVER color data** — not a
+  status, not a numeral, not a patient-facing action.
+
+Rule: violet **labels structure** (where you are / what a region is). Semantic
+color **labels data** (about a patient/visit).
+
+### 7.2 The ink band
+
+`linear-gradient(135deg, #0d1b35, #120f28 38%, #170d27 62%, #0b1525)` (identical
+to Cortex) + three faint dawn radials (apricot 15%, pink 55%, violet 90%).
+Height ≈ 62px, not sticky. Shadow `0 4px 28px rgba(8,16,44,0.28)`.
+
+### 7.3 The dawn thread (closed list — 4+ surfaces only)
+
+`linear-gradient(90deg, #f2a986 0%, #f472b6 32%, #a855f7 68%, #6366f1 100%)`
+
+| Surface | Placement | Weight |
+|---|---|---|
+| Ink band | bottom edge | 2px, full strength + glow |
+| Now Serving card | top edge | 2px, full strength + glow |
+| Queue panel | top edge | 2px, **55% opacity, no glow** |
+| Modals (ModalShell) | top edge | **2.5px, full strength + glow** (s36 upgrade from 65%) |
+
+Nowhere else. Four appearances is a motif; ten is wallpaper.
+
+### 7.4 Micro-label system
+
+10.5–11px / 700–800 / uppercase / +0.07em tracking, structural violet
+`#837bb2`, optional 12–13px lucide icon at 70%. Used for: sidebar card titles,
+modal section labels, launcher dropdown caption, Now Serving caption (lavender
+`#b9b4d6` on ink). **Exception:** stat-card labels use the same format but
+neutral gray `#8a91a0` (they sit next to semantic numerals — violet would mix
+vocabularies).
+
+### 7.5 The color anchors
+
+- Paper: page `#f4f4f8` + dot grid; surfaces `#fff`/`#fafbfc`; text ladder
+  `#161d29 → #5a6472 → #8a91a0 → #a8aeba`.
+- Ink text ladder: white → `#c7d2fe` → `#b9b4d6` → `rgba(255,255,255,0.35)`.
+- Semantic: blue `#2f6bed`, amber `#c9791a`, green `#1c8a4d`, red `#d23b34`.
+- Brand aura: violet `#7c5cf0` (+`#6366f1` focus, `#a855f7` thread), dawn pink
+  `#f0abc8`/`#f472b6`, apricot `#f2a986`, structural violet-gray `#837bb2`.
+- Brand gradient (mark + launcher `+` + modal icon tile + Save button):
+  `linear-gradient(155deg, #7c5cf0, #2f6bed)`.
+
+### 7.6 The zero rule
+
+A stat value of 0 renders muted `#a8aeba` (icon chip keeps its tint) so the
+empty morning never looks broken. On ink, an asleep value = `rgba(255,255,255,0.35)`.
+Dashes are never colored.
+
+### 7.7 The two "front doors" wear the brand
+
+The header mark and the launcher `+` are the same brand-gradient object at two
+sizes. Registration's **Save Visit** button also wears the brand (it opens a
+door, it doesn't change a visit's *status*). **Every button that changes a
+visit's status stays strictly semantic** (blue/green/red).
+
+### 7.8 Empty states — the "dawn arcs" system (first-class, per the morning problem)
+
+- **MorningWelcome** (no visits at all today, All tab): dawn arcs + static pink
+  halo + greeting (time-aware) + one line + arrow-up. No button.
+- **TabEmpty** (a filter is empty mid-day): one 20px line icon + one line. No
+  color, no illustration, no motion.
+- **DayDone** (visits exist, none still waiting/serving): green-hued arcs + halo,
+  a quiet sign-off, not a celebration.
+
+### 7.9 Motion (§9 doctrine) — nothing moves unless touched, 2 exceptions
+
+Only two ambient animations exist: launcher dawn-wash **breath** (8s) and the
+unacked doctor-request **pulse** (1.4s). Plus `aren-rise` empty-state entrance
+(300ms, once). Thread and all glows are **static**. Everything collapses to
+`none` under `prefers-reduced-motion`. One two-note chime (Web Audio) is the
+only sound.
+
+## 8. Session-36 modal amendment (newest — overrides direction §10.2)
+
+Every Front Desk modal now renders inside one shared **`ModalShell`** ("the Bhor
+modal surface"): 580px max, radius 18, deep two-layer shadow, thread at full
+strength + glow on the top edge, a header zone with dawn radials + corner-arc
+watermark + 40px brand-gradient icon tile + violet eyebrow micro-label + Manrope
+17px title + ghost X close, paper body, optional footer band. Escape / backdrop
+click / `role="dialog"` live in the shell.
+
+Field system upgraded to a **soft-filled premium treatment** (`fd-field`: 46px,
+radius 11, `#f7f8fb` fill, violet focus ring). Symptom field is a **catalog
+picker** (see §12). **Any future modal must use `ModalShell` — never hand-roll
+modal chrome again.**
+
+---
+
+# PART C — RULES (the non-negotiables)
+
+1. **All styling in Tailwind utility classes in `.tsx`.** No separate CSS files.
+   Exceptions: row-tint gradients use inline `style=`; keyframes + the fd-*
+   field classes live as an inline `<style>` in `FrontDeskStyles.tsx`.
+2. **All DB calls stay in `src/lib/db/`.** Components never touch Supabase directly.
+3. **Every user-facing string goes through `t('key')`** reading from
+   `i18n/strings.ts`. Zero hardcoded English in components. `en` + `hinglish`
+   populated; `hi` is empty stubs that fall back to English.
+4. **Symptoms are structured entities, never free text** — see §12. This was
+   misunderstood repeatedly; do not regress it.
+5. **The Tailwind v4 layer trap** — see §13. Never style raw
+   `input`/`select`/`textarea`/`label` elements with utilities in this feature;
+   use/extend the `fd-*` classes.
+6. Touch targets ≥ 44px. Must look right at 1366×768 and 1920×1080.
+7. No violet/pink outside the §7.5 closed list; no thread outside the §7.3 four
+   surfaces; no decoration inside populated rows / open dropdowns / form fields.
+8. Language dropdown lives header top-right, default English.
+9. Keyboard-ready architecture (don't build shortcuts, just don't block them):
+   queue wrapper has `role="listbox"`, rows have `role="option"` + `data-token`;
+   visit actions are standalone callables in `useVisitActions` (a future
+   shortcut registry can call the same functions a click does).
+10. Architecture and creative direction are **FROZEN**. Execute, don't re-litigate.
+
+---
+
+# PART D — TECHNICAL LAYER
+
+## 9. Stack & entry points
+
+- React 18 + TypeScript + Vite (esbuild dev, no typecheck), React Router,
+  TanStack Query (present app-wide; Front Desk uses its own lightweight hooks
+  instead), `sonner` toasts, `lucide-react` icons, Tailwind **v4**
+  (`@import "tailwindcss"` in `src/styles.css`).
+- Supabase JS client in `src/lib/supabase.ts` (reads `VITE_SUPABASE_URL` /
+  `VITE_SUPABASE_ANON_KEY` from `.env`).
+- Routing in `src/main.tsx`: `/app/cortex` → `App`, `/app/frontdesk` →
+  `FrontDeskPage`, `/` and `/app` redirect to cortex. The global
+  `<Toaster position="bottom-right" richColors>` is **shared with Cortex**
+  (acknowledged exception — only toast *copy* is localized, not the Toaster config).
+- Fonts: Manrope + Inter via a Google Fonts `<link>` in `index.html` (offline →
+  system sans fallback).
+
+## 10. Build / run / test
+
+- Dev: `npm run dev` → `http://127.0.0.1:5173`. Routes above.
+- `npm run build` = `tsc -b && vite build`. **`tsc -b` fails on ~46
+  PRE-EXISTING type errors** in legacy files (`src/App.tsx`,
+  `src/components/PreviewPanel.tsx`, `src/data/mockData.ts`) — NOT caused by
+  Front Desk. Dev works fine via esbuild. Production `vite build` will stay
+  blocked until those legacy errors are fixed (separate cleanup).
+  Filter for relevant errors: `npx tsc -b 2>&1 | grep -iE 'frontdesk|lib/db'`.
+- Headless verify (no browser npm pkg): drive system Chrome —
+  `chrome.exe --headless=new --disable-gpu --no-sandbox --virtual-time-budget=8000 --dump-dom <url>`.
+
+## 11. Data flow (how the page comes alive)
+
+```
+FrontDeskPage (I18nProvider wrapper)
+ └─ FrontDeskInner
+     ├─ useQueue(HOSPITAL_ID)         → fetchTodayVisits every 25s (silent), owns visits[]
+     ├─ useVisitActions({visits,setVisits,refetch})
+     │     → optimistic patch → DB call → rollback on failure → toast
+     ├─ fetchDoctorsByHospital / fetchHospital (once, on mount)
+     ├─ setInterval(now, 20s) for the header clock
+     └─ renders Header, PatientLauncher, StatStrip, QueuePanel, Sidebar, + modals
+```
+
+- The open Visit Detail modal is kept in sync with the live queue via
+  `liveOpenVisit = visits.find(...)` so its buttons reflect the current status.
+- Optimistic actions patch in-memory state immediately; the 25s refresh
+  self-corrects either way.
+
+## 12. Structured symptoms (RULE #4, detailed)
+
+Symptoms are rows in the `symptoms` table (`id`, `name`, ~51 entries) feeding
+Cortex / Synapse / medicine ranking / future specialty logic. Front Desk must
+let the user **search/select from the catalog and store symptom IDs** — never
+arbitrary typed strings.
+
+- Catalog source: `fetchSymptoms()` (`src/lib/db/reference.ts`).
+- Reference implementation: `SymptomPicker` inside `CreateVisitModal.tsx`.
+- Persistence: `saveVisitSymptoms(visitId, symptomIds)` → `visit_symptoms` rows.
+- Since s36 the picker is a **catalog** (focus opens the full list as `+ name`
+  chips) with typo-tolerant filtering (prefix > substring > Levenshtein fuzzy —
+  "feber" surfaces fever); Enter picks the top match (violet focus ring);
+  selected chips live inside the field well; Escape closes catalog first (capture
+  listener), modal second.
+
+## 13. The Tailwind v4 layer trap (RULE #5, detailed)
+
+Tailwind v4 utilities live in CSS cascade **layers**. Cortex's legacy CSS
+(`src/styles/base.css` etc., imported **unlayered** in `main.tsx`) styles raw
+`input`/`select`/`textarea`/`label` **elements** (31px height, blue focus ring,
+`label{display:grid}`, uppercased `label span`). **Unlayered CSS beats layered
+CSS regardless of specificity**, so Tailwind utilities on those elements
+silently lose (looks right in code, renders wrong).
+
+Counterweight = unlayered class rules in `FrontDeskStyles.tsx`:
+`.fd-bare`/`.fd-bare-lg` (chromeless inputs; put chrome on a wrapper div),
+`.fd-field`/`.fd-field-error` (premium 46px field), `.fd-label`,
+`.fd-ico`/`.fd-tag` (label ornaments). Divs/buttons are mostly safe. The real
+fix (re-layering the legacy imports) was deliberately skipped to avoid
+Cortex-wide regressions.
+
+---
+
+# PART E — FILE TREE (relevant code only)
+
+Excludes: `node_modules`, `.git`, config/dependency files, and the mature Cortex
+feature internals (summarized, not expanded). **Front Desk files carry long
+descriptions** so you know exactly what to open for a given change.
+
+## 14. Front Desk feature — `src/features/frontdesk/` (the codebase you'll edit)
+
+```
+src/features/frontdesk/
+├── FrontDeskPage.tsx          ← page shell + Header + LanguageDropdown + nav state (s37)
+├── statusStyle.ts             ← per-status colors/tints (single source)
+├── utils.ts                   ← pure presentational helpers
+├── types/
+│   └── frontdesk.ts           ← feature types + status label maps
+├── hooks/
+│   ├── useQueue.ts            ← 25s silent queue polling
+│   └── useVisitActions.ts     ← optimistic status/create actions
+├── i18n/
+│   ├── strings.ts             ← the entire copy dictionary (en/hinglish/hi)
+│   └── i18n.tsx               ← I18nProvider / useT / useI18n
+└── components/
+    ├── NavRail.tsx            ← collapsible icon rail / sidebar (s37) — NAV_ITEMS registry
+    ├── PatientLauncher.tsx    ← search-or-create bar (front door)
+    ├── StatStrip.tsx          ← 4 stat cards
+    ├── QueuePanel.tsx         ← tabs + sorting + row list + empty-state routing
+    ├── VisitRow.tsx           ← one queue row + kebab menu
+    ├── Sidebar.tsx            ← thin wrapper: Summary + Doctors + Requests
+    ├── SummaryCard.tsx        ← Today's Summary + Now Serving ink card
+    ├── DoctorsCard.tsx        ← per-doctor activity/queue count
+    ├── DoctorRequestsCard.tsx ← MOCK doctor requests (no DB) + chime
+    ├── EmptyStates.tsx        ← MorningWelcome / TabEmpty / DayDone
+    ├── DawnArcs.tsx           ← the dawn-arcs SVG motif
+    ├── ModalShell.tsx         ← shared Bhor modal surface (s36)
+    ├── CreateVisitModal.tsx   ← intake form + SymptomPicker catalog
+    ├── VisitDetailModal.tsx   ← visit detail + status buttons + recent visits
+    └── FrontDeskStyles.tsx    ← inline <style>: fd-* field classes + keyframes
+```
+
+### 14.1 File-by-file (Front Desk — long descriptions)
+
+**`FrontDeskPage.tsx`** — The feature root. `FrontDeskPage` just wraps
+`FrontDeskInner` in `<I18nProvider>`. `FrontDeskInner` is the composition root:
+calls `useQueue` + `useVisitActions`, fetches doctors/hospital once, runs the
+20s header clock, holds modal open-state (`openVisit`, `createState`), and lays
+out the page (dawn-residue background, header, launcher, stat strip, the
+`1fr/296px` grid, both modals). Also defines the **`Header`** (ink band,
+two-tone wordmark by splitting `appTitle` on first space, clinic/date/time, user
+chip, the horizon thread) and **`LanguageDropdown`** (dark ghost trigger, white
+menu, outside-click close). *Open this to change:* overall page layout, header
+contents, the language switcher, what data loads on mount, modal wiring.
+
+**`statusStyle.ts`** — The single lookup for status-domain styling. Exports
+`STATUS_TINT` (per status: label, i18n `labelKey`, border/dot colors, text
+class, chip bg, ambient row `background`/`backgroundHover` gradients) and
+`tintFor(status)` (safe fallback to neutral). This is intrinsic queue styling,
+**not** specialty/clinic branching. *Open this to change:* any status color,
+row tint, or status label mapping — VisitRow, tabs, and both modals all read
+from here so they stay in agreement.
+
+**`utils.ts`** — Pure, side-effect-free presentational helpers: `timeAgo`,
+`formatShortDate` (Today/Yesterday/date), `maskPhone` (first 4 digits + X's),
+`initials`, `padToken` (3-digit zero-pad, `—` for null). Safe to import
+anywhere. *Open this to change:* how times/phones/tokens/initials are formatted.
+
+**`types/frontdesk.ts`** — Feature-local TypeScript types. Re-exports
+`TodayVisit`/`DBPatient`/`DBDoctor` from the DB layer; defines `VisitStatus`
+union, `STATUS_LABEL` map, `QueueTab`, `DoctorActivity`, `DoctorSummary`,
+`DoctorRequest` (client-only — no DB table), `PatientMatch`,
+`CreateVisitFormValues`. *Open this to change:* the status set, tab set, or the
+shape of feature view-models.
+
+**`hooks/useQueue.ts`** — Owns the live queue. On mount calls
+`fetchTodayVisits(hospitalId)`, then re-polls every **25s silently** (failures
+are non-fatal warnings; `loading` only flips on the first load). Returns
+`{ visits, setVisits, loading, refetch }`. The `mounted` ref guards against
+setState after unmount. *Open this to change:* refresh cadence, what the queue
+loads, or to add realtime later.
+
+**`hooks/useVisitActions.ts`** — All visit mutations as standalone callables
+(keyboard-ready). Each does an **optimistic** in-memory `patch`, then the DB
+call, then rolls back to the pre-action snapshot on error + shows a toast:
+`startConsultation` (→ `markVisitServing`), `completeVisit`, `cancelVisit`
+(supports `silent` for undo), `reassignDoctor`, and `createNewVisit` (finds/
+creates patient → `createVisit(..., "waiting", doctorId)` → best-effort
+`saveVisitSymptoms(symptomIds)` → `refetch` → success toast with an **Undo**
+action that cancels the new visit). *Open this to change:* status-transition
+logic, toast copy wiring, optimistic behavior, or the create flow. Note
+`createNewVisit` takes `symptomIds: number[]` (structured symptoms).
+
+**`i18n/strings.ts`** — The **normative copy source**. `en` object (every key +
+English value; `StringKey` is derived from it), a fully populated `hinglish`
+map, and `hi` as programmatic empty stubs (fall back to English at render).
+`DICTS` bundles them; `LANGS` drives the header dropdown (`hi` flagged `soon`).
+Interpolation uses `«token»` placeholders. Doctrine: workflow nouns English,
+Hindi connective tissue, Roman script for Hinglish. *Open this to change:* ANY
+user-facing string, or to fill in Devanagari.
+
+**`i18n/i18n.tsx`** — The i18n engine: `I18nProvider` (holds `lang`, persists to
+localStorage `aren.frontdesk.lang`, default `en`), `useI18n()`
+(`{lang, setLang, t}`), `useT()`. `translate()` does empty→English fallback and
+`«token»` substitution. *Open this to change:* language persistence, fallback
+behavior, or interpolation syntax.
+
+**`components/PatientLauncher.tsx`** — The primary interaction point ("the front
+door"). A 64px bar: animated dawn wash (breathes while idle, brightens/stops on
+focus), search input (`fd-bare`), and the brand-gradient `+`. Debounced (220ms)
+`searchPatients` on ≥2 chars; results render in a **portal** dropdown positioned
+by the bar's `getBoundingClientRect` (so it escapes `overflow-hidden`), with an
+"Existing Patients" micro-label, patient rows, and a "Register new patient"
+action. `onSelectExisting`/`onCreateNew` bubble up to open CreateVisitModal.
+*Open this to change:* search behavior, the launcher's idle personality, the
+create-new affordance.
+
+**`components/StatStrip.tsx`** — Four stat cards (Today/Waiting/Consulting/
+Completed) computed with `useMemo` over `visits` (Today excludes `discarded`).
+Each card: tinted icon chip, ghost-circle watermark, neutral micro-label,
+28px Manrope numeral. Implements the **zero rule** (0 → muted `#a8aeba`).
+*Open this to change:* which metrics show, stat card treatment.
+
+**`components/QueuePanel.tsx`** — The flagship surface. Owns the active `tab`,
+computes tab `counts`, and builds `rows` (filter by tab, then sort by status
+order waiting→serving→completed→other, then by `created_at`). Renders the thread
+top edge (55%), the title, the `Tab` buttons (with count + colored dot), and
+then routes to: `SkeletonRows` (loading), `MorningWelcome`/`TabEmpty`/`DayDone`
+(empty, based on `hasVisitsToday` + `everyoneDone`), or the `role="listbox"` row
+list. *Open this to change:* tabs, sorting, empty-state routing, skeletons.
+
+**`components/VisitRow.tsx`** — One queue row (`role="option"`, `data-token`).
+Renders token, name + Returning badge (visit_count > 1, tooltip) + masked phone,
+truncated symptoms (first 2 + "+N" tooltip), doctor, last-visit date, status
+(dot + label from `tintFor`), and an always-present kebab (40% opacity → 100% on
+hover). Left border stripe + ambient tint come from `statusStyle`. Kebab opens a
+**portal** menu (Open / Move / Complete / Cancel). Whole row is a single-click
+open; the kebab stops propagation. *Open this to change:* row anatomy, the row
+menu, hover/selected treatment. (Row interior is the most protected surface — no
+decoration here.)
+
+**`components/Sidebar.tsx`** — Thin composition wrapper only: stacks
+`SummaryCard`, `DoctorsCard`, `DoctorRequestsCard`. *Open this to change:* which
+sidebar cards exist / their order.
+
+**`components/SummaryCard.tsx`** — Today's Summary. Computes current serving
+token + patient name (most recently started `serving` visit) and average wait
+(mean minutes of `waiting` visits). Renders the **Now Serving ink card** (the
+sidebar's one ink moment: ink gradient + pink radial + full thread; 26px white
+token; `#c7d2fe` patient name; asleep `—` at white/35%) and an Average Wait
+paper row below. *Open this to change:* the summary metrics or the Now Serving card.
+
+**`components/DoctorsCard.tsx`** — Per-doctor rows computed from `doctors` +
+`visits`: activity = off (availability_status ≠ active) / busy (has a `serving`
+visit) / free; avatar (image or initials) with status ring + dot; label
+(With #token / Free / Off duty); waiting-queue count. *Open this to change:*
+doctor presence display, activity logic.
+
+**`components/DoctorRequestsCard.tsx`** — **MOCK ONLY — no DB table exists.**
+Session-local `requests[]`; a dashed "Simulate" button pushes a random request
+from a hardcoded `POOL` and plays a two-note Web Audio **chime** (the only sound;
+skipped under reduced motion). Acknowledge removes it + toasts. Unacked cards
+wear the `aren-pulse` amber ring. *Open this to change:* the future
+communication-bridge mock; wiring a real `doctor_requests` table would start here.
+
+**`components/EmptyStates.tsx`** — The three-part dawn empty-state system:
+`MorningWelcome` (time-aware greeting + arcs + pink halo, no visits today),
+`TabEmpty` (quiet one-icon-one-line per tab, mid-day), `DayDone` (green arcs +
+halo sign-off). *Open this to change:* the morning experience or any empty copy/icon.
+
+**`components/DawnArcs.tsx`** — Pure SVG motif: three concentric arcs over a
+horizon + a sun dot, re-hued per `variant` (`morning` violet/pink, `endOfDay`
+green/blue). Used by the empty states. *Open this to change:* the illustration itself.
+
+**`components/ModalShell.tsx`** — **The shared Bhor modal surface (s36).** Every
+Front Desk modal renders here via portal. Owns: overlay (blur + click-to-close),
+580px radius-18 panel, thread (2.5px full+glow), header zone (dawn radials +
+`CornerArcs` watermark + brand-gradient icon tile + violet eyebrow + Manrope
+title + ghost X), paper body, optional footer band, and Escape-to-close. Props:
+`eyebrow`, `title`, `icon`, `onClose`, `footer`, `children`. *Open this to
+change:* anything common to all modals, or to build a NEW modal (always use this).
+
+**`components/CreateVisitModal.tsx`** — Patient intake. New-patient path is a
+grouped form (PATIENT DETAILS: name / age+gender / phone; then TODAY'S VISIT:
+symptoms + doctor); existing-patient path shows a blue identity card +
+visit-stats then TODAY'S VISIT. Validates required (name/phone for new,
+≥1 symptom always); Save wears the **brand gradient**. Contains the
+**`SymptomPicker`** (catalog, typo-tolerant `matchScore`/`editDistance`),
+`SectionLabel` (violet micro-label + fading hairline), and `Field` (label +
+`fd-ico`/`fd-tag` ornaments + required violet dot + error text). *Open this to
+change:* the intake form, field layout, or symptom selection UX.
+
+**`components/VisitDetailModal.tsx`** — Read + act on one visit. Header shows
+token + status-colored patient name + demographics. Sections (each a violet
+micro-label + fading hairline): Symptoms (neutral chips), Assigned Doctor
+(native `fd-field` select → `onReassignDoctor`), Change Status (`StatusBar` —
+semantic buttons that transition + close), Recent Visits (last 3 completed via
+`fetchPatientVisits`, each with a status dot). *Open this to change:* the detail
+view, status-change buttons, doctor reassignment, or recent-visit display.
+(Note: the doctor `<select>` is still native — flagged as the most visible
+non-premium element; a rich picker needs sign-off.)
+
+**`components/FrontDeskStyles.tsx`** — A single inline `<style>` (no `.css`
+file) mounted once by the page. Defines the **unlayered** `fd-*` field classes
+that beat Cortex's legacy element rules (`fd-bare`, `fd-bare-lg`, `fd-field`,
+`fd-field-error`, `fd-label`, `fd-ico`, `fd-tag`) and the three keyframes
+(`aren-breath`, `aren-pulse`, `aren-rise`), all disabled under
+`prefers-reduced-motion`. *Open this to change:* field styling or the feature's
+keyframe motion. (See §13 — this is the layer-trap counterweight.)
+
+## 15. Data layer — `src/lib/` (shared with Cortex; Front Desk depends on it)
+
+```
+src/lib/
+├── supabase.ts        ← Supabase client (env-driven)
+├── db.ts              ← barrel: re-exports ./db/*
+└── db/
+    ├── reference.ts   ← constants (IDs), symptoms/findings, ranking RPCs
+    ├── patients.ts    ← patients, visits, doctors, hospital, queue, history
+    └── intelligence.ts← Cortex clinical engine (not used by Front Desk)
+```
+
+- **`db.ts`** — barrel re-exporting all of `db/reference`, `db/patients`,
+  `db/intelligence`, so `@/lib/db` imports keep working.
+- **`db/reference.ts`** — Fixed IDs (`DOCTOR_ID`, `DOCTOR_NAME`,
+  `HOSPITAL_ID`, `DOCTOR_SPECIALIZATION`), types `DBSymptom`/`DBFinding`,
+  frequency-slot helpers, and Front Desk's **`fetchSymptoms()`** (catalog,
+  ordered by name) + `fetchFindings()` + ranking RPCs (`fetchProbableFindings`,
+  `fetchRankedPanels`, snapshots, dynamic tests — Cortex-only).
+- **`db/patients.ts`** — The workhorse for Front Desk (see §16 for the call map):
+  patient search/create, visit create/status/reassign, symptom persistence,
+  doctor/hospital fetch, today's queue, patient history, visit stats.
+- **`db/intelligence.ts`** — Cortex clinical engine; Front Desk does not import it.
+
+## 16. Front Desk → DB call map
+
+Every Supabase call Front Desk makes, and from where:
+
+| DB function (`src/lib/db/`) | Called from | Tables touched | Notes |
+|---|---|---|---|
+| `fetchTodayVisits(hospitalId)` | `useQueue` | visits, patients, doctors, visit_symptoms | Today's queue, hydrated w/ names+symptoms+visit_count. Ordered by `created_at`. |
+| `searchPatients(query)` | `PatientLauncher` | patients | ilike on name/phone, ≥2 chars, limit 8. |
+| `findPatientByPhone(phone)` | `useVisitActions.createNewVisit` | patients | Dedup before create. |
+| `createPatient({name,age,gender,phone})` | `useVisitActions.createNewVisit` | patients | Adds `hospital_id`. |
+| `createVisit(patientId,"waiting",doctorId)` | `useVisitActions.createNewVisit` | visits | Front Desk passes `"waiting"`; computes `token_number` = max-today + 1. |
+| `saveVisitSymptoms(visitId, symptomIds)` | `useVisitActions.createNewVisit` | visit_symptoms | Best-effort (non-fatal); default intensity "moderate". |
+| `markVisitServing(visitId)` | `useVisitActions.startConsultation` | visits | status→serving + `started_at`. |
+| `updateVisitStatus(visitId, status)` | `useVisitActions.completeVisit` / `cancelVisit` | visits | `completed` sets `completed_at`; cancel stores `discarded`. |
+| `reassignVisitDoctor(visitId, doctorId)` | `useVisitActions.reassignDoctor` | visits | Updates `assigned_doctor_id`. |
+| `fetchDoctorsByHospital(hospitalId)` | `FrontDeskPage` | doctors | Includes `avatar_url`, `availability_status`. |
+| `fetchHospital(hospitalId)` | `FrontDeskPage` | hospitals | Header clinic name. |
+| `fetchSymptoms()` | `CreateVisitModal.SymptomPicker` | symptoms | The ~51-row catalog. |
+| `fetchPatientVisitStats([id])` | `CreateVisitModal` | visits | Existing-patient visit count/last visit. |
+| `fetchPatientVisits(patientId)` | `VisitDetailModal` | visits, doctors, visit_symptoms, symptoms, findings, prescriptions, … | Recent completed visits (uses first 3). |
+
+### Key DB tables (as used by Front Desk)
+
+- **`patients`** — `id, name, age, gender, phone, hospital_id`.
+- **`visits`** — `id, patient_id, assigned_doctor_id, hospital_id, status`
+  (TEXT), `token_number` (computed in `createVisit`, no DB default),
+  `created_at, started_at, completed_at`.
+- **`visit_symptoms`** — join: `visit_id, symptom_id, intensity`.
+- **`symptoms`** — `id, name` (~51). The structured catalog.
+- **`doctors`** — profile incl. `avatar_url, availability_status, hospital_id`.
+- **`hospitals`** — clinic profile (`name`, branding fields).
+- (Cortex-side, read for history: `visit_findings`, `findings`, `prescriptions`,
+  `prescription_medicines`, `medicines`, `diagnostic_orders`.)
+- **No `doctor_requests` table** — that card is mock-only.
+
+## 17. Cortex — `src/` (shared app; summarized, not Front Desk's concern)
+
+Not expanded on purpose — mature and stable. Landmarks only:
+`src/App.tsx` (Cortex consult page), `src/main.tsx` (routing + shared Toaster +
+legacy CSS imports), `src/components/*` (consult panels: Findings, Medicines,
+Prescription, Preview, etc.), `src/features/*` (patients, prescriptions,
+settings, sidebar, …), `src/styles/*.css` (the **unlayered legacy CSS** behind
+the §13 layer trap). Touch these only if a change is explicitly cross-workspace.
+
+---
+
+# PART F — STATE & OPEN ITEMS
+
+## 18. Verified working (through s36)
+
+Live headless-Chrome runs against the real dev server + real Supabase:
+launcher search → create visit → row appears with token + persisted symptoms →
+optimistic status changes → Visit Detail with semantic status buttons →
+the s36 catalog symptom picker (focus opens 51 chips, "feber"→fever ranked top,
+Enter picks, Escape closes catalog-then-modal). Hinglish toast interpolation
+verified. `tsc -b` shows zero *new* errors.
+
+## 19. Open items / not yet built (carried through s36)
+
+1. **Cortex "Next Patient" button** — the top functional gap. Needs a Cortex-side
+   control that reads `clinic_mode`, calls `markVisitServing`, to close the
+   Register→Waiting→Serving→Complete loop end-to-end. Not built.
+2. **No auth** on Front Desk yet (architecture expects one shared session /
+   role-based rendering).
+3. **`clinic_mode` unread** — Solo Mode branching not wired.
+4. **`npm run build` blocked** by ~46 pre-existing legacy `tsc` errors.
+5. **Devanagari (`hi`)** ships as empty stubs (falls back to English); disabled
+   in the dropdown (`soon`).
+6. **Shared Toaster** exception (bottom-right, Cortex-shared) — revisit only if
+   Front Desk gets its own instance; direction wants a bottom-center ink pill.
+7. **Native doctor `<select>`** in both modals is the most visible non-premium
+   element; a rich picker needs Anmol's sign-off.
+8. **Re-layering the legacy CSS** (the real fix for §13) is deliberately deferred
+   — only worth it if a Cortex restyle / dark mode ever happens.
+9. Design-direction doc still describes the pre-s36 modal treatment; if it's ever
+   re-frozen, fold session 36 §2–§5 into it.
+
+## 20. Quick "where do I change X?" index
+
+| I want to change… | Open |
+|---|---|
+| A visible string / add a language | `i18n/strings.ts` |
+| A status color or row tint | `statusStyle.ts` |
+| Field look (inputs/selects) or keyframes | `components/FrontDeskStyles.tsx` |
+| The header / page layout / language switcher | `FrontDeskPage.tsx` |
+| The search-or-create bar | `components/PatientLauncher.tsx` |
+| The queue: tabs, sorting, empty routing | `components/QueuePanel.tsx` |
+| A queue row's anatomy / kebab menu | `components/VisitRow.tsx` |
+| The intake form / symptom picker | `components/CreateVisitModal.tsx` |
+| The visit detail / status buttons | `components/VisitDetailModal.tsx` |
+| Anything common to all modals / a new modal | `components/ModalShell.tsx` |
+| Sidebar cards | `components/SummaryCard.tsx` / `DoctorsCard.tsx` / `DoctorRequestsCard.tsx` |
+| Empty-state illustration/copy | `components/EmptyStates.tsx` / `DawnArcs.tsx` |
+| Queue refresh cadence / what loads | `hooks/useQueue.ts` |
+| Status-change / create logic | `hooks/useVisitActions.ts` |
+| A DB query / new table access | `src/lib/db/patients.ts` (or `reference.ts`) |
+
+---
+
+---
+
+# PART G — SESSION 37 ADDENDUM (V3 refinement)
+
+Visual reference frozen as `docs/Frontdesk V3 Refine inspiration.png` — refine
+toward it, never away from it.
+
+## 21. The "existing patient silently fails" regression — cause + fix
+
+Root cause (proved with trusted-input CDP runs): the symptom catalog rendered
+in-flow and was dismissed on **mousedown**. Clicking Save while the catalog was
+open closed it on the press, the modal collapsed ~200px mid-click, the mouseup
+landed on the overlay, and ModalShell's `target === currentTarget` check read
+it as a backdrop click → modal closed, nothing saved, no error. The
+existing-patient modal is short, so its Save button always sat in the collapse
+zone. Two-layer fix (both required, keep both):
+
+1. **ModalShell** — backdrop close now requires the *mousedown AND click* to
+   both start on the overlay (`pressedOnBackdrop` ref).
+2. **SymptomPicker** — catalog dismissal moved from `mousedown` to completed
+   outside `click` (deferred one tick so the click that opens the modal can't
+   self-close it; detached targets — a just-picked chip — count as inside).
+   Layout is therefore stable for the full duration of any press: first click
+   on Save both saves and dismisses.
+
+## 22. Intake modal (amends §8 / s36 field details)
+
+- Field order: Name → Age → Gender → Phone → Symptoms → Doctor.
+- **Phone**: +91 prefix box (India assumed), digits-only input hard-capped at
+  10, live `n/10` counter (green at 10), save validates `/^\d{10}$/`.
+- **Age**: required, compact 128px column, digits only clamped 0–120,
+  ArrowUp/Down steps, mouse wheel steps while focused (non-passive listener).
+- **Gender**: required, segmented radiogroup, one tab stop; keys M/F/O select,
+  arrows cycle; dotted underline under each first letter teaches the shortcut.
+- **Enter flow**: Enter advances to the next field until every required field
+  is complete, then Enter = Save from anywhere. The SymptomPicker consumes
+  Enter only while it has a query + match.
+- Autofocus: first empty field (existing patients → symptoms, catalog opens).
+
+## 23. Queue rows: waiting time (amends §6 row order)
+
+The 5th column is now created-time (`2:33 pm`) with, on waiting rows only, a
+live amber `Waiting «m» min` / `Just arrived` line under it (ticks with the
+20s page clock, passed down as `now`). The last-visit date moved out of the
+row; it still lives in the Returning badge tooltip.
+
+## 24. Navigation rail (new — replaces "future navigation" open item)
+
+- `components/NavRail.tsx`: slim 68px icon rail → 228px sidebar; the **AREN
+  logo in the header** (real `src/assets/aren-logo.png`, replacing the SVG
+  house tile) toggles it; state persists in localStorage `aren.frontdesk.nav`.
+- Animation: width interpolation + label fade/translateX(-8px), 200ms
+  ease-out, icons anchored, `motion-reduce` safe. Content shares a flex row so
+  it shifts naturally.
+- `NAV_ITEMS` registry: Front Desk (active), Patients / Reports / Settings as
+  disabled "Soon" placeholders. Adding a page = one entry + route in
+  `main.tsx` + label in `strings.ts`.
+- Header is now full-bleed (logo aligned over the rail) and carries the same
+  `/aren-nebula.svg` sky as Cortex, at 45% opacity under the dawn radials.
+
+*This document supersedes the styling guidance in sessions 33–34 and the modal
+guidance in the design direction §10.2. Architecture and creative direction are
+frozen. When in doubt, the tie-breaker order is: this doc (incl. Part G) →
+session 36 → session 35 → design direction → brief → architecture.*

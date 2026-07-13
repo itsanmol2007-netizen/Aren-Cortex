@@ -19,6 +19,14 @@ export const en = {
     langHindi: "हिन्दी",
     langSoon: "soon",
 
+    navFrontDesk: "Front Desk",
+    navPatients: "Patients",
+    navReports: "Reports",
+    navSettings: "Settings",
+    navSoon: "Soon",
+    navToggle: "Open navigation",
+    navUser: "Reception",
+
     launcherPlaceholder: "Search or add patient by name or phone…",
     launcherAddTitle: "Register new patient",
     existingPatients: "Existing Patients",
@@ -46,6 +54,8 @@ export const en = {
     returning: "Returning",
     returningTip: "«n» visits · Last visit «date»",
     lastVisit: "Last visit",
+    waitingFor: "Waiting «m» min",
+    waitingNow: "Just arrived",
 
     greetingMorning: "Good morning",
     greetingAfternoon: "Good afternoon",
@@ -105,6 +115,7 @@ export const en = {
     save: "Save Visit",
     saving: "Saving…",
     errRequired: "Please fill this",
+    errPhone10: "Enter a 10-digit mobile number",
 
     detSymptoms: "Symptoms",
     noSymptoms: "No symptoms recorded",
@@ -138,6 +149,14 @@ export const hinglish: Record<StringKey, string> = {
     langHindi: "हिन्दी",
     langSoon: "jaldi",
 
+    navFrontDesk: "Front Desk",
+    navPatients: "Patients",
+    navReports: "Reports",
+    navSettings: "Settings",
+    navSoon: "Jaldi",
+    navToggle: "Menu kholo",
+    navUser: "Reception",
+
     launcherPlaceholder: "Patient search karo ya naya add karo…",
     launcherAddTitle: "Naya patient add karo",
     existingPatients: "Purane Patients",
@@ -165,6 +184,8 @@ export const hinglish: Record<StringKey, string> = {
     returning: "Purana",
     returningTip: "«n» baar aaye · Pichhli baar «date»",
     lastVisit: "Pichhli baar",
+    waitingFor: "«m» min se waiting",
+    waitingNow: "Abhi aaya",
 
     greetingMorning: "Good morning",
     greetingAfternoon: "Namaste",
@@ -224,6 +245,7 @@ export const hinglish: Record<StringKey, string> = {
     save: "Save Karo",
     saving: "Save ho raha…",
     errRequired: "Yeh bharna zaroori hai",
+    errPhone10: "10 digit ka mobile number daalo",
 
     detSymptoms: "Problem",
     noSymptoms: "Koi problem likhi nahi",

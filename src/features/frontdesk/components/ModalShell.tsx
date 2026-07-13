@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useT } from "../i18n/i18n";
@@ -23,6 +23,11 @@ type Props = {
 
 export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: Props) {
     const t = useT();
+    // A backdrop click only counts if the press ALSO started on the backdrop.
+    // Without this, any in-panel interaction that reflows the layout between
+    // mousedown and mouseup (a dropdown closing, content collapsing) lets the
+    // mouseup land on the overlay and silently destroys the user's work.
+    const pressedOnBackdrop = useRef(false);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -33,25 +38,19 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: 
     return createPortal(
         <div
             className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[rgba(17,20,35,0.42)] p-[5vh_20px_24px] backdrop-blur-[6px]"
-            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+            onMouseDown={(e) => { pressedOnBackdrop.current = e.target === e.currentTarget; }}
+            onClick={(e) => { if (e.target === e.currentTarget && pressedOnBackdrop.current) onClose(); }}
         >
             <div
                 role="dialog"
                 aria-modal="true"
-                className="relative w-full max-w-[580px] overflow-hidden rounded-[18px] bg-white shadow-[0_32px_80px_rgba(13,18,38,0.32),0_8px_28px_rgba(124,92,240,0.10)]"
+                className="relative w-full max-w-[580px] rounded-[18px] bg-white shadow-[0_32px_80px_rgba(13,18,38,0.32),0_8px_28px_rgba(124,92,240,0.10)]"
             >
-                {/* Dawn thread — full strength with glow on modals since s36
-                    (amends §3.2's 65% weight; the modal is a formal surface). */}
+                {/* Header zone clips its own decoration (rounded top) so the panel
+                    itself can stay overflow-visible — floating dropdowns inside the
+                    body (e.g. the symptom catalog) must never be cut off. */}
                 <div
-                    className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2.5px]"
-                    style={{
-                        background: "linear-gradient(90deg, #f2a986 0%, #f472b6 32%, #a855f7 68%, #6366f1 100%)",
-                        boxShadow: "0 1px 10px rgba(168,85,247,0.35), 0 2px 18px rgba(244,114,182,0.14)",
-                    }}
-                />
-
-                <div
-                    className="relative border-b border-[#eef0f5] px-6 pb-5 pt-[22px]"
+                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eef0f5] px-6 pb-5 pt-[22px]"
                     style={{
                         background:
                             "radial-gradient(ellipse 320px 140px at 90% 0%, rgba(168,85,247,0.07), transparent 70%), " +
@@ -59,6 +58,15 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: 
                             "linear-gradient(180deg, #fcfbff 0%, #ffffff 100%)",
                     }}
                 >
+                    {/* Dawn thread — full strength with glow on modals since s36
+                        (amends §3.2's 65% weight; the modal is a formal surface). */}
+                    <div
+                        className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2.5px]"
+                        style={{
+                            background: "linear-gradient(90deg, #f2a986 0%, #f472b6 32%, #a855f7 68%, #6366f1 100%)",
+                            boxShadow: "0 1px 10px rgba(168,85,247,0.35), 0 2px 18px rgba(244,114,182,0.14)",
+                        }}
+                    />
                     <CornerArcs />
                     <div className="relative flex items-center gap-[13px] pr-10">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)]">
@@ -84,7 +92,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: 
                 <div className="px-6 pb-6 pt-5">{children}</div>
 
                 {footer && (
-                    <div className="flex items-center justify-end gap-[10px] border-t border-[#eef0f5] bg-[#fafbfc] px-6 py-4">
+                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eef0f5] bg-[#fafbfc] px-6 py-4">
                         {footer}
                     </div>
                 )}

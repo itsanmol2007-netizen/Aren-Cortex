@@ -16,11 +16,15 @@ import { PatientLauncher } from "./components/PatientLauncher";
 import { StatStrip } from "./components/StatStrip";
 import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
+import { NavRail } from "./components/NavRail";
 import { VisitDetailModal } from "./components/VisitDetailModal";
 import { CreateVisitModal } from "./components/CreateVisitModal";
 import { FrontDeskStyles } from "./components/FrontDeskStyles";
 import { I18nProvider, useI18n, useT } from "./i18n/i18n";
 import { LANGS } from "./i18n/strings";
+import arenLogo from "@/assets/aren-logo.png";
+
+const NAV_STORAGE_KEY = "aren.frontdesk.nav";
 
 type CreateState = { existingPatient: DBPatient | null; prefillName: string };
 
@@ -41,6 +45,14 @@ function FrontDeskInner() {
     const [openVisit, setOpenVisit] = useState<TodayVisit | null>(null);
     const [createState, setCreateState] = useState<CreateState | null>(null);
     const [now, setNow] = useState(() => new Date());
+    const [navOpen, setNavOpen] = useState(() => localStorage.getItem(NAV_STORAGE_KEY) === "1");
+
+    const toggleNav = () => {
+        setNavOpen((open) => {
+            localStorage.setItem(NAV_STORAGE_KEY, open ? "0" : "1");
+            return !open;
+        });
+    };
 
     useEffect(() => {
         fetchDoctorsByHospital(HOSPITAL_ID)
@@ -76,26 +88,35 @@ function FrontDeskInner() {
             }}
         >
             <FrontDeskStyles />
-            <Header hospital={hospital} now={now} />
-            <div className="mx-auto max-w-[1480px] px-6 pb-12 pt-4">
-                <PatientLauncher
-                    onSelectExisting={(p) => setCreateState({ existingPatient: p, prefillName: "" })}
-                    onCreateNew={(prefillName) => setCreateState({ existingPatient: null, prefillName })}
-                />
+            <Header hospital={hospital} now={now} navOpen={navOpen} onToggleNav={toggleNav} />
+            {/* The rail and the workspace share a flex row: as the rail's width
+                interpolates the content shifts right naturally — one continuous
+                transformation, not a drawer sliding on top. */}
+            <div className="flex items-stretch">
+                <NavRail expanded={navOpen} />
+                <main className="min-w-0 flex-1">
+                    <div className="mx-auto max-w-[1480px] px-6 pb-12 pt-4">
+                        <PatientLauncher
+                            onSelectExisting={(p) => setCreateState({ existingPatient: p, prefillName: "" })}
+                            onCreateNew={(prefillName) => setCreateState({ existingPatient: null, prefillName })}
+                        />
 
-                <StatStrip visits={visits} />
+                        <StatStrip visits={visits} />
 
-                <div className="grid grid-cols-[1fr_296px] items-start gap-[14px] max-[1040px]:grid-cols-1">
-                    <QueuePanel
-                        visits={visits}
-                        loading={loading}
-                        onOpen={(v) => setOpenVisit(v)}
-                        onComplete={actions.completeVisit}
-                        onCancel={actions.cancelVisit}
-                        selectedVisitId={openVisit?.visit_id ?? null}
-                    />
-                    <Sidebar doctors={doctors} visits={visits} />
-                </div>
+                        <div className="grid grid-cols-[1fr_296px] items-start gap-[14px] max-[1040px]:grid-cols-1">
+                            <QueuePanel
+                                visits={visits}
+                                now={now}
+                                loading={loading}
+                                onOpen={(v) => setOpenVisit(v)}
+                                onComplete={actions.completeVisit}
+                                onCancel={actions.cancelVisit}
+                                selectedVisitId={openVisit?.visit_id ?? null}
+                            />
+                            <Sidebar doctors={doctors} visits={visits} />
+                        </div>
+                    </div>
+                </main>
             </div>
 
             {liveOpenVisit && (
@@ -124,7 +145,17 @@ function FrontDeskInner() {
     );
 }
 
-function Header({ hospital, now }: { hospital: DBHospital | null; now: Date }) {
+function Header({
+    hospital,
+    now,
+    navOpen,
+    onToggleNav,
+}: {
+    hospital: DBHospital | null;
+    now: Date;
+    navOpen: boolean;
+    onToggleNav: () => void;
+}) {
     const t = useT();
     const time = now.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
     const date = now.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
@@ -149,14 +180,32 @@ function Header({ hospital, now }: { hospital: DBHospital | null; now: Date }) {
                 boxShadow: "0 4px 28px rgba(8,16,44,0.28), 0 6px 40px rgba(139,92,246,0.05)",
             }}
         >
-            <div className="mx-auto flex max-w-[1480px] items-center gap-[18px] px-6 py-3">
-                <div className="group flex shrink-0 items-center gap-[11px]">
-                    <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] shadow-[0_3px_10px_rgba(124,92,240,0.38)] transition-shadow duration-150 group-hover:shadow-[0_3px_16px_rgba(124,92,240,0.55)]">
-                        <svg viewBox="0 0 24 24" fill="none" className="h-[21px] w-[21px]">
-                            <path d="M12 3L20 9V21H4V9L12 3Z" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" />
-                            <path d="M9 21V13H15V21" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" />
-                        </svg>
-                    </div>
+            {/* The same nebula that hangs over Cortex's header — the two
+                workspaces share one sky (V3 reference). Kept faint so the dawn
+                radials still read as the dominant weather. */}
+            <img
+                src="/aren-nebula.svg"
+                aria-hidden="true"
+                alt=""
+                className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover opacity-45"
+            />
+
+            {/* Full-bleed (not centered): the brand mark anchors the top-left
+                corner, exactly above the navigation rail it toggles. */}
+            <div className="relative z-10 flex items-center gap-[18px] py-3 pl-[15px] pr-6">
+                <div className="flex shrink-0 items-center gap-[11px]">
+                    {/* The permanent application mark — clicking it grows the rail
+                        into the sidebar (same logo-as-menu language as Cortex). */}
+                    <button
+                        type="button"
+                        onClick={onToggleNav}
+                        aria-expanded={navOpen}
+                        aria-label={t("navToggle")}
+                        title={t("navToggle")}
+                        className="group flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[rgba(139,92,246,0.42)] shadow-[0_0_14px_rgba(139,92,246,0.30)] transition-shadow duration-150 hover:shadow-[0_0_22px_rgba(139,92,246,0.55)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.5)]"
+                    >
+                        <img src={arenLogo} alt="AREN" className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.06] motion-reduce:transition-none" />
+                    </button>
                     <div>
                         <div className="font-[Manrope,sans-serif] text-[16px] font-extrabold leading-[1.1] tracking-[-0.01em]">
                             <span className="text-white">{brandWord}</span>

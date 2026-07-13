@@ -36,6 +36,26 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [saving, setSaving] = useState(false);
     const [visitStats, setVisitStats] = useState<{ visit_count: number; last_visit_at: string | null } | null>(null);
 
+    // Keyboard flow (receptionists live on the keyboard): Enter advances
+    // through this field order; once every required field is complete, Enter
+    // triggers Save from anywhere in the form.
+    const nameRef = useRef<HTMLInputElement>(null);
+    const ageRef = useRef<HTMLInputElement>(null);
+    const genderRef = useRef<HTMLDivElement>(null);
+    const phoneRef = useRef<HTMLInputElement>(null);
+    const symptomRef = useRef<HTMLInputElement>(null);
+    const doctorRef = useRef<HTMLSelectElement>(null);
+    const fieldOrder: React.RefObject<HTMLElement | null>[] = existing
+        ? [symptomRef, doctorRef]
+        : [nameRef, ageRef, genderRef, phoneRef, symptomRef, doctorRef];
+
+    useEffect(() => {
+        // Land the cursor where typing starts: the first empty field.
+        const first = existing ? symptomRef : (prefillName ? ageRef : nameRef);
+        first.current?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         if (!existingPatient) { setVisitStats(null); return; }
         let cancelled = false;
@@ -45,16 +65,27 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         return () => { cancelled = true; };
     }, [existingPatient]);
 
-    const handleSave = async () => {
+    const phoneOk = /^\d{10}$/.test(phone);
+    const formComplete = existing
+        ? selectedSymptoms.length > 0
+        : !!name.trim() && !!age.trim() && !!gender && phoneOk && selectedSymptoms.length > 0;
+
+    const validate = () => {
         const nextErrors: Record<string, boolean> = {};
         if (!existing) {
             if (!name.trim()) nextErrors.name = true;
-            if (!phone.trim()) nextErrors.phone = true;
+            if (!age.trim()) nextErrors.age = true;
+            if (!gender) nextErrors.gender = true;
+            if (!phoneOk) nextErrors.phone = true;
         }
         if (!selectedSymptoms.length) nextErrors.symptoms = true;
         setErrors(nextErrors);
-        if (Object.keys(nextErrors).length) return;
+        return Object.keys(nextErrors).length === 0;
+    };
 
+    const handleSave = async () => {
+        if (saving) return;
+        if (!validate()) return;
         setSaving(true);
         const result = await onCreate({
             existingPatient,
@@ -67,6 +98,31 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         });
         setSaving(false);
         if (result) onClose();
+    };
+
+    // Enter anywhere in the form: save when complete, otherwise walk to the
+    // next field (the SymptomPicker preventDefaults its own Enter when it is
+    // consuming the keystroke to pick a match).
+    const handleFormKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key !== "Enter" || e.defaultPrevented) return;
+        e.preventDefault();
+        if (formComplete) { handleSave(); return; }
+        const target = e.target as HTMLElement;
+        const idx = fieldOrder.findIndex((r) => r.current && (r.current === target || r.current.contains(target)));
+        const next = idx >= 0 && idx < fieldOrder.length - 1
+            ? fieldOrder[idx + 1]
+            : fieldOrder.find((r, i) => i !== idx && isIncomplete(i));
+        next?.current?.focus();
+    };
+
+    const isIncomplete = (orderIdx: number) => {
+        const ref = fieldOrder[orderIdx];
+        if (ref === nameRef) return !name.trim();
+        if (ref === ageRef) return !age.trim();
+        if (ref === genderRef) return !gender;
+        if (ref === phoneRef) return !phoneOk;
+        if (ref === symptomRef) return selectedSymptoms.length === 0;
+        return false;
     };
 
     // fd-field lives in FrontDeskStyles: unlayered so it beats Cortex's global
@@ -100,82 +156,271 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 </>
             }
         >
-            {existing && existingPatient ? (
-                <div className="mb-5 flex items-center gap-3 rounded-[12px] border border-[#e3ecfd] bg-[linear-gradient(135deg,rgba(47,107,237,0.07),rgba(47,107,237,0.02))] px-[14px] py-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#e9f0fe] text-[13.5px] font-bold text-[#1d51c9]">
-                        {initials(existingPatient.name)}
-                    </div>
-                    <div>
-                        <div className="text-[14px] font-bold text-[#161d29]">{existingPatient.name}</div>
-                        <div className="mt-[1px] text-[12px] text-[#5a6472]">
-                            {existingPatient.phone}
-                            {visitStats && visitStats.visit_count > 0 && (
-                                <>
-                                    <span className="mx-[6px] text-[#a8aeba]">·</span>
-                                    {t("prefillFrom", { n: visitStats.visit_count })}
-                                </>
-                            )}
+            <div onKeyDown={handleFormKeyDown}>
+                {existing && existingPatient ? (
+                    <div className="mb-5 flex items-center gap-3 rounded-[12px] border border-[#e3ecfd] bg-[linear-gradient(135deg,rgba(47,107,237,0.07),rgba(47,107,237,0.02))] px-[14px] py-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#e9f0fe] text-[13.5px] font-bold text-[#1d51c9]">
+                            {initials(existingPatient.name)}
+                        </div>
+                        <div>
+                            <div className="text-[14px] font-bold text-[#161d29]">{existingPatient.name}</div>
+                            <div className="mt-[1px] text-[12px] text-[#5a6472]">
+                                {existingPatient.phone}
+                                {visitStats && visitStats.visit_count > 0 && (
+                                    <>
+                                        <span className="mx-[6px] text-[#a8aeba]">·</span>
+                                        {t("prefillFrom", { n: visitStats.visit_count })}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            ) : (
-                <>
-                    <SectionLabel text={t("secPatient")} />
-                    <div className="grid grid-cols-2 gap-x-[14px] gap-y-4">
-                        <Field className="col-span-2" icon={<UserRound size={13} />} label={t("fldName")} required error={errors.name ? t("errRequired") : undefined}>
-                            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("phName")} className={fieldClass(errors.name)} />
-                        </Field>
-                        <Field icon={<Cake size={13} />} label={t("fldAge")} optional>
-                            <input value={age} onChange={(e) => setAge(e.target.value)} placeholder={t("phAge")} inputMode="numeric" className={fieldClass()} />
-                        </Field>
-                        <Field icon={<Users size={13} />} label={t("fldGender")} optional>
-                            <select value={gender} onChange={(e) => setGender(e.target.value)} className={fieldClass()}>
-                                <option value="">{t("selectGender")}</option>
-                                <option value="Male">{t("male")}</option>
-                                <option value="Female">{t("female")}</option>
-                                <option value="Other">{t("other")}</option>
-                            </select>
-                        </Field>
-                        <Field className="col-span-2" icon={<Phone size={13} />} label={t("fldPhone")} required error={errors.phone ? t("errRequired") : undefined}>
-                            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("phPhone")} inputMode="numeric" className={fieldClass(errors.phone)} />
-                        </Field>
-                    </div>
-                </>
-            )}
+                ) : (
+                    <>
+                        <SectionLabel text={t("secPatient")} />
+                        <div className="grid grid-cols-[128px_1fr] gap-x-[14px] gap-y-4">
+                            <Field className="col-span-2" icon={<UserRound size={13} />} label={t("fldName")} required error={errors.name ? t("errRequired") : undefined}>
+                                <input
+                                    ref={nameRef}
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder={t("phName")}
+                                    className={fieldClass(errors.name)}
+                                />
+                            </Field>
+                            {/* Age is a tiny number — it gets a tiny box (fixed 128px
+                                column), gender fills the rest of the row. */}
+                            <Field icon={<Cake size={13} />} label={t("fldAge")} required error={errors.age ? t("errRequired") : undefined}>
+                                <AgeInput
+                                    inputRef={ageRef}
+                                    value={age}
+                                    onChange={(v) => { setAge(v); if (v) setErrors((er) => ({ ...er, age: false })); }}
+                                    error={!!errors.age}
+                                    placeholder={t("phAge")}
+                                />
+                            </Field>
+                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
+                                <GenderControl
+                                    groupRef={genderRef}
+                                    value={gender}
+                                    onChange={(v) => { setGender(v); setErrors((er) => ({ ...er, gender: false })); }}
+                                    error={!!errors.gender}
+                                />
+                            </Field>
+                            <Field className="col-span-2" icon={<Phone size={13} />} label={t("fldPhone")} required error={errors.phone ? t("errPhone10") : undefined}>
+                                {/* India-first: +91 is assumed and shown; the user only
+                                    ever types the 10 digits after it. */}
+                                <div
+                                    className={`flex h-[46px] items-center overflow-hidden rounded-[11px] border-[1.5px] transition-[border-color,box-shadow,background-color] duration-150 ${
+                                        errors.phone
+                                            ? "border-[#d23b34] bg-[#fffafa]"
+                                            : "border-[#e9ebf2] bg-[#f7f8fb] focus-within:border-[#7c5cf0] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
+                                    }`}
+                                >
+                                    <span className="flex h-full shrink-0 items-center border-r border-[#e9ebf2] bg-[rgba(20,30,50,0.025)] px-[13px] text-[13.5px] font-bold tracking-[0.02em] text-[#5a6472]">
+                                        +91
+                                    </span>
+                                    <input
+                                        ref={phoneRef}
+                                        value={phone}
+                                        onChange={(e) => {
+                                            const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                            setPhone(digits);
+                                            if (/^\d{10}$/.test(digits)) setErrors((er) => ({ ...er, phone: false }));
+                                        }}
+                                        placeholder={t("phPhone")}
+                                        inputMode="numeric"
+                                        maxLength={10}
+                                        className="fd-bare px-[13px] tabular-nums"
+                                    />
+                                    <span className={`shrink-0 pr-[13px] text-[11.5px] font-semibold tabular-nums ${phoneOk ? "text-[#1c8a4d]" : "text-[#a8aeba]"}`}>
+                                        {phone.length}/10
+                                    </span>
+                                </div>
+                            </Field>
+                        </div>
+                    </>
+                )}
 
-            <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[22px]"} />
-            <Field icon={<Thermometer size={13} />} label={t("fldSymptoms")} required error={errors.symptoms ? t("errSymptom") : undefined}>
-                <SymptomPicker
-                    selected={selectedSymptoms}
-                    onChange={(next) => {
-                        setSelectedSymptoms(next);
-                        if (next.length) setErrors((e) => ({ ...e, symptoms: false }));
-                    }}
-                    error={!!errors.symptoms}
-                />
-            </Field>
-            <Field className="mt-4" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
-                <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={fieldClass()}>
-                    {doctors.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                </select>
-            </Field>
+                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[22px]"} />
+                <Field icon={<Thermometer size={13} />} label={t("fldSymptoms")} required error={errors.symptoms ? t("errSymptom") : undefined}>
+                    <SymptomPicker
+                        inputRef={symptomRef}
+                        selected={selectedSymptoms}
+                        onChange={(next) => {
+                            setSelectedSymptoms(next);
+                            if (next.length) setErrors((e) => ({ ...e, symptoms: false }));
+                        }}
+                        error={!!errors.symptoms}
+                    />
+                </Field>
+                <Field className="mt-4" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
+                    <select ref={doctorRef} value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={fieldClass()}>
+                        {doctors.map((d) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                    </select>
+                </Field>
+            </div>
         </ModalShell>
+    );
+}
+
+// Compact numeric age: type it, nudge it with the arrow keys, or roll the
+// mouse wheel while focused. Digits only, clamped to 0–120.
+function AgeInput({
+    inputRef,
+    value,
+    onChange,
+    error,
+    placeholder,
+}: {
+    inputRef: React.RefObject<HTMLInputElement | null>;
+    value: string;
+    onChange: (v: string) => void;
+    error?: boolean;
+    placeholder: string;
+}) {
+    const step = (delta: number) => {
+        const current = parseInt(value, 10);
+        const base = Number.isFinite(current) ? current : 0;
+        onChange(String(Math.min(120, Math.max(0, base + delta))));
+    };
+
+    // React's onWheel is passive — it cannot preventDefault, so the page would
+    // scroll while the number changes. A manually attached non-passive
+    // listener (re-bound each render to close over the latest value) can.
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            if (document.activeElement !== el) return;
+            e.preventDefault();
+            step(e.deltaY < 0 ? 1 : -1);
+        };
+        el.addEventListener("wheel", onWheel, { passive: false });
+        return () => el.removeEventListener("wheel", onWheel);
+    });
+
+    return (
+        <input
+            ref={inputRef}
+            value={value}
+            onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, "").slice(0, 3);
+                onChange(digits === "" ? "" : String(Math.min(120, parseInt(digits, 10))));
+            }}
+            onKeyDown={(e) => {
+                if (e.key === "ArrowUp") { e.preventDefault(); step(1); }
+                else if (e.key === "ArrowDown") { e.preventDefault(); step(-1); }
+            }}
+            placeholder={placeholder}
+            inputMode="numeric"
+            maxLength={3}
+            className={`fd-field text-center tabular-nums ${error ? "fd-field-error" : ""}`}
+        />
+    );
+}
+
+// Keyboard-first gender: one tab stop; M selects Male, F Female, O Other;
+// arrow keys cycle. The dotted underline under each first letter quietly
+// teaches the shortcut. Values are the stored English entity names.
+const GENDER_OPTIONS = [
+    { value: "Male", labelKey: "male" as const, keys: ["m"] },
+    { value: "Female", labelKey: "female" as const, keys: ["f"] },
+    { value: "Other", labelKey: "other" as const, keys: ["o"] },
+];
+
+function GenderControl({
+    groupRef,
+    value,
+    onChange,
+    error,
+}: {
+    groupRef: React.RefObject<HTMLDivElement | null>;
+    value: string;
+    onChange: (v: string) => void;
+    error?: boolean;
+}) {
+    const t = useT();
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        const key = e.key.toLowerCase();
+        const hit = GENDER_OPTIONS.find((o) => o.keys.includes(key));
+        if (hit) {
+            e.preventDefault();
+            onChange(hit.value);
+            return;
+        }
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+            e.preventDefault();
+            const idx = GENDER_OPTIONS.findIndex((o) => o.value === value);
+            const dir = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1;
+            const next = GENDER_OPTIONS[(idx + dir + GENDER_OPTIONS.length) % GENDER_OPTIONS.length];
+            onChange(next.value);
+        }
+    };
+
+    return (
+        <div
+            ref={groupRef}
+            role="radiogroup"
+            aria-label={t("fldGender")}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
+            className={`flex h-[46px] items-stretch gap-[3px] rounded-[11px] border-[1.5px] p-[3px] outline-none transition-[border-color,box-shadow,background-color] duration-150 ${
+                error
+                    ? "border-[#d23b34] bg-[#fffafa]"
+                    : "border-[#e9ebf2] bg-[#f7f8fb] focus-visible:border-[#7c5cf0] focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
+            }`}
+        >
+            {GENDER_OPTIONS.map((o) => {
+                const active = value === o.value;
+                const label = t(o.labelKey);
+                return (
+                    <button
+                        key={o.value}
+                        type="button"
+                        tabIndex={-1}
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => onChange(o.value)}
+                        className={`flex-1 rounded-[8px] text-[13px] transition-colors ${
+                            active
+                                ? "border border-[#e2e5ee] bg-white font-bold text-[#161d29] shadow-[0_1px_3px_rgba(20,30,50,0.08)]"
+                                : "font-medium text-[#8a91a0] hover:text-[#5a6472]"
+                        }`}
+                    >
+                        <span className={active ? "underline decoration-[#b7a8f2] decoration-dotted underline-offset-[3px]" : "underline decoration-[#d8dce6] decoration-dotted underline-offset-[3px]"}>
+                            {label.slice(0, 1)}
+                        </span>
+                        {label.slice(1)}
+                    </button>
+                );
+            })}
+        </div>
     );
 }
 
 // Structured symptom selection: symptoms are entities in the `symptoms` table
 // (they feed Cortex, medicine ranking, and specialty logic), never free text.
-// Since s36 the picker is a catalog, not a search box: focusing the field
-// immediately opens the full symptom list as chips; typing filters it with
-// typo tolerance ("feber" still surfaces fever); Enter adds the highlighted
-// top match. The panel renders in-flow (no overlay → nothing clips).
+// Focusing the field opens the full catalog immediately; typing filters it
+// with typo tolerance ("feber" still surfaces fever); Enter adds the
+// highlighted top match.
+//
+// The catalog renders in-flow and is dismissed on outside CLICK — never on
+// mousedown. Closing on mousedown collapsed the modal layout between a
+// mousedown and its mouseup, so the click landed on the backdrop and
+// silently destroyed the whole intake (the "existing patient visits fail"
+// regression). With click-based dismissal the layout is stable for the full
+// duration of any press: a first click on Save both saves and closes.
 function SymptomPicker({
+    inputRef,
     selected,
     onChange,
     error,
 }: {
+    inputRef: React.RefObject<HTMLInputElement | null>;
     selected: DBSymptom[];
     onChange: (next: DBSymptom[]) => void;
     error?: boolean;
@@ -184,7 +429,6 @@ function SymptomPicker({
     const [catalog, setCatalog] = useState<DBSymptom[]>([]);
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
-    const inputRef = useRef<HTMLInputElement>(null);
     const rootRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -195,17 +439,29 @@ function SymptomPicker({
         return () => { cancelled = true; };
     }, []);
 
-    // Click anywhere outside the picker closes the catalog.
+    // A completed click anywhere outside the picker closes the catalog.
+    // Deliberately `click`, not `mousedown` — see the component comment.
+    // Registration is deferred a tick: when the catalog opens as a side
+    // effect of a click (selecting a patient in the launcher auto-focuses
+    // this field), that same click would otherwise reach this listener while
+    // still bubbling and close the catalog in the same breath.
     useEffect(() => {
         if (!open) return;
-        const onDown = (e: MouseEvent) => {
-            if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        const onClick = (e: MouseEvent) => {
+            const target = e.target as Node;
+            // Picking a chip unmounts it before the click finishes bubbling —
+            // a detached target is an inside click, not an outside one.
+            if (!target.isConnected) return;
+            if (rootRef.current && !rootRef.current.contains(target)) {
                 setOpen(false);
                 setQuery("");
             }
         };
-        document.addEventListener("mousedown", onDown);
-        return () => document.removeEventListener("mousedown", onDown);
+        const timer = setTimeout(() => document.addEventListener("click", onClick), 0);
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener("click", onClick);
+        };
     }, [open]);
 
     // While the catalog is open, Escape closes it — not the modal. Capture
@@ -283,8 +539,19 @@ function SymptomPicker({
                         onFocus={() => setOpen(true)}
                         onKeyDown={(e) => {
                             if (e.key === "Enter") {
-                                e.preventDefault();
-                                if (query.trim() && filtered.length) pick(filtered[0]);
+                                // Consume Enter only while picking; with nothing to
+                                // pick it bubbles up to the form's advance/save flow
+                                // and takes the catalog down with it.
+                                if (query.trim() && filtered.length) {
+                                    e.preventDefault();
+                                    pick(filtered[0]);
+                                } else {
+                                    setOpen(false);
+                                    setQuery("");
+                                }
+                            } else if (e.key === "Tab") {
+                                setOpen(false);
+                                setQuery("");
                             } else if (e.key === "Backspace" && !query && selected.length) {
                                 remove(selected[selected.length - 1].id);
                             }

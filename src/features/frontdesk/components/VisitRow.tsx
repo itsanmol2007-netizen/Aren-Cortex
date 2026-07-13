@@ -8,13 +8,14 @@ import { useT } from "../i18n/i18n";
 
 type Props = {
     visit: TodayVisit;
+    now: Date;
     selected?: boolean;
     onOpen: (visit: TodayVisit) => void;
     onComplete: (visit: TodayVisit) => void;
     onCancel: (visit: TodayVisit) => void;
 };
 
-export function VisitRow({ visit, selected, onOpen, onComplete, onCancel }: Props) {
+export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }: Props) {
     const t = useT();
     const [hovered, setHovered] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -24,6 +25,14 @@ export function VisitRow({ visit, selected, onOpen, onComplete, onCancel }: Prop
     const tint = tintFor(visit.status);
     const isCancelled = visit.status === "discarded";
     const returning = visit.visit_count > 1;
+
+    // The receptionist thinks in "how long has she been sitting there", not in
+    // clock time — so waiting rows carry a live duration under the arrival
+    // time. It ticks with the page's 20s clock; amber because waiting is
+    // semantic data (§7.1), same vocabulary as the status chip beside it.
+    const created = new Date(visit.created_at);
+    const createdTime = created.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+    const waitMins = Math.max(0, Math.floor((now.getTime() - created.getTime()) / 60000));
     const shown = visit.symptom_names.slice(0, 2).join(", ");
     const extra = visit.symptom_names.length - 2;
     const moreTip = extra > 0 ? visit.symptom_names.slice(2).join(", ") : "";
@@ -116,7 +125,14 @@ export function VisitRow({ visit, selected, onOpen, onComplete, onCancel }: Prop
                 {visit.doctor_name ?? "—"}
             </div>
 
-            <div className="max-lg:hidden text-[12px] text-[#a8aeba] tabular-nums">{formatShortDate(visit.last_visit_at)}</div>
+            <div className="max-lg:hidden">
+                <div className="text-[12px] text-[#8a91a0] tabular-nums">{createdTime}</div>
+                {visit.status === "waiting" && (
+                    <div className="mt-[1px] text-[11px] font-semibold tabular-nums text-[#c9791a]">
+                        {waitMins < 1 ? t("waitingNow") : t("waitingFor", { m: waitMins })}
+                    </div>
+                )}
+            </div>
 
             <div className={`flex items-center gap-[6px] text-[11.5px] font-medium tracking-[0.01em] ${tint.textClass}`}>
                 <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: tint.dotColor }} />

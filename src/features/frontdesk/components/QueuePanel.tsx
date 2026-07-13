@@ -7,6 +7,7 @@ import type { StringKey } from "../i18n/strings";
 
 type Props = {
     visits: TodayVisit[];
+    now: Date;
     loading: boolean;
     onOpen: (visit: TodayVisit) => void;
     onComplete: (visit: TodayVisit) => void;
@@ -24,7 +25,7 @@ const TAB_KIND: Record<QueueTab, "waiting" | "serving" | "completed" | "generic"
     completed: "completed",
 };
 
-export function QueuePanel({ visits, loading, onOpen, onComplete, onCancel, selectedVisitId }: Props) {
+export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel, selectedVisitId }: Props) {
     const t = useT();
     const [tab, setTab] = useState<QueueTab>("all");
 
@@ -88,6 +89,7 @@ export function QueuePanel({ visits, loading, onOpen, onComplete, onCancel, sele
                             <VisitRow
                                 key={v.visit_id}
                                 visit={v}
+                                now={now}
                                 selected={selectedVisitId === v.visit_id}
                                 onOpen={onOpen}
                                 onComplete={onComplete}
