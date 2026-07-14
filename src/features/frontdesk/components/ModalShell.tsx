@@ -19,9 +19,12 @@ type Props = {
     onClose: () => void;
     footer?: React.ReactNode;
     children: React.ReactNode;
+    // Panel width cap. 580 is the Bhor default; exploration surfaces (the
+    // visit-timeline modal) may go a touch wider without leaving the family.
+    maxWidth?: number;
 };
 
-export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: Props) {
+export function ModalShell({ eyebrow, title, icon, onClose, footer, children, maxWidth = 580 }: Props) {
     const t = useT();
     // A backdrop click only counts if the press ALSO started on the backdrop.
     // Without this, any in-panel interaction that reflows the layout between
@@ -44,18 +47,19 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: 
             <div
                 role="dialog"
                 aria-modal="true"
-                className="relative w-full max-w-[580px] rounded-[18px] bg-white shadow-[0_32px_80px_rgba(13,18,38,0.32),0_8px_28px_rgba(124,92,240,0.10)]"
+                className="relative w-full rounded-[18px] bg-white shadow-[0_32px_80px_rgba(13,18,38,0.32),0_8px_28px_rgba(124,92,240,0.10)]"
+                style={{ maxWidth }}
             >
                 {/* Header zone clips its own decoration (rounded top) so the panel
                     itself can stay overflow-visible — floating dropdowns inside the
                     body (e.g. the symptom catalog) must never be cut off. */}
                 <div
-                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eef0f5] px-6 pb-5 pt-[22px]"
+                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eeebf7] px-[22px] pb-4 pt-[17px]"
                     style={{
                         background:
-                            "radial-gradient(ellipse 320px 140px at 90% 0%, rgba(168,85,247,0.07), transparent 70%), " +
+                            "radial-gradient(ellipse 320px 140px at 90% 0%, rgba(168,85,247,0.10), transparent 70%), " +
                             "radial-gradient(ellipse 260px 120px at 28% 0%, rgba(242,169,134,0.05), transparent 70%), " +
-                            "linear-gradient(180deg, #fcfbff 0%, #ffffff 100%)",
+                            "linear-gradient(180deg, #faf8ff 0%, #ffffff 100%)",
                     }}
                 >
                     {/* Dawn thread — full strength with glow on modals since s36
@@ -89,10 +93,10 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children }: 
                     </button>
                 </div>
 
-                <div className="px-6 pb-6 pt-5">{children}</div>
+                <div className="px-[22px] pb-5 pt-4">{children}</div>
 
                 {footer && (
-                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eef0f5] bg-[#fafbfc] px-6 py-4">
+                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eeebf7] bg-[#fbfaff] px-[22px] py-3">
                         {footer}
                     </div>
                 )}

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, Users, X } from "lucide-react";
-import { fetchPatientVisitStats, fetchSymptoms, type DBDoctor, type DBPatient, type DBSymptom } from "@/lib/db";
+import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
+import { fetchPatientVisitStats, fetchSymptoms, searchPatients, type DBDoctor, type DBPatient, type DBSymptom } from "@/lib/db";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
 import { ModalShell } from "./ModalShell";
+import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
 
 type Props = {
     existingPatient: DBPatient | null;
@@ -11,6 +12,10 @@ type Props = {
     doctors: DBDoctor[];
     defaultDoctorId: string;
     onClose: () => void;
+    // Switches this open modal into existing-patient mode (used by duplicate
+    // detection); picked symptoms/doctor survive because the component stays
+    // mounted — only the identity half of the form changes.
+    onUseExisting: (patient: DBPatient) => void;
     onCreate: (opts: {
         existingPatient: DBPatient | null;
         name: string;
@@ -22,7 +27,7 @@ type Props = {
     }) => Promise<{ patientName: string } | null>;
 };
 
-export function CreateVisitModal({ existingPatient, prefillName, doctors, defaultDoctorId, onClose, onCreate }: Props) {
+export function CreateVisitModal({ existingPatient, prefillName, doctors, defaultDoctorId, onClose, onUseExisting, onCreate }: Props) {
     const t = useT();
     const existing = !!existingPatient;
 
@@ -65,7 +70,37 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         return () => { cancelled = true; };
     }, [existingPatient]);
 
+    // Silent duplicate watch: while the receptionist types a name or number,
+    // the DB is searched in the background. A phone hit is authoritative; a
+    // full-name hit is a softer suggestion. The banner below the fields lets
+    // them convert to "new visit for that patient" in one click — the form
+    // never creates a second patient with the same name + number.
+    const [dup, setDup] = useState<DBPatient | null>(null);
+    useEffect(() => {
+        if (existing) { setDup(null); return; }
+        const nm = name.trim();
+        if (phone.length < 4 && nm.length < 3) { setDup(null); return; }
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                let match: DBPatient | null = null;
+                if (phone.length >= 4) {
+                    const rows = await searchPatients(phone);
+                    match = rows.find((r) => r.phone === phone) ?? rows.find((r) => r.phone?.startsWith(phone)) ?? null;
+                }
+                if (!match && nm.length >= 3) {
+                    const rows = await searchPatients(nm);
+                    match = rows.find((r) => r.name.trim().toLowerCase() === nm.toLowerCase()) ?? null;
+                }
+                if (!cancelled) setDup(match);
+            } catch { /* silent — dedupe is best-effort */ }
+        }, 350);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [name, phone, existing]);
+
     const phoneOk = /^\d{10}$/.test(phone);
+    const dupPhoneHit = !existing && !!dup && dup.phone === phone && phoneOk;
+    const dupExact = dupPhoneHit && dup!.name.trim().toLowerCase() === name.trim().toLowerCase();
     const formComplete = existing
         ? selectedSymptoms.length > 0
         : !!name.trim() && !!age.trim() && !!gender && phoneOk && selectedSymptoms.length > 0;
@@ -86,9 +121,20 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const handleSave = async () => {
         if (saving) return;
         if (!validate()) return;
+        // Duplicate guard: same phone + same name = that IS this patient —
+        // create the visit for them instead of minting a twin record. Same
+        // phone under a different name is ambiguous, so block and let the
+        // banner's button resolve it explicitly.
+        let asExisting = existingPatient;
+        if (dupExact) {
+            asExisting = dup;
+        } else if (dupPhoneHit) {
+            setErrors((e) => ({ ...e, phone: true }));
+            return;
+        }
         setSaving(true);
         const result = await onCreate({
-            existingPatient,
+            existingPatient: asExisting,
             name,
             phone,
             age,
@@ -139,7 +185,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 <>
                     <button
                         onClick={onClose}
-                        className="h-11 rounded-[10px] border-[1.5px] border-[#e4e7ee] bg-white px-5 text-[14px] font-bold text-[#5a6472] transition-colors hover:border-[#d5dae4] hover:bg-[#f5f6f9]"
+                        className="h-10 rounded-[10px] border-[1.5px] border-[#e6e3f1] bg-white px-[18px] text-[13.5px] font-bold text-[#5a6472] transition-colors hover:border-[#d5cfec] hover:bg-[#f8f7fd]"
                     >
                         {t("cancel")}
                     </button>
@@ -148,7 +194,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="flex h-11 items-center gap-[7px] rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-[22px] text-[14px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[filter,box-shadow] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] disabled:opacity-50 disabled:hover:brightness-100"
+                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[filter,box-shadow] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] disabled:opacity-50 disabled:hover:brightness-100"
                     >
                         {saving ? t("saving") : t("save")}
                         <ArrowRight size={15} strokeWidth={2.4} />
@@ -158,13 +204,13 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         >
             <div onKeyDown={handleFormKeyDown}>
                 {existing && existingPatient ? (
-                    <div className="mb-5 flex items-center gap-3 rounded-[12px] border border-[#e3ecfd] bg-[linear-gradient(135deg,rgba(47,107,237,0.07),rgba(47,107,237,0.02))] px-[14px] py-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#e9f0fe] text-[13.5px] font-bold text-[#1d51c9]">
+                    <div className="mb-4 flex items-center gap-3 rounded-[11px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[10px]">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[13px] font-bold text-[#6d28d9]">
                             {initials(existingPatient.name)}
                         </div>
-                        <div>
-                            <div className="text-[14px] font-bold text-[#161d29]">{existingPatient.name}</div>
-                            <div className="mt-[1px] text-[12px] text-[#5a6472]">
+                        <div className="min-w-0">
+                            <div className="truncate text-[13.5px] font-bold text-[#161d29]">{existingPatient.name}</div>
+                            <div className="mt-[1px] text-[11.5px] text-[#5a6472]">
                                 {existingPatient.phone}
                                 {visitStats && visitStats.visit_count > 0 && (
                                     <>
@@ -174,11 +220,12 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 )}
                             </div>
                         </div>
+                        <UserCheck size={16} className="ml-auto shrink-0 text-[#8b6ff2]" />
                     </div>
                 ) : (
                     <>
                         <SectionLabel text={t("secPatient")} />
-                        <div className="grid grid-cols-[128px_1fr] gap-x-[14px] gap-y-4">
+                        <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-3">
                             <Field className="col-span-2" icon={<UserRound size={13} />} label={t("fldName")} required error={errors.name ? t("errRequired") : undefined}>
                                 <input
                                     ref={nameRef}
@@ -207,42 +254,56 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     error={!!errors.gender}
                                 />
                             </Field>
-                            <Field className="col-span-2" icon={<Phone size={13} />} label={t("fldPhone")} required error={errors.phone ? t("errPhone10") : undefined}>
-                                {/* India-first: +91 is assumed and shown; the user only
-                                    ever types the 10 digits after it. */}
-                                <div
-                                    className={`flex h-[46px] items-center overflow-hidden rounded-[11px] border-[1.5px] transition-[border-color,box-shadow,background-color] duration-150 ${
-                                        errors.phone
-                                            ? "border-[#d23b34] bg-[#fffafa]"
-                                            : "border-[#e9ebf2] bg-[#f7f8fb] focus-within:border-[#7c5cf0] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
-                                    }`}
-                                >
-                                    <span className="flex h-full shrink-0 items-center border-r border-[#e9ebf2] bg-[rgba(20,30,50,0.025)] px-[13px] text-[13.5px] font-bold tracking-[0.02em] text-[#5a6472]">
-                                        +91
-                                    </span>
-                                    <input
-                                        ref={phoneRef}
-                                        value={phone}
-                                        onChange={(e) => {
-                                            const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                            setPhone(digits);
-                                            if (/^\d{10}$/.test(digits)) setErrors((er) => ({ ...er, phone: false }));
-                                        }}
-                                        placeholder={t("phPhone")}
-                                        inputMode="numeric"
-                                        maxLength={10}
-                                        className="fd-bare px-[13px] tabular-nums"
-                                    />
-                                    <span className={`shrink-0 pr-[13px] text-[11.5px] font-semibold tabular-nums ${phoneOk ? "text-[#1c8a4d]" : "text-[#a8aeba]"}`}>
-                                        {phone.length}/10
-                                    </span>
-                                </div>
+                            <Field
+                                className="col-span-2"
+                                icon={<Phone size={13} />}
+                                label={t("fldPhone")}
+                                required
+                                error={errors.phone ? (dupPhoneHit && !dupExact ? t("dupPhone", { name: dup!.name }) : t("errPhone10")) : undefined}
+                            >
+                                <PhoneInput
+                                    inputRef={phoneRef}
+                                    value={phone}
+                                    onChange={(digits) => {
+                                        setPhone(digits);
+                                        if (/^\d{10}$/.test(digits)) setErrors((er) => ({ ...er, phone: false }));
+                                    }}
+                                    error={!!errors.phone}
+                                    placeholder={t("phPhone")}
+                                />
                             </Field>
                         </div>
+
+                        {/* Duplicate-patient banner: appears silently as they type;
+                            one click turns "register" into "new visit for them". */}
+                        {dup && (
+                            <div className="mt-3 flex items-center gap-[10px] rounded-[11px] border border-[#e2d9fb] bg-[linear-gradient(135deg,rgba(124,92,240,0.09),rgba(124,92,240,0.02))] px-3 py-[9px]">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[12.5px] font-bold text-[#6d28d9]">
+                                    {initials(dup.name)}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate text-[12.5px] font-bold text-[#161d29]">
+                                        {dup.name}
+                                        <span className="ml-[6px] font-medium text-[#8a91a0] tabular-nums">{dup.phone}</span>
+                                    </div>
+                                    <div className="mt-[1px] text-[11px] font-semibold text-[#7c5cf0]">
+                                        {dupPhoneHit && !dupExact ? t("dupPhone", { name: dup.name }) : t("dupExists")}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => onUseExisting(dup)}
+                                    className="flex h-8 shrink-0 items-center gap-[5px] rounded-[8px] bg-[#7c5cf0] px-[11px] text-[11.5px] font-bold text-white shadow-[0_2px_8px_rgba(124,92,240,0.3)] transition-[filter] hover:brightness-110"
+                                >
+                                    <UserCheck size={13} />
+                                    {t("dupUse")}
+                                </button>
+                            </div>
+                        )}
                     </>
                 )}
 
-                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[22px]"} />
+                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[18px]"} />
                 <Field icon={<Thermometer size={13} />} label={t("fldSymptoms")} required error={errors.symptoms ? t("errSymptom") : undefined}>
                     <SymptomPicker
                         inputRef={symptomRef}
@@ -254,7 +315,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         error={!!errors.symptoms}
                     />
                 </Field>
-                <Field className="mt-4" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
+                <Field className="mt-3" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
                     <select ref={doctorRef} value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={fieldClass()}>
                         {doctors.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
@@ -263,142 +324,6 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 </Field>
             </div>
         </ModalShell>
-    );
-}
-
-// Compact numeric age: type it, nudge it with the arrow keys, or roll the
-// mouse wheel while focused. Digits only, clamped to 0–120.
-function AgeInput({
-    inputRef,
-    value,
-    onChange,
-    error,
-    placeholder,
-}: {
-    inputRef: React.RefObject<HTMLInputElement | null>;
-    value: string;
-    onChange: (v: string) => void;
-    error?: boolean;
-    placeholder: string;
-}) {
-    const step = (delta: number) => {
-        const current = parseInt(value, 10);
-        const base = Number.isFinite(current) ? current : 0;
-        onChange(String(Math.min(120, Math.max(0, base + delta))));
-    };
-
-    // React's onWheel is passive — it cannot preventDefault, so the page would
-    // scroll while the number changes. A manually attached non-passive
-    // listener (re-bound each render to close over the latest value) can.
-    useEffect(() => {
-        const el = inputRef.current;
-        if (!el) return;
-        const onWheel = (e: WheelEvent) => {
-            if (document.activeElement !== el) return;
-            e.preventDefault();
-            step(e.deltaY < 0 ? 1 : -1);
-        };
-        el.addEventListener("wheel", onWheel, { passive: false });
-        return () => el.removeEventListener("wheel", onWheel);
-    });
-
-    return (
-        <input
-            ref={inputRef}
-            value={value}
-            onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, "").slice(0, 3);
-                onChange(digits === "" ? "" : String(Math.min(120, parseInt(digits, 10))));
-            }}
-            onKeyDown={(e) => {
-                if (e.key === "ArrowUp") { e.preventDefault(); step(1); }
-                else if (e.key === "ArrowDown") { e.preventDefault(); step(-1); }
-            }}
-            placeholder={placeholder}
-            inputMode="numeric"
-            maxLength={3}
-            className={`fd-field text-center tabular-nums ${error ? "fd-field-error" : ""}`}
-        />
-    );
-}
-
-// Keyboard-first gender: one tab stop; M selects Male, F Female, O Other;
-// arrow keys cycle. The dotted underline under each first letter quietly
-// teaches the shortcut. Values are the stored English entity names.
-const GENDER_OPTIONS = [
-    { value: "Male", labelKey: "male" as const, keys: ["m"] },
-    { value: "Female", labelKey: "female" as const, keys: ["f"] },
-    { value: "Other", labelKey: "other" as const, keys: ["o"] },
-];
-
-function GenderControl({
-    groupRef,
-    value,
-    onChange,
-    error,
-}: {
-    groupRef: React.RefObject<HTMLDivElement | null>;
-    value: string;
-    onChange: (v: string) => void;
-    error?: boolean;
-}) {
-    const t = useT();
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        const key = e.key.toLowerCase();
-        const hit = GENDER_OPTIONS.find((o) => o.keys.includes(key));
-        if (hit) {
-            e.preventDefault();
-            onChange(hit.value);
-            return;
-        }
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
-            e.preventDefault();
-            const idx = GENDER_OPTIONS.findIndex((o) => o.value === value);
-            const dir = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1;
-            const next = GENDER_OPTIONS[(idx + dir + GENDER_OPTIONS.length) % GENDER_OPTIONS.length];
-            onChange(next.value);
-        }
-    };
-
-    return (
-        <div
-            ref={groupRef}
-            role="radiogroup"
-            aria-label={t("fldGender")}
-            tabIndex={0}
-            onKeyDown={handleKeyDown}
-            className={`flex h-[46px] items-stretch gap-[3px] rounded-[11px] border-[1.5px] p-[3px] outline-none transition-[border-color,box-shadow,background-color] duration-150 ${
-                error
-                    ? "border-[#d23b34] bg-[#fffafa]"
-                    : "border-[#e9ebf2] bg-[#f7f8fb] focus-visible:border-[#7c5cf0] focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
-            }`}
-        >
-            {GENDER_OPTIONS.map((o) => {
-                const active = value === o.value;
-                const label = t(o.labelKey);
-                return (
-                    <button
-                        key={o.value}
-                        type="button"
-                        tabIndex={-1}
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => onChange(o.value)}
-                        className={`flex-1 rounded-[8px] text-[13px] transition-colors ${
-                            active
-                                ? "border border-[#e2e5ee] bg-white font-bold text-[#161d29] shadow-[0_1px_3px_rgba(20,30,50,0.08)]"
-                                : "font-medium text-[#8a91a0] hover:text-[#5a6472]"
-                        }`}
-                    >
-                        <span className={active ? "underline decoration-[#b7a8f2] decoration-dotted underline-offset-[3px]" : "underline decoration-[#d8dce6] decoration-dotted underline-offset-[3px]"}>
-                            {label.slice(0, 1)}
-                        </span>
-                        {label.slice(1)}
-                    </button>
-                );
-            })}
-        </div>
     );
 }
 
@@ -506,12 +431,12 @@ function SymptomPicker({
                 input/select/label elements). */}
             <div
                 onClick={() => { inputRef.current?.focus(); setOpen(true); }}
-                className={`flex min-h-[46px] cursor-text flex-wrap items-center gap-[6px] rounded-[11px] border-[1.5px] px-3 py-[7px] transition-[border-color,box-shadow,background-color] duration-150 ${
+                className={`flex min-h-[42px] cursor-text flex-wrap items-center gap-[6px] rounded-[10px] border-[1.5px] px-3 py-[5px] transition-[border-color,box-shadow,background-color] duration-150 ${
                     error
                         ? "border-[#d23b34] bg-[#fffafa]"
                         : open
                             ? "border-[#7c5cf0] bg-white shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
-                            : "border-[#e9ebf2] bg-[#f7f8fb] hover:border-[#dde1ea]"
+                            : "border-[#e9e7f4] bg-[#f8f8fd] hover:border-[#d9d3ee]"
                 }`}
             >
                 {selected.map((s) => (
@@ -632,49 +557,6 @@ function editDistance(a: string, b: string): number {
     return row[b.length];
 }
 
-// Violet micro-label + fading hairline: the section grouping device shared
-// with VisitDetailModal (§4 micro-label system).
-function SectionLabel({ text, className = "" }: { text: string; className?: string }) {
-    return (
-        <div className={`mb-[13px] flex items-center gap-2 ${className}`}>
-            <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">{text}</span>
-            <span aria-hidden className="h-px flex-1 bg-[linear-gradient(90deg,#e9e6f5,transparent)]" />
-        </div>
-    );
-}
-
-function Field({
-    icon,
-    label,
-    children,
-    className = "",
-    error,
-    required,
-    optional,
-}: {
-    icon?: React.ReactNode;
-    label: string;
-    children: React.ReactNode;
-    className?: string;
-    error?: string;
-    required?: boolean;
-    optional?: boolean;
-}) {
-    const t = useT();
-    return (
-        <div className={className}>
-            {/* fd-ico / fd-tag are unlayered classes (FrontDeskStyles): the legacy
-                `label span` rules would override Tailwind utilities here. */}
-            <label className="fd-label mb-[7px] text-[12.5px] font-bold text-[#3b4453]">
-                {icon && <span className="fd-ico">{icon}</span>}
-                {label}
-                {/* Required mark (§10.2): structural violet, known upfront — not
-                    an error color discovered on a failed save. */}
-                {required && <span aria-hidden className="h-[4px] w-[4px] shrink-0 rounded-full bg-[#a855f7] opacity-50" />}
-                {optional && <span className="fd-tag">{t("optional")}</span>}
-            </label>
-            {children}
-            {error && <p className="m-0 mt-[6px] text-[12px] font-medium text-[#d23b34]">{error}</p>}
-        </div>
-    );
-}
+// SectionLabel / Field / AgeInput / GenderControl / PhoneInput live in
+// ./fields — the shared Bhor form primitives (also used by the Patients
+// page's Edit Details modal).

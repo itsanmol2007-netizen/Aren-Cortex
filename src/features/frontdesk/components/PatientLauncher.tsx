@@ -141,9 +141,7 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                             : "linear-gradient(90deg, rgba(124,92,240,0.06), rgba(240,171,200,0.04) 30%, transparent 55%)",
                     }}
                 />
-                <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[rgba(124,92,240,0.10)] transition-colors duration-150 group-hover:bg-[rgba(124,92,240,0.15)]">
-                    <Search size={17} className="text-[#8a91a0]" />
-                </span>
+                <Search size={19} strokeWidth={2.1} className="relative shrink-0 text-[#a3aab8]" />
                 <input
                     value={query}
                     onChange={(e) => { setQuery(e.target.value); openDrop(); }}
@@ -152,16 +150,16 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                     placeholder={t("launcherPlaceholder")}
                     className="fd-bare fd-bare-lg relative flex-1 font-[450] placeholder:font-[450]"
                 />
-                {/* The + wears the brand gradient (§7): it opens the door to AREN
-                    rather than acting on a visit's state, so it matches the header
-                    mark — the product's two front doors. Status buttons stay semantic. */}
+                {/* Add Patient lives INSIDE the search bar (V3): a labelled deep
+                    indigo gradient button — the launcher's one loud element. */}
                 <button
                     type="button"
                     title={t("launcherAddTitle")}
                     onClick={() => onCreateNew("")}
-                    className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[box-shadow,transform,filter] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] active:scale-[0.92] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                    className="relative flex h-11 shrink-0 items-center gap-[7px] rounded-[11px] bg-[linear-gradient(155deg,#6366f1,#3d3ac9)] px-[17px] text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(79,70,229,0.35)] transition-[box-shadow,transform,filter] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(79,70,229,0.5)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
                 >
-                    <Plus size={18} strokeWidth={2.4} />
+                    <Plus size={16} strokeWidth={2.6} />
+                    <span className="max-[900px]:hidden">{t("addPatient")}</span>
                 </button>
             </div>
             {dropdown}

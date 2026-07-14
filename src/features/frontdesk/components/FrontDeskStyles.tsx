@@ -27,15 +27,16 @@ const CSS = `
 .fd-bare-lg { font-size: 16px; padding: 6px 0; }
 .fd-bare::placeholder { color: #8a91a0; }
 
-/* Standard modal field (§10.2, premium treatment since s36): soft-filled at
-   rest, lifts to white with the violet focus ring — screenshot-inherited. */
+/* Standard modal field (§10.2, premium treatment since s36; compacted +
+   violet-warmed in s38): soft violet-tinted fill at rest, lifts to white
+   with the brand focus ring. */
 .fd-field {
-  width: 100%; height: 46px; border: 1.5px solid #e9ebf2; border-radius: 11px;
-  background: #f7f8fb; padding: 0 14px; font-size: 14px; color: #161d29;
+  width: 100%; height: 42px; border: 1.5px solid #e9e7f4; border-radius: 10px;
+  background: #f8f8fd; padding: 0 13px; font-size: 14px; color: #161d29;
   outline: none; box-shadow: none;
   transition: border-color 150ms, box-shadow 150ms, background-color 150ms;
 }
-.fd-field:hover { border-color: #dde1ea; }
+.fd-field:hover { border-color: #d9d3ee; }
 .fd-field:focus {
   border-color: #7c5cf0; background: #ffffff;
   box-shadow: 0 0 0 3px rgba(99,102,241,0.22);
@@ -43,6 +44,20 @@ const CSS = `
 .fd-field::placeholder { color: #8a91a0; }
 .fd-field-error, .fd-field-error:hover { border-color: #d23b34; background: #fffafa; }
 select.fd-field { cursor: pointer; }
+
+/* Compact filter select (Patients browser): same family as fd-field, shrunk
+   to a 34px pill for filter rows where a full field would shout. */
+.fd-field-sm {
+  height: 34px; border: 1.5px solid #e9e7f4; border-radius: 9px;
+  background: #ffffff; padding: 0 9px; font-size: 12.5px; font-weight: 600;
+  color: #3b4453; outline: none; box-shadow: none; cursor: pointer;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.fd-field-sm:hover { border-color: #d9d3ee; }
+.fd-field-sm:focus {
+  border-color: #7c5cf0;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.22);
+}
 
 /* base.css forces label { display:grid } + uppercases label spans */
 .fd-label { display: flex; align-items: center; gap: 6px; }

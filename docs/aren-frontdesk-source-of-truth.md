@@ -390,13 +390,17 @@ src/features/frontdesk/
 **`FrontDeskPage.tsx`** — The feature root. `FrontDeskPage` just wraps
 `FrontDeskInner` in `<I18nProvider>`. `FrontDeskInner` is the composition root:
 calls `useQueue` + `useVisitActions`, fetches doctors/hospital once, runs the
-20s header clock, holds modal open-state (`openVisit`, `createState`), and lays
-out the page (dawn-residue background, header, launcher, stat strip, the
-`1fr/296px` grid, both modals). Also defines the **`Header`** (ink band,
-two-tone wordmark by splitting `appTitle` on first space, clinic/date/time, user
-chip, the horizon thread) and **`LanguageDropdown`** (dark ghost trigger, white
-menu, outside-click close). *Open this to change:* overall page layout, header
-contents, the language switcher, what data loads on mount, modal wiring.
+20s header clock, holds modal open-state (`openVisit`, `createState`) **and nav
+state** (`navOpen`, persisted to `localStorage aren.frontdesk.nav`; an
+outside-mousedown listener folds the drawer back unless the target is
+`data-nav-keep`). Lays out the page as a flex row: `NavRail` + a `main`
+workspace (dawn-residue background, launcher, stat strip, the `1fr/296px` grid,
+both modals). Also defines the **`Header`** (full-bleed ink band + `aren-nebula`
+sky at 45%; the real **AREN logo** (`aren-logo.png`) is a button that toggles
+the rail; two-tone wordmark, clinic/date/time, user chip, horizon thread) and
+**`LanguageDropdown`**. *Open this to change:* overall page layout, header
+contents, the nav toggle, the language switcher, what data loads on mount, modal
+wiring. (The rail itself lives in `NavRail.tsx`.)
 
 **`statusStyle.ts`** — The single lookup for status-domain styling. Exports
 `STATUS_TINT` (per status: label, i18n `labelKey`, border/dot colors, text
@@ -462,8 +466,9 @@ create-new affordance.
 
 **`components/StatStrip.tsx`** — Four stat cards (Today/Waiting/Consulting/
 Completed) computed with `useMemo` over `visits` (Today excludes `discarded`).
-Each card: tinted icon chip, ghost-circle watermark, neutral micro-label,
-28px Manrope numeral. Implements the **zero rule** (0 → muted `#a8aeba`).
+Each card (V3, s38): tinted icon chip + sentence-case label on one line, big
+Manrope numeral below, then a semantic subline ("Currently waiting" …). No
+watermark. Implements the **zero rule** (0 → muted `#a8aeba`).
 *Open this to change:* which metrics show, stat card treatment.
 
 **`components/QueuePanel.tsx`** — The flagship surface. Owns the active `tab`,
@@ -472,12 +477,19 @@ order waiting→serving→completed→other, then by `created_at`). Renders the 
 top edge (55%), the title, the `Tab` buttons (with count + colored dot), and
 then routes to: `SkeletonRows` (loading), `MorningWelcome`/`TabEmpty`/`DayDone`
 (empty, based on `hasVisitsToday` + `everyoneDone`), or the `role="listbox"` row
-list. *Open this to change:* tabs, sorting, empty-state routing, skeletons.
+list. Since s38 the list is a **table**: a pinned `ColumnHeaders` strip (Token/
+Patient/Symptoms/Doctor/Time/Status) and the rows **scroll inside the panel**
+(`maxHeight: clamp(260px, 100vh−380px, 640px)`, `overscroll-contain`) so the
+page never grows, with a "Showing n patient(s)" footer. Takes `now` (20s clock)
+and passes it to each row. *Open this to change:* tabs, sorting, empty-state
+routing, skeletons, column headers, scroll height.
 
 **`components/VisitRow.tsx`** — One queue row (`role="option"`, `data-token`).
-Renders token, name + Returning badge (visit_count > 1, tooltip) + masked phone,
-truncated symptoms (first 2 + "+N" tooltip), doctor, last-visit date, status
-(dot + label from `tintFor`), and an always-present kebab (40% opacity → 100% on
+Grid columns (V3, s38): lavender **token chip** · name + Returning badge
+(visit_count > 1, tooltip) + `phone · age · gender` subline · truncated symptoms
+(first 2 + "+N" tooltip) · doctor · **Time** (created time + relative date) ·
+**status pill** (dot + label from `tintFor`, and for `waiting` a live
+"· «m» min" from the `now` prop) · always-present kebab (40% opacity → 100% on
 hover). Left border stripe + ambient tint come from `statusStyle`. Kebab opens a
 **portal** menu (Open / Move / Complete / Cancel). Whole row is a single-click
 open; the kebab stops propagation. *Open this to change:* row anatomy, the row
@@ -485,15 +497,18 @@ menu, hover/selected treatment. (Row interior is the most protected surface — 
 decoration here.)
 
 **`components/Sidebar.tsx`** — Thin composition wrapper only: stacks
-`SummaryCard`, `DoctorsCard`, `DoctorRequestsCard`. *Open this to change:* which
-sidebar cards exist / their order.
+`SummaryCard`, `DoctorsCard`, `DoctorRequestsCard`. Passes `now` (20s clock)
+through to `SummaryCard`. *Open this to change:* which sidebar cards exist /
+their order.
 
-**`components/SummaryCard.tsx`** — Today's Summary. Computes current serving
-token + patient name (most recently started `serving` visit) and average wait
-(mean minutes of `waiting` visits). Renders the **Now Serving ink card** (the
-sidebar's one ink moment: ink gradient + pink radial + full thread; 26px white
-token; `#c7d2fe` patient name; asleep `—` at white/35%) and an Average Wait
-paper row below. *Open this to change:* the summary metrics or the Now Serving card.
+**`components/SummaryCard.tsx`** — Today's Summary (rebuilt s38). Computes
+current serving token + patient name (most recently started `serving` visit)
+plus average wait, longest wait, and patients-seen — all ticking off the `now`
+prop, not the queue refresh. Renders a **lavender Current Token box** (brand
+violet = structure, `Radio` icon chip; asleep `—` in muted violet) followed by
+three metric rows (`MetricRow`: Average Wait / Longest Wait / Patients Seen).
+The old dark "Now Serving ink card" was removed here. *Open this to change:* the
+summary metrics or the Current Token treatment.
 
 **`components/DoctorsCard.tsx`** — Per-doctor rows computed from `doctors` +
 `visits`: activity = off (availability_status ≠ active) / busy (has a `serving`
@@ -522,18 +537,31 @@ Front Desk modal renders here via portal. Owns: overlay (blur + click-to-close),
 580px radius-18 panel, thread (2.5px full+glow), header zone (dawn radials +
 `CornerArcs` watermark + brand-gradient icon tile + violet eyebrow + Manrope
 title + ghost X), paper body, optional footer band, and Escape-to-close. Props:
-`eyebrow`, `title`, `icon`, `onClose`, `footer`, `children`. *Open this to
-change:* anything common to all modals, or to build a NEW modal (always use this).
+`eyebrow`, `title`, `icon`, `onClose`, `footer`, `children`. **s37 hardening:**
+backdrop-close fires only if the *mousedown AND click* both land on the overlay
+(`pressedOnBackdrop` ref) — this killed the silent close-on-save regression (see
+§21); the panel is overflow-visible with only the header clipping its own
+decoration, so in-body dropdowns aren't cut off. *Open this to change:* anything
+common to all modals, or to build a NEW modal (always use this).
 
-**`components/CreateVisitModal.tsx`** — Patient intake. New-patient path is a
-grouped form (PATIENT DETAILS: name / age+gender / phone; then TODAY'S VISIT:
-symptoms + doctor); existing-patient path shows a blue identity card +
-visit-stats then TODAY'S VISIT. Validates required (name/phone for new,
-≥1 symptom always); Save wears the **brand gradient**. Contains the
-**`SymptomPicker`** (catalog, typo-tolerant `matchScore`/`editDistance`),
-`SectionLabel` (violet micro-label + fading hairline), and `Field` (label +
-`fd-ico`/`fd-tag` ornaments + required violet dot + error text). *Open this to
-change:* the intake form, field layout, or symptom selection UX.
+**`components/CreateVisitModal.tsx`** — Patient intake (heavily reworked s37/
+s38). New-patient path is a grouped form (PATIENT DETAILS: name / compact age +
+gender / phone; then TODAY'S VISIT: symptoms + doctor); existing-patient path
+shows a **violet** identity card + visit-stats then TODAY'S VISIT. Now **all of
+name/age/gender/phone are required** (plus ≥1 symptom); Save wears the **brand
+gradient**. Field system (s37): `AgeInput` (compact, digits 0–120, arrow-key +
+mouse-wheel step), `GenderControl` (keyboard-first radiogroup — M/F/O select,
+arrows cycle), a `+91`-prefixed phone cell hard-capped at 10 digits with a live
+`n/10` counter, and an **Enter flow** that advances field-to-field then Saves
+once complete. **Smart dedupe (s38):** typing name/phone silently
+`searchPatients` (350ms debounce) → a violet banner offers "create visit for
+this patient"; same phone+name reuses the existing patient (never mints a twin),
+same phone under a different name blocks until resolved (`onUseExisting`
+switches the open modal into existing-patient mode). Also contains the
+**`SymptomPicker`** (catalog, typo-tolerant `matchScore`/`editDistance`; catalog
+dismissed on outside *click*, not mousedown — see §21), `SectionLabel`, and
+`Field`. *Open this to change:* the intake form, field layout, dedupe, or
+symptom selection UX.
 
 **`components/VisitDetailModal.tsx`** — Read + act on one visit. Header shows
 token + status-colored patient name + demographics. Sections (each a violet
@@ -736,7 +764,140 @@ row; it still lives in the Returning badge tooltip.
 - Header is now full-bleed (logo aligned over the rail) and carries the same
   `/aren-nebula.svg` sky as Cortex, at 45% opacity under the dawn radials.
 
+## 25. V3 visual pass (s38 — matches the frozen inspiration image)
+
+- **Stat cards**: tinted icon chip + sentence-case label on one line, big
+  Manrope numeral, semantic subline ("Currently waiting" …). No watermark
+  circles. Zero rule intact.
+- **Queue = table**: "Patients Today" heading (a `div` — raw `h2` is eaten by
+  the §13 layer trap), pinned uppercase column headers (Token/Patient/
+  Symptoms/Doctor/Time/Status), lavender token chip, patient line carries
+  `phone · age · gender`, TIME shows clock + "Today", STATUS is a tinted pill
+  that carries the live wait ("Waiting · 18 min"). Rows keep the faint
+  amber/blue/green ambient tints + left stripe. The row list scrolls INSIDE
+  the panel (`clamp(260px, 100vh-380px, 640px)`) — the page never grows —
+  with a "Showing n patient(s)" footer.
+- **Launcher**: plain search glyph; Add Patient is a labelled deep-indigo
+  gradient button INSIDE the bar.
+- **Sidebar**: card titles are sentence-case ink + violet icon; Current Token
+  is a lavender brand box (Radio icon chip); metric rows Average Wait /
+  Longest Wait / Patients Seen tick with the 20s clock (`now` prop).
+- **Nav drawer**: any outside mousedown folds it back (elements marked
+  `data-nav-keep` are exempt).
+- **Intake modal**: compacted (42px fields, tighter rhythm, violet-tinted
+  fills/borders, +91 cell violet) and **duplicate-aware**: typing name/phone
+  silently searches patients (350ms debounce); a violet banner offers
+  "Create visit for this patient"; save with same phone+name silently reuses
+  the existing patient (never mints a twin); same phone under a different
+  name blocks with an explanatory error until resolved via the banner.
+
+---
+
+# PART H — SESSION 39 ADDENDUM (Patients page shipped)
+
+## 26. The Patients page (new — `/app/patients`)
+
+Built per `docs/Patients Page Design Brief.md` against the frozen reference
+`docs/Frontdesk-Patient-Page (Frozen).png`. Same AREN room, different tempo:
+Front Desk answers "what's happening today", Patients answers "tell me about
+this patient." No diagnosis/SOAP/prescriptions/findings here — reception-only.
+
+- **Route**: `/app/patients` → `src/features/frontdesk/PatientsPage.tsx`
+  (registered in `main.tsx` alongside `/app/frontdesk`).
+- **Layout**: left **Patient Browser** (search + Gender/Doctor/Sort filters,
+  internally scrolling list, no pagination) / right **Patient Workspace**
+  (header card with avatar + New/Returning badge + Edit Details + New Visit,
+  a compact 4-cell summary strip, a proportional **Visit Timeline** strip,
+  Recent Visits, Quick Actions). Empty state before selection uses the same
+  dawn-arcs motif as Front Desk's `MorningWelcome`.
+- **Visit Timeline**: dots placed at true chronological distance (not evenly
+  spaced) — clusters read as clusters, gaps read as gaps. "+N earlier visits"
+  opens a **Timeline modal** (`components/patients/TimelineModal.tsx`, Bhor
+  `ModalShell` at `maxWidth={640}`, pure exploration — no editing).
+- **Edit Patient Details** (`components/patients/EditPatientModal.tsx`):
+  same Bhor field system as intake; blocks saving a phone number that
+  already belongs to a different patient (dedupe guard, same spirit as
+  CreateVisitModal's).
+- **Quick Actions**: Copy Phone Number, Send WhatsApp (`wa.me` deep link),
+  View in Print RX (disabled "Soon" — no Print RX page yet). Edit Details /
+  New Visit are **not** duplicated here — they live in the header only, per
+  the design brief.
+
+### 26.1 Shared-chrome extraction
+
+`FrontDeskPage.tsx`'s header/rail/background were pulled out into
+**`components/WorkspaceShell.tsx`** so Front Desk and Patients render
+identical chrome by construction. `FrontDeskPage.tsx` and `PatientsPage.tsx`
+now only own their own data + content; `WorkspaceShell` owns the ink header,
+`LanguageDropdown`, nav-rail open/close state, hospital fetch, and the dawn
+background. *Open this to change:* the header, language switcher, or nav
+toggle for **either** page.
+
+### 26.2 Shared form fields extraction
+
+`CreateVisitModal.tsx`'s field primitives were pulled into
+**`components/fields.tsx`**: `SectionLabel`, `Field`, `AgeInput`,
+`GenderControl`, `PhoneInput`. Both `CreateVisitModal` and
+`EditPatientModal` import from here now — a form-field change should be made
+once, in `fields.tsx`.
+
+### 26.3 Navigation rail update (amends §24's registry)
+
+`NAV_ITEMS` is now: **Front Desk** (active) / **Patients** (`BookUser` icon,
+now live, no longer "Soon") / **Print RX** (renamed from "Reports"; `Printer`
+icon; still "Soon" — no page built) / **Settings** (still "Soon"). Icon
+column padding nudged (`pt-6` vs `pt-4`) per the design brief's "sit slightly
+lower" note. i18n key `navReports` was replaced by `navPrintRx`.
+
+### 26.4 New shared primitives
+
+- `ModalShell` gained an optional `maxWidth` prop (default `580`, unchanged
+  for existing modals; the Timeline modal uses `640`).
+- `FrontDeskStyles.tsx` gained `.fd-field-sm` — a compact 34px filter-select
+  class (same unlayered-CSS counterweight family as `.fd-field`) for the
+  Patient Browser's Gender/Doctor/Sort filters.
+- `utils.ts` gained `formatArchiveDate` — like `formatShortDate` but appends
+  the year when a date falls outside the current year (Patients spans years;
+  the queue never needs to).
+
+### 26.5 New DB layer — `src/lib/db/patients.ts`
+
+| DB function | Called from | Notes |
+|---|---|---|
+| `fetchPatientDirectory()` | `usePatientDirectory` | All patients + client-aggregated visit_count/first/last visit/primary doctor. Two queries (patients, visits), aggregated in memory — same pattern as `fetchTodayVisits`. Does **not** filter by `hospital_id` (many rows have it null; matches `searchPatients`'s existing behavior). |
+| `fetchPatientHistory(patientId)` | `usePatientHistory` | Every visit for one patient, any status — date/status/doctor/token only, no clinical payload (kept separate from the clinical `fetchPatientVisits`). |
+| `updatePatient(patientId, fields)` | `EditPatientModal` | Demographics only (name/age/gender/phone) — reception may correct these, never anything clinical. |
+
+Confirmed via live Supabase schema probe: `patients` has `created_at`,
+`abha_id`, `phone_normalized` columns; **no address column exists** (the
+design brief's "Update address" workflow has no backing field yet — not
+built, flagged here rather than silently dropped).
+
+### 26.6 Verified working (s39)
+
+Live headless-Chrome + trusted-CDP runs against the real dev server + real
+Supabase: directory loads and renders (16 real patients), search narrows the
+list, selecting a patient populates the full workspace (summary/timeline/
+recent visits/quick actions), the Timeline modal opens with proportional
+dot spacing, Edit Details opens and shows the correct pre-filled values, New
+Visit reuses `useVisitActions.createNewVisit` unchanged. Front Desk
+re-screenshotted after the `WorkspaceShell` extraction — pixel-identical,
+zero regressions. `npx tsc -b` filtered to `frontdesk|lib/db|main.tsx`:
+zero new errors (same 47 pre-existing legacy errors as before).
+
+### 26.7 Open items added by this page
+
+1. **Print RX page** — nav entry exists, disabled "Soon"; no route, no
+   component yet.
+2. **Address field** — design brief expects "Update address" but `patients`
+   has no address column; Edit Details only covers name/age/gender/phone.
+3. **Doctor filter in the Patient Browser** filters on `primary_doctor_id`
+   (most-visited doctor), not "ever seen by" — a patient seen once by a
+   second doctor won't surface under that doctor's filter. Acceptable for
+   v1 (matches "Primary Doctor" elsewhere on the page) but worth a second
+   look if reception reports it as confusing.
+
 *This document supersedes the styling guidance in sessions 33–34 and the modal
 guidance in the design direction §10.2. Architecture and creative direction are
-frozen. When in doubt, the tie-breaker order is: this doc (incl. Part G) →
-session 36 → session 35 → design direction → brief → architecture.*
+frozen. When in doubt, the tie-breaker order is: this doc (incl. Part H) →
+Part G → session 36 → session 35 → design direction → brief → architecture.*

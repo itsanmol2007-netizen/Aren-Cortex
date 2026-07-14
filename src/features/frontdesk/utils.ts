@@ -22,6 +22,21 @@ export function formatShortDate(iso: string | null): string {
     return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
+// Archive-friendly variant of formatShortDate: the Patients page spans years,
+// so dates outside the current year carry it ("28 Jun 2024").
+export function formatArchiveDate(iso: string | null): string {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    const today = new Date();
+    if (d.toDateString() === today.toDateString()) return "Today";
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    const opts: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" };
+    if (d.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+    return d.toLocaleDateString("en-IN", opts);
+}
+
 export function maskPhone(phone: string): string {
     if (!phone || phone.length < 4) return phone || "";
     return phone.slice(0, 4) + "X".repeat(Math.max(0, phone.length - 4));

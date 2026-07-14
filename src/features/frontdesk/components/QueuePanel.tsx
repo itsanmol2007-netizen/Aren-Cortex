@@ -54,15 +54,17 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
     const everyoneDone = hasVisitsToday && counts.waiting === 0 && counts.serving === 0;
 
     return (
-        <div className="relative overflow-hidden rounded-[13px] border border-[#e4e7ee] bg-white shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
+        <div className="relative h-full min-h-0 overflow-hidden rounded-[13px] border border-[#e4e7ee] bg-white shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
             {/* The dawn thread, paper weight (§3.2): 55% opacity, no glow. The
                 queue is the flagship surface — the thread marks it as AREN's. */}
             <div
                 className="pointer-events-none absolute inset-x-0 top-0 h-[2px]"
                 style={{ background: "linear-gradient(90deg, #f2a986 0%, #f472b6 32%, #a855f7 68%, #6366f1 100%)", opacity: 0.55 }}
             />
+            {/* div, not h2 — Cortex's unlayered legacy CSS restyles raw heading
+                elements and silently beats Tailwind here (§13 layer trap). */}
             <div className="flex items-center justify-between px-5 pt-[15px]">
-                <h2 className="m-0 font-[Manrope,sans-serif] text-[16px] font-extrabold text-[#161d29]">{t("queueTitle")}</h2>
+                <div role="heading" aria-level={2} className="font-[Manrope,sans-serif] text-[16px] font-extrabold text-[#161d29]">{t("queueTitle")}</div>
             </div>
 
             <div className="flex flex-wrap gap-[6px] px-5 py-[13px]">
@@ -84,7 +86,16 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
                 )
             ) : (
                 <>
-                    <div role="listbox" aria-label={t("queueTitle")}>
+                    {/* Nested scroll (V3): the queue scrolls inside its own panel
+                        instead of growing the page as the day fills up. Column
+                        headers stay pinned to the top of the scroll area. */}
+                    <div
+                        role="listbox"
+                        aria-label={t("queueTitle")}
+                        className="overflow-y-auto overscroll-contain"
+                        style={{ maxHeight: "clamp(260px, calc(100vh - 380px), 640px)" }}
+                    >
+                        <ColumnHeaders t={t} />
                         {rows.map((v) => (
                             <VisitRow
                                 key={v.visit_id}
@@ -96,10 +107,30 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
                                 onCancel={onCancel}
                             />
                         ))}
+                        {tab === "all" && everyoneDone && <DayDone />}
                     </div>
-                    {tab === "all" && everyoneDone && <DayDone />}
+                    <div className="border-t border-[#eef0f5] px-5 py-[9px] text-[11.5px] font-medium text-[#8a91a0]">
+                        {t("showingCount", { n: rows.length })}
+                    </div>
                 </>
             )}
+        </div>
+    );
+}
+
+// Table headers, image-style: quiet uppercase micro-labels that pin to the
+// top of the scroll area. Grid template mirrors VisitRow exactly.
+function ColumnHeaders({ t }: { t: (k: StringKey) => string }) {
+    const th = "text-[10px] font-bold uppercase tracking-[0.08em] text-[#a3aab8]";
+    return (
+        <div className="sticky top-0 z-10 grid grid-cols-[64px_1.7fr_1.4fr_0.9fr_0.8fr_148px_34px] max-lg:grid-cols-[56px_1.5fr_0.9fr_132px_34px] items-center gap-3 border-b border-[#eef0f5] bg-white pl-[23px] pr-5 pb-[7px] pt-[3px]">
+            <span className={th}>{t("colToken")}</span>
+            <span className={th}>{t("colPatient")}</span>
+            <span className={`${th} max-lg:hidden`}>{t("colSymptoms")}</span>
+            <span className={th}>{t("colDoctor")}</span>
+            <span className={`${th} max-lg:hidden`}>{t("colTime")}</span>
+            <span className={th}>{t("colStatus")}</span>
+            <span />
         </div>
     );
 }
@@ -139,7 +170,7 @@ function SkeletonRows() {
             {Array.from({ length: 5 }).map((_, i) => (
                 <div
                     key={i}
-                    className="grid grid-cols-[60px_1.7fr_1.5fr_1fr_0.9fr_118px_34px] items-center gap-3 border-t border-[#eef0f5] px-5 py-[14px]"
+                    className="grid grid-cols-[64px_1.7fr_1.4fr_0.9fr_0.8fr_148px_34px] items-center gap-3 border-t border-[#eef0f5] px-5 py-[14px]"
                 >
                     <div className="h-8 animate-pulse rounded-md bg-[linear-gradient(90deg,#eef0f4_25%,#e4e7ee_37%,#eef0f4_63%)]" />
                     <div>

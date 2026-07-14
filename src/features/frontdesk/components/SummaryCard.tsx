@@ -1,14 +1,18 @@
 import { useMemo } from "react";
-import { Activity, Timer } from "lucide-react";
+import { Activity, Radio, Timer, Hourglass, UsersRound } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { padToken } from "../utils";
 import { useT } from "../i18n/i18n";
 
-type Props = { visits: TodayVisit[] };
+type Props = { visits: TodayVisit[]; now: Date };
 
-export function SummaryCard({ visits }: Props) {
+// Today's Summary, V3 treatment: the Current Token sits in a lavender brand
+// box (violet marks structure — "where the day is right now"), followed by
+// three quiet metric rows. `now` comes from the page's 20s clock so the wait
+// figures tick without waiting for a queue refresh.
+export function SummaryCard({ visits, now }: Props) {
     const t = useT();
-    const { currentToken, servingName, avgWait } = useMemo(() => {
+    const { currentToken, servingName, avgWait, longestWait, seen } = useMemo(() => {
         const active = visits
             .filter((v) => v.status === "serving")
             .sort(
@@ -20,66 +24,72 @@ export function SummaryCard({ visits }: Props) {
         const servingName = active.length ? active[0].patient_name : null;
 
         const waiting = visits.filter((v) => v.status === "waiting");
-        let avgWait = "—";
-        if (waiting.length) {
-            const ms =
-                waiting.reduce((s, v) => s + (Date.now() - new Date(v.created_at).getTime()), 0) / waiting.length;
-            avgWait = `${Math.max(0, Math.round(ms / 60000))} ${t("min")}`;
-        }
-        return { currentToken, servingName, avgWait };
-    }, [visits, t]);
+        const waitsMin = waiting.map((v) => Math.max(0, (now.getTime() - new Date(v.created_at).getTime()) / 60000));
+        const avgWait = waitsMin.length ? `${Math.round(waitsMin.reduce((s, m) => s + m, 0) / waitsMin.length)} ${t("min")}` : "—";
+        const longestWait = waitsMin.length ? `${Math.round(Math.max(...waitsMin))} ${t("min")}` : "—";
+        const seen = visits.filter((v) => v.status === "completed").length;
+
+        return { currentToken, servingName, avgWait, longestWait, seen };
+    }, [visits, now, t]);
 
     const tokenAsleep = currentToken === "—";
-    const waitDash = avgWait === "—";
 
     return (
-        <div className="relative mb-3 overflow-hidden rounded-[13px] border border-[#e4e7ee] bg-white p-4 pt-[18px] shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
+        <div className="relative shrink-0 overflow-hidden rounded-[13px] border border-[#e7e9f0] bg-white p-4 shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
             <div className="absolute inset-x-0 top-0 h-px bg-white/60" />
-            <h3 className="m-0 mb-3 flex items-center gap-[7px] text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">
-                <Activity size={13} className="opacity-70" />
+            <h3 className="m-0 mb-3 flex items-center gap-[7px] text-[14px] font-bold text-[#161d29]">
+                <Activity size={15} className="text-[#7c5cf0]" />
                 {t("sumTitle")}
             </h3>
 
-            {/* Now Serving — the sidebar's ink moment (§10.3): the day's current
-                moment formally framed, echoing Cortex's dark letterhead. */}
-            <div
-                className="relative overflow-hidden rounded-[11px] p-[13px_14px]"
-                style={{
-                    background:
-                        "radial-gradient(ellipse 200px 110px at 80% -20%, rgba(244,114,182,0.12), transparent 65%)," +
-                        "linear-gradient(135deg, #0d1b35 0%, #120f28 38%, #170d27 62%, #0b1525 100%)",
-                }}
-            >
-                <div
-                    className="pointer-events-none absolute inset-x-0 top-0 h-[2px]"
-                    style={{
-                        background: "linear-gradient(90deg, #f2a986 0%, #f472b6 32%, #a855f7 68%, #6366f1 100%)",
-                        boxShadow: "0 1px 10px rgba(168,85,247,0.45), 0 2px 20px rgba(244,114,182,0.18)",
-                    }}
-                />
-                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#b9b4d6]">{t("currentToken")}</div>
-                <div
-                    className={`mt-[2px] font-[Manrope,sans-serif] text-[26px] font-extrabold leading-[1.1] tracking-[-0.01em] tabular-nums ${
-                        tokenAsleep ? "text-white/35" : "text-white"
-                    }`}
-                >
-                    {currentToken}
+            {/* Current Token — the day's "you are here" marker in the brand's
+                lavender (structural violet, not a status color). */}
+            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e9e4fa] bg-[linear-gradient(135deg,#f6f3fe,#f1effc)] px-[14px] py-[11px]">
+                <div className="min-w-0">
+                    <div className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8b7fd4]">{t("currentToken")}</div>
+                    <div
+                        className={`mt-[1px] font-[Manrope,sans-serif] text-[25px] font-extrabold leading-[1.1] tracking-[-0.01em] tabular-nums ${
+                            tokenAsleep ? "text-[#b6aee0]" : "text-[#5b3df5]"
+                        }`}
+                    >
+                        {currentToken}
+                    </div>
+                    {servingName && <div className="mt-[1px] truncate text-[11.5px] font-medium text-[#5a6472]">{servingName}</div>}
                 </div>
-                {servingName && <div className="mt-[2px] truncate text-[11.5px] font-medium text-[#c7d2fe]">{servingName}</div>}
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white shadow-[0_1px_3px_rgba(91,61,245,0.14)] ${tokenAsleep ? "text-[#c4bce8]" : "text-[#7c5cf0]"}`}>
+                    <Radio size={17} />
+                </div>
             </div>
 
-            <div className="flex items-center justify-between pt-[11px]">
-                <div className="flex items-center gap-2 text-[12.5px] font-medium text-[#5a6472]">
-                    <span className="text-[#8a91a0]"><Timer size={14} /></span>
-                    {t("avgWait")}
-                </div>
-                <div
-                    className={`font-[Manrope,sans-serif] text-[15px] font-extrabold tabular-nums ${
-                        waitDash ? "text-[#a8aeba]" : "text-[#161d29]"
-                    }`}
-                >
-                    {avgWait}
-                </div>
+            <MetricRow icon={<Timer size={14} />} label={t("avgWait")} value={avgWait} />
+            <MetricRow icon={<Hourglass size={14} />} label={t("longestWait")} value={longestWait} />
+            <MetricRow icon={<UsersRound size={14} />} label={t("patientsSeen")} value={String(seen)} asleep={seen === 0} last />
+        </div>
+    );
+}
+
+function MetricRow({
+    icon,
+    label,
+    value,
+    asleep,
+    last,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+    asleep?: boolean;
+    last?: boolean;
+}) {
+    const dash = value === "—" || asleep;
+    return (
+        <div className={`flex items-center justify-between pt-[11px] ${last ? "" : "border-b border-[#f2f3f7] pb-[11px]"}`}>
+            <div className="flex items-center gap-[9px] text-[12.5px] font-medium text-[#5a6472]">
+                <span className="text-[#a3aab8]">{icon}</span>
+                {label}
+            </div>
+            <div className={`font-[Manrope,sans-serif] text-[14.5px] font-extrabold tabular-nums ${dash ? "text-[#a8aeba]" : "text-[#161d29]"}`}>
+                {value}
             </div>
         </div>
     );

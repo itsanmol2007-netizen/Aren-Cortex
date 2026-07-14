@@ -26,10 +26,10 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
     const isCancelled = visit.status === "discarded";
     const returning = visit.visit_count > 1;
 
-    // The receptionist thinks in "how long has she been sitting there", not in
-    // clock time — so waiting rows carry a live duration under the arrival
-    // time. It ticks with the page's 20s clock; amber because waiting is
-    // semantic data (§7.1), same vocabulary as the status chip beside it.
+    // The receptionist thinks in "how long has she been sitting there", not
+    // in clock time — so the WAITING status pill carries a live duration
+    // ("Waiting · 18 min"), ticking with the page's 20s clock. One pill says
+    // both what and how long, instead of two redundant lines.
     const created = new Date(visit.created_at);
     const createdTime = created.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
     const waitMins = Math.max(0, Math.floor((now.getTime() - created.getTime()) / 60000));
@@ -80,7 +80,7 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
             role="option"
             aria-selected={!!selected}
             data-token={padToken(visit.token_number)}
-            className={`grid grid-cols-[60px_1.7fr_1.5fr_1fr_0.9fr_118px_34px] max-lg:grid-cols-[52px_1.5fr_1fr_110px_34px] items-center gap-3 border-t border-[#eef0f5] border-l-[3px] px-5 py-3 min-h-[44px] cursor-pointer relative transition-[background,box-shadow,border-color] duration-100 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.28)] ${selected ? "bg-[rgba(47,107,237,0.055)]" : ""} ${isCancelled ? "opacity-60" : ""}`}
+            className={`grid grid-cols-[64px_1.7fr_1.4fr_0.9fr_0.8fr_148px_34px] max-lg:grid-cols-[56px_1.5fr_0.9fr_132px_34px] items-center gap-3 border-t border-[#eef0f5] border-l-[3px] px-5 py-[11px] min-h-[44px] cursor-pointer relative transition-[background,box-shadow,border-color] duration-100 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.28)] ${selected ? "bg-[rgba(47,107,237,0.055)]" : ""} ${isCancelled ? "opacity-60" : ""}`}
             style={{
                 borderLeftColor: tint.borderColor,
                 backgroundImage: !selected ? (hovered ? tint.backgroundHover : tint.background) : undefined,
@@ -92,9 +92,10 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
                 onOpen(visit);
             }}
         >
-            <div className="font-[Manrope,sans-serif] font-extrabold text-[16px] tracking-[-0.02em] text-[#161d29]">
-                <span className="text-[#a8aeba] font-bold text-[12px]">#</span>
-                {padToken(visit.token_number)}
+            {/* Token chip (V3): lavender identity tile, same family as the
+                sidebar's Current Token. Structure, not status — so no tint. */}
+            <div className="inline-flex h-[30px] w-fit items-center justify-center rounded-[8px] bg-[rgba(99,102,241,0.08)] px-[8px] font-[Manrope,sans-serif] text-[13px] font-extrabold tracking-[-0.01em] text-[#4c46c9] tabular-nums">
+                #{padToken(visit.token_number)}
             </div>
 
             <div className="min-w-0">
@@ -109,7 +110,11 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
                         </span>
                     )}
                 </div>
-                <div className="mt-[1px] text-[12px] text-[#8a91a0] tabular-nums">{maskPhone(visit.phone)}</div>
+                <div className="mt-[1px] truncate text-[12px] text-[#8a91a0] tabular-nums">
+                    {maskPhone(visit.phone)}
+                    {visit.age > 0 && <span> · {visit.age} yrs</span>}
+                    {visit.gender && <span> · {visit.gender}</span>}
+                </div>
             </div>
 
             <div className="max-lg:hidden text-[13px] leading-[1.35] text-[#5a6472] truncate">
@@ -126,17 +131,20 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
             </div>
 
             <div className="max-lg:hidden">
-                <div className="text-[12px] text-[#8a91a0] tabular-nums">{createdTime}</div>
-                {visit.status === "waiting" && (
-                    <div className="mt-[1px] text-[11px] font-semibold tabular-nums text-[#c9791a]">
-                        {waitMins < 1 ? t("waitingNow") : t("waitingFor", { m: waitMins })}
-                    </div>
-                )}
+                <div className="text-[12.5px] font-medium text-[#374151] tabular-nums">{createdTime}</div>
+                <div className="mt-[1px] text-[11px] text-[#a8aeba]">{formatShortDate(visit.created_at)}</div>
             </div>
 
-            <div className={`flex items-center gap-[6px] text-[11.5px] font-medium tracking-[0.01em] ${tint.textClass}`}>
+            {/* Status pill: dot + label, and for waiting the live duration —
+                "Waiting · 18 min" says what AND how long in one breath. */}
+            <div className={`inline-flex w-fit items-center gap-[6px] rounded-full px-[11px] py-[5px] text-[11.5px] font-semibold ${tint.chipBg} ${tint.textClass}`}>
                 <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: tint.dotColor }} />
-                {t(tint.labelKey)}
+                <span className="whitespace-nowrap">
+                    {t(tint.labelKey)}
+                    {visit.status === "waiting" && waitMins >= 1 && (
+                        <span className="tabular-nums"> · {waitMins} {t("min")}</span>
+                    )}
+                </span>
             </div>
 
             <button

@@ -633,6 +633,143 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
     return deduped;
 }
 
+// ── PATIENTS PAGE — DIRECTORY ──────────────────────────────────────────────────
+// The receptionist's patient archive: every patient plus the operational
+// aggregates the Patients page shows (visit counts, first/last visit, the
+// doctor they usually see). Aggregation happens client-side over two queries,
+// same pattern as fetchTodayVisits — the clinic-MVP dataset is small.
+export type PatientDirectoryEntry = {
+    id: string;
+    name: string;
+    age: number;
+    gender: string;
+    phone: string;
+    abha_id: string | null;
+    created_at: string;
+    visit_count: number;
+    first_visit_at: string | null;
+    last_visit_at: string | null;
+    primary_doctor_id: string | null;
+    primary_doctor_name: string | null;
+};
+
+export async function fetchPatientDirectory(): Promise<PatientDirectoryEntry[]> {
+    const { data: patients, error } = await supabase
+        .from("patients")
+        .select("id, name, age, gender, phone, abha_id, created_at")
+        .order("created_at", { ascending: false });
+    if (error) throw new Error(`fetchPatientDirectory: ${error.message}`);
+    if (!patients || patients.length === 0) return [];
+
+    const { data: visits, error: visitErr } = await supabase
+        .from("visits")
+        .select("patient_id, created_at, assigned_doctor_id")
+        .in("patient_id", patients.map((p: any) => p.id))
+        .order("created_at", { ascending: true });
+    if (visitErr) throw new Error(`fetchPatientDirectory (visits): ${visitErr.message}`);
+
+    type Agg = { count: number; first: string; last: string; byDoctor: Map<string, number> };
+    const aggs = new Map<string, Agg>();
+    for (const v of visits ?? []) {
+        let agg = aggs.get(v.patient_id);
+        if (!agg) {
+            agg = { count: 0, first: v.created_at, last: v.created_at, byDoctor: new Map() };
+            aggs.set(v.patient_id, agg);
+        }
+        agg.count += 1;
+        agg.last = v.created_at; // rows arrive ascending, so the last write wins
+        if (v.assigned_doctor_id) {
+            agg.byDoctor.set(v.assigned_doctor_id, (agg.byDoctor.get(v.assigned_doctor_id) ?? 0) + 1);
+        }
+    }
+
+    const doctorIds = [...new Set([...aggs.values()].flatMap((a) => [...a.byDoctor.keys()]))];
+    const doctorMap = new Map<string, string>();
+    if (doctorIds.length) {
+        const { data: docs } = await supabase.from("doctors").select("id, name").in("id", doctorIds);
+        (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
+    }
+
+    return patients.map((p: any) => {
+        const agg = aggs.get(p.id);
+        let primaryDoctorId: string | null = null;
+        if (agg) {
+            let best = 0;
+            for (const [id, count] of agg.byDoctor) {
+                if (count > best) { best = count; primaryDoctorId = id; }
+            }
+        }
+        return {
+            id: p.id,
+            name: p.name ?? "Unknown",
+            age: p.age ?? 0,
+            gender: p.gender ?? "",
+            phone: p.phone ?? "",
+            abha_id: p.abha_id ?? null,
+            created_at: p.created_at,
+            visit_count: agg?.count ?? 0,
+            first_visit_at: agg?.first ?? null,
+            last_visit_at: agg?.last ?? null,
+            primary_doctor_id: primaryDoctorId,
+            primary_doctor_name: primaryDoctorId ? (doctorMap.get(primaryDoctorId) ?? null) : null,
+        };
+    });
+}
+
+// ── PATIENTS PAGE — OPERATIONAL VISIT HISTORY ──────────────────────────────────
+// Every visit for one patient (any status), lightweight: date, status, doctor,
+// token. This is the reception view — no clinical payload (symptoms, findings,
+// prescriptions stay in fetchPatientVisits for surfaces that need them).
+export type PatientHistoryVisit = {
+    visit_id: string;
+    created_at: string;
+    status: string;
+    token_number: number | null;
+    doctor_name: string | null;
+};
+
+export async function fetchPatientHistory(patientId: string): Promise<PatientHistoryVisit[]> {
+    const { data: visits, error } = await supabase
+        .from("visits")
+        .select("id, created_at, status, token_number, assigned_doctor_id")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false });
+    if (error) throw new Error(`fetchPatientHistory: ${error.message}`);
+    if (!visits || visits.length === 0) return [];
+
+    const doctorIds = [...new Set(visits.map((v: any) => v.assigned_doctor_id).filter(Boolean))];
+    const doctorMap = new Map<string, string>();
+    if (doctorIds.length) {
+        const { data: docs } = await supabase.from("doctors").select("id, name").in("id", doctorIds);
+        (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
+    }
+
+    return visits.map((v: any) => ({
+        visit_id: v.id,
+        created_at: v.created_at,
+        status: v.status,
+        token_number: v.token_number ?? null,
+        doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
+    }));
+}
+
+// ── PATIENTS PAGE — DEMOGRAPHIC UPDATES ────────────────────────────────────────
+// Reception may correct demographics (name, age, gender, phone) — nothing
+// clinical. Returns the fresh row so callers can patch state in place.
+export async function updatePatient(
+    patientId: string,
+    fields: { name: string; age: number; gender: string; phone: string }
+): Promise<DBPatient> {
+    const { data, error } = await supabase
+        .from("patients")
+        .update(fields)
+        .eq("id", patientId)
+        .select("id, name, age, gender, phone")
+        .single();
+    if (error) throw new Error(`updatePatient: ${error.message}`);
+    return data;
+}
+
 // ── VISIT STATUS MANAGEMENT ────────────────────────────────────────────────────
 // Union widened to also cover Front Desk transitions (waiting/serving/completed).
 // Existing Cortex call sites (ActiveConsultGuard) only ever pass 'draft' |

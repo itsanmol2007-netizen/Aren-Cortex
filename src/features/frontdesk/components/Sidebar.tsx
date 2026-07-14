@@ -7,12 +7,15 @@ import { DoctorRequestsCard } from "./DoctorRequestsCard";
 type Props = {
     doctors: DBDoctor[];
     visits: TodayVisit[];
+    now: Date;
 };
 
-export function Sidebar({ doctors, visits }: Props) {
+export function Sidebar({ doctors, visits, now }: Props) {
     return (
-        <div>
-            <SummaryCard visits={visits} />
+        // Safety-net scroll: if the three cards ever exceed the column height,
+        // they scroll here instead of overflowing the constrained page chain.
+        <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
+            <SummaryCard visits={visits} now={now} />
             <DoctorsCard doctors={doctors} visits={visits} />
             <DoctorRequestsCard />
         </div>

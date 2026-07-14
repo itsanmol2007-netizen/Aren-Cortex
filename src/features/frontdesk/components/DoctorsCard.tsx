@@ -22,10 +22,10 @@ export function DoctorsCard({ doctors, visits }: Props) {
     );
 
     return (
-        <div className="relative mb-3 overflow-hidden rounded-[13px] border border-[#e4e7ee] bg-white p-4 pt-[18px] shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
+        <div className="relative shrink-0 overflow-hidden rounded-[13px] border border-[#e7e9f0] bg-white p-4 shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
             <div className="absolute inset-x-0 top-0 h-px bg-white/60" />
-            <h3 className="m-0 mb-3 flex items-center gap-[7px] text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">
-                <Stethoscope size={13} className="opacity-70" />
+            <h3 className="m-0 mb-2 flex items-center gap-[7px] text-[14px] font-bold text-[#161d29]">
+                <Stethoscope size={15} className="text-[#7c5cf0]" />
                 {t("doctorsTitle")}
             </h3>
             {rows.length === 0 && <p className="m-0 text-[12px] text-[#a8aeba]">{t("noDoctors")}</p>}

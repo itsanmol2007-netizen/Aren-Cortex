@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { ConciergeBell, Users, BarChart3, Settings, type LucideIcon } from "lucide-react";
+import { ConciergeBell, BookUser, Printer, Settings, type LucideIcon } from "lucide-react";
 import { useT } from "../i18n/i18n";
 import type { StringKey } from "../i18n/strings";
 
@@ -17,8 +17,8 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
     { labelKey: "navFrontDesk", icon: ConciergeBell, path: "/app/frontdesk" },
-    { labelKey: "navPatients", icon: Users, path: "/app/patients", soon: true },
-    { labelKey: "navReports", icon: BarChart3, path: "/app/reports", soon: true },
+    { labelKey: "navPatients", icon: BookUser, path: "/app/patients" },
+    { labelKey: "navPrintRx", icon: Printer, path: "/app/printrx", soon: true },
     { labelKey: "navSettings", icon: Settings, path: "/app/settings", soon: true },
 ];
 
@@ -39,7 +39,8 @@ export function NavRail({ expanded }: { expanded: boolean }) {
     return (
         <nav
             aria-label={t("appTitle")}
-            className="relative z-10 flex shrink-0 flex-col overflow-hidden border-r border-[#e7e9f0] bg-white pb-4 pt-4 transition-[width] duration-200 ease-out motion-reduce:transition-none"
+            data-nav-keep
+            className="relative z-10 flex shrink-0 flex-col overflow-hidden border-r border-[#e7e9f0] bg-white pb-4 pt-6 transition-[width] duration-200 ease-out motion-reduce:transition-none"
             style={{ width: expanded ? SIDEBAR_W : RAIL_W }}
         >
             <div className="flex flex-col gap-[6px] px-3">

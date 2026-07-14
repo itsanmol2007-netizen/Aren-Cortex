@@ -63,16 +63,24 @@ export function DoctorRequestsCard() {
 
     return (
         <div
-            className={`relative mb-3 overflow-hidden rounded-[13px] border bg-white p-4 pt-[18px] shadow-[0_1px_2px_rgba(20,30,50,0.05)] ${active ? "border-[#e4e7ee] border-l-2 border-l-[#c9791a] bg-[rgba(224,145,32,0.03)]" : "border-[#e4e7ee]"
+            className={`relative shrink-0 overflow-hidden rounded-[13px] border bg-white p-4 pt-[18px] shadow-[0_1px_2px_rgba(20,30,50,0.05)] ${active ? "border-[#e4e7ee] border-l-2 border-l-[#c9791a] bg-[rgba(224,145,32,0.03)]" : "border-[#e4e7ee]"
                 }`}
         >
             <div className="absolute inset-x-0 top-0 h-px bg-white/60" />
-            <h3 className="m-0 mb-3 flex items-center gap-[7px] text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">
-                <Bell size={13} className="opacity-70" />
+            <h3 className="m-0 mb-3 flex items-center gap-[7px] text-[14px] font-bold text-[#161d29]">
+                <Bell size={15} className="text-[#7c5cf0]" />
                 {t("requestsTitle")}
             </h3>
 
-            {!active && <p className="m-0 py-[14px] pt-0 text-center text-[12.5px] font-medium text-[#a8aeba]">{t("noRequests")}</p>}
+            {!active && (
+                <div className="flex flex-col items-center py-2 pb-4 text-center">
+                    <div className="mb-[9px] flex h-11 w-11 items-center justify-center rounded-full bg-[#f4f1fe] text-[#9d8df1]">
+                        <Bell size={19} />
+                    </div>
+                    <p className="m-0 text-[13px] font-semibold text-[#374151]">{t("noRequests")}</p>
+                    <p className="m-0 mt-[2px] text-[11.5px] text-[#a8aeba]">{t("requestsSub")}</p>
+                </div>
+            )}
 
             {requests.map((r) => (
                 <div
