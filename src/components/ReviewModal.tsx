@@ -26,8 +26,22 @@ interface DoctorShape {
 
 interface ReviewModalProps {
   onClose: () => void;
-  onEdit: () => void;
-  onSave: () => void;
+  // Consult review flow (mode "review", the default). Optional so that
+  // Print RX can open this same surface without wiring consult actions.
+  onEdit?: () => void;
+  onSave?: () => void;
+  // "review": Consult's edit/confirm flow (default, unchanged).
+  // "print":  Print RX's read-only reprint surface — no Edit, no Save; the
+  //           primary action is printing. One rendering pipeline, two doors.
+  mode?: "review" | "print";
+  // Document date — defaults to today. Reprints of an old prescription must
+  // carry the original prescription date, not the day of reprinting.
+  date?: Date;
+  // Fire the print flow as soon as the document is ready (Print RX's
+  // one-click "Print Prescription" path).
+  autoPrint?: boolean;
+  // Called after the OS print dialog closes (react-to-print onAfterPrint).
+  onPrinted?: () => void;
   patient: {
     id?: string;
     name: string;
@@ -151,6 +165,7 @@ export default function ReviewModal({
   prescription = [], tests = [],
   followUpDays, adviceNotes,
   doctor, hospital, vitals, isSaving,
+  mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
 
   const printRef = useRef<HTMLDivElement>(null);
@@ -161,7 +176,8 @@ export default function ReviewModal({
   const { format, remembered, choose } = usePrintFormat();
   const instructions = pickInstructions(visitId);
   const accentColor = hospital?.accent_color ?? "#1268e8";
-  const today = formatDate();
+  const isPrintMode = mode === "print";
+  const today = formatDate(date);
 
   const doctorName = doctor?.name ?? "Dr. —";
   const doctorQual = doctor?.qualification ?? "";
@@ -205,6 +221,7 @@ export default function ReviewModal({
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     documentTitle: `${patient.name}_${prescriptionRef ?? visitId?.slice(0, 8) ?? "prescription"}`,
+    onAfterPrint: () => onPrinted?.(),
     pageStyle: format === "thermal"
       ? `@page { size: 80mm auto; margin: 0; } body { margin: 0; }`
       : format === "a5"
@@ -219,6 +236,22 @@ export default function ReviewModal({
       setShowFormatPicker(true);
     }
   }
+
+  // One-click printing from Print RX: fire the normal print flow once the
+  // hidden document has had a moment to settle (QR arrives async — wait for
+  // it briefly, but never hold the receptionist hostage to it).
+  const autoPrintFired = useRef(false);
+  useEffect(() => {
+    if (!autoPrint || autoPrintFired.current) return;
+    const delay = qrDataUrl ? 80 : 900;
+    const t = setTimeout(() => {
+      if (autoPrintFired.current) return;
+      autoPrintFired.current = true;
+      handlePrintClick();
+    }, delay);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrint, qrDataUrl]);
 
   function handleFormatConfirm(f: Parameters<typeof choose>[0], remember: boolean) {
     choose(f, remember);
@@ -256,6 +289,7 @@ export default function ReviewModal({
             hospital={hospital}
             vitals={vitals}
             format={format}
+            date={date}
           />
         </div>
       </div>
@@ -266,11 +300,17 @@ export default function ReviewModal({
 
           {/* Top bar */}
           <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-white shrink-0">
-            <button onClick={onEdit}
-              className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-blue-600 transition-colors">
-              <Edit2 className="w-3.5 h-3.5" /> Edit
-            </button>
-            <h2 className="text-[15px] font-black text-gray-900 tracking-tight">Review Prescription</h2>
+            {isPrintMode ? (
+              <div className="w-14" aria-hidden />
+            ) : (
+              <button onClick={onEdit}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-blue-600 transition-colors">
+                <Edit2 className="w-3.5 h-3.5" /> Edit
+              </button>
+            )}
+            <h2 className="text-[15px] font-black text-gray-900 tracking-tight">
+              {isPrintMode ? "Print Prescription" : "Review Prescription"}
+            </h2>
             <button onClick={onClose}
               className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
               <X className="w-4 h-4" />
@@ -643,30 +683,50 @@ export default function ReviewModal({
           </div>
 
           {/* ── Bottom action bar ── */}
-          <div className="shrink-0 px-6 py-3.5 border-t border-gray-100 bg-white flex items-center gap-3">
-            <button onClick={onEdit}
-              className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-blue-600 transition-colors">
-              <Edit2 className="w-3.5 h-3.5" /> Edit
-            </button>
-            <div className="flex-1" />
+          {isPrintMode ? (
+            <div className="shrink-0 px-6 py-3.5 border-t border-gray-100 bg-white flex items-center gap-3">
+              <p className="text-[11.5px] text-gray-400 leading-snug max-w-[320px]">
+                The standard print window handles printer, paper size (A4, A5, Thermal) and copies.
+              </p>
+              <div className="flex-1" />
 
-            <button onClick={handlePrintClick}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-              <Printer className="w-4 h-4" /> Print / Save PDF
-            </button>
+              <button onClick={onClose}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                Close
+              </button>
 
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors">
-              <MessageCircle className="w-4 h-4" /> WhatsApp
-            </button>
+              <button onClick={handlePrintClick}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all"
+                style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
+                <Printer className="w-4 h-4" /> Print Prescription
+              </button>
+            </div>
+          ) : (
+            <div className="shrink-0 px-6 py-3.5 border-t border-gray-100 bg-white flex items-center gap-3">
+              <button onClick={onEdit}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-blue-600 transition-colors">
+                <Edit2 className="w-3.5 h-3.5" /> Edit
+              </button>
+              <div className="flex-1" />
 
-            <button onClick={onSave} disabled={isSaving}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
-              <CheckCircle className="w-4 h-4" />
-              {isSaving ? "Saving..." : "Confirm & Save"}
-            </button>
-          </div>
+              <button onClick={handlePrintClick}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                <Printer className="w-4 h-4" /> Print / Save PDF
+              </button>
+
+              <button
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors">
+                <MessageCircle className="w-4 h-4" /> WhatsApp
+              </button>
+
+              <button onClick={onSave} disabled={isSaving}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
+                <CheckCircle className="w-4 h-4" />
+                {isSaving ? "Saving..." : "Confirm & Save"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>

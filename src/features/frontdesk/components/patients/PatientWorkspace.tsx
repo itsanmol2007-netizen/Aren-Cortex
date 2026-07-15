@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
     CalendarPlus,
@@ -299,6 +300,7 @@ function RecentVisits({
 // header — never duplicated here (per the brief).
 function QuickActions({ patient, onCopyPhone }: { patient: PatientDirectoryEntry; onCopyPhone: () => void }) {
     const t = useT();
+    const navigate = useNavigate();
 
     const openWhatsApp = () => {
         if (!patient.phone) return;
@@ -328,7 +330,7 @@ function QuickActions({ patient, onCopyPhone }: { patient: PatientDirectoryEntry
                 icon={<Printer size={16} />}
                 label={t("qaPrintRx")}
                 sub={t("qaPrintRxSub")}
-                soon
+                onClick={() => navigate(`/app/printrx?patient=${patient.id}`)}
             />
         </section>
     );

@@ -18,7 +18,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
     { labelKey: "navFrontDesk", icon: ConciergeBell, path: "/app/frontdesk" },
     { labelKey: "navPatients", icon: BookUser, path: "/app/patients" },
-    { labelKey: "navPrintRx", icon: Printer, path: "/app/printrx", soon: true },
+    { labelKey: "navPrintRx", icon: Printer, path: "/app/printrx" },
     { labelKey: "navSettings", icon: Settings, path: "/app/settings", soon: true },
 ];
 

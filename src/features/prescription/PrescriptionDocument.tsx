@@ -34,6 +34,9 @@ export interface PrescriptionDocumentProps {
     hospital?: DBHospital | null;
     vitals?: Vitals;
     format: PrintFormat;
+    // Document date — defaults to today. Reprints (Print RX) pass the
+    // original prescription date so the paper stays historically true.
+    date?: Date;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,10 +82,11 @@ function StandardDocument({
     hospital,
     vitals,
     format,
+    date,
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const accentColor = hospital?.accent_color ?? "#1268e8";
-    const today = formatDate();
+    const today = formatDate(date);
 
     const doctorName = doctor?.name ?? "Doctor";
     const doctorQual = doctor?.qualification ?? "";
@@ -418,8 +422,9 @@ function ThermalDocument({
     adviceNotes,
     doctor,
     hospital,
+    date,
 }: PrescriptionDocumentProps) {
-    const today = formatDate();
+    const today = formatDate(date);
     const doctorName = doctor?.name ?? "Doctor";
     const doctorQual = doctor?.qualification ?? "";
     const doctorReg = doctor?.registration_number ?? "";

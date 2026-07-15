@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import App from "./App";
 import { FrontDeskPage } from "./features/frontdesk/FrontDeskPage";
 import { PatientsPage } from "./features/frontdesk/PatientsPage";
+import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -31,6 +32,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/app/cortex" element={<App />} />
           <Route path="/app/frontdesk" element={<FrontDeskPage />} />
           <Route path="/app/patients" element={<PatientsPage />} />
+          <Route path="/app/printrx" element={<PrintRxPage />} />
           <Route path="/app" element={<Navigate to="/app/cortex" replace />} />
           <Route path="/" element={<Navigate to="/app/cortex" replace />} />
         </Routes>

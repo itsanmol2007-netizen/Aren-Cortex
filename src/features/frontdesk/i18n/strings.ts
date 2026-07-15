@@ -213,6 +213,64 @@ export const en = {
     editTitle: "Edit Patient Details",
     saveChanges: "Save Changes",
     toastPatientSaved: "«name» updated",
+
+    // ── Print RX page ──────────────────────────────────────────────────────
+    printRxTitle: "Print RX",
+    printRxSub: "Find, print and hand over finalized prescriptions",
+    printRxLive: "Live",
+    printRxUpdatedNow: "Updated just now",
+    printRxUpdatedAgo: "Updated «t» ago",
+    printRxRefresh: "Refresh",
+    printRxSearchPh: "Search by patient, phone or token…",
+
+    tabReady: "Ready to Print",
+    tabPrinted: "Recently Printed",
+    searchResults: "Search results",
+    rxCount: "«n» prescription(s)",
+    rxLoadFailed: "Couldn't load prescriptions",
+
+    neverPrinted: "Not printed",
+    printedOnce: "Printed once",
+    printedTimes: "Printed «n»×",
+
+    rxEmptyReadyTitle: "Nothing waiting to print",
+    rxEmptyReadyBody: "Prescriptions appear here automatically as doctors finish consultations.",
+    rxAllPrintedTitle: "All caught up",
+    rxAllPrintedBody: "Every new prescription has been printed and handed over.",
+    rxEmptyPrintedTitle: "Nothing printed yet",
+    rxEmptyPrintedBody: "Prescriptions you print will collect here for quick reprints.",
+    rxNoMatchTitle: "No prescriptions found",
+    rxNoMatchBody: "Try a different name, phone or token number.",
+
+    rxWsEmptyTitle: "Select a prescription",
+    rxWsEmptyBody: "Pick one from the list to print it. New prescriptions arrive here on their own as doctors finish consultations.",
+
+    rxEyebrow: "Prescription",
+    rxDoctor: "Doctor",
+    rxPrescribed: "Prescribed",
+    rxCopies: "Copies Printed",
+    rxLastPrinted: "Last Printed",
+    rxMedicines: "«n» medicine(s)",
+    rxTests: "«n» test(s)",
+    rxFollowUpDays: "Follow-up in «n» day(s)",
+    rxTokenTip: "Token for that visit",
+
+    printPrescription: "Print Prescription",
+    openPreview: "Preview",
+    printInfoLine: "Opens the standard print window — printer, paper size (A4, A5, Thermal) and copies are chosen there.",
+    rxDetailFailed: "Couldn't load this prescription",
+    rxPreparing: "Preparing document…",
+
+    rxHistoryTitle: "Prescription History",
+    rxHistorySub: "Older prescriptions for this patient — select one to reprint it",
+    rxHistorySelected: "Selected",
+    rxHistoryOnly: "This is their only prescription so far.",
+
+    toastPrinted: "Prescription printed · «name»",
+    noRxForVisit: "No prescription for this visit yet — it appears here when the doctor finalizes it.",
+    noRxForPatient: "No prescriptions for this patient yet.",
+    menuPrintRx: "Print Prescription",
+    rowPrintRxTip: "Print prescription",
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -421,6 +479,63 @@ export const hinglish: Record<StringKey, string> = {
     editTitle: "Patient ki Details Badlo",
     saveChanges: "Save Karo",
     toastPatientSaved: "«name» update ho gaya",
+
+    printRxTitle: "Print RX",
+    printRxSub: "Prescription dhundo, print karo aur patient ko do",
+    printRxLive: "Live",
+    printRxUpdatedNow: "Abhi update hua",
+    printRxUpdatedAgo: "«t» pehle update hua",
+    printRxRefresh: "Refresh",
+    printRxSearchPh: "Patient, phone ya token se search karo…",
+
+    tabReady: "Print ke liye Ready",
+    tabPrinted: "Abhi Print hue",
+    searchResults: "Search results",
+    rxCount: "«n» prescription(s)",
+    rxLoadFailed: "Prescriptions load nahi hue",
+
+    neverPrinted: "Print nahi hua",
+    printedOnce: "Ek baar print hua",
+    printedTimes: "«n»× print hua",
+
+    rxEmptyReadyTitle: "Abhi kuch print karna nahi hai",
+    rxEmptyReadyBody: "Doctor consultation khatam karte hi prescription yahan khud aa jayega.",
+    rxAllPrintedTitle: "Sab ho gaya",
+    rxAllPrintedBody: "Har naya prescription print ho chuka hai.",
+    rxEmptyPrintedTitle: "Abhi kuch print nahi hua",
+    rxEmptyPrintedBody: "Jo prescriptions print karoge woh yahan milenge — dobara print karna easy.",
+    rxNoMatchTitle: "Koi prescription nahi mila",
+    rxNoMatchBody: "Doosra naam, phone ya token number try karo.",
+
+    rxWsEmptyTitle: "Prescription chuno",
+    rxWsEmptyBody: "List se ek chuno aur print karo. Doctor jaise hi khatam karenge, naye prescriptions khud yahan aayenge.",
+
+    rxEyebrow: "Prescription",
+    rxDoctor: "Doctor",
+    rxPrescribed: "Kab likha",
+    rxCopies: "Kitni baar Print",
+    rxLastPrinted: "Pichhla Print",
+    rxMedicines: "«n» dawai(yan)",
+    rxTests: "«n» test(s)",
+    rxFollowUpDays: "«n» din mein follow-up",
+    rxTokenTip: "Us visit ka token",
+
+    printPrescription: "Prescription Print Karo",
+    openPreview: "Pehle Dekho",
+    printInfoLine: "Normal print window khulegi — printer, paper size (A4, A5, Thermal) aur copies wahan chuno.",
+    rxDetailFailed: "Yeh prescription load nahi hua",
+    rxPreparing: "Document ban raha hai…",
+
+    rxHistoryTitle: "Prescription History",
+    rxHistorySub: "Is patient ke purane prescriptions — dobara print ke liye chuno",
+    rxHistorySelected: "Chuna hua",
+    rxHistoryOnly: "Abhi tak inka yehi ek prescription hai.",
+
+    toastPrinted: "Prescription print ho gaya · «name»",
+    noRxForVisit: "Is visit ka prescription abhi nahi bana — doctor finalize karenge tab yahan dikhega.",
+    noRxForPatient: "Is patient ka abhi koi prescription nahi hai.",
+    menuPrintRx: "Prescription Print Karo",
+    rowPrintRxTip: "Prescription print karo",
 };
 
 // Devanagari Hindi — empty stubs for now (architecture slot). Every key is

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ExternalLink, ArrowRightLeft, CheckCircle2, XCircle, MoreVertical } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ExternalLink, ArrowRightLeft, CheckCircle2, XCircle, MoreVertical, Printer } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { tintFor } from "../statusStyle";
 import { maskPhone, padToken, formatShortDate } from "../utils";
@@ -17,6 +18,7 @@ type Props = {
 
 export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }: Props) {
     const t = useT();
+    const navigate = useNavigate();
     const [hovered, setHovered] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -36,6 +38,9 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
     const shown = visit.symptom_names.slice(0, 2).join(", ");
     const extra = visit.symptom_names.length - 2;
     const moreTip = extra > 0 ? visit.symptom_names.slice(2).join(", ") : "";
+
+    const isCompleted = visit.status === "completed";
+    const goToPrintRx = () => navigate(`/app/printrx?visit=${visit.visit_id}`);
 
     const openMenu = () => {
         const rect = menuBtnRef.current?.getBoundingClientRect();
@@ -63,6 +68,11 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
                     {visit.status !== "completed" && (
                         <MenuItem icon={<CheckCircle2 size={15} className="opacity-70" />} onClick={() => { onComplete(visit); closeMenu(); }}>
                             {t("menuComplete")}
+                        </MenuItem>
+                    )}
+                    {isCompleted && (
+                        <MenuItem icon={<Printer size={15} className="opacity-70" />} onClick={() => { goToPrintRx(); closeMenu(); }}>
+                            {t("menuPrintRx")}
                         </MenuItem>
                     )}
                     <div className="my-1 h-px bg-[#eef0f5]" />
@@ -137,14 +147,30 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
 
             {/* Status pill: dot + label, and for waiting the live duration —
                 "Waiting · 18 min" says what AND how long in one breath. */}
-            <div className={`inline-flex w-fit items-center gap-[6px] rounded-full px-[11px] py-[5px] text-[11.5px] font-semibold ${tint.chipBg} ${tint.textClass}`}>
-                <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: tint.dotColor }} />
-                <span className="whitespace-nowrap">
-                    {t(tint.labelKey)}
-                    {visit.status === "waiting" && waitMins >= 1 && (
-                        <span className="tabular-nums"> · {waitMins} {t("min")}</span>
-                    )}
-                </span>
+            <div className="flex items-center gap-[4px]">
+                <div className={`inline-flex w-fit items-center gap-[6px] rounded-full px-[11px] py-[5px] text-[11.5px] font-semibold ${tint.chipBg} ${tint.textClass}`}>
+                    <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: tint.dotColor }} />
+                    <span className="whitespace-nowrap">
+                        {t(tint.labelKey)}
+                        {visit.status === "waiting" && waitMins >= 1 && (
+                            <span className="tabular-nums"> · {waitMins} {t("min")}</span>
+                        )}
+                    </span>
+                </div>
+                {/* Completed visits grow a quiet next step: jump to Print RX
+                    with this visit's prescription already selected. Contextual,
+                    never dominant — same presence rules as the kebab. */}
+                {isCompleted && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); goToPrintRx(); }}
+                        title={t("rowPrintRxTip")}
+                        aria-label={t("rowPrintRxTip")}
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-[#347d55] transition-opacity duration-100 hover:bg-[#e4f5eb] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${hovered ? "opacity-100" : "opacity-45"}`}
+                    >
+                        <Printer size={14.5} />
+                    </button>
+                )}
             </div>
 
             <button
