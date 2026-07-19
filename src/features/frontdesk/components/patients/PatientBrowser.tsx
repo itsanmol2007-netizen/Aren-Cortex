@@ -3,7 +3,6 @@ import { ChevronRight, Search, SearchX, UsersRound, X } from "lucide-react";
 import type { DBDoctor, PatientDirectoryEntry } from "@/lib/db";
 import { formatArchiveDate, initials } from "../../utils";
 import { useT } from "../../i18n/i18n";
-import { DawnArcs } from "../DawnArcs";
 
 type SortMode = "recent" | "name";
 
@@ -160,7 +159,6 @@ export function PatientBrowser({ entries, loading, failed, onRetry, doctors, sel
 
                 {noneAtAll && (
                     <div className="aren-rise flex flex-col items-center gap-[10px] px-5 py-14 text-center">
-                        <DawnArcs variant="morning" />
                         <h3 className="m-0 font-[Manrope,sans-serif] text-[16px] font-bold text-[#161d29]">{t("dirEmptyTitle")}</h3>
                         <p className="m-0 max-w-[240px] text-[12.5px] leading-[1.5] text-[#8a91a0]">{t("dirEmptyBody")}</p>
                     </div>

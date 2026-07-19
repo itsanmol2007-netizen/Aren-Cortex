@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { X } from "lucide-react";
 import logo from "../../assets/aren-logo.png";
 import { SidebarNav, type SidebarPage } from "./SidebarNav";
+import { useLogout } from "../auth/useLogout";
 import type { Doctor } from "../../types";
 
 type SidebarProps = {
@@ -25,6 +26,7 @@ export function Sidebar({
 }: SidebarProps) {
     const panelRef = useRef<HTMLElement>(null);
     const sidebarLogoRef = useRef<HTMLDivElement>(null);
+    const logout = useLogout();
 
     // Escape to close
     useEffect(() => {
@@ -182,6 +184,7 @@ export function Sidebar({
                         activePage={activePage}
                         onNavigate={handleNavItemClick}
                         onConsult={handleConsultClick}
+                        onLogout={logout}
                     />
                 </div>
 

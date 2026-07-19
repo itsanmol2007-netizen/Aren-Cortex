@@ -17,7 +17,6 @@ import type { PatientDirectoryEntry, PatientHistoryVisit } from "@/lib/db";
 import { tintFor } from "../../statusStyle";
 import { formatArchiveDate, initials } from "../../utils";
 import { useT } from "../../i18n/i18n";
-import { DawnArcs } from "../DawnArcs";
 import { VisitTimeline, type TimelineWindow } from "./VisitTimeline";
 import { avatarTint } from "./PatientBrowser";
 
@@ -247,7 +246,6 @@ function RecentVisits({
 
             {!loading && shown.length === 0 && (
                 <div className="flex flex-col items-center gap-[8px] px-5 pb-8 pt-4 text-center">
-                    <DawnArcs variant="morning" />
                     <h3 className="m-0 text-[13.5px] font-bold text-[#5a6472]">{t("historyEmptyTitle")}</h3>
                     <p className="m-0 max-w-[260px] text-[12.5px] leading-[1.5] text-[#a8aeba]">{t("historyEmptyBody")}</p>
                 </div>
@@ -385,13 +383,6 @@ function WorkspaceEmpty() {
     const t = useT();
     return (
         <div className="aren-rise flex min-h-0 flex-1 flex-col items-center justify-center gap-[12px] rounded-[16px] border border-[#e7e9f0] bg-white px-6 py-16 text-center shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
-            <div className="relative">
-                <div
-                    className="pointer-events-none absolute left-1/2 top-1/2 h-[120px] w-[220px] -translate-x-1/2 -translate-y-1/2"
-                    style={{ background: "radial-gradient(closest-side, rgba(240,171,200,0.16), transparent)" }}
-                />
-                <DawnArcs variant="morning" className="relative" />
-            </div>
             <h3 className="m-0 mt-1 flex items-center gap-[9px] font-[Manrope,sans-serif] text-[20px] font-extrabold leading-[1.15] tracking-[-0.01em] text-[#161d29]">
                 <UserRoundSearch size={19} className="text-[#8b5cf6] opacity-80" />
                 {t("wsEmptyTitle")}

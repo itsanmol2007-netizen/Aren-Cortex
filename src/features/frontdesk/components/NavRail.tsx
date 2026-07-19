@@ -1,7 +1,8 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { ConciergeBell, BookUser, Printer, Settings, type LucideIcon } from "lucide-react";
+import { ConciergeBell, BookUser, Printer, Settings, LogOut, type LucideIcon } from "lucide-react";
 import { useT } from "../i18n/i18n";
 import type { StringKey } from "../i18n/strings";
+import { useLogout } from "../../auth/useLogout";
 
 // ── Navigation registry ────────────────────────────────────────────────────
 // Adding a future page = add one entry here (+ its route in src/main.tsx and
@@ -35,6 +36,7 @@ export function NavRail({ expanded }: { expanded: boolean }) {
     const t = useT();
     const navigate = useNavigate();
     const { pathname } = useLocation();
+    const logout = useLogout();
 
     return (
         <nav
@@ -84,8 +86,8 @@ export function NavRail({ expanded }: { expanded: boolean }) {
                 })}
             </div>
 
-            {/* Bottom zone: user/profile actions land here when accounts arrive.
-                For now the reception identity chip keeps the slot warm. */}
+            {/* Bottom zone: the reception identity chip + the session exit —
+                the quiet corner where profile actions live. */}
             <div className="mt-auto px-3">
                 <div className="mb-3 h-px bg-[#eef0f5]" />
                 <div className="flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-[6px]">
@@ -96,6 +98,18 @@ export function NavRail({ expanded }: { expanded: boolean }) {
                         <span className="text-[12.5px] font-semibold text-[#3b4453]">{t("navUser")}</span>
                     </NavLabel>
                 </div>
+                <button
+                    type="button"
+                    data-logout
+                    title={expanded ? undefined : t("navLogout")}
+                    onClick={logout}
+                    className="group flex h-10 w-full items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-3 text-left transition-colors hover:bg-[rgba(210,59,52,0.08)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                >
+                    <LogOut size={18} strokeWidth={2} className="shrink-0 text-[#8a91a0] transition-colors group-hover:text-[#d23b34]" />
+                    <NavLabel expanded={expanded}>
+                        <span className="text-[13px] font-semibold text-[#5a6472]">{t("navLogout")}</span>
+                    </NavLabel>
+                </button>
             </div>
         </nav>
     );

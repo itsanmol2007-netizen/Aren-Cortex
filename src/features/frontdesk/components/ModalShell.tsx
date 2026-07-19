@@ -7,7 +7,7 @@ import { useT } from "../i18n/i18n";
 // this shell so the whole family — intake, visit details, future
 // confirmations — reads as one AREN object: dawn thread at full strength on
 // the top edge, a header zone lit by faint dawn radials with the corner-arc
-// watermark (the DawnArcs motif folded into the frame), a brand-gradient icon
+// watermark, a brand-gradient icon
 // tile under a violet eyebrow, and an optional soft footer band. Decoration
 // lives only in the frame; the body stays paper (§2.3: she's scanning, not
 // admiring).

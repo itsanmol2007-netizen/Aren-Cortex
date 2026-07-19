@@ -1,4 +1,5 @@
 # AREN Architecture Handoff
+
 Version: Phase 1 MVP
 Status: Frozen Architecture (Pre-Implementation)
 
@@ -27,9 +28,10 @@ Every screen exists because someone is trying to complete a real task—not beca
 AREN consists of two operational workspaces.
 
 1. Front Desk
-2. Cortex (Doctor Workspace)
+2. Consult (Doctor Workspace)
+3. And Cortex (FrontDesk + Consult Combined, for Solo Doctors)
 
-Both operate on the same Visit object.
+All operate on the same Visit object.
 
 Everything revolves around the Visit.
 
@@ -107,7 +109,7 @@ Their job is only to create and manage Visits.
 
 ---
 
-## Cortex
+## Consult
 
 Purpose:
 
@@ -132,7 +134,7 @@ Nothing else.
 
 ---
 
-# Solo Mode
+# Solo Mode (Aren Cortex)
 
 Some clinics have no receptionist.
 
@@ -156,7 +158,7 @@ Reception Available = false
 
 When false:
 
-- New Patient button appears inside Cortex.
+- New Patient button and a refined UI appears at Doctor's side, called Cortex.
 - Doctor can create Visit directly.
 
 No second interface required.

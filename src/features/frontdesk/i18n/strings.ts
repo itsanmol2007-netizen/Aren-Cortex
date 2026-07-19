@@ -26,6 +26,7 @@ export const en = {
     navSoon: "Soon",
     navToggle: "Open navigation",
     navUser: "Reception",
+    navLogout: "Log out",
 
     launcherPlaceholder: "Search or add patient by name or phone…",
     launcherAddTitle: "Register new patient",
@@ -293,6 +294,7 @@ export const hinglish: Record<StringKey, string> = {
     navSoon: "Jaldi",
     navToggle: "Menu kholo",
     navUser: "Reception",
+    navLogout: "Log out",
 
     launcherPlaceholder: "Patient search karo ya naya add karo…",
     launcherAddTitle: "Naya patient add karo",

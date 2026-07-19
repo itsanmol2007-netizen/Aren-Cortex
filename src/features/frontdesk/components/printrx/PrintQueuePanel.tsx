@@ -4,7 +4,6 @@ import type { DBDoctor, PrintQueueRx } from "@/lib/db";
 import type { PrintLog } from "../../printLog";
 import { formatArchiveDate, initials, padToken } from "../../utils";
 import { useT } from "../../i18n/i18n";
-import { DawnArcs } from "../DawnArcs";
 import { avatarTint } from "../patients/PatientBrowser";
 
 export type PrintTab = "ready" | "printed";
@@ -348,7 +347,6 @@ function EmptyState({ searching, tab, printedCount }: { searching: boolean; tab:
     if (printedCount > 0) {
         return (
             <div className="aren-rise flex flex-col items-center gap-[10px] px-5 py-14 text-center">
-                <DawnArcs variant="endOfDay" />
                 <h3 className="m-0 flex items-center gap-[7px] font-[Manrope,sans-serif] text-[16px] font-bold text-[#161d29]">
                     <CheckCheck size={16} className="text-[#1c8a4d] opacity-80" />
                     {t("rxAllPrintedTitle")}
@@ -360,7 +358,6 @@ function EmptyState({ searching, tab, printedCount }: { searching: boolean; tab:
 
     return (
         <div className="aren-rise flex flex-col items-center gap-[10px] px-5 py-14 text-center">
-            <DawnArcs variant="morning" />
             <h3 className="m-0 font-[Manrope,sans-serif] text-[16px] font-bold text-[#161d29]">{t("rxEmptyReadyTitle")}</h3>
             <p className="m-0 max-w-[250px] text-[12.5px] leading-[1.5] text-[#8a91a0]">{t("rxEmptyReadyBody")}</p>
         </div>
