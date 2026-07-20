@@ -1,8 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { ConciergeBell, BookUser, Printer, Settings, LogOut, type LucideIcon } from "lucide-react";
+import { ConciergeBell, BookUser, Printer, HeartPulse, UserRound, type LucideIcon } from "lucide-react";
 import { useT } from "../i18n/i18n";
 import type { StringKey } from "../i18n/strings";
-import { useLogout } from "../../auth/useLogout";
 
 // ── Navigation registry ────────────────────────────────────────────────────
 // Adding a future page = add one entry here (+ its route in src/main.tsx and
@@ -20,7 +19,7 @@ const NAV_ITEMS: NavItem[] = [
     { labelKey: "navFrontDesk", icon: ConciergeBell, path: "/app/frontdesk" },
     { labelKey: "navPatients", icon: BookUser, path: "/app/patients" },
     { labelKey: "navPrintRx", icon: Printer, path: "/app/printrx" },
-    { labelKey: "navSettings", icon: Settings, path: "/app/settings", soon: true },
+    { labelKey: "navClinicStatus", icon: HeartPulse, path: "/app/clinicstatus" },
 ];
 
 const RAIL_W = 68;
@@ -32,11 +31,19 @@ const SIDEBAR_W = 228;
 // stay anchored (fixed left padding), labels fade + slide in beside them, and
 // the active pill stretches with the container — no element ever jumps.
 // Width/opacity/translate only, 200ms ease-out, GPU-friendly.
-export function NavRail({ expanded }: { expanded: boolean }) {
+export function NavRail({
+    expanded,
+    userName,
+    userInitials,
+}: {
+    expanded: boolean;
+    userName: string;
+    userInitials: string;
+}) {
     const t = useT();
     const navigate = useNavigate();
     const { pathname } = useLocation();
-    const logout = useLogout();
+    const displayName = userName || t("navUser");
 
     return (
         <nav
@@ -86,28 +93,22 @@ export function NavRail({ expanded }: { expanded: boolean }) {
                 })}
             </div>
 
-            {/* Bottom zone: the reception identity chip + the session exit —
-                the quiet corner where profile actions live. */}
+            {/* Bottom zone: the reception identity chip. Session actions
+                (including logout) now live inside Clinic Status — this chip is
+                the quiet way in. */}
             <div className="mt-auto px-3">
                 <div className="mb-3 h-px bg-[#eef0f5]" />
-                <div className="flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-[6px]">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[rgba(99,102,241,0.12)] text-[11px] font-bold text-[#4c3db2]">
-                        RS
-                    </div>
-                    <NavLabel expanded={expanded}>
-                        <span className="text-[12.5px] font-semibold text-[#3b4453]">{t("navUser")}</span>
-                    </NavLabel>
-                </div>
                 <button
                     type="button"
-                    data-logout
-                    title={expanded ? undefined : t("navLogout")}
-                    onClick={logout}
-                    className="group flex h-10 w-full items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-3 text-left transition-colors hover:bg-[rgba(210,59,52,0.08)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                    title={expanded ? undefined : displayName}
+                    onClick={() => { if (!pathname.startsWith("/app/clinicstatus")) navigate("/app/clinicstatus"); }}
+                    className="flex h-11 w-full items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-[6px] text-left transition-colors hover:bg-[#f5f6f9] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
                 >
-                    <LogOut size={18} strokeWidth={2} className="shrink-0 text-[#8a91a0] transition-colors group-hover:text-[#d23b34]" />
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[rgba(99,102,241,0.12)] text-[11px] font-bold text-[#4c3db2]">
+                        {userInitials || <UserRound size={15} strokeWidth={2.2} />}
+                    </div>
                     <NavLabel expanded={expanded}>
-                        <span className="text-[13px] font-semibold text-[#5a6472]">{t("navLogout")}</span>
+                        <span className="truncate text-[12.5px] font-semibold text-[#3b4453]">{displayName}</span>
                     </NavLabel>
                 </button>
             </div>

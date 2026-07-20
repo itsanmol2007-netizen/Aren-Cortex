@@ -1,61 +1,21 @@
-import { useRef, useState } from "react";
 import { Bell, Check } from "lucide-react";
 import { toast } from "sonner";
-import type { DoctorRequest } from "../types/frontdesk";
+import { useDoctorRequests } from "../hooks/useDoctorRequests";
 import { useT } from "../i18n/i18n";
+import { timeAgo } from "../utils";
 
-// No doctor_requests table exists yet (per architecture doc, this is a
-// "future communication bridge" — nothing to persist to). Session-only
-// simulate/acknowledge, mirroring the HTML prototype's mock behaviour.
-const POOL = [
-    { doctor: "Dr Amit Sharma", text: "Send next patient" },
-    { doctor: "Dr Amit Sharma", text: "Need previous file" },
-    { doctor: "Dr Amit Sharma", text: "Need wheelchair" },
-];
+// Real doctor→reception requests, read live from the database (see
+// useDoctorRequests). No more simulator: when the doctor sends a request it
+// appears here with a gentle chime; acknowledging clears it in the database.
+// Until the `doctor_requests` table exists this simply shows the calm "no
+// requests" state (see docs/Supabase Wiring TODO.md).
 
-// One gentle two-note chime on request arrival (§9 — the only sound in the
-// product). Built with Web Audio so there is no asset to load; silently no-ops
-// where AudioContext is unavailable.
-function playChime() {
-    try {
-        const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
-        if (!Ctx) return;
-        const ctx = new Ctx();
-        const notes = [660, 880];
-        notes.forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.value = freq;
-            const start = ctx.currentTime + i * 0.14;
-            gain.gain.setValueAtTime(0, start);
-            gain.gain.linearRampToValueAtTime(0.06, start + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
-            osc.connect(gain).connect(ctx.destination);
-            osc.start(start);
-            osc.stop(start + 0.24);
-        });
-        setTimeout(() => ctx.close(), 700);
-    } catch {
-        /* audio blocked (e.g. no user gesture yet) — silently skip */
-    }
-}
-
-export function DoctorRequestsCard() {
+export function DoctorRequestsCard({ hospitalId }: { hospitalId: string }) {
     const t = useT();
-    const [requests, setRequests] = useState<DoctorRequest[]>([]);
-    const prefersReducedMotion = useRef(
-        typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    );
-
-    const simulate = () => {
-        const pick = POOL[Math.floor(Math.random() * POOL.length)];
-        setRequests((r) => [{ id: `${Date.now()}`, doctor_name: pick.doctor, text: pick.text, created_at: Date.now() }, ...r]);
-        if (!prefersReducedMotion.current) playChime();
-    };
+    const { requests, acknowledge } = useDoctorRequests(hospitalId);
 
     const ack = (id: string) => {
-        setRequests((r) => r.filter((x) => x.id !== id));
+        void acknowledge(id);
         toast(t("toastAck"));
     };
 
@@ -91,7 +51,11 @@ export function DoctorRequestsCard() {
                         <Bell size={16} />
                     </div>
                     <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-semibold text-[#8a91a0]">{r.doctor_name}</div>
+                        <div className="flex items-center gap-[6px] text-[11px] font-semibold text-[#8a91a0]">
+                            <span className="truncate">{r.doctor_name}</span>
+                            <span className="shrink-0 text-[#c4c9d3]">·</span>
+                            <span className="shrink-0 tabular-nums">{timeAgo(new Date(r.created_at).toISOString())}</span>
+                        </div>
                         <div className="mt-[1px] text-[13px] font-semibold text-[#161d29]">{r.text}</div>
                     </div>
                     <button
@@ -103,13 +67,6 @@ export function DoctorRequestsCard() {
                     </button>
                 </div>
             ))}
-
-            <button
-                onClick={simulate}
-                className="mt-1 w-full rounded-[7px] border border-dashed border-[#d5dae4] bg-transparent p-2 text-[11px] font-semibold text-[#a8aeba] transition-colors hover:bg-[#f5f6f9] hover:text-[#5a6472]"
-            >
-                {t("simulate")}
-            </button>
         </div>
     );
 }

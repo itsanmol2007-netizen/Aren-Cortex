@@ -1,6 +1,12 @@
-# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Session 36)
+# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Part I · 2026-07-21)
 
-Last consolidated: 2026-07-13 · Branch: `master` · Route: `/app/frontdesk`
+Last consolidated: 2026-07-21 · Branch: `master` · Routes: `/app/frontdesk`,
+`/app/patients`, `/app/printrx`, `/app/clinicstatus` (+ `/login`)
+
+> Reading order: Parts A–H are the frozen product/architecture/design history.
+> **Part I (Clinic Status + operational layer + auth persistence) is the newest
+> — it wins on anything it covers.** For pure file-level "what is this code",
+> pair this with `docs/aren-technical-atlas.md`.
 
 ## 0. How to read this document
 
@@ -897,7 +903,142 @@ zero new errors (same 47 pre-existing legacy errors as before).
    v1 (matches "Primary Doctor" elsewhere on the page) but worth a second
    look if reception reports it as confusing.
 
+---
+
+---
+
+# PART I — CLINIC STATUS + OPERATIONAL LAYER + AUTH PERSISTENCE (2026-07-20 → 07-21)
+
+The product design brief for this work is `docs/clinic-status-page-overview.md`
+(Error Morphology philosophy, the three-screen model, illustration direction).
+The database hand-off is `docs/Supabase Wiring TODO.md`. This part records what
+shipped and the doctrine behind it.
+
+## 27. Clinic Status — the operational assistant
+
+The nav slot formerly called **Settings** is now officially **Clinic Status**
+(`/app/clinicstatus` → `ClinicStatusPage.tsx`). It is **not** a dashboard and
+**not** infrastructure monitoring — it is an operational assistant that answers
+one question in 2–3 seconds: *"Can I keep working?"*
+
+**Error Morphology (mandatory).** Every technical failure is translated into
+operational meaning — headline, impact, recovery — *before* it reaches the
+receptionist. The single translator is `clinicStatus/model.ts`
+(`buildClinicStatus({demo, online})`), the one place service health becomes a
+page model. Nothing user-facing ever shows a stack trace, a spooler error, or a
+timeout code.
+
+**Progressive disclosure — three layers, receptionist rarely leaves L1:**
+
+- **L1 Summary** (`ClinicStatusSummary`): status hero (headline + state
+  illustration + recommended action + last-checked), "today's operations", an
+  "at a glance" context column, and the door down to L2. The buried **Session**
+  card (logout) lives here.
+- **L2 Detailed** (`ClinicStatusDetailed`): information architecture over table —
+  **Core Operations** (a softly-lit panel of elevated cards with status spines +
+  an "n/n operational" pill) read as heavier than **Supporting Services** (a flat,
+  quiet list). Plus summary tiles, a "needs attention" panel, and the event-log
+  timeline (§28).
+- **L3 Service detail** (`ServiceDetailModal`, on ModalShell): one service —
+  "why this matters" (`roleKey`) → impact → recovery steps → automatic-recovery
+  progress → advanced diagnostics (folded away) → support. Recovery always before
+  support.
+
+**Reusable illustration language** (`StatusIllustration.tsx`): an integrity core
+(shield motif) stitched by dawn-thread pathways to service nodes, with travelling
+light along the connections (synchronisation). State-adaptive — healthy (threaded)
+→ warning (an amber dashed disconnect) → critical (a fractured pathway + spark).
+No stock art, no cartoons, no concentric-circle wallpaper. This is AREN's SVG
+vocabulary for operational state; reuse it, don't reinvent per-screen.
+
+**Logout moved here + always confirms.** Logout left the NavRail; it is now buried
+in the L1 Session card and always passes through `LogoutConfirmModal` before
+ending the session. The NavRail identity chip links here.
+
+**Demo vs real:** `?demo=warning|critical` simulates only the printer (no live
+probe). Internet health is **real** (§28).
+
+## 28. The reception operational layer (`src/features/frontdesk/operational/`)
+
+The real-behavior subsystem behind Clinic Status. Design rule: **react to actual
+application state, not URL parameters, wherever a real signal exists.**
+
+- **`useOnline.ts`** — `navigator.onLine` + online/offline events. The one true
+  connectivity signal; drives the model and the banner.
+- **`OperationalBanner.tsx`** (mounted in WorkspaceShell, so every reception page):
+  proactive operational voice. Offline → a slim amber Error-Morphology band;
+  reconnect → a transient green note; auto-clears. Copy is plain-language impact,
+  never implementation.
+- **`referenceCache.ts`** — doctors + symptoms cached in localStorage,
+  **cache-first + always-fresh**: serve the last copy instantly (works offline),
+  re-fetch on every online mount and on reconnect. Doctors additionally refresh
+  every 45s so **presence** stays live. Wired into `CreateVisitModal` (symptoms)
+  and `FrontDeskPage`/`PatientsPage` (doctors) — the intake dropdowns never empty
+  during an outage. (Full offline *saving* of new patients is deliberately a
+  future project — the form is usable offline but save needs the connection back.)
+- **`eventLog.ts`** — a local operational history (localStorage ring buffer, **not
+  the DB** — a clinic has no use for a server-side audit of connectivity blips).
+  `logEvent`/`useEventLog`/`useConnectivityLog` record session-start / offline /
+  online; the L2 timeline reads this (the old placeholder events were removed).
+- **Doctor presence = heartbeat.** Cortex writes `doctors.last_seen` every ~30s
+  via `src/hooks/useDoctorHeartbeat.ts` (mounted in `App.tsx`, cleans up on
+  unmount/logout); reception derives **Online (<3m) / Away ("Seen X min", <15m) /
+  Offline** in `DoctorsCard` (a doctor actively serving = "busy" always wins). No
+  more dishonest always-online. DB writer: `updateDoctorLastSeen`.
+- **Doctor Requests are real** — the simulator/mock is deleted. `useDoctorRequests`
+  reads the `doctor_requests` table with a **Realtime** subscription
+  (`subscribeDoctorRequests`, filtered by `hospital_id`) plus a 25s poll safety
+  net; chime on genuine arrivals; acknowledge writes back. Auto-disables cleanly
+  if the table is ever absent (`isMissingRelation`).
+
+## 29. Auth persistence — losing Wi-Fi must never log you out
+
+Root cause of the old bug: `AuthProvider` treated a *network* failure to
+re-verify identity the same as a *rejection*, so an offline refresh ejected the
+receptionist to /login. Fix (see also the atlas §8): identity failures are now
+split by **kind**. A last-known-good identity is cached in localStorage
+(`aren.identity.v1`); a `unreachable` result with a valid session + cache admits
+an **offline-authed** state (`{status:"authed", offline:true}`) instead of
+logging out; a definitive rejection (inactive user/hospital) still fails closed
+and clears the cache. Reconnect (`window` "online" / `TOKEN_REFRESHED`)
+re-verifies automatically. The Supabase session itself already survives offline
+(`persistSession`, made explicit).
+
+## 30. Modal refinement (ModalShell, applies to every reception modal)
+
+`ModalShell` was refined once so the whole family benefits: a warm dawn backdrop
+glow, deeper (8px) blur, crisper elevation with a pink-tinted shadow, and a gentle
+lift-in entrance (`aren-modal-in` / `aren-overlay-in` keyframes in
+`FrontDeskStyles`). Still ≤ 580 by default, comfortable on 13–15" laptops. Warm/
+pink accents were introduced subtly to soften the purple. **All new modals still
+use ModalShell** — never hand-roll chrome.
+
+## 31. Quick fine-tunes (2026-07-21)
+
+- The hardcoded **"RS"** placeholder (an old demo user) is gone: header + NavRail
+  now show the **real signed-in person's** name + initials from `useAuth`
+  identity (neutral person icon when no name). Clinic name on the ink band was
+  enlarged.
+- **Intake field order**: phone now sits **directly under name** so an existing
+  patient surfaces from the silent dedupe before age/gender are asked.
+- Clinic Status white-space was rebalanced (the healthy L2 right rail carries the
+  integrity illustration rather than empty space).
+
+## 32. Open items updated by this part
+
+1. **Offline write-queue** (create patients/visits offline, sync on reconnect) —
+   scoped as a separate future project (`Supabase Wiring TODO.md` §4). Today only
+   the intake *form* is offline-usable.
+2. **`clinic_mode`/Solo Mode** and the Cortex **"Next Patient"** button remain
+   unbuilt (carried from §19).
+3. **Reference-cache invalidation** by `updated_at`/version was **intentionally
+   skipped** — symptoms/doctors change monthly, refresh-on-online suffices.
+4. Session-identity sweep (pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID`).
+
+---
+
 *This document supersedes the styling guidance in sessions 33–34 and the modal
 guidance in the design direction §10.2. Architecture and creative direction are
-frozen. When in doubt, the tie-breaker order is: this doc (incl. Part H) →
-Part G → session 36 → session 35 → design direction → brief → architecture.*
+frozen. When in doubt, the tie-breaker order is: this doc (incl. Part I) →
+Part H → Part G → session 36 → session 35 → design direction → brief →
+architecture.*

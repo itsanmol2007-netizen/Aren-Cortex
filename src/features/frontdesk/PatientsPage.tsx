@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-    fetchDoctorsByHospital,
     HOSPITAL_ID,
     DOCTOR_ID,
-    type DBDoctor,
     type DBPatient,
 } from "@/lib/db";
 import { useQueue } from "./hooks/useQueue";
 import { useVisitActions } from "./hooks/useVisitActions";
 import { usePatientDirectory } from "./hooks/usePatientDirectory";
 import { usePatientHistory } from "./hooks/usePatientHistory";
+import { useCachedDoctors } from "./operational/referenceCache";
 import { WorkspaceShell } from "./components/WorkspaceShell";
 import { PatientBrowser } from "./components/patients/PatientBrowser";
 import { PatientWorkspace } from "./components/patients/PatientWorkspace";
@@ -35,7 +34,7 @@ function PatientsInner() {
     const t = useT();
     const directory = usePatientDirectory();
     const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [doctors, setDoctors] = useState<DBDoctor[]>([]);
+    const doctors = useCachedDoctors(HOSPITAL_ID).data;
 
     // The live queue rides along quietly: creating a visit from here reuses
     // the exact optimistic create/undo flow Front Desk runs on.
@@ -51,12 +50,6 @@ function PatientsInner() {
     const [createFor, setCreateFor] = useState<DBPatient | null>(null);
     const [editing, setEditing] = useState(false);
     const [timelineOpen, setTimelineOpen] = useState(false);
-
-    useEffect(() => {
-        fetchDoctorsByHospital(HOSPITAL_ID)
-            .then(setDoctors)
-            .catch((err) => console.warn("fetchDoctorsByHospital failed (non-fatal):", err));
-    }, []);
 
     const handleCreate: typeof actions.createNewVisit = async (opts) => {
         const result = await actions.createNewVisit(opts);

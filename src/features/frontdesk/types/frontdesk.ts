@@ -29,14 +29,14 @@ export type DoctorSummary = {
     queue_count: number;
 };
 
-// Doctor Requests has no backing DB table yet (per architecture doc, this is a
-// "future communication bridge" — not built). This type only ever lives in
-// client-side session state; nothing here is persisted.
+// Doctor Requests: reads from the real `doctor_requests` table once it exists
+// (see docs/Supabase Wiring TODO.md). Until then the query auto-disables and
+// the card shows a real "no requests" state — no more simulator.
 export type DoctorRequest = {
     id: string;
     doctor_name: string;
     text: string;
-    created_at: number;
+    created_at: number; // epoch ms (parsed from the row's created_at)
 };
 
 export type PatientMatch = DBPatient & {

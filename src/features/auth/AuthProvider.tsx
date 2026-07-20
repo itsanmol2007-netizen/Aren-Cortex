@@ -6,13 +6,27 @@
 //   1. a Supabase session is present (and refreshable),
 //   2. the users row exists and is_active,
 //   3. the hospital row exists and is_active.
-// Any miss — including network failure or timeout — resolves to "anon" and
-// the gate redirects to /login. Fail closed, never open.
+//
+// Failures are split by KIND, because "offline" and "rejected" are not the
+// same event:
+//   • a DEFINITIVE rejection (inactive user/hospital, no user row) fails closed
+//     — session cleared, redirect to login.
+//   • a NETWORK failure (offline / timeout) with a valid session + a cached
+//     identity keeps the receptionist working in an OFFLINE-authed state — it
+//     never ejects them to login for losing Wi-Fi — and silently re-verifies
+//     the moment connectivity returns.
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
-import { loadIdentity, signOutLocal, withTimeout } from "../../lib/auth";
+import {
+    loadIdentity,
+    signOutLocal,
+    withTimeout,
+    cacheIdentity,
+    readCachedIdentity,
+    clearCachedIdentity,
+} from "../../lib/auth";
 import type { Identity, IdentityFailure } from "../../lib/auth";
 
 export type GateNotice = IdentityFailure | "signed-out";
@@ -20,7 +34,10 @@ export type GateNotice = IdentityFailure | "signed-out";
 type AuthState =
     | { status: "checking" }
     | { status: "anon"; notice: GateNotice | null }
-    | { status: "authed"; identity: Identity };
+    // `offline` = admitted on a cached identity we could not re-verify because
+    // the network was down. Still fully authed for routing; consumers may show
+    // an offline affordance. Cleared to false once a live re-verify succeeds.
+    | { status: "authed"; identity: Identity; offline: boolean };
 
 type AuthContextValue = AuthState & {
     // Called by the login screen after it has run the full post-login check
@@ -42,6 +59,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Suppresses the SIGNED_OUT listener while we sign out deliberately
     // (gate cleanup / explicit logout) so state changes stay single-sourced.
     const deliberateSignOut = useRef(false);
+    // The signed-in auth user id, remembered so a reconnect can re-verify the
+    // right identity without another getSession round-trip.
+    const userIdRef = useRef<string | null>(null);
+
+    // Resolve identity for a live session. Shared by the initial check and the
+    // reconnect re-verify. Returns how it resolved so callers can react.
+    async function resolve(userId: string): Promise<"ok" | "offline" | "rejected"> {
+        userIdRef.current = userId;
+        const result = await loadIdentity(userId);
+        if (result.ok) {
+            cacheIdentity(result.identity);
+            setState({ status: "authed", identity: result.identity, offline: false });
+            return "ok";
+        }
+        if (result.reason === "unreachable") {
+            // Network problem — trust the last-known-good identity if we have
+            // one for THIS user rather than ejecting to login.
+            const cached = readCachedIdentity(userId);
+            if (cached) {
+                setState({ status: "authed", identity: cached, offline: true });
+                return "offline";
+            }
+            setState({ status: "anon", notice: "unreachable" });
+            return "rejected";
+        }
+        // Definitive rejection — invalidate everything and fail closed.
+        clearCachedIdentity();
+        deliberateSignOut.current = true;
+        await signOutLocal();
+        deliberateSignOut.current = false;
+        setState({ status: "anon", notice: result.reason });
+        return "rejected";
+    }
 
     useEffect(() => {
         let cancelled = false;
@@ -55,42 +105,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setState({ status: "anon", notice: null });
                     return;
                 }
-                const result = await loadIdentity(session.user.id);
-                if (cancelled) return;
-                if (result.ok) {
-                    setState({ status: "authed", identity: result.identity });
-                } else {
-                    // Definitive rejections invalidate the stored session.
-                    // "unreachable" keeps it so a reload can recover once the
-                    // network returns — but the gate still fails closed now.
-                    if (result.reason !== "unreachable") {
-                        deliberateSignOut.current = true;
-                        await signOutLocal();
-                        deliberateSignOut.current = false;
-                    }
-                    if (!cancelled) setState({ status: "anon", notice: result.reason });
-                }
+                await resolve(session.user.id);
             } catch {
                 if (!cancelled) setState({ status: "anon", notice: "unreachable" });
             }
         })();
 
-        const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+        const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === "SIGNED_OUT" && !deliberateSignOut.current) {
+                userIdRef.current = null;
+                clearCachedIdentity();
                 setState({ status: "anon", notice: "signed-out" });
             }
+            // A background token refresh that finally lands (e.g. right after
+            // reconnecting) is a good moment to confirm the identity is current.
+            if (event === "TOKEN_REFRESHED" && session) {
+                void resolve(session.user.id);
+            }
         });
+
+        // Reconnect: the instant the browser regains connectivity, re-verify.
+        // A still-valid account clears the offline flag; a since-revoked one is
+        // now caught and ejected — offline never hid a real rejection forever.
+        const onOnline = () => {
+            const uid = userIdRef.current;
+            if (uid) void resolve(uid);
+        };
+        window.addEventListener("online", onOnline);
 
         return () => {
             cancelled = true;
             sub.subscription.unsubscribe();
+            window.removeEventListener("online", onOnline);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const adoptIdentity = (identity: Identity) => setState({ status: "authed", identity });
+    const adoptIdentity = (identity: Identity) => {
+        userIdRef.current = identity.user.id;
+        cacheIdentity(identity);
+        setState({ status: "authed", identity, offline: false });
+    };
 
     const signOut = async () => {
         deliberateSignOut.current = true;
+        userIdRef.current = null;
+        clearCachedIdentity();
         await signOutLocal();
         deliberateSignOut.current = false;
         setState({ status: "anon", notice: null });

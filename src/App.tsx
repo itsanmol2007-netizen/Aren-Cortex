@@ -19,6 +19,8 @@ import type { SelectedSymptom, Medicine, Patient, PrescriptionMedicine, Vitals }
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
+import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
+import { useAuth } from "./features/auth/AuthProvider";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchSymptoms, fetchFindings,
@@ -102,6 +104,12 @@ function App() {
   const [dbReady, setDbReady] = useState(false);
   const [doctorProfile, setDoctorProfile] = useState<DBDoctor | null>(null);
   const [hospitalProfile, setHospitalProfile] = useState<DBHospital | null>(null);
+
+  // Presence heartbeat: mark this doctor "online" for reception while Cortex is
+  // open. Uses the signed-in doctor's own row (falls back to the MVP doctor id).
+  const auth = useAuth();
+  const heartbeatDoctorId = auth.status === "authed" ? (auth.identity.doctor?.id ?? DOCTOR_ID) : null;
+  useDoctorHeartbeat(heartbeatDoctorId);
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);

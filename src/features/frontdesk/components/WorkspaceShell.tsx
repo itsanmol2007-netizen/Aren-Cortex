@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Globe, ChevronDown, Check, Clock } from "lucide-react";
+import { Globe, ChevronDown, Check, Clock, UserRound } from "lucide-react";
 import { fetchHospital, HOSPITAL_ID, type DBHospital } from "@/lib/db";
 import { NavRail } from "./NavRail";
+import { OperationalBanner } from "./OperationalBanner";
 import { FrontDeskStyles } from "./FrontDeskStyles";
+import { useConnectivityLog } from "../operational/eventLog";
+import { initials } from "../utils";
+import { useAuth } from "../../auth/AuthProvider";
 import { useI18n, useT } from "../i18n/i18n";
 import { LANGS } from "../i18n/strings";
 import arenLogo from "@/assets/aren-logo.png";
@@ -20,6 +24,18 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     const [hospital, setHospital] = useState<DBHospital | null>(null);
     const [now, setNow] = useState(() => new Date());
     const [navOpen, setNavOpen] = useState(() => localStorage.getItem(NAV_STORAGE_KEY) === "1");
+
+    // The real signed-in person — replaces the old hardcoded "RS" placeholder
+    // in the header and the nav rail. Empty when the name is missing; the
+    // consuming components fall back to a neutral label/icon.
+    const auth = useAuth();
+    const identity = auth.status === "authed" ? auth.identity : null;
+    const userName = identity?.user.full_name?.trim() ?? "";
+    const userInitials = userName ? initials(userName) : "";
+
+    // Write the real connectivity history (session start / offline / online)
+    // to the local event log. Mounted once here so it covers every page.
+    useConnectivityLog();
 
     const toggleNav = () => {
         setNavOpen((open) => {
@@ -69,12 +85,23 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             }}
         >
             <FrontDeskStyles />
-            <Header hospital={hospital} now={now} navOpen={navOpen} onToggleNav={toggleNav} />
+            <Header
+                hospital={hospital}
+                now={now}
+                navOpen={navOpen}
+                onToggleNav={toggleNav}
+                userName={userName}
+                userInitials={userInitials}
+            />
+            {/* Proactive operational voice: a slim band that speaks up when
+                connectivity (or, later, another operational signal) changes —
+                spans every reception page, clears itself on recovery. */}
+            <OperationalBanner />
             {/* The rail and the workspace share a flex row: as the rail's width
                 interpolates the content shifts right naturally — one continuous
                 transformation, not a drawer sliding on top. */}
             <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
-                <NavRail expanded={navOpen} />
+                <NavRail expanded={navOpen} userName={userName} userInitials={userInitials} />
                 <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
             </div>
         </div>
@@ -86,11 +113,15 @@ function Header({
     now,
     navOpen,
     onToggleNav,
+    userName,
+    userInitials,
 }: {
     hospital: DBHospital | null;
     now: Date;
     navOpen: boolean;
     onToggleNav: () => void;
+    userName: string;
+    userInitials: string;
 }) {
     const t = useT();
     const time = now.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
@@ -155,7 +186,7 @@ function Header({
                 <div className="flex-1" />
 
                 <div className="flex shrink-0 items-center gap-[14px]">
-                    <div className="whitespace-nowrap text-[13px] font-semibold text-white/90">{hospital?.name ?? "Clinic"}</div>
+                    <div className="whitespace-nowrap text-[15px] font-bold tracking-[-0.01em] text-white">{hospital?.name ?? "Clinic"}</div>
                     <div className="h-6 w-px bg-white/10" />
                     <div className="flex items-center gap-[6px] whitespace-nowrap text-[12.5px] font-medium text-white/55">
                         <Clock size={13.5} strokeWidth={2} />
@@ -165,8 +196,11 @@ function Header({
                     </div>
                     <div className="h-6 w-px bg-white/10" />
                     <LanguageDropdown />
-                    <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-[rgba(99,102,241,0.28)] text-[12px] font-bold text-[#c7d2fe]">
-                        RS
+                    <div
+                        title={userName || t("navUser")}
+                        className="flex h-[34px] min-w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-[rgba(99,102,241,0.28)] px-[7px] text-[12px] font-bold text-[#c7d2fe]"
+                    >
+                        {userInitials || <UserRound size={16} strokeWidth={2.2} />}
                     </div>
                 </div>
             </div>

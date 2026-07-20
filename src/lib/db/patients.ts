@@ -163,10 +163,15 @@ export type DBDoctor = {
     hospital_id: string | null;
     avatar_url: string | null;
     availability_status: string | null;
+    // Presence heartbeat (ISO timestamp). Optional until the DB column + the
+    // doctor-side heartbeat exist — see docs/Supabase Wiring TODO.md. When the
+    // column is added, include `last_seen` in DOCTOR_COLUMNS and reception
+    // presence lights up automatically.
+    last_seen?: string | null;
 };
 
 const DOCTOR_COLUMNS =
-    "id, name, specialization, qualification, registration_number, phone, signature_image_url, hospital_id, avatar_url, availability_status";
+    "id, name, specialization, qualification, registration_number, phone, signature_image_url, hospital_id, avatar_url, availability_status, last_seen";
 
 export async function fetchDoctor(doctorId: string): Promise<DBDoctor | null> {
     const { data, error } = await supabase
@@ -186,6 +191,82 @@ export async function fetchDoctorsByHospital(hospitalId: string): Promise<DBDoct
         .order("name");
     if (error) throw new Error(`fetchDoctorsByHospital: ${error.message}`);
     return data ?? [];
+}
+
+// Presence heartbeat writer — the doctor's own app calls this every ~30s while
+// open (RLS lets a doctor update only their own row). Best-effort: a failed
+// beat (offline) is a no-op; the next one recovers presence.
+export async function updateDoctorLastSeen(doctorId: string): Promise<void> {
+    const { error } = await supabase
+        .from("doctors")
+        .update({ last_seen: new Date().toISOString() })
+        .eq("id", doctorId);
+    if (error) throw new Error(`updateDoctorLastSeen: ${error.message}`);
+}
+
+// ── DOCTOR REQUESTS ────────────────────────────────────────────────────────────
+// Real communication bridge from the doctor's workspace to reception. The
+// `doctor_requests` table may not exist yet in a given environment; these calls
+// detect that (missing relation / not in schema cache) and report it so the UI
+// can quietly stop polling rather than erroring every cycle. See
+// docs/Supabase Wiring TODO.md for the table definition + realtime.
+export type DoctorRequestRow = {
+    id: string;
+    doctor_name: string | null;
+    message: string | null;
+    status: string | null;
+    created_at: string | null;
+};
+
+function isMissingRelation(err: { code?: string; message?: string }): boolean {
+    const code = err.code ?? "";
+    const msg = err.message ?? "";
+    return (
+        code === "42P01" || // undefined_table
+        code === "PGRST205" || // PostgREST: table not found in schema cache
+        /does not exist|could not find the table|schema cache/i.test(msg)
+    );
+}
+
+export async function fetchDoctorRequests(
+    hospitalId: string
+): Promise<{ rows: DoctorRequestRow[]; unavailable: boolean }> {
+    const { data, error } = await supabase
+        .from("doctor_requests")
+        .select("id, doctor_name, message, status, created_at")
+        .eq("hospital_id", hospitalId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+    if (error) {
+        return { rows: [], unavailable: isMissingRelation(error) };
+    }
+    return { rows: (data as DoctorRequestRow[]) ?? [], unavailable: false };
+}
+
+export async function acknowledgeDoctorRequest(id: string): Promise<void> {
+    const { error } = await supabase
+        .from("doctor_requests")
+        .update({ status: "acknowledged", acknowledged_at: new Date().toISOString() })
+        .eq("id", id);
+    if (error && !isMissingRelation(error)) throw new Error(`acknowledgeDoctorRequest: ${error.message}`);
+}
+
+// Realtime subscription to this hospital's doctor_requests. `onChange` fires on
+// any insert/update/delete so reception refreshes instantly (polling stays as a
+// safety net). Returns an unsubscribe function; call it on unmount. Supabase
+// channel names must be unique per subscription, hence the timestamp suffix.
+export function subscribeDoctorRequests(hospitalId: string, onChange: () => void): () => void {
+    const channel = supabase
+        .channel(`doctor_requests:${hospitalId}:${Date.now()}`)
+        .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "doctor_requests", filter: `hospital_id=eq.${hospitalId}` },
+            () => onChange()
+        )
+        .subscribe();
+    return () => {
+        void supabase.removeChannel(channel);
+    };
 }
 
 // ── HOSPITAL / CLINIC PROFILE ──────────────────────────────────────────────────

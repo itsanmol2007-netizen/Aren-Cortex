@@ -88,8 +88,23 @@ select.fd-field { cursor: pointer; }
 }
 .aren-rise { animation: aren-rise 300ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
 
+/* Modal entrance (ModalShell): the backdrop fades, the panel lifts and settles.
+   Subtle enough to read as "arrived", never a bounce. */
+@keyframes aren-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.aren-overlay-in { animation: aren-overlay-in 170ms ease-out both; }
+
+@keyframes aren-modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.aren-modal-in { animation: aren-modal-in 230ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .aren-breath, .aren-pulse, .aren-rise { animation: none !important; }
+  .aren-breath, .aren-pulse, .aren-rise,
+  .aren-overlay-in, .aren-modal-in { animation: none !important; }
 }
 `;
 

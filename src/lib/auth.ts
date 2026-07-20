@@ -152,3 +152,49 @@ export async function signOutLocal(): Promise<void> {
         // are irrelevant to gating.
     }
 }
+
+// ── Last-known-good identity cache ──────────────────────────────────────────
+//
+// The Supabase session survives a refresh offline, but re-verifying the
+// identity (users + hospitals rows) needs the network. Without a cache, an
+// offline refresh would fail that verification and eject the receptionist to
+// login — unacceptable mid-clinic. So on every SUCCESSFUL verification we stash
+// the resolved identity here, keyed by auth user id. When verification later
+// fails for a NETWORK reason (offline / timeout), the gate trusts this cache
+// instead of logging out, and silently re-verifies once connectivity returns.
+// A DEFINITIVE rejection (inactive user/hospital) always clears it.
+
+const IDENTITY_CACHE_KEY = "aren.identity.v1";
+
+export function cacheIdentity(identity: Identity): void {
+    try {
+        localStorage.setItem(
+            IDENTITY_CACHE_KEY,
+            JSON.stringify({ userId: identity.user.id, identity })
+        );
+    } catch {
+        /* storage unavailable — cache is a bonus, never required */
+    }
+}
+
+export function readCachedIdentity(userId: string): Identity | null {
+    try {
+        const raw = localStorage.getItem(IDENTITY_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { userId?: string; identity?: Identity };
+        // Only honour a cache that belongs to the currently-signed-in user, so
+        // a previous account on this machine can never leak through.
+        if (parsed?.userId === userId && parsed.identity) return parsed.identity;
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+export function clearCachedIdentity(): void {
+    try {
+        localStorage.removeItem(IDENTITY_CACHE_KEY);
+    } catch {
+        /* no-op */
+    }
+}

@@ -40,14 +40,22 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
 
     return createPortal(
         <div
-            className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[rgba(17,20,35,0.42)] p-[5vh_20px_24px] backdrop-blur-[6px]"
+            className="aren-overlay-in fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto p-[5vh_20px_24px] backdrop-blur-[8px]"
+            style={{
+                // A cooler ink wash overall, warmed by a faint dawn glow rising
+                // from the lower-centre so the modal sits in AREN's own weather.
+                background:
+                    "radial-gradient(1100px 520px at 50% 118%, rgba(244,114,182,0.10), transparent 62%)," +
+                    "radial-gradient(900px 480px at 50% -14%, rgba(124,92,240,0.10), transparent 60%)," +
+                    "rgba(15,18,32,0.46)",
+            }}
             onMouseDown={(e) => { pressedOnBackdrop.current = e.target === e.currentTarget; }}
             onClick={(e) => { if (e.target === e.currentTarget && pressedOnBackdrop.current) onClose(); }}
         >
             <div
                 role="dialog"
                 aria-modal="true"
-                className="relative w-full rounded-[18px] bg-white shadow-[0_32px_80px_rgba(13,18,38,0.32),0_8px_28px_rgba(124,92,240,0.10)]"
+                className="aren-modal-in relative w-full rounded-[18px] border border-white/70 bg-white shadow-[0_36px_90px_rgba(13,18,38,0.34),0_12px_34px_rgba(124,92,240,0.12),0_2px_10px_rgba(244,114,182,0.08)] ring-1 ring-[rgba(124,92,240,0.05)]"
                 style={{ maxWidth }}
             >
                 {/* Header zone clips its own decoration (rounded top) so the panel

@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-    fetchDoctorsByHospital,
     HOSPITAL_ID,
     DOCTOR_ID,
-    type DBDoctor,
     type DBPatient,
     type TodayVisit,
 } from "@/lib/db";
 import { useQueue } from "./hooks/useQueue";
 import { useVisitActions } from "./hooks/useVisitActions";
+import { useCachedDoctors } from "./operational/referenceCache";
 import { PatientLauncher } from "./components/PatientLauncher";
 import { StatStrip } from "./components/StatStrip";
 import { QueuePanel } from "./components/QueuePanel";
@@ -35,16 +34,12 @@ function FrontDeskInner() {
     const { visits, setVisits, loading, refetch } = useQueue(HOSPITAL_ID);
     const actions = useVisitActions({ visits, setVisits, refetch });
 
-    const [doctors, setDoctors] = useState<DBDoctor[]>([]);
+    // Cache-fresh doctor list: instant from this computer's copy, refreshed
+    // whenever online — so the intake dropdown is never empty during an outage.
+    const doctors = useCachedDoctors(HOSPITAL_ID).data;
     const [openVisit, setOpenVisit] = useState<TodayVisit | null>(null);
     const [createState, setCreateState] = useState<CreateState | null>(null);
     const [now, setNow] = useState(() => new Date());
-
-    useEffect(() => {
-        fetchDoctorsByHospital(HOSPITAL_ID)
-            .then(setDoctors)
-            .catch((err) => console.warn("fetchDoctorsByHospital failed (non-fatal):", err));
-    }, []);
 
     useEffect(() => {
         const t = setInterval(() => setNow(new Date()), 20000);
@@ -75,7 +70,7 @@ function FrontDeskInner() {
                         onCancel={actions.cancelVisit}
                         selectedVisitId={openVisit?.visit_id ?? null}
                     />
-                    <Sidebar doctors={doctors} visits={visits} now={now} />
+                    <Sidebar doctors={doctors} visits={visits} now={now} hospitalId={HOSPITAL_ID} />
                 </div>
             </div>
 

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
-import { fetchPatientVisitStats, fetchSymptoms, searchPatients, type DBDoctor, type DBPatient, type DBSymptom } from "@/lib/db";
+import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient, type DBSymptom } from "@/lib/db";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
+import { useCachedSymptoms } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
 import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
 
@@ -50,13 +51,15 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const phoneRef = useRef<HTMLInputElement>(null);
     const symptomRef = useRef<HTMLInputElement>(null);
     const doctorRef = useRef<HTMLSelectElement>(null);
+    // Phone sits directly under the name so an existing patient surfaces the
+    // instant both are typed — before age/gender are even asked.
     const fieldOrder: React.RefObject<HTMLElement | null>[] = existing
         ? [symptomRef, doctorRef]
-        : [nameRef, ageRef, genderRef, phoneRef, symptomRef, doctorRef];
+        : [nameRef, phoneRef, ageRef, genderRef, symptomRef, doctorRef];
 
     useEffect(() => {
         // Land the cursor where typing starts: the first empty field.
-        const first = existing ? symptomRef : (prefillName ? ageRef : nameRef);
+        const first = existing ? symptomRef : (prefillName ? phoneRef : nameRef);
         first.current?.focus();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -235,25 +238,9 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     className={fieldClass(errors.name)}
                                 />
                             </Field>
-                            {/* Age is a tiny number — it gets a tiny box (fixed 128px
-                                column), gender fills the rest of the row. */}
-                            <Field icon={<Cake size={13} />} label={t("fldAge")} required error={errors.age ? t("errRequired") : undefined}>
-                                <AgeInput
-                                    inputRef={ageRef}
-                                    value={age}
-                                    onChange={(v) => { setAge(v); if (v) setErrors((er) => ({ ...er, age: false })); }}
-                                    error={!!errors.age}
-                                    placeholder={t("phAge")}
-                                />
-                            </Field>
-                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
-                                <GenderControl
-                                    groupRef={genderRef}
-                                    value={gender}
-                                    onChange={(v) => { setGender(v); setErrors((er) => ({ ...er, gender: false })); }}
-                                    error={!!errors.gender}
-                                />
-                            </Field>
+                            {/* Phone right under the name: the moment both are typed,
+                                the duplicate banner surfaces an existing patient —
+                                no need to fill age/gender first. */}
                             <Field
                                 className="col-span-2"
                                 icon={<Phone size={13} />}
@@ -270,6 +257,25 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     }}
                                     error={!!errors.phone}
                                     placeholder={t("phPhone")}
+                                />
+                            </Field>
+                            {/* Age is a tiny number — it gets a tiny box (fixed 120px
+                                column), gender fills the rest of the row. */}
+                            <Field icon={<Cake size={13} />} label={t("fldAge")} required error={errors.age ? t("errRequired") : undefined}>
+                                <AgeInput
+                                    inputRef={ageRef}
+                                    value={age}
+                                    onChange={(v) => { setAge(v); if (v) setErrors((er) => ({ ...er, age: false })); }}
+                                    error={!!errors.age}
+                                    placeholder={t("phAge")}
+                                />
+                            </Field>
+                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
+                                <GenderControl
+                                    groupRef={genderRef}
+                                    value={gender}
+                                    onChange={(v) => { setGender(v); setErrors((er) => ({ ...er, gender: false })); }}
+                                    error={!!errors.gender}
                                 />
                             </Field>
                         </div>
@@ -351,18 +357,12 @@ function SymptomPicker({
     error?: boolean;
 }) {
     const t = useT();
-    const [catalog, setCatalog] = useState<DBSymptom[]>([]);
+    // Cache-fresh: the catalog is served instantly from this computer's last
+    // copy (so the picker works offline) and quietly refreshed while online.
+    const catalog = useCachedSymptoms().data;
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        let cancelled = false;
-        fetchSymptoms()
-            .then((rows) => { if (!cancelled) setCatalog(rows); })
-            .catch((err) => console.warn("fetchSymptoms failed (non-fatal):", err));
-        return () => { cancelled = true; };
-    }, []);
 
     // A completed click anywhere outside the picker closes the catalog.
     // Deliberately `click`, not `mousedown` — see the component comment.

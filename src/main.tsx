@@ -5,6 +5,7 @@ import App from "./App";
 import { FrontDeskPage } from "./features/frontdesk/FrontDeskPage";
 import { PatientsPage } from "./features/frontdesk/PatientsPage";
 import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
+import { ClinicStatusPage } from "./features/frontdesk/ClinicStatusPage";
 import { AuthProvider } from "./features/auth/AuthProvider";
 import { RequireAuth, RequireRole, HomeRedirect } from "./features/auth/RequireAuth";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -49,6 +50,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/app/frontdesk" element={<FrontDeskPage />} />
                 <Route path="/app/patients" element={<PatientsPage />} />
                 <Route path="/app/printrx" element={<PrintRxPage />} />
+                <Route path="/app/clinicstatus" element={<ClinicStatusPage />} />
               </Route>
               <Route path="/app" element={<HomeRedirect />} />
               <Route path="/" element={<HomeRedirect />} />
