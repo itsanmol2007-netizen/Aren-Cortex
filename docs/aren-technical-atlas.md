@@ -1,11 +1,13 @@
 # AREN — Technical Atlas
 
 *A star chart of the codebase for whoever flies it next.*
-Last surveyed: 2026-07-21 · Branch: `master` · Includes the auth layer, Clinic Status, and the reception operational layer (presence, cache, event log, real doctor requests).
+Last surveyed: 2026-07-21 · Branch: `master` · Includes the auth layer, Clinic Status, the reception operational layer (presence, cache, event log, real doctor requests), **and a verified Cortex survey**.
 
 This document is deliberately **technical, not philosophical** — for product philosophy, design doctrine and workflow reasoning, open `aren-frontdesk-source-of-truth.md`. This atlas answers one question: *what files exist, and what does each one do*, so a CTO or full-stack developer can land, orient, and change things without archaeology.
 
-Confidence note: the **reception suite** (`src/features/frontdesk/`), **prescription pipeline**, and **data layer** summaries below are verified from the code itself. The Cortex consult internals (`src/components/`, most of `src/features/*`) are mature and stable; their one-liners come from file naming and the architecture handoffs, not a fresh line-by-line read.
+Confidence note: as of the 2026-07-21 Cortex pass, **everything below is verified from the code** — reception suite, prescription pipeline, data layer, and now the Cortex consult internals (`src/App.tsx`, `src/components/`, `src/features/*`, `src/styles/*`) which were previously summarized from file naming alone. That pass corrected several wrong entries; they are marked ⚠ below.
+
+**Going deeper on Cortex:** this atlas gives the map. `aren-cortex-atlas.md` is the Cortex-only companion — consult lifecycle, the intelligence layer, the three styling vocabularies, and the defect ledger. Read it before any doctor-facing work.
 
 ---
 
@@ -46,8 +48,8 @@ Defined in `src/lib/db/reference.ts`:
 
 **Scripts** (`package.json`):
 - `npm run dev` → `http://127.0.0.1:5173`
-- `npm run build` = `tsc -b && vite build` — **currently blocked**: ~46 *pre-existing* type errors in legacy files (`src/App.tsx`, `src/components/PreviewPanel.tsx`, `src/data/mockData.ts`). The app runs fine in dev because esbuild skips typechecking. Any new work must add **zero** new errors; filter with:
-  `npx tsc -b 2>&1 | grep -iE 'frontdesk|lib/db|printrx'`
+- `npm run build` = `tsc -b && vite build` — **currently blocked**. Re-counted 2026-07-21: **exactly 46 errors in exactly 3 files** — `src/data/mockData.ts` (42: test literals missing `id`/`category`, plus a `rare` property `types.ts` doesn't declare), `src/components/PreviewPanel.tsx` (2: reads `t.rare`), `src/App.tsx` (2: `selectedFindings.map(f => f.id)` on a `string[]` — a **real runtime bug**, not just a type complaint; see `aren-cortex-atlas.md` §10.2). The app runs fine in dev because esbuild skips typechecking. **This is a small fix and it would unblock production builds.** Any new work must add **zero** new errors; filter with:
+  `npx tsc -b 2>&1 | grep -v mockData`
 - Headless verification: system Chrome — `chrome.exe --headless=new --disable-gpu --no-sandbox --virtual-time-budget=8000 --dump-dom <url>` (or `--screenshot=`). For interactive flows, drive CDP over `--remote-debugging-port` with Node's native WebSocket (no npm packages needed).
 
 **Env** (`.env`, not committed): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
@@ -87,11 +89,31 @@ src/lib/
     │                    fetchPrescriptionRenderData (one prescription shaped exactly
     │                    for ReviewModal/PrescriptionDocument — medicines with names +
     │                    composition labels, symptoms, findings, tests, vitals, doctor).
-    └── intelligence.ts  Cortex clinical engine: saveConsult (writes prescription +
-                         prescription_medicines + diagnostic_orders + completes visit),
-                         learning-loop / ranking edge-function calls. Reception never
+    └── intelligence.ts  ★ Cortex clinical engine (427 lines). Reception never
                          imports this.
+                         · rankMedicines — POSTs to the `rank-compositions` Supabase
+                           EDGE FUNCTION (symptom IDs + intensity, finding IDs,
+                           doctorId, specialization) → scored medicines w/ dosage
+                           defaults. THE SCORING MATH IS SERVER-SIDE AND ITS SOURCE
+                           IS NOT IN THIS REPO.
+                         · runLearningLoop — same endpoint, action:"learn"; bumps
+                           the doctor's bias for what they picked vs what ranked.
+                         · saveConsult — completes the visit + writes prescriptions,
+                           prescription_medicines, diagnostic_orders.
+                         · fetchFrequentPicks — co-prescription hints resolved to
+                           the doctor's own preferred medicine per composition.
+                         · favourites (fetchDoctorFavourites / fetchFavouriteMedicines
+                           / toggleFavouriteMedicine) on doctor_medicine_bias.
+                         · logCoprescriptionObservations — pairwise composition log
+                           after each save (feeds future hints).
+                         · searchMedicinesDB — free-text medicine lookup.
 ```
+
+`reference.ts` also holds the Cortex ranking RPCs: `fetchProbableFindings`
+(`rank_probable_findings`, drives FindingsPanel), `fetchSnapshotSuggestions`
+(clinical snapshots), and two that are **written but called by nobody** —
+`fetchRankedPanels` (`rank_panels`) and `fetchDynamicTests`. Those are the
+ready-made hooks for a real Investigations feature.
 
 **Hydration pattern**: no SQL joins — fetch parent rows, then `IN (...)` fetches for related tables, aggregate in memory. Fine at clinic scale; revisit if a table outgrows a few thousand rows.
 
@@ -112,6 +134,13 @@ src/lib/
 | `doctors` | id, name, specialization, qualification, registration_number, phone, signature_image_url, avatar_url, availability_status, hospital_id, **last_seen** | `last_seen` (timestamptz) is the presence heartbeat — reception derives Online/Away/Offline from it. |
 | `doctor_requests` | id, hospital_id, doctor_id, doctor_name, message, status (`pending`/`acknowledged`), created_at, acknowledged_at | Real doctor→reception bridge (RLS by hospital, Realtime enabled). Replaces the old session mock. |
 | `hospitals` | id, name, address, phone, email, city, state, tagline, logo_url, accent_color, is_branded | Letterhead branding source. |
+| `doctor_medicine_bias` | doctor_id, composition_id, medicine_id, selection_count, is_favourite, updated_at | **Cortex personalization.** Upsert key `(doctor_id, composition_id, medicine_id)`. Favourites + "which brand does this doctor reach for". |
+| `composition_coprescription_hints` | trigger_tag_id, hint_composition_id, hint_label, clinical_reason, priority, is_global | Drives FrequentPicksPanel. |
+| `symptom_tag_map` | symptom_id, tag_id | Symptom → tag. Queried **inline in App.tsx** — the one place a component touches Supabase directly. |
+| `coprescription_observations` | doctor_id, visit_id, primary_composition_id, coprescribed_composition_id, tag_signature | Written after every save (all pairs). Raw material for future hints. |
+| `symptom_cluster_test_hints` | trigger_tag_id, test_name, test_group, clinical_reason, priority | Read by `fetchDynamicTests` — which nothing calls. |
+| `clinical_snapshots` + `snapshot_symptoms` / `snapshot_findings` | id, name, description, tags | Named bundles of symptoms+findings applied in one click (Ctrl+Z undoes). |
+| `medicine_composition_map` | medicine_id, composition_id, is_primary | Brand ⇄ molecule. |
 
 (`doctor_requests` now exists and is live — see the table above. The old
 "session-local mock / Simulate button" is gone.)
@@ -137,10 +166,15 @@ public/aren-nebula.svg  The shared header "sky" texture.
 ```
 src/main.tsx          THE router + global providers (QueryClient, sonner Toaster
                       bottom-right) + all legacy CSS imports (see layer trap, §6).
-src/App.tsx           Cortex's entire consult workspace in one large component:
-                      patient/visit state, symptoms→findings→medicines flow,
-                      internal sidebar-page switching, ReviewModal wiring,
-                      saveConsult call. (Owns most of the 46 legacy tsc errors.)
+src/App.tsx     950   Cortex's ENTIRE consult workspace in one component: ~30
+                      useState hooks (reference data, consult, intelligence,
+                      overlays), 3 effects (boot Promise.all of 7 calls; 300ms
+                      debounced persist+rank; 500ms debounced frequent picks),
+                      every handler, internal sidebar-page switching, ReviewModal
+                      wiring, saveConsult. Symptoms/findings/tests are held as
+                      display NAMES and converted to IDs at the edges — the root
+                      of two live bugs. Owns 2 of the 46 tsc errors.
+                      Full anatomy: aren-cortex-atlas.md §2.
 src/types.ts          Shared UI types: Medicine, PrescriptionMedicine (UI display
                       fields + DB persistence fields), Vitals, SelectedSymptom, Test…
 src/styles.css        Tailwind v4 entry (`@import "tailwindcss"`).
@@ -152,46 +186,99 @@ src/data/testsCatalogue.ts  Static investigations catalog for TestsPanel.
 src/assets/           aren-logo.png (color), aren-logo-w.png (white), nebula svg.
 ```
 
-### 4.3 Cortex consult components — `src/components/` *(summaries from naming + handoffs)*
+### 4.3 Cortex consult components — `src/components/` *(verified 2026-07-21; line counts real)*
 
 ```
-WorkspaceHeader.tsx      Ink header band of Cortex.
-GlobalLogoTrigger.tsx    Logo button that opens the Cortex sidebar.
-PatientModal.tsx         Patient intake/selection at consult start.
-PatientHeader.tsx        Current patient strip inside the consult.
-ActiveConsultGuard.tsx   Guards against losing an in-progress consult
-                         (draft/referred/discarded transitions).
-ChipSearchPanel.tsx      Symptom chip search/selection panel.
-Tag.tsx                  The chip/tag primitive.
-FindingsPanel.tsx        Probable findings (ranked) selection.
-VitalsStrip.tsx          BP/pulse/temp/SpO₂/weight inputs.
-MedicineSuggestions.tsx  Ranked medicine suggestions for selected findings.
-FrequentPicksPanel.tsx   Doctor's frequently-picked medicines.
-MedicineInspector.tsx    Dosage/frequency/duration/instructions editor for one med.
-SelectedMedicinesBar.tsx Bar of currently selected medicines.
-PrescriptionPanel.tsx    The prescription being assembled.
-TestsPanel.tsx           Investigations picker (uses testsCatalogue).
-PreviewPanel.tsx         Live consult preview (legacy tsc-error hotspot).
-ReviewModal.tsx          ★ THE prescription review/print surface — see §5.
-ActionButton.tsx         Shared button primitive.
-ComingSoonPage.tsx       Placeholder for unbuilt Cortex pages.
+ChipSearchPanel.tsx 524  Symptom entry. 280px panel, PORTAL dropdown positioned
+                         from a measured DOMRect, fuzzy filter, clinical-snapshot
+                         suggestions inline. CSS classes + inline styles.
+FindingsPanel.tsx   617  Findings entry + probable findings (RPC-ranked), grouped
+                         browse, portal dropdown. ⚠ Inline styles + CSS vars —
+                         NOT Tailwind, despite what the s31 doc says.
+Tag.tsx             205  The chip primitive; right-click → intensity menu.
+MedicineSuggestions 260  Ranked medicine list, search, match %, favourite star.
+FrequentPicksPanel  230  Co-prescription hints + favourites. Tailwind.
+MedicineInspector   208  One medicine's dosage / M-A-E-N slots / duration / notes /
+                         SOS. Also the confirm step for a staged medicine.
+SelectedMedicinesBar 74  The assembled prescription as cards (.smb-*).
+PreviewPanel.tsx    174  ⚠ This is the Tests & Lab panel (name is a leftover) and
+                         it renders data/mockData.ts. Holds "Review Prescription".
+PatientHeader.tsx   432  Consult topbar: identity, 5 vitals w/ warn thresholds,
+                         two-step Cancel, scrolling past-visit rail (Repeat Rx).
+PatientModal.tsx    277  Patient search/create. Non-dismissable until a patient
+                         is loaded (onClose becomes a no-op).
+ActiveConsultGuard  237  Refer / Draft / Discard on patient switch. The only
+                         Cortex component that writes visit status outside
+                         saveConsult. Tailwind.
+ReviewModal.tsx     733  ★ THE prescription review/print surface — see §5. Tailwind.
+GlobalLogoTrigger   103  App-level clone of the topbar logo so it stays clickable
+                         above overlays. Gated on sidebarOpen AND an overlay
+                         being open — do not ungate (§6.10).
+WorkspaceHeader.tsx  60  Header for feature pages (.ws-*).
+ComingSoonPage.tsx   32  Placeholder shell; the fallback for every unbuilt page.
+ActionButton.tsx     15  Button primitive (used only by PatientHeader).
+
+DEAD — no importers anywhere:
+TestsPanel.tsx      220  A newer tests picker on data/testsCatalogue.ts, never wired.
+PrescriptionPanel    81
+VitalsStrip.tsx      35  (vitals live inside PatientHeader)
 ```
 
-### 4.4 Cortex feature pages — `src/features/` *(each = one sidebar page + its CSS)*
+### 4.4 Cortex feature pages — `src/features/` ⚠ *(mostly empty — corrected 2026-07-21)*
 
 ```
-sidebar/       Sidebar.tsx + SidebarNav.tsx + sidebar.css — Cortex's internal nav
-               (SidebarPage type drives App.tsx's page switching); ComingSoonPage.
-patients/      Cortex's OWN patients records pages (PatientsPage/PatientsList/
-               PatientRecord + 8 css files). NOT the routed /app/patients.
-prescriptions/ PrescriptionsPage.tsx — doctor-side prescriptions list.
-investigations/ InvestigationsPage.tsx — diagnostics overview.
-communication/ CommunicationPage.tsx — placeholder/mock.
-clinic/        ClinicPage.tsx — clinic profile page.
-practice/      PracticePage.tsx — practice stats page.
-settings/      SettingsPage.tsx — doctor settings.
-support/       SupportPage.tsx — support/help page.
+sidebar/       Sidebar.tsx (203) + SidebarNav.tsx (264) + sidebar.css (587) —
+               Cortex's internal nav. The nav registry is SidebarNav's `items`
+               array. Logout wired here via useLogout(). Its ComingSoonPage.tsx
+               is an ORPHANED DUPLICATE — App imports components/ComingSoonPage.
+patients/      Cortex's OWN patient records: PatientsPage (364) / PatientsList
+               (524) / PatientRecord (902) + 8 css files (~3.5k lines). NOT the
+               routed /app/patients. Its "commonly prescribed" panel is a
+               hardcoded PLACEHOLDER_MEDICINES array.
+
+prescriptions/ ⚠ ZERO-BYTE STUB — .tsx and .css both empty, no importer.
+investigations/⚠ ZERO-BYTE STUB.
+communication/ ⚠ ZERO-BYTE STUB.
+clinic/        ⚠ ZERO-BYTE STUB.
+practice/      ⚠ ZERO-BYTE STUB.
+settings/      ⚠ ZERO-BYTE STUB.
+support/       ⚠ ZERO-BYTE STUB.
+               (Earlier revisions of this atlas described these as built pages.
+               They are 14 empty files; every one of those nav entries lands on
+               ComingSoonPage.)
 ```
+
+### 4.4b Cortex styling — `src/styles/` *(all global, all UNLAYERED — the §6.1 trap)*
+
+Eleven stylesheets imported in `main.tsx`, ~5.9k lines total. These are alive and
+load-bearing for Cortex, not legacy dead weight.
+
+```
+base.css             189  ★ THE DESIGN TOKENS (:root vars: --bg/--text/--blue/
+                          --line/--radius…), reset, Inter typography, and raw
+                          input/select/textarea/label/h2/h3 styling — the cause
+                          of the layer trap. Also .toast + per-panel focus glows
+                          (symptoms pink · findings teal · meds blue · tests violet).
+layout.css          1223  .app-shell/.workflow/.main-column/.two-column-row/
+                          .medicine-workspace/.panel + the whole .tb-* topbar.
+components-modals   1252  .mi-* (medicine inspector) + patient modal/duplicates.
+components-panels    582  .findings-*, tests panel internals, .finding-chip.
+components-medicines 507  .medicine-suggestion-list, .lib-row, .rank, .match.
+components-base      481  .chip-panel, .search-box, .icon-button, shared atoms.
+past-visit.css       454  .pv-* past-visit card.
+components-bar       283  .smb-* selected medicines bar.
+components-picks     279  .fp-* frequent picks.
+workspace-header     278  .ws-* feature-page header.
+sidebar/sidebar.css  587  the whole sidebar.
+rx-modal.css           0  empty AND unimported.
+```
+
+Cortex mixes **three styling vocabularies**: these global CSS classes (dominant),
+inline `style={{}}` (heavy in FindingsPanel/ChipSearchPanel/PrescriptionDocument),
+and four Tailwind islands (ReviewModal, ActiveConsultGuard, FrequentPicksPanel,
+PrintFormatSelector). Do not convert between them without an explicit decision —
+see `aren-cortex-atlas.md` §7. Cortex is **desktop-only** (`body{min-width:1120px}`),
+**not localized**, and uses its own `.toast`, not the app-wide sonner Toaster.
 
 ### 4.5 The prescription pipeline — `src/features/prescription/` ★ single source of truth
 
@@ -387,11 +474,23 @@ app.js                Ancient pre-React prototype data. Dead.
 server.mjs            Tiny node static-file server; not referenced by any script.
 original_chip.txt     Backup of an old chip component. Dead.
 src-tree.txt          Stale UTF-16 `tree` dump. Dead (this atlas supersedes it).
-src/styles/*.css      Cortex's legacy stylesheets, imported UNLAYERED in main.tsx —
-                      alive and load-bearing for Cortex, and the cause of the
-                      layer trap (§6). rx-modal.css is currently unimported.
-docs/aren-session33-handoff.md  Stale on styling; history only.
 ```
+
+⚠ Note `src/styles/*.css` is **not** dark matter — see §4.4b. It is legacy in
+origin but alive and load-bearing for Cortex (and the cause of the layer trap,
+§6.1). Only `rx-modal.css` (0 bytes, unimported) is actually dead.
+
+Dead code **inside** Cortex, listed here so nobody revives it by accident:
+`components/TestsPanel.tsx` (220 — a better tests picker on `testsCatalogue.ts`,
+never wired), `components/PrescriptionPanel.tsx` (81),
+`components/VitalsStrip.tsx` (35), `features/sidebar/ComingSoonPage.tsx`
+(orphaned duplicate), the 14 zero-byte files under `features/{prescriptions,
+investigations,communication,practice,clinic,settings,support}/`, and the
+`lib/db` exports `fetchDraftVisits` / `fetchVisitWithDetails` (no callers).
+
+Stale docs (history only): `docs/aren-session33-handoff.md` (styling),
+`docs/Coretx File Str.md` (Session 31 Cortex map — superseded by
+`aren-cortex-atlas.md`, which lists its errors in §11).
 
 ---
 
@@ -420,19 +519,31 @@ Entry points into Print RX: nav rail · Front Desk completed-row printer icon
 7. **Optimistic mutations**: `useVisitActions` patches state, calls the DB, rolls back on failure; the 25s polls self-correct both queues. Skeletons, never spinners; undo instead of confirm where safe.
 8. **Keyboard-ready, not keyboard-bound**: listbox/option roles, arrow-key list walking, Enter flows — but no global shortcut registry yet; visit actions are standalone callables so one can be added later.
 9. `fetchPrintQueue` loads the latest **150** prescriptions and search/history work within that window — raise it or paginate when the clinic outgrows it.
+10. **Stacking is fixed by DOM position, not z-index.** You cannot escape an ancestor's stacking context with a bigger number — `.topbar-unified`, `.ws-header` and `.sidebar-panel` each create one. Anything that must paint above an overlay is rendered as an App-level **sibling** (that is why `GlobalLogoTrigger` exists) and all dropdown overlays use `createPortal`.
+11. **Overlay state owned by `App.tsx` must be force-closed in the navigation handler AND independently guarded by `!isFeaturePage` at the render site.** Both halves — it is belt-and-braces on purpose.
+12. **All DB calls live in `src/lib/db/*`.** `db.ts` is a barrel; never add functions to it. One existing violation: the `symptom_tag_map` query inline in `App.tsx`.
+13. **Cortex ranking philosophy is "re-rank by habit", not "recommend by clinical truth"** — ranking-quality complaints get personalization math, not clinical guardrails. Tuning is parked until UI work lands. The scoring itself is in the `rank-compositions` edge function, whose **source is not in this repo**.
+14. **Learning-loop and hint calls are non-fatal** — always `.catch()`; a consult save must never fail because personalization did.
+15. **Do not convert a Cortex component between its three styling vocabularies** (global CSS / inline / Tailwind) without an explicit decision — see `aren-cortex-atlas.md` §7.4.
 
 ## 7. Open items (technical debt ledger)
 
-1. `npm run build` blocked by ~46 legacy tsc errors (App.tsx / PreviewPanel / mockData) — dev unaffected.
+1. `npm run build` blocked by **46 tsc errors in 3 files** (mockData 42 / PreviewPanel 2 / App.tsx 2) — dev unaffected. Re-verified 2026-07-21: this is a genuinely small fix (add `rare?: boolean` + `id`/`category` to the mock test literals, and fix the `findingIds` bug in item 11) and it would unblock production builds.
 2. ~~No auth / roles~~ — **DONE** (§8): login + fail-closed gate + role routing + RLS live.
-3. `clinic_mode` (Solo Mode) exists in architecture, unread in code; Cortex "Next Patient" button (queue → serving handoff) unbuilt.
+3. 🔴 **Cortex is disconnected from the reception queue.** `fetchTodayVisits` / `markVisitServing` / `fetchDraftVisits` / `fetchVisitWithDetails` are imported by **zero** Cortex files. Every consult start calls `createVisit(patientId)`, which unconditionally inserts a **new** visit row with `status:"serving"` and a **new token**. So a patient registered at reception (visit A, `waiting`, token 7) becomes visit B (`serving`, token 8) when the doctor opens them, and visit A is orphaned in `waiting` forever. This is the "Next Patient" gap. Fixing it needs a Cortex-side queue read, a resume path calling `markVisitServing(existingVisitId)`, and a rule for when a fresh visit is still correct (walk-in / Solo Mode). Related: `clinic_mode` (Solo Mode) exists in the architecture doc and is **read nowhere in code**.
 4. Devanagari `hi` strings are empty stubs (dropdown shows "soon").
 5. `patients` has no address column though the Patients brief wanted one.
 6. Native doctor `<select>` in reception modals is the last non-premium field.
 7. Re-layering the legacy CSS (the real layer-trap fix) deliberately deferred.
 8. `prescriptions` print-tracking column would let `printLog.ts` retire (see §6.6).
 9. **Offline write-queue** (create patients/visits while offline, sync on reconnect) — scoped as a future project; today the intake form works offline but *saving* a new patient needs the connection back. See `docs/Supabase Wiring TODO.md` §4.
-10. Session-identity sweep: pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID` rather than the signed-in identity's hospital/doctor (auth plan §6.4).
+10. Session-identity sweep: pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID` rather than the signed-in identity's hospital/doctor (auth plan §6.4). Cortex is the worst offender — `App.tsx`, `createVisit`, `saveConsult`, `rankMedicines`, `runLearningLoop`, `fetchFrequentPicks` and the favourites calls all use the constants; `useAuth().identity` is consumed for **exactly one thing** (the presence heartbeat, which falls back to `DOCTOR_ID` anyway). Must be done before Cortex supports a second doctor.
+11. 🔴 **Cortex's learning loop sends malformed finding IDs.** `App.tsx:633` does `selectedFindings.map(f => f.id)` on a `string[]` of finding *names*, so `runLearningLoop` receives `[undefined, …]`. Real runtime bug, not just a type error. Fix: the same `findingNameToId` conversion the rank effect already does.
+12. **Cortex Investigations runs on mock data.** `PreviewPanel` renders `src/data/mockData.ts`, while a real catalogue (`data/testsCatalogue.ts`) and two real DB intelligence calls (`fetchRankedPanels`, `fetchDynamicTests`) sit unwired. A better version of this feature is half-built in three places.
+13. **Cortex has no resilience layer.** Boot is a seven-way `Promise.all`; one failure leaves the "Connecting to AREN database…" splash on screen forever with only a toast — no retry, no degraded mode. None of reception's `useOnline` / reference cache / event log applies (they live under `features/frontdesk/operational/`).
+14. `App.tsx` is 950 lines and owns all consult state; `hasActiveConsult` takes four arguments and reads only the first (`!!patient`). Both are noted as the first things to address in a consult-state refactor — see `aren-cortex-atlas.md` §10.3.
+15. **The `rank-compositions` edge function source is not version-controlled here** — there is no `supabase/` directory in this repo. The deployed scoring math has no copy in the codebase.
+16. **Cortex has not been through the "Bhor" design pass.** Reception is on v2 ink-chrome + dawn-thread; Cortex is still on the original light-blue clinical palette. They are visually different products today. Restyling Cortex means re-layering eleven stylesheets and reconciling tokens — a deliberate project, never an incremental drift.
 
 ## 8. The auth layer (`src/features/auth/` + `src/lib/auth.ts`)
 
@@ -458,6 +569,7 @@ The "does the clinic work right now?" subsystem (built 2026-07-20/21). See also
 
 ## 10. Deeper charts
 
+- `aren-cortex-atlas.md` — ★ the Cortex-only companion to this document: consult lifecycle, the intelligence layer, the three styling vocabularies, overlay doctrine, the full defect ledger, and a "where do I change X?" table. Read it before any doctor-facing work.
 - `aren-frontdesk-source-of-truth.md` — product/architecture/design doctrine, session history (Parts A–I). Read first for *why*.
 - `docs/clinic-status-page-overview.md` — the Clinic Status brief; `docs/Supabase Wiring TODO.md` — the DB hand-off (presence, doctor_requests, offline-queue future).
 - `Print RX Design Brief.md`, `Patients Page Design Brief.md` — the briefs those pages were built against.
