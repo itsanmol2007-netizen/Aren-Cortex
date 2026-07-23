@@ -191,7 +191,7 @@ Timeline
 
 Notes
 
-Visit Status Flow
+### Visit Status Flow
 
 Waiting
 
