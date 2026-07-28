@@ -68,4 +68,15 @@ export type PrescriptionMedicine = Medicine & {
   instructions: string;
   is_sos: boolean;
   sort_order: number;
+
+  // ── Synapse link ──
+  // Which ranked intent this medicine came from, so the decision log can record
+  // the brand actually prescribed against the molecule that was ranked. Absent
+  // on medicines imported from a past prescription (Repeat Rx), which were
+  // never ranked in this consultation and must not be logged as if they were.
+  intent_id?: number;
+  /** the doctor reached this by searching, outside the ranked list */
+  via_search?: boolean;
+  /** this was hard-warned and the doctor acknowledged it before prescribing */
+  overridden?: boolean;
 };

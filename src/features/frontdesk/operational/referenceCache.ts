@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchSymptoms, fetchDoctorsByHospital, type DBSymptom, type DBDoctor } from "@/lib/db";
+import { fetchDoctorsByHospital, type DBDoctor } from "@/lib/db";
+import { fetchIntakeChips, type IntakeChip } from "@/lib/db/synapse";
 import { useOnline } from "./useOnline";
 
 // Cache-fresh reference data (doctors, symptoms). These lists change rarely —
@@ -93,10 +94,14 @@ function useCachedResource<T>(
     return { ...snap, refreshing, refresh };
 }
 
-const SYMPTOMS_KEY = "aren.cache.symptoms.v1";
+// v2: the cached shape changed from the 51-row v1 symptom list to the full
+// observable catalogue with its regional aliases. A new key rather than a
+// migration — the old blob is a different type, and a stale copy of it would
+// silently give the receptionist the small catalogue back.
+const INTAKE_KEY = "aren.cache.intakechips.v2";
 
-export function useCachedSymptoms(): CachedResource<DBSymptom[]> {
-    return useCachedResource<DBSymptom[]>(SYMPTOMS_KEY, fetchSymptoms, []);
+export function useCachedIntakeChips(): CachedResource<IntakeChip[]> {
+    return useCachedResource<IntakeChip[]>(INTAKE_KEY, fetchIntakeChips, []);
 }
 
 export function useCachedDoctors(hospitalId: string): CachedResource<DBDoctor[]> {

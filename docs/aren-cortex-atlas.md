@@ -2,15 +2,21 @@
 
 *The doctor-facing half of the product, read from the code itself.*
 
-Surveyed: 2026-07-21 · Branch `master` · Commit `068d669`
+Surveyed: 2026-07-28 · Branch `master` · Commit `c3c4a51`
 Scope: **Cortex only.** Everything under `src/features/frontdesk/` (the reception
-suite) is deliberately out of scope — see `aren-technical-atlas.md` §4.6 for that.
+suite) is deliberately out of scope — see `aren-technical-atlas.md` §4.6 for that,
+except where Front Desk shares a table with Cortex (the catalogue, §4a) — those
+crossings are called out explicitly.
 
-Purpose: this exists because the next block of work is **consultation and
-doctor-facing systems**, and the only Cortex-specific document on disk
-(`Coretx File Str.md`) is from Session 31 and is now wrong in several
-load-bearing places. Every claim below was verified by reading the file, running
-`tsc`, or grepping the import graph. Where the old doc was wrong, §11 says so.
+Purpose: this is the **source of truth going into a UI redesign**. The previous
+survey (2026-07-21) described a Cortex still wired to a v1 edge function and a
+mock test catalogue. Since then the Synapse v2 engine went live, the picking
+catalogue moved from two hand-maintained tables to the engine's own vocabulary,
+and every dead v1 code path was removed — `tsc -b` and `npm run build` now both
+pass clean, for the first time. Every claim below was verified this pass by
+reading the file, running `tsc`, running the production build, or querying the
+live database. §11 lists what changed since the 2026-07-21 survey, so a reader
+who only remembers that version can jump straight to the diff.
 
 ---
 
@@ -26,17 +32,28 @@ hand.
 There is **one** Cortex for all specialties ("Universal Cortex"): specialty is a
 data lens over a shared consultation engine, not a separate app.
 
+**What changed fundamentally this pass:** Cortex's ranking used to be a POST to a
+Supabase Edge Function whose source was not in this repo. It is now the
+**Synapse v2 engine** — a pure, client-side scoring function over a ruleset
+loaded once at boot. Ranking is synchronous: the suggestion list re-orders in the
+same frame a chip lands, with no network round-trip and no debounce on the
+ranking itself. See §4.
+
 ### Where it lives
 
 | Thing | Path |
 |---|---|
 | Route | `/app/cortex` (`src/main.tsx`, behind `RequireAuth` + `RequireRole allow={["doctor"]}`) |
-| Root component | `src/App.tsx` (950 lines) |
+| Root component | `src/App.tsx` (999 lines) |
 | Consult panels | `src/components/*.tsx` |
+| ★ The engine (pure, no React, no Supabase) | `src/lib/synapse/*.ts` |
+| ★ The engine's Supabase boundary | `src/lib/db/synapse.ts` (818 lines — the biggest data file in Cortex) |
+| ★ The suggestions UI | `src/features/synapse/*.tsx` |
+| ★ Engine-loading + per-consult ranking hooks | `src/hooks/{useSynapse,useConsultIntelligence,useClinicalIdentity}.ts` |
 | Internal pages | `src/features/{patients,prescriptions,investigations,communication,practice,clinic,settings,support}/` |
 | Internal nav | `src/features/sidebar/` |
 | Prescription renderer | `src/features/prescription/` (shared with Print RX) |
-| Data + intelligence | `src/lib/db/{reference,patients,intelligence}.ts` |
+| Legacy data (save + v1 hydration only) | `src/lib/db/{reference,patients,intelligence}.ts` |
 | Styling | `src/styles/*.css` (unlayered, global) |
 
 Cortex is **not** a router. `App.tsx` swaps "sidebar pages" in local state
@@ -47,54 +64,80 @@ means *the consult workspace*; anything else is a feature page.
 
 ## 2. `App.tsx` — the whole workspace in one component
 
-This is the single most important file in Cortex and the single biggest
-liability. It owns every piece of consult state, every effect, every handler, and
-the render tree for both the consult screen and the feature-page shell.
+Still the single most important file in Cortex and still the single biggest
+liability, though it lost roughly 250 lines of v1 wiring this pass (learning
+loop, snapshots, favourites, frequent picks) and gained the Synapse plumbing.
+950 → 999 lines net, but the composition changed more than the length suggests.
 
 ### 2.1 State inventory (all `useState` in one component)
 
-**Reference data** — `allSymptoms`, `allFindings`, `dbReady`, `doctorProfile`,
-`hospitalProfile`, `recentSnapshots`.
+**Reference data** — `dbReady`, `doctorProfile`, `hospitalProfile`.
+`allSymptoms`/`allFindings` **are gone** — the catalogue now comes from
+`useSynapse().data.observables`, not a boot-time fetch into local state (§4.1).
 
 **The consult** — `patient`, `visitId`, `vitals`, `selectedSymptoms` (string
-names), `selectedSymptomsWithIntensity` (`SelectedSymptom[]`), `selectedFindings`
-(string names), `prescription` (`PrescriptionMedicine[]`), `selectedMedicineId`,
-`selectedTests` (string names), `selectedLab`, `followUpDays`, `adviceNotes`,
-`pastVisits`, `pastVisitsLoading`.
+**labels**, now observable labels not v1 symptom names), `selectedSymptomsWithIntensity`
+(`SelectedSymptom[]`), `selectedFindings` (string labels), `prescription`
+(`PrescriptionMedicine[]`), `selectedMedicineId`, `selectedTests` (string names).
+`selectedLab` **is gone** (§10.6 in the old doc — the mock lab selector was
+deleted with the mock test catalogue).
 
-**The intelligence layer** — `rankedMedicines`, `rankedCompositionIds`,
-`rankLoading`, `frequentPicks`, `picksLoading`, `activeTagIds`, `favouriteIds`
-(`Set<number>`), `favouritePicks`, `lastSnapshot`.
+**The intelligence layer — completely new shape.** `acceptedIntents`
+(`Map<number, AcceptPayload>` — the doctor's actual decisions, keyed by the
+engine's own intent id), `chosenBrands` (`Map<intentId, medicineId>`),
+`searchedAccepts` (`SearchedAccept[]`, for intents reached by search rather than
+the ranked list). **Gone entirely:** `rankedMedicines`, `rankedCompositionIds`,
+`rankLoading`, `frequentPicks`, `picksLoading`, `activeTagIds`, `favouriteIds`,
+`favouritePicks`, `lastSnapshot`, `recentSnapshots`. There is no favourites
+feature and no clinical-snapshot feature any more — see §11.
 
-**UI / overlays** — `stagedMedicine`, `toast`, `repeatRxBanner`,
+**UI / overlays** — unchanged: `stagedMedicine`, `toast`, `repeatRxBanner`,
 `patientModalOpen` (starts `true`), `activeConsultGuardOpen`, `isReviewOpen`,
-`isSaving`, `sidebarOpen`, `activePage`.
+`isSaving`, `sidebarOpen`, `activePage`, plus `followUpDays`/`adviceNotes`.
 
-Two debounce refs (`rankTimer` 300 ms, `picksTimer` 500 ms) and five DOM refs
-(`logoRef` + four panel search inputs).
+One debounce ref (`rankTimer`, 300 ms — repurposed, see §2.2) and five DOM refs
+(`logoRef` + four panel search inputs; `testsSearchRef` is now unused since
+`PreviewPanel` lost its search box, see §10.1).
 
-> **Note the shape of the state.** Symptoms, findings and tests are held as
-> **display names** (`string[]`) and converted to IDs at the edges via
-> `symptomNameToId` / `findingNameToId` memos. This is the root cause of two live
-> bugs (§10.2, §10.3) and is the first thing to fix if consult state is ever
-> refactored.
+**Derived values, computed with `useMemo` rather than held in state** (new this
+pass): `symptomObservables`, `findingObservables`, `observableByLabel`,
+`symptomNames`, `symptomMeta`, `findingsAsDb`, `chartObservableIds`, `ageYears`.
+These exist because the catalogue is now a single `observables` table split by
+`kind`, and everything downstream — the two picker panels, the engine input, the
+legacy compatibility write — is a filter or lookup over it, not a separate fetch.
+
+> **The old warning about string-typed state is now partly resolved.** Symptoms
+> and findings are still held as display **labels** (`string[]`), but the
+> conversion to what matters — engine observable ids — happens in exactly one
+> place (`chartObservableIds`, a `useMemo`), not scattered across three
+> `.find()` calls at render time the way `symptomNameToId`/`findingNameToId`
+> used to be. The v1 runtime bug this caused (§10.2 in the old doc,
+> `selectedFindings.map(f => f.id)` on a string array) is gone — it went with
+> the whole learning-loop code path it belonged to.
 
 ### 2.2 Effects
 
-1. **Boot** (`[]`) — one `Promise.all` of seven calls: `fetchSymptoms`,
-   `fetchFindings`, `fetchDoctorFavourites`, `fetchFavouriteMedicines`,
-   `fetchDoctor`, `fetchHospital`, `fetchSnapshotSuggestions("fever")`. Sets
-   `dbReady`. Until it resolves the whole app renders a "Connecting to AREN
-   database…" splash — **there is no error state, only a toast**; a failed boot
-   leaves the splash on screen forever.
-2. **Rank** (300 ms debounce, on symptoms/findings/visitId) — persists
-   `visit_symptoms` + `visit_findings` fire-and-forget, then calls
-   `rankMedicines`. Empty selection clears the ranked list.
-3. **Frequent picks** (500 ms debounce) — resolves symptom IDs → `symptom_tag_map`
-   → tag IDs (an **inline Supabase query inside App.tsx**, the only DB call in
-   the codebase that bypasses `src/lib/db/`), then `fetchFrequentPicks`.
+1. **Boot** (`[]`, gated on `identity.ready`) — now just **two** calls:
+   `fetchDoctor`, `fetchHospital`. Sets `dbReady`. `fetchSymptoms`/`fetchFindings`
+   are gone from here — the catalogue loads inside `useSynapse()`, a separate
+   hook with its own status machine (§4.1), not this effect. Still true: no
+   error state, only a toast; a failed boot leaves the splash on screen forever
+   (§10.3 below — unchanged).
+2. **The v1 compatibility write** (300 ms debounce, `rankTimer` — same ref, new
+   job) — on every chart change, writes `visit_symptoms`/`visit_findings` for
+   whichever selected chips *have a legacy row* (via `symptomOf`/`findingOf`
+   maps loaded in `useSynapse`). This used to also trigger the ranking POST;
+   ranking is synchronous now and needs no debounce of its own — see §4.2. This
+   effect is explicitly a bridge and is commented as dying with the v1 teardown.
+
+Everything the old §2.2 called "Frequent picks" (500 ms debounce, inline
+`symptom_tag_map` query) **is gone** — deleted whole, including the one inline
+Supabase call that lived directly in `App.tsx` (old §10.8's documented rule
+violation no longer exists).
 
 ### 2.3 Render branches
+
+Unchanged in shape:
 
 ```
 !dbReady                      → boot splash
@@ -106,8 +149,8 @@ activePage === null           → the consult workspace
 Always rendered regardless of branch: `Sidebar`, `GlobalLogoTrigger`.
 Rendered only when `!isFeaturePage`: `PatientHeader`, and the three overlays
 (`ActiveConsultGuard`, `PatientModal`, `ReviewModal`) — each guarded *both* by
-`!isFeaturePage` and force-closed inside `handleSidebarNavigate`. That
-belt-and-braces pattern is deliberate (Session 31 rule #14); keep both halves.
+`!isFeaturePage` and force-closed inside `handleSidebarNavigate`. Both halves
+still present; nothing about the overlay doctrine changed this pass (§9).
 
 ---
 
@@ -124,30 +167,38 @@ belt-and-braces pattern is deliberate (Session 31 rule #14); keep both halves.
                                     ▼
                         createVisit(patientId)          ← ALWAYS creates a NEW visit,
                         status "serving", started_at,     status "serving", new token
-                        token = today's max + 1
+                        token = today's max + 1            (still true — §10.4, unchanged)
                                     │
                                     ▼
    ┌──────────────── consult workspace (activePage === null) ────────────────┐
    │  PatientHeader   patient strip · 5 vitals inputs · past-visit rail      │
    │                  (click a chip → PastVisitCard → "Repeat Rx")           │
-   │  ChipSearchPanel symptoms (structured, from `symptoms` catalog)         │
-   │      │           + clinical snapshots (bundles of symptoms + findings)  │
-   │      ▼                                                                  │
-   │  FindingsPanel   probable findings ranked by RPC from symptom IDs       │
-   │      │                                                                  │
-   │      ├── debounce 300ms → replaceVisitSymptoms / replaceVisitFindings   │
-   │      └── debounce 300ms → rankMedicines (edge function)                 │
+   │  ChipSearchPanel symptoms — from `observables` (kind=symptom|history)   │
+   │      │           idle list = system "general"; Browse all N → 18       │
+   │      │           systems; search spans the whole ~300-entry vocabulary  │
+   │      ▼           (clinical snapshots feature REMOVED, see §11)          │
+   │  FindingsPanel   findings — from `observables` (kind=finding), same     │
+   │      │           system browse; shows what's RECORDED, not a probable- │
+   │      │           findings RPC ranking (REMOVED, see §11)                │
+   │      ├── debounce 300ms → v1 compatibility write (visit_symptoms/       │
+   │      │                     visit_findings, only for chips with a v1 row)│
+   │      └── SYNCHRONOUS  → useConsultIntelligence runs the engine in-memory│
    │                    │                                                    │
    │                    ▼                                                    │
-   │  MedicineSuggestions  ranked list · search · favourite toggle           │
-   │  FrequentPicksPanel   co-prescription hints, minus what's already ranked│
+   │  ★ SuggestionsPanel  (src/features/synapse/) — ranked medicines/tests/  │
+   │       impression/plan in tabs, guard warnings with acknowledge-to-      │
+   │       prescribe, brand picker (BrandSheet), search-by-symptom, clinic-  │
+   │       brand pinning. Replaces MedicineSuggestions + FrequentPicksPanel  │
+   │       (both DELETED, see §11).                                          │
    │                    │                                                    │
-   │              click → stagedMedicine → MedicineInspector                 │
-   │              (dosage / frequency slots / duration / notes / SOS)        │
-   │                    │  confirm                                           │
-   │                    ▼                                                    │
+   │              click Add → handleAcceptIntent → staged/added directly     │
+   │              (medicine → prescription line; test → selectedTests;      │
+   │               referral/advice/exercise → appendAdvice; finding → no-op) │
+   │                    │                                                    │
    │  SelectedMedicinesBar   the assembled prescription                      │
-   │  PreviewPanel           Tests & Lab picker + "Review Prescription"      │
+   │  PreviewPanel           now shows ONLY ordered tests — no mock catalogue│
+   │                         browse, no lab selector (both REMOVED, §11) —   │
+   │                         plus "Review Prescription"                      │
    └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -161,185 +212,528 @@ belt-and-braces pattern is deliberate (Session 31 rule #14); keep both halves.
                                        ├─ insert prescriptions
                                        ├─ insert prescription_medicines
                                        └─ insert diagnostic_orders
-                        then, fire-and-forget (never fatal):
-                          runLearningLoop()                (bias increment)
-                          logCoprescriptionObservations()  (pairwise composition log)
+                        then, fire-and-forget (never fatal), ONLY if identity.isReal:
+                          commitConsultation()   ★ writes decision_log — the
+                                                    real learning write, keyed on
+                                                    the SAME EngineResult the
+                                                    doctor saw (§4.4)
                         then resetConsultState() → PatientModal reopens
 ```
 
+`runLearningLoop()` and `logCoprescriptionObservations()` — the two
+fire-and-forget calls in the old lifecycle diagram — **are gone**. `saveConsult`
+itself is unchanged in shape (still writes `prescriptions` +
+`prescription_medicines` + `diagnostic_orders`); what happens after it is
+entirely new.
+
 ### Interrupting a consult
 
-`ActiveConsultGuard` opens when the doctor tries to switch patient mid-consult.
-It writes the visit status directly (`updateVisitStatus`) and offers three exits:
-**Refer** (`referred`), **Save as draft** (`draft`), **Discard** (`discarded`).
-Note it is the only Cortex component that mutates a visit outside `saveConsult`.
+`ActiveConsultGuard` — unchanged. Opens when the doctor tries to switch patient
+mid-consult, writes the visit status directly (`updateVisitStatus`), offers
+**Refer** / **Save as draft** / **Discard**. Still the only Cortex component that
+mutates a visit outside `saveConsult`.
 
 ---
 
-## 4. The intelligence layer (`src/lib/db/intelligence.ts`)
+## 4. The intelligence layer — Synapse v2 (replaces the old §4 entirely)
 
-This is what makes Cortex more than a form. All of it is doctor-facing and all of
-it will matter for the next block of work.
+This is the section that changed the most. The old `rank-compositions` edge
+function is gone from Cortex's call graph completely; there is no server-side
+ranking left to reason about.
 
-| Function | What it does | Where the logic lives |
+### 4.1 Loading the engine — `useSynapse()` (`src/hooks/useSynapse.ts`, 187 lines)
+
+Runs once per session, gated on a **real** identity (`useClinicalIdentity`,
+below) being ready. Loads, in parallel:
+
+| What | Function | Fails how |
 |---|---|---|
-| `rankMedicines({symptoms, findingIds})` | POST to Supabase Edge Function `rank-compositions`. Sends symptom IDs **with intensity**, finding IDs, `doctorId`, `specialization`. Returns `RankedMedicine[]` with `score` + `dosage_defaults`. | **Server-side edge function — not in this repo.** |
-| `runLearningLoop({tagSignature, …})` | Same endpoint with `action:"learn"`. Increments the doctor's bias for what they actually picked vs what was ranked. | Server-side. |
-| `fetchFrequentPicks({activeTagIds, excludeCompositionIds, doctorId})` | Reads `composition_coprescription_hints` for the active symptom tags, dedupes against already-ranked compositions, then per hint resolves a concrete medicine — the doctor's own most-selected (`doctor_medicine_bias`) if it exists, else the primary from `medicine_composition_map`. Caps at 8. | Client-side, this file. |
-| `fetchFavouriteMedicines` / `fetchDoctorFavourites` / `toggleFavouriteMedicine` | Star/unstar, stored as `doctor_medicine_bias.is_favourite`. Upsert on `(doctor_id, composition_id, medicine_id)`. | Client-side. |
-| `logCoprescriptionObservations` | After a save, writes every **pair** of prescribed compositions to `coprescription_observations` with the tag signature. Feeds future hint generation. | Client-side. |
-| `searchMedicinesDB(query)` | Free-text medicine lookup with composition names joined through `medicine_composition_map`. Min 2 chars, limit 20. | Client-side. |
+| The ruleset (signals, rules, guards, intent classes) + this doctor's learned rule overlay | `loadSynapseRuleset(doctorId)` | **Hard** — no ruleset, no ranking |
+| signalId → human label | `loadSignalLabels()` | Hard |
+| The catalogue itself | `fetchObservables()` | Hard |
+| Catalogue ↔ legacy symptom/finding id maps | `loadObservableMaps()` | Hard |
+| This doctor's clinical preference model | `loadPreferences(doctorId)` | **Soft** — degrades to global ranking |
+| This doctor's brand habits | `loadBrandPreferences(doctorId)` | Soft |
+| The clinic's declared brand defaults | `loadClinicBrandDefaults(hospitalId)` | Soft |
+| This doctor's frequent-medicine shortlist | `loadFrequentMedicines(doctorId)` | Soft |
+| Co-prescription companion edges | `loadCompanionEdges()` | Soft |
 
-And in `reference.ts`:
+"Soft" failures set `data.degraded = true` and fall back to an empty model —
+personalisation quietly disappears, the ranking itself never does. All four
+personal-data loads (preferences, brand prefs, frequent list, and the ruleset's
+doctor overlay) are **skipped entirely**, not attempted-then-discarded, when
+`identity.isReal` is false — see §4.5. `reload()` is exposed for
+recalibration without a page refresh.
 
-| Function | What it does |
-|---|---|
-| `fetchProbableFindings(symptomIds)` | RPC `rank_probable_findings` — drives FindingsPanel's ranked list. |
-| `fetchRankedPanels(symptomIds, findingIds)` | RPC `rank_panels` — ranked investigation panels. **Written, never called by any component.** |
-| `fetchSnapshotSuggestions(query)` | `clinical_snapshots` + join tables. A snapshot is a named bundle of symptoms + findings applied in one click, undoable with Ctrl+Z. |
-| `fetchDynamicTests(activeTagIds)` | `symptom_cluster_test_hints` — dynamic test suggestions. **Written, never called.** |
-| `freqSlotToLabel` / `freqLabelToSlot` | The frequency contract: DB stores `"1-0-1-0"` (morning-afternoon-evening-night); UI shows "Morning and Evening". |
+`SynapseData` (the hook's return shape) carries: `ruleset`, `signalLabels`,
+`observables` (the full catalogue, `Observable[]`), `observableMaps`
+(`{ symptomOf, findingOf }` — the legacy-id bridge), `preferences`,
+`brandPreferences`, `clinicBrandDefaults`, `frequent`, `companionEdges`,
+`signalsWithRules` (a `Set<string>` — which signals can actually produce
+output, for calibration), `loadedAt`, `degraded`.
 
-> **`fetchRankedPanels` and `fetchDynamicTests` are the two ready-made hooks for a
-> smarter Investigations experience.** The DB side exists; nothing consumes it.
-> `PreviewPanel` still renders `src/data/mockData.ts`.
+### 4.2 Ranking a chart — `useConsultIntelligence()` (`src/hooks/useConsultIntelligence.ts`, 236 lines)
 
-### The `tagSignature` contract
+Takes `{ data, visitId, observableIds, vitals, ageYears, acceptedIntentIds }` and
+runs the whole pipeline **synchronously** inside `useMemo`:
 
-The learning loop keys on `tagSignature` = selected symptom IDs, sorted
-ascending, joined with `-` (e.g. `"3-17-42"`). Built inline in
-`handleConfirmAndSave`. Change how it's built and you invalidate every stored
-bias row.
+```
+observableIds + vitals + age
+   → buildEngineInput()        (src/lib/synapse/consultInput.ts)
+   → runEngine(ruleset, input) (src/lib/synapse/engine.ts)      — pure, no I/O
+   → personalize(intents, preferences)                          — reorders only
+   → resolveCompanions(...)    if any intents were accepted
+   → fetchCompositionBrands()  ASYNC — the only network call, cannot block ranking
+```
 
-**Standing rule (carried from Session 31, still valid):** ranking philosophy is
-*"re-rank by habit"*, not *"recommend by clinical truth"*. Complaints about
-ranking quality get answered with stronger personalization math, not clinical
-guardrails. Ranking tuning is **parked** until UI work is done.
+Returns `{ result, intents, byType, hardWarned, signals, companions, brands,
+brandsLoading, brandError, isPediatric, measurements, hasInput }`.
+`byType` is `Record<IntentType, PersonalizedIntent[]>` — `medicine | test |
+exercise | referral | finding | advice`, the same six types the engine has
+always scored.
+
+**Three silent-failure traps live in `buildEngineInput`/`vitalsToMeasurements`**
+(`src/lib/synapse/consultInput.ts`) and are exactly why that file exists rather
+than inlining the conversion in `App.tsx`:
+1. **Blood pressure** — one vitals field (`"140/90"`) must become two
+   measurements, `BP_SYS`/`BP_DIA`. Handled by splitting on `/`.
+2. **Temperature units** — the vitals UI is Fahrenheit (placeholder "98.6"); the
+   rule base is Celsius (`FEVER` fires ≥ 37.8°C). Converted with a magnitude
+   heuristic (`toCelsius`), not a UI toggle.
+3. **Age** — never typed by the doctor; injected from `patient.age` on every
+   run, or `ELDERLY`/`PEDIATRIC` never fire.
+
+### 4.3 Identity — `useClinicalIdentity()` (`src/hooks/useClinicalIdentity.ts`, 65 lines)
+
+One resolver for "which doctor, which clinic", reading `useAuth()`. Returns
+`{ doctorId, hospitalId, doctorName, specialization, isReal, ready }`.
+`isReal` is `false` when the signed-in account has no `doctors` row — several
+active accounts in the live database are in this state (verified this pass).
+Falls back to the hardcoded `DOCTOR_ID`/`HOSPITAL_ID` constants
+(`lib/db/reference.ts`) only in that case, and everything downstream is built to
+notice: no personal data loads, no `decision_log` write, ranking still works
+(global evidence is identical for every doctor).
+
+### 4.4 The learning write — `commitConsultation()` (`src/lib/db/synapse.ts`)
+
+Replaces `runLearningLoop` + `logCoprescriptionObservations` with one insert
+into `decision_log` at consult close, gated on `identity.isReal`. Records the
+**exact** `EngineResult` object the doctor saw on screen (`intelligence.result`
+— never re-run), every accepted intent, implicit skips (shown, left untouched,
+in a type where something else *was* accepted — never inferred for
+safety-critical intents), and distinguishes `accepted` / `searched_accepted`
+(reached by search, not the ranked list) / `override_accepted` (a `warn_hard`
+intent the doctor acknowledged and prescribed anyway — logged, but **never**
+fed back into the preference model, so an override can't teach the system to
+promote what a guard is warning about).
+
+### 4.5 Brands, search, and the clinic tier
+
+- **Brands** — `fetchCompositionBrands()` resolves ranked *compositions* to
+  actual dispensable products via the `composition_brands` RPC, ordered by:
+  this doctor's learned preference → **the clinic's declared default**
+  (`clinic_brand_preference` table, new this pass — pinned/unpinned from the
+  `BrandSheet` UI, §5) → most-prescribed → catalogue order → alphabetical.
+- **Search** — `searchIntents()` calls a new `search_intents` RPC that matches
+  by molecule name, brand name, *or the symptom it treats* (typing "fever"
+  surfaces paracetamol via the rule base, not string matching). Returns
+  `matchKind: 'label' | 'brand' | 'symptom'` and the matched term, so the UI can
+  say *why* a result came back.
+- **Guards** — unchanged engine behaviour (`warn` / `warn_hard`, never hides an
+  intent), but **materially more of them now fire**. Verified this pass: 8 of
+  14 active guards were previously unreachable because no Cortex chip could
+  produce their signal (pregnancy, cauda equina, dengue, bilateral neuro
+  deficit, renal impairment among them) — fixed by §11's catalogue change, not
+  by touching the engine.
+
+**Standing rule (carried forward, still true):** ranking is "re-rank by habit",
+not "recommend by clinical truth" — complaints about ranking quality get
+personalization math, not clinical guardrails baked into the engine. The
+knowledge base itself (`signal_intent_rules`, guards) is data, lives in
+Supabase, and is out of scope for a UI redesign.
 
 ---
 
-## 5. Data model, from Cortex's side
+## 5. The suggestions UI — `src/features/synapse/` (all new this pass)
+
+| File | Lines | What it does |
+|---|---|---|
+| `SuggestionsPanel.tsx` | 608 | ★ The main surface. Tabs: Medicines / Tests / Impression / Plan (referral+advice+exercise). Each row shows the intent, its top contributing signals ("why"), a guard flag if warned, a brand picker for medicines. A `warn_hard` row requires an explicit "I understand" acknowledgement before its Add button activates. A dedicated search box spans all intent types via `searchIntents()`. Companions render as a distinct "often prescribed with" strip below the ranked list. |
+| `BrandSheet.tsx` | 158 | The brand picker for one ranked composition — a small modal/popover listing dispensable products in `resolveBrands()` order, with a pin/unpin control that writes `clinic_brand_preference` (visible to every doctor at that hospital) separately from this doctor's own learned preference. |
+| `SynapseStyles.tsx` | 509 | Scoped CSS for the above two — see §7.1, this is now effectively a **fourth** styling vocabulary alongside the three below, and the redesign needs to decide whether it survives, gets folded into the CSS layer, or becomes Tailwind. |
+
+None of this existed at the 2026-07-21 survey. `MedicineSuggestions.tsx` and
+`FrequentPicksPanel.tsx`, which it replaces, are deleted (§11).
+
+---
+
+## 6. Data model, from Cortex's side
 
 Cortex reads and writes:
 
 | Table | Cortex's relationship |
 |---|---|
 | `patients` | create (`createPatient`), lookup by phone, search. |
-| `visits` | **creates** one per consult (`createVisit`); updates status via `saveConsult` (→ `completed`) and `ActiveConsultGuard` (→ `referred`/`draft`/`discarded`). Writes `vitals` (jsonb) at save time. |
-| `visit_symptoms` | `replaceVisitSymptoms` on every debounced change — IDs + intensity. |
-| `visit_findings` | `replaceVisitFindings`, IDs only. |
-| `symptoms`, `findings` | read once at boot, cached in component state. |
+| `visits` | creates one per consult (`createVisit`); updates status via `saveConsult` (→ `completed`) and `ActiveConsultGuard` (→ `referred`/`draft`/`discarded`). Writes `vitals` (jsonb) at save time. |
+| ★ `observables` | **the catalogue** — every pickable symptom/finding/history chip, `kind`-split. Read once per session via `useSynapse`. Front Desk's intake also reads this table now (with a separate alias layer — out of scope here, see `aren-technical-atlas.md`). |
+| ★ `observable_signals`, `measurement_rules`, `signal_intent_rules`, `intent_guards`, `intent_classes`, `signals`, `intents` | the rule base / knowledge base the engine scores against. Never written by Cortex, only read via `loadSynapseRuleset`. |
+| ★ `visit_observations` | the permanent, canonical record of what was on the chart — every chip the engine actually saw, by observable id. Written by `useConsultIntelligence`. This is the record that survives the v1 teardown. |
+| ★ `decision_log` | the learning write — `commitConsultation()`, gated on a real identity. |
+| ★ `clinic_brand_preference` | new table — the clinic-wide declared brand default per composition, set from `BrandSheet`'s pin control. |
+| `visit_symptoms` / `visit_findings` | **still written**, but now as a compatibility bridge only — only for chips that have a legacy row, via `symptomOf`/`findingOf` (§2.2). Front Desk, the past-visit rail and existing patient records still read these; this is the path that disappears in the v1 teardown. |
+| `symptoms` / `findings` | **no longer read by Cortex.** These are the pre-Synapse catalogue tables (51 / 73 rows); Cortex reads `observables` (~300+ rows) instead. Front Desk still reads `symptoms` for its intake picker. |
 | `prescriptions` | insert at save. |
 | `prescription_medicines` | insert at save; writes both `composition_ids` (array) and legacy `composition_id`. |
 | `diagnostic_orders` | insert at save, `status: "ordered"`. |
-| `medicines`, `compositions`, `medicine_composition_map` | read for search / picks. |
-| `doctor_medicine_bias` | read + upsert (favourites, personalization). |
-| `composition_coprescription_hints`, `symptom_tag_map`, `symptom_cluster_test_hints` | read (hints). |
-| `coprescription_observations` | insert after save. |
-| `clinical_snapshots` + `snapshot_symptoms` / `snapshot_findings` | read. |
+| `medicines`, `compositions`, `medicine_composition_map` | read via the brand-resolution RPC (`composition_brands`), not by direct query from Cortex components any more. |
 | `doctors`, `hospitals` | read for the prescription letterhead; `doctors.last_seen` written by the heartbeat. |
 
-**Hydration pattern:** no SQL joins for the big reads — fetch parents, then
-`IN (…)` the children, aggregate in memory. Fine at clinic scale.
+**Gone from Cortex's relationship list entirely:** `doctor_medicine_bias`
+(favourites — feature removed), `composition_coprescription_hints` /
+`symptom_tag_map` / `symptom_cluster_test_hints` (v1 hint tables — replaced by
+`intent_companions` + the rule base), `coprescription_observations` (write
+removed with the learning loop), `clinical_snapshots` + `snapshot_symptoms` /
+`snapshot_findings` (feature removed).
 
-**Presence:** `src/hooks/useDoctorHeartbeat.ts` writes `doctors.last_seen` every
-30 s (plus immediately on mount) while Cortex is open. Reception's `DoctorsCard`
-derives Online/Away/Offline from it. This is the *only* live signal Cortex sends
-to the reception side.
+**Hydration pattern:** unchanged — no SQL joins for the big reads, fetch
+parents then `IN (…)` the children, aggregate in memory.
+
+**Presence:** unchanged. `src/hooks/useDoctorHeartbeat.ts` writes
+`doctors.last_seen` every 30 s. Now driven by `useClinicalIdentity()`'s
+`identity.doctorId` rather than a raw `auth.identity.doctor?.id ?? DOCTOR_ID`
+fallback written inline in `App.tsx` — same effective behaviour, one fewer
+place the fallback logic is duplicated.
 
 ---
 
-## 6. Component inventory (verified)
+## 7. Component inventory (re-verified 2026-07-28)
 
-Line counts are real. "Style" is how the component is actually written — this
-matters, see §7.
+> ## ⚠ SUPERSEDED IN PART BY THE 2026-07-28 UI REDESIGN
+>
+> §7.1, §12 and §13 below were rewritten on 2026-07-28 when the workspace
+> redesign landed. **The redesign's own record is
+> `docs/aren-cortex-redesign-plan.md` (phase log) and
+> `docs/aren-cortex-workspace-design.md` (the spec).** In one paragraph, what
+> changed:
+>
+> The consult workspace is now **three columns — Chart · Synapse · Plan** —
+> each a sticky, viewport-height pane that scrolls inside itself, with a
+> full-width **ContextBar** above them. `ChipSearchPanel`, `FindingsPanel`,
+> `PreviewPanel`, `SelectedMedicinesBar`, `Tag`, `utils/filter.ts` and
+> `SynapseStyles.tsx` are **deleted**; `ChartPanel`, `ContextBar`, `PlanPanel`
+> and `ShortcutsSheet` are new, and `SuggestionsPanel` was rewritten with **no
+> tabs** — every intent type has a permanent section, and medicines render as
+> cards headlined by a prescribable **brand** with the composition as subtitle.
+> Styling went from **four vocabularies to two**: `styles/workspace.css`
+> (`cx-*`, the redesign) plus the surviving legacy stylesheets.
+> `components-medicines.css` is deleted and `components-panels.css` is trimmed
+> to 60 lines. Read §12 below for the parts that still hold.
 
-### 6.1 Consult panels — `src/components/`
+### 7.1 Consult panels — `src/components/`
 
 | File | Lines | Style | What it does |
 |---|---|---|---|
-| `ChipSearchPanel.tsx` | 524 | CSS classes + inline (34 blocks) | Symptoms input. Fixed 280 px panel, **portal** dropdown positioned from a measured `DOMRect` (re-measured on scroll/resize), fuzzy filter, snapshot suggestions inline in the dropdown, idle-state ECG artwork. |
-| `FindingsPanel.tsx` | 617 | inline (49 blocks) + CSS vars | Findings input. Probable findings via RPC, grouped browse (`GROUP_ORDER`), portal dropdown. Its own inline SVG icons. |
-| `Tag.tsx` | 205 | CSS classes + tone vars | The chip primitive. Right-click → intensity menu (mild/moderate/severe). |
-| `MedicineSuggestions.tsx` | 260 | CSS classes | Ranked medicine list, search, match %, favourite star. |
-| `FrequentPicksPanel.tsx` | 230 | **Tailwind** | Co-prescription hints + favourites, with clinical reason text. |
-| `MedicineInspector.tsx` | 208 | CSS classes | Per-medicine editor: dosage, the four frequency slots (M/A/E/N), duration, notes, instructions, SOS. Doubles as the confirm step for a staged medicine. |
-| `SelectedMedicinesBar.tsx` | 74 | CSS classes (`.smb-*`) | The assembled prescription as cards. |
-| `PreviewPanel.tsx` | 174 | CSS classes | **Actually the Tests & Lab panel** (the name is a leftover). Renders `mockData.testGroups`, search, selected-tag strip, preferred-lab `<select>`, and the "Review Prescription" button. |
-| `PatientHeader.tsx` | 432 | CSS classes (`.tb-*`) | The consult topbar: patient identity, 5 vitals inputs with warn thresholds, doctor pill, Review Rx, Cancel-consult (two-step arm), horizontally scrolling past-visit rail with `IntersectionObserver` stick detection. |
-| `PatientModal.tsx` | 277 | CSS classes | Patient search / create. Non-dismissable while no patient is loaded (`onClose` becomes a no-op). |
-| `ActiveConsultGuard.tsx` | 237 | **Tailwind** | Refer / Draft / Discard on patient switch. Writes visit status itself. |
-| `ReviewModal.tsx` | 733 | **Tailwind** (245 utilities) | The prescription review + print surface. Shared with Print RX via `mode`. See §8. |
-| `GlobalLogoTrigger.tsx` | 103 | inline | A floating clone of the topbar logo, rendered as an App-level sibling so it stays clickable above full-screen overlays. Gated on `sidebarOpen` **and** `active` (any overlay open). See §9. |
-| `WorkspaceHeader.tsx` | 60 | CSS classes (`.ws-*`) | Header for feature pages (Patients, Coming Soon). |
-| `ComingSoonPage.tsx` | 32 | CSS classes | Placeholder shell, title/subtitle props. |
-| `ActionButton.tsx` | 15 | CSS classes | Button primitive, used only by `PatientHeader`. |
-| `TestsPanel.tsx` | 220 | inline + CSS vars | **DEAD.** Nothing imports it. A newer tests picker built on `data/testsCatalogue.ts` that was never wired in. |
-| `PrescriptionPanel.tsx` | 81 | — | **DEAD.** No importer. |
-| `VitalsStrip.tsx` | 35 | — | **DEAD.** No importer (vitals live in `PatientHeader`). |
+| `ChipSearchPanel.tsx` | 519 | CSS classes + inline | Symptom/history entry. **Rewired this pass**: reads the `observables` catalogue via an optional `itemMeta` prop (`{system, isCommon}` per label); idle state shows the `general`-system chips, a "Browse all N" door opens all ~18 systems as a grid, search spans everything. **Clinical-snapshot feature fully removed** — no fetch, no snapshot cards, no Ctrl+Z undo (§11). Portal dropdown positioned from a measured `DOMRect`, unchanged. |
+| `FindingsPanel.tsx` | 520 | inline + CSS vars | Findings entry. **Rewired this pass**: reads `observables` (kind=finding) the same way; group order now comes from `SYSTEM_LABELS_IN_ORDER` (`lib/synapse/systems.ts`), not a hardcoded 7-name list. **Probable-findings RPC ranking fully removed** — the panel shows what is *recorded*, full stop; the engine's ranked Impression lives in `SuggestionsPanel` now (one pipeline, not two). |
+| `Tag.tsx` | 205 | CSS classes + tone vars | The chip primitive. Unchanged. |
+| `MedicineInspector.tsx` | 208 | CSS classes | Per-medicine editor — dosage, M/A/E/N slots, duration, notes, SOS. Unchanged. |
+| `SelectedMedicinesBar.tsx` | 74 | CSS classes (`.smb-*`) | The assembled prescription as cards. Unchanged. |
+| `PreviewPanel.tsx` | 93 (was 174) | CSS classes | **Rewritten.** No longer a Tests & Lab *picker* — it shows only what's already ordered (from `SuggestionsPanel`'s Tests tab or search) as removable tags, plus "Review Prescription". No mock catalogue browse, no search box, no lab `<select>`. |
+| `PatientHeader.tsx` | 432 | CSS classes (`.tb-*`) | Unchanged: patient identity, 5 vitals inputs, doctor pill, past-visit rail. |
+| `PatientModal.tsx` | 277 | CSS classes | Unchanged. |
+| `ActiveConsultGuard.tsx` | 237 | Tailwind | Unchanged. |
+| `ReviewModal.tsx` | 733 | Tailwind (245 utilities) | Unchanged — still the one shared review/print surface (§8). |
+| `GlobalLogoTrigger.tsx` | 103 | inline | Unchanged. |
+| `WorkspaceHeader.tsx` | 60 | CSS classes (`.ws-*`) | Unchanged. |
+| `ComingSoonPage.tsx` | 32 | CSS classes | Unchanged. |
+| `ActionButton.tsx` | 15 | CSS classes | Unchanged. |
 
-### 6.2 Feature pages — `src/features/`
+**Deleted this pass, confirmed zero importers:** `MedicineSuggestions.tsx` (260),
+`FrequentPicksPanel.tsx` (230), `TestsPanel.tsx` (220, was already dead),
+`PrescriptionPanel.tsx` (81, was already dead), `VitalsStrip.tsx` (35, was
+already dead). See §11 for what replaced the first two.
 
-| Folder | State |
-|---|---|
-| `patients/` | **The only built one.** `PatientsPage.tsx` (364) → `PatientsList.tsx` (524) + `PatientRecord.tsx` (902) + 8 CSS files (~3.5k lines). Today's/recent/search lists, then a full record: derived summary, visit-frequency chart, clinical signals, per-visit cards, "Start Consult" sidebar. Note it renders a `PLACEHOLDER_MEDICINES` array — the "commonly prescribed" panel is hardcoded, not derived. |
-| `sidebar/` | `Sidebar.tsx` (203) + `SidebarNav.tsx` (264) + `sidebar.css` (587). The nav registry lives in `SidebarNav`'s `items` array. Logout is wired here via `useLogout()`. `ComingSoonPage.tsx` (21) here is an **orphaned duplicate** — App imports the one in `components/`. |
-| `prescriptions/`, `investigations/`, `communication/`, `practice/`, `clinic/`, `settings/`, `support/` | **0-byte stubs, all of them** — both the `.tsx` and the `.css`. Nothing imports them. Every one of these nav entries lands on `ComingSoonPage`. |
+### 7.2 Feature pages — `src/features/`
 
-> ⚠️ `aren-technical-atlas.md` §4.4 previously described these as built pages
-> ("doctor-side prescriptions list", "diagnostics overview", "clinic profile
-> page"). They are empty files. That has been corrected in this pass.
+Unchanged from the 2026-07-21 survey: `patients/` is the only built one
+(`PatientsPage` → `PatientsList` + `PatientRecord`, still a hardcoded
+`PLACEHOLDER_MEDICINES` array in the "commonly prescribed" panel — not touched
+this pass). The seven feature-page folders
+(`prescriptions/investigations/communication/practice/clinic/settings/support`)
+are still 0-byte stubs. `features/sidebar/ComingSoonPage.tsx` — the orphaned
+duplicate the old atlas flagged — **is deleted** this pass; `App.tsx` always
+imported `components/ComingSoonPage` so nothing changed behaviourally.
 
-### 6.3 Shared prescription pipeline — `src/features/prescription/`
+### 7.3 Shared prescription pipeline — `src/features/prescription/`
 
-Shared with Print RX; **one renderer for the whole product.**
-
-- `PrescriptionDocument.tsx` (617, ~89 inline style blocks — inline **on purpose**,
-  for print fidelity). A4 / A5 / Thermal variants, QR generation, optional `date`
-  prop so reprints carry the original date.
-- `PrintFormatSelector.tsx` (171, Tailwind) — format picker + "remember my choice".
-- `usePrintFormat.ts` (28) — persists to `localStorage` key `aren_print_format`.
+Unchanged. `PrescriptionDocument.tsx`, `PrintFormatSelector.tsx`,
+`usePrintFormat.ts` — see the old atlas or `aren-technical-atlas.md` §4.5.
 
 ---
 
-## 7. The styling system — read this before touching any Cortex UI
+## 8. `ReviewModal` — the one shared surface
 
-Cortex has **three coexisting visual vocabularies**. This is the single most
-confusing thing about the codebase and there is no plan of record to unify them.
+Unchanged from the previous survey. `src/components/ReviewModal.tsx`, used by
+both workspaces via `mode="review"`/`mode="print"`. Still not forked. Still
+renders a hidden `PrescriptionDocument` for `react-to-print`. **Not touched by
+the Synapse migration** — it receives `prescription: PrescriptionMedicine[]`
+same as always; it has no idea the medicines in that array now carry an
+`intent_id`/`via_search`/`overridden` provenance (new optional fields on
+`PrescriptionMedicine`, `src/types.ts`) for the decision log to read.
 
-### 7.1 The three vocabularies
+---
 
-**(a) Global unlayered CSS — the dominant one.** Eleven stylesheets imported in
+## 9. Overlay & stacking doctrine
+
+Unchanged. See the previous survey's §9 — nothing about `GlobalLogoTrigger`,
+the stacking-context rule, or the force-close pattern was touched this pass.
+
+---
+
+## 10. Known defects, gaps, and debt (re-audited 2026-07-28)
+
+Numbering restarts clean — most of the old §10 was either fixed as a side
+effect of the Synapse migration or deleted along with the code it described.
+What's left:
+
+### 10.1 🟠 `PreviewPanel` lost its search box; `testsSearchRef` is now a dead ref
+
+`App.tsx` still declares `testsSearchRef` and wires it into
+`useConsultKeyboard` (Tab/Shift+Tab panel cycling includes a fourth stop that no
+longer focuses anything, since `PreviewPanel` no longer renders a search
+`<input>`). Harmless — the keyboard handler is null-safe — but worth deciding
+in the redesign: either give tests a real search entry point again (the engine
+already supports searching by type via `searchIntents({types:['test']})`, so
+this is a UI gap, not a data one) or drop the ref and the cycle stop.
+
+### 10.2 🟠 Alt+M ("toggle favourites") is a dead shortcut
+
+`useConsultKeyboard.ts` still dispatches `window.dispatchEvent(new
+CustomEvent("aren:toggle-favourites"))` on Alt+M. Nothing listens for it any
+more — `MedicineSuggestions.tsx`, the only component that ever did, is deleted.
+Pressing Alt+M in Cortex today does nothing. Either remove the shortcut or
+decide favouriting is coming back in the redesign (the underlying learned-brand
+and frequent-medicine models already exist in `SynapseData` — see §4.1 — a
+"favourite" affordance would be a thin UI layer over `frequent`, not a new
+feature).
+
+### 10.3 🔴 Cortex is disconnected from the reception queue (carried forward, unchanged)
+
+Still true, still unfixed, still the single biggest architectural gap.
+`fetchTodayVisits`/`markVisitServing`/`fetchDraftVisits`/`fetchVisitWithDetails`
+are imported by zero Cortex files. Every consult start calls `createVisit`
+unconditionally, minting a new visit + token even when the patient is already
+`waiting` in the queue. See the pre-2026-07-21 handoffs for the full "Next
+Patient" gap description — nothing here changed it.
+
+### 10.4 🟠 Hardcoded identity fallback still exists, now more consequential
+
+`DOCTOR_ID`/`HOSPITAL_ID` (`lib/db/reference.ts`) are still the fallback inside
+`useClinicalIdentity()` when a signed-in account has no `doctors` row. This used
+to be silent (the old learning loop wrote under the fallback id regardless).
+It is **no longer silent** — `useSynapse`/`commitConsultation` explicitly check
+`identity.isReal` and skip personal-data loads and the decision-log write for
+such accounts (§4.1, §4.3). So the defect changed shape: it no longer risks
+corrupting another doctor's model, but affected accounts get **no
+personalisation and no learning** until their `doctors` row is created. Worth
+surfacing to the doctor in the UI redesign — right now it fails silently from
+their point of view (ranking still works, nothing tells them why suggestions
+never adapt to their habits).
+
+### 10.5 🟡 `App.tsx` is still one 999-line component
+
+Unchanged as a structural fact. The Synapse migration added complexity (six new
+`useMemo` derivations, the `handleAcceptIntent`/`handleChangeBrand`/
+`handlePinClinicBrand` handlers) without reducing the file's role as the sole
+owner of all consult state. If the UI redesign touches consult-state shape at
+all, this is the moment to consider splitting it — the intelligence layer is
+already cleanly separated into hooks (§4), which makes `App.tsx` itself more
+splittable than it was at the last survey, not less.
+
+### 10.6 🟡 A fourth styling vocabulary now exists
+
+`src/features/synapse/SynapseStyles.tsx` (509 lines of scoped CSS-in-JS,
+`syn-*` class prefix) sits alongside the three vocabularies §11 (old atlas)
+described. It was written this way specifically to dodge the Tailwind layer
+trap (§12.1) without touching the eleven legacy stylesheets. **This is the
+single most relevant fact for a UI redesign** — the suggestions panel's visual
+language was authored independently of the rest of Cortex and needs a
+deliberate decision, not an incremental one, about whether it becomes the
+template for the redesign or gets reconciled into whatever system the redesign
+picks.
+
+### 10.7 🟡 Smaller things carried forward, unchanged
+
+- Boot is still all-or-nothing (now a two-call `Promise.all` instead of seven,
+  same failure mode).
+- `PatientsPage`'s "commonly prescribed" panel is still a hardcoded
+  `PLACEHOLDER_MEDICINES` array — untouched by this pass, a real candidate to
+  wire to `frequent` (§4.1) in the redesign.
+- `FindingsPanel`'s browse-by-category dropdown visual issue (reported Session
+  29) was not re-verified this pass.
+- Keyboard shortcuts remain undiscoverable in the UI (Ctrl+N, Ctrl+Enter, Alt+M
+  — now partly dead, see §10.2 — Tab/Shift+Tab, Esc).
+
+### 10.8 🟢 Fixed this pass, no longer debt
+
+- ~~`tsc -b` blocked, 46 errors~~ — **`tsc -b` and `npm run build` both pass
+  clean.** Verified this session with a from-scratch `rm -rf
+  node_modules/.tmp && npx tsc -b` and a full `npm run build`. The three files
+  responsible (`mockData.ts`, `PreviewPanel.tsx`, `App.tsx`'s finding-id bug)
+  are gone or fixed.
+- ~~Investigations running on mock data~~ — `mockData.ts` and
+  `testsCatalogue.ts` are both deleted; `PreviewPanel` has no catalogue browse
+  left to run on mock data.
+- ~~Dead code: `TestsPanel`/`PrescriptionPanel`/`VitalsStrip`/orphaned
+  `ComingSoonPage`/`rx-modal.css`~~ — all deleted.
+- ~~The inline `symptom_tag_map` query inside `App.tsx`, violating "all DB calls
+  live in `lib/db/*`"~~ — gone with the frequent-picks feature it served.
+- ~~The malformed `findingIds` learning-loop bug~~ — gone with `runLearningLoop`.
+- `styles/components-picks.css` (279 lines, `.fp-*`) is now **orphaned CSS** —
+  still imported in `main.tsx`, but its only consumer (`FrequentPicksPanel`) is
+  deleted. Not removed this pass because deleting a stylesheet import is a
+  presentation decision, which this pass deliberately avoided (§13.6 rule
+  still applies) — but it is dead weight worth cutting in the redesign.
+  Likewise expect dead selectors inside `components-medicines.css` (`.rank`,
+  `.match`, `.lib-row`) now that `MedicineSuggestions` is gone.
+
+---
+
+## 11. What changed since the 2026-07-21 survey — the full diff
+
+For a reader who has the old atlas memorized and just needs the delta.
+
+**Added:**
+- `src/lib/synapse/` — the pure engine, ported verbatim from the Synapse v2
+  sandbox: `engine.ts` (418), `personalize.ts` (132), `brands.ts` (132),
+  `companions.ts` (125), plus two AREN-specific additions, `consultInput.ts`
+  (143, the vitals/age/BP conversion layer) and `systems.ts` (55, the one
+  source of truth for body-system order/labels, used by both picker panels).
+- `src/lib/db/synapse.ts` (818 lines) — the entire Supabase boundary for the
+  above: ruleset loading, the catalogue (`fetchObservables`), preference/brand/
+  companion models, brand resolution, `commitConsultation`, `searchIntents`.
+- `src/hooks/useSynapse.ts`, `useConsultIntelligence.ts`, `useClinicalIdentity.ts`.
+- `src/features/synapse/` — `SuggestionsPanel.tsx`, `BrandSheet.tsx`,
+  `SynapseStyles.tsx`.
+- Database: `observable_alias` (Front Desk intake, out of scope here),
+  `clinic_brand_preference` (the clinic-wide brand default, read/written from
+  Cortex's `BrandSheet`), plus RLS policies and RPC additions
+  (`search_intents`) — see `aren-technical-atlas.md` for the full DB-side list.
+
+**Deleted:**
+- Components: `MedicineSuggestions.tsx`, `FrequentPicksPanel.tsx`,
+  `TestsPanel.tsx`, `PrescriptionPanel.tsx`, `VitalsStrip.tsx`,
+  `features/sidebar/ComingSoonPage.tsx`.
+- Data: `src/data/mockData.ts`, `src/data/testsCatalogue.ts`.
+- Style: `src/styles/rx-modal.css` (was already empty/unimported).
+- Features removed outright, not just refactored: **clinical snapshots**
+  (bundle-apply-with-Ctrl+Z-undo in `ChipSearchPanel`), **probable-findings
+  RPC ranking** (in `FindingsPanel`), **doctor favourites** (star toggle on
+  medicines, `doctor_medicine_bias`), **the mock Tests & Lab catalogue browser
+  and preferred-lab selector** (in `PreviewPanel`).
+- `lib/db/intelligence.ts` trimmed from ~427 lines to 100 — only `saveConsult`
+  and its types remain; `rankMedicines`, `runLearningLoop`, `fetchFrequentPicks`,
+  `fetchFavouriteMedicines`/`fetchDoctorFavourites`/`toggleFavouriteMedicine`,
+  `logCoprescriptionObservations`, `searchMedicinesDB` all removed.
+- `lib/db/reference.ts` — `fetchProbableFindings`, `fetchRankedPanels`,
+  `fetchSnapshotSuggestions`, `fetchDynamicTests` all removed (all four were
+  either the source of a removed feature or, per the old atlas, already
+  "written, never called").
+
+**Behaviourally changed:**
+- The picking catalogue for **Cortex only** moved from `symptoms`/`findings`
+  (51/73 rows) to `observables` (~300+ rows, `kind`-split). Front Desk still
+  uses `symptoms` for intake (with its own alias/fuzzy layer — see
+  `aren-technical-atlas.md`); the two are bridged by a compatibility write
+  (§2.2, §6) until a deliberate v1 teardown.
+- Ranking went from an async POST to a real edge function (300 ms debounce, own
+  loading state) to a synchronous, in-memory pure function (§4.2). There is no
+  `rankLoading` state any more because there is nothing to wait for.
+- The learning write went from two fire-and-forget calls to a real edge
+  function, to one insert into `decision_log`, gated on identity being real,
+  keyed on the exact result the doctor saw.
+- 8 of 14 safety guards went from unreachable (no chip could fire their signal)
+  to reachable, as a side effect of the catalogue change — not an engine change.
+- `npm run build` went from broken (46 `tsc` errors) to passing.
+
+**Not touched:** the reception queue disconnect (§10.3), the styling-vocabulary
+split (now four, not three — §10.6), `ReviewModal`/`PrescriptionDocument`, the
+overlay/stacking doctrine, Front Desk (except the shared `observables` table
+and new `observable_alias`), auth.
+
+---
+
+## 12. The styling system — read this before touching any Cortex UI
+
+> **UPDATED 2026-07-28 — the redesign made this decision, and it is TWO now,
+> not four.**
+>
+> | # | Vocabulary | Status |
+> |---|---|---|
+> | 1 | **`styles/workspace.css` — `cx-*`** | ★ **The answer.** Plain global CSS, class-based selectors only, in the visual language SynapseStyles.tsx piloted: glass surfaces, hairline dividers, ink-and-grey, colour only for meaning. **All new workspace UI goes here.** |
+> | 2 | Legacy global stylesheets | What the redesign has not reached: the topbar (`layout.css` `.tb-*`), modals (`components-modals.css`), past-visit (`past-visit.css`), workspace-header, sidebar, features/patients. |
+> | ~~3~~ | ~~Inline `style={{}}` in the pickers~~ | **Gone** — those components are deleted. (`PrescriptionDocument` still uses inline styles, correctly, for print fidelity.) |
+> | ~~4~~ | ~~`SynapseStyles.tsx` CSS-in-JS~~ | **Deleted**, folded into `workspace.css` as `cx-*`. |
+>
+> Tailwind islands (`ReviewModal`, `ActiveConsultGuard`, `PrintFormatSelector`)
+> are unchanged and still out of scope.
+>
+> **Deleted this pass:** `components-medicines.css` (507 lines, 29 of 33
+> classes dead), `components-picks.css`, `components-bar.css`.
+> **Trimmed:** `components-panels.css` 582 → 60 lines (only the overlay
+> backdrop fix and the `.finding-chip*` rules PatientRecord still uses
+> survived). `base.css` lost its four dead per-panel focus rules — the focus
+> glows live with their panels in `workspace.css` now.
+>
+> The rest of §12 below is retained for the parts that still hold: the design
+> tokens (§12.2, unchanged and read by `cx-*`), the layer trap (§12.3, still
+> exactly why `cx-*` is plain CSS and not Tailwind), and the motion/overlay
+> conventions (§12.5).
+
+Cortex *used to have* **four** coexisting visual vocabularies. This was
+*the* thing the UI redesign had to make a decision about before writing new
+code — see the box above for what it decided.
+
+### 12.1 The four vocabularies
+
+**(a) Global unlayered CSS — still the dominant one for the legacy panels.**
+Ten stylesheets now (was eleven — `rx-modal.css` deleted), imported in
 `src/main.tsx`, all global, none inside a `@layer`:
 
 | File | Lines | Owns |
 |---|---|---|
-| `styles/base.css` | 189 | **The design tokens** (`:root` vars), reset, typography, and raw-element styling for `input/select/textarea/label/h2/h3`. Also `.toast` and the per-panel focus glows. |
-| `styles/layout.css` | 1223 | `.app-shell`, `.workflow`, `.main-column`, `.two-column-row`, `.medicine-workspace`, `.sidebar-column`, `.panel`, `.section-head`, and the whole `.tb-*` topbar system. |
-| `styles/components-base.css` | 481 | `.chip-panel`, `.search-box`, `.icon-button`, `.quick-actions`, shared atoms. |
-| `styles/components-panels.css` | 582 | `.findings-*`, tests panel internals, `.finding-chip`. |
-| `styles/components-medicines.css` | 507 | `.medicine-suggestion-list`, `.lib-row`, `.rank`, `.match`, favourite/add buttons. |
-| `styles/components-picks.css` | 279 | `.fp-*` (frequent picks). |
+| `styles/base.css` | 189 | **The design tokens** (`:root` vars), reset, typography, raw-element styling for `input/select/textarea/label/h2/h3`. Also `.toast` and per-panel focus glows. |
+| `styles/layout.css` | 1223 | `.app-shell`, `.workflow`, `.main-column`, `.two-column-row`, `.medicine-workspace`, `.panel`, the `.tb-*` topbar system. |
+| `styles/components-base.css` | 481 | `.chip-panel`, `.search-box`, `.icon-button`, shared atoms. |
+| `styles/components-panels.css` | 582 | `.findings-*`, `.finding-chip`. |
+| `styles/components-medicines.css` | 507 | `.medicine-suggestion-list`, `.lib-row`, `.rank`, `.match` — **now partly orphaned**, see §10.8. |
+| `styles/components-picks.css` | 279 | `.fp-*` (frequent picks) — **fully orphaned**, `FrequentPicksPanel` is deleted, see §10.8. |
 | `styles/components-bar.css` | 283 | `.smb-*` (selected medicines bar). |
-| `styles/components-modals.css` | 1252 | `.mi-*` (medicine inspector), patient-modal + duplicate-detection UI. |
-| `styles/past-visit.css` | 454 | `.pv-*` (past-visit card). |
-| `styles/workspace-header.css` | 278 | `.ws-*` (feature-page header). |
-| `features/sidebar/sidebar.css` | 587 | The whole sidebar. |
-| `styles/rx-modal.css` | 0 | Empty and unimported. |
+| `styles/components-modals.css` | 1252 | `.mi-*` (medicine inspector), patient-modal UI. |
+| `styles/past-visit.css` | 454 | `.pv-*`. |
+| `styles/workspace-header.css` | 278 | `.ws-*`. |
+| `features/sidebar/sidebar.css` | 587 | The sidebar. |
 
-Plus `features/patients/*.css` — 8 files, ~3.5k lines, imported by
-`features/patients/PatientsPage.tsx`.
+Plus `features/patients/*.css` — 7 files (~3.5k lines).
 
-**(b) Inline `style={{}}`** — used heavily in `FindingsPanel` (49 blocks),
-`ChipSearchPanel` (34), `TestsPanel` (12), and `PrescriptionDocument` (89, where
-it is correct and required for print).
+**(b) Inline `style={{}}`** — `FindingsPanel`, `ChipSearchPanel`,
+`PrescriptionDocument` (correct and required there, for print fidelity).
 
-**(c) Tailwind islands** — four components only: `ReviewModal` (245 utilities),
-`ActiveConsultGuard` (60), `FrequentPicksPanel` (52), `PrintFormatSelector` (40).
+**(c) Tailwind islands** — `ReviewModal`, `ActiveConsultGuard`,
+`PrintFormatSelector`. (`FrequentPicksPanel` is deleted, so this list shrank
+by one since the old survey.)
 
-### 7.2 The design tokens
+**(d) ★ New this pass — scoped CSS-in-JS.** `SynapseStyles.tsx` (509 lines),
+injected as a `<style>` tag scoped under `.syn-*` classes, consumed only by
+`SuggestionsPanel` and `BrandSheet`. Built this way specifically to sidestep
+§12.2 without touching the legacy stylesheets or fighting the layer trap the
+way Tailwind does. It is its own design language — distinct tokens, distinct
+spacing scale, distinct component patterns — authored to look coherent with the
+rest of Cortex but not literally sharing rules with it.
 
-Everything in vocabulary (a) reads from `styles/base.css`:
+### 12.2 The design tokens
+
+Unchanged — still `styles/base.css`:
 
 ```css
 --bg: #eef3f8            --text: #0b1733       --blue: #1268e8   --blue-soft: #edf5ff
@@ -350,299 +744,143 @@ Everything in vocabulary (a) reads from `styles/base.css`:
 --shadow-low / --shadow-active     --radius: 8px
 ```
 
-Typography is **Inter** (body) — set in `base.css`. Note `src/styles.css`
-separately declares `--font-sans: 'Geist Variable'` and applies it to `html` via
-Tailwind's base layer, while `base.css` sets Inter on `body`; body wins for
-everything Cortex renders. The `@fontsource-variable/geist` import and the entire
-shadcn oklch token block in `styles.css` are effectively unused by Cortex.
+`SynapseStyles.tsx` **does read these same tokens** (`var(--blue)`,
+`var(--line)`, etc.) rather than inventing new colours, so it is not a fifth
+palette — just a fourth rule-authoring mechanism over the same one.
 
-Per-panel identity is colour-coded via focus glow (`base.css` lines 176–190):
-symptoms **pink**, findings **teal**, suggestions **blue**, tests **violet**.
+Per-panel focus-glow colour-coding unchanged: symptoms pink, findings teal,
+suggestions blue, tests violet.
 
-### 7.3 The layer trap — Cortex is the cause, not the victim
+### 12.3 The layer trap — unchanged, still load-bearing
 
-`base.css` styles raw `input`, `select`, `textarea`, `label`, `label span`, `h2`,
-`h3` **globally and unlayered**. Unlayered CSS beats Tailwind's layered utilities
-regardless of specificity. Consequences:
+`base.css` still styles raw `input`/`select`/`textarea`/`label`/`h2`/`h3`
+globally and unlayered; unlayered CSS still beats Tailwind's layered utilities
+regardless of specificity. This is exactly why `SynapseStyles.tsx` exists as
+scoped `<style>` rather than Tailwind classes — it needed real `<input>`
+styling inside the suggestions search box and inheriting `base.css`'s raw
+element rules was the simpler path than fighting them. Re-layering `src/styles/`
+remains deliberately deferred.
 
-- **Inside Cortex** this is fine and load-bearing — those global element styles
-  *are* the form design.
-- **Anywhere Tailwind is used** (the four islands above, and the whole reception
-  suite) utilities on those elements silently lose. Reception works around it
-  with `fd-*` classes in `FrontDeskStyles.tsx`. If you write a new Tailwind form
-  control in Cortex, you will hit exactly the same wall.
-- Re-layering `src/styles/` is the real fix and is **deliberately deferred** —
-  only worth doing alongside a Cortex restyle or dark mode.
+### 12.4 Cortex blue vs. Front Desk "Bhor" vs. the Synapse panel
 
-### 7.4 Cortex blue vs. Front Desk "Bhor"
+Reception is on v2 "Bhor" (ink chrome, dawn thread). Cortex's legacy panels are
+still on the original light-blue clinical palette. The Synapse panel is a third
+point in the same space — same *tokens* as legacy Cortex, but a distinctly
+calmer, more restrained density (generous whitespace, quieter borders,
+smaller type scale) that was deliberately designed to read as "considered" next
+to the denser legacy panels. **If the redesign is going to unify Cortex's
+look, `SynapseStyles.tsx` is the closest thing that exists today to a
+preview of a restyled Cortex** — worth looking at directly before designing
+from scratch.
 
-Reception was rebuilt on visual direction **v2 "Bhor"** — ink chrome, dawn
-thread, three never-mixed vocabularies, the zero rule (see
-`aren-frontdesk-design-direction.md` and `aren-frontdesk-source-of-truth.md` §7).
-**Cortex has not been through that pass.** It is still on the original light-blue
-clinical palette above.
+### 12.5 Motion & other conventions
 
-The two workspaces are visually different products today. If Cortex is going to
-be restyled toward Bhor, that is a large, deliberate project — it means
-re-layering the CSS (§7.3), reconciling tokens, and touching all eleven
-stylesheets. Do not do it incrementally and by accident.
-
-### 7.5 Motion & other conventions
-
-- `body { min-width: 1120px }` — Cortex is **desktop-only by design**. No
-  responsive work exists.
-- All dropdown overlays use `createPortal` (standing rule).
-- Custom 6 px scrollbars, `scrollbar-gutter: stable`.
-- Cortex is **not localized**. No `i18n` — English strings inline. Reception's
-  `t()` dictionary does not apply here.
-- Cortex uses its own `toast` state + the `.toast` CSS class, **not** the
-  app-wide `sonner` Toaster mounted in `main.tsx`.
+Unchanged: desktop-only (`min-width: 1120px`), all dropdowns via `createPortal`,
+custom 6 px scrollbars, not localized, own `.toast` state (not the app-wide
+`sonner` Toaster).
 
 ---
 
-## 8. `ReviewModal` — the one shared surface
+## 13. Where do I change X? (updated)
 
-`src/components/ReviewModal.tsx` is used by **both** workspaces and must not be
-forked.
-
-- `mode="review"` (default) — Cortex: Edit / Confirm & Save / Print.
-- `mode="print"` — Print RX: read-only, Close + Print only. `onEdit`/`onSave` are
-  optional so the reception side need not wire consult actions.
-- `date` — reprints carry the original prescription date.
-- `autoPrint` — fires the print flow on open (Print RX one-click path).
-- `onPrinted` — fires on `onAfterPrint`; note the browser cannot distinguish a
-  real print from a cancelled dialog.
-
-It renders an on-screen preview plus a hidden `PrescriptionDocument` that
-`react-to-print` targets. Branding/layout changes belong in
-`PrescriptionDocument`, not here.
-
----
-
-## 9. Overlay & stacking doctrine
-
-Hard-won rules that are still enforced in the code:
-
-1. **You cannot escape an ancestor's stacking context with a bigger z-index.**
-   `.topbar-unified`, `.ws-header`, and `.sidebar-panel` each set their own
-   `position` + `z-index`. Anything that must paint above a future overlay has to
-   be rendered as a **sibling outside** that subtree.
-2. That is exactly why `GlobalLogoTrigger` exists — an App-level clone of the
-   topbar logo. It must gate on an explicit "something is covering the screen"
-   condition (`active={patientModalOpen || isReviewOpen || activeConsultGuardOpen}`)
-   **and** on `sidebarOpen`. `pointer-events: none` stops clicks but does not stop
-   painting; do not remove the gating.
-3. Overlays whose state lives in `App.tsx` must be force-closed in every
-   navigation handler **and** independently guarded by `!isFeaturePage` at the
-   render site. Both halves, always.
-4. Never race a parent transition against a child keyframe animation off the same
-   state change.
-
----
-
-## 10. Known defects, gaps, and debt
-
-Ordered by how much they will hurt the upcoming consultation work.
-
-### 10.1 🔴 Cortex is disconnected from the reception queue
-
-**Cortex never reads the queue.** `fetchTodayVisits`, `markVisitServing`,
-`fetchDraftVisits`, and `fetchVisitWithDetails` are imported by **zero** Cortex
-files (`markVisitServing` is used only by reception's `useVisitActions`).
-
-Every consult start — `handlePatientConfirm` and `handleStartConsultFromRecord` —
-calls `createVisit(patientId)`, which unconditionally inserts a **new** visit row
-with `status: "serving"` and **a new token number**. So when a receptionist
-registers a patient (visit A, `waiting`, token 7) and the doctor then opens that
-patient in Cortex, the DB gets visit B, `serving`, token 8. Visit A is orphaned
-in `waiting` forever.
-
-This is the **"Next Patient" gap** carried in every handoff since Session 36, and
-it is the single most important thing to fix before building more consultation
-features. It needs: a Cortex-side queue read, a "resume this visit" path that
-calls `markVisitServing(existingVisitId)` instead of `createVisit`, and a rule for
-when creating a fresh visit is still correct (walk-in / Solo Mode).
-
-Related: `clinic_mode` (Solo Mode — clinic with no receptionist) exists in
-`aren-architecture-handoff.md` and is **read nowhere in code**.
-
-### 10.2 🔴 The learning loop is sending garbage finding IDs
-
-`App.tsx:633`:
-
-```ts
-findingIds: selectedFindings.map((f) => f.id),
-```
-
-`selectedFindings` is `string[]` (finding **names**). `.id` on a string is
-`undefined`, so `runLearningLoop` receives `[undefined, …]`. This is one of the
-two `tsc` errors in `App.tsx` and it is a **real runtime bug**, not just a type
-complaint — every learn call since findings were added has had a malformed
-`findingIds`. The fix is `selectedFindings.map(n => findingNameToId.get(n))`
-filtered for `undefined`, the same conversion the rank effect already does.
-
-### 10.3 🟠 `hasActiveConsult` ignores three of its four arguments
-
-`App.tsx:84` takes `(patient, prescription, selectedSymptoms, selectedFindings)`
-and returns `!!patient`. So "do I have unsaved work?" is really "is a patient
-loaded?". It drives the sidebar-navigation warning toast and the consult-guard
-decision. Harmless today because a patient is always loaded first — but it will
-lie the moment anything else depends on it.
-
-### 10.4 🟠 Hardcoded identity everywhere
-
-`DOCTOR_ID` and `HOSPITAL_ID` (`lib/db/reference.ts`) are used directly by
-`App.tsx`, `createVisit`, `saveConsult`, `rankMedicines`, `runLearningLoop`,
-`fetchFrequentPicks`, and the favourites calls. Auth ships a real identity
-(`useAuth().identity`) and `App.tsx` uses it for **exactly one thing** — the
-presence heartbeat, which falls back to `DOCTOR_ID` anyway. `fetchHospital` is
-even called with the UUID string literal inline rather than the constant. A
-session-identity sweep is needed before Cortex supports a second doctor.
-
-### 10.5 🟠 `tsc -b` is blocked — 46 errors, exactly three files
-
-Verified this session:
-
-| File | Errors | Cause |
-|---|---|---|
-| `src/data/mockData.ts` | 42 | Test literals missing `id`/`category`, and using a `rare` property that `types.ts` `Test` does not declare. |
-| `src/components/PreviewPanel.tsx` | 2 | Reads `t.rare` (same missing property). |
-| `src/App.tsx` | 2 | §10.2 above. |
-
-`npm run build` = `tsc -b && vite build`, so **the app cannot be built for
-production today**. Dev works because Vite/esbuild skips typechecking. This is a
-genuinely small fix — add `rare?: boolean` + `id`/`category` to the mock data, and
-fix §10.2 — and it would unblock deployment.
-
-Any new work must add **zero** new errors. Filter for your own:
-`npx tsc -b 2>&1 | grep -v mockData`
-
-### 10.6 🟡 Investigations is running on mock data
-
-`PreviewPanel` renders `src/data/mockData.ts`. Meanwhile
-`src/data/testsCatalogue.ts` (a real catalogue) exists but is only consumed by
-the **dead** `TestsPanel.tsx`, and `fetchRankedPanels` / `fetchDynamicTests` (real
-DB intelligence) are called by nobody. There is a half-built better version of
-this feature sitting unwired in three places.
-
-### 10.7 🟡 Dead code
-
-- `components/TestsPanel.tsx`, `components/PrescriptionPanel.tsx`,
-  `components/VitalsStrip.tsx` — no importers.
-- `features/sidebar/ComingSoonPage.tsx` — orphaned duplicate.
-- `features/{prescriptions,investigations,communication,practice,clinic,settings,support}/*` — 14 zero-byte files.
-- `styles/rx-modal.css` — empty, unimported.
-- `lib/db` exports `fetchDraftVisits`, `fetchVisitWithDetails` — no callers anywhere.
-- Repo root: `@/` (a literal folder from a shadcn misfire), `app.js`, `server.mjs`,
-  `original_chip.txt`, `src-tree.txt`.
-
-### 10.8 🟡 Smaller things
-
-- **Boot is all-or-nothing.** One failed call in the seven-way `Promise.all` and
-  the app sits on the splash screen with a toast. No retry, no degraded mode.
-  Cortex has none of reception's offline handling (`useOnline`, reference cache,
-  event log) — those live in `features/frontdesk/operational/` and are
-  reception-only.
-- **The `symptom_tag_map` query is inline in `App.tsx`** (line ~268), violating
-  the "all DB calls live in `src/lib/db/*`" rule. It's the only such violation.
-- `fetchSnapshotSuggestions("fever")` is hardcoded at boot to populate "recent
-  snapshots" — the idle-state suggestions are always fever-related.
-- `PatientsPage`'s "commonly prescribed" panel is a hardcoded
-  `PLACEHOLDER_MEDICINES` array.
-- `FindingsPanel`'s browse-by-category dropdown was reported visually broken in
-  Session 29 and has not been revisited.
-- `App.tsx` renders `ActiveConsultGuard` with `visitId!` and a `// ← ADD THIS LINE`
-  comment still in the source.
-- Keyboard shortcuts exist (`useConsultKeyboard`) but are undiscoverable: Ctrl+N
-  new patient, Ctrl+Enter review (needs ≥1 medicine), Ctrl+Z undo snapshot (only
-  while the symptoms panel is focused), Alt+M toggle favourites (dispatches a
-  `window` CustomEvent `aren:toggle-favourites`), Tab / Shift+Tab cycle the four
-  panels, Esc blurs. Everything except the Ctrl/Alt set is suppressed while a
-  modal is open.
-
----
-
-## 11. Corrections to `docs/Coretx File Str.md` (Session 31)
-
-Keep that file for history; do not trust these points:
-
-| It says | Actually |
-|---|---|
-| `App.tsx` is ~780 lines | 950. |
-| `FindingsPanel` "IS Tailwind (the one exception)" | It is **inline styles + CSS vars**. The Tailwind components are `ReviewModal`, `ActiveConsultGuard`, `FrequentPicksPanel`, `PrintFormatSelector`. |
-| `PreviewPanel` is "the actual Tests & Lab component — note it is NOT named TestsPanel.tsx" | Still true, and now there *also* is a `TestsPanel.tsx` — which is dead code. |
-| The `!isFeaturePage` modal-leak fix and `handleSidebarNavigate` force-close were "unconfirmed" | Both are present and correct in `App.tsx` today. |
-| `features/sidebar/ComingSoonPage.tsx` "may be an orphaned duplicate" | Confirmed orphaned. App imports `components/ComingSoonPage`. |
-| The sidebar logo "morph" measurement may be dead weight | `Sidebar.tsx` is 203 lines and logout is wired through `useLogout()`; the morph question was not re-verified this pass. |
-| `supabase/functions/rank-compositions/index.ts` is in the tree | **There is no `supabase/` directory in this repo.** The edge function is deployed but its source is not version-controlled here. Worth fixing. |
-
-And a correction to `docs/aren-technical-atlas.md` §4.4, now applied: the
-`prescriptions/`, `investigations/`, `communication/`, `clinic/`, `practice/`,
-`settings/`, `support/` feature pages are **zero-byte stubs**, not built pages.
-
----
-
-## 12. Where do I change X?
+*Updated 2026-07-28 for the redesign. Rows marked ★ are the new workspace.*
 
 | I want to change… | Open |
 |---|---|
-| Any consult state, effect, or handler | `src/App.tsx` (there is nowhere else) |
-| The consult page grid / topbar layout | `src/styles/layout.css` |
+| Any consult state, effect, or handler | `src/App.tsx` |
+| ★ **Anything about how the workspace LOOKS** | `src/styles/workspace.css` (`cx-*`) — never a legacy stylesheet |
+| ★ The three-column grid / column heights | `styles/workspace.css` → `.workflow.cx-grid` and the sticky rule on `.cx-chart-panel` / `.cx-synapse .cx-syn` / `.cx-plan` |
+| ★ Patient context chips (pregnant, diabetic, age badges) | `components/ContextBar.tsx` (+ `PINNED_SLUGS`) |
+| ★ Symptom / finding / history entry, fuzzy search, browse-all | `components/ChartPanel.tsx` (`rankOf` is the 5-tier matcher) |
+| ★ "Likely on exam" suggestions | `components/ChartPanel.tsx` → the `ghosts` memo |
+| ★ Suggestion sections, order, per-section caps | `features/synapse/SuggestionsPanel.tsx` (`SECTIONS`, `SECTION_CAP`) |
+| ★ The medicine card / which brands show | `features/synapse/SuggestionsPanel.tsx` → `MedicineCard` (`INLINE_ALTS`) |
+| ★ The prescription, dose/frequency/duration/SOS editing | `components/PlanPanel.tsx` (`DoseEditor`) |
+| ★ Frequency ⇄ dose-slot conversion (M/A/E/N) | `lib/db/reference.ts` — `freqLabelToKeys` / `keysToFreqLabel`. **The slot string is canonical; never parse the human label.** |
+| ★ Keyboard shortcuts | `hooks/useConsultKeyboard.ts` + `components/ShortcutsSheet.tsx` (keep both in step) |
+| The topbar / vitals strip | `components/PatientHeader.tsx` + `styles/layout.css` (`.tb-*`) + `styles/components-base.css` (`.vital-*`) |
 | Design tokens, form elements, typography | `src/styles/base.css` |
-| Symptom entry / snapshots | `components/ChipSearchPanel.tsx` |
-| Findings entry / probable findings | `components/FindingsPanel.tsx` |
-| Medicine ranking **call**, learning loop, favourites, picks | `lib/db/intelligence.ts` |
-| Medicine ranking **math** | The `rank-compositions` edge function (not in this repo) |
-| Ranked medicine list UI | `components/MedicineSuggestions.tsx` + `styles/components-medicines.css` |
+| ~~Symptom entry~~ ~~`ChipSearchPanel`~~ | **deleted** — see ChartPanel above |
+| ~~Findings entry~~ ~~`FindingsPanel`~~ | **deleted** — see ChartPanel above |
+| ★ Ranking, guards, personalisation, brands, companions, search — the MATH | `src/lib/synapse/*.ts` (pure, no I/O — safe to unit-test in isolation) |
+| ★ Loading the ruleset/catalogue/preference models from Supabase | `src/lib/db/synapse.ts` |
+| ★ The suggestions list UI, guard acknowledgement, brand sheet | `src/features/synapse/*.tsx` |
+| ★ Per-consult ranking wiring (React-side) | `src/hooks/useConsultIntelligence.ts` |
+| ★ Which doctor/clinic is signed in | `src/hooks/useClinicalIdentity.ts` |
+| What saving a consult writes (prescription rows) | `lib/db/intelligence.ts` → `saveConsult` |
+| The learning write | `lib/db/synapse.ts` → `commitConsultation` |
+| Investigations / ordered-tests display | `components/PreviewPanel.tsx` (now trivial — see §7.1) |
 | Dosage / frequency editor | `components/MedicineInspector.tsx` + `styles/components-modals.css` |
-| Tests & Lab | `components/PreviewPanel.tsx` + `data/mockData.ts` (see §10.6) |
 | Frequency slot ⇄ label mapping | `lib/db/reference.ts` |
 | Patient topbar, vitals, past-visit rail | `components/PatientHeader.tsx` + `styles/layout.css` (`.tb-*`) |
-| What saving a consult writes | `lib/db/intelligence.ts` → `saveConsult` |
 | The prescription document itself | `features/prescription/PrescriptionDocument.tsx` |
 | The review/print surface | `components/ReviewModal.tsx` |
 | Sidebar nav entries | `features/sidebar/SidebarNav.tsx` (`items` array) |
-| A new Cortex feature page | Fill the 0-byte stub, add to `SidebarNav.items`, add a branch in `App.tsx`'s render, add meta to `COMING_SOON_META` if still pending |
-| Keyboard shortcuts | `hooks/useConsultKeyboard.ts` |
+| A new Cortex feature page | Fill the 0-byte stub, add to `SidebarNav.items`, add a branch in `App.tsx`'s render, add meta to `COMING_SOON_META` |
+| Keyboard shortcuts | `hooks/useConsultKeyboard.ts` (note §10.1, §10.2 — two stops are currently dead) |
 | Patient records / history | `features/patients/` |
-| A DB query | `lib/db/{reference,patients,intelligence}.ts` — **never** `lib/db.ts` (barrel only) |
+| Body-system order/labels (used by both pickers) | `lib/synapse/systems.ts` — **the one place**, don't hand-keep a second copy |
+| A DB query | `lib/db/{reference,patients,intelligence,synapse}.ts` — **never** `lib/db.ts` (barrel only) |
 
 ---
 
-## 13. Standing rules for Cortex work
+## 14. Standing rules for Cortex work (updated)
 
-1. **Read the current file before editing.** Verify with grep that a previous edit
-   actually landed — do not assume.
-2. **All DB calls go in `src/lib/db/*`.** `db.ts` is a barrel; never add functions
-   there. (One existing violation — §10.8.)
-3. **Symptoms and findings are structured entities.** Select from the catalog,
-   persist IDs. Never free text.
-4. **Learning-loop / hint failures are non-fatal.** Always `.catch()`.
-5. **Never redefine an existing CSS class** — check first. Never touch
-   `layout.css` for `ChipSearchPanel`/`FindingsPanel` work; those own their rules.
-6. **Do not convert a component between the three styling vocabularies** without
-   an explicit decision (§7.4). The CSS-vs-Tailwind split is an open question, not
-   an accident to be tidied.
-7. **Dropdown overlays use `createPortal`.** Stacking is fixed by DOM position,
-   not z-index (§9).
-8. **One prescription renderer, one review surface.** Don't fork
+1. **Read the current file before editing.** Verify with grep that a previous
+   edit actually landed — do not assume.
+2. **All DB calls go in `src/lib/db/*`.** `db.ts` is a barrel; never add
+   functions there. (The one known violation — the inline `symptom_tag_map`
+   query — is gone; there are currently zero known violations.)
+3. **Symptoms, findings and history are structured entities from `observables`.**
+   Never free text. Front Desk's `symptoms` table is a *separate*, v1
+   catalogue Cortex does not read — don't conflate the two when working across
+   both workspaces.
+4. **The engine (`lib/synapse/*.ts`) is pure.** No Supabase import, no React
+   import, ever. If a change needs either, it belongs in `lib/db/synapse.ts` or
+   a hook, not the engine files. This is enforced by convention, not tooling —
+   check before adding an import.
+5. **Learning-loop / hint failures are non-fatal.** Always `.catch()`. Still
+   true for `commitConsultation` and the v1 compatibility write.
+6. **Never redefine an existing CSS class** — check first. Never touch
+   `layout.css` for `ChipSearchPanel`/`FindingsPanel` work; those own their
+   rules. `SynapseStyles.tsx` owns everything under `.syn-*` — same rule,
+   fourth vocabulary.
+7. **Do not convert a component between the four styling vocabularies**
+   without an explicit decision (§12.4). This is now the single most important
+   open question for a redesign, not a side note.
+8. **Dropdown overlays use `createPortal`.** Stacking is fixed by DOM position,
+   not z-index (§9, unchanged).
+9. **One prescription renderer, one review surface.** Don't fork
    `PrescriptionDocument` or `ReviewModal`.
-9. **Ranking is "re-rank by habit", not "recommend by clinical truth"** — and is
-   parked regardless until UI work is done.
-10. **Add zero new `tsc` errors.**
-11. **Targeted edits only** — never silently rewrite a whole file.
-12. Anmol is non-technical: literal, copy-paste-ready instructions; text and code
-    in chat, no diagrams or HTML.
+10. **Ranking is "re-rank by habit", not "recommend by clinical truth"** — this
+    is now enforced by the engine's own architecture (`personalize.ts` cannot
+    touch safety-critical or hard-warned intents), not just a convention.
+11. **Add zero new `tsc` errors — there is no longer an allowance.** `tsc -b`
+    passes clean as of this pass; treat any new error as a regression, not
+    pre-existing debt to route around.
+12. **Targeted edits only** — never silently rewrite a whole file.
+13. **Never persist an alias, a search term, or a v1 name into a visit
+    record.** The canonical identity of anything on the chart is its
+    `observable.id`; everything else (labels, aliases, matched search terms) is
+    a UI-level convenience for finding that id.
+14. Anmol is non-technical: literal, copy-paste-ready instructions; text and
+    code in chat, no diagrams or HTML.
 
 ---
 
-## 14. Further reading
+## 15. Further reading
 
-- `aren-technical-atlas.md` — the whole-repo map (both workspaces, auth, data layer).
+- `aren-technical-atlas.md` — the whole-repo map (both workspaces, auth, data
+  layer, Front Desk's intake-alias layer over the shared `observables` table).
 - `aren-architecture-handoff.md` — product philosophy, the Visit object,
-  Universal Cortex, Solo Mode, Design Philosophy. Read for *why*.
+  Universal Cortex, Solo Mode. Read for *why*.
 - `aren-frontdesk-source-of-truth.md` — reception doctrine + session history.
-  Cortex-relevant: §13 (layer trap), §19 (the "Next Patient" gap).
-- `Coretx File Str.md` — Session 31. **Superseded by this document**; see §11.
+- `referance (synapsev2)/Synapse v2 handoff .md` — the sandbox-side design
+  doctrine for the engine itself: the guard philosophy (§14 there), the
+  personalisation model (§10a there), the migration checklist this port
+  followed. Read this before changing anything under `lib/synapse/`.
+- `Coretx File Str.md` — Session 31. Superseded twice over now; historical only.
 
-*End. Update when the consult loop changes shape.*
+*End. Update this document again when the UI redesign lands — at minimum §7
+(component inventory), §12 (styling — this is where the redesign's decision
+gets recorded), and §13 (where-do-I-change-X) will need a fresh pass.*

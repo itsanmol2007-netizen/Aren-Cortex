@@ -208,19 +208,44 @@
     margin-right: 4px;
 }
 
+/* Empty by default — DASHED and unfilled, so a placeholder can never be
+   mistaken for a measurement. `.is-filled` is what a recorded vital looks
+   like. See PatientHeader for why this matters. */
 .vital-pill {
     display: flex;
     align-items: center;
     gap: 5px;
     height: 30px;
-    border: 1px solid rgba(0, 0, 0, 0.07);
+    border: 1px dashed rgba(121, 143, 177, 0.4);
     border-radius: 999px;
-    background: white;
+    background: rgba(255, 255, 255, 0.5);
     padding: 0 10px 0 8px;
     white-space: nowrap;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
     cursor: text;
+}
+
+.vital-pill.is-filled {
+    border-style: solid;
+    border-color: rgba(18, 104, 232, 0.24);
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.vital-unit {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #a8b6cc;
+    flex-shrink: 0;
+}
+
+.vital-pill.is-filled .vital-unit {
+    color: #8fa2bd;
+}
+
+.vital-pill.warn .vital-unit {
+    color: #b8860b;
 }
 
 .vital-pill:focus-within {
@@ -250,11 +275,16 @@
     background: transparent;
     box-shadow: none;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 500;
     color: #1e293b;
-    width: 52px;
+    width: 50px;
     padding: 0;
     text-align: left;
+}
+
+/* A value the doctor actually entered reads heavier than the hint. */
+.vital-pill.is-filled input {
+    font-weight: 700;
 }
 
 .vital-pill input:focus {
@@ -262,7 +292,8 @@
 }
 
 .vital-pill input::placeholder {
-    color: #c0cfe0;
+    color: #cbd6e4;
+    font-weight: 450;
 }
 
 /* Warn state — amber */

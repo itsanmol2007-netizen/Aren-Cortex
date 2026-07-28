@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
-import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient, type DBSymptom } from "@/lib/db";
+import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
+import type { IntakeChip } from "@/lib/db/synapse";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
-import { useCachedSymptoms } from "../operational/referenceCache";
+import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
 import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
 
@@ -23,7 +24,7 @@ type Props = {
         phone: string;
         age: string;
         gender: string;
-        symptomIds: number[];
+        observableIds: number[];
         doctorId: string;
     }) => Promise<{ patientName: string } | null>;
 };
@@ -36,7 +37,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [phone, setPhone] = useState("");
     const [age, setAge] = useState("");
     const [gender, setGender] = useState("");
-    const [selectedSymptoms, setSelectedSymptoms] = useState<DBSymptom[]>([]);
+    const [selectedSymptoms, setSelectedSymptoms] = useState<IntakeChip[]>([]);
     const [doctorId, setDoctorId] = useState(defaultDoctorId);
     const [errors, setErrors] = useState<Record<string, boolean>>({});
     const [saving, setSaving] = useState(false);
@@ -142,7 +143,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             phone,
             age,
             gender,
-            symptomIds: selectedSymptoms.map((s) => s.id),
+            observableIds: selectedSymptoms.map((s) => s.observableId),
             doctorId,
         });
         setSaving(false);
@@ -352,14 +353,14 @@ function SymptomPicker({
     error,
 }: {
     inputRef: React.RefObject<HTMLInputElement | null>;
-    selected: DBSymptom[];
-    onChange: (next: DBSymptom[]) => void;
+    selected: IntakeChip[];
+    onChange: (next: IntakeChip[]) => void;
     error?: boolean;
 }) {
     const t = useT();
     // Cache-fresh: the catalog is served instantly from this computer's last
     // copy (so the picker works offline) and quietly refreshed while online.
-    const catalog = useCachedSymptoms().data;
+    const catalog = useCachedIntakeChips().data;
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
@@ -404,25 +405,51 @@ function SymptomPicker({
         return () => document.removeEventListener("keydown", onEsc, true);
     }, [open]);
 
+    // The catalogue is the doctor's full 374 — a receptionist must be able to
+    // enter whatever the patient reported, and a shorter list only moves the
+    // transcription problem onto them. What makes that usable is that the chip
+    // is reachable in the language it was spoken: every term (English label,
+    // colloquial text, Devanagari and romanised alias) is matched with the same
+    // typo tolerance, and the CANONICAL label is what gets picked.
+    //
+    // With no query the catalogue opens on the everyday complaints rather than
+    // 374 chips — same feel as the 51-row list it replaces.
     const filtered = useMemo(() => {
-        const chosen = new Set(selected.map((s) => s.id));
-        const available = catalog.filter((s) => !chosen.has(s.id));
+        const chosen = new Set(selected.map((s) => s.observableId));
+        const available = catalog.filter((s) => !chosen.has(s.observableId));
         const q = query.trim().toLowerCase();
-        if (!q) return available;
+        if (!q) return available.filter((s) => s.system === "general" && s.kind === "symptom");
         return available
-            .map((s) => ({ s, score: matchScore(s.name, q) }))
-            .filter((x): x is { s: DBSymptom; score: number } => x.score !== null)
-            .sort((a, b) => a.score - b.score || a.s.name.localeCompare(b.s.name))
+            .map((s) => {
+                // best-scoring term wins; a Devanagari alias and the English
+                // label are equally good ways to have found the same chip
+                let best: number | null = null;
+                for (const term of s.terms) {
+                    const sc = matchScore(term, q);
+                    if (sc !== null && (best === null || sc < best)) best = sc;
+                }
+                return { s, score: best };
+            })
+            .filter((x): x is { s: IntakeChip; score: number } => x.score !== null)
+            .sort((a, b) => a.score - b.score || a.s.label.localeCompare(b.s.label))
             .map((x) => x.s);
     }, [catalog, query, selected]);
 
-    const pick = (s: DBSymptom) => {
+    /** The alias that explains why this chip matched, if it was not the label. */
+    const matchedAlias = (s: IntakeChip): string | null => {
+        const q = query.trim().toLowerCase();
+        if (!q || s.label.toLowerCase().includes(q)) return null;
+        const hit = s.aliases.find((a) => matchScore(a.term.toLowerCase(), q) !== null);
+        return hit?.term ?? null;
+    };
+
+    const pick = (s: IntakeChip) => {
         onChange([...selected, s]);
         setQuery("");
         inputRef.current?.focus();
     };
 
-    const remove = (id: number) => onChange(selected.filter((s) => s.id !== id));
+    const remove = (id: number) => onChange(selected.filter((s) => s.observableId !== id));
 
     return (
         <div ref={rootRef}>
@@ -441,14 +468,14 @@ function SymptomPicker({
             >
                 {selected.map((s) => (
                     <span
-                        key={s.id}
+                        key={s.observableId}
                         className="flex items-center gap-[5px] rounded-[8px] border border-[#e2e5ee] bg-white py-[4px] pl-[9px] pr-[5px] text-[12.5px] font-medium text-[#374151] shadow-[0_1px_2px_rgba(20,30,50,0.05)]"
                     >
-                        {s.name}
+                        {s.label}
                         <button
                             type="button"
-                            onClick={() => remove(s.id)}
-                            aria-label={`${t("cancel")} ${s.name}`}
+                            onClick={() => remove(s.observableId)}
+                            aria-label={`${t("cancel")} ${s.label}`}
                             className="flex h-[18px] w-[18px] items-center justify-center rounded-[5px] text-[#a8aeba] transition-colors hover:bg-[#eef0f5] hover:text-[#5a6472]"
                         >
                             <X size={12} />
@@ -478,7 +505,7 @@ function SymptomPicker({
                                 setOpen(false);
                                 setQuery("");
                             } else if (e.key === "Backspace" && !query && selected.length) {
-                                remove(selected[selected.length - 1].id);
+                                remove(selected[selected.length - 1].observableId);
                             }
                         }}
                         placeholder={selected.length ? "" : t("phSymp")}
@@ -499,9 +526,10 @@ function SymptomPicker({
                                 // The top match is what Enter will pick — it wears the
                                 // focus ring (structural affordance, not data color).
                                 const isTop = i === 0 && query.trim().length > 0;
+                                const via = matchedAlias(s);
                                 return (
                                     <button
-                                        key={s.id}
+                                        key={s.observableId}
                                         type="button"
                                         onClick={() => pick(s)}
                                         className={`flex items-center gap-[5px] rounded-[8px] border py-[5px] pl-[8px] pr-[10px] text-[12.5px] font-medium transition-colors ${
@@ -511,7 +539,16 @@ function SymptomPicker({
                                         }`}
                                     >
                                         <Plus size={12} className={isTop ? "text-[#7c5cf0]" : "text-[#a8aeba]"} />
-                                        {s.name}
+                                        {s.label}
+                                        {/* Why this matched, when it was not the English
+                                            label — so the receptionist can see their own
+                                            word was understood, and that the chip going
+                                            into the record is the clinical one. */}
+                                        {via && (
+                                            <span className="text-[11.5px] font-normal text-[#8b93a3]">
+                                                · {via}
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}

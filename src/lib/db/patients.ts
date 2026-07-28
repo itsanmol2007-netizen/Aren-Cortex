@@ -130,6 +130,86 @@ export async function saveVisitSymptoms(
     if (error) throw new Error(`saveVisitSymptoms: ${error.message}`);
 }
 
+/**
+ * Intake, stored the v2 way.
+ *
+ * `visit_observations` is the canonical record — it can hold any of the 374
+ * observables, which is what lets the front desk enter whatever the patient
+ * actually reported. `visit_symptoms` is written too, for the subset that has a
+ * v1 row, because the queue row, the visit detail and every existing patient
+ * record still read it. The second write dies with the v1 teardown.
+ */
+export async function saveVisitObservations(
+    visitId: string,
+    observableIds: number[]
+): Promise<void> {
+    if (!observableIds.length) return;
+    const { error } = await supabase.from("visit_observations").insert(
+        observableIds.map((observable_id) => ({
+            visit_id: visitId,
+            observable_id,
+            is_negated: false,
+            source: "doctor",
+        }))
+    );
+    if (error) throw new Error(`saveVisitObservations: ${error.message}`);
+}
+
+/**
+ * What was reported at intake, per visit, read from the CANONICAL record.
+ *
+ * `visit_symptoms` can only hold the 51 observables that have a v1 row; the
+ * catalogue is 374. Reading the queue from it alone would mean a receptionist
+ * enters "High grade fever", it saves correctly, and then vanishes from the
+ * row — stored but invisible, which is worse than refusing it.
+ *
+ * Only symptom- and history-kind observables come back: this fills the
+ * "Symptoms" column, and an examination finding is not one.
+ */
+export async function observationNamesByVisit(
+    visitIds: string[]
+): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (!visitIds.length) return out;
+
+    const { data: rows, error } = await supabase
+        .from("visit_observations")
+        .select("visit_id, observable_id")
+        .in("visit_id", visitIds);
+    if (error || !rows?.length) return out;
+
+    const ids = [...new Set(rows.map((r: any) => Number(r.observable_id)))];
+    const { data: obs } = await supabase
+        .from("observables")
+        .select("id, label, kind")
+        .in("id", ids);
+
+    const labelById = new Map<number, string>();
+    for (const o of obs ?? []) {
+        if (o.kind === "symptom" || o.kind === "history") labelById.set(o.id, o.label);
+    }
+
+    for (const r of rows) {
+        const label = labelById.get(Number(r.observable_id));
+        if (!label) continue;
+        const list = out.get(r.visit_id);
+        if (list) list.push(label);
+        else out.set(r.visit_id, [label]);
+    }
+    return out;
+}
+
+/** observable id -> legacy symptom id, for the v1 compatibility write. */
+export async function legacySymptomIdsFor(observableIds: number[]): Promise<number[]> {
+    if (!observableIds.length) return [];
+    const { data, error } = await supabase
+        .from("symptom_observable_map")
+        .select("symptom_id, observable_id")
+        .in("observable_id", observableIds);
+    if (error) return [];
+    return [...new Set((data ?? []).map((r: any) => Number(r.symptom_id)))];
+}
+
 export async function replaceVisitSymptoms(
     visitId: string,
     symptomIds: number[],
@@ -349,6 +429,9 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
         (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
     }
 
+    // The canonical intake record, which the v1 join above cannot represent in full.
+    const obsNamesByVisit = await observationNamesByVisit(visitIds);
+
     const { data: vfRows } = await supabase
         .from("visit_findings")
         .select("visit_id, finding_id")
@@ -407,10 +490,15 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
             created_at: v.created_at,
             status: v.status,
             doctor_name: doctorMap.get(v.assigned_doctor_id) ?? null,
-            symptoms: (vsRows ?? [])
-                .filter((r: any) => r.visit_id === v.id)
-                .map((r: any) => symptomById.get(Number(r.symptom_id)))
-                .filter(Boolean) as string[],
+            // Canonical first — see observationNamesByVisit. This drives Cortex's
+            // past-visit rail and Repeat Rx, so a visit registered against the
+            // full catalogue has to come back whole.
+            symptoms: obsNamesByVisit.get(v.id)?.length
+                ? obsNamesByVisit.get(v.id)!
+                : ((vsRows ?? [])
+                    .filter((r: any) => r.visit_id === v.id)
+                    .map((r: any) => symptomById.get(Number(r.symptom_id)))
+                    .filter(Boolean) as string[]),
             findings: (vfRows ?? [])
                 .filter((r: any) => r.visit_id === v.id)
                 .map((r: any) => findingById.get(Number(r.finding_id)))
@@ -488,6 +576,9 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
         (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
     }
 
+    // The canonical intake record, which the v1 join above cannot represent in full.
+    const obsNamesByVisit = await observationNamesByVisit(visitIds);
+
     const { data: vfRows } = await supabase
         .from("visit_findings")
         .select("visit_id, finding_id")
@@ -537,10 +628,16 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
 
     return visits.map((v: any) => {
         const pat = patMap.get(v.patient_id) ?? {};
-        const symptomNames = (vsRows ?? [])
-            .filter((r: any) => r.visit_id === v.id)
-            .map((r: any) => symptomById.get(Number(r.symptom_id)))
-            .filter(Boolean) as string[];
+        // Canonical first: a visit written since the catalogue moved to
+        //  has a complete observation record, and only older
+        // visits fall back to the v1 join.
+        const observed = obsNamesByVisit.get(v.id);
+        const symptomNames = observed?.length
+            ? observed
+            : ((vsRows ?? [])
+                .filter((r: any) => r.visit_id === v.id)
+                .map((r: any) => symptomById.get(Number(r.symptom_id)))
+                .filter(Boolean) as string[]);
         const findingNames = (vfRows ?? [])
             .filter((r: any) => r.visit_id === v.id)
             .map((r: any) => findingById.get(Number(r.finding_id)))
@@ -621,6 +718,9 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
         (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
     }
 
+    // The canonical intake record, which the v1 join above cannot represent in full.
+    const obsNamesByVisit = await observationNamesByVisit(visitIds);
+
     const { data: vfRows } = await supabase
         .from("visit_findings")
         .select("visit_id, finding_id")
@@ -676,10 +776,16 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
         seenPatients.add(v.patient_id);
 
         const pat = patMap.get(v.patient_id) ?? {};
-        const symptomNames = (vsRows ?? [])
-            .filter((r: any) => r.visit_id === v.id)
-            .map((r: any) => symptomById.get(Number(r.symptom_id)))
-            .filter(Boolean) as string[];
+        // Canonical first: a visit written since the catalogue moved to
+        //  has a complete observation record, and only older
+        // visits fall back to the v1 join.
+        const observed = obsNamesByVisit.get(v.id);
+        const symptomNames = observed?.length
+            ? observed
+            : ((vsRows ?? [])
+                .filter((r: any) => r.visit_id === v.id)
+                .map((r: any) => symptomById.get(Number(r.symptom_id)))
+                .filter(Boolean) as string[]);
         const findingNames = (vfRows ?? [])
             .filter((r: any) => r.visit_id === v.id)
             .map((r: any) => findingById.get(Number(r.finding_id)))
@@ -933,6 +1039,9 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
         (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
     }
 
+    // The canonical intake record, which the v1 join above cannot represent in full.
+    const obsNamesByVisit = await observationNamesByVisit(visitIds);
+
     const { data: allVisitsForPatients } = await supabase
         .from("visits")
         .select("patient_id, created_at")
@@ -962,10 +1071,15 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
             completed_at: v.completed_at,
             assigned_doctor_id: v.assigned_doctor_id,
             doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
-            symptom_names: (vsRows ?? [])
-                .filter((r: any) => r.visit_id === v.id)
-                .map((r: any) => symptomById.get(Number(r.symptom_id)))
-                .filter(Boolean) as string[],
+            // Canonical first — see observationNamesByVisit. Intake can enter any
+            // of the 374 observables; only 51 have a v1 row, so reading the queue
+            // from `visit_symptoms` alone would drop most of what was typed.
+            symptom_names: obsNamesByVisit.get(v.id)?.length
+                ? obsNamesByVisit.get(v.id)!
+                : ((vsRows ?? [])
+                    .filter((r: any) => r.visit_id === v.id)
+                    .map((r: any) => symptomById.get(Number(r.symptom_id)))
+                    .filter(Boolean) as string[]),
             visit_count: visitCountMap.get(v.patient_id) ?? 1,
             last_visit_at: lastVisitMap.get(v.patient_id) ?? v.created_at,
         };

@@ -173,18 +173,6 @@ kbd {
     background: rgba(121, 143, 177, 0.58);
 }
 
-.symptoms-panel:focus-within {
-    box-shadow: 0 0 0 2px #fce7f3, 0 0 18px 4px rgba(236, 72, 153, 0.15);
-}
-
-.findings-panel:focus-within {
-    box-shadow: 0 0 0 2px #ccfbf1, 0 0 18px 4px rgba(13, 148, 136, 0.15);
-}
-
-.suggestions-panel:focus-within {
-    box-shadow: 0 0 0 2px #dbeafe, 0 0 18px 4px rgba(18, 104, 232, 0.15);
-}
-
-.tests-panel:focus-within {
-    box-shadow: 0 0 0 2px #ede9fe, 0 0 18px 4px rgba(124, 58, 237, 0.15);
-}
+/* The per-panel focus glows moved to styles/workspace.css with the
+   panels themselves (.cx-chart-panel / .cx-syn / .cx-plan). The four
+   rules that lived here pointed at components that no longer exist. */

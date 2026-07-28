@@ -17,13 +17,11 @@ import "./styles.css";
 import "./styles/base.css";
 import "./styles/layout.css";
 import "./styles/components-base.css";
-import "./styles/components-medicines.css";
-import "./styles/components-picks.css";
-import "./styles/components-bar.css";
 import "./styles/components-panels.css";
 import "./styles/components-modals.css";
 import "./styles/past-visit.css";
 import "./styles/workspace-header.css";
+import "./styles/workspace.css";
 import "./features/sidebar/sidebar.css";
 
 const queryClient = new QueryClient();

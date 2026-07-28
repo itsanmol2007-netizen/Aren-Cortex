@@ -7,6 +7,11 @@ export const DOCTOR_SPECIALIZATION = "general";
 export const HOSPITAL_ID = "38bd8da3-0dd2-43a5-ad09-2d3194c95ba9";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
+/**
+ * The v1 symptom catalogue. Front Desk's intake picker and existing patient
+ * history run on it; Cortex does NOT — it reads `observables`, which is the v2
+ * catalogue (handoff §16). This dies with the rest of the v1 tables.
+ */
 export type DBSymptom = { id: number; name: string };
 export type DBFinding = { id: number; name: string; group_name: string; is_abnormal: boolean };
 
@@ -29,6 +34,7 @@ export function freqSlotToLabel(slot: string): string {
         "0-0-1-0": "Once daily (Evening)",
         "0-0-0-1": "Once daily (Night)",
         "0-1-1-0": "Afternoon and Evening",
+        "0-0-0-0": "SOS",
     };
     return map[slot] ?? slot;
 }
@@ -51,10 +57,56 @@ export function freqLabelToSlot(label: string): string {
         "Once daily (Evening)": "0-0-1-0",
         "Once daily (Night)": "0-0-0-1",
         "Afternoon and Evening": "0-1-1-0",
-        "Twice a day": "1-0-1-0",
+        "SOS": "0-0-0-0",
+        // Legacy aliases. "Twice a day" used to map to 1-0-1-0 (morning +
+        // EVENING) while every other path treated twice-daily as morning +
+        // night — so a prescription written as BD silently printed a different
+        // schedule than the one the doctor ticked. BD is morning + night and
+        // TDS is morning + afternoon + night; both now agree with the slots.
+        "Twice a day": "1-0-0-1",
         "Three times a day": "1-1-0-1",
     };
     return map[label] ?? label;
+}
+
+// ── Frequency, as the four dose slots ─────────────────────────────────────────
+//
+// The slot STRING ("1-0-0-1") is the canonical form — it is what
+// `prescription_medicines.frequency` stores. Everything else (the human label,
+// the M/A/E/N buttons in the editor) is derived from it here, in one place.
+//
+// This exists because the medicine editor used to parse the human label with a
+// substring test, so "Morning and Night" lit three buttons: M from "MORNING",
+// A from "AND", N from "NIGHT". The editor said three doses a day, the
+// prescription said two, and nothing reconciled them.
+
+export const FREQ_KEYS = ["M", "A", "E", "N"] as const;
+
+const SLOT_STRING = /^[01]-[01]-[01]-[01]$/;
+
+/** "1-0-0-1" → ["M","N"]. Anything that is not a slot string yields nothing. */
+export function slotStringToKeys(slot: string): string[] {
+    if (!SLOT_STRING.test(slot)) return [];
+    const keys: string[] = [];
+    slot.split("-").forEach((bit, i) => {
+        if (bit === "1") keys.push(FREQ_KEYS[i]);
+    });
+    return keys;
+}
+
+/** ["M","N"] → "1-0-0-1" */
+export function keysToSlotString(keys: string[]): string {
+    return FREQ_KEYS.map((k) => (keys.includes(k) ? "1" : "0")).join("-");
+}
+
+/** Human label → the slots it lights. */
+export function freqLabelToKeys(label: string): string[] {
+    return slotStringToKeys(freqLabelToSlot(label));
+}
+
+/** Slots → the human label, via the same map the save path uses. */
+export function keysToFreqLabel(keys: string[]): string {
+    return freqSlotToLabel(keysToSlotString(keys));
 }
 
 // All frequency options for the inspector dropdown
@@ -92,137 +144,12 @@ export async function fetchFindings(): Promise<DBFinding[]> {
     return data ?? [];
 }
 
-// ── PROBABLE FINDINGS RANKING ─────────────────────────────────────────────────
-export interface ProbableFinding {
-    finding_id: number;
-    finding_name: string;
-    group_name: string;
-    is_abnormal: boolean;
-    score: number;
-}
-
-export async function fetchProbableFindings(
-    symptomIds: number[]
-): Promise<ProbableFinding[]> {
-    if (!symptomIds.length) return [];
-    const { data, error } = await supabase.rpc(
-        "rank_probable_findings",
-        { p_symptom_ids: symptomIds }
-    );
-    if (error) {
-        console.error("fetchProbableFindings error:", error);
-        return [];
-    }
-    return (data as ProbableFinding[]) ?? [];
-}
-
-// ── RANKED PANELS (TEST RECOMMENDATIONS) ─────────────────────────────────────
-export interface RankedPanel {
-    panel_id: number;
-    panel_name: string;
-    panel_tier: number;
-    score: number;
-    test_ids: number[];
-    test_names: string[];
-}
-
-export async function fetchRankedPanels(
-    symptomIds: number[],
-    findingIds: number[]
-): Promise<RankedPanel[]> {
-    if (!symptomIds.length && !findingIds.length) return [];
-    const { data, error } = await supabase.rpc(
-        "rank_panels",
-        {
-            p_symptom_ids: symptomIds,
-            p_finding_ids: findingIds,
-        }
-    );
-    if (error) {
-        console.error("fetchRankedPanels error:", error);
-        return [];
-    }
-    return (data as RankedPanel[]) ?? [];
-}
-
-// ── CLINICAL SNAPSHOTS ────────────────────────────────────────────────────────
-export interface ClinicalSnapshot {
-    id: number;
-    name: string;
-    description: string;
-    tags: string[];
-    symptoms: { id: number; name: string }[];
-    findings: {
-        id: number;
-        name: string;
-        group_name: string;
-        is_abnormal: boolean;
-    }[];
-}
-
-export async function fetchSnapshotSuggestions(
-    query: string
-): Promise<ClinicalSnapshot[]> {
-    if (query.length < 2) return [];
-    const { data, error } = await supabase
-        .from("clinical_snapshots")
-        .select(`
-      id, name, description, tags,
-      snapshot_symptoms (
-        symptom_id,
-        symptoms ( id, name )
-      ),
-      snapshot_findings (
-        finding_id,
-        findings ( id, name, group_name, is_abnormal )
-      )
-    `)
-        .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
-        .limit(3);
-
-    if (error) {
-        console.error("fetchSnapshotSuggestions error:", error);
-        return [];
-    }
-
-    return (data ?? []).map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        tags: s.tags ?? [],
-        symptoms: (s.snapshot_symptoms ?? []).map((ss: any) => ss.symptoms).filter(Boolean),
-        findings: (s.snapshot_findings ?? []).map((sf: any) => sf.findings).filter(Boolean),
-    }));
-}
-
-// ── SYNAPSE: DYNAMIC TEST HINTS ────────────────────────────────────────────────
-export type DynamicTestHint = {
-    test_name: string;
-    test_group: string;
-    clinical_reason: string;
-    priority: number;
-};
-
-export async function fetchDynamicTests(activeTagIds: number[]): Promise<DynamicTestHint[]> {
-    if (!activeTagIds.length) return [];
-
-    const { data, error } = await supabase
-        .from("symptom_cluster_test_hints")
-        .select("test_name, test_group, clinical_reason, priority")
-        .in("trigger_tag_id", activeTagIds)
-        .eq("is_global", true)
-        .order("priority", { ascending: true })
-        .limit(20);
-
-    if (error) {
-        console.warn("fetchDynamicTests (non-fatal):", error.message);
-        return [];
-    }
-
-    const seen = new Map<string, DynamicTestHint>();
-    for (const row of (data ?? [])) {
-        if (!seen.has(row.test_name)) seen.set(row.test_name, row as DynamicTestHint);
-    }
-
-    return Array.from(seen.values());
-}
+// Four v1 ranking helpers used to live below this line and are gone:
+// fetchProbableFindings (rank_probable_findings), fetchRankedPanels
+// (rank_panels), fetchSnapshotSuggestions (clinical_snapshots) and
+// fetchDynamicTests (symptom_cluster_test_hints).
+//
+// All four keyed on v1 symptom/finding ids, which Cortex no longer picks — the
+// engine ranks findings and tests as INTENTS from the same rule base, so a
+// second parallel ranking path was both dead and misleading. The RPCs and their
+// tables still exist in the database for the v1 teardown to remove.

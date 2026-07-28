@@ -1,6 +1,7 @@
 import { FlaskConical, Stethoscope, X } from "lucide-react";
 import { useEffect } from "react";
 import type { PrescriptionMedicine } from "../types";
+import { freqLabelToKeys, keysToFreqLabel } from "../lib/db";
 
 type Props = {
   medicine: PrescriptionMedicine;
@@ -19,41 +20,13 @@ const SLOTS = [
   { key: "N", label: "Night" },
 ];
 
-function toSlots(frequency: string): string[] {
-  const v = frequency.toUpperCase();
-  if (v.includes("FOUR TIMES")) return ["M", "A", "E", "N"];
-  if (v.includes("THREE TIMES")) return ["M", "A", "N"];
-  if (v.includes("TWICE")) return ["M", "N"];
-  if (v.includes("BEDTIME")) return ["N"];
-  if (v.includes("ONCE DAILY (MORNING)")) return ["M"];
-  if (v.includes("ONCE DAILY (AFTERNOON)")) return ["A"];
-  if (v.includes("ONCE DAILY (EVENING)")) return ["E"];
-  if (v.includes("TDS")) return ["M", "A", "N"];
-  if (v.includes("BD")) return ["M", "N"];
-  if (v.includes("HS")) return ["N"];
-  if (v.includes("OD")) return ["M"];
-  return ["M", "A", "E", "N"].filter((k) => v.includes(k));
-}
-
-function fromSlots(slots: string[]): string {
-  const sorted = ["M", "A", "E", "N"].filter((k) => slots.includes(k));
-  if (sorted.length === 0) return "SOS";
-  if (sorted.length === 4) return "Four times a day";
-  if (sorted.length === 3) return "Three times a day";
-  if (sorted.includes("M") && sorted.includes("N") && sorted.length === 2) return "Twice a day";
-  if (sorted.length === 2) return "Twice a day";
-  if (sorted[0] === "N") return "At bedtime";
-  if (sorted[0] === "M") return "Once daily (Morning)";
-  if (sorted[0] === "A") return "Once daily (Afternoon)";
-  if (sorted[0] === "E") return "Once daily (Evening)";
-  return sorted.join("-");
-}
-
 export function MedicineInspector({
   medicine, symptoms, findings, isStaging,
   onUpdate, onConfirmStaged, onClose,
 }: Props) {
-  const activeSlots = toSlots(medicine.frequency);
+  // Derived from the SAME map the save path uses, so what the buttons show and
+  // what the prescription stores cannot disagree (see lib/db/reference.ts).
+  const activeSlots = freqLabelToKeys(medicine.frequency);
 
   // Escape closes the inspector
   useEffect(() => {
@@ -80,7 +53,7 @@ export function MedicineInspector({
     const next = activeSlots.includes(key)
       ? activeSlots.filter((s) => s !== key)
       : [...activeSlots, key];
-    onUpdate({ ...medicine, frequency: fromSlots(next) });
+    onUpdate({ ...medicine, frequency: keysToFreqLabel(next) });
   };
 
   return (

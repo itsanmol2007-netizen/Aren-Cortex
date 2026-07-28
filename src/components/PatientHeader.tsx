@@ -22,17 +22,31 @@ type PatientHeaderProps = {
   onRepeatRx?: (visit: RealVisit) => void;
 };
 
+/**
+ * The vitals strip.
+ *
+ * `unit` is rendered as a fixed suffix rather than left to the doctor to type.
+ * That is cosmetic for weight and load-bearing for temperature: the rule base
+ * is Celsius and this field is Fahrenheit, reconciled downstream by a magnitude
+ * heuristic (`consultInput.ts`). Printing °F on the field is the cheapest way to
+ * stop someone entering 38 and meaning it.
+ *
+ * `warnText` exists because an amber pill that will not say why is just a pill
+ * the doctor learns to ignore.
+ */
 const VITAL_FIELDS: {
   key: keyof Vitals;
   label: string;
+  unit?: string;
   placeholder: string;
   warn?: (v: string) => boolean;
+  warnText?: string;
 }[] = [
-    { key: "bp", label: "BP", placeholder: "120/80", warn: (v) => { const s = parseInt(v.split("/")[0]); return !isNaN(s) && (s > 140 || s < 90); } },
-    { key: "pulse", label: "Pulse", placeholder: "72", warn: (v) => { const n = parseInt(v); return !isNaN(n) && (n > 100 || n < 50); } },
-    { key: "temp", label: "Temp", placeholder: "98.6", warn: (v) => { const n = parseFloat(v); return !isNaN(n) && (n > 99.5 || n < 96); } },
-    { key: "spo2", label: "SpO₂", placeholder: "98", warn: (v) => { const n = parseInt(v); return !isNaN(n) && n < 95; } },
-    { key: "weight", label: "Wt", placeholder: "65 kg" },
+    { key: "bp", label: "BP", unit: "mmHg", placeholder: "120/80", warn: (v) => { const s = parseInt(v.split("/")[0]); return !isNaN(s) && (s > 140 || s < 90); }, warnText: "Systolic outside 90–140 mmHg" },
+    { key: "pulse", label: "Pulse", unit: "bpm", placeholder: "72", warn: (v) => { const n = parseInt(v); return !isNaN(n) && (n > 100 || n < 50); }, warnText: "Outside 50–100 bpm" },
+    { key: "temp", label: "Temp", unit: "°F", placeholder: "98.6", warn: (v) => { const n = parseFloat(v); return !isNaN(n) && (n > 99.5 || n < 96); }, warnText: "Outside 96–99.5 °F" },
+    { key: "spo2", label: "SpO₂", unit: "%", placeholder: "98", warn: (v) => { const n = parseInt(v); return !isNaN(n) && n < 95; }, warnText: "Below 95%" },
+    { key: "weight", label: "Wt", unit: "kg", placeholder: "65" },
   ];
 
 function formatVisitDate(isoString: string): string {
@@ -69,6 +83,7 @@ export function PatientHeader({
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const vitalRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -291,21 +306,40 @@ export function PatientHeader({
         </div>
       </header>
 
-      {/* Vitals bar */}
+      {/* Vitals bar. A recorded vital and an empty one must never look alike —
+          the placeholder "98.6" sitting where a real temperature goes reads as
+          a measurement at a glance, and these feed the engine. Empty pills are
+          dashed and light; filled pills go solid, tinted and bold. */}
       <div className="vitals-bar">
         <span className="vitals-bar-label">Vitals</span>
         {VITAL_FIELDS.map((field, i) => {
           const val = vitals[field.key];
-          const isWarn = field.warn ? field.warn(val) : false;
+          const filled = val.trim().length > 0;
+          const isWarn = filled && field.warn ? field.warn(val) : false;
           return (
-            <div key={field.key} className={`vital-pill${isWarn ? " warn" : ""}`}>
+            <div
+              key={field.key}
+              className={`vital-pill${filled ? " is-filled" : ""}${isWarn ? " warn" : ""}`}
+              title={isWarn ? field.warnText : undefined}
+            >
               <span className="vital-pill-label">{field.label}</span>
               <input
+                ref={(el) => { vitalRefs.current[i] = el; }}
                 value={val}
                 placeholder={field.placeholder}
+                inputMode={field.key === "bp" ? "text" : "decimal"}
                 onChange={(e) => onVitalsChange({ ...vitals, [field.key]: e.target.value })}
-                aria-label={field.label}
+                onKeyDown={(e) => {
+                  // Enter walks the strip, so five vitals are one hand on the
+                  // number row rather than five clicks.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    vitalRefs.current[i + 1]?.focus();
+                  }
+                }}
+                aria-label={field.unit ? `${field.label} in ${field.unit}` : field.label}
               />
+              {field.unit && <span className="vital-unit">{field.unit}</span>}
               {i < VITAL_FIELDS.length - 1 && <span className="vital-sep" />}
             </div>
           );

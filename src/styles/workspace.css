@@ -1,0 +1,2397 @@
+/* ============================================================
+   WORKSPACE.CSS — the redesigned consult workspace (`cx-*`)
+   AREN Cortex redesign, Step 1 (docs/aren-cortex-redesign-plan.md)
+
+   The one deliberate styling decision (atlas §10.6 / rule 7):
+   the redesign is authored HERE, as plain global CSS under a
+   `cx-` prefix, in the visual language SynapseStyles.tsx
+   established — hairlines, ink-and-grey, colour only for
+   meaning, glass surfaces. Every selector is class-based, so
+   nothing fights base.css's raw-element rules and nothing
+   touches the legacy panels' classes.
+
+   Colour carries meaning only: blue = the one action,
+   amber = soft guard, red = hard guard, green = added.
+   Focus-glow doctrine: chart pink · synapse blue · plan violet.
+   ============================================================ */
+
+:root {
+    --cx-hairline: rgba(121, 143, 177, 0.18);
+    --cx-glass: rgba(255, 255, 255, 0.66);
+    --cx-glass-strong: rgba(255, 255, 255, 0.85);
+    --cx-radius: 16px;
+    --cx-shadow: 0 1px 2px rgba(20, 35, 66, 0.05), 0 12px 32px rgba(20, 35, 66, 0.07);
+    --cx-amber: #b45309;
+    --cx-amber-bg: #fffbeb;
+    --cx-red: #b42318;
+    --cx-red-bg: #fef3f2;
+    --cx-violet: #7c3aed;
+}
+
+/* ── The three-column story: Chart | Synapse | Plan ─────────── */
+
+.workflow.cx-grid {
+    grid-template-columns:
+        minmax(270px, 0.95fr)
+        minmax(370px, 1.35fr)
+        minmax(285px, 1fr);
+    align-items: start;
+}
+
+.cx-col {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+/* ── Three panes, one screen ────────────────────────────────────
+   Every column pins and scrolls INSIDE itself. The page as a whole
+   does not scroll, so a long ranked list can never turn the two
+   short columns into a strip of dead white space beside it — and
+   the chart never leaves view while the doctor reads suggestions.
+
+   This is the rule that broke when the suggestions panel was
+   rewritten: it targeted `.syn`, the panel became `.cx-syn`, the
+   cap silently stopped applying and the centre grew unbounded. */
+.cx-chart-panel,
+.cx-synapse .cx-syn,
+.cx-plan {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 26px);
+}
+
+/* ── Panel primitive — glass, hairline, quiet ───────────────── */
+
+.cx-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid rgba(217, 226, 238, 0.9);
+    border-radius: var(--cx-radius);
+    background: var(--cx-glass);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    backdrop-filter: blur(22px) saturate(160%);
+    box-shadow: var(--cx-shadow);
+    overflow: hidden;
+}
+
+/* ── CONTEXT BAR — who this patient is, above all three columns ─
+   Spec §4.1. Spans the full grid width as the first row; the three
+   columns flow beneath it. Chips are toggles over the SAME chart
+   array the pickers write, so there is one source of truth. */
+
+.cx-context {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    border-radius: 12px;
+    padding: 8px 14px;
+    overflow: visible;
+    /* the bar is chrome, not a surface the eye should land on */
+    background: var(--cx-glass-strong);
+}
+
+.cx-context.is-disabled .cx-ctx-chip,
+.cx-context.is-disabled .cx-ctx-more {
+    opacity: 0.5;
+}
+
+.cx-ctx-label {
+    margin-right: 3px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    flex: none;
+}
+
+/* derived from the patient record — stated, never toggled */
+.cx-ctx-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(18, 104, 232, 0.22);
+    border-radius: 999px;
+    background: var(--blue-soft);
+    padding: 4px 11px;
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.cx-ctx-badge svg {
+    flex: none;
+    opacity: 0.85;
+}
+
+.cx-ctx-badge-detail {
+    color: rgba(18, 104, 232, 0.66);
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-ctx-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 4px 12px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cx-ctx-chip:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.4);
+    color: var(--blue);
+}
+
+.cx-ctx-chip[aria-pressed="true"] {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-weight: 680;
+}
+
+.cx-ctx-chip svg {
+    flex: none;
+}
+
+.cx-ctx-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1.5px dashed rgba(121, 143, 177, 0.4);
+    border-radius: 999px;
+    background: none;
+    padding: 3.5px 11px;
+    color: var(--faint);
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease;
+}
+
+.cx-ctx-more:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: rgba(237, 245, 255, 0.6);
+    color: var(--blue);
+}
+
+/* ── the More sheet (portal — stacking by DOM position, §9 doctrine) ── */
+
+.cx-ctx-pop {
+    position: fixed;
+    z-index: 9999;
+    width: 288px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 20px 52px rgba(18, 44, 92, 0.2), 0 0 0 0.5px rgba(20, 35, 66, 0.05);
+    overflow: hidden;
+}
+
+.cx-ctx-pop-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--cx-hairline);
+    padding: 0 12px;
+    height: 40px;
+}
+
+.cx-ctx-pop-search svg {
+    flex: none;
+    color: var(--faint);
+}
+
+.cx-ctx-pop-search input {
+    flex: 1;
+    height: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    outline: none;
+    box-shadow: none;
+}
+
+.cx-ctx-pop-search input:hover,
+.cx-ctx-pop-search input:focus {
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.cx-ctx-pop-search input::placeholder {
+    color: var(--faint);
+    font-weight: 450;
+}
+
+.cx-ctx-pop-list {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.cx-ctx-pop-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 9px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 550;
+    letter-spacing: -0.008em;
+    text-align: left;
+    transition: background 0.13s ease;
+}
+
+.cx-ctx-pop-row:hover {
+    background: rgba(18, 104, 232, 0.06);
+}
+
+.cx-ctx-pop-row.is-on {
+    background: rgba(18, 104, 232, 0.09);
+    color: var(--blue);
+    font-weight: 620;
+}
+
+.cx-ctx-pop-row svg {
+    flex: none;
+}
+
+.cx-ctx-pop-empty {
+    margin: 0;
+    padding: 18px 12px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* ── CHART — what you know, left column ─────────────────────────
+   Spec §4.2–4.6. One panel, one search, three zones that route
+   themselves by `kind`. Replaced ChipSearchPanel + FindingsPanel. */
+
+.cx-chart-panel {
+    min-height: 320px;
+}
+
+/* The chart scrolls inside itself too, so a long chip list never
+   drags the column past the fold. */
+.cx-chart-body {
+    overflow-y: auto;
+}
+
+.cx-chart-panel:focus-within {
+    box-shadow: var(--cx-shadow), 0 0 0 2px #fce7f3, 0 0 18px 4px rgba(236, 72, 153, 0.14);
+}
+
+.cx-chart-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 18px 0;
+}
+
+.cx-chart-title {
+    margin: 0;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 680;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    text-transform: none;
+}
+
+.cx-chart-sub {
+    margin: 2px 0 0;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+}
+
+.cx-chart-count {
+    color: var(--faint);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-chart-search {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 14px 18px 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(248, 251, 255, 0.85);
+    padding: 0 11px;
+    height: 38px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.cx-chart-search:focus-within {
+    border-color: rgba(217, 70, 143, 0.45);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(217, 70, 143, 0.1);
+}
+
+.cx-chart-search svg {
+    flex: none;
+    color: var(--faint);
+}
+
+.cx-chart-search input {
+    flex: 1;
+    height: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    outline: none;
+    box-shadow: none;
+}
+
+.cx-chart-search input:hover,
+.cx-chart-search input:focus {
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.cx-chart-search input::placeholder {
+    color: var(--faint);
+    font-weight: 450;
+}
+
+.cx-chart-clear {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(121, 143, 177, 0.16);
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+}
+
+.cx-chart-clear:hover {
+    background: rgba(121, 143, 177, 0.3);
+    color: var(--text);
+}
+
+/* ── the result list (portal) ── */
+
+.cx-chart-drop {
+    position: fixed;
+    z-index: 9999;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 20px 52px rgba(18, 44, 92, 0.2), 0 0 0 0.5px rgba(20, 35, 66, 0.05);
+    padding: 5px;
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.cx-drop-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    text-align: left;
+}
+
+.cx-drop-row.is-active {
+    background: rgba(18, 104, 232, 0.08);
+}
+
+.cx-drop-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 560;
+    letter-spacing: -0.008em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cx-drop-row.is-on .cx-drop-name {
+    color: var(--blue);
+    font-weight: 620;
+}
+
+.cx-drop-tick {
+    flex: none;
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.cx-drop-zone {
+    flex: none;
+    border-radius: 999px;
+    background: rgba(121, 143, 177, 0.12);
+    padding: 2px 8px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+/* ── zones ── */
+
+.cx-chart-body {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 18px 4px;
+}
+
+.cx-zone + .cx-zone {
+    margin-top: 4px;
+    border-top: 1px solid var(--cx-hairline);
+    padding-top: 12px;
+}
+
+.cx-zone-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 0 8px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cx-zone-label span {
+    border-radius: 999px;
+    background: rgba(121, 143, 177, 0.14);
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-zone-hint {
+    margin: 0 0 4px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 450;
+    line-height: 1.5;
+}
+
+.cx-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* ── a chip on the chart ── */
+
+.cx-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 4px 5px 4px 11px;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+    white-space: nowrap;
+    outline: none;
+    transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+
+.cx-chip:focus-visible {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.12);
+}
+
+.cx-chip--reported {
+    border-color: rgba(217, 70, 143, 0.28);
+}
+
+/* A recorded finding is a FACT the doctor established — filled, not
+   outlined, so it never reads at the same weight as a suggestion. */
+.cx-chip--examined {
+    border-color: rgba(15, 159, 154, 0.32);
+    background: var(--cyan-soft);
+    color: #0f5f5c;
+}
+
+.cx-ghost-tray {
+    margin-top: 10px;
+    border: 1px solid var(--cx-hairline);
+    border-radius: 11px;
+    background: rgba(121, 143, 177, 0.05);
+    padding: 2px 10px 10px;
+}
+
+.cx-ghost-tray .cx-ghost-label {
+    padding-top: 9px;
+}
+
+.cx-chip .cx-x {
+    opacity: 0;
+    width: 18px;
+    height: 18px;
+    font-size: 13px;
+}
+
+.cx-chip:hover .cx-x,
+.cx-chip:focus-within .cx-x {
+    opacity: 1;
+}
+
+/* severity, as three dots — mild / moderate / severe */
+.cx-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 0;
+    background: none;
+    padding: 0;
+    margin-right: 1px;
+}
+
+.cx-dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(121, 143, 177, 0.32);
+    transition: background 0.13s ease;
+}
+
+.cx-dots.is-mild i:nth-child(1),
+.cx-dots.is-moderate i:nth-child(-n + 2),
+.cx-dots.is-severe i {
+    background: var(--pink);
+}
+
+.cx-dots.is-severe i {
+    background: var(--danger);
+}
+
+/* ── likely-on-exam ghosts ── */
+
+.cx-ghost-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 12px 0 7px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.cx-ghost-label svg {
+    flex: none;
+    opacity: 0.8;
+}
+
+.cx-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1.5px dashed rgba(121, 143, 177, 0.38);
+    border-radius: 999px;
+    background: none;
+    padding: 3.5px 11px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease;
+}
+
+.cx-ghost:hover {
+    border-color: rgba(15, 159, 154, 0.5);
+    background: var(--cyan-soft);
+    color: #0f766e;
+}
+
+.cx-ghost-plus {
+    color: var(--faint);
+    font-weight: 700;
+}
+
+.cx-ghost:hover .cx-ghost-plus {
+    color: var(--cyan);
+}
+
+.cx-ghost.is-more {
+    border-style: solid;
+    border-color: transparent;
+    color: var(--blue);
+    font-weight: 620;
+}
+
+.cx-ghost.is-more:hover {
+    background: var(--blue-soft);
+    color: var(--blue);
+}
+
+/* ── the door to the whole catalogue ── */
+
+.cx-browse-door {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: none;
+    border: 0;
+    border-top: 1px solid var(--cx-hairline);
+    background: none;
+    padding: 11px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cx-browse-door:hover {
+    background: rgba(18, 104, 232, 0.05);
+    color: var(--blue);
+}
+
+/* ── browse sheet — the whole catalogue, by system ── */
+
+.cx-browse {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: grid;
+    place-items: center;
+    background: rgba(11, 23, 51, 0.28);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    padding: 36px 24px;
+}
+
+.cx-browse-sheet {
+    display: flex;
+    flex-direction: column;
+    width: min(1040px, 100%);
+    max-height: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    -webkit-backdrop-filter: blur(30px) saturate(170%);
+    backdrop-filter: blur(30px) saturate(170%);
+    box-shadow: 0 32px 80px rgba(18, 44, 92, 0.28);
+    overflow: hidden;
+}
+
+.cx-browse-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+    border-bottom: 1px solid var(--cx-hairline);
+    padding: 12px 14px;
+}
+
+.cx-browse-search {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(248, 251, 255, 0.9);
+    padding: 0 12px;
+    height: 40px;
+}
+
+.cx-browse-search svg {
+    flex: none;
+    color: var(--faint);
+}
+
+.cx-browse-search input {
+    flex: 1;
+    height: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 500;
+    outline: none;
+    box-shadow: none;
+}
+
+.cx-browse-search input:hover,
+.cx-browse-search input:focus {
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.cx-browse-close {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--muted);
+}
+
+.cx-browse-close:hover {
+    border-color: rgba(217, 64, 64, 0.35);
+    color: var(--danger);
+}
+
+/* A GRID, deliberately, not CSS multi-column. Multicol flows each system to the
+   bottom of a column before starting the next, so a vertically scrolling sheet
+   shows Respiratory beside Eyes beside Endocrine and the browse order scrambles
+   as you scroll. Grid reads left-to-right in SYSTEM_ORDER, always. Ragged row
+   bottoms are the price, and a picker whose section order moves under you is
+   worse than one with whitespace (see lib/synapse/systems.ts). */
+.cx-browse-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px 18px 18px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+    align-items: start;
+    gap: 18px 26px;
+}
+
+.cx-browse-group {
+    min-width: 0;
+}
+
+.cx-browse-empty {
+    grid-column: 1 / -1;
+}
+
+.cx-browse-group-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 8px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cx-browse-group-label span {
+    border-radius: 999px;
+    background: rgba(121, 143, 177, 0.14);
+    padding: 1px 7px;
+    color: var(--faint);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-browse-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.cx-browse-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 4px 11px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+    text-align: left;
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.cx-browse-chip:hover {
+    border-color: rgba(18, 104, 232, 0.4);
+    color: var(--blue);
+}
+
+.cx-browse-chip.is-on {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-weight: 650;
+}
+
+.cx-browse-empty {
+    margin: 24px 0;
+    color: var(--faint);
+    font-size: 13px;
+    text-align: center;
+}
+
+.cx-browse-foot {
+    flex: none;
+    border-top: 1px solid var(--cx-hairline);
+    padding: 10px 16px;
+    color: var(--faint);
+    font-size: 11.5px;
+    font-weight: 500;
+}
+
+/* ── SYNAPSE — the engine's voice, centre column ────────────────
+   Spec §5. No tabs: permanent sections in clinical reading order.
+   This absorbed the old SynapseStyles.tsx `syn-*` vocabulary, so
+   Cortex is down from four styling languages to two. */
+
+.cx-syn {
+    overflow: hidden;
+}
+
+.cx-syn:focus-within {
+    box-shadow: var(--cx-shadow), 0 0 0 2px #dbeafe, 0 0 18px 4px rgba(18, 104, 232, 0.14);
+}
+
+.cx-syn-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex: none;
+    padding: 18px 18px 0;
+}
+
+.cx-syn-title {
+    margin: 0;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 680;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    text-transform: none;
+}
+
+.cx-syn-sub {
+    margin: 2px 0 0;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+}
+
+.cx-reading {
+    flex: none;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+}
+
+.cx-reading:hover:not(:disabled) {
+    color: var(--blue);
+}
+
+.cx-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: none;
+    padding: 12px 18px 0;
+}
+
+.cx-signal {
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    background: rgba(248, 251, 255, 0.9);
+    padding: 3px 9px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 620;
+}
+
+.cx-syn-search {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    margin: 14px 18px 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(248, 251, 255, 0.85);
+    padding: 0 11px;
+    height: 38px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.cx-syn-search:focus-within {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+}
+
+.cx-syn-search svg {
+    flex: none;
+    color: var(--faint);
+}
+
+.cx-syn-search input {
+    flex: 1;
+    height: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    outline: none;
+    box-shadow: none;
+}
+
+.cx-syn-search input:hover,
+.cx-syn-search input:focus {
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.cx-syn-search input::placeholder {
+    color: var(--faint);
+    font-weight: 450;
+}
+
+.cx-syn-note {
+    flex: none;
+    margin: 12px 18px 0;
+    border-radius: 8px;
+    background: rgba(121, 143, 177, 0.08);
+    padding: 8px 11px;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
+/* ── the hard-warning ledger (§14) — never collapsible ── */
+
+.cx-ledger {
+    flex: none;
+    margin: 14px 18px 0;
+    border: 1px solid rgba(180, 35, 24, 0.24);
+    border-radius: 10px;
+    background: var(--cx-red-bg);
+    padding: 10px 12px;
+}
+
+.cx-ledger-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--cx-red);
+    font-size: 12.5px;
+    font-weight: 660;
+    letter-spacing: -0.005em;
+    line-height: 1.35;
+}
+
+.cx-ledger-head svg {
+    flex: none;
+}
+
+.cx-ledger-row {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 6px;
+    padding-left: 22px;
+    color: var(--cx-red);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
+.cx-ledger-row .cx-cap {
+    flex: none;
+    font-weight: 680;
+    text-transform: capitalize;
+}
+
+.cx-ledger-row span:last-child {
+    opacity: 0.85;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── the scrolling body ── */
+
+/* The list is paper: opaque, so a sticky section header never has card
+   text showing through it as the list scrolls underneath. The glass
+   stays on the panel's chrome above. */
+.cx-syn-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 10px 14px;
+    margin-top: 6px;
+    background: #fff;
+    border-top: 1px solid var(--cx-hairline);
+}
+
+.cx-sec + .cx-sec {
+    margin-top: 10px;
+}
+
+.cx-sec-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    background: #fff;
+    box-shadow: 0 8px 10px -9px rgba(20, 35, 66, 0.22);
+    padding: 11px 8px 7px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cx-sec-head span {
+    border-radius: 999px;
+    background: rgba(121, 143, 177, 0.14);
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-sec-note {
+    margin: -2px 8px 6px;
+    color: var(--faint);
+    font-size: 11.5px;
+    font-weight: 450;
+    line-height: 1.45;
+}
+
+.cx-cap {
+    text-transform: capitalize;
+}
+
+/* ── impression ── */
+
+.cx-imp-primary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: 11px;
+    background: linear-gradient(180deg, rgba(238, 250, 249, 0.75), rgba(255, 255, 255, 0));
+    padding: 11px 12px;
+    margin: 0 8px;
+}
+
+.cx-imp-main {
+    min-width: 0;
+}
+
+.cx-imp-name {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+}
+
+.cx-imp-use {
+    flex: none;
+    border: 1px solid rgba(15, 159, 154, 0.35);
+    border-radius: 8px;
+    background: #fff;
+    padding: 5px 11px;
+    color: #0f766e;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cx-imp-use:hover {
+    background: var(--cyan);
+    border-color: var(--cyan);
+    color: #fff;
+}
+
+.cx-imp-taken {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    background: rgba(22, 163, 74, 0.14);
+    padding: 4px 10px;
+    color: var(--green);
+    font-size: 11.5px;
+    font-weight: 660;
+    white-space: nowrap;
+}
+
+.cx-imp-alts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px 0;
+    color: var(--faint);
+    font-size: 11.5px;
+    font-weight: 500;
+}
+
+.cx-imp-alt {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 3px 10px;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 570;
+    transition: border-color 0.13s ease, color 0.13s ease;
+}
+
+.cx-imp-alt:hover {
+    border-color: rgba(15, 159, 154, 0.4);
+    color: #0f766e;
+}
+
+/* ── one intent row ── */
+
+.cx-int {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 3px 12px;
+    border-radius: 10px;
+    padding: 10px;
+    cursor: pointer;
+    transition: background 0.13s ease;
+}
+
+.cx-int + .cx-int::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 10px;
+    right: 10px;
+    border-top: 1px solid var(--cx-hairline);
+}
+
+.cx-int:hover {
+    background: rgba(18, 104, 232, 0.045);
+}
+
+.cx-int:hover::before,
+.cx-int:hover + .cx-int::before {
+    border-color: transparent;
+}
+
+.cx-int.is-added {
+    background: rgba(22, 163, 74, 0.06);
+}
+
+.cx-int.is-hard,
+.cx-med.is-hard {
+    background: var(--cx-red-bg);
+    cursor: default;
+}
+
+.cx-int-main {
+    min-width: 0;
+    grid-column: 1;
+}
+
+.cx-int-name {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 620;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+}
+
+.cx-why {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1.45;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cx-why em {
+    font-style: normal;
+    color: var(--faint);
+}
+
+.cx-int-side {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    align-self: center;
+}
+
+.cx-move {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+}
+
+.cx-flag.warn {
+    border: 1px solid rgba(180, 83, 9, 0.22);
+    background: var(--cx-amber-bg);
+    color: var(--cx-amber);
+}
+
+.cx-flag.hard {
+    border: 1px solid rgba(180, 35, 24, 0.22);
+    background: #fff;
+    color: var(--cx-red);
+}
+
+.cx-flag.safety {
+    border: 1px solid rgba(18, 104, 232, 0.2);
+    background: var(--blue-soft);
+    color: var(--blue);
+}
+
+.cx-add {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(18, 104, 232, 0.1);
+    color: var(--blue);
+    transition: background 0.14s ease, transform 0.14s ease;
+}
+
+.cx-int:hover .cx-add {
+    background: var(--blue);
+    color: #fff;
+}
+
+.cx-add:active {
+    transform: scale(0.94);
+}
+
+.cx-added {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(22, 163, 74, 0.14);
+    color: var(--green);
+}
+
+/* ── guard reason ── */
+
+.cx-reason {
+    grid-column: 1 / -1;
+    margin-top: 7px;
+    border-left: 2px solid currentColor;
+    padding: 2px 0 2px 10px;
+    font-size: 12px;
+    font-weight: 550;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+}
+
+.cx-reason.warn {
+    color: var(--cx-amber);
+}
+
+.cx-reason.hard {
+    color: var(--cx-red);
+}
+
+.cx-reason strong {
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 700;
+}
+
+.cx-reason p {
+    margin: 0;
+}
+
+.cx-ack {
+    margin-top: 8px;
+    border: 1px solid rgba(180, 35, 24, 0.28);
+    border-radius: 8px;
+    background: #fff;
+    padding: 5px 11px;
+    color: var(--cx-red);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+}
+
+.cx-ack:hover {
+    background: var(--cx-red);
+    color: #fff;
+}
+
+.cx-ack.is-on {
+    border-color: rgba(22, 163, 74, 0.35);
+    color: var(--green);
+}
+
+.cx-ack.is-on:hover {
+    background: var(--green);
+    color: #fff;
+}
+
+/* ── a medicine card: the brands ARE the interface ── */
+
+.cx-med {
+    position: relative;
+    border: 1px solid var(--line-soft);
+    border-radius: 12px;
+    background: rgba(248, 251, 255, 0.85);
+    padding: 11px 12px;
+    margin: 0 2px 8px;
+    outline: none;
+    transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+
+.cx-med:focus-visible {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.12);
+}
+
+.cx-med.is-added {
+    border-color: rgba(22, 163, 74, 0.25);
+    background: rgba(22, 163, 74, 0.05);
+}
+
+.cx-med.is-hard {
+    border-color: rgba(180, 35, 24, 0.25);
+}
+
+.cx-med-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.cx-med-name {
+    min-width: 0;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.012em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The molecule, demoted to where it belongs: under the product name. */
+.cx-med-sub {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1.45;
+}
+
+.cx-med-sub em {
+    font-style: normal;
+    color: var(--faint);
+}
+
+.cx-med-sub svg {
+    opacity: 0.5;
+}
+
+.cx-med-comp {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.cx-med-swap {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--blue);
+    font-size: 11.5px;
+    font-weight: 620;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.cx-brands {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.cx-brands-or {
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.cx-sec-more {
+    display: block;
+    width: calc(100% - 4px);
+    margin: 4px 2px 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 7px;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 620;
+    letter-spacing: -0.005em;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cx-sec-more:hover {
+    background: rgba(18, 104, 232, 0.06);
+    color: var(--blue);
+}
+
+.cx-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    padding: 5px 12px;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cx-brand svg {
+    flex: none;
+    opacity: 0.55;
+}
+
+.cx-brand:hover:not(:disabled) {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: #fff;
+}
+
+.cx-brand:hover:not(:disabled) svg {
+    opacity: 0.9;
+}
+
+/* the one that lands on Enter */
+.cx-brand.is-default {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-weight: 680;
+}
+
+.cx-brand-star {
+    color: #d9a441;
+    font-size: 10px;
+}
+
+.cx-brand.is-more {
+    border-style: dashed;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.cx-brand.is-more:hover {
+    background: none;
+    border-color: rgba(18, 104, 232, 0.45);
+    color: var(--blue);
+}
+
+.cx-brand.is-skeleton {
+    width: 86px;
+    height: 28px;
+    border-color: transparent;
+    background: rgba(121, 143, 177, 0.12);
+    animation: cx-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes cx-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.45;
+    }
+}
+
+.cx-med-done {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    color: var(--green);
+    font-size: 12.5px;
+    font-weight: 550;
+}
+
+.cx-med-done b {
+    font-weight: 680;
+}
+
+.cx-med-nobrand {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.cx-med-nobrand button {
+    margin-left: 6px;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 650;
+    text-decoration: underline;
+}
+
+/* ── brand sheet (portal) — absorbed from SynapseStyles ── */
+
+.cx-sheet {
+    position: fixed;
+    z-index: 60;
+    width: 306px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 20px 52px rgba(18, 44, 92, 0.2), 0 0 0 0.5px rgba(20, 35, 66, 0.05);
+    overflow: hidden;
+}
+
+.cx-sheet-head {
+    border-bottom: 1px solid var(--cx-hairline);
+    padding: 13px 15px 10px;
+}
+
+.cx-sheet-title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 660;
+    letter-spacing: -0.01em;
+}
+
+.cx-sheet-sub {
+    margin-top: 2px;
+    color: var(--faint);
+    font-size: 11.5px;
+    font-weight: 500;
+}
+
+.cx-sheet-list {
+    max-height: 292px;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.cx-brandrow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 9px;
+    text-align: left;
+    transition: background 0.13s ease;
+}
+
+.cx-brandrow:hover {
+    background: rgba(18, 104, 232, 0.06);
+}
+
+.cx-brandrow.is-current {
+    background: rgba(18, 104, 232, 0.09);
+}
+
+.cx-brandrow-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.cx-brandrow-name {
+    display: block;
+    max-width: 100%;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 580;
+    letter-spacing: -0.008em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cx-brandrow-meta {
+    display: block;
+    margin-top: 2px;
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.cx-tag {
+    flex: none;
+    border-radius: 5px;
+    padding: 1.5px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.cx-tag.clinic {
+    background: var(--cyan-soft);
+    color: #0f766e;
+}
+
+.cx-tag.yours {
+    background: var(--blue-soft);
+    color: var(--blue);
+}
+
+.cx-sheet-foot {
+    border-top: 1px solid var(--cx-hairline);
+    padding: 9px 15px;
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
+.cx-sheet-pin {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.cx-sheet-pin:hover {
+    color: var(--cyan);
+}
+
+/* ── PLAN — the live prescription, right column ─────────────── */
+
+.cx-plan {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 26px);
+}
+
+.cx-plan:focus-within {
+    box-shadow: 0 0 0 2px #ede9fe, 0 0 18px 4px rgba(124, 58, 237, 0.15);
+}
+
+.cx-plan-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 6px;
+}
+
+.cx-plan-title {
+    margin: 0;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 680;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    text-transform: none;
+}
+
+.cx-plan-sum {
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+}
+
+.cx-plan-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 12px 10px;
+}
+
+/* section micro-headers */
+.cx-sec-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 8px 5px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cx-sec-label svg {
+    flex: none;
+    opacity: 0.75;
+}
+
+/* ── one line on the plan ── */
+.cx-line {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 2px 10px;
+    border-radius: 10px;
+    padding: 9px 8px;
+}
+
+.cx-line + .cx-line::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 8px;
+    right: 8px;
+    border-top: 1px solid var(--cx-hairline);
+}
+
+.cx-line.is-click {
+    cursor: pointer;
+    transition: background 0.13s ease;
+}
+
+.cx-line.is-click:hover {
+    background: rgba(18, 104, 232, 0.045);
+}
+
+.cx-line.is-click:hover::before,
+.cx-line.is-click:hover + .cx-line::before {
+    border-color: transparent;
+}
+
+.cx-line.is-active {
+    background: rgba(18, 104, 232, 0.07);
+}
+
+.cx-line.is-active::before,
+.cx-line.is-active + .cx-line::before {
+    border-color: transparent;
+}
+
+.cx-line-main {
+    min-width: 0;
+}
+
+.cx-line-name {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 620;
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+}
+
+.cx-line.is-plain .cx-line-name {
+    font-size: 12.5px;
+    font-weight: 560;
+    line-height: 1.45;
+}
+
+.cx-line-sub {
+    margin-top: 1px;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    text-transform: capitalize;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cx-line-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.cx-pill {
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    background: rgba(248, 251, 255, 0.85);
+    padding: 1.5px 7px;
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+}
+
+.cx-pill.sos {
+    border-color: rgba(180, 83, 9, 0.25);
+    background: var(--cx-amber-bg);
+    color: var(--cx-amber);
+    font-weight: 700;
+}
+
+/* remove ×: invisible until the line is hovered — the plan reads
+   as a document first, an editor second */
+.cx-x {
+    flex: none;
+    align-self: center;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--faint);
+    font-size: 15px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.cx-line:hover .cx-x,
+.cx-x:focus-visible {
+    opacity: 1;
+}
+
+.cx-x:hover {
+    background: rgba(217, 64, 64, 0.1);
+    color: var(--danger);
+}
+
+/* ── dose, edited on the line ── */
+
+.cx-dose {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 9px;
+    margin-top: 9px;
+    border-top: 1px solid var(--cx-hairline);
+    padding-top: 10px;
+    cursor: default;
+}
+
+.cx-dose-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: end;
+}
+
+.cx-dose-field {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.cx-dose-field>span {
+    color: var(--faint);
+    font-size: 9.5px;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cx-dose-field input {
+    width: 100%;
+    height: 30px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 9px;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 600;
+    outline: none;
+    box-shadow: none;
+}
+
+.cx-dose-field input:focus {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+}
+
+.cx-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    height: 30px;
+    padding: 0 3px;
+}
+
+.cx-stepper button {
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1;
+}
+
+.cx-stepper button:hover {
+    background: rgba(18, 104, 232, 0.08);
+    color: var(--blue);
+}
+
+.cx-stepper b {
+    min-width: 22px;
+    text-align: center;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.cx-slots {
+    display: flex;
+    gap: 4px;
+}
+
+.cx-slot {
+    flex: 1;
+    height: 30px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cx-slot:hover {
+    border-color: rgba(18, 104, 232, 0.4);
+    color: var(--blue);
+}
+
+.cx-slot[aria-pressed="true"] {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--blue-soft);
+    color: var(--blue);
+}
+
+.cx-slot.is-sos {
+    flex: 1.4;
+}
+
+.cx-slot.is-sos[aria-pressed="true"] {
+    border-color: rgba(180, 83, 9, 0.4);
+    background: var(--cx-amber-bg);
+    color: var(--cx-amber);
+}
+
+.cx-dose-more {
+    justify-self: start;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 620;
+}
+
+.cx-dose-more:hover {
+    color: var(--blue);
+}
+
+/* ── follow-up quick chips ── */
+.cx-followup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 8px 6px;
+}
+
+.cx-chip-toggle {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 4.5px 12px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cx-chip-toggle:hover {
+    border-color: rgba(18, 104, 232, 0.45);
+    color: var(--blue);
+}
+
+.cx-chip-toggle[aria-pressed="true"] {
+    border-color: rgba(18, 104, 232, 0.55);
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-weight: 680;
+}
+
+/* ── footer: the one action ── */
+.cx-plan-foot {
+    flex: none;
+    border-top: 1px solid var(--cx-hairline);
+    background: rgba(255, 255, 255, 0.55);
+    padding: 12px 14px;
+}
+
+.cx-review {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 42px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #2e7ef0, #1268e8);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 660;
+    letter-spacing: -0.008em;
+    box-shadow: 0 8px 20px rgba(18, 104, 232, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    transition: filter 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.cx-review:hover {
+    filter: brightness(1.06);
+}
+
+.cx-review:active {
+    transform: translateY(1px);
+    box-shadow: 0 4px 12px rgba(18, 104, 232, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cx-review:disabled {
+    filter: saturate(0.25) brightness(1.04);
+    box-shadow: none;
+}
+
+.cx-review kbd {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.14);
+    padding: 1px 6px;
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 650;
+}
+
+/* ── the keyboard map ── */
+
+.cx-keys-hint {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    border: 0;
+    background: none;
+    padding: 2px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+}
+
+.cx-keys-hint:hover {
+    color: var(--muted);
+}
+
+.cx-keys-hint kbd {
+    padding: 0 4px;
+    font-size: 10px;
+}
+
+.cx-keys-sheet {
+    width: min(660px, 100%);
+}
+
+.cx-keys-title h2 {
+    margin: 0;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 680;
+    letter-spacing: -0.015em;
+    text-transform: none;
+}
+
+.cx-keys-title p {
+    margin: 2px 0 0;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.cx-keys-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 18px 26px;
+    padding: 16px 18px;
+}
+
+.cx-keys-group h3 {
+    margin: 0 0 8px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cx-keys-row {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.cx-keys-row kbd {
+    justify-self: start;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(248, 251, 255, 0.9);
+    padding: 2px 7px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.cx-keys-row span {
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
+/* ── empty state ── */
+.cx-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 44px 24px;
+    text-align: center;
+}
+
+.cx-empty-mark {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1.5px dashed var(--line);
+    border-radius: 50%;
+    color: var(--faint);
+}
+
+.cx-empty-title {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+}
+
+.cx-empty-sub {
+    max-width: 230px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 450;
+    line-height: 1.5;
+}
+
+/* ── responsive ────────────────────────────────────────────── */
+
+@media (max-width: 1440px) {
+    .workflow.cx-grid {
+        grid-template-columns:
+            minmax(252px, 0.95fr)
+            minmax(338px, 1.3fr)
+            minmax(262px, 0.95fr);
+    }
+}
+
+@media (max-width: 1120px) {
+    .workflow.cx-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cx-chart-panel,
+    .cx-plan,
+    .cx-synapse .cx-syn {
+        position: static;
+        max-height: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .cx-line.is-click,
+    .cx-x,
+    .cx-chip-toggle,
+    .cx-review,
+    .cx-ctx-chip,
+    .cx-ctx-more,
+    .cx-ctx-pop-row,
+    .cx-chip,
+    .cx-dots i,
+    .cx-ghost,
+    .cx-browse-chip,
+    .cx-browse-door,
+    .cx-chart-search {
+        transition: none;
+    }
+}

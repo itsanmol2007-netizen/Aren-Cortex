@@ -8,6 +8,8 @@ import {
     updateVisitStatus,
     reassignVisitDoctor,
     saveVisitSymptoms,
+    saveVisitObservations,
+    legacySymptomIdsFor,
     type DBPatient,
 } from "@/lib/db";
 import type { TodayVisit } from "../types/frontdesk";
@@ -83,7 +85,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         phone: string;
         age: string;
         gender: string;
-        symptomIds: number[];
+        observableIds: number[];
         doctorId: string;
     }): Promise<{ patientName: string } | null> => {
         try {
@@ -102,14 +104,20 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
 
             const visit = await createVisit(patient.id, "waiting", opts.doctorId);
 
-            // Symptoms are structured entities picked from the `symptoms` catalog
-            // (they feed Cortex, ranking, and future specialty logic) — the picker
-            // hands us real IDs, so they persist directly. Best-effort: a failure
-            // here must not lose the visit itself.
-            if (opts.symptomIds.length) {
-                saveVisitSymptoms(visit.id, opts.symptomIds).catch((err) =>
-                    console.warn("saveVisitSymptoms failed (non-fatal):", err)
-                );
+            // Symptoms are structured entities — the picker hands us observable
+            // ids from the shared catalogue, never typed strings.
+            //
+            // Two writes. `visit_observations` is canonical and holds anything the
+            // receptionist entered; `visit_symptoms` mirrors the subset that has a
+            // v1 row, so the queue row and visit detail keep rendering while those
+            // tables still exist. Best-effort throughout: losing a symptom must
+            // never lose the visit.
+            if (opts.observableIds.length) {
+                const ids = opts.observableIds;
+                saveVisitObservations(visit.id, ids)
+                    .then(() => legacySymptomIdsFor(ids))
+                    .then((legacy) => (legacy.length ? saveVisitSymptoms(visit.id, legacy) : undefined))
+                    .catch((err) => console.warn("saveVisitObservations failed (non-fatal):", err));
             }
 
             refetch();

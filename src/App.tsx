@@ -1,17 +1,15 @@
-import { HeartPulse, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { testGroups } from "./data/mockData";
-import { ChipSearchPanel } from "./components/ChipSearchPanel";
-import { FindingsPanel } from "./components/FindingsPanel";
-import { FrequentPicksPanel } from "./components/FrequentPicksPanel";
+import { ChartPanel } from "./components/ChartPanel";
+import { systemLabel } from "./lib/synapse/systems";
 import { MedicineInspector } from "./components/MedicineInspector";
-import { MedicineSuggestions } from "./components/MedicineSuggestions";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { ActiveConsultGuard } from "./components/ActiveConsultGuard";
-import { PreviewPanel } from "./components/PreviewPanel";
+import { ContextBar } from "./components/ContextBar";
+import { PlanPanel } from "./components/PlanPanel";
+import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import ReviewModal from "./components/ReviewModal";
-import { SelectedMedicinesBar } from "./components/SelectedMedicinesBar";
 import { Sidebar } from "./features/sidebar/Sidebar";
 import { GlobalLogoTrigger } from "./components/GlobalLogoTrigger";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
@@ -20,26 +18,28 @@ import { PatientsPage } from "./features/patients/PatientsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
 import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
-import { useAuth } from "./features/auth/AuthProvider";
+import { useClinicalIdentity } from "./hooks/useClinicalIdentity";
+import { useSynapse } from "./hooks/useSynapse";
+import { useConsultIntelligence } from "./hooks/useConsultIntelligence";
+import { SuggestionsPanel, type AcceptPayload } from "./features/synapse/SuggestionsPanel";
 import {
-  DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
-  fetchSymptoms, fetchFindings,
+  commitConsultation, setClinicBrandDefault, clearClinicBrandDefault,
+  type SearchedAccept,
+} from "./lib/db/synapse";
+import type { Medicine as SynapseBrand } from "./lib/synapse/brands";
+import {
+  DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   createPatient, findPatientByPhone, createVisit,
   replaceVisitSymptoms, replaceVisitFindings,
-  rankMedicines, saveConsult, runLearningLoop,
-  fetchFrequentPicks, logCoprescriptionObservations,
+  saveConsult,
   freqSlotToLabel, freqLabelToSlot,
   fetchPatientVisits,
-  fetchDoctorFavourites,
-  fetchFavouriteMedicines,
-  toggleFavouriteMedicine,
-  fetchDoctor, fetchHospital, fetchSnapshotSuggestions,
-  type DBSymptom, type DBFinding, type RankedMedicine,
-  type SaveConsultMedicine, type RealVisit, type FrequentPick,
-  type DBDoctor, type DBHospital, type ClinicalSnapshot,
+  fetchDoctor, fetchHospital,
+  type DBFinding,
+  type SaveConsultMedicine, type RealVisit,
+  type DBDoctor, type DBHospital,
 } from "./lib/db";
 
-const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
 const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
 
 // Title + subtitle for every coming-soon feature page
@@ -53,31 +53,42 @@ const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
   support: { title: "Support", subtitle: "Help & documentation" },
 };
 
-function toUIMedicine(r: RankedMedicine, maxScore: number): Medicine & {
-  _dosageDefaults: RankedMedicine["dosage_defaults"];
-  _dosage_mg: number | null;
-  _duration_days: number | null;
-  _route: string;
-} {
-  const defaults = r.dosage_defaults;
-  const compositionIds: number[] = (r as any).compositions?.length
-    ? (r as any).compositions
-    : [r.primary_composition_id].filter(Boolean);
-
+/**
+ * A ranked molecule plus the brand chosen for it, as a prescription line.
+ *
+ * The engine ranks compositions; `brand` is the product actually dispensed.
+ * A composition with no single-molecule product behind it is rankable but not
+ * prescribable, and the caller must handle that rather than silently adding a
+ * medicine with no id.
+ */
+function toPrescriptionLine(
+  payload: AcceptPayload,
+  brand: SynapseBrand,
+  sortOrder: number
+): PrescriptionMedicine {
   return {
-    id: String(r.medicine_id),
-    medicine_id: r.medicine_id,
-    composition_ids: compositionIds,
-    primary_composition_id: r.primary_composition_id,
-    name: r.medicine_name,
-    category: r.composition_names,
+    id: String(brand.id),
+    medicine_id: brand.id,
+    composition_ids: [brand.compositionId],
+    primary_composition_id: brand.compositionId,
+    name: brand.name,
+    category: payload.label,
     use: "",
-    match: maxScore > 0 ? Math.round((r.score / maxScore) * 100) : 50,
-    composition: r.composition_names,
-    _dosageDefaults: defaults,
-    _dosage_mg: defaults?.dosage_mg ?? null,
-    _duration_days: defaults?.duration_days ?? null,
-    _route: defaults?.route ?? "oral",
+    match: 0,
+    composition: payload.label,
+    dosage: "1 tab",
+    frequency: "Morning and Night",
+    duration: "5 days",
+    notes: "After food",
+    dosage_mg: null,
+    duration_days: null,
+    route: brand.form ?? "oral",
+    instructions: "",
+    is_sos: false,
+    sort_order: sortOrder,
+    intent_id: payload.intentId,
+    via_search: payload.viaSearch,
+    overridden: payload.overridden,
   };
 }
 
@@ -94,22 +105,27 @@ function hasActiveConsult(
 
 function App() {
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
-  const symptomsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
-  const findingsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
-  const medicinesSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
-  const testsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  // One ref per column — the three Tab stops of the workspace. The old
+  // findings/tests refs are gone with the panels they pointed at.
+  const chartSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  const synapseSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  const planRef = useRef<HTMLElement>(null) as React.RefObject<HTMLElement>;
 
-  const [allSymptoms, setAllSymptoms] = useState<DBSymptom[]>([]);
-  const [allFindings, setAllFindings] = useState<DBFinding[]>([]);
   const [dbReady, setDbReady] = useState(false);
   const [doctorProfile, setDoctorProfile] = useState<DBDoctor | null>(null);
   const [hospitalProfile, setHospitalProfile] = useState<DBHospital | null>(null);
 
-  // Presence heartbeat: mark this doctor "online" for reception while Cortex is
-  // open. Uses the signed-in doctor's own row (falls back to the MVP doctor id).
-  const auth = useAuth();
-  const heartbeatDoctorId = auth.status === "authed" ? (auth.identity.doctor?.id ?? DOCTOR_ID) : null;
-  useDoctorHeartbeat(heartbeatDoctorId);
+  // ★ The one answer to "which doctor, which clinic". Everything Synapse
+  // learns is keyed on these, so they have to be the signed-in ones — a bias
+  // row written under the wrong doctor cannot be untangled later.
+  const identity = useClinicalIdentity();
+  const DOCTOR = useMemo(
+    () => ({ id: identity.doctorId, name: identity.doctorName, specialty: identity.specialization }),
+    [identity.doctorId, identity.doctorName, identity.specialization]
+  );
+
+  // Presence heartbeat: mark this doctor "online" for reception while Cortex is open.
+  useDoctorHeartbeat(identity.ready ? identity.doctorId : null);
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
@@ -120,19 +136,29 @@ function App() {
   const [prescription, setPrescription] = useState<PrescriptionMedicine[]>([]);
   const [selectedMedicineId, setSelectedMedicineId] = useState<string | null>(null);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
-  const [selectedLab, setSelectedLab] = useState("No preferred lab");
 
-  const [rankedMedicines, setRankedMedicines] = useState<Medicine[]>([]);
-  const [rankedCompositionIds, setRankedCompositionIds] = useState<number[]>([]);
-  const [rankLoading, setRankLoading] = useState(false);
+  // ── Synapse: what the doctor took, and what they were offered ──
+  // `accepted` is keyed by intent id because that is what the engine ranked and
+  // what the decision log records. The prescription rows are downstream of it.
+  const [acceptedIntents, setAcceptedIntents] = useState<Map<number, AcceptPayload>>(new Map());
+  const [chosenBrands, setChosenBrands] = useState<Map<number, number>>(new Map());
+  const [searchedAccepts, setSearchedAccepts] = useState<SearchedAccept[]>([]);
 
-  const [favouriteIds, setFavouriteIds] = useState<Set<number>>(new Set());
-  const [favouritePicks, setFavouritePicks] = useState<FrequentPick[]>([]);
+  /** Impressions the doctor agreed with — the working diagnosis. */
+  const [diagnoses, setDiagnoses] = useState<string[]>([]);
 
-  const [frequentPicks, setFrequentPicks] = useState<FrequentPick[]>([]);
-  const [picksLoading, setPicksLoading] = useState(false);
-  const [activeTagIds, setActiveTagIds] = useState<number[]>([]);
-  const picksTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Hard warnings this doctor has read. Lifted out of the suggestions panel so
+   * that closing the consult can refuse while a contraindication the doctor is
+   * actually prescribing is still unread (handoff §14, second half of the gate).
+   */
+  const [acknowledgedIntents, setAcknowledgedIntents] = useState<Set<number>>(new Set());
+
+  /**
+   * Brands the doctor picked ON PURPOSE, as opposed to accepting the default.
+   * Only these are fed to the learning write — see handleAcceptIntent.
+   */
+  const [deliberateBrands, setDeliberateBrands] = useState<Map<number, number>>(new Map());
 
   const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
   const [pastVisitsLoading, setPastVisitsLoading] = useState(false);
@@ -146,151 +172,200 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [followUpDays, setFollowUpDays] = useState<number | null>(null);
   const [adviceNotes, setAdviceNotes] = useState<string>("");
-  const [lastSnapshot, setLastSnapshot] = useState<{ symptoms: string[]; findings: string[] } | null>(null);
-  const [recentSnapshots, setRecentSnapshots] = useState<ClinicalSnapshot[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useConsultKeyboard({
-    symptomsRef: symptomsSearchRef,
-    findingsRef: findingsSearchRef,
-    medicinesRef: medicinesSearchRef,
-    testsRef: testsSearchRef,
+    chartRef: chartSearchRef,
+    synapseRef: synapseSearchRef,
+    planRef,
     medicineCount: prescription.length,
     onNewPatient: () => setPatientModalOpen(true),
-    onReviewRx: () => setIsReviewOpen(true),
-    onUndoSnapshot: handleUndoSnapshot,
-    isAnyModalOpen: patientModalOpen || isReviewOpen || activeConsultGuardOpen,
+    onReviewRx: () => openReview(),
+    onToggleShortcuts: () => setShortcutsOpen((v) => !v),
+    isAnyModalOpen:
+      patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
+      shortcutsOpen || !!stagedMedicine || !!selectedMedicineId,
   });
 
-  const symptomNameToId = useMemo(() => {
-    const map = new Map<string, number>();
-    allSymptoms.forEach((s) => map.set(s.name, s.id));
-    return map;
-  }, [allSymptoms]);
+  // ★ Ranking + the catalogue. `observables` IS the catalogue in v2 (handoff
+  // §16): symptoms, examination findings and patient history are one table
+  // split by `kind`, not three. The legacy `symptoms` / `findings` tables still
+  // hold every existing patient's history and Front Desk still writes them —
+  // Cortex just no longer picks from them.
+  const synapse = useSynapse();
 
-  const findingNameToId = useMemo(() => {
-    const map = new Map<string, number>();
-    allFindings.forEach((f) => map.set(f.name, f.id));
-    return map;
-  }, [allFindings]);
+  const observables = synapse.data?.observables ?? [];
 
-  const symptomNames = useMemo(() => allSymptoms.map((s) => s.name), [allSymptoms]);
+  // ChartPanel takes the catalogue whole and splits it by `kind` itself — one
+  // search over everything, and the chip routes to the right zone rather than
+  // the doctor choosing a panel first (design spec §4.2). What App still needs
+  // are the label sets below, which decide which SURFACE renders a chip and
+  // what may legitimately sit in `selectedSymptoms`.
 
-  useEffect(() => {
-    Promise.all([
-      fetchSymptoms(),
-      fetchFindings(),
-      fetchDoctorFavourites(DOCTOR_ID),
-      fetchFavouriteMedicines(DOCTOR_ID),
-      fetchDoctor(DOCTOR_ID),
-      fetchHospital("38bd8da3-0dd2-43a5-ad09-2d3194c95ba9"),
-      fetchSnapshotSuggestions("fever"),
-    ])
-      .then(([symptoms, findings, favs, favPicks, doctor, hospital, snapshots]) => {
-        setAllSymptoms(symptoms);
-        setAllFindings(findings);
-        setFavouriteIds(new Set(favs.map((f) => f.medicine_id)));
-        setFavouritePicks(favPicks);
-        setDoctorProfile(doctor);
-        setHospitalProfile(hospital);
-        setRecentSnapshots((snapshots as ClinicalSnapshot[]).slice(0, 3));
-        setDbReady(true);
-      })
-      .catch((err) => showToast(`DB load failed: ${err.message}`));
+  /** Patient context — pregnancy, comorbidities, exposures. Rendered by ContextBar. */
+  const historyLabels = useMemo(
+    () => new Set(observables.filter((o) => o.kind === "history").map((o) => o.label)),
+    [observables]
+  );
+
+  /** Everything that may legitimately sit in `selectedSymptoms`. */
+  const reportableLabels = useMemo(
+    () => new Set(
+      observables
+        .filter((o) => o.kind === "symptom" || o.kind === "history")
+        .map((o) => o.label)
+    ),
+    [observables]
+  );
+
+  /** Seen on examination. */
+  const findingObservables = useMemo(
+    () => observables.filter((o) => o.kind === "finding"),
+    [observables]
+  );
+
+  const observableByLabel = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of observables) m.set(o.label, o.id);
+    return m;
+  }, [observables]);
+
+  /**
+   * ReviewModal and the past-visit rail are typed against `DBFinding`, so the
+   * finding observables are presented in that shape rather than rewriting them.
+   * Every finding observable is an abnormal sign — the catalogue has no "chest
+   * clear", because a normal finding emits no signal and is represented by
+   * absence.
+   */
+  const findingsAsDb: DBFinding[] = useMemo(
+    () => findingObservables.map((o) => ({
+      id: o.id,
+      name: o.label,
+      group_name: systemLabel(o.system),
+      is_abnormal: true,
+    })),
+    [findingObservables]
+  );
+
+  // ── One chart, two surfaces ─────────────────────────────────────────────
+  // `selectedSymptoms` stays the single array it has always been — the engine,
+  // the v1 compatibility write and the review modal all read it unchanged. It
+  // is only SPLIT for rendering: complaints go to the picker, context to the
+  // bar. Showing a chip in both places would let a doctor remove it twice and
+  // wonder which surface won.
+  const symptomChips = useMemo(
+    () => selectedSymptoms.filter((l) => !historyLabels.has(l)),
+    [selectedSymptoms, historyLabels]
+  );
+
+  const contextChips = useMemo(
+    () => selectedSymptoms.filter((l) => historyLabels.has(l)),
+    [selectedSymptoms, historyLabels]
+  );
+
+  /** The picker owns the complaints half; context survives around its edits. */
+  const handleSymptomsChange = useCallback(
+    (next: string[]) => setSelectedSymptoms([...next, ...contextChips]),
+    [contextChips]
+  );
+
+  const handleContextToggle = useCallback((label: string) => {
+    setSelectedSymptoms((curr) =>
+      curr.includes(label) ? curr.filter((l) => l !== label) : [...curr, label]
+    );
+    // Context is never graded mild/moderate/severe. If an intensity row exists
+    // for this label — a chart built before the bar existed — drop it.
+    setSelectedSymptomsWithIntensity((curr) => curr.filter((s) => s.name !== label));
   }, []);
 
   useEffect(() => {
-    if (!visitId) return;
+    if (!identity.ready) return;
+    Promise.all([
+      fetchDoctor(identity.doctorId),
+      fetchHospital(identity.hospitalId),
+    ])
+      .then(([doctor, hospital]) => {
+        setDoctorProfile(doctor);
+        setHospitalProfile(hospital);
+        setDbReady(true);
+      })
+      .catch((err) => showToast(`DB load failed: ${err.message}`));
+  }, [identity.ready, identity.doctorId, identity.hospitalId]);
+
+  // The chart, as observable ids. Both panels hold display LABELS; this is the
+  // one place they become the engine's vocabulary — and since the catalogue IS
+  // the engine's vocabulary now, it is a lookup rather than a translation.
+  const chartObservableIds = useMemo(
+    () => [...selectedSymptoms, ...selectedFindings]
+      .map((label) => observableByLabel.get(label))
+      .filter((id): id is number => id !== undefined),
+    [selectedSymptoms, selectedFindings, observableByLabel]
+  );
+
+  const ageYears = useMemo(() => {
+    const n = Number.parseInt(String(patient?.age ?? ""), 10);
+    return Number.isFinite(n) ? n : null;
+  }, [patient?.age]);
+
+  // The engine is a pure function over data already in memory, so ranking is
+  // synchronous — the list re-ranks in the same frame the chip lands. The old
+  // path posted every change to an edge function and waited 300 ms.
+  const intelligence = useConsultIntelligence({
+    data: synapse.data,
+    visitId,
+    observableIds: chartObservableIds,
+    vitals,
+    ageYears,
+    acceptedIntentIds: useMemo(() => [...acceptedIntents.keys()], [acceptedIntents]),
+  });
+
+  // ── The v1 compatibility write ──────────────────────────────────────────
+  //
+  // `visit_observations` is the permanent, engine-shaped record and is written
+  // by useConsultIntelligence. This second write keeps `visit_symptoms` /
+  // `visit_findings` current as well, because Front Desk's visit detail, the
+  // past-visit rail and every existing patient record still read them.
+  //
+  // Only chips that HAVE a legacy row can be written there — the v2 catalogue
+  // is five times the size of the v1 one, so a chip like "Positive slump test"
+  // simply has no v1 equivalent and lives only in visit_observations. That gap
+  // closes when the v1 tables are torn down and everything reads observations.
+  // This whole effect dies with them.
+  useEffect(() => {
+    if (!visitId || !synapse.data) return;
     if (rankTimer.current) clearTimeout(rankTimer.current);
 
-    rankTimer.current = setTimeout(async () => {
-      const symptomPayload = selectedSymptoms
-        .map((name) => symptomNameToId.get(name))
-        .filter((id): id is number => id !== undefined)
-        .map((id) => {
-          const name = [...symptomNameToId.entries()].find(([, v]) => v === id)?.[0];
-          const intensity = selectedSymptomsWithIntensity.find((s) => s.name === name)?.intensity ?? "moderate";
-          return { id, intensity: intensity as "mild" | "moderate" | "severe" };
-        });
+    const { symptomOf, findingOf } = synapse.data.observableMaps;
 
-      const findingPayload = selectedFindings
-        .map((name) => findingNameToId.get(name))
-        .filter((id): id is number => id !== undefined);
-
-      replaceVisitSymptoms(visitId, symptomPayload.map((s) => s.id), symptomPayload.map((s) => s.intensity)).catch(() => { });
-      replaceVisitFindings(visitId, findingPayload).catch(() => { });
-
-      if (!symptomPayload.length && !findingPayload.length) {
-        setRankedMedicines([]);
-        setRankedCompositionIds([]);
-        setActiveTagIds([]);
-        return;
+    rankTimer.current = setTimeout(() => {
+      const legacySymptoms: number[] = [];
+      const intensities: ("mild" | "moderate" | "severe")[] = [];
+      for (const label of selectedSymptoms) {
+        const obsId = observableByLabel.get(label);
+        const legacyId = obsId != null ? symptomOf.get(obsId) : undefined;
+        if (legacyId == null) continue;
+        legacySymptoms.push(legacyId);
+        intensities.push(
+          selectedSymptomsWithIntensity.find((s) => s.name === label)?.intensity ?? "moderate"
+        );
       }
 
-      setRankLoading(true);
-      try {
-        const results = await rankMedicines({ symptoms: symptomPayload, findingIds: findingPayload });
-        const maxScore = results[0]?.score ?? 1;
-        setRankedMedicines(results.map((r) => toUIMedicine(r, maxScore)));
-        setRankedCompositionIds(results.map((r) => r.primary_composition_id));
-        const sIds = symptomPayload.map((s) => s.id);
-        setActiveTagIds(sIds);
-      } catch (err: any) {
-        showToast(`Ranking failed: ${err.message}`);
-      } finally {
-        setRankLoading(false);
-      }
+      const legacyFindings = selectedFindings
+        .map((label) => observableByLabel.get(label))
+        .map((obsId) => (obsId != null ? findingOf.get(obsId) : undefined))
+        .filter((id): id is number => id != null);
+
+      replaceVisitSymptoms(visitId, legacySymptoms, intensities).catch(() => { });
+      replaceVisitFindings(visitId, legacyFindings).catch(() => { });
     }, 300);
 
     return () => { if (rankTimer.current) clearTimeout(rankTimer.current); };
-  }, [selectedSymptoms, selectedSymptomsWithIntensity, selectedFindings, visitId, symptomNameToId, findingNameToId]);
-
-  useEffect(() => {
-    if (!visitId) return;
-    if (picksTimer.current) clearTimeout(picksTimer.current);
-
-    picksTimer.current = setTimeout(async () => {
-      if (!rankedCompositionIds.length && !selectedSymptoms.length) {
-        setFrequentPicks([]);
-        return;
-      }
-
-      const symptomIds = selectedSymptoms
-        .map((name) => symptomNameToId.get(name))
-        .filter((id): id is number => id !== undefined);
-
-      if (!symptomIds.length) { setFrequentPicks([]); return; }
-
-      const { supabase } = await import("./lib/supabase");
-      const { data: tagRows } = await supabase
-        .from("symptom_tag_map")
-        .select("tag_id")
-        .in("symptom_id", symptomIds);
-
-      const tagIds = [...new Set((tagRows ?? []).map((r: any) => Number(r.tag_id)))];
-      if (!tagIds.length) { setFrequentPicks([]); return; }
-
-      setPicksLoading(true);
-      try {
-        const picks = await fetchFrequentPicks({
-          activeTagIds: tagIds,
-          excludeCompositionIds: rankedCompositionIds,
-          doctorId: DOCTOR_ID,
-        });
-        setFrequentPicks(picks);
-      } catch (err: any) {
-        console.warn("fetchFrequentPicks (non-fatal):", err.message);
-        setFrequentPicks([]);
-      } finally {
-        setPicksLoading(false);
-      }
-    }, 500);
-
-    return () => { if (picksTimer.current) clearTimeout(picksTimer.current); };
-  }, [rankedCompositionIds, selectedSymptoms, visitId, symptomNameToId]);
+  }, [visitId, synapse.data, selectedSymptoms, selectedFindings,
+      selectedSymptomsWithIntensity, observableByLabel]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -306,11 +381,12 @@ function App() {
     setPrescription([]);
     setSelectedMedicineId(null);
     setSelectedTests([]);
-    setSelectedLab("No preferred lab");
-    setRankedMedicines([]);
-    setRankedCompositionIds([]);
-    setFrequentPicks([]);
-    setActiveTagIds([]);
+    setAcceptedIntents(new Map());
+    setChosenBrands(new Map());
+    setSearchedAccepts([]);
+    setDiagnoses([]);
+    setAcknowledgedIntents(new Set());
+    setDeliberateBrands(new Map());
     setPastVisits([]);
     setRepeatRxBanner(null);
     setFollowUpDays(null);
@@ -358,17 +434,19 @@ function App() {
       setPrescription([]);
       setSelectedMedicineId(null);
       setSelectedTests([]);
-      setSelectedLab("No preferred lab");
-      setRankedMedicines([]);
-      setRankedCompositionIds([]);
-      setFrequentPicks([]);
-      setActiveTagIds([]);
+      setAcceptedIntents(new Map());
+      setChosenBrands(new Map());
+      setSearchedAccepts([]);
+      setDiagnoses([]);
+      setAcknowledgedIntents(new Set());
+      setDeliberateBrands(new Map());
       setRepeatRxBanner(null);
       setFollowUpDays(null);
       setAdviceNotes("");
       setActivePage(null);
       setSidebarOpen(false);
       showToast(`Consult started for ${incomingPatient.name}`);
+      window.setTimeout(() => chartSearchRef.current?.focus(), 0);
 
       setPastVisitsLoading(true);
       fetchPatientVisits(incomingPatient.id!)
@@ -380,28 +458,133 @@ function App() {
     }
   }, []);
 
-  const handleToggleFavourite = useCallback(async (medicine: Medicine) => {
-    const medId = medicine.medicine_id;
-    const compId = medicine.primary_composition_id ?? medicine.composition_ids?.[0] ?? 0;
-    if (!medId || !compId) return;
+  // ────────────────────────────────────────────────────────────────────
+  // Taking a suggestion.
+  //
+  // One entry point for every intent type, because the decision log records
+  // them all the same way. Where each type LANDS differs — a medicine becomes
+  // a prescription line, a test becomes an order, advice and referrals become
+  // lines on the advice note — but the record of "the doctor took this" is one
+  // shape, and that is what the learning loop reads.
+  // ────────────────────────────────────────────────────────────────────
+  const handleAcceptIntent = useCallback((payload: AcceptPayload) => {
+    setAcceptedIntents((curr) => {
+      if (curr.has(payload.intentId)) return curr;
+      const next = new Map(curr);
+      next.set(payload.intentId, payload);
+      return next;
+    });
 
-    const isFav = favouriteIds.has(medId);
-    const next = new Set(favouriteIds);
-    if (isFav) next.delete(medId); else next.add(medId);
-    setFavouriteIds(next);
-
-    try {
-      await toggleFavouriteMedicine({
-        doctorId: DOCTOR_ID,
-        medicineId: medId,
-        compositionId: compId,
-        setFav: !isFav,
-      });
-    } catch (err: any) {
-      setFavouriteIds(favouriteIds);
-      showToast(`Favourite update failed: ${err.message}`);
+    if (payload.viaSearch) {
+      setSearchedAccepts((curr) => [
+        ...curr.filter((s) => s.intentId !== payload.intentId),
+        { intentId: payload.intentId, chosenMedicineId: payload.medicine?.id ?? null },
+      ]);
     }
-  }, [favouriteIds]);
+
+    switch (payload.type) {
+      case "medicine": {
+        if (!payload.medicine) {
+          // Rankable but not prescribable: the catalogue has no product
+          // containing this molecule on its own. Saying so is the whole point
+          // of surfacing it rather than quietly dropping it.
+          showToast(`${payload.label} has no single-molecule brand — search a product instead`);
+          setAcceptedIntents((curr) => {
+            const next = new Map(curr);
+            next.delete(payload.intentId);
+            return next;
+          });
+          return;
+        }
+        const brand = payload.medicine;
+        setChosenBrands((curr) => new Map(curr).set(payload.intentId, brand.id));
+        // Only a DELIBERATE pick teaches the brand model. Recording the default
+        // as if it had been chosen would train the model on its own output
+        // (handoff §12) — the drift §10a avoids by never logging the
+        // personalised score.
+        if (payload.brandDeliberate) {
+          setDeliberateBrands((curr) => new Map(curr).set(payload.intentId, brand.id));
+        }
+        setPrescription((curr) => {
+          if (curr.some((m) => m.medicine_id === brand.id)) return curr;
+          return [...curr, toPrescriptionLine(payload, brand, curr.length)];
+        });
+        // Deliberately NOT opening the dose editor. The defaults are right most
+        // of the time, and a modal after every single accept was the largest
+        // click cost in the old workspace. The line is editable on the Plan.
+        break;
+      }
+      case "test":
+        setSelectedTests((curr) =>
+          curr.includes(payload.label) ? curr : [...curr, payload.label]
+        );
+        break;
+      case "referral":
+        appendAdvice(`Refer to ${payload.label}`);
+        break;
+      case "advice":
+      case "exercise":
+        appendAdvice(payload.label);
+        break;
+      case "finding":
+        // The engine's reading of the chart, taken as the working diagnosis.
+        // It lands on the Plan and prints on the Rx — and, the part that was
+        // missing until now, it is finally RECORDED as an accept, so the
+        // decision log sees which impression the doctor actually agreed with.
+        setDiagnoses((curr) =>
+          curr.includes(payload.label) ? curr : [...curr, payload.label]
+        );
+        break;
+    }
+  }, []);
+
+  const appendAdvice = (line: string) => {
+    setAdviceNotes((curr) => {
+      const existing = curr.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (existing.includes(line)) return curr;
+      return [...existing, line].join("\n");
+    });
+  };
+
+  /** Swap the brand under an already-chosen molecule. Always deliberate. */
+  const handleChangeBrand = useCallback((intentId: number, brand: SynapseBrand) => {
+    setChosenBrands((curr) => new Map(curr).set(intentId, brand.id));
+    setDeliberateBrands((curr) => new Map(curr).set(intentId, brand.id));
+    setPrescription((curr) =>
+      curr.map((m) =>
+        m.intent_id === intentId
+          ? { ...m, id: String(brand.id), medicine_id: brand.id, name: brand.name, route: brand.form ?? m.route }
+          : m
+      )
+    );
+  }, []);
+
+  /** Pin (or unpin) the brand the whole clinic sees first for this molecule. */
+  const handlePinClinicBrand = useCallback(async (brand: SynapseBrand, pinned: boolean) => {
+    try {
+      if (pinned) {
+        await setClinicBrandDefault({
+          hospitalId: identity.hospitalId,
+          compositionId: brand.compositionId,
+          medicineId: brand.id,
+          form: brand.form,
+          setBy: null,
+        });
+        showToast(`${brand.name} is now the clinic default`);
+      } else {
+        await clearClinicBrandDefault({
+          hospitalId: identity.hospitalId,
+          compositionId: brand.compositionId,
+          medicineId: brand.id,
+        });
+        showToast(`${brand.name} is no longer the clinic default`);
+      }
+      synapse.reload();
+    } catch (err: any) {
+      showToast(`Clinic default failed: ${err.message}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity.hospitalId, synapse.reload]);
 
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
     try {
@@ -442,17 +625,21 @@ function App() {
       setPrescription([]);
       setSelectedMedicineId(null);
       setSelectedTests([]);
-      setSelectedLab("No preferred lab");
-      setRankedMedicines([]);
-      setRankedCompositionIds([]);
-      setFrequentPicks([]);
-      setActiveTagIds([]);
+      setAcceptedIntents(new Map());
+      setChosenBrands(new Map());
+      setSearchedAccepts([]);
+      setDiagnoses([]);
+      setAcknowledgedIntents(new Set());
+      setDeliberateBrands(new Map());
       setRepeatRxBanner(null);
       setFollowUpDays(null);
       setAdviceNotes("");
       setPatientModalOpen(false);
       setActivePage(null);
       showToast(`Consult started for ${dbPatient.name}`);
+      // The chart is where a consult actually begins, so the cursor lands there
+      // and the first complaint is one keystroke away (spec §4.2).
+      window.setTimeout(() => chartSearchRef.current?.focus(), 0);
 
       setPastVisitsLoading(true);
       fetchPatientVisits(dbPatient.id!)
@@ -463,59 +650,6 @@ function App() {
       showToast(`Error: ${err.message}`);
     }
   }, []);
-
-  const handleSuggestionClick = (medicine: Medicine) => {
-    if (prescription.some((m) => m.id === medicine.id)) {
-      setSelectedMedicineId(medicine.id);
-      return;
-    }
-    const ext = medicine as ReturnType<typeof toUIMedicine>;
-    const defaults = ext._dosageDefaults;
-    const staged: PrescriptionMedicine = {
-      ...medicine,
-      dosage: defaults?.dosage_mg ? `${defaults.dosage_mg}mg` : "1 tab",
-      frequency: defaults?.frequency ? freqSlotToLabel(defaults.frequency) : "Morning and Night",
-      duration: defaults?.duration_days ? `${defaults.duration_days} days` : "5 days",
-      notes: defaults?.notes ?? "After food",
-      dosage_mg: defaults?.dosage_mg ?? null,
-      duration_days: defaults?.duration_days ?? null,
-      route: defaults?.route ?? "oral",
-      instructions: "",
-      is_sos: false,
-      sort_order: prescription.length,
-    };
-    setStagedMedicine(staged);
-  };
-
-  const handlePickAdd = (pick: FrequentPick) => {
-    const existingId = String(pick.medicine_id);
-    if (prescription.some((m) => m.id === existingId)) {
-      setSelectedMedicineId(existingId);
-      return;
-    }
-    const staged: PrescriptionMedicine = {
-      id: existingId,
-      medicine_id: pick.medicine_id,
-      composition_ids: [pick.composition_id],
-      primary_composition_id: pick.composition_id,
-      name: pick.medicine_name,
-      category: pick.composition_name,
-      use: "",
-      match: 0,
-      composition: pick.composition_name,
-      dosage: "1 tab",
-      frequency: "Morning and Night",
-      duration: "5 days",
-      notes: "After food",
-      dosage_mg: null,
-      duration_days: null,
-      route: "oral",
-      instructions: "",
-      is_sos: false,
-      sort_order: prescription.length,
-    };
-    setStagedMedicine(staged);
-  };
 
   const confirmStagedMedicine = () => {
     if (!stagedMedicine) return;
@@ -532,18 +666,95 @@ function App() {
     setPrescription((curr) => curr.map((m) => (m.id === updated.id ? updated : m)));
   };
 
+  // Releasing an intent matters everywhere something is removed: an accept
+  // the doctor took back is not an accept, and leaving it in the map would
+  // teach the preference model a decision that never happened.
+  const releaseIntent = (intentId: number) => {
+    setAcceptedIntents((curr) => {
+      const next = new Map(curr);
+      next.delete(intentId);
+      return next;
+    });
+    setChosenBrands((curr) => {
+      const next = new Map(curr);
+      next.delete(intentId);
+      return next;
+    });
+    setSearchedAccepts((curr) => curr.filter((s) => s.intentId !== intentId));
+  };
+
   const removeMedicine = (id: string) => {
+    const line = prescription.find((m) => m.id === id);
+    if (line?.intent_id != null) releaseIntent(line.intent_id);
     setPrescription((curr) => curr.filter((m) => m.id !== id));
     if (selectedMedicineId === id) setSelectedMedicineId(null);
   };
 
-  const handleRepeatRx = (visit: RealVisit) => {
-    const validSymptoms = visit.symptoms.filter((s) =>
-      allSymptoms.some((a) => a.name === s)
+  const removeTest = (label: string) => {
+    setSelectedTests((curr) => curr.filter((t) => t !== label));
+    for (const [intentId, p] of acceptedIntents) {
+      if (p.type === "test" && p.label === label) releaseIntent(intentId);
+    }
+  };
+
+  /** Advice notes are one string; the Plan column edits them as lines. */
+  const adviceLines = useMemo(
+    () => adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean),
+    [adviceNotes]
+  );
+
+  const removeDiagnosis = (label: string) => {
+    setDiagnoses((curr) => curr.filter((d) => d !== label));
+    for (const [intentId, p] of acceptedIntents) {
+      if (p.type === "finding" && p.label === label) releaseIntent(intentId);
+    }
+  };
+
+  const handleAcknowledge = useCallback((intentId: number, ack: boolean) => {
+    setAcknowledgedIntents((curr) => {
+      const next = new Set(curr);
+      if (ack) next.add(intentId);
+      else next.delete(intentId);
+      return next;
+    });
+    // Un-acknowledging withdraws the accept it permitted (handoff §14) — an
+    // override the doctor took back must not stay on the prescription.
+    if (!ack) {
+      setPrescription((curr) => curr.filter((m) => m.intent_id !== intentId));
+      releaseIntent(intentId);
+    }
+  }, [acceptedIntents]);
+
+  const removeAdviceLine = (line: string) => {
+    setAdviceNotes((curr) =>
+      curr.split("\n").map((l) => l.trim()).filter((l) => l && l !== line).join("\n")
     );
+    for (const [intentId, p] of acceptedIntents) {
+      const asLine = p.type === "referral" ? `Refer to ${p.label}` : p.label;
+      if ((p.type === "referral" || p.type === "advice" || p.type === "exercise") && asLine === line) {
+        releaseIntent(intentId);
+      }
+    }
+  };
+
+  const handleRepeatRx = (visit: RealVisit) => {
+    // A past visit stores v1 names ("fever"); the catalogue now speaks
+    // observable labels ("Fever"). Match case-insensitively and carry the
+    // CATALOGUE's spelling forward, so an imported chip is a real chip that
+    // the engine can score — not a string that merely looks like one.
+    const canonical = (name: string) =>
+      observables.find((o) => o.label.toLowerCase() === name.toLowerCase())?.label;
+
+    // Complaints AND context: a repeated Rx that quietly dropped "Known
+    // diabetic" would re-rank the new consult without the frame the old one
+    // had. The ContextBar picks the history half back up automatically.
+    const validSymptoms = visit.symptoms
+      .map(canonical)
+      .filter((n): n is string => !!n && reportableLabels.has(n));
+
     const validFindings = visit.findings
-      .map((f) => f.name)
-      .filter((name) => allFindings.some((a) => a.name === name));
+      .map((f) => canonical(f.name))
+      .filter((n): n is string => !!n && findingsAsDb.some((a) => a.name === n));
 
     const importedMeds: PrescriptionMedicine[] = visit.medicines.map((med, i) => ({
       id: `repeat-${med.medicine_id}-${i}`,
@@ -602,45 +813,52 @@ function App() {
         medicines: medicineRows,
         tests: selectedTests,
         vitals,
-        findingsText: selectedFindings.join(", "),
+        // The working diagnosis leads, then what was seen on examination.
+        findingsText: [...diagnoses, ...selectedFindings].join(", "),
         followUpDays,
         adviceNotes,
       });
 
-      const tagSignature = allSymptoms
-        .filter((s) => selectedSymptoms.includes(s.name))
-        .map((s) => s.id)
-        .sort((a, b) => a - b)
-        .join("-");
-
-      // Build {medicineId, compositionId} pairs — one entry per medicine added.
-      // For combos (e.g. Augmentin), we use primary_composition_id as the signal.
-      const selectedMedicinesForLoop = prescription
-        .filter((m) => m.medicine_id && (m.primary_composition_id || m.composition_ids?.length))
-        .map((m) => ({
-          medicineId: m.medicine_id,
-          compositionId: m.primary_composition_id ?? m.composition_ids?.[0] ?? 0,
-        }))
-        .filter((m) => m.compositionId > 0);
-
-      // rankedMedicines is already sorted by score — map to medicine_id order.
-      const rankedMedicineIds = rankedMedicines
-        .map((m) => m.medicine_id)
-        .filter(Boolean);
-      runLearningLoop({
-        tagSignature,
-        symptoms: selectedSymptomsWithIntensity,
-        findingIds: selectedFindings.map((f) => f.id),
-        selectedMedicines: selectedMedicinesForLoop,
-        rankedMedicineIds,
-      }).catch((e) => console.warn("Learning loop failed (non-fatal):", e));
-
-      logCoprescriptionObservations({
-        visitId,
-        doctorId: DOCTOR_ID,
-        tagSignature,
-        compositionIds: [...new Set(prescriptionCompositionIds)],
-      }).catch((e) => console.warn("logCoprescriptionObservations (non-fatal):", e));
+      // ★ The learning write. One insert, at the close of a consultation the
+      // doctor actually finished — nothing is logged while they are still
+      // working, because an abandoned draft is not evidence of anything.
+      //
+      // It records the ranking AS THE DOCTOR SAW IT (`intelligence.result` is
+      // the same object that fed the panel), which is the only thing that makes
+      // a past decision interpretable. Re-running the engine here to get a
+      // "fresh" result would log a screen that never existed.
+      //
+      // Non-fatal by rule: a consult save must never fail because
+      // personalisation did.
+      //
+      // Guarded on a REAL identity. Several signed-in doctor accounts have no
+      // `doctors` row yet, and for those `useClinicalIdentity` falls back to the
+      // MVP constant — which would file their prescribing under a different
+      // doctor entirely. A missing row costs them personalisation until it is
+      // created; writing anyway would corrupt someone else's model permanently,
+      // and there is no way to unpick it afterwards. Ranking still works for
+      // them: global evidence is identical for every doctor.
+      if (intelligence.result && identity.isReal) {
+        commitConsultation({
+          visitId,
+          doctorId: identity.doctorId,
+          hospitalId: identity.hospitalId,
+          result: intelligence.result,
+          accepted: new Set(acceptedIntents.keys()),
+          // Nothing is explicitly skipped in this UI yet; the implicit-skip
+          // inference inside commitConsultation covers "shown, left untouched,
+          // in a type where something else was taken".
+          skipped: new Set<number>(),
+          // Only deliberate picks — never the default the panel offered.
+          chosenBrands: deliberateBrands,
+          searched: searchedAccepts,
+        }).catch((e) => console.warn("decision_log (non-fatal):", e));
+      } else if (intelligence.result && !identity.isReal) {
+        console.warn(
+          "decision_log skipped: this account has no doctors row, so the " +
+          "decision cannot be attributed. Create one to enable personalisation."
+        );
+      }
 
       setIsReviewOpen(false);
       resetConsultState();
@@ -651,6 +869,31 @@ function App() {
       setIsSaving(false);
     }
   };
+
+  /**
+   * The second half of the §14 gate.
+   *
+   * A hard warning attached to something in the ranked list is gated by its own
+   * acknowledge button. Nothing gates an intent reached by SEARCH or from the
+   * frequent list — those have no button to lock — so the close of the consult
+   * is where that is caught: if the doctor is prescribing something a guard is
+   * warning about and has not read the reason, review does not open.
+   */
+  const unreadPrescribedWarnings = useMemo(
+    () => intelligence.hardWarned.filter(
+      (i) => acceptedIntents.has(i.intentId) && !acknowledgedIntents.has(i.intentId)
+    ),
+    [intelligence.hardWarned, acceptedIntents, acknowledgedIntents]
+  );
+
+  const openReview = useCallback(() => {
+    const blocking = unreadPrescribedWarnings[0];
+    if (blocking) {
+      showToast(`Read the contraindication on ${blocking.label} before finishing`);
+      return;
+    }
+    setIsReviewOpen(true);
+  }, [unreadPrescribedWarnings]);
 
   const selectedMedicine = useMemo(
     () => prescription.find((m) => m.id === selectedMedicineId),
@@ -668,38 +911,10 @@ function App() {
     [prescription]
   );
 
-  function handleSnapshotSelect(snapshot: ClinicalSnapshot) {
-    // Save current state so Ctrl+Z can undo the whole bundle
-    setLastSnapshot({
-      symptoms: snapshot.symptoms.map((s) => s.name),
-      findings: snapshot.findings.map((f) => f.name),
-    });
-
-    // Merge snapshot symptoms into selected (no duplicates)
-    const newSymptomNames = snapshot.symptoms.map((s) => s.name);
-    setSelectedSymptoms((curr) => [...new Set([...curr, ...newSymptomNames])]);
-    setSelectedSymptomsWithIntensity((curr) => {
-      const existing = new Set(curr.map((s) => s.name));
-      const toAdd = newSymptomNames
-        .filter((name) => !existing.has(name))
-        .map((name) => ({ name, intensity: "moderate" as const }));
-      return [...curr, ...toAdd];
-    });
-
-    // Merge snapshot findings into selected (no duplicates)
-    const newFindingNames = snapshot.findings.map((f) => f.name);
-    setSelectedFindings((curr) => [...new Set([...curr, ...newFindingNames])]);
-
-    showToast(`${snapshot.name} applied — ${newSymptomNames.length} symptoms added`);
-  }
-
-  function handleUndoSnapshot() {
-    if (!lastSnapshot) return;
-    setSelectedSymptoms((curr) => curr.filter((s) => !lastSnapshot.symptoms.includes(s)));
-    setSelectedSymptomsWithIntensity((curr) => curr.filter((s) => !lastSnapshot.symptoms.includes(s.name)));
-    setSelectedFindings((curr) => curr.filter((f) => !lastSnapshot.findings.includes(f)));
-    setLastSnapshot(null);
-  }
+  const acceptedIntentIdSet = useMemo(
+    () => new Set(acceptedIntents.keys()),
+    [acceptedIntents]
+  );
 
   if (!dbReady) {
     return (
@@ -761,7 +976,7 @@ function App() {
               setPatientModalOpen(true);
             }
           }}
-          onReviewRx={() => setIsReviewOpen(true)}
+          onReviewRx={openReview}
           onCancelConsult={resetConsultState}
           onOpenSidebar={handleOpenSidebar}
           isSidebarOpen={sidebarOpen}
@@ -787,74 +1002,72 @@ function App() {
           subtitle={comingSoonMeta.subtitle}
         />
       ) : (
-        /* Consult workspace */
+        /* Consult workspace — the left-to-right story:
+           CHART (what you know) · SYNAPSE (what it suggests) · PLAN (what
+           you're issuing). See docs/aren-cortex-redesign-plan.md. */
         <div className="app-shell-body">
-          <main className="workflow">
-            <div className="main-column">
-              <div className="two-column-row">
-                <ChipSearchPanel
-                  className="symptoms-panel"
-                  title="Symptoms"
-                  tone="blue"
-                  icon={<HeartPulse size={18} />}
-                  items={symptomNames}
-                  selected={selectedSymptoms}
-                  onChange={setSelectedSymptoms}
-                  selectedWithIntensity={selectedSymptomsWithIntensity}
-                  onChangeWithIntensity={setSelectedSymptomsWithIntensity}
-                  searchRef={symptomsSearchRef}
-                  onSnapshotSelect={handleSnapshotSelect}
-                  recentSnapshots={recentSnapshots}
-                />
-                <FindingsPanel
-                  findings={allFindings}
-                  selected={selectedFindings}
-                  onChange={setSelectedFindings}
-                  selectedSymptoms={selectedSymptoms}
-                  symptomIds={selectedSymptomsWithIntensity.map(s =>
-                    allSymptoms.find(sym => sym.name === s.name)?.id
-                  ).filter(Boolean) as number[]}
-                  searchRef={findingsSearchRef}
-                />
-              </div>
+          <main className="workflow cx-grid">
+            {/* Who this patient is — read before anything below it. Toggling a
+                chip here re-runs the engine in the same frame, so ticking
+                "Pregnant" turns contraindicated medicines red with no other
+                click anywhere. */}
+            <ContextBar
+              observables={observables}
+              selected={selectedSymptoms}
+              onToggle={handleContextToggle}
+              ageYears={ageYears}
+              gender={patient?.gender}
+              disabled={!patient}
+            />
 
-              <div className="medicine-workspace">
-                <div className="medicine-zone">
-                  <MedicineSuggestions
-                    medicines={rankedMedicines}
-                    selectedIds={prescription.map((m) => m.id)}
-                    loading={rankLoading}
-                    onAdd={handleSuggestionClick}
-                    favouriteIds={favouriteIds}
-                    onToggleFavourite={handleToggleFavourite}
-                    searchRef={medicinesSearchRef}
-                  />
-                  <FrequentPicksPanel
-                    picks={frequentPicks}
-                    loading={picksLoading}
-                    addedCompositionIds={[...rankedCompositionIds, ...prescriptionCompositionIds]}
-                    onAdd={handlePickAdd}
-                    favouritePicks={favouritePicks}
-                  />
-                </div>
-              </div>
-
-              <SelectedMedicinesBar
-                medicines={prescription}
-                selectedId={selectedMedicineId}
-                onSelect={setSelectedMedicineId}
-                onRemove={removeMedicine}
+            <div className="cx-col cx-chart">
+              <ChartPanel
+                observables={observables}
+                symptoms={symptomChips}
+                onSymptomsChange={handleSymptomsChange}
+                findings={selectedFindings}
+                onFindingsChange={setSelectedFindings}
+                context={contextChips}
+                onToggleContext={handleContextToggle}
+                intensities={selectedSymptomsWithIntensity}
+                onIntensitiesChange={setSelectedSymptomsWithIntensity}
+                searchRef={chartSearchRef}
               />
-            </div >
+            </div>
 
-            <PreviewPanel
-              testGroups={testGroups}
-              selectedTests={selectedTests}
-              selectedLab={selectedLab}
-              onTestsChange={setSelectedTests}
-              onLabChange={setSelectedLab}
-              onReviewRx={() => setIsReviewOpen(true)}
-              searchRef={testsSearchRef}
+            <div className="cx-col cx-synapse">
+              <SuggestionsPanel
+                intelligence={intelligence}
+                data={synapse.data}
+                acceptedIntentIds={acceptedIntentIdSet}
+                chosenBrands={chosenBrands}
+                acknowledged={acknowledgedIntents}
+                onAcknowledge={handleAcknowledge}
+                onAccept={handleAcceptIntent}
+                onChangeBrand={handleChangeBrand}
+                onPinClinicBrand={handlePinClinicBrand}
+                hasChart={intelligence.hasInput}
+                searchRef={synapseSearchRef}
+              />
+            </div>
+
+            <PlanPanel
+              diagnoses={diagnoses}
+              onRemoveDiagnosis={removeDiagnosis}
+              prescription={prescription}
+              selectedMedicineId={selectedMedicineId}
+              onSelectMedicine={setSelectedMedicineId}
+              onUpdateMedicine={updateMedicine}
+              onRemoveMedicine={removeMedicine}
+              tests={selectedTests}
+              onRemoveTest={removeTest}
+              adviceLines={adviceLines}
+              onRemoveAdviceLine={removeAdviceLine}
+              followUpDays={followUpDays}
+              onFollowUpChange={setFollowUpDays}
+              onReviewRx={openReview}
+              panelRef={planRef}
+              onShowShortcuts={() => setShortcutsOpen(true)}
             />
           </main >
         </div >
@@ -884,6 +1097,8 @@ function App() {
           </div>
         )
       }
+
+      {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
 
       {toast && <div className="toast">{toast}</div>}
 
@@ -931,7 +1146,7 @@ function App() {
             vitals={vitals}
             symptoms={selectedSymptoms}
             findings={selectedFindings}
-            allFindings={allFindings}
+            allFindings={findingsAsDb}
             prescription={prescription}
             tests={selectedTests}
             isSaving={isSaving}
