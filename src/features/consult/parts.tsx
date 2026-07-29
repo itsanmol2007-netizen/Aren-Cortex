@@ -1,0 +1,285 @@
+// ---------------------------------------------------------------------------
+// The small shared vocabulary of the consultation screen.
+//
+// Everything here exists because it appears on more than one surface and must
+// look and mean the same thing on all of them. A convention repeated four times
+// is a convention that drifts.
+// ---------------------------------------------------------------------------
+
+import { Heart, Sparkles, X } from "lucide-react";
+import type { IntentType } from "../../lib/synapse/engine";
+import type { PersonalizedIntent } from "../../lib/synapse/personalize";
+import type { CompanionScope, CompanionSuggestion } from "../../lib/synapse/companions";
+
+// ============================================================
+// MEDICINE IDENTITY — two lines, everywhere, always
+// ============================================================
+
+/**
+ * Brand over composition, as one unit.
+ *
+ * Doctors think and prescribe in brand names; composition is supporting
+ * context, shown for verification, never promoted to the label. This is a
+ * component rather than a convention because "everywhere a medicine is
+ * rendered" is five surfaces — recommendations, search, the frequent list, the
+ * Plan and the print.
+ *
+ * `brand` may be absent: the engine ranks molecules, and some have no
+ * standalone product. In that case the composition IS the identity and it is
+ * rendered as the primary line rather than printed twice.
+ */
+export function MedicineIdentity({
+    brand, composition, trailing,
+}: {
+    brand: string | null;
+    composition: string;
+    /** pins, clinic markers — anything belonging on the brand line */
+    trailing?: React.ReactNode;
+}) {
+    const hasBrand =
+        !!brand && brand.trim().toLowerCase() !== composition.trim().toLowerCase();
+
+    return (
+        <span className="cs-ident">
+            <span className="cs-ident-brand">
+                <span className={hasBrand ? undefined : "cs-cap"}>
+                    {hasBrand ? brand : composition}
+                </span>
+                {trailing}
+            </span>
+            {hasBrand && <span className="cs-ident-comp">{composition}</span>}
+        </span>
+    );
+}
+
+// ============================================================
+// RANK — a proportional bar, never a figure
+// ============================================================
+
+/**
+ * How long the bar is, in [0, 1], relative to the strongest option OF THE SAME
+ * TYPE in this consultation.
+ *
+ * Same-type is the only comparison that means anything. Findings score around
+ * 3 and medicines around 0.5 in the same run, so a bar normalised across all
+ * types would draw every medicine as a stub and say nothing about which
+ * medicine to reach for — the entire question the doctor is asking.
+ *
+ * The floor is deliberate: a suggestion the engine chose to show is never
+ * drawn as empty. Zero length reads as "this is nothing", and the engine is not
+ * saying that about anything it put on the screen.
+ */
+export const RANK_FLOOR = 0.16;
+
+export function rankFillOf(intent: PersonalizedIntent, topOfType: number): number {
+    if (!(topOfType > 0)) return 1;
+    return Math.max(RANK_FLOOR, Math.min(1, intent.finalScore / topOfType));
+}
+
+export function topScoreByType(intents: PersonalizedIntent[]): Map<IntentType, number> {
+    const top = new Map<IntentType, number>();
+    for (const i of intents) {
+        top.set(i.type, Math.max(top.get(i.type) ?? 0, i.finalScore));
+    }
+    return top;
+}
+
+/**
+ * `aria-label` carries the ORDINAL — "2nd in this list" — because a screen
+ * reader cannot see a length, and the normalised figure is exactly what this
+ * component exists to withhold. Position is honest; a score is not.
+ */
+export function RankBar({ fill, rank, hard = false }: {
+    fill: number;
+    rank: number;
+    hard?: boolean;
+}) {
+    return (
+        <span
+            className={`cs-bar${hard ? " is-hard" : ""}`}
+            role="img"
+            aria-label={`Rank ${rank}`}
+        >
+            <span className="cs-bar-fill" style={{ width: `${Math.round(fill * 100)}%` }} />
+        </span>
+    );
+}
+
+// ============================================================
+// RELEVANCE — the same proportion, said in words
+// ============================================================
+
+export type Relevance = "high" | "medium" | "low";
+
+export function relevanceOf(fill: number): Relevance {
+    if (fill >= 0.7) return "high";
+    if (fill >= 0.35) return "medium";
+    return "low";
+}
+
+export const RELEVANCE_TEXT: Record<Relevance, string> = {
+    high: "High relevance",
+    medium: "Medium relevance",
+    low: "Low relevance",
+};
+
+// ============================================================
+// PIN — the doctor's own shortcut, not a signal
+// ============================================================
+
+/**
+ * The heart is a toggle the DOCTOR sets. Pinning lifts that medicine to the top
+ * of the recommendations every time it is ranked again.
+ *
+ * It is deliberately kept off the ranking: pinning reorders what the doctor
+ * sees, it does not change what the engine scored. The rank bar beside it still
+ * shows the engine's real reading, so a pinned item that the engine ranks
+ * poorly still says so — the doctor's shortcut never disguises the evidence.
+ */
+export function PinButton({ pinned, label, onToggle }: {
+    pinned: boolean;
+    label: string;
+    onToggle: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            className={`cs-pin${pinned ? " is-on" : ""}`}
+            aria-pressed={pinned}
+            aria-label={pinned ? `Unpin ${label}` : `Pin ${label} to the top`}
+            title={pinned
+                ? "Pinned — shows at the top whenever it is suggested. Click to unpin."
+                : "Pin to the top of recommendations"}
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        >
+            <Heart size={15} />
+        </button>
+    );
+}
+
+// ============================================================
+// A GUARD, SAID OUT LOUD — on the row it belongs to
+// ============================================================
+
+/**
+ * Never a floating banner. A guarded item stays visible at its real rank, in
+ * red, with its reason attached, and the accept action and brand picker are
+ * withheld until the doctor acknowledges it. Acknowledgement is
+ * per-consultation and reversible. Nothing is ever hidden outright.
+ */
+export function GuardReason({
+    hard, reasons, acknowledged, onAcknowledge,
+}: {
+    hard: boolean;
+    reasons: string[];
+    acknowledged: boolean;
+    onAcknowledge: (v: boolean) => void;
+}) {
+    return (
+        <div className={`cs-reason ${hard ? "is-hard" : "is-warn"}`}>
+            {hard && <strong>Contraindicated — read before prescribing</strong>}
+            {reasons.map((r, i) => <p key={i}>{r}</p>)}
+            {hard && (
+                <button
+                    type="button"
+                    className={`cs-ack${acknowledged ? " is-on" : ""}`}
+                    onClick={(e) => { e.stopPropagation(); onAcknowledge(!acknowledged); }}
+                >
+                    {acknowledged
+                        ? "Read — prescribing allowed (undo)"
+                        : "I've read this — allow prescribing"}
+                </button>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// COMPANION — the suggestion that attaches to a medicine
+// ============================================================
+//
+// Some medicines travel with others: an NSAID prompts a PPI for gastric cover,
+// an antibiotic a probiotic. That belongs in exactly one place — a small,
+// indented, dismissible line directly beneath the medicine that triggered it,
+// inside the Consultation Plan. Never a separate section, never a modal, never
+// blocking.
+//
+// It appears only AFTER the trigger is on the plan. Before that there is
+// nothing to pair with, and a PPI offered beside an NSAID the doctor has not
+// taken is just a second medicine competing for the same glance.
+//
+// ── WHAT IS NOT WIRED, AND WHY (flagged, not invented) ────────────────────
+// `intent_companions` carries a `scope` column with 'authored' and 'learned',
+// but the table has no doctor_id — every row is global, and all 26 live rows
+// are 'authored'. So a doctor-specific "Your pattern" tag has no source yet:
+// `sourceOf` maps 'learned' to the honest global wording rather than claiming a
+// habit the database cannot attribute to anyone. The habit branch below is
+// complete and lights up the moment a doctor_id (or a v_doctor_companion view)
+// exists.
+
+export type CompanionSource = "authored" | "habit" | "observed";
+
+const SOURCE_TAG: Record<CompanionSource, string> = {
+    authored: "Common pairing",
+    habit: "Your pattern",
+    observed: "Often co-prescribed",
+};
+
+const SOURCE_TITLE: Record<CompanionSource, string> = {
+    authored: "A clinically authored pairing — the same for every doctor",
+    habit: "Learned from your own prescribing — not clinical advice",
+    observed: "Seen together across prescriptions — not specific to you",
+};
+
+export function sourceOf(scopes: CompanionScope[]): CompanionSource {
+    if (scopes.includes("authored")) return "authored";
+    return "observed";
+}
+
+export function CompanionLine({
+    suggestion, onAdd, onDismiss,
+}: {
+    suggestion: CompanionSuggestion;
+    onAdd: () => void;
+    onDismiss: () => void;
+}) {
+    const source = sourceOf(suggestion.scopes);
+    const reason = suggestion.reasons[0];
+    const guarded = suggestion.status !== "ok";
+
+    return (
+        <div className={`cs-comp${guarded ? " is-guarded" : ""}`}>
+            <span className="cs-comp-mark" aria-hidden="true"><Sparkles size={11} /></span>
+
+            <div className="cs-comp-body">
+                <div className="cs-comp-line">
+                    <button
+                        type="button"
+                        className="cs-comp-add"
+                        onClick={onAdd}
+                        title={`Add ${suggestion.label} to the plan`}
+                    >
+                        Add {suggestion.label}
+                    </button>
+                    <span className={`cs-comp-tag is-${source}`} title={SOURCE_TITLE[source]}>
+                        {SOURCE_TAG[source]}
+                    </span>
+                </div>
+                {reason && <div className="cs-comp-why">{reason}</div>}
+                {guarded && suggestion.guardReasons[0] && (
+                    <div className="cs-comp-guard">{suggestion.guardReasons[0]}</div>
+                )}
+            </div>
+
+            <button
+                type="button"
+                className="cs-comp-x"
+                onClick={onDismiss}
+                aria-label={`Dismiss the ${suggestion.label} suggestion`}
+                title="Dismiss — this will not come back this consultation"
+            >
+                <X size={11} />
+            </button>
+        </div>
+    );
+}

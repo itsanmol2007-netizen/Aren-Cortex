@@ -22,6 +22,7 @@ import "./styles/components-modals.css";
 import "./styles/past-visit.css";
 import "./styles/workspace-header.css";
 import "./styles/workspace.css";
+import "./styles/consult.css";
 import "./features/sidebar/sidebar.css";
 
 const queryClient = new QueryClient();

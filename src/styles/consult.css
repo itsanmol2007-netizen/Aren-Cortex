@@ -1,0 +1,1863 @@
+/* ============================================================
+   CONSULT.CSS — the consultation workspace, built to
+   docs/Aren Cortex Mock 2.png and governed by
+   docs/Aren cortex visual philosophy.md.
+
+   Prefix: `cs-`. Self-contained: this file owns the whole
+   screen, so nothing here inherits from the older `cx-`
+   workspace and the two cannot drift into each other.
+
+   Visual language, from the philosophy doc:
+     · High information density, LOW visual density. Many data
+       points, almost no decoration.
+     · White paper cards on a cool grey page. One hairline, one
+       radius, no gradients on content surfaces.
+     · Colour carries meaning only — never brand, never mood.
+       blue = the action · rose = reported · teal = examined
+       amber = soft guard · red = hard guard · green = taken
+     · The chrome is dark so the paper is what the eye lands on.
+   ============================================================ */
+
+:root {
+    --cs-page: #f4f6fa;
+    --cs-card: #ffffff;
+    --cs-line: #e7ecf3;
+    --cs-line-strong: #dbe2ec;
+    --cs-ink: #0b1733;
+    --cs-muted: #64748b;
+    --cs-faint: #94a3b8;
+    --cs-blue: #1268e8;
+    --cs-blue-soft: #eef4ff;
+    --cs-teal: #0f766e;
+    --cs-teal-soft: #ecfdf5;
+    --cs-rose: #e11d48;
+    --cs-rose-soft: #fff1f3;
+    --cs-amber: #b45309;
+    --cs-amber-soft: #fffbeb;
+    --cs-red: #b42318;
+    --cs-red-soft: #fef3f2;
+    --cs-violet: #7c3aed;
+    --cs-green: #16a34a;
+    --cs-radius: 14px;
+    --cs-radius-sm: 9px;
+    --cs-shadow: 0 1px 2px rgba(16, 28, 46, 0.04);
+}
+
+/* The consult surface sits BELOW the existing topbar, inside `.app-shell`.
+   It owns the page from there down — hence its own background — but it must
+   not assume the full viewport, or the header's height would push a
+   scrollbar onto every consultation. */
+.cs-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 110px);
+    margin: 12px 18px 0;
+    border: 1px solid var(--cs-line);
+    border-radius: 16px;
+    background: var(--cs-page);
+    overflow: hidden;
+}
+
+/* ════════════════════════════════════════════════════════════
+   PAGE GRID
+
+   Not a uniform three-column grid: the consultation reads in
+   three bands, and each band splits differently.
+
+     band 1 — the chart: three equal pickers
+     band 2 — measurements, beside the plan
+     band 3 — recommendations + suggestions, beside the plan
+
+   The plan spans bands 2 and 3 because it is the destination of
+   both, and it must never scroll out of view while the doctor
+   is taking things from either.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-page {
+    flex: 1;
+    min-height: 0;
+    padding: 14px 20px 12px;
+}
+
+.cs-pickers {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.cs-body {
+    display: grid;
+    grid-template-columns: minmax(0, 2.94fr) minmax(330px, 1fr);
+    gap: 13px;
+    margin-top: 12px;
+    align-items: stretch;
+}
+
+.cs-body-left {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+    min-width: 0;
+}
+
+.cs-engine {
+    display: grid;
+    grid-template-columns: minmax(0, 0.83fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    min-width: 0;
+}
+
+/* ── the card primitive ── */
+
+.cs-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius);
+    background: var(--cs-card);
+    box-shadow: var(--cs-shadow);
+}
+
+.cs-card-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    padding: 14px 16px 0;
+}
+
+.cs-card-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    color: var(--cs-ink);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.055em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.cs-card-title em {
+    color: var(--cs-faint);
+    font-style: normal;
+    font-weight: 550;
+    letter-spacing: 0.01em;
+    text-transform: none;
+}
+
+/* the small tinted glyph tile beside a title */
+.cs-glyph {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+}
+
+.cs-glyph.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-glyph.is-rose { background: var(--cs-rose-soft); color: var(--cs-rose); }
+.cs-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-glyph.is-slate { background: #f1f5f9; color: #475569; }
+
+.cs-count {
+    margin-left: auto;
+    flex: none;
+    border-radius: 7px;
+    background: var(--cs-blue-soft);
+    padding: 3px 9px;
+    color: var(--cs-blue);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+}
+
+.cs-count.is-quiet {
+    background: none;
+    padding: 0;
+    color: var(--cs-faint);
+    font-weight: 550;
+}
+
+/* ════════════════════════════════════════════════════════════
+   PICKER — History / Symptoms / Findings
+
+   Three cards, one purpose each, exactly as the philosophy doc's
+   "One Primary Action" requires. They are separate rather than
+   merged because the doctor's own sequence is separate: context
+   is set once, complaints are taken from the patient, findings
+   come from the examination.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-picker {
+    min-height: 196px;
+}
+
+.cs-picker-search {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    margin: 11px 16px 0;
+}
+
+.cs-field {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 0 11px;
+    height: 38px;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.cs-field:focus-within {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+}
+
+.cs-field svg {
+    flex: none;
+    color: var(--cs-faint);
+}
+
+.cs-field input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    outline: none;
+    box-shadow: none;
+}
+
+.cs-field input:hover,
+.cs-field input:focus {
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.cs-field input::placeholder {
+    color: var(--cs-faint);
+    font-weight: 450;
+}
+
+.cs-sqbtn {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    color: var(--cs-muted);
+    transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.cs-sqbtn:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+.cs-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+    align-content: flex-start;
+    padding: 13px 16px 0;
+}
+
+.cs-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 5px 9px 5px 11px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
+.cs-chip--history {
+    border-color: #dbe6fb;
+    background: #eff4ff;
+    color: #2563eb;
+}
+
+.cs-chip--symptom {
+    border-color: #fecdd3;
+    background: var(--cs-rose-soft);
+    color: var(--cs-rose);
+}
+
+.cs-chip--finding {
+    border-color: #bbf0e0;
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+
+.cs-chip-x {
+    display: grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    padding: 0;
+    color: currentColor;
+    opacity: 0.5;
+    font-size: 13px;
+    line-height: 1;
+    transition: opacity 0.13s ease, background 0.13s ease;
+}
+
+.cs-chip-x:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.07);
+}
+
+/* severity, cycled on the chip itself */
+.cs-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 1.5px;
+    border: 0;
+    background: none;
+    padding: 0;
+    margin-right: 1px;
+}
+
+.cs-dots i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.28;
+}
+
+.cs-dots.is-mild i:nth-child(1),
+.cs-dots.is-moderate i:nth-child(-n+2),
+.cs-dots.is-severe i {
+    opacity: 1;
+}
+
+.cs-picker-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    border: 0;
+    background: none;
+    padding: 12px 16px 14px;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+    transition: color 0.13s ease;
+}
+
+.cs-picker-foot:hover {
+    color: var(--cs-blue);
+}
+
+.cs-picker-hint {
+    padding: 4px 16px 0;
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 450;
+    line-height: 1.5;
+}
+
+/* ── the search dropdown (portal) ── */
+
+.cs-drop {
+    position: fixed;
+    z-index: 9000;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 18px 46px rgba(18, 44, 92, 0.16), 0 0 0 0.5px rgba(16, 28, 46, 0.04);
+    padding: 5px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.cs-drop-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 550;
+    letter-spacing: -0.008em;
+    text-align: left;
+}
+
+.cs-drop-row.is-active {
+    background: var(--cs-blue-soft);
+}
+
+.cs-drop-row.is-on {
+    color: var(--cs-blue);
+    font-weight: 650;
+}
+
+.cs-drop-zone {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.cs-drop-empty {
+    padding: 14px 12px;
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    text-align: center;
+}
+
+/* ════════════════════════════════════════════════════════════
+   MEASUREMENTS — the single source of truth for the numbers
+
+   The vitals strip that used to sit under the header is gone.
+   Two renderings of one number is how a consultation ends up
+   with two different numbers.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-meas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+    gap: 10px;
+    padding: 12px 16px 16px;
+}
+
+.cs-meas {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--cs-line);
+    border-radius: 11px;
+    background: #fff;
+    padding: 11px 10px 12px;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+}
+
+.cs-meas:focus-within {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
+}
+
+/* A recorded value and an empty one must never look alike: the
+   placeholder "98.6" sitting where a real temperature goes reads
+   as a measurement at a glance, and these feed the engine. */
+.cs-meas.is-filled {
+    border-color: var(--cs-line-strong);
+}
+
+.cs-meas.is-warn {
+    border-color: rgba(180, 83, 9, 0.36);
+    background: var(--cs-amber-soft);
+}
+
+.cs-meas-label {
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+}
+
+.cs-meas.is-warn .cs-meas-label {
+    color: var(--cs-amber);
+}
+
+.cs-meas-value {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+}
+
+.cs-meas input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-ink);
+    font-size: 21px;
+    font-weight: 660;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    box-shadow: none;
+}
+
+.cs-meas input:hover,
+.cs-meas input:focus {
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.cs-meas input::placeholder {
+    color: #cbd5e1;
+    font-weight: 500;
+}
+
+.cs-meas.is-warn input {
+    color: var(--cs-amber);
+}
+
+.cs-meas-slash {
+    flex: none;
+    color: #cbd5e1;
+    font-size: 18px;
+    font-weight: 300;
+}
+
+.cs-meas.is-add {
+    border-style: dashed;
+    border-color: var(--cs-line-strong);
+    background: none;
+    color: var(--cs-faint);
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 560;
+    cursor: default;
+}
+
+/* ════════════════════════════════════════════════════════════
+   PRIMARY RECOMMENDATION
+
+   Which intent type sits in this card is a per-facility
+   configuration, set once at onboarding. Nothing in this block
+   names a type: swap the specialty profile and Exercise Plans
+   inherit these exact rules. ("Configure, never redesign.")
+   ════════════════════════════════════════════════════════════ */
+
+.cs-rec-search {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    padding: 11px 16px 0;
+}
+
+.cs-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex: none;
+    border: 1px solid rgba(18, 104, 232, 0.28);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-blue-soft);
+    padding: 0 13px;
+    height: 38px;
+    color: var(--cs-blue);
+    font-size: 12.5px;
+    font-weight: 620;
+    white-space: nowrap;
+}
+
+.cs-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px 10px 4px;
+}
+
+/* ── one ranked medicine ── */
+
+.cs-rec {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 3px 11px;
+    border-radius: 10px;
+    padding: 10px 8px;
+}
+
+.cs-rec + .cs-rec::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 8px;
+    right: 8px;
+    border-top: 1px solid var(--cs-line);
+}
+
+.cs-rec:hover {
+    background: #f8fafc;
+}
+
+.cs-rec:hover::before,
+.cs-rec:hover + .cs-rec::before {
+    border-color: transparent;
+}
+
+.cs-rec.is-added {
+    background: #f0fdf4;
+}
+
+/* A guarded item stays visible at its real rank, in red, saying
+   why — never hidden, never demoted, never summarised into a
+   banner somewhere else on the screen. */
+.cs-rec.is-hard {
+    background: var(--cs-red-soft);
+}
+
+.cs-rank-no {
+    display: grid;
+    place-items: center;
+    flex: none;
+    grid-row: span 2;
+    width: 23px;
+    height: 23px;
+    border-radius: 50%;
+    background: var(--cs-teal);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-rec.is-hard .cs-rank-no {
+    background: var(--cs-red);
+}
+
+.cs-rec-main {
+    min-width: 0;
+}
+
+.cs-rec-side {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    grid-row: span 2;
+}
+
+.cs-rec-guard {
+    grid-column: 1 / -1;
+}
+
+/* ── medicine identity: brand over composition, everywhere ── */
+
+.cs-ident {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.cs-ident-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 660;
+    letter-spacing: -0.014em;
+    line-height: 1.25;
+}
+
+.cs-ident-brand > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-ident-brand svg {
+    flex: none;
+    opacity: 0.45;
+}
+
+.cs-ident-comp {
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: -0.004em;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Compositions arrive lowercase. Sentence case, not title case —
+   capitalising every word turns the unit into "500 Mg", which is
+   wrong on a prescription. */
+.cs-ident-comp::first-letter,
+.cs-ident-brand .cs-cap::first-letter {
+    text-transform: uppercase;
+}
+
+/* ── rank, as a proportional bar and never a figure ──────────
+   Length is the whole message. No label, no ticks, no tooltip:
+   anything that turns this back into a readable quantity
+   re-creates the "% match" badge the review threw out. */
+
+.cs-bar {
+    display: block;
+    width: 96px;
+    height: 3px;
+    border-radius: 999px;
+    background: #e8edf4;
+    overflow: hidden;
+}
+
+.cs-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--cs-teal);
+    transition: width 0.24s cubic-bezier(0.3, 0.8, 0.4, 1);
+}
+
+.cs-bar.is-hard .cs-bar-fill {
+    background: rgba(180, 35, 24, 0.6);
+}
+
+/* ── pin: the doctor's own shortcut ──────────────────────────
+   The heart is a TOGGLE the doctor sets, not a signal the
+   engine emits. Pinning lifts that medicine to the top of the
+   recommendations every time it is ranked again. Filled = set
+   by this doctor; outline = available. It sits apart from the
+   rank bar on purpose — one is the doctor's choice, the other
+   is the engine's reading, and they must not read as one
+   claim. */
+
+.cs-pin {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 29px;
+    height: 29px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: none;
+    color: #cbd5e1;
+    transition: color 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
+.cs-pin:hover {
+    background: var(--cs-rose-soft);
+    color: var(--cs-rose);
+}
+
+.cs-pin.is-on {
+    border-color: #fecdd3;
+    background: var(--cs-rose-soft);
+    color: var(--cs-rose);
+}
+
+.cs-pin.is-on svg {
+    fill: currentColor;
+}
+
+/* A pinned row wears a hairline flag so it is obvious WHY it is
+   sitting at the top — a row that jumped the ranking without
+   saying so reads as the engine changing its mind. */
+.cs-rec.is-pinned .cs-rank-no {
+    background: var(--cs-rose);
+}
+
+/* ── the add control ── */
+
+.cs-add {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 29px;
+    height: 29px;
+    border: 1px solid rgba(18, 104, 232, 0.22);
+    border-radius: 8px;
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+    transition: background 0.14s ease, color 0.14s ease;
+}
+
+.cs-add:hover {
+    background: var(--cs-blue);
+    color: #fff;
+}
+
+.cs-added {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 29px;
+    height: 29px;
+    border-radius: 8px;
+    background: #dcfce7;
+    color: var(--cs-green);
+}
+
+.cs-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    flex: none;
+    width: 100%;
+    border: 0;
+    border-top: 1px solid var(--cs-line);
+    border-radius: 0 0 var(--cs-radius) var(--cs-radius);
+    background: none;
+    padding: 13px;
+    color: var(--cs-blue);
+    font-size: 12.5px;
+    font-weight: 620;
+    letter-spacing: -0.005em;
+    transition: background 0.13s ease;
+}
+
+.cs-more:hover {
+    background: #fafbfd;
+}
+
+/* ── brand alternatives ── */
+
+.cs-brands {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    grid-column: 2 / -1;
+    margin-top: 6px;
+}
+
+.cs-brands-or {
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.cs-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 3px 9px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: border-color 0.13s ease, color 0.13s ease;
+}
+
+.cs-brand:hover {
+    border-color: rgba(18, 104, 232, 0.45);
+    color: var(--cs-blue);
+}
+
+.cs-brand svg { opacity: 0.5; }
+
+.cs-brand-star {
+    color: #d97706;
+    font-size: 10px;
+}
+
+.cs-brand.is-skeleton {
+    width: 62px;
+    height: 22px;
+    background: #f1f5f9;
+    border-color: transparent;
+}
+
+.cs-nobrand {
+    grid-column: 2 / -1;
+    margin-top: 5px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.cs-nobrand button {
+    margin-left: 5px;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 620;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* ── a guard, said out loud, on the row it belongs to ──────── */
+
+.cs-reason {
+    margin-top: 8px;
+    border-left: 2px solid currentColor;
+    padding: 1px 0 1px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.cs-reason.is-warn { color: var(--cs-amber); }
+.cs-reason.is-hard { color: var(--cs-red); }
+
+.cs-reason strong {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+}
+
+.cs-reason p {
+    margin: 2px 0 0;
+    font-weight: 500;
+    opacity: 0.92;
+}
+
+.cs-ack {
+    margin-top: 8px;
+    border: 1px solid currentColor;
+    border-radius: 7px;
+    background: #fff;
+    padding: 5px 11px;
+    color: inherit;
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cs-ack:hover {
+    background: var(--cs-red);
+    color: #fff;
+}
+
+.cs-ack.is-on {
+    border-color: rgba(22, 163, 74, 0.4);
+    color: var(--cs-green);
+}
+
+.cs-ack.is-on:hover {
+    background: var(--cs-green);
+    color: #fff;
+}
+
+/* ── flags ── */
+
+.cs-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+}
+
+.cs-flag.is-warn {
+    border: 1px solid rgba(180, 83, 9, 0.24);
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+}
+
+.cs-flag.is-hard {
+    border: 1px solid rgba(180, 35, 24, 0.26);
+    background: #fff;
+    color: var(--cs-red);
+}
+
+.cs-flag.is-safety {
+    border: 1px solid rgba(18, 104, 232, 0.22);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* ════════════════════════════════════════════════════════════
+   CLINICAL SUGGESTIONS — split by intent type, with relevance
+   ════════════════════════════════════════════════════════════ */
+
+.cs-sug-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: none;
+    border-bottom: 1px solid var(--cs-line);
+    padding: 14px 16px 0;
+}
+
+.cs-sug-tab {
+    position: relative;
+    padding-bottom: 11px;
+    color: var(--cs-violet);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+}
+
+.cs-sug-tab::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--cs-violet);
+}
+
+.cs-sort {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding-bottom: 9px;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.cs-sort b {
+    color: var(--cs-ink);
+    font-weight: 600;
+}
+
+.cs-sug {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px 12px;
+    border-radius: 10px;
+    padding: 11px 8px;
+}
+
+.cs-sug + .cs-sug::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 8px;
+    right: 8px;
+    border-top: 1px solid var(--cs-line);
+}
+
+.cs-sug:hover { background: #f8fafc; }
+
+.cs-sug:hover::before,
+.cs-sug:hover + .cs-sug::before { border-color: transparent; }
+
+.cs-sug.is-added { background: #f0fdf4; }
+.cs-sug.is-hard { background: var(--cs-red-soft); }
+
+.cs-sug-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    grid-row: span 2;
+    width: 29px;
+    height: 29px;
+    border-radius: 9px;
+    color: #fff;
+}
+
+.cs-sug-icon.is-finding { background: #f59e0b; }
+.cs-sug-icon.is-test { background: #2563eb; }
+.cs-sug-icon.is-referral { background: #8b5cf6; }
+.cs-sug-icon.is-advice { background: #10b981; }
+.cs-sug-icon.is-exercise { background: #0ea5e9; }
+
+.cs-sug-main { min-width: 0; }
+
+.cs-sug-kind {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+.cs-sug-kind.is-finding { color: #b45309; }
+.cs-sug-kind.is-test { color: #1d4ed8; }
+.cs-sug-kind.is-referral { color: #6d28d9; }
+.cs-sug-kind.is-advice { color: #047857; }
+.cs-sug-kind.is-exercise { color: #0369a1; }
+
+.cs-sug-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 640;
+    letter-spacing: -0.014em;
+    line-height: 1.3;
+}
+
+.cs-sug-rel {
+    display: block;
+    margin-top: 2px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 500;
+}
+
+.cs-act {
+    flex: none;
+    grid-row: span 2;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 8px;
+    background: #fff;
+    padding: 6px 13px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 620;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cs-sug:hover .cs-act {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* ════════════════════════════════════════════════════════════
+   CONSULTATION PLAN — the destination of the consultation
+   ════════════════════════════════════════════════════════════ */
+
+/* The plan is the destination of both bands beside it, so it must never
+   scroll out of view while the doctor is taking things from either. */
+.cs-plan {
+    position: sticky;
+    top: 14px;
+    max-height: calc(100vh - 40px);
+}
+
+.cs-plan-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: none;
+    border-bottom: 1px solid var(--cs-line);
+    padding: 15px 16px 13px;
+}
+
+.cs-plan-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 0 8px;
+}
+
+.cs-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 16px 4px;
+}
+
+.cs-group-title {
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cs-group-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 620;
+    letter-spacing: -0.005em;
+}
+
+.cs-group-add:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* one line on the plan */
+.cs-line {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 2px 10px;
+    padding: 7px 16px;
+    border-left: 2px solid transparent;
+}
+
+.cs-line.is-click { cursor: pointer; }
+.cs-line.is-click:hover { background: #f8fafc; }
+.cs-line.is-active { background: #f8fafc; border-left-color: var(--cs-blue); }
+
+.cs-line-main { min-width: 0; }
+
+.cs-line-name {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 620;
+    letter-spacing: -0.012em;
+    line-height: 1.3;
+}
+
+.cs-line-sub {
+    margin-top: 1px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: -0.004em;
+}
+
+.cs-line-sub::first-letter { text-transform: uppercase; }
+
+.cs-x {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+    font-size: 15px;
+    line-height: 1;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cs-x:hover {
+    background: #fee2e2;
+    color: var(--cs-red);
+}
+
+.cs-pill {
+    border-radius: 5px;
+    background: #f1f5f9;
+    padding: 1px 6px;
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+}
+
+.cs-pill.is-sos {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.cs-plan-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 40px 22px;
+    text-align: center;
+}
+
+.cs-plan-empty strong {
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 620;
+}
+
+.cs-plan-empty span {
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 450;
+    line-height: 1.55;
+}
+
+/* ── companion slot: attached to the medicine that triggered it ──
+   Indented under its trigger, quiet, dismissible. It is a nudge:
+   no acknowledge step, no unread state, and ignoring it never
+   blocks finishing the consultation. */
+
+.cs-comp-slot {
+    grid-column: 1 / -1;
+    margin: 3px 0 4px 4px;
+    border-left: 1.5px solid var(--cs-line-strong);
+    padding-left: 10px;
+}
+
+.cs-comp {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 4px 0;
+}
+
+.cs-comp-mark {
+    flex: none;
+    margin-top: 2px;
+    color: var(--cs-faint);
+}
+
+.cs-comp.is-guarded .cs-comp-mark { color: var(--cs-amber); }
+
+.cs-comp-body { flex: 1; min-width: 0; }
+
+.cs-comp-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cs-comp-add {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-blue);
+    font-size: 12px;
+    font-weight: 620;
+    letter-spacing: -0.005em;
+    text-align: left;
+}
+
+.cs-comp-add:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* "Common pairing" and "Your pattern" are different claims —
+   pharmacology vs. a record of this doctor's habit — so they are
+   told apart at a glance, never merged. */
+.cs-comp-tag {
+    flex: none;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #f8fafc;
+    padding: 1px 7px;
+    color: var(--cs-faint);
+    font-size: 9.5px;
+    font-weight: 650;
+    letter-spacing: 0.015em;
+    white-space: nowrap;
+    cursor: help;
+}
+
+.cs-comp-tag.is-habit {
+    border-color: rgba(124, 58, 237, 0.26);
+    background: #f5f3ff;
+    color: var(--cs-violet);
+}
+
+.cs-comp-why,
+.cs-comp-guard {
+    margin-top: 1px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.cs-comp-why { color: var(--cs-muted); }
+.cs-comp-guard { color: var(--cs-amber); font-weight: 550; }
+
+.cs-comp-x {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 19px;
+    height: 19px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: var(--cs-faint);
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cs-comp-x:hover { background: #f1f5f9; color: var(--cs-ink); }
+
+/* ── dose, edited on the line itself ─────────────────────────
+   Dose, frequency and duration are the whole of a routine edit;
+   sending the doctor to a modal for them meant every
+   prescription cost a dialog. */
+
+.cs-dose {
+    display: grid;
+    gap: 9px;
+    margin: 7px 0 3px;
+    border: 1px solid var(--cs-line);
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 10px 11px;
+}
+
+.cs-dose-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+}
+
+.cs-dose-field {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.cs-dose-field > span {
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.cs-dose-field input {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 5px 9px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+    outline: none;
+}
+
+.cs-dose-field input:focus {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
+}
+
+.cs-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 2px;
+}
+
+.cs-stepper button {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: var(--cs-muted);
+    font-size: 14px;
+    line-height: 1;
+}
+
+.cs-stepper button:hover { background: #f1f5f9; color: var(--cs-ink); }
+
+.cs-stepper b {
+    min-width: 22px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 650;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-slots {
+    display: flex;
+    gap: 4px;
+}
+
+.cs-slot {
+    width: 28px;
+    height: 26px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 660;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cs-slot[aria-pressed="true"] {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+.cs-slot.is-sos { width: auto; padding: 0 8px; }
+
+.cs-slot.is-sos[aria-pressed="true"] {
+    border-color: rgba(180, 83, 9, 0.4);
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+}
+
+.cs-dose-more {
+    justify-self: start;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 620;
+}
+
+.cs-dose-more:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── follow-up ── */
+
+.cs-followup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 16px 2px;
+}
+
+.cs-toggle {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 4px 10px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cs-toggle[aria-pressed="true"] {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* ── plan footer ── */
+
+.cs-plan-foot {
+    flex: none;
+    border-top: 1px solid var(--cs-line);
+    padding: 12px 14px 14px;
+}
+
+.cs-notes {
+    width: 100%;
+    min-height: 58px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 10px 12px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+}
+
+.cs-notes:focus {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
+}
+
+.cs-notes::placeholder { color: var(--cs-faint); font-weight: 450; }
+
+.cs-plan-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 9px;
+    margin-top: 11px;
+}
+
+.cs-print {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 46px;
+    border: 0;
+    border-radius: 10px;
+    background: #101c2e;
+    color: #fff;
+    transition: background 0.14s ease;
+}
+
+.cs-print:hover { background: #1c2f4a; }
+
+.cs-review {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex: 1;
+    border: 0;
+    border-radius: 10px;
+    background: #0e7c66;
+    padding: 13px;
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 660;
+    letter-spacing: -0.008em;
+    transition: background 0.14s ease;
+}
+
+.cs-review:hover:not(:disabled) { background: #0f8d74; }
+
+.cs-review .cs-kbd {
+    border-color: rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.82);
+}
+
+/* ════════════════════════════════════════════════════════════
+   STATUS BAR — priority 3, and it looks like it
+
+   Model version, cache state, specialty. Supporting metadata:
+   present for confidence, never competing for attention.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-status {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    flex: none;
+    border-top: 1px solid var(--cs-line);
+    padding: 11px 22px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: -0.003em;
+}
+
+.cs-status b {
+    color: var(--cs-muted);
+    font-weight: 620;
+}
+
+.cs-status-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.cs-status-item.is-right { margin-left: auto; }
+
+.cs-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cs-green);
+}
+
+.cs-status-dot.is-off { background: #cbd5e1; }
+
+/* ── BROWSE SHEET — the whole catalogue, by body system ────── */
+
+.cs-browse {
+    position: fixed;
+    inset: 0;
+    z-index: 9500;
+    display: grid;
+    place-items: center;
+    background: rgba(11, 23, 51, 0.36);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    padding: 40px 20px;
+}
+
+.cs-browse-sheet {
+    display: flex;
+    flex-direction: column;
+    width: min(880px, 100%);
+    max-height: 100%;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 30px 80px rgba(11, 23, 51, 0.3);
+    overflow: hidden;
+}
+
+.cs-browse-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    border-bottom: 1px solid var(--cs-line);
+    padding: 13px 14px;
+}
+
+.cs-browse-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px 16px 14px;
+}
+
+.cs-browse-group h3 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0;
+    background: #fff;
+    padding: 13px 0 7px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cs-browse-group h3 span {
+    border-radius: 999px;
+    background: #f1f5f9;
+    padding: 0 6px;
+    color: var(--cs-muted);
+    font-size: 10px;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-browse-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cs-browse-chip {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 8px;
+    background: #fff;
+    padding: 5px 10px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 550;
+    letter-spacing: -0.006em;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cs-browse-chip:hover {
+    border-color: rgba(18, 104, 232, 0.45);
+    color: var(--cs-blue);
+}
+
+.cs-browse-chip.is-on {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+    font-weight: 640;
+}
+
+.cs-browse-foot {
+    flex: none;
+    border-top: 1px solid var(--cs-line);
+    padding: 11px 16px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 450;
+}
+
+.cs-browse-foot kbd {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 4px;
+    background: #f8fafc;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 620;
+}
+
+/* ── shared: an empty state that names the next action ─────── */
+
+.cs-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 44px 24px;
+    text-align: center;
+}
+
+.cs-empty strong {
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 620;
+}
+
+.cs-empty span {
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 450;
+    line-height: 1.55;
+    max-width: 260px;
+}
+
+/* ── responsive ────────────────────────────────────────────── */
+
+@media (max-width: 1400px) {
+    .cs-body { grid-template-columns: minmax(0, 2.5fr) minmax(310px, 1fr); }
+    .cs-engine { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+@media (max-width: 1180px) {
+    .cs-pickers { grid-template-columns: 1fr; }
+    .cs-body { grid-template-columns: 1fr; }
+    .cs-engine { grid-template-columns: 1fr; }
+    .cs-plan { position: static; max-height: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-bar-fill,
+    .cs-add,
+    .cs-act,
+    .cs-hbtn,
+    .cs-review,
+    .cs-meas,
+    .cs-field {
+        transition: none;
+    }
+}

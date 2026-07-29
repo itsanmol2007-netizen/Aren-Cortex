@@ -1,0 +1,58 @@
+// ---------------------------------------------------------------------------
+// STATUS BAR — priority 3, and it looks like it.
+//
+// Engine state, model version, specialty, cache state. The philosophy doc puts
+// all of this in the lowest tier: supporting metadata, present so the doctor can
+// trust the screen, never competing with it. It is deliberately the only thing
+// on the page smaller and quieter than the body text.
+// ---------------------------------------------------------------------------
+
+import { Cloud, CloudOff } from "lucide-react";
+
+interface Props {
+    /** ruleset loaded and ranking */
+    active: boolean;
+    /** ruleset version string from the loaded ruleset */
+    modelVersion: string | null;
+    specialty: string;
+    /** personalisation degraded — ranking still works, habits do not */
+    degraded: boolean;
+    online: boolean;
+}
+
+export function StatusBar({ active, modelVersion, specialty, degraded, online }: Props) {
+    return (
+        <footer className="cs-status">
+            <span className="cs-status-item">
+                <b>Synapse</b>
+                <span className={`cs-status-dot${active ? "" : " is-off"}`} />
+                {active ? "Active" : "Loading"}
+            </span>
+
+            {modelVersion && (
+                <span className="cs-status-item">
+                    Model: <b>Synapse {modelVersion}</b>
+                </span>
+            )}
+
+            <span className="cs-status-item">
+                Specialty: <b>{specialty}</b>
+            </span>
+
+            {/* Said out loud rather than hidden: a doctor whose personalisation
+                failed still gets the global evidence-based ranking, which is
+                exactly what every doctor gets on their first day. They should
+                know which one they are looking at. */}
+            {degraded && (
+                <span className="cs-status-item">
+                    <b>Personalisation unavailable</b> — global ranking in use
+                </span>
+            )}
+
+            <span className="cs-status-item is-right">
+                {online ? <Cloud size={13} /> : <CloudOff size={13} />}
+                {online ? "Data cached locally" : "Offline — working from cache"}
+            </span>
+        </footer>
+    );
+}

@@ -142,9 +142,33 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         brandCache.current.clear();
     }, [data?.brandPreferences, data?.clinicBrandDefaults]);
 
+    // Ranked medicines, plus any medicine a COMPANION is offering.
+    //
+    // A companion now lands on the Plan as a real prescription line, which
+    // means it needs a brand exactly as a ranked medicine does. Companions fire
+    // on acceptance, so their compositions are frequently not in the ranked set
+    // — a PPI suggested because an NSAID was taken may never have been ranked
+    // at all. Without this the doctor would be offered a pairing and then told
+    // it has no product behind it.
+    //
+    // This changes which brands are FETCHED and nothing else. No score, no
+    // rank and no guard verdict is touched by it.
+    const companionCompositionIds = useMemo(() => {
+        if (!companions || !data) return [];
+        const out: number[] = [];
+        for (const c of companions.suggestions) {
+            if (c.type !== "medicine") continue;
+            const intent = data.ruleset.intents.get(c.companionIntentId);
+            if (intent?.refTable === "compositions" && intent.refId != null) {
+                out.push(intent.refId);
+            }
+        }
+        return out;
+    }, [companions, data]);
+
     const wantedCompositions = useMemo(
-        () => compositionIdsOf(byType.medicine),
-        [byType.medicine]
+        () => [...new Set([...compositionIdsOf(byType.medicine), ...companionCompositionIds])],
+        [byType.medicine, companionCompositionIds]
     );
     const brandKey = `${isPediatric ? "p" : "a"}:${wantedCompositions.join(",")}`;
 

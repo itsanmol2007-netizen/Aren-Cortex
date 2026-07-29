@@ -501,6 +501,15 @@ function ThermalDocument({
                         return (
                             <div key={idx} style={{ marginBottom: 6 }}>
                                 <div style={{ fontWeight: 700, fontSize: "10px" }}>{idx + 1}. {med.name}</div>
+                                {/* Composition on its own line even on the compact
+                                    format. A medicine is two lines everywhere it is
+                                    rendered — the pharmacist reading this needs the
+                                    molecule as much as the doctor writing it did. */}
+                                {med.composition && med.composition !== med.name && (
+                                    <div style={{ fontSize: "8px", paddingLeft: 10, opacity: 0.75, textTransform: "capitalize" }}>
+                                        {med.composition}
+                                    </div>
+                                )}
                                 <div style={{ fontSize: "8px", paddingLeft: 10 }}>
                                     {slots} · {med.duration}
                                     {med.instructions && ` · ${med.instructions}`}

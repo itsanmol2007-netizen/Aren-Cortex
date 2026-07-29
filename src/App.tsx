@@ -1,13 +1,10 @@
-import { RefreshCw } from "lucide-react";
+import { CircleDot, HeartPulse, RefreshCw, UserRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChartPanel } from "./components/ChartPanel";
 import { systemLabel } from "./lib/synapse/systems";
 import { MedicineInspector } from "./components/MedicineInspector";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { ActiveConsultGuard } from "./components/ActiveConsultGuard";
-import { ContextBar } from "./components/ContextBar";
-import { PlanPanel } from "./components/PlanPanel";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import ReviewModal from "./components/ReviewModal";
 import { Sidebar } from "./features/sidebar/Sidebar";
@@ -21,7 +18,21 @@ import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
 import { useClinicalIdentity } from "./hooks/useClinicalIdentity";
 import { useSynapse } from "./hooks/useSynapse";
 import { useConsultIntelligence } from "./hooks/useConsultIntelligence";
-import { SuggestionsPanel, type AcceptPayload } from "./features/synapse/SuggestionsPanel";
+import { PickerCard, type PickerKind } from "./features/consult/PickerCard";
+import { BrowseSheet } from "./features/consult/BrowseSheet";
+import { MeasurementsCard } from "./features/consult/MeasurementsCard";
+import { RecommendationsCard } from "./features/consult/RecommendationsCard";
+import { SuggestionsCard } from "./features/consult/SuggestionsCard";
+import { PlanCard } from "./features/consult/PlanCard";
+import { StatusBar } from "./features/consult/StatusBar";
+import { topScoreByType } from "./features/consult/parts";
+import { usePinnedMedicines } from "./features/consult/usePinnedMedicines";
+import type { AcceptPayload } from "./features/consult/types";
+import { BrandSheet } from "./features/synapse/BrandSheet";
+import { profileFor } from "./features/synapse/specialtyProfile";
+import { useOnline } from "./features/frontdesk/operational/useOnline";
+import type { PersonalizedIntent } from "./lib/synapse/personalize";
+import type { CompanionSuggestion } from "./lib/synapse/companions";
 import {
   commitConsultation, setClinicBrandDefault, clearClinicBrandDefault,
   type SearchedAccept,
@@ -160,6 +171,16 @@ function App() {
    */
   const [deliberateBrands, setDeliberateBrands] = useState<Map<number, number>>(new Map());
 
+  /**
+   * Companion suggestions the doctor waved off, this consultation only.
+   *
+   * Per-consultation and deliberately not persisted: dismissing the PPI for
+   * one patient says nothing about the next one, and a dismissal that outlived
+   * the visit would quietly turn a nudge into a permanent opt-out the doctor
+   * never asked for.
+   */
+  const [dismissedCompanions, setDismissedCompanions] = useState<Set<number>>(new Set());
+
   const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
   const [pastVisitsLoading, setPastVisitsLoading] = useState(false);
 
@@ -175,6 +196,17 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  /** Free text for this visit, separate from the advice the doctor accepted. */
+  const [visitNotes, setVisitNotes] = useState("");
+  const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
+  /** which picker's browse-everything sheet is open */
+  const [browse, setBrowse] = useState<PickerKind | null>(null);
+  const [brandSheet, setBrandSheet] = useState<
+    { intentId: number; compositionId: number; label: string; rect: DOMRect } | null
+  >(null);
+
+  const online = useOnline();
 
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -267,10 +299,39 @@ function App() {
     [selectedSymptoms, historyLabels]
   );
 
-  /** The picker owns the complaints half; context survives around its edits. */
-  const handleSymptomsChange = useCallback(
-    (next: string[]) => setSelectedSymptoms([...next, ...contextChips]),
-    [contextChips]
+  /** Everything on the chart, for the ✓ in a search result or the browse sheet. */
+  const onChartSet = useMemo(
+    () => new Set([...selectedSymptoms, ...selectedFindings]),
+    [selectedSymptoms, selectedFindings]
+  );
+
+  /** The symptoms picker owns the complaints half; context survives its edits. */
+  const handleSymptomToggle = useCallback((label: string) => {
+    setSelectedSymptoms((curr) =>
+      curr.includes(label) ? curr.filter((l) => l !== label) : [...curr, label]
+    );
+    setSelectedSymptomsWithIntensity((curr) =>
+      curr.some((i) => i.name === label)
+        ? curr.filter((i) => i.name !== label)
+        : [...curr, { name: label, intensity: "moderate" }]
+    );
+  }, []);
+
+  const handleFindingToggle = useCallback((label: string) => {
+    setSelectedFindings((curr) =>
+      curr.includes(label) ? curr.filter((l) => l !== label) : [...curr, label]
+    );
+  }, []);
+
+  const handleIntensityChange = useCallback(
+    (label: string, intensity: SelectedSymptom["intensity"]) => {
+      setSelectedSymptomsWithIntensity((curr) =>
+        curr.some((i) => i.name === label)
+          ? curr.map((i) => (i.name === label ? { ...i, intensity } : i))
+          : [...curr, { name: label, intensity }]
+      );
+    },
+    []
   );
 
   const handleContextToggle = useCallback((label: string) => {
@@ -387,10 +448,12 @@ function App() {
     setDiagnoses([]);
     setAcknowledgedIntents(new Set());
     setDeliberateBrands(new Map());
+    setDismissedCompanions(new Set());
     setPastVisits([]);
     setRepeatRxBanner(null);
     setFollowUpDays(null);
     setAdviceNotes("");
+    setVisitNotes("");
     setPatientModalOpen(true);
   };
 
@@ -440,9 +503,11 @@ function App() {
       setDiagnoses([]);
       setAcknowledgedIntents(new Set());
       setDeliberateBrands(new Map());
+      setDismissedCompanions(new Set());
       setRepeatRxBanner(null);
       setFollowUpDays(null);
       setAdviceNotes("");
+    setVisitNotes("");
       setActivePage(null);
       setSidebarOpen(false);
       showToast(`Consult started for ${incomingPatient.name}`);
@@ -631,9 +696,11 @@ function App() {
       setDiagnoses([]);
       setAcknowledgedIntents(new Set());
       setDeliberateBrands(new Map());
+      setDismissedCompanions(new Set());
       setRepeatRxBanner(null);
       setFollowUpDays(null);
       setAdviceNotes("");
+    setVisitNotes("");
       setPatientModalOpen(false);
       setActivePage(null);
       showToast(`Consult started for ${dbPatient.name}`);
@@ -696,6 +763,17 @@ function App() {
       if (p.type === "test" && p.label === label) releaseIntent(intentId);
     }
   };
+
+  /**
+   * What actually prints as Advice: the lines the doctor ACCEPTED, then
+   * anything they typed freehand. Two inputs, one field on the prescription —
+   * the Rx prints a single advice block and the doctor should not have to
+   * decide which half a line belongs in.
+   */
+  const reviewAdvice = useMemo(
+    () => [adviceNotes, visitNotes.trim()].filter(Boolean).join("\n"),
+    [adviceNotes, visitNotes]
+  );
 
   /** Advice notes are one string; the Plan column edits them as lines. */
   const adviceLines = useMemo(
@@ -816,7 +894,7 @@ function App() {
         // The working diagnosis leads, then what was seen on examination.
         findingsText: [...diagnoses, ...selectedFindings].join(", "),
         followUpDays,
-        adviceNotes,
+        adviceNotes: reviewAdvice,
       });
 
       // ★ The learning write. One insert, at the close of a consultation the
@@ -916,6 +994,99 @@ function App() {
     [acceptedIntents]
   );
 
+  // ── The specialty profile ───────────────────────────────────────────────
+  // Which intent type this facility elevates into the Primary Recommendation
+  // slot. Read once from the facility, never inferred from what the doctor is
+  // doing — see specialtyProfile.ts for why that distinction is load-bearing.
+  const specialty = useMemo(() => profileFor(identity.hospitalId), [identity.hospitalId]);
+
+  /**
+   * The doctor's pins — the heart on a recommendation row.
+   *
+   * A pin lifts that medicine to the top of the recommendations whenever it is
+   * ranked again. It reorders what is SHOWN and never touches a score, so the
+   * bar beside a pinned row still draws the engine's real reading.
+   */
+  const pins = usePinnedMedicines(identity.isReal ? identity.doctorId : null);
+
+  /** The denominator behind every rank bar and relevance word on this screen. */
+  const topOfType = useMemo(
+    () => topScoreByType(intelligence.intents as PersonalizedIntent[]),
+    [intelligence.intents]
+  );
+
+  const handleOpenBrandSheet = useCallback(
+    (intent: PersonalizedIntent, rect: DOMRect) => {
+      if (intent.refTable !== "compositions" || intent.refId == null) return;
+      setBrandSheet({
+        intentId: intent.intentId,
+        compositionId: intent.refId,
+        label: intent.label,
+        rect,
+      });
+    },
+    []
+  );
+
+  // ── Companions, indexed by the medicine that triggered them ─────────────
+  // The Plan asks per line. Anything already on the plan, or waved off this
+  // consultation, never reaches the slot.
+  const companionsByTrigger = useMemo(() => {
+    const m = new Map<number, CompanionSuggestion[]>();
+    for (const c of intelligence.companions?.suggestions ?? []) {
+      if (dismissedCompanions.has(c.companionIntentId)) continue;
+      if (acceptedIntents.has(c.companionIntentId)) continue;
+      for (const trigger of c.triggeredBy) {
+        const list = m.get(trigger);
+        if (list) list.push(c);
+        else m.set(trigger, [c]);
+      }
+    }
+    return m;
+  }, [intelligence.companions, dismissedCompanions, acceptedIntents]);
+
+  const companionsFor = useCallback(
+    (intentId: number) => companionsByTrigger.get(intentId) ?? [],
+    [companionsByTrigger]
+  );
+
+  const dismissCompanion = useCallback((companionIntentId: number) => {
+    setDismissedCompanions((curr) => new Set(curr).add(companionIntentId));
+  }, []);
+
+  /**
+   * Taking a companion.
+   *
+   * It routes through the same accept path as everything else, because the
+   * decision log must not be able to tell a companion apart from a suggestion
+   * the doctor reached any other way — it is a prescription either way. The
+   * one thing that has to happen here is resolving the BRAND: a companion
+   * carries an intent id and a label, not a product, so the brand index (which
+   * now covers companion compositions) is consulted before handing it on.
+   */
+  const handleAddCompanion = useCallback((c: CompanionSuggestion) => {
+    const intent = synapse.data?.ruleset.intents.get(c.companionIntentId);
+    const compositionId =
+      intent?.refTable === "compositions" ? intent.refId : null;
+    const brand =
+      c.type === "medicine" && compositionId != null
+        ? intelligence.brands.get(compositionId)?.brands[0] ?? null
+        : null;
+
+    handleAcceptIntent({
+      intentId: c.companionIntentId,
+      type: c.type,
+      label: c.label,
+      refTable: intent?.refTable ?? null,
+      refId: intent?.refId ?? null,
+      medicine: brand,
+      // It was offered by the pairing table, not by the ranking, so it is not
+      // a ranked accept and must not be logged as one.
+      viaSearch: true,
+      overridden: c.status === "warn_hard",
+    });
+  }, [synapse.data, intelligence.brands, handleAcceptIntent]);
+
   if (!dbReady) {
     return (
       <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
@@ -967,8 +1138,6 @@ function App() {
         <PatientHeader
           patient={patient ?? { name: "—", age: "—", gender: "", phone: "" }}
           doctor={DOCTOR}
-          vitals={vitals}
-          onVitalsChange={setVitals}
           onOpenPatientModal={() => {
             if (patient && visitId) {
               setActiveConsultGuardOpen(true);
@@ -1002,75 +1171,175 @@ function App() {
           subtitle={comingSoonMeta.subtitle}
         />
       ) : (
-        /* Consult workspace — the left-to-right story:
-           CHART (what you know) · SYNAPSE (what it suggests) · PLAN (what
-           you're issuing). See docs/aren-cortex-redesign-plan.md. */
-        <div className="app-shell-body">
-          <main className="workflow cx-grid">
-            {/* Who this patient is — read before anything below it. Toggling a
-                chip here re-runs the engine in the same frame, so ticking
-                "Pregnant" turns contraindicated medicines red with no other
-                click anywhere. */}
-            <ContextBar
-              observables={observables}
-              selected={selectedSymptoms}
-              onToggle={handleContextToggle}
-              ageYears={ageYears}
-              gender={patient?.gender}
-              disabled={!patient}
-            />
-
-            <div className="cx-col cx-chart">
-              <ChartPanel
+        /* ── The consultation, read top to bottom ──────────────────────────
+           History → Symptoms → Findings → Measurements → Recommendations,
+           with the Consultation Plan running alongside as the destination of
+           all of them. Built to docs/Aren Cortex Mock 2.png; the layout rules
+           are in docs/Aren cortex visual philosophy.md. */
+        <div className="cs-shell">
+          <main className="cs-page">
+            <div className="cs-pickers">
+              {/* Context first. Toggling a chip here re-runs the engine in the
+                  same frame, so ticking "Pregnant" turns contraindicated
+                  medicines red with no other click anywhere. */}
+              <PickerCard
+                kind="history"
+                title="History / Context"
+                glyph={<UserRound size={12} />}
+                glyphTone="blue"
+                placeholder="Search history…"
                 observables={observables}
-                symptoms={symptomChips}
-                onSymptomsChange={handleSymptomsChange}
-                findings={selectedFindings}
-                onFindingsChange={setSelectedFindings}
-                context={contextChips}
-                onToggleContext={handleContextToggle}
+                selected={contextChips}
+                onToggle={handleContextToggle}
+                onChart={onChartSet}
+                onBrowse={() => setBrowse("history")}
+                emptyHint="Pregnancy, comorbidities, allergies — what frames the whole consultation."
+                disabled={!patient}
+              />
+
+              <PickerCard
+                kind="symptom"
+                title="Symptoms"
+                glyph={<HeartPulse size={12} />}
+                glyphTone="rose"
+                placeholder="Search symptoms…"
+                observables={observables}
+                selected={symptomChips}
+                onToggle={handleSymptomToggle}
+                onChart={onChartSet}
                 intensities={selectedSymptomsWithIntensity}
-                onIntensitiesChange={setSelectedSymptomsWithIntensity}
+                onIntensityChange={handleIntensityChange}
+                onBrowse={() => setBrowse("symptom")}
+                emptyHint="What the patient came in with. Hindi works too — बुखार, bukhar."
+                disabled={!patient}
                 searchRef={chartSearchRef}
               />
-            </div>
 
-            <div className="cx-col cx-synapse">
-              <SuggestionsPanel
-                intelligence={intelligence}
-                data={synapse.data}
-                acceptedIntentIds={acceptedIntentIdSet}
-                chosenBrands={chosenBrands}
-                acknowledged={acknowledgedIntents}
-                onAcknowledge={handleAcknowledge}
-                onAccept={handleAcceptIntent}
-                onChangeBrand={handleChangeBrand}
-                onPinClinicBrand={handlePinClinicBrand}
-                hasChart={intelligence.hasInput}
-                searchRef={synapseSearchRef}
+              <PickerCard
+                kind="finding"
+                title="Findings"
+                note="On Examination"
+                glyph={<CircleDot size={12} />}
+                glyphTone="teal"
+                placeholder="Search findings…"
+                observables={observables}
+                selected={selectedFindings}
+                onToggle={handleFindingToggle}
+                onChart={onChartSet}
+                onBrowse={() => setBrowse("finding")}
+                emptyHint="What you saw on examination — every entry here is an abnormal sign."
+                disabled={!patient}
               />
             </div>
 
-            <PlanPanel
-              diagnoses={diagnoses}
-              onRemoveDiagnosis={removeDiagnosis}
-              prescription={prescription}
-              selectedMedicineId={selectedMedicineId}
-              onSelectMedicine={setSelectedMedicineId}
-              onUpdateMedicine={updateMedicine}
-              onRemoveMedicine={removeMedicine}
-              tests={selectedTests}
-              onRemoveTest={removeTest}
-              adviceLines={adviceLines}
-              onRemoveAdviceLine={removeAdviceLine}
-              followUpDays={followUpDays}
-              onFollowUpChange={setFollowUpDays}
-              onReviewRx={openReview}
-              panelRef={planRef}
-              onShowShortcuts={() => setShortcutsOpen(true)}
+            <div className="cs-body">
+              <div className="cs-body-left">
+                {/* The single source of truth for these five numbers. The
+                    topbar strip that used to duplicate them is gone. */}
+                <MeasurementsCard
+                  vitals={vitals}
+                  onChange={setVitals}
+                  disabled={!patient}
+                />
+
+                <div className="cs-engine">
+                  <RecommendationsCard
+                    intents={intelligence.byType.medicine}
+                    topScore={topOfType.get("medicine") ?? 0}
+                    brands={intelligence.brands}
+                    brandsLoading={intelligence.brandsLoading}
+                    brandError={intelligence.brandError}
+                    brandPreferences={synapse.data?.brandPreferences}
+                    acceptedIntentIds={acceptedIntentIdSet}
+                    chosenBrands={chosenBrands}
+                    acknowledged={acknowledgedIntents}
+                    onAcknowledge={handleAcknowledge}
+                    onAccept={handleAcceptIntent}
+                    isPinned={pins.isPinned}
+                    onTogglePin={pins.toggle}
+                    onOpenBrandSheet={handleOpenBrandSheet}
+                    hasChart={intelligence.hasInput}
+                    searchRef={synapseSearchRef}
+                  />
+
+                  <SuggestionsCard
+                    byType={intelligence.byType}
+                    topOfType={topOfType}
+                    acceptedIntentIds={acceptedIntentIdSet}
+                    acknowledged={acknowledgedIntents}
+                    onAcknowledge={handleAcknowledge}
+                    onAccept={handleAcceptIntent}
+                    expanded={suggestionsExpanded}
+                    onToggleExpanded={() => setSuggestionsExpanded((v) => !v)}
+                    hasChart={intelligence.hasInput}
+                  />
+                </div>
+              </div>
+
+              <PlanCard
+                diagnoses={diagnoses}
+                onRemoveDiagnosis={removeDiagnosis}
+                prescription={prescription}
+                onSelectMedicine={setSelectedMedicineId}
+                onUpdateMedicine={updateMedicine}
+                onRemoveMedicine={removeMedicine}
+                tests={selectedTests}
+                onRemoveTest={removeTest}
+                adviceLines={adviceLines}
+                onRemoveAdviceLine={removeAdviceLine}
+                followUpDays={followUpDays}
+                onFollowUpChange={setFollowUpDays}
+                notes={visitNotes}
+                onNotesChange={setVisitNotes}
+                companionsFor={companionsFor}
+                onAddCompanion={handleAddCompanion}
+                onDismissCompanion={dismissCompanion}
+                onAddMedicine={() => synapseSearchRef.current?.focus()}
+                onAddTest={() => setSuggestionsExpanded(true)}
+                onReviewRx={openReview}
+                onPrint={openReview}
+                panelRef={planRef}
+              />
+            </div>
+          </main>
+
+          <StatusBar
+            active={synapse.status === "ready"}
+            modelVersion={synapse.data?.ruleset.version ?? null}
+            specialty={specialty.label}
+            degraded={!!synapse.data?.degraded}
+            online={online}
+          />
+
+          {/* The brand picker, anchored to the row that opened it. */}
+          {brandSheet && intelligence.brands.get(brandSheet.compositionId) && (
+            <BrandSheet
+              anchor={brandSheet.rect}
+              composition={intelligence.brands.get(brandSheet.compositionId)!}
+              compositionLabel={brandSheet.label}
+              currentMedicineId={chosenBrands.get(brandSheet.intentId) ?? null}
+              brandPreferences={synapse.data?.brandPreferences ?? new Map()}
+              clinicDefaults={synapse.data?.clinicBrandDefaults ?? new Map()}
+              onChoose={(m) => handleChangeBrand(brandSheet.intentId, m)}
+              onPinClinic={handlePinClinicBrand}
+              onClose={() => setBrandSheet(null)}
             />
-          </main >
-        </div >
+          )}
+
+          {browse && (
+            <BrowseSheet
+              kind={browse}
+              observables={observables}
+              selected={onChartSet}
+              onToggle={
+                browse === "history" ? handleContextToggle
+                  : browse === "symptom" ? handleSymptomToggle
+                    : handleFindingToggle
+              }
+              onClose={() => setBrowse(null)}
+            />
+          )}
+        </div>
       )
       }
 
@@ -1154,7 +1423,7 @@ function App() {
             onSave={handleConfirmAndSave}
             onClose={() => setIsReviewOpen(false)}
             followUpDays={followUpDays}
-            adviceNotes={adviceNotes}
+            adviceNotes={reviewAdvice}
             visitId={visitId ?? undefined}
           />
         )

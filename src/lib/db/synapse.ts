@@ -289,7 +289,20 @@ export interface FrequentMedicine {
     usualBrand: string | null;
 }
 
-export const FREQUENT_LIMIT = 8;
+/**
+ * These rows do two jobs, and the larger one sets the limit.
+ *
+ *  * The idle "Your frequent" shortlist, which shows the head of this list and
+ *    slices it to 8 itself — a door with forty options is a wall.
+ *  * The tiered habit meter on every ranked medicine card, which needs a row
+ *    for any molecule the doctor might be shown. Capped at 8, the meter would
+ *    silently vanish from everything outside their ten most-used drugs and
+ *    read as "you have never prescribed this", which is a different and false
+ *    statement.
+ *
+ * One extra ordered read of a view already being fetched; no schema change.
+ */
+export const FREQUENT_LIMIT = 60;
 /** Below this it is a coincidence, not a habit, and the list is noise. */
 export const FREQUENT_MIN_TIMES = 2;
 

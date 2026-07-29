@@ -9,8 +9,7 @@
     padding: 0 0 24px;
 }
 
-.app-shell>.topbar-unified,
-.app-shell>.vitals-bar {
+.app-shell>.topbar-unified {
     margin: 0 18px;
 }
 
@@ -484,22 +483,6 @@
 
 .tb-review-btn:active {
     transform: scale(0.97);
-}
-
-
-/* ════════════════════════════════════════════════════════════
-   VITALS BAR
-   ════════════════════════════════════════════════════════════ */
-
-.vitals-bar {
-    background: linear-gradient(to right,
-            rgba(238, 242, 255, 0.95) 0%,
-            rgba(255, 255, 255, 0.97) 30%,
-            rgba(255, 255, 255, 0.97) 100%);
-    border-bottom: 1px solid rgba(191, 205, 226, 0.5);
-    box-shadow:
-        inset 0 1px 0 rgba(168, 85, 247, 0.06),
-        0 1px 4px rgba(34, 54, 92, 0.05);
 }
 
 
