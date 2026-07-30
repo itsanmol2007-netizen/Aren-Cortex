@@ -15,12 +15,33 @@ export type Doctor = {
   specialty: string;
 };
 
+/**
+ * This visit's measurements, as the doctor typed them.
+ *
+ * The five original fields stay REQUIRED because `visits.vitals` (jsonb) has
+ * been written with exactly those keys since the first release, and the print,
+ * the review modal and Front Desk all read them positionally. Everything added
+ * since is OPTIONAL, so a vitals object built anywhere else in the codebase
+ * still type-checks and an old row still hydrates.
+ *
+ * The measure key each field becomes is declared once, in
+ * `features/consult/measures.ts` — never inferred from the name here.
+ */
 export type Vitals = {
   bp: string;
   pulse: string;
   temp: string;
   spo2: string;
+  /** body weight, kg */
   weight: string;
+  /** height, cm */
+  height?: string;
+  /** A+, O−, … — the one non-numeric measurement, stored as text */
+  bloodGroup?: string;
+  /** pain visual analogue scale, 0–10 (PAIN_VAS) */
+  painVas?: string;
+  /** range of motion achieved ÷ expected, % (ROM_PCT) */
+  romPct?: string;
 };
 
 export type Medicine = {

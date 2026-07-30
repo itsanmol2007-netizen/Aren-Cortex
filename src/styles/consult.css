@@ -41,6 +41,8 @@
     --cs-radius: 14px;
     --cs-radius-sm: 9px;
     --cs-shadow: 0 1px 2px rgba(16, 28, 46, 0.04);
+    /* The shared height of the two ranked columns — see `.cs-engine`. */
+    --cs-engine-h: 540px;
 }
 
 /* The consult surface sits BELOW the existing topbar, inside `.app-shell`.
@@ -79,10 +81,15 @@
     padding: 14px 20px 12px;
 }
 
+/* Four cards: the three the doctor fills in, then the engine's reading of
+   them. Possible Conditions is last because it reads from all three (and from
+   the measurements below), and any earlier position would imply it reflects
+   only the card beside it. */
 .cs-pickers {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
+    align-items: stretch;
 }
 
 .cs-body {
@@ -100,12 +107,38 @@
     min-width: 0;
 }
 
+/* ── the two ranked columns ──────────────────────────────────
+   Medicine Recommendations and Clinical Suggestions are given ONE
+   height and scroll inside it, rather than each sizing to its own
+   content.
+
+   Sizing to content meant the shorter column stretched to match the
+   taller one (grid `stretch`) and left the difference as dead white
+   space between its last row and its "Show more" button — the button
+   floating half a card away from the list it belongs to. A shared
+   height with independent internal scroll puts every "Show more"
+   back on the bottom edge of its own card, whatever either column
+   happens to contain.
+
+   The height is fixed rather than derived from the viewport: the
+   plan beside it is already sticky to the viewport, and two
+   different viewport-relative heights on one row is how a short
+   screen ends up with a 90px scroll area. */
 .cs-engine {
     display: grid;
     grid-template-columns: minmax(0, 0.83fr) minmax(0, 1fr);
     gap: 12px;
     align-items: stretch;
     min-width: 0;
+    height: var(--cs-engine-h);
+}
+
+/* `.cs-list` already carries `flex: 1; min-height: 0; overflow-y: auto`,
+   so each card scrolls its own list and nothing else. Stated here
+   because the fixed height above is what makes it load-bearing. */
+.cs-engine > .cs-card {
+    min-height: 0;
+    overflow: hidden;
 }
 
 /* ── the card primitive ── */
@@ -552,15 +585,117 @@
     font-weight: 300;
 }
 
+/* ── the doctor's own way in ──
+   Everything not on the facility's default list is reachable from here.
+   It is a real control now: the facility profile decides what is VISIBLE,
+   never what exists. */
 .cs-meas.is-add {
+    position: relative;
     border-style: dashed;
     border-color: var(--cs-line-strong);
     background: none;
     color: var(--cs-faint);
     justify-content: center;
+    padding: 0;
+}
+
+.cs-meas-add {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 11px;
+    background: none;
+    padding: 11px 10px 12px;
+    color: inherit;
     font-size: 12px;
     font-weight: 560;
-    cursor: default;
+    transition: color 0.13s ease, background 0.13s ease;
+}
+
+.cs-meas-add:hover:not(:disabled) {
+    background: #f8fafc;
+    color: var(--cs-blue);
+}
+
+.cs-meas-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 5px;
+    box-shadow: 0 12px 28px rgba(16, 28, 46, 0.13);
+}
+
+.cs-meas-menu button {
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 520;
+    text-align: left;
+}
+
+.cs-meas-menu button:hover {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* Blood group — the one measurement that is not a number. It borrows the
+   numeric field's type scale so the row does not visibly break rank. */
+.cs-meas-select {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-ink);
+    font-size: 19px;
+    font-weight: 660;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    text-align: center;
+    text-align-last: center;
+    outline: none;
+    box-shadow: none;
+    appearance: none;
+}
+
+/* ── PROGRESSIVE RELEVANCE ──
+   A field the chart has just made worth taking. The whole treatment is a
+   hairline ring and a small "+" beside the label — no card, no badge, no
+   sentence addressed to the doctor. It is the field itself, present and
+   quietly marked, and it stops the moment a value is entered.
+
+   Deliberately weaker than `.is-warn`: an out-of-range number the doctor
+   already recorded always outranks a field they have not filled in. */
+.cs-meas.is-suggested {
+    border-color: rgba(18, 104, 232, 0.34);
+    background: #fcfdff;
+}
+
+.cs-meas.is-suggested .cs-meas-label {
+    color: var(--cs-blue);
+}
+
+.cs-meas-mark {
+    margin-left: 4px;
+    color: var(--cs-blue);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -580,20 +715,26 @@
     padding: 11px 16px 0;
 }
 
-.cs-filter {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
+/* Narrows one search box to one category. A filter rather than four boxes:
+   the doctor knows the name of the thing before they know which of our
+   buckets we filed it under. */
+.cs-scope {
     flex: none;
-    border: 1px solid rgba(18, 104, 232, 0.28);
+    border: 1px solid var(--cs-line-strong);
     border-radius: var(--cs-radius-sm);
-    background: var(--cs-blue-soft);
-    padding: 0 13px;
+    background: #fff;
+    padding: 0 8px;
     height: 38px;
-    color: var(--cs-blue);
-    font-size: 12.5px;
-    font-weight: 620;
-    white-space: nowrap;
+    max-width: 118px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 580;
+}
+
+.cs-scope:focus {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+    outline: none;
 }
 
 .cs-list {
@@ -1102,7 +1243,10 @@
     color: #fff;
 }
 
-.cs-sug-icon.is-finding { background: #f59e0b; }
+/* Violet, matching the Possible Conditions card glyph. It was amber when
+   findings were one section of Clinical Suggestions; they have their own
+   panel now, and the panel should read as one thing. */
+.cs-sug-icon.is-finding { background: var(--cs-violet); }
 .cs-sug-icon.is-test { background: #2563eb; }
 .cs-sug-icon.is-referral { background: #8b5cf6; }
 .cs-sug-icon.is-advice { background: #10b981; }
@@ -1836,7 +1980,177 @@
     max-width: 260px;
 }
 
+/* ════════════════════════════════════════════════════════════
+   POSSIBLE CONDITIONS — the engine's reading, beside the chart
+
+   It borrows `.cs-picker` for its shell so it sits at the same
+   height as the three entry cards, and `.cs-sug` for its rows so
+   a condition looks the same wherever it renders. What is new is
+   only the honesty line and the violet glyph that separates an
+   OUTPUT from the three inputs beside it.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-glyph.is-violet {
+    background: #f5f3ff;
+    color: var(--cs-violet);
+}
+
+/* Permanent, not a tooltip: what this panel reads from is exactly the thing
+   a doctor would otherwise assume wrongly. */
+.cs-cond-note {
+    flex: none;
+    margin: 9px 16px 0;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 450;
+    line-height: 1.5;
+}
+
+/* A row reached by search rather than by ranking. It carries no rank number
+   and no relevance word, because it has neither — the ranking never offered
+   it, and dressing it up as though it had is the one thing search must not
+   do. */
+.cs-sug.is-hit .cs-sug-icon {
+    background: #94a3b8;
+}
+
+/* ════════════════════════════════════════════════════════════
+   WHY THIS RANKED — contribution, on request
+
+   Closed by default. Opened by the "i" beside a name or by a
+   double-click on the row. See ContributionSheet.tsx for the
+   three rules this styling exists to serve.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-why-btn {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 15px;
+    height: 15px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 50%;
+    background: none;
+    color: var(--cs-faint);
+    font-size: 9.5px;
+    font-style: italic;
+    font-weight: 700;
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1;
+    transition: color 0.13s ease, border-color 0.13s ease;
+}
+
+.cs-why-btn:hover {
+    border-color: var(--cs-blue);
+    color: var(--cs-blue);
+}
+
+.cs-why {
+    position: fixed;
+    z-index: 90;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius);
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(16, 28, 46, 0.18);
+    overflow: hidden;
+}
+
+.cs-why-head {
+    border-bottom: 1px solid var(--cs-line);
+    padding: 12px 14px 10px;
+}
+
+.cs-why-title {
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 660;
+    letter-spacing: -0.01em;
+}
+
+.cs-why-sub {
+    margin-top: 3px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 480;
+}
+
+.cs-why-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 12px 14px;
+}
+
+.cs-why-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+}
+
+.cs-why-name {
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+}
+
+/* A proportion, never a figure — the same rule the rank bar follows. What
+   it compares is the inputs with each other, not likelihood with certainty. */
+.cs-why-bar {
+    display: block;
+    width: 100%;
+    height: 5px;
+    border-radius: 3px;
+    background: #eef2f7;
+    overflow: hidden;
+}
+
+.cs-why-fill {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--cs-blue);
+}
+
+/* A signal that argues AGAINST is shown, not hidden. Half an explanation is
+   a sales pitch. */
+.cs-why-bar.is-against .cs-why-fill {
+    background: var(--cs-amber);
+}
+
+.cs-why-against {
+    color: var(--cs-amber);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.cs-why-rest {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 480;
+}
+
+.cs-why-foot {
+    border-top: 1px solid var(--cs-line);
+    background: #fafbfd;
+    padding: 10px 14px 11px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 450;
+    line-height: 1.5;
+}
+
 /* ── responsive ────────────────────────────────────────────── */
+
+@media (max-width: 1500px) {
+    /* Four across stops being readable before the rest of the page does.
+       Two-by-two keeps every card at a usable width and keeps Possible
+       Conditions on the same band as the chart it reads. */
+    .cs-pickers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (max-width: 1400px) {
     .cs-body { grid-template-columns: minmax(0, 2.5fr) minmax(310px, 1fr); }
@@ -1846,7 +2160,10 @@
 @media (max-width: 1180px) {
     .cs-pickers { grid-template-columns: 1fr; }
     .cs-body { grid-template-columns: 1fr; }
-    .cs-engine { grid-template-columns: 1fr; }
+    /* Stacked, there is no second column to match, so a fixed height would
+       only crop one card for no reason. */
+    .cs-engine { grid-template-columns: 1fr; height: auto; }
+    .cs-engine > .cs-card { overflow: visible; }
     .cs-plan { position: static; max-height: none; }
 }
 

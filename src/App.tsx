@@ -23,6 +23,9 @@ import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MeasurementsCard } from "./features/consult/MeasurementsCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
+import { ConditionsCard } from "./features/consult/ConditionsCard";
+import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
+import { relevantFields } from "./features/consult/measures";
 import { PlanCard } from "./features/consult/PlanCard";
 import { StatusBar } from "./features/consult/StatusBar";
 import { topScoreByType } from "./features/consult/parts";
@@ -35,6 +38,7 @@ import type { PersonalizedIntent } from "./lib/synapse/personalize";
 import type { CompanionSuggestion } from "./lib/synapse/companions";
 import {
   commitConsultation, setClinicBrandDefault, clearClinicBrandDefault,
+  fetchCompositionBrands,
   type SearchedAccept,
 } from "./lib/db/synapse";
 import type { Medicine as SynapseBrand } from "./lib/synapse/brands";
@@ -205,6 +209,15 @@ function App() {
   const [brandSheet, setBrandSheet] = useState<
     { intentId: number; compositionId: number; label: string; rect: DOMRect } | null
   >(null);
+
+  /**
+   * Which ranked item the doctor asked "why is this here" about.
+   *
+   * Never open by default. The contribution data has always been computed —
+   * every scored intent carries its contributors — but showing it beside every
+   * row turns a decision surface into a reading surface.
+   */
+  const [explain, setExplain] = useState<ExplainTarget | null>(null);
 
   const online = useOnline();
 
@@ -531,8 +544,11 @@ function App() {
   // a prescription line, a test becomes an order, advice and referrals become
   // lines on the advice note — but the record of "the doctor took this" is one
   // shape, and that is what the learning loop reads.
+  //
+  // `commitAccept` is the second half: everything below assumes a medicine
+  // intent already knows its product. `handleAcceptIntent` guarantees that.
   // ────────────────────────────────────────────────────────────────────
-  const handleAcceptIntent = useCallback((payload: AcceptPayload) => {
+  const commitAccept = useCallback((payload: AcceptPayload) => {
     setAcceptedIntents((curr) => {
       if (curr.has(payload.intentId)) return curr;
       const next = new Map(curr);
@@ -550,9 +566,11 @@ function App() {
     switch (payload.type) {
       case "medicine": {
         if (!payload.medicine) {
-          // Rankable but not prescribable: the catalogue has no product
-          // containing this molecule on its own. Saying so is the whole point
-          // of surfacing it rather than quietly dropping it.
+          // Genuinely not prescribable: the catalogue holds no product with
+          // this molecule on its own. `handleAcceptIntent` has already tried to
+          // resolve one, so reaching here means there is nothing to resolve —
+          // saying so is the whole point of surfacing it rather than quietly
+          // dropping it.
           showToast(`${payload.label} has no single-molecule brand — search a product instead`);
           setAcceptedIntents((curr) => {
             const next = new Map(curr);
@@ -602,6 +620,73 @@ function App() {
         break;
     }
   }, []);
+
+  /**
+   * The product behind a molecule, fetched on demand.
+   *
+   * ── The bug this exists to fix ─────────────────────────────────────────
+   * Only the RANKED medicine list ever had brands in hand: `useConsultIntelligence`
+   * fetches them for the compositions the engine scored, and the ranked row
+   * passes the resolved product straight into the accept. Every OTHER way of
+   * reaching a medicine — searching for it, taking a companion before its
+   * brands had loaded — handed the accept a `medicine: null`, and the accept
+   * path read that as "this molecule has no product in the catalogue". The
+   * doctor got "…has no single-molecule brand" on drugs with hundreds of
+   * brands, and the intent was silently un-accepted.
+   *
+   * The catalogue was never the problem — `composition_brands` returns those
+   * brands for anon and authenticated alike, and `medicine_composition_map`
+   * has had a working read policy throughout. The lookup simply was not being
+   * made. It is made here, once, for every path into an accept.
+   *
+   * The session cache inside `useConsultIntelligence` is consulted first, so
+   * accepting a ranked medicine still costs no round trip.
+   */
+  const resolveBrandFor = useCallback(
+    async (compositionId: number): Promise<SynapseBrand | null> => {
+      const cached = intelligence.brands.get(compositionId);
+      if (cached) return cached.brands[0] ?? null;
+      if (!synapse.data) return null;
+
+      const index = await fetchCompositionBrands({
+        compositionIds: [compositionId],
+        prefs: synapse.data.brandPreferences,
+        clinicDefaults: synapse.data.clinicBrandDefaults,
+        isPediatric: intelligence.isPediatric,
+      });
+      return index.get(compositionId)?.brands[0] ?? null;
+    },
+    [intelligence.brands, intelligence.isPediatric, synapse.data]
+  );
+
+  /**
+   * The one entry point. A medicine that arrives without a product gets one
+   * before anything else happens; every other type passes straight through.
+   */
+  const handleAcceptIntent = useCallback((payload: AcceptPayload) => {
+    if (payload.type !== "medicine" || payload.medicine) {
+      commitAccept(payload);
+      return;
+    }
+
+    const compositionId =
+      payload.refTable === "compositions" ? payload.refId : null;
+    if (compositionId == null) {
+      // A medicine intent with no composition behind it is a data problem, not
+      // a lookup failure, and must not be reported as one.
+      showToast(`${payload.label} is not linked to a composition`);
+      return;
+    }
+
+    resolveBrandFor(compositionId)
+      .then((brand) => commitAccept({ ...payload, medicine: brand }))
+      .catch((err) => {
+        // The ranking is unaffected — only the product lookup failed — so this
+        // says which half broke rather than blaming the molecule.
+        console.warn("brand resolution failed:", err);
+        showToast(`Could not load a product for ${payload.label} — try again`);
+      });
+  }, [commitAccept, resolveBrandFor]);
 
   const appendAdvice = (line: string) => {
     setAdviceNotes((curr) => {
@@ -1015,6 +1100,24 @@ function App() {
     [intelligence.intents]
   );
 
+  const handleExplain = useCallback(
+    (intent: PersonalizedIntent, anchor: DOMRect) => setExplain({ intent, anchor }),
+    []
+  );
+
+  /**
+   * Which measurements the chart has just made worth taking.
+   *
+   * Derived from the engine's own active signals rather than from the chip
+   * labels, so "Fever", "Fever with rash" and the Hindi alias all surface
+   * Temperature through the one signal they share. Static mapping, no
+   * inference — see `measures.ts`.
+   */
+  const measureRelevance = useMemo(
+    () => relevantFields(intelligence.signals),
+    [intelligence.signals]
+  );
+
   const handleOpenBrandSheet = useCallback(
     (intent: PersonalizedIntent, rect: DOMRect) => {
       if (intent.refTable !== "compositions" || intent.refId == null) return;
@@ -1230,6 +1333,31 @@ function App() {
                 emptyHint="What you saw on examination — every entry here is an abnormal sign."
                 disabled={!patient}
               />
+
+              {/* The engine's reading, beside the chart it reads. It used to
+                  sit inside Clinical Suggestions between Investigations and
+                  Advice, which put the answer to "what is going on" below the
+                  answers to "what do I do about it". It re-ranks in the same
+                  frame a chip lands, so the doctor watches their own reasoning
+                  move as they type.
+
+                  It is DELIBERATELY the fourth card and not the second: it
+                  reads from all three pickers plus the measurements, and
+                  placing it after its inputs is the only arrangement that does
+                  not imply it only reflects the one beside it. */}
+              <ConditionsCard
+                intents={intelligence.byType.finding}
+                topScore={topOfType.get("finding") ?? 0}
+                acceptedIntentIds={acceptedIntentIdSet}
+                acknowledged={acknowledgedIntents}
+                onAcknowledge={handleAcknowledge}
+                onAccept={handleAcceptIntent}
+                onExplain={handleExplain}
+                ruleset={synapse.data?.ruleset ?? null}
+                activeSignals={intelligence.result?.activeSignals ?? []}
+                hasChart={intelligence.hasInput}
+                disabled={!patient}
+              />
             </div>
 
             <div className="cs-body">
@@ -1239,6 +1367,12 @@ function App() {
                 <MeasurementsCard
                   vitals={vitals}
                   onChange={setVitals}
+                  // Which fields this facility shows without being asked —
+                  // the same one-time onboarding config that decides which
+                  // intent type gets the Primary Recommendation slot.
+                  defaultKeys={specialty.measurements}
+                  relevantKeys={measureRelevance.keys}
+                  relevantBecause={measureRelevance.because}
                   disabled={!patient}
                 />
 
@@ -1258,6 +1392,9 @@ function App() {
                     isPinned={pins.isPinned}
                     onTogglePin={pins.toggle}
                     onOpenBrandSheet={handleOpenBrandSheet}
+                    onExplain={handleExplain}
+                    ruleset={synapse.data?.ruleset ?? null}
+                    activeSignals={intelligence.result?.activeSignals ?? []}
                     hasChart={intelligence.hasInput}
                     searchRef={synapseSearchRef}
                   />
@@ -1269,9 +1406,13 @@ function App() {
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}
                     onAccept={handleAcceptIntent}
+                    onExplain={handleExplain}
+                    ruleset={synapse.data?.ruleset ?? null}
+                    activeSignals={intelligence.result?.activeSignals ?? []}
                     expanded={suggestionsExpanded}
                     onToggleExpanded={() => setSuggestionsExpanded((v) => !v)}
                     hasChart={intelligence.hasInput}
+                    disabled={!patient}
                   />
                 </div>
               </div>
@@ -1323,6 +1464,17 @@ function App() {
               onChoose={(m) => handleChangeBrand(brandSheet.intentId, m)}
               onPinClinic={handlePinClinicBrand}
               onClose={() => setBrandSheet(null)}
+            />
+          )}
+
+          {/* "Why is this here?" — the engine's own contribution data, on
+              request only. Anchored to the row that asked, like the brand
+              sheet, and closed by anything else. */}
+          {explain && synapse.data && (
+            <ContributionSheet
+              target={explain}
+              signalLabels={synapse.data.signalLabels}
+              onClose={() => setExplain(null)}
             />
           )}
 

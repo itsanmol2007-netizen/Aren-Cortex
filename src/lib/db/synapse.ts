@@ -592,10 +592,15 @@ export async function persistVisitInput(opts: {
 
     if (opts.measurements.length) {
         const { error } = await supabase.from("visit_measurements").upsert(
+            // A measurement is either a number or a string, never both. Blood
+            // group is the only text one today; the column has existed for it
+            // since the schema was built, and writing it into `value_num` would
+            // fail the numeric cast rather than degrade quietly.
             opts.measurements.map((m) => ({
                 visit_id: opts.visitId,
                 measure_key: m.measureKey,
                 value_num: m.value,
+                value_text: m.text ?? null,
                 unit: m.unit,
             })),
             { onConflict: "visit_id,measure_key" }

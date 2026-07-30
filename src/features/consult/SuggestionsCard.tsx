@@ -1,10 +1,17 @@
 // ---------------------------------------------------------------------------
-// CLINICAL SUGGESTIONS — everything the engine has to say that is not a
-// medicine, split by intent type and read as a list of considerations.
+// CLINICAL SUGGESTIONS — everything the engine has to say that is neither a
+// medicine nor a reading of the chart.
 //
-// Possible Finding · Investigation · Referral · Advice · Exercise, in clinical
-// reading order: what could this be → what confirms it → who else should see
-// them → what to tell them.
+// Investigation · Referral · Advice · Exercise, in clinical reading order:
+// what confirms it → who else should see them → what to tell them.
+//
+// ── What left this panel, and why ─────────────────────────────────────────
+// `finding` used to lead this list as "Possible Finding". It has its own panel
+// now — `ConditionsCard`, up beside the chart — because a reading of the chart
+// is not an order to place, and because sitting it above Investigations here
+// buried the one output that answers "what is going on" underneath the outputs
+// that answer "what do I do about it". Nothing about how a finding is scored,
+// guarded or accepted changed; only where it renders.
 //
 // Relevance is a WORD here, not a bar. These are not competing options the
 // doctor picks one of — they are separate considerations, each either worth
@@ -17,29 +24,42 @@
 // "High relevance" no matter how weakly the engine scored it.
 // ---------------------------------------------------------------------------
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
     Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb,
-    ShieldAlert, Stethoscope, Sparkles,
+    ShieldAlert, Sparkles,
 } from "lucide-react";
-import type { IntentType } from "../../lib/synapse/engine";
+import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RELEVANCE_TEXT, rankFillOf, relevanceOf } from "./parts";
+import { WhyButton } from "./ContributionSheet";
+import {
+    IntentSearchField, IntentSearchResults, useIntentSearch,
+} from "./IntentSearch";
 import type { AcceptPayload } from "./types";
 
-/** Section order, labels, glyphs and the verb each type is accepted with. */
+/**
+ * Section order, labels, glyphs and the verb each type is accepted with.
+ *
+ * `finding` is deliberately absent — see the header comment.
+ */
 const SECTIONS: {
     type: IntentType;
     label: string;
     verb: string;
     icon: React.ReactNode;
 }[] = [
-        { type: "finding", label: "Possible Finding", verb: "Consider", icon: <Stethoscope size={14} /> },
         { type: "test", label: "Investigation", verb: "Order", icon: <FlaskConical size={14} /> },
         { type: "referral", label: "Referral", verb: "Refer", icon: <ArrowUpRight size={14} /> },
         { type: "advice", label: "Advice", verb: "Advise", icon: <Lightbulb size={14} /> },
         { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
     ];
+
+const SEARCH_TYPES = SECTIONS.map((s) => s.type);
+
+const VERB_OF: Record<string, string> = Object.fromEntries(
+    SECTIONS.map((s) => [s.type, s.verb])
+);
 
 /** Rows shown per type before the panel asks. */
 const CAP = 2;
@@ -51,22 +71,38 @@ interface Props {
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
     onAccept: (payload: AcceptPayload) => void;
+    onExplain: (intent: PersonalizedIntent, anchor: DOMRect) => void;
+    /** for the guard verdict on a searched, never-ranked intent */
+    ruleset: Ruleset | null;
+    activeSignals: ActiveSignal[];
     expanded: boolean;
     onToggleExpanded: () => void;
     hasChart: boolean;
+    disabled?: boolean;
 }
 
 export function SuggestionsCard({
     byType, topOfType, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
-    expanded, onToggleExpanded, hasChart,
+    onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
+    disabled = false,
 }: Props) {
     /**
-     * One flat, ordered list rather than five sub-lists.
+     * Which category the search box is pointed at.
      *
-     * The mock reads as a single stream with a type label on each row, and that
-     * is the right shape: the doctor is scanning for anything worth acting on,
-     * not visiting five sections in turn. The type stays legible on every row,
-     * so nothing is lost by flattening.
+     * `null` means all four. A filter rather than four separate boxes: the
+     * doctor is looking for one thing and usually knows its name before they
+     * know which of our four buckets we filed it under, and four search fields
+     * on one card is four places to look for the same feature.
+     */
+    const [scope, setScope] = useState<IntentType | null>(null);
+    const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
+
+    /**
+     * One flat, ordered list rather than four sub-lists.
+     *
+     * The doctor is scanning for anything worth acting on, not visiting four
+     * sections in turn. The type stays legible on every row, so nothing is lost
+     * by flattening.
      */
     const rows = useMemo(() => {
         const out: { intent: PersonalizedIntent; section: (typeof SECTIONS)[number] }[] = [];
@@ -87,7 +123,86 @@ export function SuggestionsCard({
         [byType]
     );
 
+    const rankedIds = useMemo(() => {
+        const ids = new Set<number>();
+        for (const s of SECTIONS) for (const i of byType[s.type] ?? []) ids.add(i.intentId);
+        return ids;
+    }, [byType]);
+
     const hidden = total - rows.length;
+
+    const body = () => {
+        if (search.isSearching) {
+            return (
+                <IntentSearchResults
+                    state={search}
+                    verbOf={(t) => VERB_OF[t] ?? "Add"}
+                    ruleset={ruleset}
+                    activeSignals={activeSignals}
+                    rankedIntentIds={rankedIds}
+                    acceptedIntentIds={acceptedIntentIds}
+                    acknowledged={acknowledged}
+                    onAcknowledge={onAcknowledge}
+                    onAccept={onAccept}
+                />
+            );
+        }
+
+        if (!hasChart) {
+            return (
+                <div className="cs-empty">
+                    <strong>Start adding observations to activate Synapse</strong>
+                    <span>
+                        Symptoms, findings and measurements all feed the same reading —
+                        suggestions appear here the moment one lands.
+                    </span>
+                </div>
+            );
+        }
+
+        if (rows.length === 0) {
+            return (
+                <div className="cs-empty">
+                    <strong>Nothing else to suggest for this chart</strong>
+                    <span>Search above to order or refer something directly.</span>
+                </div>
+            );
+        }
+
+        return rows.map(({ intent, section }) => {
+            const list = byType[section.type] ?? [];
+            const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
+            // A section of one has no other side to the comparison.
+            const relevance = list.length > 1 ? relevanceOf(fill) : null;
+
+            return (
+                <SuggestionRow
+                    key={intent.intentId}
+                    intent={intent}
+                    kindLabel={section.label}
+                    verb={section.verb}
+                    icon={section.icon}
+                    relevance={relevance ? RELEVANCE_TEXT[relevance] : null}
+                    added={acceptedIntentIds.has(intent.intentId)}
+                    acknowledged={acknowledged.has(intent.intentId)}
+                    onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
+                    onExplain={(rect) => onExplain(intent, rect)}
+                    onAccept={() =>
+                        onAccept({
+                            intentId: intent.intentId,
+                            type: intent.type,
+                            label: intent.label,
+                            refTable: intent.refTable,
+                            refId: intent.refId,
+                            medicine: null,
+                            viaSearch: false,
+                            overridden: intent.status === "warn_hard",
+                        })
+                    }
+                />
+            );
+        });
+    };
 
     return (
         <section className="cs-card" aria-label="Clinical suggestions">
@@ -96,57 +211,32 @@ export function SuggestionsCard({
                 <span className="cs-sort">Sort by: <b>Relevance</b></span>
             </div>
 
-            <div className="cs-list">
-                {!hasChart ? (
-                    <div className="cs-empty">
-                        <strong>Start adding observations to activate Synapse</strong>
-                        <span>
-                            Symptoms, findings and measurements all feed the same reading —
-                            suggestions appear here the moment one lands.
-                        </span>
-                    </div>
-                ) : rows.length === 0 ? (
-                    <div className="cs-empty">
-                        <strong>Nothing else to suggest for this chart</strong>
-                        <span>The medicines beside this panel are the whole of it.</span>
-                    </div>
-                ) : (
-                    rows.map(({ intent, section }) => {
-                        const list = byType[section.type] ?? [];
-                        const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
-                        // A section of one has no other side to the comparison.
-                        const relevance = list.length > 1 ? relevanceOf(fill) : null;
+            <IntentSearchField
+                state={search}
+                placeholder={
+                    scope
+                        ? `Search ${(SECTIONS.find((s) => s.type === scope)?.label ?? "").toLowerCase()}…`
+                        : "Search tests, referrals, advice, exercises…"
+                }
+                disabled={disabled}
+                trailing={
+                    <select
+                        className="cs-scope"
+                        value={scope ?? ""}
+                        aria-label="Limit the search to one category"
+                        onChange={(e) => setScope((e.target.value || null) as IntentType | null)}
+                    >
+                        <option value="">All</option>
+                        {SECTIONS.map((s) => (
+                            <option key={s.type} value={s.type}>{s.label}</option>
+                        ))}
+                    </select>
+                }
+            />
 
-                        return (
-                            <SuggestionRow
-                                key={intent.intentId}
-                                intent={intent}
-                                kindLabel={section.label}
-                                verb={section.verb}
-                                icon={section.icon}
-                                relevance={relevance ? RELEVANCE_TEXT[relevance] : null}
-                                added={acceptedIntentIds.has(intent.intentId)}
-                                acknowledged={acknowledged.has(intent.intentId)}
-                                onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
-                                onAccept={() =>
-                                    onAccept({
-                                        intentId: intent.intentId,
-                                        type: intent.type,
-                                        label: intent.label,
-                                        refTable: intent.refTable,
-                                        refId: intent.refId,
-                                        medicine: null,
-                                        viaSearch: false,
-                                        overridden: intent.status === "warn_hard",
-                                    })
-                                }
-                            />
-                        );
-                    })
-                )}
-            </div>
+            <div className="cs-list">{body()}</div>
 
-            {hasChart && (hidden > 0 || expanded) && (
+            {!search.isSearching && hasChart && (hidden > 0 || expanded) && (
                 <button type="button" className="cs-more" onClick={onToggleExpanded}>
                     {expanded ? "Show fewer" : "Show more suggestions"}
                     <ChevronDown size={14} style={{ transform: expanded ? "rotate(180deg)" : undefined }} />
@@ -157,7 +247,8 @@ export function SuggestionsCard({
 }
 
 function SuggestionRow({
-    intent, kindLabel, verb, icon, relevance, added, acknowledged, onAcknowledge, onAccept,
+    intent, kindLabel, verb, icon, relevance, added, acknowledged, onAcknowledge,
+    onExplain, onAccept,
 }: {
     intent: PersonalizedIntent;
     kindLabel: string;
@@ -167,15 +258,24 @@ function SuggestionRow({
     added: boolean;
     acknowledged: boolean;
     onAcknowledge: (v: boolean) => void;
+    onExplain: (anchor: DOMRect) => void;
     onAccept: () => void;
 }) {
+    const rowRef = useRef<HTMLDivElement>(null);
     const isHard = intent.status === "warn_hard";
     const isWarn = intent.status === "warn";
     const locked = isHard && !acknowledged;
     const tone = intent.type;
 
     return (
-        <div className={`cs-sug${added ? " is-added" : ""}${isHard ? " is-hard" : ""}`}>
+        <div
+            ref={rowRef}
+            className={`cs-sug${added ? " is-added" : ""}${isHard ? " is-hard" : ""}`}
+            onDoubleClick={() => {
+                const r = rowRef.current?.getBoundingClientRect();
+                if (r) onExplain(r);
+            }}
+        >
             <span className={`cs-sug-icon is-${tone}`} aria-hidden="true">{icon}</span>
 
             <div className="cs-sug-main">
@@ -187,6 +287,7 @@ function SuggestionRow({
                     )}
                     {isWarn && <span className="cs-flag is-warn">Caution</span>}
                     {isHard && <span className="cs-flag is-hard">Check</span>}
+                    <WhyButton label={intent.label} onOpen={onExplain} />
                 </div>
                 {relevance && <span className="cs-sug-rel">{relevance}</span>}
             </div>

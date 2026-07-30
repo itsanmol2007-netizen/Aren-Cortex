@@ -29,11 +29,21 @@
 import type { EngineInput } from "./engine";
 import type { Vitals } from "../../types";
 
-/** A measurement on its way to both the engine and `visit_measurements`. */
+/**
+ * A measurement on its way to both the engine and `visit_measurements`.
+ *
+ * `value` is nullable because not every measurement is a number. Blood group is
+ * the only one today, and it exists to be recorded and printed, not scored —
+ * `visit_measurements` already carries `value_text` for exactly this, and the
+ * engine simply never receives a row without a number. That is enforced in
+ * `buildEngineInput` below rather than left to each caller to remember.
+ */
 export interface MeasurementRow {
     measureKey: string;
-    value: number;
+    value: number | null;
     unit: string;
+    /** the recorded value when it is not a number (blood group) */
+    text?: string;
 }
 
 /** Above this, a temperature can only be Fahrenheit — 45 °C is not survivable. */
@@ -80,6 +90,29 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
     const weight = num(vitals.weight);
     if (weight !== null) out.push({ measureKey: "WEIGHT", value: weight, unit: "kg" });
 
+    const height = num(vitals.height);
+    if (height !== null) out.push({ measureKey: "HEIGHT", value: height, unit: "cm" });
+
+    // ── Physical measures ────────────────────────────────────────────────
+    // Unlike WEIGHT and HEIGHT, these two DO have measurement rules behind
+    // them (PAIN_VAS, ROM_PCT), so a physiotherapy facility surfacing them
+    // changes the ranking rather than only the record. ROM is deliberately
+    // generic and not per-joint: the chip carries the location, the number
+    // carries the degree (handoff §2.4).
+    const pain = num(vitals.painVas);
+    if (pain !== null) out.push({ measureKey: "PAIN_VAS", value: pain, unit: "/10" });
+
+    const rom = num(vitals.romPct);
+    if (rom !== null) out.push({ measureKey: "ROM_PCT", value: rom, unit: "%" });
+
+    // The one non-numeric measurement. It is carried so that it reaches
+    // `visit_measurements.value_text` and the print; no rule reads it, and
+    // `buildEngineInput` never hands a text row to the engine.
+    const bloodGroup = String(vitals.bloodGroup ?? "").trim();
+    if (bloodGroup) {
+        out.push({ measureKey: "BLOOD_GROUP", value: null, unit: "", text: bloodGroup });
+    }
+
     return out;
 }
 
@@ -122,7 +155,13 @@ export function buildEngineInput(args: BuildInputArgs): BuiltInput {
             // negated. The engine already handles negation; when a denial chip
             // exists, it sets this flag and nothing else changes.
             observations: ids.map((observableId) => ({ observableId, isNegated: false })),
-            measurements: measurements.map((m) => ({ measureKey: m.measureKey, value: m.value })),
+            // Only numeric rows reach the engine. A measurement with no number
+            // cannot match a `measurement_rules` range, and passing one through
+            // as NaN would be a silent wrong answer of exactly the kind this
+            // module exists to prevent.
+            measurements: measurements
+                .filter((m): m is MeasurementRow & { value: number } => m.value !== null)
+                .map((m) => ({ measureKey: m.measureKey, value: m.value })),
         },
         measurements,
         observableIds: ids,

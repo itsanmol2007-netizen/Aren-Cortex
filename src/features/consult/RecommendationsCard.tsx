@@ -23,18 +23,22 @@
 //    a pin can never disguise weak evidence.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
-    AlertTriangle, Check, ChevronDown, Filter, Pill, Pin, Plus, Search, ShieldAlert,
+    AlertTriangle, Check, ChevronDown, Pill, Pin, Plus, ShieldAlert,
 } from "lucide-react";
+import type { ActiveSignal, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandKey } from "../../lib/synapse/brands";
 import type { CompositionBrands } from "../../lib/db/synapse";
-import { searchIntents, type IntentSearchHit } from "../../lib/db/synapse";
 import {
     GuardReason, MedicineIdentity, PinButton, RankBar, rankFillOf,
 } from "./parts";
+import { WhyButton } from "./ContributionSheet";
+import {
+    IntentSearchField, IntentSearchResults, useIntentSearch,
+} from "./IntentSearch";
 import type { AcceptPayload } from "./types";
 
 /** Alternatives shown beside the default before the sheet takes over. */
@@ -69,6 +73,10 @@ interface Props {
     isPinned: (intentId: number) => boolean;
     onTogglePin: (intentId: number) => void;
     onOpenBrandSheet: (intent: PersonalizedIntent, rect: DOMRect) => void;
+    onExplain: (intent: PersonalizedIntent, anchor: DOMRect) => void;
+    /** for the guard verdict on a searched, never-ranked medicine */
+    ruleset: Ruleset | null;
+    activeSignals: ActiveSignal[];
     hasChart: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
 }
@@ -76,34 +84,19 @@ interface Props {
 export function RecommendationsCard({
     intents, topScore, brands, brandsLoading, brandError, brandPreferences,
     acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept,
-    isPinned, onTogglePin, onOpenBrandSheet, hasChart, searchRef,
+    isPinned, onTogglePin, onOpenBrandSheet, onExplain, ruleset, activeSignals,
+    hasChart, searchRef,
 }: Props) {
-    const [query, setQuery] = useState("");
-    const [hits, setHits] = useState<IntentSearchHit[]>([]);
-    const [searching, setSearching] = useState(false);
     const [expanded, setExpanded] = useState(false);
 
     const internalRef = useRef<HTMLInputElement>(null);
     const inputRef = (searchRef ?? internalRef) as React.RefObject<HTMLInputElement>;
-    const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    useEffect(() => {
-        if (debounce.current) clearTimeout(debounce.current);
-        const q = query.trim();
-        if (q.length < 2) { setHits([]); setSearching(false); return; }
-
-        setSearching(true);
-        debounce.current = setTimeout(() => {
-            searchIntents({ query: q, types: ["medicine"], limit: 20 })
-                .then(setHits)
-                .catch((e) => { console.warn("search failed:", e); setHits([]); })
-                .finally(() => setSearching(false));
-        }, 220);
-
-        return () => { if (debounce.current) clearTimeout(debounce.current); };
-    }, [query]);
-
-    const isSearching = query.trim().length >= 2;
+    // The same search every other category now has — this card is where it was
+    // first built, and it moved into `IntentSearch` so the other five could
+    // have the identical thing rather than a near-copy.
+    const search = useIntentSearch(["medicine"]);
+    const isSearching = search.isSearching;
 
     /**
      * The engine's rank for each intent, 1-based, captured BEFORE pinning
@@ -170,58 +163,26 @@ export function RecommendationsCard({
         });
     };
 
+    const rankedIds = useMemo(
+        () => new Set(intents.map((i) => i.intentId)),
+        [intents]
+    );
+
     const body = () => {
         if (isSearching) {
-            if (searching && hits.length === 0) {
-                return <div className="cs-empty"><strong>Searching…</strong></div>;
-            }
-            if (hits.length === 0) {
-                return (
-                    <div className="cs-empty">
-                        <strong>Nothing matches “{query.trim()}”</strong>
-                        <span>Try a molecule, a brand name, or the symptom you are treating.</span>
-                    </div>
-                );
-            }
-            return hits.map((hit, i) => {
-                const added = acceptedIntentIds.has(hit.intentId);
-                // A brand-matched hit already knows its product name; anything
-                // else is identified by the molecule alone. Either way it goes
-                // through the one identity component, so a searched medicine
-                // looks exactly like a ranked one.
-                const brand = hit.matchKind === "brand" ? hit.viaLabel : null;
-                return (
-                    <div key={hit.intentId} className={`cs-rec${added ? " is-added" : ""}`}>
-                        <span className="cs-rank-no">{i + 1}</span>
-                        <div className="cs-rec-main">
-                            <MedicineIdentity brand={brand} composition={hit.label} />
-                        </div>
-                        <div className="cs-rec-side">
-                            {added ? (
-                                <span className="cs-added"><Check size={15} /></span>
-                            ) : (
-                                <button
-                                    type="button"
-                                    className="cs-add"
-                                    aria-label={`Add ${hit.label}`}
-                                    onClick={() =>
-                                        onAccept({
-                                            intentId: hit.intentId,
-                                            type: hit.type,
-                                            label: hit.label,
-                                            refTable: hit.refTable,
-                                            refId: hit.refId,
-                                            medicine: null,
-                                            viaSearch: true,
-                                            overridden: false,
-                                        })
-                                    }
-                                ><Plus size={15} /></button>
-                            )}
-                        </div>
-                    </div>
-                );
-            });
+            return (
+                <IntentSearchResults
+                    state={search}
+                    verbOf={() => "Prescribe"}
+                    ruleset={ruleset}
+                    activeSignals={activeSignals}
+                    rankedIntentIds={rankedIds}
+                    acceptedIntentIds={acceptedIntentIds}
+                    acknowledged={acknowledged}
+                    onAcknowledge={onAcknowledge}
+                    onAccept={onAccept}
+                />
+            );
         }
 
         if (!hasChart) {
@@ -262,7 +223,8 @@ export function RecommendationsCard({
                 brandPreferences={brandPreferences}
                 onAccept={accept}
                 onOpenSheet={(rect) => onOpenBrandSheet(intent, rect)}
-                onSearchProducts={() => { setQuery(intent.label); inputRef.current?.focus(); }}
+                onExplain={(rect) => onExplain(intent, rect)}
+                onSearchProducts={() => { search.setQuery(intent.label); inputRef.current?.focus(); }}
             />
         ));
     };
@@ -279,23 +241,11 @@ export function RecommendationsCard({
                 )}
             </div>
 
-            <div className="cs-rec-search">
-                <div className="cs-field">
-                    <Search size={15} />
-                    <input
-                        ref={inputRef}
-                        value={query}
-                        placeholder="Search medicine or composition…"
-                        onChange={(e) => setQuery(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-                        aria-label="Search medicine or composition"
-                    />
-                </div>
-                <button type="button" className="cs-filter" title="Filters (coming soon)">
-                    <Filter size={13} />
-                    Filters
-                </button>
-            </div>
+            <IntentSearchField
+                state={search}
+                placeholder="Search medicine or composition…"
+                inputRef={inputRef}
+            />
 
             {brandError && !isSearching && (
                 <p className="cs-picker-hint">
@@ -323,7 +273,7 @@ export function RecommendationsCard({
 function MedicineRow({
     intent, position, fill, pinned, onTogglePin, added, acknowledged, onAcknowledge,
     composition, brandsLoading, chosen, brandPreferences, onAccept, onOpenSheet,
-    onSearchProducts,
+    onExplain, onSearchProducts,
 }: {
     intent: PersonalizedIntent;
     position: number;
@@ -339,9 +289,11 @@ function MedicineRow({
     brandPreferences?: Map<string, { preference: number }>;
     onAccept: (i: PersonalizedIntent, m: Medicine | null, deliberate?: boolean) => void;
     onOpenSheet: (rect: DOMRect) => void;
+    onExplain: (rect: DOMRect) => void;
     onSearchProducts: () => void;
 }) {
     const moreRef = useRef<HTMLButtonElement>(null);
+    const rowRef = useRef<HTMLDivElement>(null);
     const isHard = intent.status === "warn_hard";
     const isWarn = intent.status === "warn";
     const locked = isHard && !acknowledged;
@@ -361,10 +313,17 @@ function MedicineRow({
 
     return (
         <div
+            ref={rowRef}
             className={
                 `cs-rec${added ? " is-added" : ""}${isHard ? " is-hard" : ""}` +
                 `${pinned ? " is-pinned" : ""}`
             }
+            // The shortcut into the contribution sheet. The info button beside
+            // the name is the discoverable route and the one a keyboard reaches.
+            onDoubleClick={() => {
+                const r = rowRef.current?.getBoundingClientRect();
+                if (r) onExplain(r);
+            }}
         >
             <span className="cs-rank-no">{position}</span>
 
@@ -387,6 +346,7 @@ function MedicineRow({
                             {isHard && (
                                 <span className="cs-flag is-hard"><ShieldAlert size={10} /> Check</span>
                             )}
+                            <WhyButton label={intent.label} onOpen={onExplain} />
                         </>
                     }
                 />

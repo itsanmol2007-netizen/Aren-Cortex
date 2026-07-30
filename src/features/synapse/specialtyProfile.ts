@@ -40,6 +40,7 @@
 // ---------------------------------------------------------------------------
 
 import type { IntentType } from "../../lib/synapse/engine";
+import type { MeasureFieldKey } from "../consult/measures";
 
 export interface SpecialtySection {
     type: IntentType;
@@ -63,6 +64,23 @@ export interface SpecialtyProfile {
      * Suggestions. `primary` must not appear here — it has its own slot.
      */
     sections: SpecialtySection[];
+    /**
+     * Which measurement fields this facility shows without being asked.
+     *
+     * The same configuration idea as `primary`, applied to the other place a
+     * specialty differs: a General OPD wants temperature and blood pressure in
+     * front of it, a physiotherapist wants a pain score and a range of motion,
+     * and neither should have to look past the other's fields to reach their
+     * own. The full catalogue lives in `consult/measures.ts` and every field is
+     * always REACHABLE — this decides only what is visible before the doctor
+     * asks, so a facility whose profile is wrong costs a click, never a
+     * measurement.
+     *
+     * Order is NOT taken from here. Fields always render in catalogue order, so
+     * the layout is identical for every facility (§3 above); this is a
+     * membership test and nothing more.
+     */
+    measurements: MeasureFieldKey[];
 }
 
 /**
@@ -82,6 +100,10 @@ export const GENERAL_OPD: SpecialtyProfile = {
         { type: "advice", label: "Advice" },
         { type: "exercise", label: "Exercise" },
     ],
+    // The five a general physician records on nearly every patient. Height,
+    // blood group, pain scale and range of motion are one click away rather
+    // than absent — see `measurements` above.
+    measurements: ["bp", "pulse", "spo2", "temp", "weight"],
 };
 
 /**
@@ -104,6 +126,11 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         { type: "medicine", label: "Medicine" },
         { type: "advice", label: "Advice" },
     ],
+    // Pain and range of motion lead, because they are what a physiotherapy
+    // consultation is measured in. BP stays visible: it is an exercise-safety
+    // input here, not a general vital (SEVERE_HIGH_BP guards the whole
+    // `exercise` type).
+    measurements: ["painVas", "romPct", "bp", "pulse", "weight"],
 };
 
 /** Investigation-led practice — diagnostics, pre-op workup. */
@@ -119,6 +146,8 @@ export const DIAGNOSTICS: SpecialtyProfile = {
         { type: "advice", label: "Advice" },
         { type: "exercise", label: "Exercise" },
     ],
+    // Pre-op workup asks for the body habitus a general OPD usually skips.
+    measurements: ["bp", "pulse", "spo2", "temp", "weight", "height", "bloodGroup"],
 };
 
 export const PROFILES: Record<string, SpecialtyProfile> = {
