@@ -1105,7 +1105,10 @@ function App() {
   // Which intent type this facility elevates into the Primary Recommendation
   // slot. Read once from the facility, never inferred from what the doctor is
   // doing — see specialtyProfile.ts for why that distinction is load-bearing.
-  const specialty = useMemo(() => profileFor(identity.hospitalId), [identity.hospitalId]);
+  const specialty = useMemo(
+    () => profileFor(hospitalProfile?.specialty_profile),
+    [hospitalProfile?.specialty_profile]
+  );
 
   /**
    * The doctor's pins — the heart on a recommendation row.

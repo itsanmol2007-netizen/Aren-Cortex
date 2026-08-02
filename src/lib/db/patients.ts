@@ -385,12 +385,14 @@ export type DBHospital = {
     logo_url: string | null;
     accent_color: string | null;
     is_branded: boolean;
+    /** The onboarding choice — see features/synapse/specialtyProfile.ts. Null means General OPD. */
+    specialty_profile: string | null;
 };
 
 export async function fetchHospital(hospitalId: string): Promise<DBHospital | null> {
     const { data, error } = await supabase
         .from("hospitals")
-        .select("id, name, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded")
+        .select("id, name, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded, specialty_profile")
         .eq("id", hospitalId)
         .maybeSingle();
     if (error) throw new Error(`fetchHospital: ${error.message}`);

@@ -29,14 +29,11 @@
 //     remaining types fall through to Clinical Suggestions in their declared
 //     order. There is no per-specialty branch anywhere in the render tree.
 //
-// ── WHERE THIS SHOULD LIVE (flagged, not invented) ────────────────────────
-// A facility's profile belongs on the facility. `hospitals` has no column for
-// it today — the nearest field, `clinic_mode`, is solo/multi_doctor, an
-// operational setting, not a clinical one. Rather than invent a schema, the
-// assignment lives in `PROFILE_BY_FACILITY` below: a hand-maintained map that
-// the clinic owner's onboarding would write to a `hospitals.specialty_profile`
-// column once that column exists. `profileFor()` is already the single read
-// point, so that migration is a one-line change here and nothing else.
+// A facility's profile lives on the facility: `hospitals.specialty_profile`
+// (nullable text, checked against PROFILES' ids). `profileFor()` is the single
+// read point. Nothing in this codebase writes that column yet — there is no
+// onboarding UI for it — so every live facility reads as General OPD until
+// one is set directly.
 // ---------------------------------------------------------------------------
 
 import type { IntentType } from "../../lib/synapse/engine";
@@ -157,19 +154,12 @@ export const PROFILES: Record<string, SpecialtyProfile> = {
 };
 
 /**
- * hospitalId -> profile id. The onboarding choice, one row per facility.
- *
- * Empty is correct today: every live facility is General OPD, which is the
- * fallback. An entry here is only needed to move a facility OFF the default.
+ * The one read point. Takes the facility's `hospitals.specialty_profile`
+ * value. A facility with no assignment (null, or an id this build doesn't
+ * recognise) gets General OPD — a missing configuration must never leave the
+ * Primary Recommendation slot empty, because an empty slot is a workspace the
+ * doctor cannot use.
  */
-export const PROFILE_BY_FACILITY: Record<string, string> = {};
-
-/**
- * The one read point. A facility with no assignment gets General OPD — a
- * missing configuration must never leave the Primary Recommendation slot
- * empty, because an empty slot is a workspace the doctor cannot use.
- */
-export function profileFor(hospitalId: string | null | undefined): SpecialtyProfile {
-    const id = hospitalId ? PROFILE_BY_FACILITY[hospitalId] : undefined;
-    return (id && PROFILES[id]) || GENERAL_OPD;
+export function profileFor(specialtyProfileId: string | null | undefined): SpecialtyProfile {
+    return (specialtyProfileId && PROFILES[specialtyProfileId]) || GENERAL_OPD;
 }
