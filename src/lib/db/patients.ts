@@ -114,6 +114,29 @@ export async function reassignVisitDoctor(visitId: string, doctorId: string): Pr
     if (error) throw new Error(`reassignVisitDoctor: ${error.message}`);
 }
 
+// Front Desk may already have this patient queued today. Cortex used to ignore
+// that entirely and mint a fresh visit + token for every consult start, so a
+// patient checked in at the counter got a second, disconnected visit the
+// moment the doctor picked them up (§10.1 in the technical atlas). This is the
+// read side of the fix: find today's still-open queue entry, if any, so the
+// caller can resume it with markVisitServing instead of calling createVisit.
+export async function findQueuedVisit(patientId: string, hospitalId: string): Promise<DBVisit | null> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data, error } = await supabase
+        .from("visits")
+        .select("id, patient_id, assigned_doctor_id, status, token_number")
+        .eq("patient_id", patientId)
+        .eq("hospital_id", hospitalId)
+        .eq("status", "waiting")
+        .gte("created_at", todayStart.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (error) throw new Error(`findQueuedVisit: ${error.message}`);
+    return data;
+}
+
 // ── VISIT SYMPTOMS ─────────────────────────────────────────────────────────────
 export async function saveVisitSymptoms(
     visitId: string,

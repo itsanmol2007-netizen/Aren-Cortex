@@ -559,6 +559,45 @@ export async function loadCompanionEdges(): Promise<CompanionEdge[]> {
     }));
 }
 
+/**
+ * Pinned medicines — the doctor's own shortcut, persisted so it follows them
+ * between machines. `usePinnedMedicines` is the single read/write point on
+ * the React side; these two functions are its only DB access.
+ */
+export async function loadPinnedIntents(doctorId: string): Promise<Set<number>> {
+    const { data, error } = await supabase
+        .from("doctor_pinned_intent")
+        .select("intent_id")
+        .eq("doctor_id", doctorId);
+    if (error) throw new Error(`doctor_pinned_intent (load): ${error.message}`);
+    return new Set((data ?? []).map((r: any) => Number(r.intent_id)));
+}
+
+export async function setPinnedIntent(opts: {
+    doctorId: string;
+    hospitalId: string;
+    intentId: number;
+    pinned: boolean;
+}): Promise<void> {
+    const { doctorId, hospitalId, intentId, pinned } = opts;
+    if (pinned) {
+        const { error } = await supabase
+            .from("doctor_pinned_intent")
+            .upsert(
+                { doctor_id: doctorId, hospital_id: hospitalId, intent_id: intentId },
+                { onConflict: "doctor_id,intent_id" }
+            );
+        if (error) throw new Error(`doctor_pinned_intent (pin): ${error.message}`);
+    } else {
+        const { error } = await supabase
+            .from("doctor_pinned_intent")
+            .delete()
+            .eq("doctor_id", doctorId)
+            .eq("intent_id", intentId);
+        if (error) throw new Error(`doctor_pinned_intent (unpin): ${error.message}`);
+    }
+}
+
 // ============================================================
 // RAW CONSULT INPUT — permanent record
 // ============================================================

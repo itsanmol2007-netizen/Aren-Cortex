@@ -14,32 +14,15 @@
 //    policy; the clinic-wide equivalent already exists and is a different,
 //    declared thing (`clinic_brand_default`).
 //
-// ── WHERE THIS SHOULD LIVE (flagged, not invented) ────────────────────────
-// There is no table for it. `hospital_medicine_preference` is clinic-scoped and
-// brand-level, which is a different claim. Rather than invent a schema, pins
-// persist to localStorage under the doctor's id — which does deliver "pinned
-// whenever it comes up again" on the machine they work at, and loses nothing
-// but portability. A `doctor_pinned_intent (doctor_id, intent_id)` table would
-// make it follow them between machines; this hook is the single read/write
-// point, so that swap is contained here.
+// Persisted to `doctor_pinned_intent (doctor_id, intent_id)`, so it follows
+// the doctor between machines. This hook is the single read/write point;
+// `loadPinnedIntents` / `setPinnedIntent` in `lib/db/synapse.ts` are its only
+// DB access. On a fallback (non-real) identity there is no `doctors` row to
+// key a pin on, so pins are in-memory only for that session — same as before.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react";
-
-const KEY = (doctorId: string) => `aren.cortex.pinned.${doctorId}`;
-
-function read(doctorId: string): Set<number> {
-    try {
-        const raw = window.localStorage.getItem(KEY(doctorId));
-        if (!raw) return new Set();
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? new Set(parsed.filter((n) => typeof n === "number")) : new Set();
-    } catch {
-        // A corrupt or unavailable store must cost the doctor their shortcuts,
-        // never their consultation.
-        return new Set();
-    }
-}
+import { loadPinnedIntents, setPinnedIntent } from "../../lib/db/synapse";
 
 export interface PinnedMedicines {
     /** intent ids this doctor has pinned */
@@ -48,28 +31,43 @@ export interface PinnedMedicines {
     toggle: (intentId: number) => void;
 }
 
-export function usePinnedMedicines(doctorId: string | null): PinnedMedicines {
+export function usePinnedMedicines(doctorId: string | null, hospitalId: string | null): PinnedMedicines {
     const [pinned, setPinned] = useState<Set<number>>(new Set());
 
     useEffect(() => {
-        setPinned(doctorId ? read(doctorId) : new Set());
+        if (!doctorId) {
+            setPinned(new Set());
+            return;
+        }
+        let cancelled = false;
+        loadPinnedIntents(doctorId)
+            .then((ids) => {
+                if (!cancelled) setPinned(ids);
+            })
+            .catch(() => {
+                // A failed load must cost the doctor their shortcuts this
+                // session, never their consultation.
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [doctorId]);
 
     const toggle = useCallback((intentId: number) => {
         setPinned((curr) => {
+            const nowPinned = !curr.has(intentId);
             const next = new Set(curr);
-            if (next.has(intentId)) next.delete(intentId);
-            else next.add(intentId);
-            if (doctorId) {
-                try {
-                    window.localStorage.setItem(KEY(doctorId), JSON.stringify([...next]));
-                } catch {
+            if (nowPinned) next.add(intentId);
+            else next.delete(intentId);
+
+            if (doctorId && hospitalId) {
+                setPinnedIntent({ doctorId, hospitalId, intentId, pinned: nowPinned }).catch(() => {
                     // Non-fatal: the pin still applies for this session.
-                }
+                });
             }
             return next;
         });
-    }, [doctorId]);
+    }, [doctorId, hospitalId]);
 
     const isPinned = useCallback((intentId: number) => pinned.has(intentId), [pinned]);
 

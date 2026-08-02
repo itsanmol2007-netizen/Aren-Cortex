@@ -45,6 +45,7 @@ import type { Medicine as SynapseBrand } from "./lib/synapse/brands";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   createPatient, findPatientByPhone, createVisit,
+  findQueuedVisit, markVisitServing,
   replaceVisitSymptoms, replaceVisitFindings,
   saveConsult,
   freqSlotToLabel, freqLabelToSlot,
@@ -127,6 +128,8 @@ function App() {
   const planRef = useRef<HTMLElement>(null) as React.RefObject<HTMLElement>;
 
   const [dbReady, setDbReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [bootAttempt, setBootAttempt] = useState(0);
   const [doctorProfile, setDoctorProfile] = useState<DBDoctor | null>(null);
   const [hospitalProfile, setHospitalProfile] = useState<DBHospital | null>(null);
 
@@ -358,6 +361,7 @@ function App() {
 
   useEffect(() => {
     if (!identity.ready) return;
+    setBootError(null);
     Promise.all([
       fetchDoctor(identity.doctorId),
       fetchHospital(identity.hospitalId),
@@ -367,8 +371,14 @@ function App() {
         setHospitalProfile(hospital);
         setDbReady(true);
       })
-      .catch((err) => showToast(`DB load failed: ${err.message}`));
-  }, [identity.ready, identity.doctorId, identity.hospitalId]);
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        showToast(`DB load failed: ${message}`);
+        setBootError(message);
+      });
+  }, [identity.ready, identity.doctorId, identity.hospitalId, bootAttempt]);
+
+  const retryBoot = useCallback(() => setBootAttempt((n) => n + 1), []);
 
   // The chart, as observable ids. Both panels hold display LABELS; this is the
   // one place they become the engine's vocabulary — and since the catalogue IS
@@ -498,9 +508,21 @@ function App() {
     }
   };
 
+  // Front Desk may already have this patient waiting in today's queue. Resume
+  // that visit instead of minting a second, disconnected one with its own
+  // token — createVisit remains the fallback for Solo Mode / no queue entry.
+  const resolveVisitForConsult = useCallback(async (patientId: string) => {
+    const queued = await findQueuedVisit(patientId, identity.hospitalId);
+    if (queued) {
+      await markVisitServing(queued.id);
+      return queued;
+    }
+    return createVisit(patientId);
+  }, [identity.hospitalId]);
+
   const handleStartConsultFromRecord = useCallback(async (incomingPatient: Patient) => {
     try {
-      const visit = await createVisit(incomingPatient.id!);
+      const visit = await resolveVisitForConsult(incomingPatient.id!);
       setVisitId(visit.id);
       setSelectedSymptomsWithIntensity([]);
       setPatient(incomingPatient);
@@ -534,7 +556,7 @@ function App() {
     } catch (err: any) {
       showToast(`Error starting consult: ${err.message}`);
     }
-  }, []);
+  }, [resolveVisitForConsult]);
 
   // ────────────────────────────────────────────────────────────────────
   // Taking a suggestion.
@@ -765,7 +787,7 @@ function App() {
         }
       }
 
-      const visit = await createVisit(dbPatient.id!);
+      const visit = await resolveVisitForConsult(dbPatient.id!);
       setVisitId(visit.id);
       setPatient(dbPatient);
       setVitals(emptyVitals);
@@ -801,7 +823,7 @@ function App() {
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
-  }, []);
+  }, [resolveVisitForConsult]);
 
   const confirmStagedMedicine = () => {
     if (!stagedMedicine) return;
@@ -1092,7 +1114,10 @@ function App() {
    * ranked again. It reorders what is SHOWN and never touches a score, so the
    * bar beside a pinned row still draws the engine's real reading.
    */
-  const pins = usePinnedMedicines(identity.isReal ? identity.doctorId : null);
+  const pins = usePinnedMedicines(
+    identity.isReal ? identity.doctorId : null,
+    identity.isReal ? identity.hospitalId : null
+  );
 
   /** The denominator behind every rank bar and relevance word on this screen. */
   const topOfType = useMemo(
@@ -1195,7 +1220,29 @@ function App() {
       <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
         <div style={{ textAlign: "center", color: "var(--muted)" }}>
           <div style={{ fontSize: 28, marginBottom: 12 }}>⚕</div>
-          <p style={{ fontSize: 14 }}>Connecting to AREN database…</p>
+          {bootError ? (
+            <>
+              <p style={{ fontSize: 14, color: "var(--cs-red, #b42318)" }}>
+                Couldn't reach the AREN database.
+              </p>
+              <p style={{ fontSize: 12, marginTop: 4, marginBottom: 16 }}>{bootError}</p>
+              <button
+                onClick={retryBoot}
+                style={{
+                  fontSize: 13,
+                  padding: "8px 18px",
+                  borderRadius: 8,
+                  border: "1px solid var(--line, #dbe2ec)",
+                  background: "var(--card, #fff)",
+                  cursor: "pointer",
+                }}
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <p style={{ fontSize: 14 }}>Connecting to AREN database…</p>
+          )}
         </div>
       </div>
     );
@@ -1449,6 +1496,7 @@ function App() {
             modelVersion={synapse.data?.ruleset.version ?? null}
             specialty={specialty.label}
             degraded={!!synapse.data?.degraded}
+            unidentified={!identity.isReal}
             online={online}
           />
 

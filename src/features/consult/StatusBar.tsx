@@ -17,10 +17,12 @@ interface Props {
     specialty: string;
     /** personalisation degraded — ranking still works, habits do not */
     degraded: boolean;
+    /** signed-in account has no `doctors` row — running on the shared fallback identity */
+    unidentified: boolean;
     online: boolean;
 }
 
-export function StatusBar({ active, modelVersion, specialty, degraded, online }: Props) {
+export function StatusBar({ active, modelVersion, specialty, degraded, unidentified, online }: Props) {
     return (
         <footer className="cs-status">
             <span className="cs-status-item">
@@ -46,6 +48,18 @@ export function StatusBar({ active, modelVersion, specialty, degraded, online }:
             {degraded && (
                 <span className="cs-status-item">
                     <b>Personalisation unavailable</b> — global ranking in use
+                </span>
+            )}
+
+            {/* Distinct from `degraded`: this account has no `doctors` row at all,
+                so nothing it does here can be attributed to a doctor. Ranking still
+                works — global evidence is identical for everyone — but nothing this
+                consult does teaches this account's model, and the decision log skips
+                it outright. Silence here would leave a signed-in doctor wondering why
+                their habits never seem to stick. */}
+            {unidentified && (
+                <span className="cs-status-item">
+                    <b>No doctor profile</b> — this consult won't be personalised or logged
                 </span>
             )}
 
