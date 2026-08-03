@@ -147,10 +147,36 @@ export const DIAGNOSTICS: SpecialtyProfile = {
     measurements: ["bp", "pulse", "spo2", "temp", "weight", "height", "bloodGroup"],
 };
 
+/**
+ * Cardiology. Primary stays Medicines — the common case is a returning
+ * patient on chronic cardiac drugs (beta-blockers, ACE/ARB, statins), not a
+ * fresh workup. Investigations (ECG/echo) still lead the Clinical Suggestions
+ * order, so nothing about the diagnostic workflow is buried; only which
+ * section gets the elevated slot changes, same as every other profile.
+ */
+export const CARDIOLOGY: SpecialtyProfile = {
+    id: "cardiology",
+    label: "Cardiology",
+    primary: "medicine",
+    primaryLabel: "Medicines",
+    sections: [
+        { type: "finding", label: "Possible Finding" },
+        { type: "test", label: "Investigation" },
+        { type: "referral", label: "Referral" },
+        { type: "advice", label: "Advice" },
+        { type: "exercise", label: "Exercise" },
+    ],
+    // Weight matters here beyond general vitals — trending it is how fluid
+    // overload in heart failure gets caught early. Pain/ROM stay excluded;
+    // they're physiotherapy's signal, not cardiology's.
+    measurements: ["bp", "pulse", "spo2", "weight", "height"],
+};
+
 export const PROFILES: Record<string, SpecialtyProfile> = {
     [GENERAL_OPD.id]: GENERAL_OPD,
     [PHYSIOTHERAPY.id]: PHYSIOTHERAPY,
     [DIAGNOSTICS.id]: DIAGNOSTICS,
+    [CARDIOLOGY.id]: CARDIOLOGY,
 };
 
 /**

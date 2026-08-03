@@ -54,7 +54,8 @@ const TERMS = [
     "back pain", "knee pain",
     // cardio/metabolic
     "diabetes", "sugar", "high bp", "hypertension", "thyroid", "anemia", "anaemia",
-    "heart attack", "cholesterol",
+    "heart attack", "cholesterol", "atrial fibrillation", "afib", "palpitations",
+    "murmur", "angina", "valve problem",
     // neuro
     "migraine", "vertigo", "headache",
 ];
