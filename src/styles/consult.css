@@ -81,13 +81,24 @@
     padding: 14px 20px 12px;
 }
 
-/* Four cards: the three the doctor fills in, then the engine's reading of
-   them. Possible Conditions is last because it reads from all three (and from
-   the measurements below), and any earlier position would imply it reflects
-   only the card beside it. */
+/* History / Context, full-width and shorter than the three cards below —
+   see the comment at its call site in App.tsx for why it was pulled out of
+   this grid. */
+.cs-context-strip {
+    margin-bottom: 12px;
+}
+
+.cs-context-strip .cs-picker {
+    min-height: 0;
+}
+
+/* Three cards: what the patient reports, what the doctor finds, and the
+   engine's reading of both. Possible Conditions is last because it reads
+   from all three (and from the measurements below), and any earlier
+   position would imply it reflects only the card beside it. */
 .cs-pickers {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     align-items: stretch;
 }
@@ -2146,8 +2157,8 @@
 /* ── responsive ────────────────────────────────────────────── */
 
 @media (max-width: 1500px) {
-    /* Four across stops being readable before the rest of the page does.
-       Two-by-two keeps every card at a usable width and keeps Possible
+    /* Three across stops being readable before the rest of the page does.
+       Two-and-one keeps every card at a usable width and keeps Possible
        Conditions on the same band as the chart it reads. */
     .cs-pickers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

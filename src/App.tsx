@@ -1331,10 +1331,17 @@ function App() {
            are in docs/Aren cortex visual philosophy.md. */
         <div className="cs-shell">
           <main className="cs-page">
-            <div className="cs-pickers">
-              {/* Context first. Toggling a chip here re-runs the engine in the
-                  same frame, so ticking "Pregnant" turns contraindicated
-                  medicines red with no other click anywhere. */}
+            {/* Context first, but not at the same visual weight as the three
+                cards below it. Most consults tick zero or one of these — equal
+                card treatment for a rarely-used field is visual symmetry
+                winning over clinical flow, which the philosophy doc's
+                "Clinical Flow over Visual Symmetry" rule exists to prevent.
+                Same PickerCard, same behaviour, just full-width and shorter
+                instead of competing for one of the four grid slots. Toggling a
+                chip here still re-runs the engine in the same frame, so
+                ticking "Pregnant" still turns contraindicated medicines red
+                with no other click anywhere. */}
+            <div className="cs-context-strip">
               <PickerCard
                 kind="history"
                 title="History / Context"
@@ -1349,7 +1356,14 @@ function App() {
                 emptyHint="Pregnancy, comorbidities, allergies — what frames the whole consultation."
                 disabled={!patient}
               />
+            </div>
 
+            {/* Three cards: what the patient reports, what the doctor finds,
+                and the engine's reading of both. Possible Conditions is last
+                because it reads from all three plus the measurements, and any
+                earlier position would imply it reflects only the card
+                beside it. */}
+            <div className="cs-pickers">
               <PickerCard
                 kind="symptom"
                 title="Symptoms"
