@@ -41,7 +41,7 @@ const TERMS = [
     "typhoid", "dengue", "malaria", "chickenpox", "chicken pox", "flu", "common cold",
     "food poisoning", "tb", "tuberculosis", "jaundice", "measles", "mumps", "parotid swelling",
     // GI
-    "piles", "hemorrhoids", "gastritis", "acidity", "worms", "loose motion",
+    "piles", "hemorrhoids", "gastritis", "acidity", "indigestion", "worms", "loose motion",
     "constipation", "gas", "vomiting",
     // urinary / renal
     "uti", "kidney stone", "burning urination",
