@@ -39,7 +39,7 @@ const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)
 const TERMS = [
     // infectious / fever
     "typhoid", "dengue", "malaria", "chickenpox", "chicken pox", "flu", "common cold",
-    "food poisoning", "tb", "tuberculosis", "jaundice", "measles", "mumps",
+    "food poisoning", "tb", "tuberculosis", "jaundice", "measles", "mumps", "parotid swelling",
     // GI
     "piles", "hemorrhoids", "gastritis", "acidity", "worms", "loose motion",
     "constipation", "gas", "vomiting",
@@ -51,11 +51,11 @@ const TERMS = [
     "pink eye", "conjunctivitis", "ringworm", "fungal infection", "scabies", "allergy",
     // musculoskeletal
     "frozen shoulder", "sciatica", "slip disc", "arthritis", "gout", "tennis elbow",
-    "back pain", "knee pain",
+    "back pain", "knee pain", "big toe pain",
     // cardio/metabolic
     "diabetes", "sugar", "high bp", "hypertension", "thyroid", "anemia", "anaemia",
     "heart attack", "cholesterol", "atrial fibrillation", "afib", "palpitations",
-    "murmur", "angina", "valve problem",
+    "murmur", "angina", "valve problem", "cardiology",
     // neuro
     "migraine", "vertigo", "headache",
 ];
