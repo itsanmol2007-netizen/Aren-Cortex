@@ -58,6 +58,10 @@ const TERMS = [
     "murmur", "angina", "valve problem", "cardiology", "heart block", "svt", "slow heart rate",
     // neuro
     "migraine", "vertigo", "headache",
+    // pediatrics
+    "croup", "barking cough", "febrile seizure", "failure to thrive",
+    "reflux", "baby vomiting", "developmental delay", "not gaining weight",
+    "zinc",
 ];
 
 let fail = 0, weak = 0;

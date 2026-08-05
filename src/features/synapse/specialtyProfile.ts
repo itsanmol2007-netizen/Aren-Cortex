@@ -172,11 +172,37 @@ export const CARDIOLOGY: SpecialtyProfile = {
     measurements: ["bp", "pulse", "spo2", "weight", "height"],
 };
 
+/**
+ * Paediatrics. Primary stays Medicines — the common OPD case (fever, cough,
+ * feeding complaints) resolves with a prescription, same as General OPD.
+ * What differs is measurements: weight and temperature lead, because growth
+ * trending and fever are the two numbers a paediatric consult is anchored on,
+ * ahead of the adult-first BP/pulse ordering.
+ */
+export const PEDIATRICS: SpecialtyProfile = {
+    id: "pediatrics",
+    label: "Paediatrics",
+    primary: "medicine",
+    primaryLabel: "Medicines",
+    sections: [
+        { type: "finding", label: "Possible Finding" },
+        { type: "test", label: "Investigation" },
+        { type: "referral", label: "Referral" },
+        { type: "advice", label: "Advice" },
+        { type: "exercise", label: "Exercise" },
+    ],
+    // Weight and temperature first — growth faltering and fever are the two
+    // pediatric red flags a general OPD's BP-first ordering would bury.
+    // Pain/ROM stay excluded; they're physiotherapy's signal, not paediatric.
+    measurements: ["weight", "temp", "height", "pulse", "spo2"],
+};
+
 export const PROFILES: Record<string, SpecialtyProfile> = {
     [GENERAL_OPD.id]: GENERAL_OPD,
     [PHYSIOTHERAPY.id]: PHYSIOTHERAPY,
     [DIAGNOSTICS.id]: DIAGNOSTICS,
     [CARDIOLOGY.id]: CARDIOLOGY,
+    [PEDIATRICS.id]: PEDIATRICS,
 };
 
 /**
