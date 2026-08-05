@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { runEngine, type EngineResult, type IntentType } from "../lib/synapse/engine";
 import { personalize, type PersonalizedIntent } from "../lib/synapse/personalize";
 import { resolveCompanions, type CompanionResult } from "../lib/synapse/companions";
+import { rankExamSuggestions, type RankedExamSuggestion } from "../lib/synapse/examSuggestions";
 import { buildEngineInput, isPediatricConsult, type MeasurementRow } from "../lib/synapse/consultInput";
 import {
     fetchCompositionBrands,
@@ -49,6 +50,10 @@ export interface ConsultIntelligence {
     /** active signals, with their human labels, strongest first */
     signals: { id: string; label: string; strength: number }[];
     companions: CompanionResult | null;
+    /** examination findings worth checking for, given the chart so far — the
+     * entry-band cascade one stage before Possible Conditions. Low confidence
+     * by nature (2-3 symptoms driving it); ranking says so, never a verdict. */
+    examSuggestions: RankedExamSuggestion[];
     brands: BrandIndex;
     brandsLoading: boolean;
     brandError: string | null;
@@ -116,6 +121,18 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         () => (result ? isPediatricConsult(result.activeSignals.map((s) => s.signalId)) : false),
         [result]
     );
+
+    // ---- 2b. exam suggestions. Same signals, a different target — see
+    // examSuggestions.ts. Already-charted observables are excluded so this
+    // never suggests re-ticking something already on the exam picker. ----
+    const examSuggestions = useMemo(() => {
+        if (!result || !data || !built) return [];
+        return rankExamSuggestions(
+            data.findingSuggestionRules,
+            result.activeSignals,
+            new Set(built.observableIds)
+        );
+    }, [result, data, built]);
 
     // ---- 3. companions. Fire on acceptance, after scoring, never on score. ----
     const acceptedKey = acceptedIntentIds.join(",");
@@ -250,6 +267,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         hardWarned,
         signals,
         companions,
+        examSuggestions,
         brands,
         brandsLoading,
         brandError,

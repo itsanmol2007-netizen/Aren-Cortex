@@ -36,6 +36,7 @@ import {
 } from "../synapse/brands";
 import type { CompanionEdge } from "../synapse/companions";
 import type { MeasurementRow } from "../synapse/consultInput";
+import type { FindingSuggestionRule } from "../synapse/examSuggestions";
 
 export const RULESET_VERSION = "mvp-1";
 
@@ -556,6 +557,25 @@ export async function loadCompanionEdges(): Promise<CompanionEdge[]> {
         weight: Number(r.weight),
         reason: r.reason,
         scope: r.scope,
+    }));
+}
+
+/**
+ * signal -> examination-finding-to-check rules. Same shape as loading the
+ * main ruleset's `signal_intent_rules`, just a different edge type — see
+ * lib/synapse/examSuggestions.ts for why this is a separate table rather
+ * than more rows in signal_intent_rules.
+ */
+export async function loadFindingSuggestionRules(): Promise<FindingSuggestionRule[]> {
+    const { data, error } = await supabase
+        .from("signal_finding_suggestions")
+        .select("signal_id, observable_id, weight")
+        .eq("is_active", true);
+    if (error) throw new Error(`signal_finding_suggestions: ${error.message}`);
+    return (data ?? []).map((r: any) => ({
+        signalId: r.signal_id,
+        observableId: Number(r.observable_id),
+        weight: Number(r.weight),
     }));
 }
 

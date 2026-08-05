@@ -29,10 +29,12 @@ import {
     loadClinicBrandDefaults,
     loadFrequentMedicines,
     loadCompanionEdges,
+    loadFindingSuggestionRules,
     type ObservableMaps,
     type ClinicBrandDefaults,
     type FrequentMedicine,
 } from "../lib/db/synapse";
+import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
 
 export interface SynapseData {
@@ -43,6 +45,8 @@ export interface SynapseData {
     observables: Observable[];
     /** observable -> legacy symptom/finding id, for the v1 compatibility write */
     observableMaps: ObservableMaps;
+    /** signal -> examination finding worth checking for — the entry-band cascade */
+    findingSuggestionRules: FindingSuggestionRule[];
     /** this doctor's learned preferences — local to them, never global */
     preferences: PreferenceModel;
     /** this doctor's brand habits — a separate, ~6x faster model */
@@ -94,12 +98,14 @@ export function useSynapse(): UseSynapse {
 
             try {
                 // The clinical half. If any of this fails there is no ranking.
-                const [ruleset, signalLabels, observables, observableMaps] = await Promise.all([
-                    loadSynapseRuleset(doctorId),
-                    loadSignalLabels(),
-                    fetchObservables(),
-                    loadObservableMaps(),
-                ]);
+                const [ruleset, signalLabels, observables, observableMaps, findingSuggestionRules] =
+                    await Promise.all([
+                        loadSynapseRuleset(doctorId),
+                        loadSignalLabels(),
+                        fetchObservables(),
+                        loadObservableMaps(),
+                        loadFindingSuggestionRules(),
+                    ]);
 
                 // The personalisation half. Each piece degrades on its own —
                 // one missing view must not cost the doctor the whole surface.
@@ -141,6 +147,7 @@ export function useSynapse(): UseSynapse {
                     signalLabels,
                     observables,
                     observableMaps,
+                    findingSuggestionRules,
                     preferences: buildPreferenceModel(prefRows),
                     brandPreferences: buildBrandModel(brandRows),
                     clinicBrandDefaults,
