@@ -55,7 +55,7 @@ const TERMS = [
     // cardio/metabolic
     "diabetes", "sugar", "high bp", "hypertension", "thyroid", "anemia", "anaemia",
     "heart attack", "cholesterol", "atrial fibrillation", "afib", "palpitations",
-    "murmur", "angina", "valve problem", "cardiology",
+    "murmur", "angina", "valve problem", "cardiology", "heart block", "svt", "slow heart rate",
     // neuro
     "migraine", "vertigo", "headache",
 ];
