@@ -598,6 +598,27 @@ export async function setPinnedIntent(opts: {
     }
 }
 
+/**
+ * A test panel's member tests, by name — "Fever Workup" resolves to CBC,
+ * Widal, Dengue NS1, etc. via `test_panel_map`.
+ *
+ * Panels are `intents` with `ref_table = 'panels'`, same as a medicine intent
+ * points at `compositions`. Accepting one is not "order a test called Fever
+ * Workup" — it's "order everything in it" — so the accept path resolves this
+ * before touching `selectedTests`, the same way a medicine accept resolves a
+ * brand before touching the prescription.
+ */
+export async function resolvePanelTests(panelId: number): Promise<string[]> {
+    const { data, error } = await supabase
+        .from("test_panel_map")
+        .select("tests(name)")
+        .eq("panel_id", panelId);
+    if (error) throw new Error(`resolvePanelTests: ${error.message}`);
+    return (data ?? [])
+        .map((r: any) => r.tests?.name)
+        .filter((name: unknown): name is string => typeof name === "string");
+}
+
 // ============================================================
 // RAW CONSULT INPUT — permanent record
 // ============================================================

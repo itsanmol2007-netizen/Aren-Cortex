@@ -38,7 +38,7 @@ import type { PersonalizedIntent } from "./lib/synapse/personalize";
 import type { CompanionSuggestion } from "./lib/synapse/companions";
 import {
   commitConsultation, setClinicBrandDefault, clearClinicBrandDefault,
-  fetchCompositionBrands,
+  fetchCompositionBrands, resolvePanelTests,
   type SearchedAccept,
 } from "./lib/db/synapse";
 import type { Medicine as SynapseBrand } from "./lib/synapse/brands";
@@ -570,7 +570,7 @@ function App() {
   // `commitAccept` is the second half: everything below assumes a medicine
   // intent already knows its product. `handleAcceptIntent` guarantees that.
   // ────────────────────────────────────────────────────────────────────
-  const commitAccept = useCallback((payload: AcceptPayload) => {
+  const commitAccept = useCallback((payload: AcceptPayload, panelTestNames?: string[]) => {
     setAcceptedIntents((curr) => {
       if (curr.has(payload.intentId)) return curr;
       const next = new Map(curr);
@@ -620,9 +620,21 @@ function App() {
         break;
       }
       case "test":
-        setSelectedTests((curr) =>
-          curr.includes(payload.label) ? curr : [...curr, payload.label]
-        );
+        // A panel intent isn't itself an orderable test — "Fever Workup" is
+        // the accept, but CBC / Widal / Dengue NS1 etc. are what actually go
+        // on the plan. `panelTestNames` carries that resolved list; every
+        // other test accept still adds its own label as one line.
+        if (panelTestNames) {
+          setSelectedTests((curr) => {
+            const merged = new Set(curr);
+            panelTestNames.forEach((name) => merged.add(name));
+            return [...merged];
+          });
+        } else {
+          setSelectedTests((curr) =>
+            curr.includes(payload.label) ? curr : [...curr, payload.label]
+          );
+        }
         break;
       case "referral":
         appendAdvice(`Refer to ${payload.label}`);
@@ -683,9 +695,16 @@ function App() {
 
   /**
    * The one entry point. A medicine that arrives without a product gets one
-   * before anything else happens; every other type passes straight through.
+   * before anything else happens; a panel gets its member tests resolved the
+   * same way; every other type passes straight through.
    */
   const handleAcceptIntent = useCallback((payload: AcceptPayload) => {
+    if (payload.type === "test" && payload.refTable === "panels" && payload.refId != null) {
+      resolvePanelTests(payload.refId)
+        .then((testNames) => commitAccept(payload, testNames))
+        .catch((err: any) => showToast(`Could not load tests for ${payload.label}: ${err.message}`));
+      return;
+    }
     if (payload.type !== "medicine" || payload.medicine) {
       commitAccept(payload);
       return;
