@@ -230,6 +230,10 @@ function StandardDocument({
                     {vitals.temp && <VitalItem label="Temp" value={vitals.temp} unit="°F" />}
                     {vitals.spo2 && <VitalItem label="SpO₂" value={vitals.spo2} unit="%" />}
                     {vitals.weight && <VitalItem label="Wt" value={vitals.weight} unit="kg" />}
+                    {vitals.height && <VitalItem label="Ht" value={vitals.height} unit="cm" />}
+                    {vitals.bloodGroup && <VitalItem label="Blood Grp" value={vitals.bloodGroup} unit="" />}
+                    {vitals.painVas && <VitalItem label="Pain" value={vitals.painVas} unit="/10" />}
+                    {vitals.romPct && <VitalItem label="ROM" value={vitals.romPct} unit="%" />}
                 </div>
             )}
 

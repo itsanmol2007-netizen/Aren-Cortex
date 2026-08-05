@@ -443,6 +443,10 @@ export default function ReviewModal({
                   {vitals.temp && <VitalChip label="Temp" value={vitals.temp} unit="°F" />}
                   {vitals.spo2 && <VitalChip label="SpO₂" value={vitals.spo2} unit="%" />}
                   {vitals.weight && <VitalChip label="Weight" value={vitals.weight} unit="kg" />}
+                  {vitals.height && <VitalChip label="Height" value={vitals.height} unit="cm" />}
+                  {vitals.bloodGroup && <VitalChip label="Blood Group" value={vitals.bloodGroup} unit="" />}
+                  {vitals.painVas && <VitalChip label="Pain" value={vitals.painVas} unit="/10" />}
+                  {vitals.romPct && <VitalChip label="ROM" value={vitals.romPct} unit="%" />}
                 </div>
               )}
 
