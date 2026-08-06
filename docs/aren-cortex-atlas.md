@@ -4,6 +4,21 @@
 
 Surveyed: **2026-07-30** · Branch `master` · Commit `d5af9f7` + the session-41
 working tree
+Partial re-audit: **2026-08-06** · Branch `claude/cortex-atlas-summary-auycuc` ·
+Commit `edfb000`. Five of the nine items in §10 had been fixed and never struck
+off — including the one the last edition called the biggest architectural gap —
+so work was nearly planned off a list that was substantially historical.
+
+Re-verified on that pass, and current as of 2026-08-06:
+**§10** (every item, each with the check that proves it) · **§6** row counts ·
+the file counts in "Where it lives" · **§5.3** (two profiles were missing and
+its open question had been resolved) · the `App.tsx` line count and the boot
+description in §2.
+
+**Everything else still carries its 2026-07-30 reading and was NOT re-checked.**
+Treat §3, §4, §7–§9 and §11–§15 as of that date. Where a claim there contradicts
+§10, §10 is the newer reading.
+
 Scope: **Cortex only.** Everything under `src/features/frontdesk/` (the reception
 suite) is deliberately out of scope — see `aren-technical-atlas.md` §4.6 for that,
 except where Front Desk shares a table with Cortex (the catalogue, §6) — those
@@ -48,17 +63,17 @@ ranking itself. See §4.
 | Thing | Path |
 |---|---|
 | Route | `/app/cortex` (`src/main.tsx`, behind `RequireAuth` + `RequireRole allow={["doctor"]}`) |
-| Root component | `src/App.tsx` (1,586 lines) |
-| ★ **The consult screen** | `src/features/consult/*` (14 files, 3,273 lines) |
-| Remaining shared components | `src/components/*.tsx` (10 files, 2,139 lines) |
-| ★ The engine (pure, no React, no Supabase) | `src/lib/synapse/*.ts` (6 files, 1,044 lines) |
-| ★ The engine's Supabase boundary | `src/lib/db/synapse.ts` (836 lines) |
+| Root component | `src/App.tsx` (1,670 lines) |
+| ★ **The consult screen** | `src/features/consult/*` (14 files, 3,285 lines) |
+| Remaining shared components | `src/components/*.tsx` (10 files, 2,143 lines) |
+| ★ The engine (pure, no React, no Supabase) | `src/lib/synapse/*.ts` (7 files, 1,125 lines) |
+| ★ The engine's Supabase boundary | `src/lib/db/synapse.ts` (916 lines) |
 | ★ Brand picker + facility profile | `src/features/synapse/` (2 files) |
 | Engine-loading + per-consult ranking hooks | `src/hooks/{useSynapse,useConsultIntelligence,useClinicalIdentity}.ts` |
 | Internal pages | `src/features/{patients,prescriptions,investigations,communication,practice,clinic,settings,support}/` |
 | Internal nav | `src/features/sidebar/` |
 | Prescription renderer | `src/features/prescription/` (shared with Print RX) |
-| ★ Consult styling | `src/styles/consult.css` (2,180 lines, `cs-` prefix) |
+| ★ Consult styling | `src/styles/consult.css` (2,191 lines, `cs-` prefix) |
 | Legacy data (save + v1 hydration only) | `src/lib/db/{reference,patients,intelligence}.ts` |
 
 Cortex is **not** a router. `App.tsx` swaps "sidebar pages" in local state
@@ -70,7 +85,7 @@ means *the consult workspace*; anything else is a feature page.
 ## 2. `App.tsx` — the whole workspace in one component
 
 Still the single most important file in Cortex and still the single biggest
-liability. **1,586 lines**, up from 999 at the last survey: the Mock 2 rebuild
+liability. **1,670 lines** (2026-08-06), up from 999 at the last survey: the Mock 2 rebuild
 moved rendering out into `features/consult/` but moved *more state and more
 handlers* in, because every one of those cards is controlled.
 
@@ -117,8 +132,8 @@ refs (`logoRef`, `chartSearchRef`, `synapseSearchRef`, `planRef`). The dead
 
 1. **Boot** (`[]`, gated on `identity.ready`) — two calls: `fetchDoctor`,
    `fetchHospital`. Sets `dbReady`. The catalogue loads separately inside
-   `useSynapse()` (§4.1). Still no error state, only a toast; a failed boot
-   leaves the splash on screen forever (§10.2).
+   `useSynapse()` (§4.1). A failure now sets `bootError` and the splash offers a
+   retry (fixed since this section was written — see §10.2).
 2. **The v1 compatibility write** (300 ms debounce, `rankTimer`) — on every
    chart change, writes `visit_symptoms` / `visit_findings` for whichever
    selected chips *have a legacy row* (via `symptomOf` / `findingOf`). Explicitly
@@ -148,8 +163,12 @@ force-closed inside `handleSidebarNavigate`.
                        └─→ handlePatientConfirm / handleStartConsultFromRecord
                                     │
                                     ▼
-                        createVisit(patientId)          ← ALWAYS creates a NEW visit,
-                                                          status "serving", new token (§10.1)
+                        findQueuedVisit → markVisitServing,
+                        else createVisit(patientId)     ← reuses today's waiting
+                                                          queue row when one exists;
+                                                          only mints a new visit and
+                                                          token otherwise (§10.1, fixed
+                                                          after this diagram was drawn)
                                     │
                                     ▼
  ┌──────────── the consult workspace — `.cs-shell` ─────────────────────────────┐
@@ -364,25 +383,39 @@ The whole doctor-facing surface. Fourteen files, one stylesheet.
    other five now do, through `IntentSearch`. An out-of-list pick computes and
    renders its guard verdict at full strength — reachable, never silent.
 
-### 5.3 The facility profile — `features/synapse/specialtyProfile.ts` (175 lines)
+### 5.3 The facility profile — `features/synapse/specialtyProfile.ts` (217 lines)
 
 The one place a specialty is expressed. It decides **two** things and cannot
 touch a score, a rank, or which intents exist:
+
+Five profiles as of 2026-08-06 — Cardiology and Paediatrics were added after
+this section was first written:
 
 | Profile | Primary slot | Measurements visible by default |
 |---|---|---|
 | `general_opd` (default) | Medicines | BP · Pulse · SpO₂ · Temp · Body Weight |
 | `physiotherapy` | Exercise Plans | Pain · Range of Motion · BP · Pulse · Body Weight |
 | `diagnostics` | Investigations | BP · Pulse · SpO₂ · Temp · Weight · Height · Blood Group |
+| `cardiology` | Medicines | BP · Pulse · SpO₂ · Weight · Height |
+| `pediatrics` | Medicines | Weight · Temp · Height · Pulse · SpO₂ |
+
+Note that Cardiology and Paediatrics both keep **Medicines** in the primary
+slot. That is the law working, not a shortcut: depth for a specialty comes from
+clinical content underneath it (ECG-derived signals and beta-blocker guards for
+cardiology; growth faltering, stridor and the paediatric drug guards for
+paediatrics), never from rearranging the screen.
 
 Set **once at onboarding, per facility**; never relearned at runtime and never
 derived from what the doctor happens to prescribe. Field *order* is never taken
 from here — fields always render in catalogue order, so the layout is identical
 for every facility. `profileFor()` is the single read point.
 
-**Still unresolved:** `hospitals` has no column for this, so
-`PROFILE_BY_FACILITY` is a hand-maintained map (empty = everyone on General OPD).
-That missing column now blocks two settings rather than one.
+~~**Still unresolved:** `hospitals` has no column for this, so
+`PROFILE_BY_FACILITY` is a hand-maintained map.~~ **Resolved** — migration
+`20260802191801_add_hospitals_specialty_profile` added the column, and
+`profileFor()` now reads `hospitals.specialty_profile`. The hardcoded map is
+gone. No onboarding UI writes the column yet, so every facility still reads as
+General OPD until one is set directly.
 
 ### 5.4 Measurements — the catalogue and progressive relevance
 
@@ -436,31 +469,37 @@ Three rules encoded in it:
 
 ## 6. Data model, from Cortex's side
 
+Row counts re-measured **2026-08-06** (the previous edition's counts are in
+parentheses where they moved).
+
 | Table | Rows | Cortex's relationship |
 |---|---|---|
 | `patients` | 8 | create, lookup by phone, search. |
-| `visits` | 57 | creates one per consult; updates status via `saveConsult` and `ActiveConsultGuard`. Writes `vitals` (jsonb) at save. |
-| ★ `observables` | 374 | **the catalogue** — every pickable symptom / finding / history chip, `kind`-split. Read once per session. Front Desk's intake reads it too, through a separate alias layer. |
-| `observable_signals` | 503 | chip → signal. |
-| `signals` | 281 | the engine's vocabulary + `idf_weight`. |
+| `visits` | 60 (57) | creates one per consult; updates status via `saveConsult` and `ActiveConsultGuard`. Writes `vitals` (jsonb) at save. |
+| ★ `observables` | 393 (374) | **the catalogue** — every pickable symptom / finding / history chip, `kind`-split. Read once per session. Front Desk's intake reads it too, through a separate alias layer. |
+| `observable_alias` | 165 | regional/typo alternates feeding search. |
+| `observable_signals` | 522 (503) | chip → signal. |
+| `signals` | 300 (281) | the engine's vocabulary + `idf_weight`. |
 | `measurement_rules` | 29 | threshold → signal. |
-| `intents` | 652 | every possible output. |
-| `signal_intent_rules` | 1,099 | **the knowledge base**. |
-| `intent_guards` | 14 | 9 hard, 5 soft, 0 hiding. |
-| `intent_classes` / `intent_class_map` | 6 / 71 | grouping, for gating only. |
+| `intents` | 709 total / **697 active** (652) | every possible output. |
+| `signal_intent_rules` | **1,281 active** (1,099) | **the knowledge base**. 93 → 95 safety-critical. |
+| `signal_finding_suggestions` | 10 | symptom → what to examine for (added 2026-08-05). |
+| `intent_guards` | 16 (14) | 10 hard, 6 soft, 0 hiding. |
+| `intent_classes` / `intent_class_map` | 7 / 74 (6 / 71) | grouping, for gating only. |
 | `intent_companions` | 26 | intent → companion intent, authored, global. |
-| ★ `visit_observations` | 52 | the permanent, engine-shaped record of what was on the chart. |
-| ★ `visit_measurements` | 45 | same, for numbers. **`value_text` is now written** for blood group. |
+| ★ `visit_observations` | 55 (52) | the permanent, engine-shaped record of what was on the chart. |
+| ★ `visit_measurements` | 48 (45) | same, for numbers. **`value_text` is now written** for blood group. |
 | ★ `decision_log` | 23 | the learning write, gated on a real identity. |
 | `clinic_brand_preference` | 0 | the clinic-wide declared brand default, set from `BrandSheet`. |
 | `doctor_signal_intent_rules` | 0 | the per-doctor learned overlay, applied by `loadRuleset(…, doctorId)`. |
 | `v_doctor_preference` / `_brand_preference` / `_frequent_medicine` | views | the three personalisation models. |
-| `visit_symptoms` / `visit_findings` | 78 / 16 | **still written**, as a compatibility bridge only. |
+| `visit_symptoms` / `visit_findings` | 81 / 16 (78 / 16) | **still written**, as a compatibility bridge only. |
 | `symptoms` / `findings` | 51 / 0 | **no longer read by Cortex.** Front Desk still reads `symptoms`. |
 | `symptom_observable_map` / `finding_observable_map` | 52 / 27 | the bridge between the two catalogues. |
 | `prescriptions` / `prescription_medicines` / `diagnostic_orders` | — | insert at save. |
 | `medicines`, `compositions`, `medicine_composition_map` | — | read **only** through the `composition_brands` RPC, never directly from a component. |
-| `doctors`, `hospitals` | 6 / 11 | letterhead; `doctors.last_seen` written by the 30 s heartbeat. |
+| `doctors`, `hospitals` | 7 / 12 (6 / 11) | letterhead; `doctors.last_seen` written by the 30 s heartbeat. **All five clinical tables here carry an RLS `hospital_isolation` policy (`hospital_id = current_user_hospital_id()`)** — see §10.11 for why that matters. |
+| `doctor_pinned_intent` | 0 | per-doctor pins; added 2026-08-02 (§10.5). |
 
 **Hydration pattern:** unchanged — no SQL joins for the big reads; fetch parents
 then `IN (…)` the children and aggregate in memory.
@@ -510,9 +549,10 @@ Unchanged. `src/components/ReviewModal.tsx`, used by both workspaces via
 `prescription: PrescriptionMedicine[]` and has no idea those lines now carry
 `intent_id` / `via_search` / `overridden` provenance for the decision log to read.
 
-**It has not caught up with the new measurements.** It renders BP, Pulse, Temp,
-SpO₂ and Weight only — height, blood group, pain and ROM are recorded and saved
-but do not print. See §10.6.
+~~**It has not caught up with the new measurements.**~~ **Fixed 2026-08-05** —
+height, blood group, pain and ROM now render alongside BP, Pulse, Temp, SpO₂ and
+Weight, in both `ReviewModal` (`:446-449`) and `PrescriptionDocument`
+(`:233-236`). See §10.6.
 
 ---
 
@@ -530,68 +570,92 @@ Four portal surfaces now: `PickerCard`'s dropdown, `BrowseSheet`, `BrandSheet`,
 
 ---
 
-## 10. Known defects, gaps, and debt (re-audited 2026-07-30)
+## 10. Known defects, gaps, and debt (re-audited 2026-08-06)
 
-### 10.1 🔴 Cortex is disconnected from the reception queue
+> **Read this first.** On the 2026-08-06 pass, **five of the nine items below
+> were already fixed** and had simply never been struck off — including 10.1,
+> which the previous edition called "the single biggest architectural gap".
+> Work was very nearly planned off a list that was substantially historical.
+> Each item now records how its status was checked, so the next reader can
+> re-run the check instead of trusting the label.
 
-Still true, still unfixed, still the single biggest architectural gap.
-`fetchTodayVisits` / `markVisitServing` / `fetchDraftVisits` /
-`fetchVisitWithDetails` are imported by **zero** Cortex files — verified this
-pass. Every consult start calls `createVisit` unconditionally (`App.tsx:503`,
-`App.tsx:768`), minting a new visit and token even when the patient is already
-`waiting` in the queue.
+### 10.1 ✅ FIXED — Cortex is disconnected from the reception queue
 
-### 10.2 🟠 Boot is still all-or-nothing
+Was 🔴. `App.tsx:48` now imports `findQueuedVisit` and `markVisitServing`, and
+`App.tsx:517` marks the existing queue row as serving instead of minting a
+second visit. Starting a consult no longer duplicates a waiting patient's
+token.
 
-A failed `fetchDoctor` / `fetchHospital` shows a toast and leaves the splash on
-screen forever. No retry, no error state.
+*Check:* `grep -n "findQueuedVisit\|markVisitServing" src/App.tsx`
 
-### 10.3 🟠 Hardcoded identity fallback
+### 10.2 ✅ FIXED — Boot is all-or-nothing
 
-`DOCTOR_ID` / `HOSPITAL_ID` (`lib/db/reference.ts`) remain the fallback when a
-signed-in account has no `doctors` row. It no longer risks corrupting another
-doctor's model — `useSynapse` and `commitConsultation` both check
-`identity.isReal` — but affected accounts get **no personalisation and no
-learning**, and nothing in the UI tells them why. The `StatusBar` shows
-`degraded` for a *failed* load, not for this.
+Was 🟠. `App.tsx` now holds `bootError` state (`:131`) and a `retryBoot`
+callback (`:381`), and the splash renders the message plus a retry button
+(`:1245-1252`) instead of hanging forever.
 
-### 10.4 🟠 `workspace.css` is 2,794 lines for 24 classes
+*Check:* `grep -n "bootError\|retryBoot" src/App.tsx`
 
-The `cx-*` stylesheet from the deleted three-column workspace is still imported
-in `main.tsx`. **173 `cx-` classes are defined; 24 are still referenced** — by
-`BrandSheet` (`cx-sheet*`, `cx-brandrow*`, `cx-tag`, `cx-cap`), `BrowseSheet`
-(`cx-browse*`), `ShortcutsSheet` (`cx-keys*`) and one `data-cx-planline` hook in
-`PlanCard`. Roughly 149 dead classes. The fix is to move those four survivors
-into `consult.css` as `cs-*` and delete the file, which is a presentation
-decision rather than a mechanical one — the sheets would need restyling to match.
+### 10.3 🟡 Hardcoded identity fallback (downgraded from 🟠)
 
-### 10.5 🟡 Pins are localStorage-only
+`DOCTOR_ID` / `HOSPITAL_ID` (`lib/db/reference.ts`) are still the fallback in
+`useClinicalIdentity` when a signed-in account has no `doctors` row, so those
+accounts still get **no personalisation and no learning**.
 
-`usePinnedMedicines.ts` is the single read/write point. No table exists; a
-`doctor_pinned_intent (doctor_id, intent_id)` table would make pins follow the
-doctor between machines.
+What changed: the previous edition's main complaint was that *nothing in the UI
+told them why*. That is fixed — `StatusBar` takes an `unidentified` prop,
+distinct from `degraded`, and `App.tsx:1535` passes `!identity.isReal` into it.
+The corruption risk remains closed (`useSynapse` and `commitConsultation` both
+gate on `isReal`).
 
-### 10.6 🟡 The print does not carry the new measurements
+Note the reception half of this was a separate and worse instance, now fixed —
+see the Front Desk note at the end of this section.
 
-`ReviewModal` and `PrescriptionDocument` render five vitals. Height, blood group,
-pain score and range of motion are entered, fed to the engine where a rule exists,
-and saved — but never printed. A physiotherapy prescription that omits the pain
-score it was written from is the case that will surface this.
+### 10.4 🟠 `workspace.css` is 2,794 lines for 25 classes
 
-### 10.7 🟡 `App.tsx` is now 1,586 lines
+Unchanged, and marginally worse than recorded. Re-measured 2026-08-06:
+**175 `cx-` classes defined, 25 still referenced, 150 dead.** Still imported at
+`main.tsx:24`. The survivors are `BrandSheet`, `BrowseSheet`, `ShortcutsSheet`
+and the `data-cx-planline` hook in `PlanCard`. The fix — move those into
+`consult.css` as `cs-*` and delete the file — is a presentation decision, not a
+mechanical one, because the sheets would need restyling to match.
 
-Up from 999. The rebuild moved rendering out and state in. The intelligence layer
-is cleanly separated into hooks and the screen into `features/consult/`, which
-makes `App.tsx` more splittable than it has ever been — the obvious seam is a
-`useConsult()` hook owning patient / visit / chart / prescription / accepted-intent
-state, leaving `App.tsx` as routing plus overlays.
+*Check:* the class census is a one-liner; see the commit that added this note.
 
-### 10.8 🟡 Two tables have RLS disabled
+### 10.5 ✅ FIXED — Pins are localStorage-only
 
-Supabase's advisor flags `public.prescription_counters` and
-`public.visit_attachments` as readable and writable by anyone holding the anon
-key. Both are empty today. Enabling RLS without writing policies first would
-black both tables out, so this needs one change that does both.
+Was 🟡, and the entry was wrong by the time it was read: the table *does* exist.
+`doctor_pinned_intent (doctor_id, intent_id, hospital_id, created_at)` was added
+by migration `20260802185000_add_doctor_pinned_intent`, has RLS enabled with a
+policy, and `usePinnedMedicines.ts` reads and writes it through
+`loadPinnedIntents` / `setPinnedIntent`. Pins follow the doctor between
+machines. In-memory-only remains the behaviour for a fallback identity, which is
+correct — there is no `doctors` row to key a pin on.
+
+### 10.6 ✅ FIXED — The print does not carry the new measurements
+
+Was 🟡. Both surfaces now render height, blood group, pain score and range of
+motion: `ReviewModal.tsx:446-449` and `PrescriptionDocument.tsx:233-236`.
+
+*Check:* `grep -n "bloodGroup\|painVas\|romPct" src/components/ReviewModal.tsx
+src/features/prescription/PrescriptionDocument.tsx`
+
+### 10.7 🟡 `App.tsx` is now 1,670 lines
+
+Still open and still growing — 999 → 1,586 (2026-07-30) → **1,670**
+(2026-08-06). The intelligence layer is cleanly separated into hooks and the
+screen into `features/consult/`, so the obvious seam is unchanged: a
+`useConsult()` hook owning patient / visit / chart / prescription /
+accepted-intent state, leaving `App.tsx` as routing plus overlays.
+
+### 10.8 ✅ FIXED — Two tables have RLS disabled
+
+Was 🟡. `prescription_counters` and `visit_attachments` both have
+`relrowsecurity = true` with one policy each, so enabling RLS did not black them
+out.
+
+*Check:* `select relname, relrowsecurity from pg_class …` against the two
+tables, plus `pg_policies`.
 
 ### 10.9 🟢 Fixed since the last survey
 
@@ -621,6 +685,26 @@ black both tables out, so this needs one change that does both.
   computes `guardIntent()` for every hit and renders it at full strength.
 
 ---
+
+### 10.11 ✅ FIXED (2026-08-06) — Front Desk was pinned to one hardcoded clinic
+
+Strictly out of this atlas's scope (`src/features/frontdesk/`) but recorded here
+because it is the reception-side twin of 10.3 and was found during this pass.
+
+Every reception page read the `HOSPITAL_ID` constant instead of the signed-in
+identity — the queue, doctor list, stats, doctor-requests card and the Print RX
+letterhead. **No data ever leaked**: RLS (`hospital_isolation`:
+`hospital_id = current_user_hospital_id()`) is enabled on `patients`, `visits`,
+`prescriptions`, `doctors` and `hospitals`, so a query for the constant's
+hospital intersected with the caller's own returned nothing. The effect was the
+inverse — for all eleven other clinics Front Desk came up **empty**: empty
+queue, empty intake dropdown, and a header falling back to the generic "Clinic".
+
+Fixed by `useHospitalId()` (`features/frontdesk/hooks/`), which reads the
+verified hospital off the auth identity with deliberately no fallback to the
+constant. The lesson worth keeping: **RLS turned a confidentiality bug into an
+availability bug.** It is the reason this was survivable, and the reason it went
+unnoticed.
 
 ## 11. What changed since the 2026-07-28 edition
 
