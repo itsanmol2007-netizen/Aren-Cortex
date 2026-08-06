@@ -9,6 +9,11 @@ Commit `edfb000`. Five of the nine items in §10 had been fixed and never struck
 off — including the one the last edition called the biggest architectural gap —
 so work was nearly planned off a list that was substantially historical.
 
+Content work done on the same branch (2026-08-06): the orphaned test panels and
+individual tests were wired, taking `signal_intent_rules` from 1,224 to **1,520**
+and reachable intents from 456 to **568**. See §6.1 for the catalogue-duplicate
+question that surfaced during it.
+
 Re-verified on that pass, and current as of 2026-08-06:
 **§10** (every item, each with the check that proves it) · **§6** row counts ·
 the file counts in "Where it lives" · **§5.3** (two profiles were missing and
@@ -482,7 +487,8 @@ parentheses where they moved).
 | `signals` | 300 (281) | the engine's vocabulary + `idf_weight`. |
 | `measurement_rules` | 29 | threshold → signal. |
 | `intents` | 709 total / **697 active** (652) | every possible output. |
-| `signal_intent_rules` | **1,281 active** (1,099) | **the knowledge base**. 93 → 95 safety-critical. |
+| `signal_intent_rules` | **1,520 active** (1,099) | **the knowledge base**. 95 safety-critical. |
+| `tests` | 249 | the investigation catalogue. **Two generations** — see below. |
 | `signal_finding_suggestions` | 10 | symptom → what to examine for (added 2026-08-05). |
 | `intent_guards` | 16 (14) | 10 hard, 6 soft, 0 hiding. |
 | `intent_classes` / `intent_class_map` | 7 / 74 (6 / 71) | grouping, for gating only. |
@@ -500,6 +506,40 @@ parentheses where they moved).
 | `medicines`, `compositions`, `medicine_composition_map` | — | read **only** through the `composition_brands` RPC, never directly from a component. |
 | `doctors`, `hospitals` | 7 / 12 (6 / 11) | letterhead; `doctors.last_seen` written by the 30 s heartbeat. **All five clinical tables here carry an RLS `hospital_isolation` policy (`hospital_id = current_user_hospital_id()`)** — see §10.11 for why that matters. |
 | `doctor_pinned_intent` | 0 | per-doctor pins; added 2026-08-02 (§10.5). |
+
+### 6.1 The tests catalogue has two generations (open decision)
+
+Found 2026-08-06 while wiring the orphaned tests. `tests` was seeded twice on
+the same day:
+
+| Generation | `created_at` | Style |
+|---|---|---|
+| v1 | `2026-06-11 05:28:56` | combined names — `Malaria Antigen / Smear`, `Serum Iron / TIBC`, `T3 / T4`, `Uric Acid`, `Blood Sugar PP`, `Stool Culture` |
+| v2 | `2026-06-11 06:01:26` | the split canonical tests, mostly `priority_tier` 1 |
+
+Both generations are live, so **the same investigation exists twice under two
+names**. Ranking rules are authored only against the canonical (v2) entry — the
+v1 rows are reachable by search but will never be suggested, which is the
+deliberate choice that stops the engine offering one test twice.
+
+`priority_tier` is the field that already encodes this: **tier 1 = canonical and
+common**. A useful invariant falls out of it, and is worth re-running after any
+catalogue work:
+
+> **All 57 tier-1 tests are reachable from the chart. Zero are orphaned.**
+> Everything still unreachable is tier 2 or 3.
+
+**The open decision is a catalogue one, not a ranking one:** whether to retire
+the 9 superseded v1 duplicates (`is_active = false`) so they stop appearing in
+search. Deliberately not done here — deactivating catalogue rows the doctor may
+be used to typing is a product call.
+
+The other 22 unwired tests are intentional: immunity checks (`Anti-HBs`),
+procedures that follow a result rather than a symptom (bone marrow / liver
+biopsy, colposcopy, USG-guided FNAC), techniques inside another test (Gram
+stain), and tests with no signal to key on — `Blood Lead Level` needs an
+occupational-exposure signal and `Neonatal Bilirubin` a neonate signal, neither
+of which exists.
 
 **Hydration pattern:** unchanged — no SQL joins for the big reads; fetch parents
 then `IN (…)` the children and aggregate in memory.
