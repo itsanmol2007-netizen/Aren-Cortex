@@ -10,7 +10,7 @@ import { timeAgo } from "../utils";
 // Until the `doctor_requests` table exists this simply shows the calm "no
 // requests" state (see docs/Supabase Wiring TODO.md).
 
-export function DoctorRequestsCard({ hospitalId }: { hospitalId: string }) {
+export function DoctorRequestsCard({ hospitalId }: { hospitalId: string | null }) {
     const t = useT();
     const { requests, acknowledge } = useDoctorRequests(hospitalId);
 

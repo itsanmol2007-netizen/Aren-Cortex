@@ -6,7 +6,6 @@ import {
     fetchDoctorsByHospital,
     fetchHospital,
     fetchPrescriptionRenderData,
-    HOSPITAL_ID,
     type DBDoctor,
     type DBHospital,
     type PrescriptionRenderData,
@@ -16,6 +15,7 @@ import ReviewModal from "@/components/ReviewModal";
 import { WorkspaceShell } from "./components/WorkspaceShell";
 import { PrintQueuePanel } from "./components/printrx/PrintQueuePanel";
 import { PrintWorkspace } from "./components/printrx/PrintWorkspace";
+import { useHospitalId } from "./hooks/useHospitalId";
 import { usePrintQueue } from "./hooks/usePrintQueue";
 import { recordPrint, usePrintLog } from "./printLog";
 import { timeAgo } from "./utils";
@@ -36,6 +36,7 @@ export function PrintRxPage() {
 
 function PrintRxInner() {
     const t = useT();
+    const hospitalId = useHospitalId();
     const queue = usePrintQueue();
     const printLog = usePrintLog();
     const [doctors, setDoctors] = useState<DBDoctor[]>([]);
@@ -54,13 +55,21 @@ function PrintRxInner() {
 
     const [now, setNow] = useState(() => new Date());
 
+    // The letterhead needs the full `hospitals` row (address, phone, tagline,
+    // logo), which the auth identity does not carry — so this one still fetches,
+    // but for the SIGNED-IN clinic rather than a hardcoded one. Printing another
+    // clinic's letterhead onto a prescription is the worst version of this bug.
     useEffect(() => {
-        fetchDoctorsByHospital(HOSPITAL_ID)
+        if (!hospitalId) return;
+        fetchDoctorsByHospital(hospitalId)
             .then(setDoctors)
             .catch((err) => console.warn("fetchDoctorsByHospital failed (non-fatal):", err));
-        fetchHospital(HOSPITAL_ID)
+        fetchHospital(hospitalId)
             .then(setHospital)
             .catch((err) => console.warn("fetchHospital failed (non-fatal):", err));
+    }, [hospitalId]);
+
+    useEffect(() => {
         const timer = setInterval(() => setNow(new Date()), 20000);
         return () => clearInterval(timer);
     }, []);

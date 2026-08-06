@@ -104,8 +104,15 @@ export function useCachedIntakeChips(): CachedResource<IntakeChip[]> {
     return useCachedResource<IntakeChip[]>(INTAKE_KEY, fetchIntakeChips, []);
 }
 
-export function useCachedDoctors(hospitalId: string): CachedResource<DBDoctor[]> {
-    const fetcher = useCallback(() => fetchDoctorsByHospital(hospitalId), [hospitalId]);
+// The cache key is per-hospital, so two clinics on one shared reception
+// computer never read each other's doctor list. `hospitalId` is null only while
+// the auth identity resolves; we fetch nothing rather than falling back to a
+// constant clinic (see hooks/useHospitalId.ts).
+export function useCachedDoctors(hospitalId: string | null): CachedResource<DBDoctor[]> {
+    const fetcher = useCallback(
+        () => (hospitalId ? fetchDoctorsByHospital(hospitalId) : Promise.resolve([])),
+        [hospitalId]
+    );
     // 45s periodic refresh keeps `last_seen` presence current for reception.
-    return useCachedResource<DBDoctor[]>(`aren.cache.doctors.${hospitalId}.v1`, fetcher, [], { refreshMs: 45_000 });
+    return useCachedResource<DBDoctor[]>(`aren.cache.doctors.${hospitalId ?? "none"}.v1`, fetcher, [], { refreshMs: 45_000 });
 }

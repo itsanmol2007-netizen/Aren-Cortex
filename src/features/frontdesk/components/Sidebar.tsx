@@ -8,7 +8,7 @@ type Props = {
     doctors: DBDoctor[];
     visits: TodayVisit[];
     now: Date;
-    hospitalId: string;
+    hospitalId: string | null;
 };
 
 export function Sidebar({ doctors, visits, now, hospitalId }: Props) {

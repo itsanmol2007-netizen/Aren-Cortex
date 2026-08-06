@@ -39,6 +39,18 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [gender, setGender] = useState("");
     const [selectedSymptoms, setSelectedSymptoms] = useState<IntakeChip[]>([]);
     const [doctorId, setDoctorId] = useState(defaultDoctorId);
+
+    // The doctor <select> has no placeholder option, so a value that is not in
+    // `doctors` renders as the first option while still SUBMITTING the unlisted
+    // id — a silent mis-assignment. Two ordinary cases produce exactly that:
+    // the cached doctor list is still empty on first paint, and a patient whose
+    // stored primary doctor no longer practises at this clinic. Keep the state
+    // and the list in agreement so what is shown is what is saved.
+    useEffect(() => {
+        if (!doctors.length) return;
+        if (doctors.some((d) => d.id === doctorId)) return;
+        setDoctorId(doctors[0].id);
+    }, [doctors, doctorId]);
     const [errors, setErrors] = useState<Record<string, boolean>>({});
     const [saving, setSaving] = useState(false);
     const [visitStats, setVisitStats] = useState<{ visit_count: number; last_visit_at: string | null } | null>(null);

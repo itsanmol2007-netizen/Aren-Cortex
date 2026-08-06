@@ -35,7 +35,7 @@ function playChime() {
     }
 }
 
-export function useDoctorRequests(hospitalId: string): {
+export function useDoctorRequests(hospitalId: string | null): {
     requests: DoctorRequest[];
     acknowledge: (id: string) => Promise<void>;
 } {
@@ -49,7 +49,7 @@ export function useDoctorRequests(hospitalId: string): {
     );
 
     useEffect(() => {
-        if (unavailable.current || !online) return;
+        if (unavailable.current || !online || !hospitalId) return;
         let cancelled = false;
 
         const load = async () => {

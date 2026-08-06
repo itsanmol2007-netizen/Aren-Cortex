@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Globe, ChevronDown, Check, Clock, UserRound } from "lucide-react";
-import { fetchHospital, HOSPITAL_ID, type DBHospital } from "@/lib/db";
 import { NavRail } from "./NavRail";
 import { OperationalBanner } from "./OperationalBanner";
 import { FrontDeskStyles } from "./FrontDeskStyles";
@@ -21,7 +20,6 @@ const NAV_STORAGE_KEY = "aren.frontdesk.nav";
 // switching applications. Pages own their content, data and modals; the
 // shell owns identity, time and navigation.
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-    const [hospital, setHospital] = useState<DBHospital | null>(null);
     const [now, setNow] = useState(() => new Date());
     const [navOpen, setNavOpen] = useState(() => localStorage.getItem(NAV_STORAGE_KEY) === "1");
 
@@ -32,6 +30,13 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     const identity = auth.status === "authed" ? auth.identity : null;
     const userName = identity?.user.full_name?.trim() ?? "";
     const userInitials = userName ? initials(userName) : "";
+
+    // The clinic name comes off the verified identity, not a fetch. AuthProvider
+    // has already loaded and activity-checked this `hospitals` row during the
+    // gate, so re-fetching it by a hardcoded id was both a redundant round trip
+    // and the reason the header could name a different clinic than the data
+    // below it belonged to.
+    const hospitalName = identity?.hospital.name?.trim() || null;
 
     // Write the real connectivity history (session start / offline / online)
     // to the local event log. Mounted once here so it covers every page.
@@ -59,12 +64,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     }, [navOpen]);
 
     useEffect(() => {
-        fetchHospital(HOSPITAL_ID)
-            .then(setHospital)
-            .catch((err) => console.warn("fetchHospital failed (non-fatal):", err));
-    }, []);
-
-    useEffect(() => {
         const t = setInterval(() => setNow(new Date()), 20000);
         return () => clearInterval(t);
     }, []);
@@ -86,7 +85,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         >
             <FrontDeskStyles />
             <Header
-                hospital={hospital}
+                hospitalName={hospitalName}
                 now={now}
                 navOpen={navOpen}
                 onToggleNav={toggleNav}
@@ -109,14 +108,14 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 }
 
 function Header({
-    hospital,
+    hospitalName,
     now,
     navOpen,
     onToggleNav,
     userName,
     userInitials,
 }: {
-    hospital: DBHospital | null;
+    hospitalName: string | null;
     now: Date;
     navOpen: boolean;
     onToggleNav: () => void;
@@ -186,7 +185,7 @@ function Header({
                 <div className="flex-1" />
 
                 <div className="flex shrink-0 items-center gap-[14px]">
-                    <div className="whitespace-nowrap text-[15px] font-bold tracking-[-0.01em] text-white">{hospital?.name ?? "Clinic"}</div>
+                    <div className="whitespace-nowrap text-[15px] font-bold tracking-[-0.01em] text-white">{hospitalName ?? "Clinic"}</div>
                     <div className="h-6 w-px bg-white/10" />
                     <div className="flex items-center gap-[6px] whitespace-nowrap text-[12.5px] font-medium text-white/55">
                         <Clock size={13.5} strokeWidth={2} />

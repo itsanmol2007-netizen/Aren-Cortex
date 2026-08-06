@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { HOSPITAL_ID } from "@/lib/db";
 import { WorkspaceShell } from "./components/WorkspaceShell";
 import { ClinicStatusSummary } from "./components/clinicstatus/ClinicStatusSummary";
 import { ClinicStatusDetailed } from "./components/clinicstatus/ClinicStatusDetailed";
 import { ServiceDetailModal } from "./components/clinicstatus/ServiceDetailModal";
 import { LogoutConfirmModal } from "./components/clinicstatus/LogoutConfirmModal";
 import { buildClinicStatus, readDemoState, type Service } from "./clinicStatus/model";
+import { useHospitalId } from "./hooks/useHospitalId";
 import { useQueue } from "./hooks/useQueue";
 import { useOnline } from "./operational/useOnline";
 import { useAuth } from "../auth/AuthProvider";
@@ -47,7 +47,8 @@ function ClinicStatusInner() {
     }, []);
 
     // Today's registered-patient count — the one real number on Level 1.
-    const { visits } = useQueue(HOSPITAL_ID);
+    const hospitalId = useHospitalId();
+    const { visits } = useQueue(hospitalId);
     const registeredToday = useMemo(() => visits.filter((v) => v.status !== "discarded").length, [visits]);
 
     const identity = auth.status === "authed" ? auth.identity : null;

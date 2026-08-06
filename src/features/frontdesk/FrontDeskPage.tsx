@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-    HOSPITAL_ID,
-    DOCTOR_ID,
     type DBPatient,
     type TodayVisit,
 } from "@/lib/db";
+import { useHospitalId } from "./hooks/useHospitalId";
 import { useQueue } from "./hooks/useQueue";
 import { useVisitActions } from "./hooks/useVisitActions";
 import { useCachedDoctors } from "./operational/referenceCache";
@@ -31,12 +30,13 @@ export function FrontDeskPage() {
 // navigation rail, dawn background) lives in WorkspaceShell — this component
 // owns the queue data, the 20s row clock, and the two modals.
 function FrontDeskInner() {
-    const { visits, setVisits, loading, refetch } = useQueue(HOSPITAL_ID);
+    const hospitalId = useHospitalId();
+    const { visits, setVisits, loading, refetch } = useQueue(hospitalId);
     const actions = useVisitActions({ visits, setVisits, refetch });
 
     // Cache-fresh doctor list: instant from this computer's copy, refreshed
     // whenever online — so the intake dropdown is never empty during an outage.
-    const doctors = useCachedDoctors(HOSPITAL_ID).data;
+    const doctors = useCachedDoctors(hospitalId).data;
     const [openVisit, setOpenVisit] = useState<TodayVisit | null>(null);
     const [createState, setCreateState] = useState<CreateState | null>(null);
     const [now, setNow] = useState(() => new Date());
@@ -70,7 +70,7 @@ function FrontDeskInner() {
                         onCancel={actions.cancelVisit}
                         selectedVisitId={openVisit?.visit_id ?? null}
                     />
-                    <Sidebar doctors={doctors} visits={visits} now={now} hospitalId={HOSPITAL_ID} />
+                    <Sidebar doctors={doctors} visits={visits} now={now} hospitalId={hospitalId} />
                 </div>
             </div>
 
@@ -91,7 +91,7 @@ function FrontDeskInner() {
                     existingPatient={createState.existingPatient}
                     prefillName={createState.prefillName}
                     doctors={doctors}
-                    defaultDoctorId={DOCTOR_ID}
+                    defaultDoctorId={doctors[0]?.id ?? ""}
                     onClose={() => setCreateState(null)}
                     onUseExisting={(p) => setCreateState({ existingPatient: p, prefillName: "" })}
                     onCreate={actions.createNewVisit}

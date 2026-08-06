@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-    HOSPITAL_ID,
-    DOCTOR_ID,
     type DBPatient,
 } from "@/lib/db";
+import { useHospitalId } from "./hooks/useHospitalId";
 import { useQueue } from "./hooks/useQueue";
 import { useVisitActions } from "./hooks/useVisitActions";
 import { usePatientDirectory } from "./hooks/usePatientDirectory";
@@ -34,11 +33,12 @@ function PatientsInner() {
     const t = useT();
     const directory = usePatientDirectory();
     const [selectedId, setSelectedId] = useState<string | null>(null);
-    const doctors = useCachedDoctors(HOSPITAL_ID).data;
+    const hospitalId = useHospitalId();
+    const doctors = useCachedDoctors(hospitalId).data;
 
     // The live queue rides along quietly: creating a visit from here reuses
     // the exact optimistic create/undo flow Front Desk runs on.
-    const { visits, setVisits, refetch: refetchQueue } = useQueue(HOSPITAL_ID);
+    const { visits, setVisits, refetch: refetchQueue } = useQueue(hospitalId);
     const actions = useVisitActions({ visits, setVisits, refetch: refetchQueue });
 
     const selected = useMemo(
@@ -97,7 +97,7 @@ function PatientsInner() {
                     existingPatient={createFor}
                     prefillName=""
                     doctors={doctors}
-                    defaultDoctorId={selected?.primary_doctor_id ?? DOCTOR_ID}
+                    defaultDoctorId={selected?.primary_doctor_id ?? doctors[0]?.id ?? ""}
                     onClose={() => setCreateFor(null)}
                     onUseExisting={(p) => setCreateFor(p)}
                     onCreate={handleCreate}
