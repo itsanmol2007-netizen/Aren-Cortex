@@ -3,6 +3,18 @@
 *A star chart of the codebase for whoever flies it next.*
 Last surveyed: 2026-07-21 · Branch: `master` · Includes the auth layer, Clinic Status, the reception operational layer (presence, cache, event log, real doctor requests), **and a verified Cortex survey**.
 
+> **Ledger corrected 2026-08-06** (branch `claude/cortex-atlas-summary-auycuc`,
+> commits `edfb000`/`87c4d01`/`5f718ea`/`d6c1d97`/`63387da`) without a full
+> re-survey. §7 items **#1, #3, #10, #13 are DONE** and **#14 is stale** — each
+> marked in place below. Don't trust an unmarked item as current either: this
+> banner only certifies what was explicitly checked, not the whole document.
+> For Cortex specifically, `aren-cortex-atlas.md` had its own §10 re-audit the
+> same day and found 5 more items fixed that this document's §7 doesn't even
+> list — treat that atlas as current for Cortex, this one for file-level
+> "what exists" and for Front Desk (whose tenancy bug — §7 #10 below — is the
+> one Front Desk change; see `aren-frontdesk-source-of-truth.md` Part J for the
+> full account).
+
 This document is deliberately **technical, not philosophical** — for product philosophy, design doctrine and workflow reasoning, open `aren-frontdesk-source-of-truth.md`. This atlas answers one question: *what files exist, and what does each one do*, so a CTO or full-stack developer can land, orient, and change things without archaeology.
 
 Confidence note: as of the 2026-07-21 Cortex pass, **everything below is verified from the code** — reception suite, prescription pipeline, data layer, and now the Cortex consult internals (`src/App.tsx`, `src/components/`, `src/features/*`, `src/styles/*`) which were previously summarized from file naming alone. That pass corrected several wrong entries; they are marked ⚠ below.
@@ -39,6 +51,15 @@ Cortex is itself a mini-router: `App.tsx` swaps internal "sidebar pages" (Patien
 Defined in `src/lib/db/reference.ts`:
 - `HOSPITAL_ID = 38bd8da3-0dd2-43a5-ad09-2d3194c95ba9`
 - `DOCTOR_ID = 5cd330d2-5a48-4098-b865-ed3393e08698` (Dr. SK Pandey, `general`)
+
+**As of 2026-08-06, Front Desk no longer reads these.** Every reception page
+was pinned to the one clinic above regardless of who signed in — RLS stopped it
+leaking data, but it meant every other clinic saw an empty queue. Fixed by
+`features/frontdesk/hooks/useHospitalId.ts`, which reads the verified hospital
+off the auth identity with deliberately no fallback. Full account in
+`aren-frontdesk-source-of-truth.md` Part J. Cortex's fallback use of these
+constants (`useClinicalIdentity`, gated on `identity.isReal`) is unchanged and
+was never the bug — see `aren-cortex-atlas.md` §10.3.
 
 ---
 
@@ -528,20 +549,42 @@ Entry points into Print RX: nav rail · Front Desk completed-row printer icon
 
 ## 7. Open items (technical debt ledger)
 
-1. `npm run build` blocked by **46 tsc errors in 3 files** (mockData 42 / PreviewPanel 2 / App.tsx 2) — dev unaffected. Re-verified 2026-07-21: this is a genuinely small fix (add `rare?: boolean` + `id`/`category` to the mock test literals, and fix the `findingIds` bug in item 11) and it would unblock production builds.
+1. ~~`npm run build` blocked by **46 tsc errors in 3 files**~~ — **DONE.**
+   Re-checked 2026-08-06: `tsc -b` and `npm run build` both pass clean.
 2. ~~No auth / roles~~ — **DONE** (§8): login + fail-closed gate + role routing + RLS live.
-3. 🔴 **Cortex is disconnected from the reception queue.** `fetchTodayVisits` / `markVisitServing` / `fetchDraftVisits` / `fetchVisitWithDetails` are imported by **zero** Cortex files. Every consult start calls `createVisit(patientId)`, which unconditionally inserts a **new** visit row with `status:"serving"` and a **new token**. So a patient registered at reception (visit A, `waiting`, token 7) becomes visit B (`serving`, token 8) when the doctor opens them, and visit A is orphaned in `waiting` forever. This is the "Next Patient" gap. Fixing it needs a Cortex-side queue read, a resume path calling `markVisitServing(existingVisitId)`, and a rule for when a fresh visit is still correct (walk-in / Solo Mode). Related: `clinic_mode` (Solo Mode) exists in the architecture doc and is **read nowhere in code**.
+3. ~~🔴 **Cortex is disconnected from the reception queue.**~~ — **DONE.**
+   `App.tsx:48/517` now call `findQueuedVisit` → `markVisitServing`, reusing
+   today's waiting queue row instead of always minting a new visit/token. Fixed
+   before 2026-08-06; confirmed in `aren-cortex-atlas.md` §10.1. `clinic_mode`
+   (Solo Mode) is unverified — not re-checked.
 4. Devanagari `hi` strings are empty stubs (dropdown shows "soon").
 5. `patients` has no address column though the Patients brief wanted one.
 6. Native doctor `<select>` in reception modals is the last non-premium field.
 7. Re-layering the legacy CSS (the real layer-trap fix) deliberately deferred.
 8. `prescriptions` print-tracking column would let `printLog.ts` retire (see §6.6).
 9. **Offline write-queue** (create patients/visits while offline, sync on reconnect) — scoped as a future project; today the intake form works offline but *saving* a new patient needs the connection back. See `docs/Supabase Wiring TODO.md` §4.
-10. Session-identity sweep: pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID` rather than the signed-in identity's hospital/doctor (auth plan §6.4). Cortex is the worst offender — `App.tsx`, `createVisit`, `saveConsult`, `rankMedicines`, `runLearningLoop`, `fetchFrequentPicks` and the favourites calls all use the constants; `useAuth().identity` is consumed for **exactly one thing** (the presence heartbeat, which falls back to `DOCTOR_ID` anyway). Must be done before Cortex supports a second doctor.
-11. 🔴 **Cortex's learning loop sends malformed finding IDs.** `App.tsx:633` does `selectedFindings.map(f => f.id)` on a `string[]` of finding *names*, so `runLearningLoop` receives `[undefined, …]`. Real runtime bug, not just a type error. Fix: the same `findingNameToId` conversion the rank effect already does.
-12. **Cortex Investigations runs on mock data.** `PreviewPanel` renders `src/data/mockData.ts`, while a real catalogue (`data/testsCatalogue.ts`) and two real DB intelligence calls (`fetchRankedPanels`, `fetchDynamicTests`) sit unwired. A better version of this feature is half-built in three places.
-13. **Cortex has no resilience layer.** Boot is a seven-way `Promise.all`; one failure leaves the "Connecting to AREN database…" splash on screen forever with only a toast — no retry, no degraded mode. None of reception's `useOnline` / reference cache / event log applies (they live under `features/frontdesk/operational/`).
-14. `App.tsx` is 950 lines and owns all consult state; `hasActiveConsult` takes four arguments and reads only the first (`!!patient`). Both are noted as the first things to address in a consult-state refactor — see `aren-cortex-atlas.md` §10.3.
+10. ~~Session-identity sweep: pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID`~~
+    — **DONE, but this item's own diagnosis was wrong.** It named Cortex "the
+    worst offender"; the actual unconditional offender turned out to be **Front
+    Desk** — `FrontDeskPage`, `PatientsPage`, `ClinicStatusPage`, `PrintRxPage`
+    and `WorkspaceShell` all read `HOSPITAL_ID` directly, with no fallback logic
+    at all. Cortex already had the `isReal`-gated fallback pattern this item
+    seems to have wanted (`useClinicalIdentity`), which is why it was never the
+    bug. Fixed 2026-08-06 by `features/frontdesk/hooks/useHospitalId.ts` — full
+    account in `aren-frontdesk-source-of-truth.md` Part J. Not re-verified:
+    whether `rankMedicines` / `runLearningLoop` / `fetchFrequentPicks` still use
+    the constants as this item claimed — that's a Cortex-side claim this pass
+    did not check.
+11. 🔴 **Cortex's learning loop sends malformed finding IDs.** `App.tsx:633` does `selectedFindings.map(f => f.id)` on a `string[]` of finding *names*, so `runLearningLoop` receives `[undefined, …]`. Real runtime bug, not just a type error. Fix: the same `findingNameToId` conversion the rank effect already does. **Not re-checked 2026-08-06** — do not assume fixed.
+12. **Cortex Investigations runs on mock data.** `PreviewPanel` renders `src/data/mockData.ts`, while a real catalogue (`data/testsCatalogue.ts`) and two real DB intelligence calls (`fetchRankedPanels`, `fetchDynamicTests`) sit unwired. A better version of this feature is half-built in three places. **Not re-checked 2026-08-06.**
+13. ~~**Cortex has no resilience layer.**~~ — **DONE.** `App.tsx` now holds
+    `bootError` state and a `retryBoot` callback; a failed boot offers a retry
+    instead of hanging on the splash forever. Confirmed in `aren-cortex-atlas.md`
+    §10.2.
+14. `App.tsx` is ~~950~~ **1,670 lines** (2026-08-06 count) and owns all consult
+    state; `hasActiveConsult` still unverified this pass. See
+    `aren-cortex-atlas.md` §10.7 for the current reading — it is growing, not
+    shrinking.
 15. **The `rank-compositions` edge function source is not version-controlled here** — there is no `supabase/` directory in this repo. The deployed scoring math has no copy in the codebase.
 16. **Cortex has not been through the "Bhor" design pass.** Reception is on v2 ink-chrome + dawn-thread; Cortex is still on the original light-blue clinical palette. They are visually different products today. Restyling Cortex means re-layering eleven stylesheets and reconciling tokens — a deliberate project, never an incremental drift.
 

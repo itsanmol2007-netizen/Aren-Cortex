@@ -1,12 +1,16 @@
-# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Part I · 2026-07-21)
+# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Part J · 2026-08-06)
 
 Last consolidated: 2026-07-21 · Branch: `master` · Routes: `/app/frontdesk`,
 `/app/patients`, `/app/printrx`, `/app/clinicstatus` (+ `/login`)
+Part J appended 2026-08-06 · Branch `claude/cortex-atlas-summary-auycuc` ·
+Commit `edfb000` — a real bug fix (the hardcoded-clinic tenancy issue), not a
+design pass. It closes §32 item 4 below; nothing else in Parts A–I changed.
 
 > Reading order: Parts A–H are the frozen product/architecture/design history.
-> **Part I (Clinic Status + operational layer + auth persistence) is the newest
-> — it wins on anything it covers.** For pure file-level "what is this code",
-> pair this with `docs/aren-technical-atlas.md`.
+> Part I (Clinic Status + operational layer + auth persistence) wins on
+> anything it covers. **Part J (identity/tenancy fix) is newest and wins on
+> anything using `HOSPITAL_ID`/`DOCTOR_ID` or per-clinic data.** For pure
+> file-level "what is this code", pair this with `docs/aren-technical-atlas.md`.
 
 ## 0. How to read this document
 
@@ -305,7 +309,10 @@ modal chrome again.**
 ```
 FrontDeskPage (I18nProvider wrapper)
  └─ FrontDeskInner
-     ├─ useQueue(HOSPITAL_ID)         → fetchTodayVisits every 25s (silent), owns visits[]
+     ├─ useQueue(hospitalId)          → fetchTodayVisits every 25s (silent), owns visits[]
+     │     hospitalId = useHospitalId(), read off the signed-in auth identity —
+     │     NOT the HOSPITAL_ID constant this diagram showed before 2026-08-06.
+     │     See Part J.
      ├─ useVisitActions({visits,setVisits,refetch})
      │     → optimistic patch → DB call → rollback on failure → toast
      ├─ fetchDoctorsByHospital / fetchHospital (once, on mount)
@@ -1033,12 +1040,68 @@ use ModalShell** — never hand-roll chrome.
    unbuilt (carried from §19).
 3. **Reference-cache invalidation** by `updated_at`/version was **intentionally
    skipped** — symptoms/doctors change monthly, refresh-on-online suffices.
-4. Session-identity sweep (pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID`).
+4. ~~Session-identity sweep (pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID`).~~
+   **Fixed 2026-08-06 — see Part J.**
+
+---
+
+---
+
+# PART J — SESSION 2026-08-06 ADDENDUM (identity/tenancy fix)
+
+Not a design or workflow session — a correctness bug found and fixed while
+doing unrelated Cortex/Synapse content work on the same branch. Recorded here
+because it changes §11's data-flow diagram and closes §32 item 4.
+
+## 33. Every reception page was pinned to one hardcoded clinic
+
+`HOSPITAL_ID` (`src/lib/db/reference.ts`) — one specific clinic out of twelve
+in the database — was read directly by `FrontDeskPage`, `PatientsPage`,
+`ClinicStatusPage`, `PrintRxPage`, `WorkspaceShell`, and the queue/doctor-list/
+doctor-requests hooks, instead of the signed-in identity.
+
+**No data ever leaked.** `hospital_isolation` RLS (`hospital_id =
+current_user_hospital_id()`) is enabled on `patients`, `visits`,
+`prescriptions`, `doctors` and `hospitals`, so a query for the constant's
+hospital intersected with the caller's real one returned nothing. The effect
+was the opposite of a leak: for eleven of the twelve clinics, every page above
+came up **empty** — blank queue, empty doctor dropdown, `ClinicStatusPage`
+naming the real clinic from the auth identity directly above a patient count
+fetched for a different one, `WorkspaceShell`'s header falling back to the
+generic "Clinic" because `fetchHospital` couldn't see the row it asked for.
+
+**The fix:** `features/frontdesk/hooks/useHospitalId.ts` — a read, not a fetch,
+since `AuthProvider` already loads and activity-checks the `hospitals` row
+during the gate, and every reception route sits behind `RequireAuth` +
+`RequireRole allow={["reception"]}`. Deliberately **no fallback** to the
+constant: a tenancy id that guesses is worse than one that's visibly absent
+(empty state, not wrong-clinic state). Threaded through every page and hook
+above; `WorkspaceShell` now reads the clinic name straight off the identity
+instead of re-fetching it, dropping a redundant round trip. `PrintRxPage`
+still fetches the full `hospitals` row (the letterhead needs address/phone/
+logo the identity doesn't carry) — but now for the right clinic.
+
+**A second bug surfaced in the same code path:** the intake `<select>` in
+`CreateVisitModal` has no placeholder option, so a `defaultDoctorId` not
+present in `doctors` rendered as the first option in the list while still
+*submitting the unlisted id* — a silent mis-assignment. Two ordinary cases hit
+this: the cached doctor list still empty on first paint, and an existing
+patient whose stored `primary_doctor_id` no longer practises at this clinic.
+Fixed by reconciling `doctorId` state against the actual `doctors` prop
+whenever it changes.
+
+**Verified:** `tsc -b` and `npm run build` both pass clean.
+
+**Not touched by this session:** the Cortex/Synapse knowledge base changed
+substantially on the same branch (panel and test wiring, a duplicate-catalogue
+bug in both tests and medicines, an `is_active` bug in the ranking engine
+itself). None of it is Front Desk's concern per §17 — see
+`docs/aren-cortex-atlas.md` for that work, not here.
 
 ---
 
 *This document supersedes the styling guidance in sessions 33–34 and the modal
 guidance in the design direction §10.2. Architecture and creative direction are
-frozen. When in doubt, the tie-breaker order is: this doc (incl. Part I) →
-Part H → Part G → session 36 → session 35 → design direction → brief →
-architecture.*
+frozen. When in doubt, the tie-breaker order is: **Part J** (identity/tenancy)
+→ this doc (incl. Part I) → Part H → Part G → session 36 → session 35 →
+design direction → brief → architecture.*
