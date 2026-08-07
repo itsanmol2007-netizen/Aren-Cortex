@@ -507,7 +507,7 @@ parentheses where they moved).
 | `doctors`, `hospitals` | 7 / 12 (6 / 11) | letterhead; `doctors.last_seen` written by the 30 s heartbeat. **All five clinical tables here carry an RLS `hospital_isolation` policy (`hospital_id = current_user_hospital_id()`)** — see §10.11 for why that matters. |
 | `doctor_pinned_intent` | 0 | per-doctor pins; added 2026-08-02 (§10.5). |
 
-### 6.1 The tests catalogue has two generations (open decision)
+### 6.1 The tests catalogue had two generations (resolved 2026-08-06)
 
 Found 2026-08-06 while wiring the orphaned tests. `tests` was seeded twice on
 the same day:
@@ -517,10 +517,30 @@ the same day:
 | v1 | `2026-06-11 05:28:56` | combined names — `Malaria Antigen / Smear`, `Serum Iron / TIBC`, `T3 / T4`, `Uric Acid`, `Blood Sugar PP`, `Stool Culture` |
 | v2 | `2026-06-11 06:01:26` | the split canonical tests, mostly `priority_tier` 1 |
 
-Both generations are live, so **the same investigation exists twice under two
-names**. Ranking rules are authored only against the canonical (v2) entry — the
-v1 rows are reachable by search but will never be suggested, which is the
-deliberate choice that stops the engine offering one test twice.
+Both generations were live, so **the same investigation existed twice under two
+names**. Ranking rules are authored only against the canonical entry, and the
+14 redundant rows have now been retired (`is_active = false`, migration
+`retire_duplicate_test_catalogue_rows`) so each investigation appears exactly
+once in search.
+
+> **Why retiring them mattered — this was never cosmetic.** `search_intents`
+> returned both rows. If a doctor picked the rule-less twin, `decision_log`
+> recorded `outcome = 'searched_accepted'` against it, and `learn_doctor_rules`
+> (threshold 2, weight 0.4) then wrote a `doctor_signal_intent_rules` row
+> pointing **at the duplicate**. The engine would then start actively suggesting
+> the orphan copy to that doctor, permanently splitting their catalogue — a
+> compounding, per-doctor divergence that would have surfaced as one doctor's
+> Cortex quietly disagreeing with everyone else's. Checked before retiring:
+> nothing had been taught yet, so there was nothing to unwind.
+
+Every retired row carried zero rules, so ranking was unchanged (1,520 before and
+after) and no rule points at a retired intent. `is_active` is a soft flag and
+nothing was deleted, so any row can be brought back with a one-line update.
+
+One pair inverts the pattern: for **FSH / LH** it is the *combined* v1 row that
+carries the rules, so the single-analyte v2 rows were the redundant ones.
+Keeping the combined row leaves one chip instead of three and needed no rules
+moved. If standalone LH is ever wanted for ovulation timing, reactivate it.
 
 `priority_tier` is the field that already encodes this: **tier 1 = canonical and
 common**. A useful invariant falls out of it, and is worth re-running after any
@@ -529,12 +549,13 @@ catalogue work:
 > **All 57 tier-1 tests are reachable from the chart. Zero are orphaned.**
 > Everything still unreachable is tier 2 or 3.
 
-**The open decision is a catalogue one, not a ranking one:** whether to retire
-the 9 superseded v1 duplicates (`is_active = false`) so they stop appearing in
-search. Deliberately not done here — deactivating catalogue rows the doctor may
-be used to typing is a product call.
+**Not retired, deliberately:** `X-Ray Chest (AP View)` and
+`X-Ray Abdomen (Supine)` are genuinely different radiographic views a doctor
+chooses on purpose — AP for a patient who cannot stand, and erect vs supine
+answer different questions. They are lower-priority variants, not duplicate
+names for one test.
 
-The other 22 unwired tests are intentional: immunity checks (`Anti-HBs`),
+The 15 remaining unwired tests are intentional: immunity checks (`Anti-HBs`),
 procedures that follow a result rather than a symptom (bone marrow / liver
 biopsy, colposcopy, USG-guided FNAC), techniques inside another test (Gram
 stain), and tests with no signal to key on — `Blood Lead Level` needs an
