@@ -343,7 +343,13 @@ export async function loadRuleset(db: Db, version = 'mvp-1', doctorId?: string):
 
     const [sig, ints, obsSig, measRules, sirRules, guards, classMap] = await Promise.all([
         page('signals', 'id, idf_weight'),
-        page('intents', 'id, type, label, ref_table, ref_id').then(r => r.filter((x: any) => x)),
+        // `is_active` must be read and filtered here. Retiring an intent removes
+        // it from `search_intents` (which does filter), but the ranking engine
+        // reached it through signal_intent_rules regardless — so a retired row
+        // that still had rules went on being SUGGESTED while being unsearchable.
+        // The old `.filter(x => x)` looked like a guard and filtered nothing.
+        page('intents', 'id, type, label, ref_table, ref_id, is_active')
+            .then(r => r.filter((x: any) => x?.is_active)),
         page('observable_signals', 'observable_id, signal_id, weight'),
         page('measurement_rules', 'measure_key, min_value, max_value, signal_id, weight, is_active'),
         page('signal_intent_rules', 'signal_id, intent_id, weight, is_safety_critical, is_active'),

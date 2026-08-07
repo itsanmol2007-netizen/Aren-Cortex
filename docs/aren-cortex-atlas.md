@@ -10,8 +10,8 @@ off — including the one the last edition called the biggest architectural gap 
 so work was nearly planned off a list that was substantially historical.
 
 Content work done on the same branch (2026-08-06): the orphaned test panels and
-individual tests were wired, taking `signal_intent_rules` from 1,224 to **1,520**
-and reachable intents from 456 to **568**. See §6.1 for the catalogue-duplicate
+individual tests were wired, taking `signal_intent_rules` from 1,224 to **1,543**
+and reachable intents from 456 to **581**. See §6.1 for the catalogue-duplicate
 question that surfaced during it.
 
 Re-verified on that pass, and current as of 2026-08-06:
@@ -487,7 +487,7 @@ parentheses where they moved).
 | `signals` | 300 (281) | the engine's vocabulary + `idf_weight`. |
 | `measurement_rules` | 29 | threshold → signal. |
 | `intents` | 709 total / **697 active** (652) | every possible output. |
-| `signal_intent_rules` | **1,520 active** (1,099) | **the knowledge base**. 95 safety-critical. |
+| `signal_intent_rules` | **1,543 active** (1,099) | **the knowledge base**. 95 safety-critical. |
 | `tests` | 249 | the investigation catalogue. **Two generations** — see below. |
 | `signal_finding_suggestions` | 10 | symptom → what to examine for (added 2026-08-05). |
 | `intent_guards` | 16 (14) | 10 hard, 6 soft, 0 hiding. |
@@ -506,6 +506,25 @@ parentheses where they moved).
 | `medicines`, `compositions`, `medicine_composition_map` | — | read **only** through the `composition_brands` RPC, never directly from a component. |
 | `doctors`, `hospitals` | 7 / 12 (6 / 11) | letterhead; `doctors.last_seen` written by the 30 s heartbeat. **All five clinical tables here carry an RLS `hospital_isolation` policy (`hospital_id = current_user_hospital_id()`)** — see §10.11 for why that matters. |
 | `doctor_pinned_intent` | 0 | per-doctor pins; added 2026-08-02 (§10.5). |
+
+### 6.0 `intents.is_active` was not enforced by the engine (fixed 2026-08-06)
+
+Worth knowing before retiring anything. `search_intents` filters `i.is_active`,
+so a retired row vanishes from search — but `loadRuleset` selected
+`id, type, label, ref_table, ref_id` and **never read `is_active`**. Its
+`.then(r => r.filter(x => x))` looked like a guard and filtered nothing. The
+engine reaches an intent through `signal_intent_rules`, so a retired intent that
+still had live rules went on being **suggested while being unsearchable** — the
+worst of both.
+
+`engine.ts` now selects and filters `is_active`. Two consequences for anyone
+retiring catalogue rows:
+
+1. Retiring a row that carries rules requires deactivating **the rules too**, not
+   just the intent, so the data is correct independently of which client build
+   is deployed.
+2. Retiring a rule-less row is free and always was — which is why the 14 test
+   rows retired the same day had no ranking effect.
 
 ### 6.1 The tests catalogue had two generations (resolved 2026-08-06)
 
@@ -567,6 +586,49 @@ then `IN (…)` the children and aggregate in memory.
 
 **RPC surface:** exactly two — `composition_brands` (SQL, invoker, reads only the
 `mv_composition_brand` matview) and `search_intents` (SQL, **security definer**).
+
+---
+
+### 6.2 Medicines are deliberately scoped — read this before "completing" them
+
+68 medicine intents carry no rules. **That is mostly policy, not a gap**, and
+the rule table states the policy without ever writing it down: across
+`ANXIETY`, `INSOMNIA`, `LOW_MOOD`, `PSYCHOSIS`, `SUICIDAL_IDEATION` and
+`SEIZURE` there is **not one medicine rule**. Every one of those signals routes
+to a Psychiatry or Neurology referral plus a workup and stops:
+
+| Signal | Reaches |
+|---|---|
+| `SUICIDAL_IDEATION` | Psychiatry 0.95 · Emergency transfer 0.85 |
+| `PSYCHOSIS` | Psychiatry 0.90 · CT Brain |
+| `SEIZURE` | Neurology 0.75 · EEG · MRI · RBS · electrolytes — **no anticonvulsant** |
+| `LOW_MOOD` | Psychiatry 0.55 · TSH · B12 · CBC |
+| `ANXIETY` | Psychiatry 0.45 · TSH · ECG |
+| `INSOMNIA` | Sleep advice · Psychiatry · TSH |
+
+So the ~35 unwired psychotropics, benzodiazepines and anticonvulsants are
+unreachable **by design**. Wiring them would silently reverse a safety posture
+someone chose consistently across six signals. Do not "finish" them.
+
+The same reasoning retires four more groups from consideration: IV/hospital-only
+antibacterials, beta-lactamase inhibitors that never stand alone, definitive
+therapy that must follow a diagnosis rather than a symptom (antimalarials,
+anti-TB — the engine already routes those presentations to the confirmatory
+test), and specialist-initiated or market-restricted drugs.
+
+**A saturation rule falls out of this too.** Before adding a medicine to a
+signal, count what is already there. `PRURITUS` offers 14 medicines, `DYSPEPSIA`
+10, `WHEEZE` 9, `HEARTBURN` 8. A fifteenth option is noise, not coverage. The
+2026-08-06 batch wired 14 medicines against ten signals that had **no medicine
+at all** — erectile difficulty, menorrhagia, bleeding, epistaxis, infertility,
+irregular periods, amenorrhoea, cognitive decline, stroke signs, known
+asthma/COPD — and skipped every crowded one.
+
+**Wiring a drug can create a safety gap.** `clomiphene` is contraindicated in
+pregnancy, so it was added to the existing `Contraindicated in pregnancy`
+class (id 4) rather than given a new guard — the `PREGNANCY -> warn_hard` guard
+then covers it automatically, as it already does for isotretinoin and
+doxycycline. Check class membership whenever wiring a drug, not just weights.
 
 ---
 
