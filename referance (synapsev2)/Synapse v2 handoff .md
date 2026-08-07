@@ -11,6 +11,43 @@ Sections rewritten across those passes: §2.1, §3.1, §4, §7, §8, §9, §10a,
 
 > **Read §14 before acting on §4, §5, §10a, §10b, §12 or §13.** Those sections were written against a system in which a guard could hide a suggestion, and they still say *blocked* / *withheld* / *held back* in places. It cannot any more. §14 is a philosophy change, not a tuning tweak, and it is the authority wherever the two disagree.
 
+> **Corrected 2026-08-06** (found while doing unrelated content work on
+> `claude/cortex-atlas-summary-auycuc`, commit `63387da`). Two things, kept
+> separate because they're different kinds of stale:
+>
+> **The numbers below are all outdated.** As of 2026-08-06: **393** active
+> observables (not 373) · **300** signals (not 280) · **1,543** active rules
+> (not 1,099) · **261** active medicine intents, **193** ruled (not 263 / 177).
+> The philosophy sections (§0, §1–§9, §14) are unaffected — only counts.
+>
+> **A real bug, not staleness — this doc's own architecture predates ever
+> retiring a catalogue row.** `loadRuleset`'s intents query (§9,
+> `Synapse engine.ts:346` in this folder) selects
+> `id, type, label, ref_table, ref_id` and never reads `is_active`; the
+> `.filter(x => x)` beside it filters nothing. `search_intents` **does** filter
+> `is_active`, so a retired intent that still carried rules would go on being
+> **suggested while unsearchable** — the worst combination.
+>
+> Present from the original build — this reference file and the live
+> `src/lib/synapse/engine.ts` were byte-for-byte identical apart from this one
+> query before today. It was **latent, not live**: nothing had ever had
+> `is_active = false` while still carrying rules before this session, so the
+> failure mode had never actually fired. I fixed the loader before running the
+> catalogue-dedup migrations that retire ruled intents, and those migrations
+> deactivate an intent's rules in the same statement as the intent — so this
+> specific bug never reached a served suggestion. (A *different*, unrelated bug
+> did: two `compositions` rows — `glucosamine` and its salt form — were both
+> **active** and both wired to the same two signals, so real duplicate
+> suggestions were live in production before today. That's a catalogue-
+> authoring duplicate, not an `is_active`-enforcement gap; see
+> `docs/aren-cortex-atlas.md` §6.1–§6.2 for that one.)
+>
+> **Fixed in `src/lib/synapse/engine.ts`, deliberately left unfixed in the copy
+> of `Synapse engine.ts` in this folder** — this folder is inert reference
+> material nothing imports; the live file is the one that matters. Do not copy
+> the intents-select pattern below without adding the `is_active` filter. Full
+> account: `docs/aren-cortex-atlas.md` §6.0.
+
 * * *
 
 0. Read this first — non-negotiables
