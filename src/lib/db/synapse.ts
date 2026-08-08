@@ -30,6 +30,8 @@ import {
 import { contextOf, type PreferenceRow } from "../synapse/personalize";
 import {
     resolveBrands,
+    groupBrandFamilies,
+    type BrandFamily,
     type BrandPreference,
     type BrandPreferenceModel,
     type Medicine,
@@ -45,8 +47,14 @@ export const RULESET_VERSION = "mvp-1";
  * reorders within this set, so it has to be wide enough for the doctor's own
  * brand to surface and small enough that paracetamol's ~1,800 single-molecule
  * brands never reach the browser.
+ *
+ * Raised from 12 once brands were grouped into families. Products, not brands,
+ * are what this limit counts, and the catalogue's worst brand family is twelve
+ * products — so at 12 a single brand could consume the entire window and the
+ * doctor would be offered one brand with no alternative. 30 leaves room for a
+ * real choice after grouping, and is still one round trip.
  */
-export const BRAND_CANDIDATES = 12;
+export const BRAND_CANDIDATES = 30;
 
 // ============================================================
 // THE RULESET
@@ -406,8 +414,16 @@ export async function clearClinicBrandDefault(opts: {
 
 export interface CompositionBrands {
     compositionId: number;
-    /** ordered for this doctor, in this clinic */
+    /**
+     * One entry per BRAND, ordered for this doctor, in this clinic — not one
+     * per product. The catalogue stores every strength and form as its own row
+     * (`Aceto` is six rows under paracetamol), so a flat list repeats the same
+     * name until it fills the card. Each of these carries its strengths in
+     * `families`; nothing is dropped.
+     */
     brands: Medicine[];
+    /** the full family behind each entry in `brands`, same order */
+    families: BrandFamily[];
     /** every single-molecule brand in the catalogue, not just the ones fetched */
     singleTotal: number;
     /** combination products containing this molecule — counted, never offered */
@@ -498,6 +514,9 @@ export async function fetchCompositionBrands(opts: {
             // the dosage form is medicine_composition_map.route — `medicines`
             // has no form column, and the paediatric rule keys on this
             form: r.route,
+            // display only — null on ~31% of the catalogue, so the variant
+            // label prefers the strength written into the product name
+            strengthMg: r.strength_mg,
             prescriptionCount: 0,
             // ★ the clinic tier, tier 2 of resolveBrands' fallback chain.
             //   A default declared for a specific form only counts when the
@@ -514,12 +533,19 @@ export async function fetchCompositionBrands(opts: {
     for (const compositionId of wanted) {
         const list = candidates.get(compositionId) ?? [];
         const t = totals.get(compositionId);
-        index.set(compositionId, {
-            compositionId,
-            brands: resolveBrands(compositionId, opts.prefs, {
+        // Resolve first, group second. Grouping inherits the resolved order, so
+        // the doctor's learned brand still leads its family and the family
+        // still leads the list — see groupBrandFamilies.
+        const families = groupBrandFamilies(
+            resolveBrands(compositionId, opts.prefs, {
                 candidates: list,
                 isPediatric: opts.isPediatric,
-            }),
+            })
+        );
+        index.set(compositionId, {
+            compositionId,
+            brands: families.map((f) => f.lead),
+            families,
             singleTotal: t?.single ?? 0,
             combinationTotal: t?.combination ?? 0,
         });

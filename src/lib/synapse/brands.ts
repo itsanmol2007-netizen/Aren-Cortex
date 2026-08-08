@@ -41,6 +41,14 @@ export interface Medicine {
   name: string
   /** dosage form / route — part of the preference key */
   form: Form | null
+  /**
+   * Strength in mg, when the catalogue records it. Null on ~31% of products —
+   * including Calpol, Crocin and Dolo, the three curated paracetamol brands —
+   * so this must never be treated as required. It is carried for DISPLAY, to
+   * tell one variant of a brand family from another; it is not part of any
+   * preference key and nothing ranks on it.
+   */
+  strengthMg?: number | null
   /** how often this brand is prescribed overall; popularity fallback */
   prescriptionCount: number
   /** clinic-configured default brand for this composition */
@@ -129,4 +137,129 @@ export function resolveBrands(
     if (ra !== rb) return ra - rb // 4. catalogue rank
     return a.name.localeCompare(b.name) // 5. alphabetical
   })
+}
+
+// ---------------------------------------------------------------------------
+// Brand families — one brand, many strengths and forms.
+//
+// The catalogue stores every strength and form of a brand as its OWN product
+// row, so `Aceto` is six rows under paracetamol (100mg drop, 125mg/5ml syrup,
+// 150mg drop, 250mg/5ml suspension, 500mg tablet, 650mg tablet) and one brand
+// reaches twelve. Measured across the catalogue: 49,860 of 115,541 offerable
+// rows (43%) are a strength/form variant of a brand already in the list.
+//
+// Rendered flat, that is not a choice between brands — it is the same name
+// repeated until it fills the card, pushing genuine alternatives out of view.
+// So the list is grouped: one row per brand, the strengths underneath it.
+//
+// This is presentation only. It never changes which products exist, never
+// reorders against the doctor's learned preference (family order follows the
+// best-ranked member, so a learned brand still leads), and never drops a row —
+// every variant stays reachable in the sheet.
+// ---------------------------------------------------------------------------
+
+/** A strength with its unit — "650mg", "125mg/5ml", "0.5%". */
+const STRENGTH_RE = /\d+(?:\.\d+)?\s*(?:mg|mcg|gm|g|ml|iu|%)(?:\s*\/\s*\d*(?:\.\d+)?\s*(?:ml|gm|g))?/gi
+
+/**
+ * Dosage-form nouns. Deliberately does NOT include release modifiers (SR, XR,
+ * DT, MR): sustained-release IS a different product, and merging it into the
+ * plain family would hide it. Conservative on purpose — a family that splits
+ * too eagerly shows one extra row, a family that merges too eagerly hides a
+ * prescription.
+ */
+const FORM_RE =
+  /\b(?:tablets?|capsules?|syrup|suspension|drops?|injection|infusion|cream|gel|ointment|solution|lotion|sachet|granules|powder|respules|rotacaps|inhaler|kit|oral)\b/gi
+
+/** Bare strength numbers left behind — "Dolo 500 Tablet" once the form is gone. */
+const BARE_NUM_RE = /\b\d+(?:\.\d+)?\b/g
+
+/**
+ * The display name of the family a product belongs to — "Aceto 250mg/5ml
+ * Suspension" -> "Aceto". Case is preserved, because this is what the doctor
+ * reads. Falls back to the original name when stripping leaves nothing (a
+ * product genuinely named for its strength).
+ */
+export function brandFamilyLabel(name: string): string {
+  const label = name
+    .replace(STRENGTH_RE, ' ')
+    .replace(FORM_RE, ' ')
+    .replace(BARE_NUM_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s\-–—,.]+$/, '')
+    .trim()
+  return label || name.trim()
+}
+
+/**
+ * Grouping key. Families are only ever compared WITHIN one composition, so a
+ * key collision across two different molecules cannot happen and the key can
+ * stay this simple.
+ */
+export function brandFamilyKey(name: string): string {
+  return brandFamilyLabel(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/**
+ * What tells this variant apart from its siblings — "650mg Tablet".
+ *
+ * Taken from the product's own name rather than rebuilt from `strengthMg`,
+ * because the name carries concentrations the column cannot: "125mg/5ml" is a
+ * syrup concentration, and `strength_mg = 125` states a dose the product does
+ * not contain. The column is only a fallback.
+ */
+export function brandVariantLabel(m: Medicine): string {
+  // Subtract the family's own words from the product name; what is left is
+  // exactly the strength and form that distinguish this variant.
+  //
+  // Deliberately NOT a prefix slice: the family label is built by removing
+  // tokens from anywhere in the name, so it is often not a prefix at all
+  // ("Ameto 1000 Tablet ER" -> family "Ameto ER"). A prefix slice failed on
+  // those and fell through to `strengthMg`, which collapsed "Ameto 1000
+  // Tablet ER" and "Ameto 1000mg Tablet ER" onto the same label and made two
+  // distinct products indistinguishable in the sheet.
+  const baseTokens = new Set(
+    brandFamilyLabel(m.name).toLowerCase().split(/\s+/).filter(Boolean)
+  )
+  const rest = m.name
+    .split(/\s+/)
+    .filter((w) => w && !baseTokens.has(w.toLowerCase()))
+    .join(' ')
+    .replace(/^[\s\-–—,.]+|[\s\-–—,.]+$/g, '')
+    .trim()
+  if (rest) return rest
+
+  const parts = [m.strengthMg != null ? `${m.strengthMg}mg` : null, m.form].filter(Boolean)
+  return parts.length > 0 ? parts.join(' ') : 'standard'
+}
+
+export interface BrandFamily {
+  /** grouping key, unique within the composition */
+  key: string
+  /** what the doctor reads — "Aceto" */
+  label: string
+  /** the variant that represents the family: its best-ranked member */
+  lead: Medicine
+  /** every variant including the lead, in resolved order */
+  variants: Medicine[]
+}
+
+/**
+ * Group an ALREADY-RESOLVED brand list into families.
+ *
+ * Order is inherited, never recomputed: a family sits where its best-ranked
+ * member sat, and that member leads it. So a learned preference, a clinic
+ * default and the paediatric form ordering all survive grouping untouched —
+ * if the doctor's brand is a 250mg syrup, that syrup is the lead and its
+ * family is first.
+ */
+export function groupBrandFamilies(ordered: Medicine[]): BrandFamily[] {
+  const byKey = new Map<string, BrandFamily>()
+  for (const m of ordered) {
+    const key = brandFamilyKey(m.name)
+    const existing = byKey.get(key)
+    if (existing) existing.variants.push(m)
+    else byKey.set(key, { key, label: brandFamilyLabel(m.name), lead: m, variants: [m] })
+  }
+  return [...byKey.values()]
 }

@@ -23,7 +23,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Pin, PinOff } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
-import { brandKey, type BrandPreferenceModel } from "../../lib/synapse/brands";
+import { brandKey, brandVariantLabel, type BrandPreferenceModel } from "../../lib/synapse/brands";
 import { clinicBrandKey, type ClinicBrandDefaults, type CompositionBrands } from "../../lib/db/synapse";
 
 interface Props {
@@ -79,7 +79,54 @@ export function BrandSheet({
         };
     }, [onClose]);
 
-    const brands = composition.brands;
+    const families = composition.families;
+    // Every product still reaches the doctor — grouping changed the shape of
+    // the list, never its contents.
+    const productsShown = families.reduce((n, f) => n + f.variants.length, 0);
+
+    // One product. Inside a multi-variant family it is identified by what makes
+    // it different ("650mg Tablet"); on its own it keeps its full brand name.
+    const renderRow = (m: Medicine, inFamily: boolean) => {
+        const isCurrent = m.id === currentMedicineId;
+        const clinic = clinicDefaults.get(clinicBrandKey(m.compositionId, m.id));
+        const isClinic = !!clinic && (clinic.form == null || clinic.form === m.form);
+        const pref = brandPreferences.get(brandKey(m.compositionId, m.id, m.form));
+        const isYours = !!pref && pref.preference > 0.15;
+
+        const label = inFamily ? brandVariantLabel(m) : m.name;
+        // the variant label usually already names the form — don't say it twice
+        const meta = m.form
+            ? label.toLowerCase().includes(m.form.toLowerCase()) ? null : m.form
+            : "form not recorded";
+
+        return (
+            <button
+                key={m.id}
+                type="button"
+                role="option"
+                aria-selected={isCurrent}
+                className={`cx-brandrow${isCurrent ? " is-current" : ""}${inFamily ? " is-variant" : ""}`}
+                onClick={() => { onChoose(m); onClose(); }}
+            >
+                <span className="cx-brandrow-body">
+                    <span className="cx-brandrow-name">{label}</span>
+                    {meta && <span className="cx-brandrow-meta">{meta}</span>}
+                </span>
+                {isYours && <span className="cx-tag yours">Yours</span>}
+                {isClinic && <span className="cx-tag clinic">Clinic</span>}
+                <span
+                    role="button"
+                    tabIndex={-1}
+                    className="cx-sheet-pin"
+                    title={isClinic ? "Remove the clinic default" : "Make this the clinic default"}
+                    onClick={(e) => { e.stopPropagation(); onPinClinic(m, !isClinic); }}
+                >
+                    {isClinic ? <PinOff size={13} /> : <Pin size={13} />}
+                </span>
+                {isCurrent && <Check size={14} color="var(--blue)" />}
+            </button>
+        );
+    };
 
     return createPortal(
         <div
@@ -93,7 +140,7 @@ export function BrandSheet({
                 <div className="cx-sheet-title cx-cap">{compositionLabel}</div>
                 <div className="cx-sheet-sub">
                     {composition.singleTotal > 0
-                        ? `${brands.length} of ${composition.singleTotal} brands`
+                        ? `${families.length} brand${families.length === 1 ? "" : "s"} · ${productsShown} of ${composition.singleTotal} products`
                         : "No single-molecule brand in the catalogue"}
                     {composition.combinationTotal > 0 &&
                         ` · ${composition.combinationTotal} combination${composition.combinationTotal === 1 ? "" : "s"} not offered`}
@@ -101,48 +148,27 @@ export function BrandSheet({
             </div>
 
             <div className="cx-sheet-list">
-                {brands.length === 0 ? (
+                {families.length === 0 ? (
                     <div className="cx-sheet-foot" style={{ border: 0 }}>
                         This molecule is rankable but not prescribable — nothing in the
                         catalogue contains it on its own.
                     </div>
                 ) : (
-                    brands.map((m) => {
-                        const isCurrent = m.id === currentMedicineId;
-                        const clinic = clinicDefaults.get(clinicBrandKey(m.compositionId, m.id));
-                        const isClinic =
-                            !!clinic && (clinic.form == null || clinic.form === m.form);
-                        const pref = brandPreferences.get(brandKey(m.compositionId, m.id, m.form));
-                        const isYours = !!pref && pref.preference > 0.15;
-
+                    families.map((fam) => {
+                        // A brand with one product reads exactly as it always
+                        // did. Only a brand that genuinely has several strengths
+                        // becomes a group.
+                        if (fam.variants.length === 1) return renderRow(fam.lead, false);
                         return (
-                            <button
-                                key={m.id}
-                                type="button"
-                                role="option"
-                                aria-selected={isCurrent}
-                                className={`cx-brandrow${isCurrent ? " is-current" : ""}`}
-                                onClick={() => { onChoose(m); onClose(); }}
-                            >
-                                <span className="cx-brandrow-body">
-                                    <span className="cx-brandrow-name">{m.name}</span>
-                                    <span className="cx-brandrow-meta">
-                                        {m.form ?? "form not recorded"}
+                            <div key={fam.key} className="cx-brandfam">
+                                <div className="cx-brandfam-head">
+                                    <span className="cx-brandfam-name">{fam.label}</span>
+                                    <span className="cx-brandfam-count">
+                                        {fam.variants.length} options
                                     </span>
-                                </span>
-                                {isYours && <span className="cx-tag yours">Yours</span>}
-                                {isClinic && <span className="cx-tag clinic">Clinic</span>}
-                                <span
-                                    role="button"
-                                    tabIndex={-1}
-                                    className="cx-sheet-pin"
-                                    title={isClinic ? "Remove the clinic default" : "Make this the clinic default"}
-                                    onClick={(e) => { e.stopPropagation(); onPinClinic(m, !isClinic); }}
-                                >
-                                    {isClinic ? <PinOff size={13} /> : <Pin size={13} />}
-                                </span>
-                                {isCurrent && <Check size={14} color="var(--blue)" />}
-                            </button>
+                                </div>
+                                {fam.variants.map((m) => renderRow(m, true))}
+                            </div>
                         );
                     })
                 )}

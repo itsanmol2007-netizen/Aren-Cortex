@@ -1834,6 +1834,39 @@
     padding: 5px;
 }
 
+/* One brand that ships in several strengths or forms. The catalogue stores
+   each as its own product, so without this the same name repeats down the
+   sheet and the strengths read as separate brands. */
+.cx-brandfam {
+    margin: 2px 0;
+    border-left: 2px solid var(--line, #e7ecf3);
+    padding-left: 6px;
+}
+
+.cx-brandfam-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 9px 2px;
+}
+
+.cx-brandfam-name {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 620;
+    letter-spacing: -0.008em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cx-brandfam-count {
+    flex: none;
+    color: var(--faint);
+    font-size: 11px;
+}
+
 .cx-brandrow {
     display: flex;
     align-items: center;
@@ -1845,6 +1878,16 @@
     padding: 8px 9px;
     text-align: left;
     transition: background 0.13s ease;
+}
+
+/* A strength inside a family — subordinate to the brand name above it. */
+.cx-brandrow.is-variant {
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+.cx-brandrow.is-variant .cx-brandrow-name {
+    font-weight: 500;
 }
 
 .cx-brandrow:hover {
