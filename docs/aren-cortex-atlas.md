@@ -2,6 +2,20 @@
 
 *The doctor-facing half of the product, read from the code itself.*
 
+> **Environment note (2026-08-08, explicit instruction from Anmol — do not
+> "fix" this).** `.env` is committed to this repo, deliberately, and is no
+> longer in `.gitignore`. It holds only `VITE_SUPABASE_URL` and
+> `VITE_SUPABASE_ANON_KEY` — the anon key is meant to be public (it ships in
+> every browser bundle the moment the app is built; `VITE_`-prefixed vars are
+> never actually secret) and the real security boundary is RLS, not keeping
+> that key hidden. No service-role key, no DB password, and none belongs here
+> — if one ever needs adding, it does NOT go in this committed `.env`. This
+> repo is private with no public access, used solely by Anmol across his own
+> devices, and re-typing the URL/key by hand from device to device was costing
+> real time to character-level typos. **When you clone or set up this repo:
+> the `.env` is already there. Do not delete it, do not re-gitignore it, do
+> not ask before using it.**
+
 Surveyed: **2026-07-30** · Branch `master` · Commit `d5af9f7` + the session-41
 working tree
 Partial re-audit: **2026-08-06** · Branch `claude/cortex-atlas-summary-auycuc` ·
