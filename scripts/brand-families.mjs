@@ -70,6 +70,10 @@ const comps = [
     { id: 9, name: "metformin" },     // 711
     { id: 7, name: "cetirizine" },    // 655
     { id: 29, name: "montelukast" },  // 188
+    // added 2026-08-08 alongside the other 19 essential-OPD compositions;
+    // small brand counts (7 and 6) by design, real market size, not padding
+    { id: 285, name: "oral rehydration salts" },
+    { id: 292, name: "nitrofurantoin" },
 ];
 
 let errors = 0;

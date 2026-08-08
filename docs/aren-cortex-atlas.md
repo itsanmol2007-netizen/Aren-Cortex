@@ -507,7 +507,7 @@ parentheses where they moved).
 | `intent_guards` | **20** (14) | 14 hard, 6 soft, 0 hiding. |
 | `intent_classes` / `intent_class_map` | 7 / **79** (6 / 71) | grouping, for gating only. |
 | ★ `compositions` | **284** (264) | the molecule catalogue — what the engine actually ranks. 20 added 2026-08-08, §6.2. |
-| ★ `medicines` | **213,076** (213,838) | products. Deduplicated 2026-08-08, §6.2. |
+| ★ `medicines` | **213,145** (213,838) | products. Deduplicated then given 69 real branded products across the 20 new compositions, 2026-08-08, §6.2. |
 | `intent_companions` | 26 | intent → companion intent, authored, global. |
 | ★ `visit_observations` | 55 (52) | the permanent, engine-shaped record of what was on the chart. |
 | ★ `visit_measurements` | 48 (45) | same, for numbers. **`value_text` is now written** for blood group. |
@@ -716,6 +716,42 @@ Both migrations that touched products end with the refresh.
 import *discarded*. Those rows never landed, so the catalogue cannot report them.
 The way to answer it is to re-run one source CSV against the current 284 and read
 what fails to match — that turns the gap from an estimate into a list.
+
+### 6.4 Brands for the 20 new compositions — web-verified, not recalled (2026-08-08)
+
+69 real Indian products added — each checked against a live pharmacy source
+(1mg, Medindia, manufacturer listings, drugsupdate) this session, not typed
+from memory. Counts per composition are honest, not padded to a target: ORS,
+nitrofurantoin, benzoyl peroxide and hydroxychloroquine had a wide, clearly
+sourced brand landscape (5–7 each); ferrous fumarate, ferrous sulfate,
+carbonyl iron and insulin aspart turned up exactly **one** brand each that
+could be confidently attributed without contradicting sources. The Indian
+iron-salt brand market in particular is fragmented and cross-labelled in a way
+that made asserting more unsafe.
+
+**Pure ferrous ascorbate and pure calcium carbonate essentially do not exist as
+marketed Indian products.** Every real brand found for either is sold combined
+with folic acid (iron) or vitamin D3 (calcium) — both already compositions in
+this catalogue. Modelling those brands as single-ingredient would have been
+exactly the "combination trap" §12 of the Synapse handoff already warns about:
+the UI would offer a 2-ingredient product as if it were the ranked pure
+molecule. They are linked to **both** compositions instead
+(`ingredient_count = 2`), so `ferrous ascorbate`, `ferrous fumarate`,
+`ferrous sulfate`, `carbonyl iron` and `calcium carbonate` are now
+combination-only in the same way `trypsin` / `oxetacaine` /
+`phenylpropanolamine` already were — counted in `mv_composition_brand`,
+never offered as a single-molecule brand. Verified: `composition_brands()`
+returns `ingredient_count = 1` rows for the other 15 and none for these 5.
+
+Excluded deliberately: `Glyxambi` / `Synjardy` / `Trijardy` are real
+empagliflozin combination brands (with linagliptin / metformin) — left out
+rather than mismapped, same reasoning as the iron/calcium combos. `Enerzal`
+came up repeatedly for ORS but is a sports/energy drink, not a WHO-formula
+oral rehydration salt — excluded as not clinically equivalent.
+
+*Check:* `npm run check:brands` — the sample now includes `oral rehydration
+salts` (id 285) and `nitrofurantoin` (id 292) alongside the original eight
+high-volume generics.
 
 ---
 
