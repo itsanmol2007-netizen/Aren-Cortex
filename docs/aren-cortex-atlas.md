@@ -486,12 +486,14 @@ parentheses where they moved).
 | `observable_signals` | 522 (503) | chip → signal. |
 | `signals` | 300 (281) | the engine's vocabulary + `idf_weight`. |
 | `measurement_rules` | 29 | threshold → signal. |
-| `intents` | 709 total / **697 active** (652) | every possible output. |
-| `signal_intent_rules` | **1,543 active** (1,099) | **the knowledge base**. 95 safety-critical. |
+| `intents` | 729 total / **717 active** (652) | every possible output. |
+| `signal_intent_rules` | **1,569 active** (1,099) | **the knowledge base**. 95 safety-critical. |
 | `tests` | 249 | the investigation catalogue. **Two generations** — see below. |
 | `signal_finding_suggestions` | 10 | symptom → what to examine for (added 2026-08-05). |
-| `intent_guards` | 16 (14) | 10 hard, 6 soft, 0 hiding. |
-| `intent_classes` / `intent_class_map` | 7 / 74 (6 / 71) | grouping, for gating only. |
+| `intent_guards` | **20** (14) | 14 hard, 6 soft, 0 hiding. |
+| `intent_classes` / `intent_class_map` | 7 / **79** (6 / 71) | grouping, for gating only. |
+| ★ `compositions` | **284** (264) | the molecule catalogue — what the engine actually ranks. 20 added 2026-08-08, §6.2. |
+| ★ `medicines` | **213,076** (213,838) | products. Deduplicated 2026-08-08, §6.2. |
 | `intent_companions` | 26 | intent → companion intent, authored, global. |
 | ★ `visit_observations` | 55 (52) | the permanent, engine-shaped record of what was on the chart. |
 | ★ `visit_measurements` | 48 (45) | same, for numbers. **`value_text` is now written** for blood group. |
@@ -629,6 +631,77 @@ pregnancy, so it was added to the existing `Contraindicated in pregnancy`
 class (id 4) rather than given a new guard — the `PREGNANCY -> warn_hard` guard
 then covers it automatically, as it already does for isotretinoin and
 doxycycline. Check class membership whenever wiring a drug, not just weights.
+
+---
+
+### 6.3 The product catalogue — what 213k rows actually are (2026-08-08)
+
+**213,076 products collapse to 284 molecules.** The engine ranks the molecules;
+`medicines` is a lookup after ranking (§4.5). So "the medicine database is
+huge" is not a scale problem — anything that needs authoring happens at the
+composition level, which is a table you can read in one sitting.
+
+Four things were measured this pass, and only one of them was the problem
+everyone expects:
+
+**Duplicate names were never the issue** — 40 exact-duplicate pairs in 213,798
+names. **Duplicate *products* were**: 762 rows were the same medicine entered
+twice under two spellings (`Adimox 250 Capsule` / `Adimox 250mg Capsule`,
+`Levoc 5mg Tablet` / `Levo C 5mg Tablet`), differing only in whether the
+strength carried its unit or where a space fell. Deleted; nothing referenced
+them. Scope was narrowed to products mapping to exactly one composition, because
+a combination product maps to every ingredient and a name match across those
+could merge two genuinely different formulations.
+
+**The visible problem is brand families.** Every strength and form of a product
+is its own row, so `Aceto` is six rows under paracetamol and the worst brand
+reaches twelve — 43% of offerable rows are a variant of a brand already in the
+list. Grouped in `lib/synapse/brands.ts`; see the module header. `npm run
+check:brands` guards it against the live catalogue.
+
+**31% of products have no strength, and it is not recoverable.** 66,270 rows
+have `strength_mg = null`; only ~7,400 have a parseable strength in the name.
+**53,401 carry no number anywhere** — including `Calpol`, `Crocin` and
+`Dolo 500 Tablet`, the three curated paracetamol brands. The brands a doctor
+most wants are the ones with the least data. No parser and probably no purchased
+dataset fixes this; the realistic path is capturing it from what doctors
+actually prescribe, which makes "add a missing medicine" and "complete an
+incomplete one" the same feature.
+
+**`route` was wrong for 1,682 products.** Oral drops were filed as `syrup` —
+and `route` is the only dosage form this schema has (`medicines` has no form
+column), so a dropper and a spoonful were indistinguishable on infants.
+Reclassified. Verified zero eye/ear/nasal preparations were in the set first,
+because `drops` is a member of `PEDIATRIC_FORMS` in `lib/synapse/brands.ts`.
+
+**Twenty compositions were missing**, and the gaps were ordinary rather than
+exotic: ORS absent entirely; oral iron absent while IV iron sucrose was present;
+furosemide absent while torasemide was present; nitrofurantoin absent while
+flavoxate — an antispasmodic, not an antibiotic — was there. Added with 26 rules
+and 4 new guards. The three migrations ran in the order §4/§15 demands —
+compositions, then **gates**, then rules — so no drug was ever ruled before it
+was gated.
+
+Two things worth keeping from authoring them:
+
+- **Mirroring a drug's rules does not mean inheriting its gates.** Benzoyl
+  peroxide mirrors adapalene's `ACNE 0.400` exactly but is deliberately *not* in
+  `pregnancy_contraindicated`: adapalene is a retinoid and a real teratogen,
+  benzoyl peroxide is not. A gate has to be true of the molecule or it is noise,
+  and noise is what §14's alert-fatigue risk is made of.
+- **Guarded drugs are ranked below their unguarded alternatives on purpose.** In
+  acute diarrhoea, ORS leads at 1.935, then racecadotril 0.560, then loperamide
+  0.420 — which carries two hard warnings. That ordering is the clinical answer,
+  not tuning.
+
+**`mv_composition_brand` must be refreshed after any of this.** Nothing does it
+automatically, and a stale materialised view looks exactly like a correct one.
+Both migrations that touched products end with the refresh.
+
+**Still unmeasurable from inside the database:** which compositions the original
+import *discarded*. Those rows never landed, so the catalogue cannot report them.
+The way to answer it is to re-run one source CSV against the current 284 and read
+what fails to match — that turns the gap from an estimate into a list.
 
 ---
 

@@ -15,10 +15,22 @@ Sections rewritten across those passes: §2.1, §3.1, §4, §7, §8, §9, §10a,
 > `claude/cortex-atlas-summary-auycuc`, commit `63387da`). Two things, kept
 > separate because they're different kinds of stale:
 >
-> **The numbers below are all outdated.** As of 2026-08-06: **393** active
-> observables (not 373) · **300** signals (not 280) · **1,543** active rules
-> (not 1,099) · **261** active medicine intents, **193** ruled (not 263 / 177).
+> **The numbers below are all outdated.** As of 2026-08-08: **393** active
+> observables (not 373) · **300** signals (not 280) · **1,569** active rules
+> (not 1,099) · **284** compositions (not 264) · **281** active medicine
+> intents, **207** ruled (not 263 / 177) · **20** guards (not 12).
 > The philosophy sections (§0, §1–§9, §14) are unaffected — only counts.
+>
+> **§0.4 needs one correction of substance.** It says the ~200k `medicines`
+> rows "are untouched and stay untouched". That was true until 2026-08-08, when
+> 762 rows were deleted as duplicate spellings of products already present and
+> 1,682 had `route` corrected from `syrup` to `drops`. The *principle* is
+> intact and still governs — the engine ranks compositions, brands are a lookup
+> after ranking, and nobody re-imports the feed — but the table is no longer
+> literally read-only. See `docs/aren-cortex-atlas.md` §6.3 for what was
+> measured and why. **Anything that changes `medicines` or
+> `medicine_composition_map` must refresh `mv_composition_brand`** (§12's
+> refresh obligation, which nothing automates).
 >
 > **A real bug, not staleness — this doc's own architecture predates ever
 > retiring a catalogue row.** `loadRuleset`'s intents query (§9,
