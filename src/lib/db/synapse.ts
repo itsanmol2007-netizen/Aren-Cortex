@@ -567,6 +567,66 @@ export function compositionIdsOf(
     return [...ids].sort((a, b) => a - b);
 }
 
+export interface AddMedicineResult {
+    compositionId: number;
+    medicine: Medicine;
+}
+
+/**
+ * Doctor-added medicine, linked to one or more EXISTING compositions — never
+ * creates a composition. That stays behind compositions → guards → rules
+ * (§6.3/6.4 of the atlas), a clinical decision the RPC refuses to make on its
+ * own; `add_medicine` raises if any id doesn't already exist.
+ *
+ * Hospital-scoped on creation, never global. Promotion to the shared
+ * catalogue is an admin action (clearing `hospital_id` back to null), not
+ * available here — see atlas §14.5 for the full design.
+ *
+ * Returns one entry per composition linked — a combination product returns
+ * more than one — each already shaped as a `Medicine` so the caller can
+ * splice it straight into the CURRENT consult's brand list. It does not need
+ * to wait on `mv_composition_brand`'s refresh to do that: the refresh is what
+ * makes the medicine reachable on the *next* search, by anyone, not what this
+ * consult needs right now.
+ */
+export async function addMedicine(opts: {
+    name: string;
+    compositionIds: number[];
+    route?: string | null;
+    strengthMg?: number | null;
+    manufacturer?: string | null;
+}): Promise<AddMedicineResult[]> {
+    const { data, error } = await supabase.rpc("add_medicine", {
+        p_name: opts.name,
+        p_composition_ids: opts.compositionIds,
+        p_route: opts.route ?? null,
+        p_strength_mg: opts.strengthMg ?? null,
+        p_manufacturer: opts.manufacturer ?? null,
+    });
+    // The RPC's RAISE EXCEPTION text ("a medicine named … already exists",
+    // "unknown composition id(s): …", "no doctor profile linked to this
+    // account", …) IS the doctor-facing message. Surfaced as-is, not
+    // reworded, so the UI can show it directly rather than a generic failure.
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((r: any) => ({
+        compositionId: Number(r.composition_id),
+        medicine: {
+            id: Number(r.medicine_id),
+            compositionId: Number(r.composition_id),
+            name: r.name as string,
+            form: r.route as string | null,
+            strengthMg: r.strength_mg == null ? null : Number(r.strength_mg),
+            prescriptionCount: 0,
+            isClinicDefault: false,
+            // no catalogueRank — a brand-new product carries no lookup-order
+            // opinion yet; resolveBrands falls through to alphabetical for
+            // it, which is correct: nothing distinguishes it from any other
+            // brand until a doctor actually prescribes it.
+        } satisfies Medicine,
+    }));
+}
+
 // ============================================================
 // COMPANIONS
 // ============================================================

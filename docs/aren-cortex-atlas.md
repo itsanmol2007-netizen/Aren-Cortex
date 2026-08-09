@@ -1129,7 +1129,50 @@ A `prefers-reduced-motion` block disables the transitions.
 
 ---
 
-## 14.5 Planned: doctor-added medicines + the admin panel (decided 2026-08-08)
+## 14.5 Doctor-added medicines + the admin panel (decided 2026-08-08)
+
+**Status: the RPC and its TypeScript wrapper are built and verified. The UI
+(search-fallback entry point, dedicated add screen) and the whole admin panel
+are not.** Read this before touching either.
+
+### What exists now
+
+`add_medicine(p_name, p_composition_ids, p_route, p_strength_mg,
+p_manufacturer)` — security-definer SQL function, same pattern as
+`search_intents` / `composition_brands`. Takes ONE name, ONE strength, ONE
+form for the whole product (a tablet cannot be "tablet" for one ingredient and
+"syrup" for another) and an *array* of composition ids — the array is what
+makes a combination product a combination. Never creates a composition; raises
+if any id doesn't already exist. Hospital-scoped on every insert
+(`hospital_id = current_user_hospital_id()`), never global.
+
+Verified this pass, live against `arenod`, each in its own rolled-back
+transaction so nothing was left behind:
+
+| Case | Result |
+|---|---|
+| Real doctor, valid input | Returns one row per composition, correct fields |
+| No `auth.uid()` | `not authenticated` |
+| Composition id doesn't exist | `unknown composition id(s): 999999` |
+| Name exists already, different case (`DOLO 500 TABLET` vs `Dolo 500 Tablet`) | Caught — case-insensitive on purpose, see below |
+| Same composition id twice in one call | `the same composition was listed more than once` |
+| Signed-in user with no `doctors` row | `no doctor profile linked to this account` |
+
+**Case-insensitive name check is deliberate, not the DB's own behaviour.**
+`medicines.name` carries a plain `UNIQUE` constraint, which is case-sensitive
+— it would let `"Dolo"` and `"dolo"` both through. That's exactly the
+formatting-duplicate problem the 2026-08-08 dedup pass (762 rows) just
+cleaned up, so the RPC checks `lower(name) = lower(input)` itself before
+the insert rather than relying on the constraint.
+
+TypeScript side: `addMedicine()` in `lib/db/synapse.ts`, returns
+`{ compositionId, medicine: Medicine }[]` — one entry per composition linked,
+already shaped as a `Medicine` so a caller can splice it straight into the
+current consult's brand list without waiting on `mv_composition_brand`'s
+refresh. RPC error text is surfaced as-is (`throw new Error(error.message)`)
+— the six messages above ARE the doctor-facing copy, not generic failures.
+
+### What's still open
 
 Not built yet — this is the standing decision so a future session doesn't
 re-litigate it.
