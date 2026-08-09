@@ -1129,6 +1129,66 @@ A `prefers-reduced-motion` block disables the transitions.
 
 ---
 
+## 14.5 Planned: doctor-added medicines + the admin panel (decided 2026-08-08)
+
+Not built yet — this is the standing decision so a future session doesn't
+re-litigate it.
+
+**Problem:** ~46% of `medicines` are genuinely multi-composition (measured live:
+53.9% single, 46.1% two, a sliver at 3–4), and the catalogue will always be
+some years stale no matter how it was imported. The fix isn't a bigger import,
+it's a smooth add-flow that absorbs drift permanently — usable both at
+onboarding and mid-prescribing.
+
+**The line that must hold:** a doctor may attach a new *medicine* to an
+*existing* composition. A doctor may never mint a new *composition* — that
+still requires the full compositions → gates → rules pipeline (§6.3/§15) a
+clinical decision, not a self-service one. `medicine_composition_map` already
+supports multi-composition products (proved in §6.4 — the iron/calcium
+combos), so this covers combination products natively.
+
+**Design:**
+- `add_medicine()` RPC, security-definer (same pattern as `composition_brands`
+  / `search_intents`) — takes a name, one-or-more `{composition_id,
+  strength_mg, form}`, optional manufacturer. Regular doctors cannot write
+  `medicine_composition_map` directly (`admin_write` policy requires
+  `current_user_is_admin()`), so this has to go through a function, not a
+  direct insert.
+- New medicines are **hospital-scoped by default** (`hospital_id =
+  current_user_hospital_id()`), never global on creation — mirrors the
+  doctor-local-rule-promotion philosophy already in Synapse (§10b of the
+  handoff): safe and instant locally, promoted only if it proves out.
+- **No new "pending" column needed.** `hospital_id` already encodes the
+  state — every existing catalogue medicine has `hospital_id = null` (global);
+  a doctor-added one has their real hospital id (pending). Admin approval is
+  just setting it back to `null`.
+- `medicines.created_by_doctor_id` / `created_at` (added 2026-08-08, both
+  nullable, null on all pre-existing rows) exist for exactly this — the admin
+  review queue needs to show who submitted a pending medicine and when.
+- `mv_composition_brand` has a unique index
+  (`composition_id, medicine_id`), so `REFRESH MATERIALIZED VIEW
+  CONCURRENTLY` is available and doesn't block other readers. The RPC doesn't
+  need to wait on it either way — it returns the new medicine directly, so the
+  calling consult can use it immediately; the refresh only matters for the
+  *next* search, by anyone.
+- Reachable from two places: the search-fallback (mid-prescribing, when a
+  molecule ranks but no brand exists) and a dedicated add screen (onboarding).
+  Same RPC underneath.
+
+**Admin panel:** `arenod.com/admin`, same codebase as Cortex/Front Desk, not a
+separate repo. Reasoning: the actual security boundary is already RLS
+(`current_user_is_admin()`) at the database layer, not which frontend calls
+it — a second codebase buys no additional isolation. The existing
+`RequireAuth` + `RequireRole` pattern already used to split Cortex (doctor)
+from Front Desk (reception) extends cleanly to a third role; lazy-load
+(`React.lazy`) so the admin bundle never ships to a doctor or receptionist.
+Scope: hospital activation, doctor credential reset (password/phone/details),
+and the medicine-catalogue approval queue this section describes. Multi-day
+build, separate from the RPC above — the RPC has to exist first, since the
+approval queue has nothing to review until doctors can submit.
+
+---
+
 ## 15. Further reading
 
 - `aren-technical-atlas.md` — the whole-repo map (both workspaces, auth, data
