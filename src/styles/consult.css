@@ -842,76 +842,139 @@
     font-weight: 600;
 }
 
-/* Dental chart — the real odontogram. Two arches (cs-dchart-arch), each a
-   row of tooth buttons in the order TOOTH_CHART_ROWS defines (patient's
-   right first, split at the midline via is-quad-end's extra margin) — this
-   file only styles what dental/types.ts already laid out. */
-.cs-dchart {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+/* ODONTOGRAM — the real dental chart. All geometry (arch curves, crown
+   shapes, the five surface polygons per tooth) is computed in
+   lib/dental/anatomy.ts; this file only colors what that file drew. */
+.cs-odo {
     margin-bottom: 8px;
 }
 
-.cs-dchart.is-disabled {
-    opacity: 0.5;
+.cs-odo.is-disabled {
+    opacity: 0.45;
     pointer-events: none;
 }
 
-.cs-dchart-arch {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
+.cs-odo-svg {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    overflow: visible;
 }
 
-.cs-dchart-tooth {
-    position: relative;
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 25px;
-    height: 29px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: 5px 5px 9px 9px;
-    background: #fff;
-    color: var(--cs-muted);
-    font-size: 10px;
+/* the occlusal plane — where the two arches meet when the mouth closes */
+.cs-odo-plane {
+    stroke: var(--cs-line);
+    stroke-width: 1;
+    stroke-dasharray: 3 5;
+}
+
+.cs-odo-side {
+    fill: var(--cs-faint);
+    font-size: 7.5px;
     font-weight: 700;
+    letter-spacing: 0.09em;
+}
+
+.cs-odo-crown {
+    fill: #fff;
+}
+
+.cs-odo-crown.is-missing {
+    fill: none;
+}
+
+/* the crown edge, drawn over the surface fills so a charted tooth still
+   reads as one tooth rather than five loose polygons */
+.cs-odo-edge {
+    fill: none;
+    stroke: var(--cs-line-strong);
+    stroke-width: 1.1;
+    pointer-events: none;
+}
+
+.cs-odo-edge.is-missing {
+    stroke: var(--cs-faint);
+    stroke-dasharray: 2.5 2.5;
+}
+
+.cs-odo-surface {
+    fill: transparent;
+    stroke: var(--cs-line);
+    stroke-width: 0.6;
     cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    transition: fill 0.12s ease;
 }
 
-.cs-dchart-tooth.is-quad-end {
-    margin-right: 7px; /* the midline gap between quadrants */
+.cs-odo-surface:hover {
+    fill: var(--cs-blue-soft);
 }
 
-.cs-dchart-tooth:hover {
-    border-color: var(--cs-blue);
+.cs-odo-surface.is-sel {
+    fill: var(--cs-blue);
 }
 
-.cs-dchart-tooth.is-selected {
-    outline: 2px solid var(--cs-blue);
-    outline-offset: 1px;
+.cs-odo-cusp {
+    fill: var(--cs-line-strong);
+    pointer-events: none;
 }
 
-.cs-dchart-count {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    min-width: 13px;
-    height: 13px;
-    border-radius: 999px;
-    background: var(--cs-ink);
-    color: #fff;
-    font-size: 8.5px;
-    font-style: normal;
+.cs-odo-num {
+    fill: var(--cs-faint);
+    font-size: 8px;
     font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 3px;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.cs-odo-tooth.is-sel .cs-odo-num {
+    fill: var(--cs-blue);
+}
+
+.cs-odo-tooth.is-sel .cs-odo-edge {
+    stroke: var(--cs-blue);
+    stroke-width: 1.6;
+}
+
+/* Surface fills, one per condition — the same map the legend and the
+   panel rows use, so a color means one thing across the whole card. */
+.cs-odo-surface.is-cond-red { fill: var(--cs-red); }
+.cs-odo-surface.is-cond-amber { fill: var(--cs-amber); }
+.cs-odo-surface.is-cond-violet { fill: var(--cs-violet); }
+.cs-odo-surface.is-cond-rose { fill: var(--cs-rose); }
+.cs-odo-surface.is-cond-orange { fill: var(--cs-orange); }
+.cs-odo-surface.is-cond-teal { fill: var(--cs-teal); }
+.cs-odo-surface.is-cond-blue { fill: var(--cs-blue); }
+.cs-odo-surface.is-cond-muted { fill: var(--cs-faint); }
+
+/* A whole-tooth finding tints the crown itself rather than one surface. */
+.cs-odo-crown.is-cond-red { fill: var(--cs-red-soft); }
+.cs-odo-crown.is-cond-amber { fill: var(--cs-amber-soft); }
+.cs-odo-crown.is-cond-violet { fill: var(--cs-violet-soft); }
+.cs-odo-crown.is-cond-rose { fill: var(--cs-rose-soft); }
+.cs-odo-crown.is-cond-orange { fill: var(--cs-orange-soft); }
+.cs-odo-crown.is-cond-teal { fill: var(--cs-teal-soft); }
+.cs-odo-crown.is-cond-blue { fill: var(--cs-blue-soft); }
+
+.cs-odo-surfacetag {
+    margin-left: 7px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 600;
+}
+
+/* Says, in words, exactly what will be written down — a surface finding or
+   a whole-tooth one. The chart should never record something different
+   from what the doctor thinks they clicked. */
+.cs-odo-scope {
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 11px;
+    line-height: 1.45;
 }
 
 .cs-dchart-legend {

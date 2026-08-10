@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
-// The tooth chart's vocabulary — data model AND the visual chart's layout.
-// tooth_number (FDI notation) was always the addressable unit; TOOTH_CHART_ROWS
-// below is what a real dentist actually clicks (2026-08-10): two arches, each
-// split at the midline, patient's right shown first — the standard odontogram
-// layout, not an alphabetic dropdown.
+// The tooth chart's vocabulary — conditions, tooth naming, and the
+// surface/whole-tooth split. The chart's *geometry* (arch curves, crown
+// shapes, the five clickable surfaces per tooth) lives in anatomy.ts.
 // ---------------------------------------------------------------------------
+
+import type { ToothSurface } from "./anatomy";
 
 export type DentalCondition =
     | "caries"
@@ -82,25 +82,18 @@ export const TOOTH_LABEL: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * The chart itself: two arches (upper, lower), each arch a single row read
- * left-to-right the way a dentist draws one — quadrant 1 (upper right)
- * innermost-out reversed so the midline sits in the visual centre, mirrored
- * for the other three quadrants. This is the one place quadrant order
- * matters visually; TOOTH_OPTIONS above stays in plain ascending FDI order
- * for the (now secondary) case something just needs the full list.
+ * Which conditions live on a surface and which belong to the whole tooth.
+ * This is a clinical distinction, not a UI convenience: caries, a needed
+ * filling and a fracture all happen on a named surface ("36 MO"), while
+ * mobility, impaction, a missing tooth and a root canal are facts about the
+ * tooth entire. The chart asks for a surface only where a surface exists to
+ * be asked about.
  */
-function quadrantCodes(q: "1" | "2" | "3" | "4", reversed: boolean): ToothOption[] {
-    const codes = POSITION_LABEL.map((_, i) => `${q}${i + 1}`);
-    return (reversed ? codes.slice().reverse() : codes).map((code) => ({
-        code,
-        label: TOOTH_LABEL[code],
-    }));
-}
+export const SURFACE_CONDITIONS: DentalCondition[] = ["caries", "filling_needed", "fractured"];
 
-export const TOOTH_CHART_ROWS: ToothOption[][] = [
-    [...quadrantCodes("1", true), ...quadrantCodes("2", false)], // upper: right -> left
-    [...quadrantCodes("4", true), ...quadrantCodes("3", false)], // lower: right -> left
-];
+export function isSurfaceCondition(c: DentalCondition): boolean {
+    return SURFACE_CONDITIONS.includes(c);
+}
 
 /** One color per condition, used as a className suffix (`is-cond-${condition}`) in consult.css. */
 export const DENTAL_CONDITION_COLOR: Record<DentalCondition, string> = {
@@ -118,6 +111,8 @@ export interface DentalFinding {
     id: number;
     visitId: string;
     toothNumber: string;
+    /** null = the finding is about the whole tooth, not one surface */
+    surface: ToothSurface | null;
     condition: DentalCondition;
     note: string | null;
     attachmentId: number | null;

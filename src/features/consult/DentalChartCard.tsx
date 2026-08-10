@@ -1,34 +1,41 @@
 // ---------------------------------------------------------------------------
-// DENTAL CHART — a real clickable odontogram, not a dropdown pretending to
-// be one. Rebuilt 2026-08-10 after Anmol's direct question: "have you made
-// the dental chart seriously? You click on it and see the tooth chart and
-// all" — the answer was no (a list-and-form was the deliberate 2026-08-08
-// backbone scope), so here is the real thing.
+// DENTAL CHART — a real odontogram, charted per surface.
 //
-// Two arches, drawn the way a dentist draws one: patient's right shown
-// first, split at the midline, upper over lower — see TOOTH_CHART_ROWS in
-// lib/dental/types.ts, which owns the layout so this component only renders
-// it. Click a tooth to select it; the panel below shows that tooth's
-// findings and a quick-add form with the tooth already fixed — no dropdown
-// needed once the diagram exists to click on directly. A flagged tooth
-// colors by its most recent finding's condition, with a count badge when
-// more than one finding exists (e.g. caries, then filled, both on record).
+// Rebuilt 2026-08-10 (second time tonight) after Anmol pushed back on the
+// first attempt, correctly: it was 32 rectangles in two straight rows, and a
+// dentist does not chart on rectangles. Two things were missing, and both
+// are here now.
+//
+// 1. THE SHAPE. Two curved arches facing each other, teeth sized and spaced
+//    by real crown width, each rotated to sit radially on its arch, cusps
+//    marked. All of that geometry lives in lib/dental/anatomy.ts — this
+//    component renders what that file computes and owns no anatomy itself.
+//
+// 2. THE UNIT OF RECORD. Caries is charted per SURFACE. A dentist writes
+//    "36 MO", meaning the mesial and occlusal surfaces of the lower left
+//    first molar — the tooth alone is not the record. So every tooth here is
+//    five independently clickable surfaces, and dental_findings carries a
+//    nullable `surface` column. Null is meaningful, not missing: mobility,
+//    impaction, a missing tooth and a root canal are facts about the whole
+//    tooth, and the chart only asks for a surface where one exists to be
+//    asked about (see isSurfaceCondition).
 //
 // Still its own card, not folded into Attachments: a finding can exist with
-// no image at all (most caries/mobility findings never get photographed),
-// and an X-ray, when one exists, is a property OF a finding, not the
-// finding itself.
+// no image at all, and an X-ray, when one exists, is a property OF a
+// finding, not the finding itself.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
 import { Smile, Loader2, Trash2, X } from "lucide-react";
 import { listDentalFindings, addDentalFinding, deleteDentalFinding } from "../../lib/db/dental";
 import {
-    TOOTH_CHART_ROWS,
-    TOOTH_LABEL,
-    DENTAL_CONDITIONS,
-    DENTAL_CONDITION_LABEL,
-    DENTAL_CONDITION_COLOR,
+    UPPER_ARCH, LOWER_ARCH, TOOTH_BY_CODE, CHART_VIEWBOX, OCCLUSAL_Y,
+    surfaceLabel, SURFACE_INITIAL,
+} from "../../lib/dental/anatomy";
+import type { ToothGeometry, ToothSurface } from "../../lib/dental/anatomy";
+import {
+    TOOTH_LABEL, DENTAL_CONDITIONS, DENTAL_CONDITION_LABEL,
+    DENTAL_CONDITION_COLOR, isSurfaceCondition,
 } from "../../lib/dental/types";
 import type { DentalFinding, DentalCondition } from "../../lib/dental/types";
 
@@ -38,16 +45,30 @@ interface Props {
     disabled?: boolean;
 }
 
+interface Selection {
+    code: string;
+    surface: ToothSurface | null;
+}
+
+/** What colors each of a tooth's parts, once all its findings are considered. */
+interface ToothPaint {
+    /** surface -> condition, most recent finding wins */
+    surfaces: Partial<Record<ToothSurface, DentalCondition>>;
+    /** a whole-tooth finding, if any — paints the crown itself */
+    whole: DentalCondition | null;
+    count: number;
+}
+
 export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) {
     const [items, setItems] = useState<DentalFinding[]>([]);
-    const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
+    const [sel, setSel] = useState<Selection | null>(null);
     const [condition, setCondition] = useState<DentalCondition>("caries");
     const [note, setNote] = useState("");
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!visitId) { setItems([]); setSelectedTooth(null); return; }
+        if (!visitId) { setItems([]); setSel(null); return; }
         let cancelled = false;
         listDentalFindings(visitId)
             .then((rows) => { if (!cancelled) setItems(rows); })
@@ -55,42 +76,56 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
         return () => { cancelled = true; };
     }, [visitId]);
 
-    // A fresh selection starts a fresh quick-add draft — the previous
-    // tooth's note has no business surviving onto this one.
-    useEffect(() => {
-        setCondition("caries");
-        setNote("");
-    }, [selectedTooth]);
+    // A new selection starts a fresh draft — the previous surface's note has
+    // no business surviving onto this one.
+    useEffect(() => { setNote(""); }, [sel?.code, sel?.surface]);
 
-    // tooth code -> its findings, most-recent first, computed once per
-    // render rather than filtering `items` inside every tooth cell.
-    const byTooth = useMemo(() => {
-        const map = new Map<string, DentalFinding[]>();
-        for (const f of items) {
-            const list = map.get(f.toothNumber) ?? [];
-            list.push(f);
-            map.set(f.toothNumber, list);
-        }
-        for (const list of map.values()) {
-            list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const paint = useMemo(() => {
+        const map = new Map<string, ToothPaint>();
+        // Oldest first, so the newest finding on a given surface overwrites
+        // the older one and ends up the color that shows.
+        const ordered = [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        for (const f of ordered) {
+            const cur = map.get(f.toothNumber) ?? { surfaces: {}, whole: null, count: 0 };
+            if (f.surface) cur.surfaces[f.surface] = f.condition;
+            else cur.whole = f.condition;
+            cur.count += 1;
+            map.set(f.toothNumber, cur);
         }
         return map;
     }, [items]);
 
-    const selectedFindings = selectedTooth ? (byTooth.get(selectedTooth) ?? []) : [];
+    const selectedTooth = sel ? TOOTH_BY_CODE[sel.code] : null;
+    const selectedFindings = useMemo(() => {
+        if (!sel) return [];
+        return items
+            .filter((f) => f.toothNumber === sel.code)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }, [items, sel]);
 
-    const onSelect = (code: string) => {
+    // The surface actually recorded: a whole-tooth condition ignores whichever
+    // surface happened to be clicked, rather than filing mobility under "mesial".
+    const effectiveSurface = sel && isSurfaceCondition(condition) ? sel.surface : null;
+
+    const onPick = (code: string, surface: ToothSurface) => {
         if (disabled || !visitId) return;
-        setSelectedTooth((curr) => (curr === code ? null : code));
+        setSel((curr) =>
+            curr && curr.code === code && curr.surface === surface ? null : { code, surface }
+        );
     };
 
     const onAdd = async () => {
-        if (!visitId || !selectedTooth) return;
+        if (!visitId || !sel) return;
         setSaving(true);
         setError(null);
         try {
             const finding = await addDentalFinding({
-                visitId, toothNumber: selectedTooth, condition, note: note.trim() || undefined, doctorId,
+                visitId,
+                toothNumber: sel.code,
+                surface: effectiveSurface,
+                condition,
+                note: note.trim() || undefined,
+                doctorId,
             });
             setItems((curr) => [finding, ...curr]);
             setNote("");
@@ -111,47 +146,82 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
         }
     };
 
+    const renderTooth = (t: ToothGeometry) => {
+        const p = paint.get(t.code);
+        const isSel = sel?.code === t.code;
+        const wholeColor = p?.whole ? DENTAL_CONDITION_COLOR[p.whole] : null;
+        // "Missing" is not a color — it is the absence of a tooth. Drawn as a
+        // dashed ghost so the gap in the arch reads as a gap.
+        const isMissing = p?.whole === "missing";
+
+        return (
+            <g key={t.code} className={`cs-odo-tooth${isSel ? " is-sel" : ""}`}>
+                <g transform={`translate(${t.x.toFixed(1)},${t.y.toFixed(1)}) rotate(${t.rotate.toFixed(1)})`}>
+                    {/* crown body — painted by a whole-tooth finding, if any */}
+                    <path
+                        d={t.outline}
+                        className={
+                            "cs-odo-crown" +
+                            (isMissing ? " is-missing" : wholeColor ? ` is-cond-${wholeColor}` : "")
+                        }
+                    />
+                    {!isMissing && t.zones.map((z) => {
+                        const cond = p?.surfaces[z.surface];
+                        return (
+                            <polygon
+                                key={z.surface}
+                                points={z.points}
+                                data-tooth={t.code}
+                                data-surface={z.surface}
+                                className={
+                                    "cs-odo-surface" +
+                                    (cond ? ` is-cond-${DENTAL_CONDITION_COLOR[cond]}` : "") +
+                                    (isSel && sel?.surface === z.surface ? " is-sel" : "")
+                                }
+                                onClick={() => onPick(t.code, z.surface)}
+                            >
+                                <title>{`${t.code} ${surfaceLabel(z.surface, t)}${cond ? ` — ${DENTAL_CONDITION_LABEL[cond]}` : ""}`}</title>
+                            </polygon>
+                        );
+                    })}
+                    {!isMissing && t.cusps.map((c, i) => (
+                        <circle key={i} cx={c.cx} cy={c.cy} r={c.r} className="cs-odo-cusp" />
+                    ))}
+                    {/* outline drawn last so surface fills never cover the crown edge */}
+                    <path d={t.outline} className={`cs-odo-edge${isMissing ? " is-missing" : ""}`} />
+                </g>
+                <text x={t.labelX.toFixed(1)} y={t.labelY.toFixed(1)} className="cs-odo-num">
+                    {t.code}
+                </text>
+            </g>
+        );
+    };
+
     return (
         <section className="cs-card" aria-label="Dental chart">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
                     <span className="cs-glyph is-slate"><Smile size={12} /></span>
                     Dental Chart
+                    <em>
+                        {items.length > 0
+                            ? `${items.length} finding${items.length > 1 ? "s" : ""}`
+                            : "FDI · charted per surface"}
+                    </em>
                 </h2>
             </div>
 
             <div className="cs-attach-body">
-                <div className={`cs-dchart${disabled || !visitId ? " is-disabled" : ""}`}>
-                    {TOOTH_CHART_ROWS.map((row, rowIdx) => (
-                        <div className="cs-dchart-arch" key={rowIdx}>
-                            {row.map((t, i) => {
-                                const findings = byTooth.get(t.code) ?? [];
-                                const flagged = findings.length > 0;
-                                const colorKey = flagged ? DENTAL_CONDITION_COLOR[findings[0].condition] : null;
-                                return (
-                                    <button
-                                        key={t.code}
-                                        type="button"
-                                        className={
-                                            `cs-dchart-tooth` +
-                                            (flagged ? ` is-flagged is-cond-${colorKey}` : "") +
-                                            (selectedTooth === t.code ? " is-selected" : "") +
-                                            (i === 7 ? " is-quad-end" : "")
-                                        }
-                                        title={TOOTH_LABEL[t.code]}
-                                        aria-label={`Tooth ${t.code}${flagged ? `, ${findings.length} finding${findings.length > 1 ? "s" : ""}` : ""}`}
-                                        aria-pressed={selectedTooth === t.code}
-                                        onClick={() => onSelect(t.code)}
-                                    >
-                                        {t.code}
-                                        {findings.length > 1 && (
-                                            <i className="cs-dchart-count">{findings.length}</i>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ))}
+                <div className={`cs-odo${disabled || !visitId ? " is-disabled" : ""}`}>
+                    <svg viewBox={CHART_VIEWBOX} className="cs-odo-svg" role="img"
+                        aria-label="Dental chart — click a tooth surface to record a finding">
+                        {/* the occlusal plane, where the two arches meet */}
+                        <line x1="14" y1={OCCLUSAL_Y} x2="446" y2={OCCLUSAL_Y} className="cs-odo-plane" />
+                        <text x="16" y={OCCLUSAL_Y - 6} className="cs-odo-side">RIGHT</text>
+                        <text x="444" y={OCCLUSAL_Y - 6} className="cs-odo-side" textAnchor="end">LEFT</text>
+                        {UPPER_ARCH.map(renderTooth)}
+                        {LOWER_ARCH.map(renderTooth)}
+                    </svg>
                 </div>
 
                 <div className="cs-dchart-legend">
@@ -163,16 +233,21 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                     ))}
                 </div>
 
-                {selectedTooth ? (
+                {sel && selectedTooth ? (
                     <div className="cs-dchart-panel">
                         <div className="cs-dchart-panel-head">
                             <span className="cs-dchart-panel-title">
-                                {TOOTH_LABEL[selectedTooth]}
+                                {TOOTH_LABEL[sel.code]}
+                                {sel.surface && (
+                                    <i className="cs-odo-surfacetag">
+                                        {surfaceLabel(sel.surface, selectedTooth)}
+                                    </i>
+                                )}
                             </span>
                             <button
                                 type="button"
                                 className="cs-dchart-panel-close"
-                                onClick={() => setSelectedTooth(null)}
+                                onClick={() => setSel(null)}
                                 aria-label="Close"
                             >
                                 <X size={13} />
@@ -185,7 +260,14 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                                     <i className={`cs-dchart-dot is-cond-${DENTAL_CONDITION_COLOR[f.condition]}`} />
                                 </span>
                                 <span className="cs-attach-meta">
-                                    <span className="cs-attach-label">{DENTAL_CONDITION_LABEL[f.condition]}</span>
+                                    <span className="cs-attach-label">
+                                        {DENTAL_CONDITION_LABEL[f.condition]}
+                                        <i className="cs-attach-tagbadge">
+                                            {f.surface
+                                                ? `${f.toothNumber} ${SURFACE_INITIAL[f.surface]}`
+                                                : "Whole tooth"}
+                                        </i>
+                                    </span>
                                     {f.note && <span className="cs-attach-size">{f.note}</span>}
                                 </span>
                                 <button
@@ -213,6 +295,11 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                                     </button>
                                 ))}
                             </div>
+                            <p className="cs-odo-scope">
+                                {effectiveSurface
+                                    ? `Records as ${sel.code} ${SURFACE_INITIAL[effectiveSurface]} — ${surfaceLabel(effectiveSurface, selectedTooth).toLowerCase()} surface.`
+                                    : `Records against the whole of tooth ${sel.code} — ${DENTAL_CONDITION_LABEL[condition].toLowerCase()} is not a surface finding.`}
+                            </p>
                             <div className="cs-attach-tagrow">
                                 <input
                                     className="cs-attach-region-input"
@@ -229,9 +316,9 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                     </div>
                 ) : (
                     <p className="cs-attach-empty">
-                        Click a tooth above to add or review findings — FDI numbering, patient's
-                        right shown first. Not needed for a simple toothache with nothing else
-                        to record.
+                        Click a tooth surface to chart it — mesial, distal, buccal, lingual or
+                        occlusal, the way a finding is actually written down. Patient's right
+                        is on the left, as you face them.
                     </p>
                 )}
 

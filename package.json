@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check:search": "node scripts/search-coverage.mjs",
-    "check:brands": "node scripts/brand-families.mjs"
+    "check:brands": "node scripts/brand-families.mjs",
+    "check:dental": "node scripts/dental-anatomy.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

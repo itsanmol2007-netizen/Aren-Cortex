@@ -8,11 +8,16 @@
 
 import { supabase } from "../supabase";
 import type { DentalCondition, DentalFinding } from "../dental/types";
+import type { ToothSurface } from "../dental/anatomy";
+
+const DENTAL_COLUMNS =
+    "id, visit_id, tooth_number, surface, condition, note, attachment_id, created_by_doctor_id, created_at";
 
 function fromRow(r: {
     id: number;
     visit_id: string;
     tooth_number: string;
+    surface: string | null;
     condition: string;
     note: string | null;
     attachment_id: number | null;
@@ -23,6 +28,7 @@ function fromRow(r: {
         id: r.id,
         visitId: r.visit_id,
         toothNumber: r.tooth_number,
+        surface: r.surface as ToothSurface | null,
         condition: r.condition as DentalCondition,
         note: r.note,
         attachmentId: r.attachment_id,
@@ -34,7 +40,7 @@ function fromRow(r: {
 export async function listDentalFindings(visitId: string): Promise<DentalFinding[]> {
     const { data, error } = await supabase
         .from("dental_findings")
-        .select("id, visit_id, tooth_number, condition, note, attachment_id, created_by_doctor_id, created_at")
+        .select(DENTAL_COLUMNS)
         .eq("visit_id", visitId)
         .order("tooth_number", { ascending: true });
     if (error) throw new Error(`listDentalFindings: ${error.message}`);
@@ -44,6 +50,8 @@ export async function listDentalFindings(visitId: string): Promise<DentalFinding
 export async function addDentalFinding(opts: {
     visitId: string;
     toothNumber: string;
+    /** omit or null for a whole-tooth finding (missing, mobile, impacted, root canal) */
+    surface?: ToothSurface | null;
     condition: DentalCondition;
     note?: string;
     attachmentId?: number;
@@ -54,12 +62,13 @@ export async function addDentalFinding(opts: {
         .insert({
             visit_id: opts.visitId,
             tooth_number: opts.toothNumber,
+            surface: opts.surface ?? null,
             condition: opts.condition,
             note: opts.note ?? null,
             attachment_id: opts.attachmentId ?? null,
             created_by_doctor_id: opts.doctorId ?? null,
         })
-        .select("id, visit_id, tooth_number, condition, note, attachment_id, created_by_doctor_id, created_at")
+        .select(DENTAL_COLUMNS)
         .single();
     if (error) throw new Error(`addDentalFinding: ${error.message}`);
     return fromRow(data);
