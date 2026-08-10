@@ -2796,3 +2796,49 @@
    exists, so a tooth surface is a comfortable target instead of a 5px sliver. */
 .cs-chartmodal-body .cs-odo-svg { max-width: 100%; }
 .cs-chartmodal-body .cs-body-svg { max-width: 300px; }
+
+/* LMP — a native date control, sized to sit in the measurement row without
+   breaking rank with the numeric fields beside it. */
+.cs-meas-date {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-ink);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* G-P-L-A — four boxes reading as one value, each labelled with its letter
+   so nobody has to remember which position "Living" is. */
+.cs-meas-gpla {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.cs-meas-gpla-cell {
+    display: flex;
+    align-items: baseline;
+    gap: 1px;
+    min-width: 0;
+}
+
+.cs-meas-gpla-letter {
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 700;
+}
+
+.cs-meas-gpla-cell input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-ink);
+    font-size: 19px;
+    font-weight: 660;
+}

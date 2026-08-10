@@ -1515,8 +1515,65 @@ and presentation, the same line drawn for specialty profiles.
 the specialty profile (a dermatologist should not scroll past a tooth
 chart), which is a presentation-config change, not a data one.
 
-Still open, unchanged: #12 (Dentistry content gap — DENTAL_ABSCESS signal,
-Dentistry referral intent) and #13 (Gynaecology LMP/G-P-L-A).
+### 2026-08-10, closing out — the Dentistry gap and the obstetric fields
+
+**The Dentistry gap was worse than "a missing referral".** Cortex had
+TOOTHACHE and BLEEDING_GUMS signals and twenty referral specialties, none
+of them a dentist. Toothache resolved to ibuprofen and paracetamol and
+nothing else — which reads as *"take a painkiller"* for a condition whose
+treatment is always dental. Added:
+
+- `Dentistry` referral intent (the 21st).
+- `dental_abscess` observable + `DENTAL_ABSCESS` signal (idf 2.2, above
+  TOOTHACHE's 1.6 — a visible abscess is far more specific than "my tooth
+  hurts"). `search_text` carries the Hindi transliterations the rest of the
+  catalogue uses: a patient says *daant mein pus*, not "periapical abscess".
+- Abscess routes to: Dentistry 0.90 (safety-critical — drainage/extraction/
+  RCT is the cure, antibiotics only buy time), amoxicillin 0.80,
+  metronidazole 0.75 (anaerobic cover, alongside amoxicillin not instead of
+  it), ibuprofen 0.70, paracetamol 0.65, and Emergency 0.55 safety-critical
+  for spreading facial-space infection — trismus, dysphagia, floor-of-mouth
+  or periorbital swelling is airway-threatening (Ludwig's angina).
+- Toothache → Dentistry 0.55, which now **outranks the painkillers** (0.45 /
+  0.35). Bleeding gums → Dentistry 0.50.
+
+**Deliberately not done, and it matters:** no antibiotic is attached to
+plain toothache. Antibiotics do not treat uncomplicated pulpitis, and
+reflexive antibiotic prescribing for toothache is a real problem in Indian
+OPD. The antibiotics hang off DENTAL_ABSCESS — an actual infection — and
+nothing else. The rationale is written into the rule row so nobody
+"completes" it later.
+
+**Obstetric fields.** Two new `MeasureInputKind`s:
+
+- `date`, for the LMP. This is the one field where what the doctor types and
+  what the engine scores differ: a date means nothing to a rule, so
+  `consultInput.ts` carries the date for the record and derives **LMP_DAYS**
+  for the ranking. New `measurement_rules` row: LMP_DAYS 35–400 →
+  AMENORRHEA (35 = a 28-day cycle plus a week's grace; 400 caps it so
+  lactational amenorrhoea and menopause don't fire "missed period"
+  forever). A **future date is recorded but never scored** — a mistyped year
+  would otherwise run the interval backwards.
+- `gpla`, following `bp`'s precedent exactly: one control, four
+  measurements. Stored "G/P/L/A", split into GRAVIDA / PARA / LIVING /
+  ABORTIONS. Blanks stay blank rather than becoming zeroes — a first
+  pregnancy is "1///" and asserting P=0 is asserting a fact nobody entered.
+  Warns when the arithmetic is impossible (living > births, or G < P+A).
+
+New `GYNAECOLOGY` specialty profile (the 6th) shows both by default with
+LMP first; everywhere else they stay behind `RELEVANT_FIELDS`, because a
+general OPD doctor seeing a man should never be shown an obstetric history
+box. `npm run check:obstetric` covers the derivation, since it is invisible
+in the UI — if it broke, the LMP box would still fill in, the record would
+still be right, and amenorrhoea would just quietly never fire again.
+Confirmed non-vacuous.
+
+**Still open:** the dental chart and body map are always visible rather
+than driven by the specialty profile (see above). Guards are currently only
+wired for `exercise` targets — `intent_guards.target_type` has no other
+value in the table — so a medicine-level guard (e.g. amoxicillin under
+DRUG_ALLERGY) would be new engine territory, not a content row. Worth doing
+and deliberately not started here.
 
 ---
 

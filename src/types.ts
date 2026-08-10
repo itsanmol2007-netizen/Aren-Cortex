@@ -42,6 +42,10 @@ export type Vitals = {
   painVas?: string;
   /** range of motion achieved ÷ expected, % (ROM_PCT) */
   romPct?: string;
+  /** last menstrual period, ISO yyyy-mm-dd. Emitted as LMP_DAYS, not as a date. */
+  lmp?: string;
+  /** obstetric history as "G/P/L/A" — one control, four measurements, like bp */
+  gpla?: string;
 };
 
 export type Medicine = {

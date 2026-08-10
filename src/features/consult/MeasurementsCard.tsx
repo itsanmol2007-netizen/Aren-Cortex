@@ -234,6 +234,72 @@ function MeasureCell({
         );
     }
 
+    if (field.kind === "date") {
+        // A native date input, because a doctor typing "12/6" means one thing
+        // in India and another to Date.parse, and the LMP feeds an interval
+        // calculation where that ambiguity would be a real error.
+        return (
+            <div className={className} title={title}>
+                <span className="cs-meas-label">
+                    {field.label}
+                    {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
+                </span>
+                <div className="cs-meas-value">
+                    <input
+                        ref={registerRef as React.Ref<HTMLInputElement>}
+                        type="date"
+                        className="cs-meas-date"
+                        value={value}
+                        disabled={disabled}
+                        onChange={(e) => onChange(e.target.value)}
+                        onKeyDown={onKey}
+                        aria-label={field.shortLabel}
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    if (field.kind === "gpla") {
+        // Four boxes, one value — the bp pattern. Stored "G/P/L/A" so the
+        // split downstream is the same trivial one bp already uses.
+        const parts = value.split("/");
+        const at = (i: number) => (parts[i] ?? "").trim();
+        const setAt = (i: number, next: string) => {
+            const four = [at(0), at(1), at(2), at(3)];
+            four[i] = next.trim();
+            onChange(four.every((p) => !p) ? "" : four.join("/"));
+        };
+        const LETTERS = ["G", "P", "L", "A"];
+        return (
+            <div className={className} title={title}>
+                <span className="cs-meas-label">
+                    {field.label}
+                    {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
+                </span>
+                <div className="cs-meas-value cs-meas-gpla">
+                    {LETTERS.map((letter, i) => (
+                        <span className="cs-meas-gpla-cell" key={letter}>
+                            <i className="cs-meas-gpla-letter">{letter}</i>
+                            <input
+                                ref={i === 0 ? (registerRef as React.Ref<HTMLInputElement>) : undefined}
+                                value={at(i)}
+                                placeholder="0"
+                                inputMode="numeric"
+                                disabled={disabled}
+                                onChange={(e) => setAt(i, e.target.value)}
+                                onKeyDown={onKey}
+                                aria-label={`${field.shortLabel} — ${
+                                    ["Gravida", "Para", "Living", "Abortions"][i]
+                                }`}
+                            />
+                        </span>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
     if (field.kind === "select") {
         return (
             <div className={className} title={title}>

@@ -28,8 +28,18 @@ export type MeasureFieldKey = keyof Vitals;
  * `select` exists for blood group — the only measurement in the catalogue that
  * is not a number, and therefore the only one that lands in
  * `visit_measurements.value_text` rather than `value_num`.
+ *
+ * `date` exists for the LMP. A date is not what the engine wants — "12 June"
+ * means nothing to a rule — so `consultInput.ts` carries the date through for
+ * the record and derives LMP_DAYS from it for the ranking. The doctor enters
+ * the thing they actually know; the engine gets the thing it can reason about.
+ *
+ * `gpla` is the obstetric history, and follows `bp`'s precedent exactly: one
+ * control, four measurements. G-P-L-A is written and spoken as a single unit,
+ * so it is entered as one, but Gravida, Para, Living and Abortions are four
+ * separate numbers to anything downstream.
  */
-export type MeasureInputKind = "number" | "bp" | "select";
+export type MeasureInputKind = "number" | "bp" | "select" | "date" | "gpla";
 
 export interface MeasureField {
     key: MeasureFieldKey;
@@ -103,6 +113,10 @@ export const MEASURE_FIELDS: MeasureField[] = [
         options: ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"],
     },
     {
+        // Deliberately before the obstetric pair: those two are the only
+        // fields in the catalogue that are sex-specific, and the "Stable
+        // Layout" rule means they hold this position whether or not the
+        // facility is a gynaecology one.
         key: "painVas", label: "Pain (0–10)", shortLabel: "Pain scale",
         placeholder: "0", kind: "number",
         warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 7; },
@@ -113,6 +127,32 @@ export const MEASURE_FIELDS: MeasureField[] = [
         placeholder: "100", kind: "number",
         warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 50; },
         warnText: "Under half of expected range",
+    },
+    {
+        key: "lmp", label: "LMP", shortLabel: "Last menstrual period",
+        placeholder: "—", kind: "date",
+        // A date in the future is a typo, always. A date more than a year back
+        // is usually one too, but it can be genuine (lactational amenorrhoea,
+        // menopause), so it warns rather than blocks — §14: never hide.
+        warn: (v) => {
+            if (!v) return false;
+            const days = (Date.now() - new Date(v).getTime()) / 86400000;
+            return !Number.isFinite(days) || days < 0 || days > 400;
+        },
+        warnText: "Check the date — in the future, or over a year ago",
+    },
+    {
+        key: "gpla", label: "G-P-L-A", shortLabel: "Obstetric history",
+        placeholder: "0", kind: "gpla",
+        // Living children cannot exceed births, and pregnancies cannot be
+        // fewer than births plus losses. Both are arithmetic, so they are
+        // worth catching at entry rather than in a chart review later.
+        warn: (v) => {
+            const [g, p, l, a] = v.split("/").map((n) => Number.parseInt(n, 10));
+            if (![g, p, l, a].every(Number.isFinite)) return false;
+            return l > p || g < p + a;
+        },
+        warnText: "G-P-L-A does not add up — living exceeds births, or G is under P+A",
     },
 ];
 
@@ -185,6 +225,16 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     // bleeding — the one place blood group is genuinely the next question
     BLEEDING: ["bloodGroup"],
     TRAUMA_HISTORY: ["bloodGroup", "bp", "pulse"],
+
+    // obstetric — the LMP is the next question for any of these, and for a
+    // pregnancy the obstetric history comes with it. Note AMENORRHEA appears
+    // here even though LMP_DAYS is what RAISES it: a doctor who ticks "missed
+    // periods" from the chip list still needs somewhere to put the date.
+    AMENORRHEA: ["lmp"],
+    MENSTRUAL_IRREGULAR: ["lmp"],
+    INTERMENSTRUAL_BLEEDING: ["lmp"],
+    PREGNANCY: ["lmp", "gpla"],
+    PREGNANCY_NAUSEA: ["lmp", "gpla"],
 
     // musculoskeletal — pain scale and range of motion
     LOW_BACK_PAIN: ["painVas"],

@@ -197,12 +197,43 @@ export const PEDIATRICS: SpecialtyProfile = {
     measurements: ["weight", "temp", "height", "pulse", "spo2"],
 };
 
+/**
+ * Obstetrics & gynaecology. Primary stays Medicines — the everyday consult is
+ * a symptomatic one (menstrual complaints, infection, contraception advice),
+ * not a fresh diagnostic workup — but Investigations lead the suggestion order
+ * because so much of this practice turns on a scan or a beta-hCG.
+ *
+ * This profile is the reason `lmp` and `gpla` exist as fields rather than as a
+ * note: here they are asked EVERY time, not only when something on the chart
+ * happens to make them relevant. Elsewhere they stay behind
+ * RELEVANT_FIELDS — a general OPD doctor seeing a man should never be shown
+ * an obstetric history box.
+ */
+export const GYNAECOLOGY: SpecialtyProfile = {
+    id: "gynaecology",
+    label: "Obstetrics & gynaecology",
+    primary: "medicine",
+    primaryLabel: "Medicines",
+    sections: [
+        { type: "test", label: "Investigation" },
+        { type: "finding", label: "Possible Finding" },
+        { type: "referral", label: "Referral" },
+        { type: "advice", label: "Advice" },
+        { type: "exercise", label: "Exercise" },
+    ],
+    // LMP first: it is the question this consultation opens with, and it dates
+    // everything that follows. BP is not general-vitals padding here either —
+    // it is the pre-eclampsia screen.
+    measurements: ["lmp", "gpla", "bp", "weight", "pulse", "temp"],
+};
+
 export const PROFILES: Record<string, SpecialtyProfile> = {
     [GENERAL_OPD.id]: GENERAL_OPD,
     [PHYSIOTHERAPY.id]: PHYSIOTHERAPY,
     [DIAGNOSTICS.id]: DIAGNOSTICS,
     [CARDIOLOGY.id]: CARDIOLOGY,
     [PEDIATRICS.id]: PEDIATRICS,
+    [GYNAECOLOGY.id]: GYNAECOLOGY,
 };
 
 /**

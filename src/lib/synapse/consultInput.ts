@@ -105,6 +105,35 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
     const rom = num(vitals.romPct);
     if (rom !== null) out.push({ measureKey: "ROM_PCT", value: rom, unit: "%" });
 
+    // ── Obstetric ────────────────────────────────────────────────────────
+    // The LMP is entered as a date because that is what the patient knows,
+    // but "12 June" means nothing to a rule. What a rule can reason about is
+    // how long it has been, so the date is carried for the record and the
+    // interval is derived for the engine. LMP_DAYS is what measurement_rules
+    // keys on (>35 days raises AMENORRHEA); the date itself never is.
+    const lmp = String(vitals.lmp ?? "").trim();
+    if (lmp) {
+        out.push({ measureKey: "LMP", value: null, unit: "", text: lmp });
+        const days = Math.floor((Date.now() - new Date(lmp).getTime()) / 86_400_000);
+        // A future date is a typo; carrying it would fire amenorrhoea rules
+        // backwards. Recorded above either way, just not scored.
+        if (Number.isFinite(days) && days >= 0) {
+            out.push({ measureKey: "LMP_DAYS", value: days, unit: "days" });
+        }
+    }
+
+    // G-P-L-A splits exactly as bp does — one control, four measurements —
+    // so each number can be read on its own downstream.
+    const gpla = String(vitals.gpla ?? "").trim();
+    if (gpla) {
+        const parts = gpla.split("/");
+        const keys = ["GRAVIDA", "PARA", "LIVING", "ABORTIONS"];
+        keys.forEach((key, i) => {
+            const n = num(parts[i]);
+            if (n !== null) out.push({ measureKey: key, value: n, unit: "" });
+        });
+    }
+
     // The one non-numeric measurement. It is carried so that it reaches
     // `visit_measurements.value_text` and the print; no rule reads it, and
     // `buildEngineInput` never hands a text row to the engine.
