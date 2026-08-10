@@ -37,6 +37,9 @@
     --cs-red: #b42318;
     --cs-red-soft: #fef3f2;
     --cs-violet: #7c3aed;
+    --cs-violet-soft: #f5f0ff;
+    --cs-orange: #c2410c;
+    --cs-orange-soft: #fff7ed;
     --cs-green: #16a34a;
     --cs-radius: 14px;
     --cs-radius-sm: 9px;
@@ -839,28 +842,150 @@
     font-weight: 600;
 }
 
-/* Dental chart — the FDI tooth code stands in for the type icon everywhere
-   else in this card family, since it IS the identifying label here. */
-.cs-dental-tooth {
+/* Dental chart — the real odontogram. Two arches (cs-dchart-arch), each a
+   row of tooth buttons in the order TOOTH_CHART_ROWS defines (patient's
+   right first, split at the midline via is-quad-end's extra margin) — this
+   file only styles what dental/types.ts already laid out. */
+.cs-dchart {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.cs-dchart.is-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.cs-dchart-arch {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.cs-dchart-tooth {
+    position: relative;
     display: flex;
     flex: none;
     align-items: center;
     justify-content: center;
-    min-width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    background: var(--cs-blue-soft);
-    color: var(--cs-blue);
-    font-size: 11px;
+    width: 25px;
+    height: 29px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 5px 5px 9px 9px;
+    background: #fff;
+    color: var(--cs-muted);
+    font-size: 10px;
     font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
-.cs-dental-select {
-    width: 100%;
+.cs-dchart-tooth.is-quad-end {
+    margin-right: 7px; /* the midline gap between quadrants */
+}
+
+.cs-dchart-tooth:hover {
+    border-color: var(--cs-blue);
+}
+
+.cs-dchart-tooth.is-selected {
+    outline: 2px solid var(--cs-blue);
+    outline-offset: 1px;
+}
+
+.cs-dchart-count {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 13px;
+    height: 13px;
+    border-radius: 999px;
+    background: var(--cs-ink);
+    color: #fff;
+    font-size: 8.5px;
+    font-style: normal;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+}
+
+.cs-dchart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 0 0 4px;
+    font-size: 10.5px;
+    color: var(--cs-muted);
+}
+
+.cs-dchart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.cs-dchart-legend-dot,
+.cs-dchart-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--cs-line-strong);
+}
+
+/* One color per condition — shared by the tooth cells, the legend dots and
+   the panel's per-finding row icon, so the same red means the same thing
+   everywhere on this card. "Missing" is deliberately colorless (dashed,
+   struck through) rather than another fill — a gap in the mouth isn't a
+   flavor of finding, it's the absence of a tooth. */
+.cs-dchart-tooth.is-cond-red, .cs-dchart-legend-dot.is-cond-red, .cs-dchart-dot.is-cond-red { background: var(--cs-red-soft); border-color: var(--cs-red); color: var(--cs-red); }
+.cs-dchart-tooth.is-cond-amber, .cs-dchart-legend-dot.is-cond-amber, .cs-dchart-dot.is-cond-amber { background: var(--cs-amber-soft); border-color: var(--cs-amber); color: var(--cs-amber); }
+.cs-dchart-tooth.is-cond-violet, .cs-dchart-legend-dot.is-cond-violet, .cs-dchart-dot.is-cond-violet { background: var(--cs-violet-soft); border-color: var(--cs-violet); color: var(--cs-violet); }
+.cs-dchart-tooth.is-cond-rose, .cs-dchart-legend-dot.is-cond-rose, .cs-dchart-dot.is-cond-rose { background: var(--cs-rose-soft); border-color: var(--cs-rose); color: var(--cs-rose); }
+.cs-dchart-tooth.is-cond-orange, .cs-dchart-legend-dot.is-cond-orange, .cs-dchart-dot.is-cond-orange { background: var(--cs-orange-soft); border-color: var(--cs-orange); color: var(--cs-orange); }
+.cs-dchart-tooth.is-cond-teal, .cs-dchart-legend-dot.is-cond-teal, .cs-dchart-dot.is-cond-teal { background: var(--cs-teal-soft); border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-dchart-tooth.is-cond-blue, .cs-dchart-legend-dot.is-cond-blue, .cs-dchart-dot.is-cond-blue { background: var(--cs-blue-soft); border-color: var(--cs-blue); color: var(--cs-blue); }
+.cs-dchart-tooth.is-cond-muted { background: none; border-style: dashed; color: var(--cs-faint); text-decoration: line-through; }
+.cs-dchart-legend-dot.is-cond-muted, .cs-dchart-dot.is-cond-muted { background: none; border: 1px dashed var(--cs-faint); }
+
+.cs-dchart-panel {
     border: 1px solid var(--cs-line-strong);
-    border-radius: 8px;
-    padding: 6px 9px;
+    border-radius: 9px;
+    padding: 9px 10px;
+    background: #fff;
+    margin-bottom: 8px;
+}
+
+.cs-dchart-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.cs-dchart-panel-title {
     font-size: 12.5px;
+    font-weight: 700;
+    color: var(--cs-ink);
+}
+
+.cs-dchart-panel-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+
+.cs-dchart-panel-close:hover {
+    color: var(--cs-ink);
 }
 
 .cs-attach-error {

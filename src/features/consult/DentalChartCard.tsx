@@ -1,22 +1,35 @@
 // ---------------------------------------------------------------------------
-// DENTAL CHART — the real per-tooth record, not a metadata tag on a photo.
+// DENTAL CHART — a real clickable odontogram, not a dropdown pretending to
+// be one. Rebuilt 2026-08-10 after Anmol's direct question: "have you made
+// the dental chart seriously? You click on it and see the tooth chart and
+// all" — the answer was no (a list-and-form was the deliberate 2026-08-08
+// backbone scope), so here is the real thing.
 //
-// Backend/backbone only, per explicit scope agreed with Anmol (2026-08-08):
-// this is a plain list-and-form, not a clickable tooth diagram. tooth_number
-// (FDI notation) is already the addressable unit a real diagram would click
-// on — nothing about the data model changes when that gets built, only this
-// component gets replaced.
+// Two arches, drawn the way a dentist draws one: patient's right shown
+// first, split at the midline, upper over lower — see TOOTH_CHART_ROWS in
+// lib/dental/types.ts, which owns the layout so this component only renders
+// it. Click a tooth to select it; the panel below shows that tooth's
+// findings and a quick-add form with the tooth already fixed — no dropdown
+// needed once the diagram exists to click on directly. A flagged tooth
+// colors by its most recent finding's condition, with a count badge when
+// more than one finding exists (e.g. caries, then filled, both on record).
 //
-// Deliberately its own card, not folded into Attachments: a finding can
-// exist with no image at all (most caries/mobility findings never get
-// photographed), and an X-ray, when one exists, is a property OF a finding,
-// not the finding itself.
+// Still its own card, not folded into Attachments: a finding can exist with
+// no image at all (most caries/mobility findings never get photographed),
+// and an X-ray, when one exists, is a property OF a finding, not the
+// finding itself.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from "react";
-import { Smile, Loader2, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Smile, Loader2, Trash2, X } from "lucide-react";
 import { listDentalFindings, addDentalFinding, deleteDentalFinding } from "../../lib/db/dental";
-import { TOOTH_OPTIONS, DENTAL_CONDITIONS, DENTAL_CONDITION_LABEL } from "../../lib/dental/types";
+import {
+    TOOTH_CHART_ROWS,
+    TOOTH_LABEL,
+    DENTAL_CONDITIONS,
+    DENTAL_CONDITION_LABEL,
+    DENTAL_CONDITION_COLOR,
+} from "../../lib/dental/types";
 import type { DentalFinding, DentalCondition } from "../../lib/dental/types";
 
 interface Props {
@@ -27,15 +40,14 @@ interface Props {
 
 export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) {
     const [items, setItems] = useState<DentalFinding[]>([]);
-    const [formOpen, setFormOpen] = useState(false);
-    const [tooth, setTooth] = useState(TOOTH_OPTIONS[0].code);
+    const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
     const [condition, setCondition] = useState<DentalCondition>("caries");
     const [note, setNote] = useState("");
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!visitId) { setItems([]); return; }
+        if (!visitId) { setItems([]); setSelectedTooth(null); return; }
         let cancelled = false;
         listDentalFindings(visitId)
             .then((rows) => { if (!cancelled) setItems(rows); })
@@ -43,17 +55,45 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
         return () => { cancelled = true; };
     }, [visitId]);
 
+    // A fresh selection starts a fresh quick-add draft — the previous
+    // tooth's note has no business surviving onto this one.
+    useEffect(() => {
+        setCondition("caries");
+        setNote("");
+    }, [selectedTooth]);
+
+    // tooth code -> its findings, most-recent first, computed once per
+    // render rather than filtering `items` inside every tooth cell.
+    const byTooth = useMemo(() => {
+        const map = new Map<string, DentalFinding[]>();
+        for (const f of items) {
+            const list = map.get(f.toothNumber) ?? [];
+            list.push(f);
+            map.set(f.toothNumber, list);
+        }
+        for (const list of map.values()) {
+            list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        }
+        return map;
+    }, [items]);
+
+    const selectedFindings = selectedTooth ? (byTooth.get(selectedTooth) ?? []) : [];
+
+    const onSelect = (code: string) => {
+        if (disabled || !visitId) return;
+        setSelectedTooth((curr) => (curr === code ? null : code));
+    };
+
     const onAdd = async () => {
-        if (!visitId) return;
+        if (!visitId || !selectedTooth) return;
         setSaving(true);
         setError(null);
         try {
             const finding = await addDentalFinding({
-                visitId, toothNumber: tooth, condition, note: note.trim() || undefined, doctorId,
+                visitId, toothNumber: selectedTooth, condition, note: note.trim() || undefined, doctorId,
             });
-            setItems((curr) => [finding, ...curr].sort((a, b) => a.toothNumber.localeCompare(b.toothNumber)));
+            setItems((curr) => [finding, ...curr]);
             setNote("");
-            setFormOpen(false);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Could not save finding");
         } finally {
@@ -81,78 +121,118 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
             </div>
 
             <div className="cs-attach-body">
-                {items.length === 0 && !formOpen && (
-                    <p className="cs-attach-empty">
-                        Per-tooth findings — FDI numbering. Not needed for a simple
-                        toothache; use it when more than one tooth is involved.
-                    </p>
-                )}
+                <div className={`cs-dchart${disabled || !visitId ? " is-disabled" : ""}`}>
+                    {TOOTH_CHART_ROWS.map((row, rowIdx) => (
+                        <div className="cs-dchart-arch" key={rowIdx}>
+                            {row.map((t, i) => {
+                                const findings = byTooth.get(t.code) ?? [];
+                                const flagged = findings.length > 0;
+                                const colorKey = flagged ? DENTAL_CONDITION_COLOR[findings[0].condition] : null;
+                                return (
+                                    <button
+                                        key={t.code}
+                                        type="button"
+                                        className={
+                                            `cs-dchart-tooth` +
+                                            (flagged ? ` is-flagged is-cond-${colorKey}` : "") +
+                                            (selectedTooth === t.code ? " is-selected" : "") +
+                                            (i === 7 ? " is-quad-end" : "")
+                                        }
+                                        title={TOOTH_LABEL[t.code]}
+                                        aria-label={`Tooth ${t.code}${flagged ? `, ${findings.length} finding${findings.length > 1 ? "s" : ""}` : ""}`}
+                                        aria-pressed={selectedTooth === t.code}
+                                        onClick={() => onSelect(t.code)}
+                                    >
+                                        {t.code}
+                                        {findings.length > 1 && (
+                                            <i className="cs-dchart-count">{findings.length}</i>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ))}
+                </div>
 
-                {items.map((f) => (
-                    <div key={f.id} className="cs-attach-row">
-                        <span className="cs-attach-icon cs-dental-tooth">{f.toothNumber}</span>
-                        <span className="cs-attach-meta">
-                            <span className="cs-attach-label">{DENTAL_CONDITION_LABEL[f.condition]}</span>
-                            {f.note && <span className="cs-attach-size">{f.note}</span>}
+                <div className="cs-dchart-legend">
+                    {DENTAL_CONDITIONS.map((c) => (
+                        <span className="cs-dchart-legend-item" key={c}>
+                            <i className={`cs-dchart-legend-dot is-cond-${DENTAL_CONDITION_COLOR[c]}`} />
+                            {DENTAL_CONDITION_LABEL[c]}
                         </span>
-                        <button
-                            type="button"
-                            className="cs-attach-action is-danger"
-                            onClick={() => onDelete(f)}
-                            aria-label="Remove finding"
-                            title="Remove"
-                        >
-                            <Trash2 size={13} />
-                        </button>
-                    </div>
-                ))}
+                    ))}
+                </div>
 
-                {formOpen ? (
-                    <div className="cs-attach-tagpanel">
-                        <div className="cs-attach-tagrow">
-                            <select className="cs-dental-select" value={tooth} onChange={(e) => setTooth(e.target.value)}>
-                                {TOOTH_OPTIONS.map((t) => (
-                                    <option key={t.code} value={t.code}>{t.label}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="cs-attach-tagrow">
-                            {DENTAL_CONDITIONS.map((c) => (
-                                <button
-                                    key={c}
-                                    type="button"
-                                    className={`cs-attach-chip${condition === c ? " is-on" : ""}`}
-                                    onClick={() => setCondition(c)}
-                                >
-                                    {DENTAL_CONDITION_LABEL[c]}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="cs-attach-tagrow">
-                            <input
-                                className="cs-attach-region-input"
-                                placeholder="Note — optional"
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
-                            />
-                            <button type="button" className="cs-attach-tagsave" disabled={saving} onClick={onAdd}>
-                                {saving ? <Loader2 size={13} className="cs-spin" /> : "Add"}
+                {selectedTooth ? (
+                    <div className="cs-dchart-panel">
+                        <div className="cs-dchart-panel-head">
+                            <span className="cs-dchart-panel-title">
+                                {TOOTH_LABEL[selectedTooth]}
+                            </span>
+                            <button
+                                type="button"
+                                className="cs-dchart-panel-close"
+                                onClick={() => setSelectedTooth(null)}
+                                aria-label="Close"
+                            >
+                                <X size={13} />
                             </button>
+                        </div>
+
+                        {selectedFindings.map((f) => (
+                            <div key={f.id} className="cs-attach-row">
+                                <span className="cs-attach-icon">
+                                    <i className={`cs-dchart-dot is-cond-${DENTAL_CONDITION_COLOR[f.condition]}`} />
+                                </span>
+                                <span className="cs-attach-meta">
+                                    <span className="cs-attach-label">{DENTAL_CONDITION_LABEL[f.condition]}</span>
+                                    {f.note && <span className="cs-attach-size">{f.note}</span>}
+                                </span>
+                                <button
+                                    type="button"
+                                    className="cs-attach-action is-danger"
+                                    onClick={() => onDelete(f)}
+                                    aria-label="Remove finding"
+                                    title="Remove"
+                                >
+                                    <Trash2 size={13} />
+                                </button>
+                            </div>
+                        ))}
+
+                        <div className="cs-attach-tagpanel">
+                            <div className="cs-attach-tagrow">
+                                {DENTAL_CONDITIONS.map((c) => (
+                                    <button
+                                        key={c}
+                                        type="button"
+                                        className={`cs-attach-chip${condition === c ? " is-on" : ""}`}
+                                        onClick={() => setCondition(c)}
+                                    >
+                                        {DENTAL_CONDITION_LABEL[c]}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="cs-attach-tagrow">
+                                <input
+                                    className="cs-attach-region-input"
+                                    placeholder="Note — optional"
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
+                                />
+                                <button type="button" className="cs-attach-tagsave" disabled={saving} onClick={onAdd}>
+                                    {saving ? <Loader2 size={13} className="cs-spin" /> : "Add finding"}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="cs-attach-add">
-                        <button
-                            type="button"
-                            className="cs-meas-add"
-                            disabled={disabled || !visitId}
-                            onClick={() => setFormOpen(true)}
-                        >
-                            <Smile size={13} />
-                            <span className="cs-meas-label">Add finding</span>
-                        </button>
-                    </div>
+                    <p className="cs-attach-empty">
+                        Click a tooth above to add or review findings — FDI numbering, patient's
+                        right shown first. Not needed for a simple toothache with nothing else
+                        to record.
+                    </p>
                 )}
 
                 {error && <p className="cs-attach-error">{error}</p>}

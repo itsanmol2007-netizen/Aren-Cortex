@@ -1416,6 +1416,43 @@ consult:
   this session, and Anmol has asked more than once to be told the plan
   before further scope starts, not after.
 
+### 2026-08-10, later same night — the real clickable odontogram
+
+Anmol asked directly: "have you made the dental chart seriously? You click
+on it and see the tooth chart and all." The answer was no — §14.7 above
+describes the deliberate 2026-08-08 list-and-form backbone, not a diagram.
+Replaced `DentalChartCard` with a real two-arch odontogram:
+
+- `TOOTH_CHART_ROWS` (`lib/dental/types.ts`) lays out both arches in actual
+  dentist reading order — patient's right first, split at the midline —
+  not alphabetic/ascending FDI order (`TOOTH_OPTIONS` keeps that order for
+  anything that still just needs a flat list).
+- Each tooth is a clickable button. A tooth with findings is colored by its
+  *most recent* finding's condition (`DENTAL_CONDITION_COLOR`, one color per
+  condition, shared by the tooth cell, the legend dot, and the panel row so
+  the same color means the same thing everywhere); a count badge appears
+  when a tooth has more than one finding. "Missing" is deliberately
+  colorless — dashed border, struck-through code — an absent tooth isn't a
+  flavor of finding.
+- Clicking a tooth opens a panel below the chart: that tooth's findings
+  (with delete) plus a quick-add form with the tooth already fixed — no
+  dropdown needed once there's a diagram to click.
+- Verified live through a real headless-browser session: tooth 36 flagged
+  caries then a second finding (mobile) added on the same tooth, count
+  badge "2" confirmed, color correctly followed the most recent condition;
+  switching to tooth 16 correctly showed an empty panel; "Missing" applied
+  correctly. Zero console errors. Test patient
+  "TOOTHCHART UI TEST (delete me)" (9000000006) — **cleanup of this test
+  patient was NOT completed before the session ended; do this first next
+  session** (delete patient `+` its visit(s) + any dental_findings rows,
+  same pattern as every other verification round this session).
+- One cosmetic bug caught and fixed during verification: the panel title
+  briefly duplicated the tooth code (`TOOTH_LABEL` already includes it).
+
+Still open, unchanged: #12 (Dentistry content gap — DENTAL_ABSCESS signal,
+Dentistry referral intent) and #13 (Gynaecology LMP/G-P-L-A) — the session
+ended (subscription window) before either was started.
+
 ---
 
 ## 15. Further reading
