@@ -16,7 +16,38 @@
 
 import { supabase } from "../supabase";
 import { compressImage, needsCompression } from "../attachments/compress";
-import type { Attachment, AttachmentType } from "../attachments/types";
+import type { Attachment, AttachmentType, Laterality } from "../attachments/types";
+
+const ATTACHMENT_COLUMNS =
+    "id, visit_id, storage_path, mime_type, label, attachment_type, size_bytes, uploaded_by_doctor_id, created_at, laterality, body_region";
+
+function attachmentFromRow(r: {
+    id: number;
+    visit_id: string;
+    storage_path: string;
+    mime_type: string | null;
+    label: string | null;
+    attachment_type: string | null;
+    size_bytes: number | null;
+    uploaded_by_doctor_id: string | null;
+    created_at: string;
+    laterality: string | null;
+    body_region: string | null;
+}): Attachment {
+    return {
+        id: r.id,
+        visitId: r.visit_id,
+        storagePath: r.storage_path,
+        mimeType: r.mime_type,
+        label: r.label,
+        attachmentType: r.attachment_type as AttachmentType | null,
+        sizeBytes: r.size_bytes,
+        uploadedByDoctorId: r.uploaded_by_doctor_id,
+        createdAt: r.created_at,
+        laterality: r.laterality as Laterality | null,
+        bodyRegion: r.body_region,
+    };
+}
 
 interface UploadUrlResponse {
     uploadUrl: string;
@@ -56,6 +87,33 @@ export async function getViewUrl(storagePath: string): Promise<string> {
     return (data as { viewUrl: string }).viewUrl;
 }
 
+/**
+ * Tagging is deliberately separate from upload — laterality/body region are
+ * optional, secondary metadata (per the "structured first, artifact when
+ * necessary" philosophy, tagging is even more secondary than the attachment
+ * itself), and forcing them into the upload step would slow down the common
+ * case (a lab report PDF, where neither applies) for the sake of the cases
+ * that need them. A plain RLS-protected update — no edge function, nothing
+ * here touches storage or the upload secret.
+ */
+export async function updateAttachmentTags(
+    id: number,
+    tags: { laterality?: Laterality | null; bodyRegion?: string | null }
+): Promise<Attachment> {
+    const patch: Record<string, unknown> = {};
+    if ("laterality" in tags) patch.laterality = tags.laterality;
+    if ("bodyRegion" in tags) patch.body_region = tags.bodyRegion;
+
+    const { data, error } = await supabase
+        .from("visit_attachments")
+        .update(patch)
+        .eq("id", id)
+        .select(ATTACHMENT_COLUMNS)
+        .single();
+    if (error) throw new Error(`updateAttachmentTags: ${error.message}`);
+    return attachmentFromRow(data);
+}
+
 export async function deleteAttachment(storagePath: string): Promise<void> {
     const { data, error } = await supabase.functions.invoke("attachment-delete", {
         body: { storagePath },
@@ -66,22 +124,11 @@ export async function deleteAttachment(storagePath: string): Promise<void> {
 export async function listAttachments(visitId: string): Promise<Attachment[]> {
     const { data, error } = await supabase
         .from("visit_attachments")
-        .select("id, visit_id, storage_path, mime_type, label, attachment_type, size_bytes, uploaded_by_doctor_id, created_at")
+        .select(ATTACHMENT_COLUMNS)
         .eq("visit_id", visitId)
         .order("created_at", { ascending: false });
     if (error) throw new Error(`listAttachments: ${error.message}`);
-
-    return (data ?? []).map((r) => ({
-        id: r.id,
-        visitId: r.visit_id,
-        storagePath: r.storage_path,
-        mimeType: r.mime_type,
-        label: r.label,
-        attachmentType: r.attachment_type as AttachmentType | null,
-        sizeBytes: r.size_bytes,
-        uploadedByDoctorId: r.uploaded_by_doctor_id,
-        createdAt: r.created_at,
-    }));
+    return (data ?? []).map(attachmentFromRow);
 }
 
 export interface UploadAttachmentProgress {
@@ -106,6 +153,10 @@ export async function uploadAttachment(
         file: File;
         attachmentType: AttachmentType;
         label?: string;
+        /** which side — ENT/eye/ortho. Never read by the engine; see attachments/types.ts */
+        laterality?: Laterality;
+        /** where on the body — dermatology in particular; site changes steroid potency, not just documentation */
+        bodyRegion?: string;
     },
     onProgress?: (p: UploadAttachmentProgress) => void
 ): Promise<Attachment> {
@@ -147,20 +198,12 @@ export async function uploadAttachment(
             size_bytes: toUpload.size,
             storage_provider: "b2",
             uploaded_by_doctor_id: uploadedByDoctorId,
+            laterality: opts.laterality ?? null,
+            body_region: opts.bodyRegion ?? null,
         })
-        .select("id, visit_id, storage_path, mime_type, label, attachment_type, size_bytes, uploaded_by_doctor_id, created_at")
+        .select(ATTACHMENT_COLUMNS)
         .single();
     if (error) throw new Error(`record attachment: ${error.message}`);
 
-    return {
-        id: data.id,
-        visitId: data.visit_id,
-        storagePath: data.storage_path,
-        mimeType: data.mime_type,
-        label: data.label,
-        attachmentType: data.attachment_type as AttachmentType | null,
-        sizeBytes: data.size_bytes,
-        uploadedByDoctorId: data.uploaded_by_doctor_id,
-        createdAt: data.created_at,
-    };
+    return attachmentFromRow(data);
 }

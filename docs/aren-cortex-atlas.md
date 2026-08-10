@@ -1331,6 +1331,93 @@ active consult), not curl-only:
 
 ---
 
+## 14.7 Dental chart + attachment tagging — the specialty backbone (2026-08-10)
+
+The reframe that produced this: Anmol pushed back hard on relevance-ranking
+as the lens for "does a specialty need X" — "I'm talking about a specialty
+from perspective of a doctor... how do a dentist operate? He must operate in
+a dental chart." A dentist's real per-tooth record and a dermatologist's
+"where on the body" both needed a home; neither is a chip or a measurement,
+and neither should be invented as a one-off, dentistry-only table. Two
+pieces, one philosophy:
+
+1. **`dental_findings`** — a real per-tooth table, not a note field.
+2. **`laterality` / `body_region`** on `visit_attachments` — generic tagging
+   any specialty's photo can use (ENT/eye/ortho side; dermatology site,
+   which changes steroid potency, not just documentation).
+
+Both are backend/backbone only, per explicit scope: "I'm not saying you to
+build the UI policy and everything, but the database... maybe backbone of
+the UI, which we will fine tune later." The UI shipped is a working
+list-and-form, not a clickable tooth diagram or a photo-overlay picker —
+intentionally, so the data model absorbs the eventual real UI without
+changing shape.
+
+### What exists
+
+`dental_findings`: `id`, `visit_id` (FK→visits, cascade), `tooth_number`
+(FDI notation, `CHECK ~ '^[1-4][1-8]'` — quadrant 1-4, tooth 1-8, the same
+fixed-format discipline as every other coded column in this schema),
+`condition` (8-value fixed set: caries, mobility, missing, fracture,
+periapical abscess, gingivitis, calculus, other), `note` (free text,
+optional), `attachment_id` (FK→visit_attachments, SET NULL — an X-ray is a
+property OF a finding, never the finding itself, so losing the image never
+loses the finding), `created_by_doctor_id` (FK→doctors, SET NULL). RLS
+enabled, `hospital_isolation` policy, indexed on `visit_id`.
+
+`visit_attachments.laterality` (`left | right | bilateral`, nullable) and
+`visit_attachments.body_region` (free text, nullable) — added as plain
+nullable columns, not a new table, because tagging is optional metadata on
+an attachment that already exists, not a new entity. Never read by the
+Synapse engine (§14, guards/signals/ranking untouched) — presentation and
+documentation only, same boundary already drawn for specialty profiles.
+
+`TOOTH_OPTIONS` (`lib/dental/types.ts`) is generated programmatically —
+all 32 permanent teeth in FDI order — not hand-listed, so there's no way
+for it to silently miss a tooth.
+
+`DentalChartCard` (`features/consult/`) sits directly after
+`AttachmentsCard` in `cs-body-left`: tooth select → condition chips → note
+→ Add, same "button → small menu/panel → action" pattern as
+`MeasurementsCard` and `AttachmentsCard` for consistency, not because the
+data models are related. Deliberately its own card, not folded into
+Attachments — most caries/mobility findings never get photographed at all.
+
+Attachment tagging is a `Tag` icon per attachment row in `AttachmentsCard`,
+opening an inline panel (laterality chips + body-region text input). Saved
+tags show as compact badges next to the attachment's type label without
+opening the panel — the point of tagging is that a doctor glancing at the
+card later sees "Left · Lower jaw, tooth 36" without a click.
+
+### Verified, live, through the real UI
+
+Logged in as the real test doctor, created a real patient, started a real
+consult:
+
+- Dental finding added — tooth 36, condition "Caries", note "Deep caries,
+  sensitive to cold" — appeared correctly in the card
+- X-ray uploaded, then tagged laterality "Left" / body region "Lower jaw,
+  tooth 36" — both saved and rendered as badges, confirmed in a screenshot
+- Zero console errors across the session
+- All test data (patient, its 3 visits, the dental finding, the
+  attachment) deleted afterward — the attachment through the real
+  `attachment-delete` edge function (removes the B2 object too, not just
+  the DB row), the rest via direct delete — zero rows left behind
+
+### Still open
+
+- Toothache/abscess content gap: no `DENTAL_ABSCESS` signal, no Dentistry
+  referral intent at all yet (was mid-flight before this detour; the
+  research is done, the migration is not written).
+- Gynaecology LMP + G-P-L-A structured fields — not started, needs new
+  `MeasureInputKind` variants (date, structured code), separate in kind
+  from everything in this section.
+- Both deferred pending a scope check-in — a lot of ground already covered
+  this session, and Anmol has asked more than once to be told the plan
+  before further scope starts, not after.
+
+---
+
 ## 15. Further reading
 
 - `aren-technical-atlas.md` — the whole-repo map (both workspaces, auth, data

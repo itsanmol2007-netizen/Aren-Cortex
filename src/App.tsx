@@ -22,6 +22,7 @@ import { PickerCard, type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MeasurementsCard } from "./features/consult/MeasurementsCard";
 import { AttachmentsCard } from "./features/consult/AttachmentsCard";
+import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
@@ -1466,6 +1467,25 @@ function App() {
                     the numbers, before the engine's own output, never
                     competing with either for attention. */}
                 <AttachmentsCard visitId={visitId} disabled={!patient} />
+
+                {/* Per-tooth record, separate from Attachments — a finding
+                    can exist with no X-ray at all, and most do. Always
+                    reachable, same as every chip in the catalogue:
+                    specialtyProfile.ts only changes which panel is
+                    ELEVATED, never what exists ("Nothing in this file can
+                    change a score, a rank, or which intents exist" — its
+                    own header). A general OPD doctor with an occasional
+                    dental walk-in needs this exactly as much as a
+                    dedicated dental clinic would. */}
+                <DentalChartCard
+                  visitId={visitId}
+                  // Same corruption-risk gate as every other attribution
+                  // write in this file (line ~1143) — a fallback identity
+                  // must never write a real doctor's id onto a finding it
+                  // did not enter.
+                  doctorId={identity.isReal ? identity.doctorId : null}
+                  disabled={!patient}
+                />
 
                 <div className="cs-engine">
                   <RecommendationsCard

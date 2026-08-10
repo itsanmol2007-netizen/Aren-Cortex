@@ -21,10 +21,12 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, ExternalLink } from "lucide-react";
-import { listAttachments, uploadAttachment, getViewUrl, deleteAttachment } from "../../lib/db/attachments";
-import { ATTACHMENT_TYPES, ATTACHMENT_TYPE_LABEL, ACCEPTED_MIME_ACCEPT } from "../../lib/attachments/types";
-import type { Attachment, AttachmentType } from "../../lib/attachments/types";
+import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, ExternalLink, Tag } from "lucide-react";
+import { listAttachments, uploadAttachment, getViewUrl, deleteAttachment, updateAttachmentTags } from "../../lib/db/attachments";
+import { ATTACHMENT_TYPES, ATTACHMENT_TYPE_LABEL, ACCEPTED_MIME_ACCEPT, LATERALITY_LABEL } from "../../lib/attachments/types";
+import type { Attachment, AttachmentType, Laterality } from "../../lib/attachments/types";
+
+const LATERALITIES: Laterality[] = ["left", "right", "bilateral"];
 
 interface Props {
     visitId: string | null;
@@ -45,6 +47,8 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
     const [busy, setBusy] = useState<string | null>(null); // status text while uploading
     const [error, setError] = useState<string | null>(null);
     const [viewing, setViewing] = useState<number | null>(null); // attachment id being fetched
+    const [tagging, setTagging] = useState<number | null>(null); // attachment id whose tag panel is open
+    const [regionDraft, setRegionDraft] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -98,6 +102,33 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
         }
     };
 
+    const openTagPanel = (att: Attachment) => {
+        setTagging((curr) => (curr === att.id ? null : att.id));
+        setRegionDraft(att.bodyRegion ?? "");
+    };
+
+    const setLaterality = async (att: Attachment, laterality: Laterality) => {
+        // toggling the same value off — a doctor un-tagging a mis-click
+        const next = att.laterality === laterality ? null : laterality;
+        setItems((curr) => curr.map((i) => (i.id === att.id ? { ...i, laterality: next } : i)));
+        try {
+            await updateAttachmentTags(att.id, { laterality: next });
+        } catch {
+            setItems((curr) => curr.map((i) => (i.id === att.id ? { ...i, laterality: att.laterality } : i)));
+        }
+    };
+
+    const saveBodyRegion = async (att: Attachment) => {
+        const next = regionDraft.trim() || null;
+        setItems((curr) => curr.map((i) => (i.id === att.id ? { ...i, bodyRegion: next } : i)));
+        try {
+            await updateAttachmentTags(att.id, { bodyRegion: next });
+        } catch {
+            setItems((curr) => curr.map((i) => (i.id === att.id ? { ...i, bodyRegion: att.bodyRegion } : i)));
+        }
+        setTagging(null);
+    };
+
     const onDelete = async (att: Attachment) => {
         setError(null);
         // Optimistic — a doctor deleting a mis-attached file wants it gone
@@ -137,35 +168,81 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                 )}
 
                 {items.map((att) => (
-                    <div key={att.id} className="cs-attach-row">
-                        <span className="cs-attach-icon">
-                            {att.mimeType?.startsWith("image/") ? <ImageIcon size={14} /> : <FileText size={14} />}
-                        </span>
-                        <span className="cs-attach-meta">
-                            <span className="cs-attach-label">
-                                {att.attachmentType ? ATTACHMENT_TYPE_LABEL[att.attachmentType] : "Attachment"}
+                    <div key={att.id} className="cs-attach-item">
+                        <div className="cs-attach-row">
+                            <span className="cs-attach-icon">
+                                {att.mimeType?.startsWith("image/") ? <ImageIcon size={14} /> : <FileText size={14} />}
                             </span>
-                            <span className="cs-attach-size">{formatBytes(att.sizeBytes)}</span>
-                        </span>
-                        <button
-                            type="button"
-                            className="cs-attach-action"
-                            disabled={viewing === att.id}
-                            onClick={() => onView(att)}
-                            aria-label="View"
-                            title="View"
-                        >
-                            {viewing === att.id ? <Loader2 size={13} className="cs-spin" /> : <ExternalLink size={13} />}
-                        </button>
-                        <button
-                            type="button"
-                            className="cs-attach-action is-danger"
-                            onClick={() => onDelete(att)}
-                            aria-label="Remove"
-                            title="Remove"
-                        >
-                            <Trash2 size={13} />
-                        </button>
+                            <span className="cs-attach-meta">
+                                <span className="cs-attach-label">
+                                    {att.attachmentType ? ATTACHMENT_TYPE_LABEL[att.attachmentType] : "Attachment"}
+                                    {/* Compact tag badge — visible without opening the panel, since
+                                        the whole point of tagging is that another glance at the card
+                                        (not just at upload time) should say which side / where. */}
+                                    {att.laterality && <i className="cs-attach-tagbadge">{LATERALITY_LABEL[att.laterality]}</i>}
+                                    {att.bodyRegion && <i className="cs-attach-tagbadge">{att.bodyRegion}</i>}
+                                </span>
+                                <span className="cs-attach-size">{formatBytes(att.sizeBytes)}</span>
+                            </span>
+                            <button
+                                type="button"
+                                className={`cs-attach-action${tagging === att.id ? " is-active" : ""}`}
+                                onClick={() => openTagPanel(att)}
+                                aria-label="Tag"
+                                aria-expanded={tagging === att.id}
+                                title="Which side / where"
+                            >
+                                <Tag size={13} />
+                            </button>
+                            <button
+                                type="button"
+                                className="cs-attach-action"
+                                disabled={viewing === att.id}
+                                onClick={() => onView(att)}
+                                aria-label="View"
+                                title="View"
+                            >
+                                {viewing === att.id ? <Loader2 size={13} className="cs-spin" /> : <ExternalLink size={13} />}
+                            </button>
+                            <button
+                                type="button"
+                                className="cs-attach-action is-danger"
+                                onClick={() => onDelete(att)}
+                                aria-label="Remove"
+                                title="Remove"
+                            >
+                                <Trash2 size={13} />
+                            </button>
+                        </div>
+
+                        {tagging === att.id && (
+                            <div className="cs-attach-tagpanel">
+                                <div className="cs-attach-tagrow">
+                                    {LATERALITIES.map((l) => (
+                                        <button
+                                            key={l}
+                                            type="button"
+                                            className={`cs-attach-chip${att.laterality === l ? " is-on" : ""}`}
+                                            onClick={() => setLaterality(att, l)}
+                                        >
+                                            {LATERALITY_LABEL[l]}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="cs-attach-tagrow">
+                                    <input
+                                        className="cs-attach-region-input"
+                                        placeholder="Body region — e.g. face, palms, forearm"
+                                        value={regionDraft}
+                                        onChange={(e) => setRegionDraft(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") saveBodyRegion(att); }}
+                                    />
+                                    <button type="button" className="cs-attach-tagsave" onClick={() => saveBodyRegion(att)}>
+                                        Save
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
 

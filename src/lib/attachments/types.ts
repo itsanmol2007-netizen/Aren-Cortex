@@ -23,6 +23,23 @@ export const ATTACHMENT_TYPE_LABEL: Record<AttachmentType, string> = {
     other: "Other",
 };
 
+/**
+ * Which side, when it matters. A shared mechanism, not a table per
+ * specialty — ENT (which ear), eye (which eye), dermatology (site changes
+ * steroid potency, not just documentation) and orthopaedics/physio (which
+ * joint) all need "which side" and/or "where on the body". That is the same
+ * need wearing different clothes. Neither this nor bodyRegion is read by
+ * the Synapse engine — same status as observables.system (Synapse handoff
+ * §2.3): display and record fields, UI only.
+ */
+export type Laterality = "left" | "right" | "bilateral";
+
+export const LATERALITY_LABEL: Record<Laterality, string> = {
+    left: "Left",
+    right: "Right",
+    bilateral: "Bilateral",
+};
+
 /** One row of visit_attachments, camelCased. */
 export interface Attachment {
     id: number;
@@ -34,6 +51,8 @@ export interface Attachment {
     sizeBytes: number | null;
     uploadedByDoctorId: string | null;
     createdAt: string;
+    laterality: Laterality | null;
+    bodyRegion: string | null;
 }
 
 /** What the file picker is allowed to accept — mirrors attachment-upload-url's ALLOWED_MIME. */
