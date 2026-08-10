@@ -161,16 +161,66 @@ export interface ToothGeometry {
     labelY: number;
 }
 
-function roundedRect(w: number, h: number, r: number): string {
-    const x = -w / 2, y = -h / 2;
-    return [
-        `M${x + r},${y}`,
-        `H${x + w - r}`, `Q${x + w},${y} ${x + w},${y + r}`,
-        `V${y + h - r}`, `Q${x + w},${y + h} ${x + w - r},${y + h}`,
-        `H${x + r}`, `Q${x},${y + h} ${x},${y + h - r}`,
-        `V${y + r}`, `Q${x},${y} ${x + r},${y}`,
-        "Z",
-    ].join(" ");
+/**
+ * The crown outline, seen from the biting surface — the view a chart is drawn
+ * in. Each class gets its own silhouette because they genuinely differ, and a
+ * chart where a wisdom tooth and a central incisor are the same rounded box is
+ * a chart nobody reads as teeth:
+ *
+ *   incisor   a flattened lens — wide mesiodistally, thin front to back
+ *   canine    a teardrop, its cusp tip pointing at the cheek
+ *   premolar  an oval of two lobes, buccal and lingual
+ *   molar     four cusp lobes with the fissures showing between them
+ *
+ * Local frame, centred on the origin, +y toward the cheek. The five surface
+ * zones stay rectangular and are clipped to this outline when rendered, so the
+ * fills follow the crown's real shape without the zone maths having to know
+ * anything about it.
+ */
+function crownPath(cls: ToothClass, w: number, h: number): string {
+    const x = w / 2, y = h / 2;
+    switch (cls) {
+        case "incisor":
+            return [
+                `M${-x},${-y * 0.2}`,
+                `Q${-x},${-y} ${-x * 0.5},${-y}`,
+                `L${x * 0.5},${-y}`, `Q${x},${-y} ${x},${-y * 0.2}`,
+                `L${x * 0.94},${y * 0.55}`, `Q${x * 0.82},${y} ${x * 0.42},${y}`,
+                `L${-x * 0.42},${y}`, `Q${-x * 0.82},${y} ${-x * 0.94},${y * 0.55}`,
+                "Z",
+            ].join(" ");
+        case "canine":
+            return [
+                `M0,${y}`,
+                `Q${x * 0.86},${y * 0.42} ${x * 0.9},${-y * 0.28}`,
+                `Q${x * 0.72},${-y} 0,${-y}`,
+                `Q${-x * 0.72},${-y} ${-x * 0.9},${-y * 0.28}`,
+                `Q${-x * 0.86},${y * 0.42} 0,${y}`,
+                "Z",
+            ].join(" ");
+        case "premolar":
+            return [
+                `M0,${-y}`,
+                `Q${x},${-y} ${x},${-y * 0.05}`,
+                `Q${x},${y} 0,${y}`,
+                `Q${-x},${y} ${-x},${-y * 0.05}`,
+                `Q${-x},${-y} 0,${-y}`,
+                "Z",
+            ].join(" ");
+        case "molar":
+            return [
+                `M${-x * 0.5},${-y}`,
+                `Q${-x},${-y} ${-x},${-y * 0.42}`,
+                `Q${-x * 0.86},0 ${-x},${y * 0.42}`,
+                `Q${-x},${y} ${-x * 0.5},${y}`,
+                `Q0,${y * 0.86} ${x * 0.5},${y}`,
+                `Q${x},${y} ${x},${y * 0.42}`,
+                `Q${x * 0.86},0 ${x},${-y * 0.42}`,
+                `Q${x},${-y} ${x * 0.5},${-y}`,
+                `Q0,${-y * 0.86} ${-x * 0.5},${-y}`,
+                "Z",
+            ].join(" ");
+    }
 }
 
 function pts(...p: [number, number][]): string {
@@ -268,7 +318,7 @@ function build(quadrant: 1 | 2 | 3 | 4): ToothGeometry[] {
             x, y, rotate,
             w: spec.w,
             h: spec.h,
-            outline: roundedRect(spec.w, spec.h, spec.cls === "molar" ? 5 : 6),
+            outline: crownPath(spec.cls, spec.w, spec.h),
             zones: zonesFor(spec.w, spec.h, mesialIsPlusX),
             cusps: cuspsFor(spec.cusps, spec.w, spec.h),
             labelX: x + ux * off,

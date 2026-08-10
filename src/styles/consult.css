@@ -845,8 +845,41 @@
 /* ODONTOGRAM — the real dental chart. All geometry (arch curves, crown
    shapes, the five surface polygons per tooth) is computed in
    lib/dental/anatomy.ts; this file only colors what that file drew. */
-.cs-odo {
-    margin-bottom: 8px;
+/* The glass panel the chart sits on.
+   Deliberately CHROME, not data: §12.1's rule is that colour carries meaning
+   and never mood, so the depth, blur and tint all live on the container while
+   the teeth themselves keep the flat clinical palette. The tints below are
+   near-transparent washes, not the semantic blue/red/amber — nothing here can
+   be mistaken for a finding. */
+.cs-odo,
+.cs-body {
+    position: relative;
+    margin-bottom: 10px;
+    padding: 12px 10px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 18px;
+    background:
+        radial-gradient(115% 80% at 50% 0%, rgba(18, 104, 232, 0.055), transparent 62%),
+        radial-gradient(95% 65% at 50% 100%, rgba(124, 58, 237, 0.045), transparent 58%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(240, 244, 250, 0.72));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 0 0 1px rgba(219, 226, 236, 0.45),
+        0 10px 26px -18px rgba(11, 23, 51, 0.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.12);
+    backdrop-filter: blur(12px) saturate(1.12);
+}
+
+/* the soft specular band across the top of the glass */
+.cs-odo::before,
+.cs-body::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 42%;
+    border-radius: 18px 18px 40% 40% / 18px 18px 18% 18%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
+    pointer-events: none;
 }
 
 .cs-odo.is-disabled {
@@ -878,6 +911,7 @@
 
 .cs-odo-crown {
     fill: #fff;
+    filter: drop-shadow(0 1px 1.5px rgba(11, 23, 51, 0.13));
 }
 
 .cs-odo-crown.is-missing {
@@ -912,6 +946,15 @@
 
 .cs-odo-surface.is-sel {
     fill: var(--cs-blue);
+}
+
+.cs-odo-tooth.is-sel {
+    filter: drop-shadow(0 0 5px rgba(18, 104, 232, 0.4));
+}
+
+.cs-body-zone.is-sel,
+.cs-body-zone.is-marked {
+    filter: drop-shadow(0 0 4px rgba(15, 118, 110, 0.28));
 }
 
 .cs-odo-cusp {
@@ -2587,19 +2630,21 @@
     .cs-hbtn,
     .cs-review,
     .cs-meas,
-    .cs-field {
+    .cs-field,
+    .cs-odo-surface,
+    .cs-body-zone {
         transition: none;
     }
 }
 
 /* BODY MAP — the dermatology counterpart to the odontogram. Geometry lives in
-   lib/body/anatomy.ts; this only colors it. */
+   lib/body/anatomy.ts; this only colors it. The glass panel it shares with the
+   odontogram is declared above, next to .cs-odo. */
 .cs-body {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    margin-bottom: 8px;
 }
 
 .cs-body.is-disabled {
@@ -2650,3 +2695,104 @@
     color: var(--cs-faint);
     font-size: 10.5px;
 }
+
+/* The chart modal — where the odontogram and the body map go when the doctor
+   needs room to aim. The scrim blurs what is behind it rather than dimming
+   it: the consult underneath stays legible as context, which is the point of
+   opening a chart over it rather than navigating away. */
+.cs-chart-expand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-left: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: color 0.13s ease, border-color 0.13s ease;
+}
+
+.cs-chart-expand:hover {
+    border-color: var(--cs-blue);
+    color: var(--cs-blue);
+}
+
+.cs-chartmodal {
+    position: fixed;
+    inset: 0;
+    z-index: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+}
+
+.cs-chartmodal-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 23, 51, 0.28);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.cs-chartmodal-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(760px, 100%);
+    max-height: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(246, 248, 252, 0.94));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        0 40px 80px -32px rgba(11, 23, 51, 0.55);
+    overflow: hidden;
+}
+
+.cs-chartmodal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: none;
+    padding: 16px 18px 10px;
+}
+
+.cs-chartmodal-title {
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+}
+
+.cs-chartmodal-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--cs-muted);
+    cursor: pointer;
+}
+
+.cs-chartmodal-close:hover {
+    border-color: var(--cs-blue);
+    color: var(--cs-blue);
+}
+
+.cs-chartmodal-body {
+    padding: 0 18px 18px;
+    overflow-y: auto;
+}
+
+/* Given the room, the chart takes it — this is the whole reason the modal
+   exists, so a tooth surface is a comfortable target instead of a 5px sliver. */
+.cs-chartmodal-body .cs-odo-svg { max-width: 100%; }
+.cs-chartmodal-body .cs-body-svg { max-width: 300px; }

@@ -26,7 +26,8 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
-import { Smile, Loader2, Trash2, X } from "lucide-react";
+import { Smile, Loader2, Trash2, X, Maximize2 } from "lucide-react";
+import { ChartSurface } from "./ChartSurface";
 import { listDentalFindings, addDentalFinding, deleteDentalFinding } from "../../lib/db/dental";
 import {
     UPPER_ARCH, LOWER_ARCH, TOOTH_BY_CODE, CHART_VIEWBOX, OCCLUSAL_Y,
@@ -66,6 +67,7 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
     const [note, setNote] = useState("");
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
         if (!visitId) { setItems([]); setSel(null); return; }
@@ -157,6 +159,12 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
         return (
             <g key={t.code} className={`cs-odo-tooth${isSel ? " is-sel" : ""}`}>
                 <g transform={`translate(${t.x.toFixed(1)},${t.y.toFixed(1)}) rotate(${t.rotate.toFixed(1)})`}>
+                    {/* The surface zones are rectangles; the crown is not. Clipping
+                        them to the outline lets the zone maths stay simple while the
+                        fills still follow the real shape of the tooth. */}
+                    <clipPath id={`cs-crown-${t.code}`}>
+                        <path d={t.outline} />
+                    </clipPath>
                     {/* crown body — painted by a whole-tooth finding, if any */}
                     <path
                         d={t.outline}
@@ -165,6 +173,7 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                             (isMissing ? " is-missing" : wholeColor ? ` is-cond-${wholeColor}` : "")
                         }
                     />
+                    <g clipPath={`url(#cs-crown-${t.code})`}>
                     {!isMissing && t.zones.map((z) => {
                         const cond = p?.surfaces[z.surface];
                         return (
@@ -184,6 +193,7 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                             </polygon>
                         );
                     })}
+                    </g>
                     {!isMissing && t.cusps.map((c, i) => (
                         <circle key={i} cx={c.cx} cy={c.cy} r={c.r} className="cs-odo-cusp" />
                     ))}
@@ -209,8 +219,18 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
                             : "FDI · charted per surface"}
                     </em>
                 </h2>
+                <button
+                    type="button"
+                    className="cs-chart-expand"
+                    onClick={() => setExpanded(true)}
+                    aria-label="Open the chart larger"
+                    title="Open larger"
+                >
+                    <Maximize2 size={12} />
+                </button>
             </div>
 
+            <ChartSurface title="Dental chart" expanded={expanded} onClose={() => setExpanded(false)}>
             <div className="cs-attach-body">
                 <div className={`cs-odo${disabled || !visitId ? " is-disabled" : ""}`}>
                     <svg viewBox={CHART_VIEWBOX} className="cs-odo-svg" role="img"
@@ -324,6 +344,7 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
 
                 {error && <p className="cs-attach-error">{error}</p>}
             </div>
+            </ChartSurface>
         </section>
     );
 }

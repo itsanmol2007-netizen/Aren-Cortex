@@ -17,7 +17,8 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
-import { PersonStanding, Loader2, Trash2, X } from "lucide-react";
+import { PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
+import { ChartSurface } from "./ChartSurface";
 import { listBodySites, addBodySite, deleteBodySite } from "../../lib/db/bodySites";
 import type { BodySiteFinding } from "../../lib/db/bodySites";
 import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/body/anatomy";
@@ -41,6 +42,7 @@ export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
     const [note, setNote] = useState("");
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
         if (!visitId) { setItems([]); setSel(null); return; }
@@ -106,8 +108,18 @@ export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
                     Body Map
                     <em>{items.length > 0 ? `${items.length} site${items.length > 1 ? "s" : ""}` : "where on the body"}</em>
                 </h2>
+                <button
+                    type="button"
+                    className="cs-chart-expand"
+                    onClick={() => setExpanded(true)}
+                    aria-label="Open the map larger"
+                    title="Open larger"
+                >
+                    <Maximize2 size={12} />
+                </button>
             </div>
 
+            <ChartSurface title="Body map" expanded={expanded} onClose={() => setExpanded(false)}>
             <div className="cs-attach-body">
                 <div className="cs-attach-tagrow cs-body-aspect">
                     {(["front", "back"] as BodyAspect[]).map((a) => (
@@ -220,6 +232,7 @@ export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
 
                 {error && <p className="cs-attach-error">{error}</p>}
             </div>
+            </ChartSurface>
         </section>
     );
 }
