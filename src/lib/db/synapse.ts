@@ -459,6 +459,17 @@ export async function fetchCompositionBrands(opts: {
     prefs: BrandPreferenceModel;
     clinicDefaults: ClinicBrandDefaults;
     isPediatric: boolean;
+    /**
+     * The calling doctor's hospital. Required to see their own hospital's
+     * pending (doctor-added, not-yet-approved) medicines alongside the
+     * global catalogue — composition_brands() filters to
+     * `hospital_id IS NULL OR hospital_id = p_hospital_id`, so omitting this
+     * silently hides nothing global but also silently hides every one of
+     * THIS hospital's own pending additions. Optional only because a couple
+     * of legacy callers predate hospital scoping existing at all; every new
+     * call site should pass it.
+     */
+    hospitalId?: string;
 }): Promise<BrandIndex> {
     const index: BrandIndex = new Map();
     if (opts.compositionIds.length === 0) return index;
@@ -484,6 +495,7 @@ export async function fetchCompositionBrands(opts: {
     const { data, error } = await supabase.rpc("composition_brands", {
         p_composition_ids: opts.compositionIds,
         p_limit: BRAND_CANDIDATES,
+        p_hospital_id: opts.hospitalId ?? null,
         p_pediatric: opts.isPediatric,
         p_keep_medicine_ids: keep,
     });

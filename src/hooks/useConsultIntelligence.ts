@@ -38,6 +38,14 @@ export interface ConsultIntelligenceArgs {
     ageYears: number | null;
     /** intent ids the doctor has actually taken — drives companions */
     acceptedIntentIds: number[];
+    /**
+     * Required to see this hospital's own pending (doctor-added, not yet
+     * admin-approved) medicines alongside the global catalogue — see the
+     * `hospitalId` note on `fetchCompositionBrands`. Optional only so a
+     * still-resolving identity doesn't crash the hook; brands simply come
+     * back global-only until it's ready.
+     */
+    hospitalId?: string;
 }
 
 export interface ConsultIntelligence {
@@ -67,7 +75,7 @@ const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
 });
 
 export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIntelligence {
-    const { data, visitId, observableIds, vitals, ageYears, acceptedIntentIds } = args;
+    const { data, visitId, observableIds, vitals, ageYears, acceptedIntentIds, hospitalId } = args;
 
     // ---- 1. inputs -> signals -> ranked intents. Synchronous. ----
     const built = useMemo(() => {
@@ -212,6 +220,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
             prefs: data.brandPreferences,
             clinicDefaults: data.clinicBrandDefaults,
             isPediatric,
+            hospitalId,
         })
             .then((fetched) => {
                 for (const [id, cb] of fetched) brandCache.current.set(ck(id), cb);
@@ -241,7 +250,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         // `brandKey` is the identity of the request — the array itself is
         // rebuilt every render and would loop forever.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [brandKey, data, isPediatric]);
+    }, [brandKey, data, isPediatric, hospitalId]);
 
     // ---- 5. the raw input, persisted. Debounced, fire-and-forget. ----
     const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

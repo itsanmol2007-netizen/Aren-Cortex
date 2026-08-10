@@ -405,6 +405,7 @@ function App() {
     vitals,
     ageYears,
     acceptedIntentIds: useMemo(() => [...acceptedIntents.keys()], [acceptedIntents]),
+    hospitalId: identity.hospitalId,
   });
 
   // ── The v1 compatibility write ──────────────────────────────────────────
