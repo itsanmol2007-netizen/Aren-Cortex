@@ -21,6 +21,7 @@ import { useConsultIntelligence } from "./hooks/useConsultIntelligence";
 import { PickerCard, type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MeasurementsCard } from "./features/consult/MeasurementsCard";
+import { AttachmentsCard } from "./features/consult/AttachmentsCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
@@ -1459,6 +1460,12 @@ function App() {
                   relevantBecause={measureRelevance.because}
                   disabled={!patient}
                 />
+
+                {/* Secondary by design (atlas S14.5's attachment philosophy —
+                    "structured first, artifact when necessary"): sits after
+                    the numbers, before the engine's own output, never
+                    competing with either for attention. */}
+                <AttachmentsCard visitId={visitId} disabled={!patient} />
 
                 <div className="cs-engine">
                   <RecommendationsCard

@@ -1232,6 +1232,105 @@ approval queue has nothing to review until doctors can submit.
 
 ---
 
+## 14.6 Attachments — built and verified end-to-end (2026-08-08)
+
+X-rays, lab reports, ultrasound images. The three-input-shapes architecture
+in the Synapse handoff always named "attachments" as a real input type
+(§1); this is it finally built, not a new concept.
+
+**Storage: Backblaze B2, not Cloudflare R2.** R2 requires a payment method on
+file even for free-tier use — a real blocker Anmol hit live. B2 needs none,
+is cheaper per GB (~$0.006 vs R2's ~$0.015), and has the same 10GB free
+tier. Both are S3-compatible, so the code is **provider-neutral on purpose**:
+`ATTACHMENTS_S3_ENDPOINT` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` /
+`_BUCKET` env vars, not anything B2-specific — switching provider later, or
+to AWS S3 `ap-south-1` (Mumbai) for India data residency once past pilot
+(see the compliance note below), is a secrets change, never a code change.
+
+**Compliance note, said plainly to Anmol and repeated here:** India's
+data-localisation rules for health data are still evolving; the DPDPA
+doesn't ban cross-border transfer outright today, but the direction of
+policy leans toward keeping health data in-country, and this is not legal
+advice. B2's US-region storage is an accepted MVP/pilot-stage choice, not a
+permanent one — `storage_provider` on `visit_attachments` exists specifically
+so a later move to an India-region provider costs a migration, not a rewrite.
+Get real counsel before onboarding beyond a small consenting pilot.
+
+### What exists
+
+Three edge functions, all deployed, all `verify_jwt: true`, all
+security-scoped through the **caller's own session** (not a service-role
+bypass) — asking "does this visit exist" through an RLS-scoped client IS the
+authorization check, same pattern as `add_medicine`:
+
+| Function | Does |
+|---|---|
+| `attachment-upload-url` | Validates mime type / size / attachment_type, presigns a PUT, returns a random (never the original filename) storage path |
+| `attachment-view-url` | Checks `visit_attachments` is visible to the caller, presigns a GET |
+| `attachment-delete` | Deletes the metadata row through the caller's RLS-scoped client FIRST — that's the auth check — only then deletes from storage. This order means a failure can only ever leave a harmless orphaned object, never a broken reference the app still shows |
+
+`visit_attachments` (existed as an unused stub before tonight — no FK on
+`visit_id`, no `storage_provider`/`uploaded_by`/`size_bytes`/
+`attachment_type`) is now fully wired: FK added, four columns added,
+`attachment_type` constrained to `xray | lab_report | photo | scan | other`
+— same fixed-set discipline as every other categorical column in this
+schema.
+
+**Compression is type-aware, not one target** (`lib/attachments/compress.ts`,
+pure, no Supabase dependency):
+
+| Type | Max dimension | Target | Quality floor |
+|---|---|---|---|
+| xray, scan | 2400px | ~1.5MB | 0.65 |
+| photo, lab_report, other | 1600px | ~550KB | 0.5 |
+
+Reasoning: an X-ray or ultrasound's diagnostic value IS the fine detail;
+over-compressing one the same way as a wound photo destroys exactly what the
+doctor took it for. `application/pdf` passes through unchanged — client-side
+PDF recompression needs a real PDF library, out of scope tonight; the 8MB
+backstop in `attachment-upload-url` still catches anything absurd.
+
+`AttachmentsCard` (`features/consult/`) sits in `cs-body-left` directly after
+`MeasurementsCard` — secondary by design, per the agreed UI philosophy
+("structured first, artifact when necessary"), never competing with the
+chip pickers or the engine's own output for attention. Interaction mirrors
+`MeasurementsCard`'s "Add Measurement" pattern deliberately (button → small
+menu → action) rather than inventing a new one: tap Attach, pick what kind
+of file this is (the type has to be picked FIRST — it drives the compression
+profile), the native file picker opens. Thumbnails are never eagerly
+fetched — every visible file would mean an immediate signed-URL round trip
+for detail nobody asked to see yet, the same restraint already applied to
+brand candidate windows elsewhere in this codebase.
+
+### Verified, live, through the real UI — not just the API
+
+Driven through a real headless browser session (login, new-patient intake,
+active consult), not curl-only:
+
+- Upload: real JPEG compressed and landed in the real B2 bucket, appeared in
+  the card as "X-ray · 759 B"
+- View: real network call to `attachment-view-url`, 200, valid presigned URL
+  returned
+- Delete: card reverted to empty state, confirmed in the DB
+- Cross-hospital isolation re-confirmed through the real `authenticated`
+  Postgres role (not the `postgres` role `execute_sql` uses, which bypasses
+  RLS entirely — a methodology mistake caught mid-session, see the commit
+  history for the full account) — a different hospital's session gets `[]` /
+  `404`, never the file
+- All test patients/visits/attachments created during verification deleted
+  afterward through the real delete function, not a raw DB wipe
+
+### Still open
+
+- QR phone-handoff (desktop doctor, photo on phone) — deliberately deferred,
+  not built. "Upload from computer" (today's file picker) covers desktop
+  webcams and, on an actual phone browser, triggers the native camera
+  directly via `accept="image/*"` with no QR needed at all.
+- India-region storage migration — tracked above, not urgent for pilot.
+- No PDF compression.
+
+---
+
 ## 15. Further reading
 
 - `aren-technical-atlas.md` — the whole-repo map (both workspaces, auth, data

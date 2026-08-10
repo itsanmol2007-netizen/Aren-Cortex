@@ -664,6 +664,116 @@
     color: var(--cs-blue);
 }
 
+/* ── Attachments ──────────────────────────────────────────────────────────
+   Deliberately plain: a list of small rows, not a gallery. Thumbnails are
+   never eagerly rendered here (AttachmentsCard fetches nothing until the
+   doctor clicks View) so there is no image to lay out — a type icon, a
+   label and a size is the whole row. */
+.cs-attach-input-hidden {
+    display: none;
+}
+
+.cs-attach-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cs-attach-empty {
+    margin: 0;
+    padding: 4px 2px 6px;
+    color: var(--cs-faint);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.cs-attach-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--cs-line);
+    border-radius: 9px;
+    background: #fafbfc;
+    padding: 7px 9px;
+}
+
+.cs-attach-row.is-busy {
+    color: var(--cs-faint);
+    font-size: 12px;
+}
+
+.cs-attach-icon {
+    display: flex;
+    flex: none;
+    color: var(--cs-faint);
+}
+
+.cs-attach-meta {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: baseline;
+    gap: 7px;
+}
+
+.cs-attach-label {
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 560;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-attach-size {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11px;
+}
+
+.cs-attach-action {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--cs-faint);
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cs-attach-action:hover:not(:disabled) {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+.cs-attach-action.is-danger:hover:not(:disabled) {
+    background: #fdecea;
+    color: #b23a2c;
+}
+
+.cs-attach-add {
+    position: relative;
+}
+
+.cs-attach-error {
+    margin: 2px 0 0;
+    color: #b23a2c;
+    font-size: 12px;
+}
+
+.cs-spin {
+    animation: cs-spin-turn 0.9s linear infinite;
+}
+
+@keyframes cs-spin-turn {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* Blood group — the one measurement that is not a number. It borrows the
    numeric field's type scale so the row does not visibly break rank. */
 .cs-meas-select {
