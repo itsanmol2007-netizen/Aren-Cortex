@@ -2591,3 +2591,62 @@
         transition: none;
     }
 }
+
+/* BODY MAP — the dermatology counterpart to the odontogram. Geometry lives in
+   lib/body/anatomy.ts; this only colors it. */
+.cs-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.cs-body.is-disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.cs-body-aspect {
+    justify-content: center;
+    margin-bottom: 6px;
+}
+
+.cs-body-svg {
+    display: block;
+    width: 100%;
+    max-width: 190px;
+    height: auto;
+}
+
+.cs-body-zone {
+    fill: #fff;
+    stroke: var(--cs-line-strong);
+    stroke-width: 1;
+    cursor: pointer;
+    transition: fill 0.12s ease;
+}
+
+.cs-body-zone:hover {
+    fill: var(--cs-blue-soft);
+}
+
+/* A marked site is teal, matching the dot used in the list below — one
+   colour for "there is something here", since unlike a tooth surface the
+   region itself carries no condition of its own. */
+.cs-body-zone.is-marked {
+    fill: var(--cs-teal-soft);
+    stroke: var(--cs-teal);
+}
+
+.cs-body-zone.is-sel {
+    fill: var(--cs-blue);
+    stroke: var(--cs-blue);
+}
+
+/* Which way round the patient is — the one thing a body map must never leave
+   the reader to guess. */
+.cs-body-orient {
+    color: var(--cs-faint);
+    font-size: 10.5px;
+}

@@ -23,6 +23,7 @@ import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MeasurementsCard } from "./features/consult/MeasurementsCard";
 import { AttachmentsCard } from "./features/consult/AttachmentsCard";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
+import { BodyMapCard } from "./features/consult/BodyMapCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
@@ -1483,6 +1484,18 @@ function App() {
                   // write in this file (line ~1143) — a fallback identity
                   // must never write a real doctor's id onto a finding it
                   // did not enter.
+                  doctorId={identity.isReal ? identity.doctorId : null}
+                  disabled={!patient}
+                />
+
+                {/* Same argument as the dental chart, for the rest of the
+                    body: "where" is a clinical input a free-text box cannot
+                    carry. Dermatology is the clearest case — site decides
+                    topical potency and distribution is itself diagnostic —
+                    but pain, rashes and injuries in general OPD land here
+                    too. Also presentation only; the engine never reads it. */}
+                <BodyMapCard
+                  visitId={visitId}
                   doctorId={identity.isReal ? identity.doctorId : null}
                   disabled={!patient}
                 />

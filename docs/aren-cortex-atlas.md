@@ -1449,9 +1449,74 @@ Replaced `DentalChartCard` with a real two-arch odontogram:
 - One cosmetic bug caught and fixed during verification: the panel title
   briefly duplicated the tooth code (`TOOTH_LABEL` already includes it).
 
+### 2026-08-10, third pass — the real odontogram, and the body map
+
+Anmol again, and the criticism was correct both times: *"Why do you tell me
+one thing? Can you make a teeth diagram seriously? What do dentists use in
+real life? Meet that, not boxes. And same for other specialty too."* The
+previous pass produced 32 rectangles in two straight rows and I had called
+it a real odontogram. It was not. Two things were missing, and the second
+one matters more than the first.
+
+**The shape.** Two horseshoe arches mirrored across the occlusal plane,
+drawn as an ellipse wider than deep because a real arch is (~55mm across
+vs ~40mm front-to-back). Teeth are placed by **arc length**, not by angle —
+even angular spacing leaves gaps between the narrow front teeth and crowds
+the molars — so the arch is walked crown width by crown width and the curve
+parameter solved numerically. Each crown rotates onto the arch normal, so
+buccal always faces the cheek, and carries its real cusp count. All of it
+lives in `lib/dental/anatomy.ts`; the component renders and owns no anatomy.
+
+**The unit of record — the part that actually matters.** A dentist charts
+caries per *surface*: "36 MO" is the mesial and occlusal surfaces of the
+lower left first molar. Recording "tooth 36 has caries" throws away the
+information the chart exists to carry. So every tooth is five independently
+clickable surfaces, and `dental_findings` gained a nullable `surface`
+column. **NULL is meaningful, not missing** — mobility, impaction, a missing
+tooth and a root canal are whole-tooth facts, so the chart asks for a
+surface only where one exists (`isSurfaceCondition`), and states in words
+which of the two it is about to write. Surface names follow the tooth: the
+outer surface is buccal on a molar but labial on an incisor, palatal above
+and lingual below, occlusal on a molar and incisal on an incisor.
+
+`scripts/dental-anatomy.mjs` (`npm run check:dental`) checks the geometry
+numerically, because a mesial/distal swap on one quadrant looks *fine in a
+screenshot* and silently records the wrong surface — a wrong medical
+record. It verifies crowns touch without overlapping, that mesial genuinely
+faces the midline, and that buccal faces out of the arch. Confirmed
+non-vacuous by deliberately inverting the mesial calculation: 32 errors, as
+expected.
+
+**The body map** (`lib/body/anatomy.ts`, `BodyMapCard`,
+`visit_body_sites`) is the same correction applied to the rest of the body.
+Attachments carried a free-text "body region" box, which is not what a
+dermatologist uses — they point at a body. Site is not documentation
+either: it decides topical potency (a steroid safe on a shin will thin an
+eyelid) and distribution is itself diagnostic (palms and soles, flexures,
+sun-exposed areas). Region + aspect + side is the addressable unit, exactly
+as tooth + surface is for the mouth. One silhouette serves front and back —
+a person's outline does not change when they turn around, only the names
+do: chest becomes upper back, shin becomes calf, palm becomes back of
+hand. The patient's right half is authored once and mirrored, with a guard
+that refuses to mirror any path containing an arc (the sweep flag would
+also have to flip).
+
+Verified live in a real browser for both: 32 teeth / 160 surfaces, "36 MO"
+charted and displayed as `36 M` / `36 O`, whole-tooth conditions correctly
+ignoring the clicked surface, a missing tooth ghosting out of the arch, an
+upper incisor naming its outer surface "Labial"; 25 body zones, "Right
+palm" in front vs "Right back of hand" behind, "Shin" vs "Calf", and marks
+correctly scoped per aspect. Zero console errors. All test data removed.
+
+Neither is read by the engine — §14's boundary is intact. Both are record
+and presentation, the same line drawn for specialty profiles.
+
+**Not yet done:** both cards are always visible. They should be driven by
+the specialty profile (a dermatologist should not scroll past a tooth
+chart), which is a presentation-config change, not a data one.
+
 Still open, unchanged: #12 (Dentistry content gap — DENTAL_ABSCESS signal,
-Dentistry referral intent) and #13 (Gynaecology LMP/G-P-L-A) — the session
-ended (subscription window) before either was started.
+Dentistry referral intent) and #13 (Gynaecology LMP/G-P-L-A).
 
 ---
 
