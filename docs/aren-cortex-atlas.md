@@ -34,9 +34,15 @@ the file counts in "Where it lives" · **§5.3** (two profiles were missing and
 its open question had been resolved) · the `App.tsx` line count and the boot
 description in §2.
 
+Sessions of **2026-08-08 → 2026-08-11** added the attachment pipeline (§14.6),
+the specialty tools (§14.7) and the dentistry/obstetric content (§14.8), and
+edge-function source was brought into the repo. Those sections are current as
+of 2026-08-11 and were each verified live — real browser, real database.
+
 **Everything else still carries its 2026-07-30 reading and was NOT re-checked.**
-Treat §3, §4, §7–§9 and §11–§15 as of that date. Where a claim there contradicts
-§10, §10 is the newer reading.
+Treat §3, §4, §7–§9 and §11–§13 as of that date. Where a claim there contradicts
+§10, §10 is the newer reading; where it contradicts §14.6–§14.8, those are newer
+still.
 
 Scope: **Cortex only.** Everything under `src/features/frontdesk/` (the reception
 suite) is deliberately out of scope — see `aren-technical-atlas.md` §4.6 for that,
@@ -54,6 +60,118 @@ nothing left in it that is superseded.
 Every claim below was verified this pass by reading the file, running `tsc -b`,
 running the production build, or querying the live database. §11 is the full
 diff for a reader who has the 2026-07-28 edition memorised.
+
+---
+
+## 0. Start here — current state, keys, and what's open
+
+*Written 2026-08-11 as the handoff point between a browser session and local
+terminal work. If you are picking this repo up cold, this section plus §14.6–
+§14.8 is the recent half; §1–§13 is the standing description of the app.*
+
+### Where the code is
+
+Branch `claude/cortex-atlas-summary-auycuc`, always fast-forwarded to `master`
+— the two are kept identical, so either is safe to read. Everything described
+in §14.6–§14.8 is committed and pushed.
+
+```bash
+npm run dev              # vite, 127.0.0.1:5173
+npm run build            # tsc -b && vite build
+npm run check:search     # search coverage
+npm run check:brands     # brand-family grouping, against the LIVE catalogue
+npm run check:dental     # odontogram geometry (§14.7)
+npm run check:obstetric  # LMP / G-P-L-A derivation (§14.8)
+```
+
+The two newest checks exist because both failures are **invisible**: a
+mesial/distal swap looks fine in a screenshot, and a broken LMP derivation
+still fills the box and still records correctly. Both were confirmed
+non-vacuous by deliberately breaking the code first. Run them before trusting
+a refactor near either area.
+
+### Where the keys are
+
+| What | Where it lives | In git? |
+|---|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | `.env` at the repo root | **Yes, deliberately** — see the preamble above |
+| `ATTACHMENTS_S3_*` (Backblaze B2) | **Supabase function secrets only** | **No, and never** |
+| Supabase service-role key / DB password | Supabase dashboard | No |
+
+The B2 credentials — endpoint, key id, secret, bucket — are set as Supabase
+**function secrets** and read by the three attachment edge functions at
+runtime. They are not in `.env`, not in the repo, and not recoverable from
+it: `supabase secrets list` shows names and digests, never values. If they
+are ever lost, mint a new application key in the Backblaze console and re-set
+them; nothing needs redeploying and no already-issued presigned URL outlives
+its 5-minute TTL.
+
+Bucket: **`aren-packets-attachment`**, private, S3-compatible API. See
+`supabase/functions/README.md` for the exact variable names and the deploy
+commands.
+
+> The variable names are generic (`ATTACHMENTS_S3_*`, not `B2_*`) on purpose.
+> Every S3-compatible provider is reachable through the identical SDK calls,
+> so **changing provider is a secrets change, not a code change** — which is
+> also the escape hatch for the data-residency question in §14.6.
+
+### Where the edge functions are
+
+`supabase/functions/` — in git as of 2026-08-11. Before that they existed
+only deployed on Supabase and in a throwaway container, which meant the only
+copy of the attachment pipeline was one accidental delete from gone. If you
+change one, deploy it *and* commit it; there is no CI keeping them in sync.
+
+Note `rank-compositions` is deployed but **not** mirrored into the repo yet —
+it predates this pipeline.
+
+### Migrations
+
+Applied directly to the live database through the Supabase MCP tools, **not**
+stored as migration files in this repo. `supabase/migrations/` does not
+exist. This is a real gap and a deliberate one for now (solo founder, one
+environment, no staging): the schema's history lives in Supabase's own
+migration log. If a second environment ever appears, this is the first thing
+that has to change.
+
+### What is open
+
+Nothing is half-built — these are all "decided not to start", with reasons.
+
+1. **The charts are not specialty-gated.** The dental chart and body map are
+   always visible, so a dermatologist scrolls past a tooth chart. This is
+   presentation config (`specialtyProfile.ts`), not a data change — the
+   cheapest real win on this list.
+2. **Guards are `exercise`-only.** `intent_guards.target_type` contains no
+   other value in the entire table, so there is no mechanism today for a
+   medicine-level guard — amoxicillin under a known drug allergy, say. This
+   is genuine engine work, and it got sharper when §14.8 put amoxicillin on
+   the abscess route. **Of the open items this is the only one where the gap
+   is a safety gap rather than a polish gap.**
+3. **Attachment tags overlap the body map.** `visit_attachments.laterality` /
+   `.body_region` predate `visit_body_sites` and now duplicate it loosely.
+   An attachment should probably reference a body site.
+4. **The body figure is a schematic** — 14 regions. Fine for marking a limb,
+   too coarse for real dermatology (no cheek vs periorbital, no fingers).
+5. **Data residency.** B2 is US-region. Acceptable for a consenting pilot,
+   not for scale — see the compliance note in §14.6, which is not legal
+   advice and should not be treated as any.
+6. **No PDF compression**, and no QR phone-handoff for photos (§14.6). Both
+   deliberately deferred; `accept="image/*"` already opens the camera
+   directly on a real phone browser.
+
+### Conventions worth knowing before you touch anything
+
+- **Verify against reality.** Every claim in §14.6–§14.8 was checked with a
+  real browser session and live database queries, not by reading the code.
+  Screenshots lie less than diffs, and both lie less than a query.
+- **Clean up test data.** Every test patient created during verification was
+  deleted afterwards, and attachments were removed through the real
+  `attachment-delete` function so the B2 object went too, not just the row.
+  The database currently has **zero** test patients.
+- **Colour carries meaning, never mood** (§12.1). This survived the
+  glassmorphism pass in §14.7 — the glass is on containers only.
+- **Guards warn, never hide** (§14).
 
 ---
 
@@ -1330,250 +1448,172 @@ active consult), not curl-only:
 - No PDF compression.
 
 ---
+## 14.7 Specialty tools — the dental chart and the body map
 
-## 14.7 Dental chart + attachment tagging — the specialty backbone (2026-08-10)
+Both exist because of one correction from Anmol, worth restating because it
+governs how any future specialty support should be judged:
 
-The reframe that produced this: Anmol pushed back hard on relevance-ranking
-as the lens for "does a specialty need X" — "I'm talking about a specialty
-from perspective of a doctor... how do a dentist operate? He must operate in
-a dental chart." A dentist's real per-tooth record and a dermatologist's
-"where on the body" both needed a home; neither is a chip or a measurement,
-and neither should be invented as a one-off, dentistry-only table. Two
-pieces, one philosophy:
+> *"You are again and again talking in terms of engine… I'm talking about a
+> specialty from the perspective of a doctor. How does a dentist operate? He
+> must operate on a dental chart."*
 
-1. **`dental_findings`** — a real per-tooth table, not a note field.
-2. **`laterality` / `body_region`** on `visit_attachments` — generic tagging
-   any specialty's photo can use (ENT/eye/ortho side; dermatology site,
-   which changes steroid potency, not just documentation).
+The question is never "does this specialty change the ranking" — it is "what
+does this doctor actually reach for". A dentist reaches for a tooth chart; a
+dermatologist points at a body. **Neither is read by the engine.** Guards,
+signals and ranking are untouched (§14), exactly as with specialty profiles.
+These are record and presentation.
 
-Both are backend/backbone only, per explicit scope: "I'm not saying you to
-build the UI policy and everything, but the database... maybe backbone of
-the UI, which we will fine tune later." The UI shipped is a working
-list-and-form, not a clickable tooth diagram or a photo-overlay picker —
-intentionally, so the data model absorbs the eventual real UI without
-changing shape.
+Both were built twice. The first attempt at each was a dropdown and a
+free-text box, which Anmol rejected in the same terms — *"meet what dentists
+use in real life, not boxes"*. That verdict is the useful part of the
+history; the rest of it isn't, so what follows describes the final state only.
 
-### What exists
+### The dental chart
 
-`dental_findings`: `id`, `visit_id` (FK→visits, cascade), `tooth_number`
-(FDI notation, `CHECK ~ '^[1-4][1-8]'` — quadrant 1-4, tooth 1-8, the same
-fixed-format discipline as every other coded column in this schema),
-`condition` (8-value fixed set: caries, mobility, missing, fracture,
-periapical abscess, gingivitis, calculus, other), `note` (free text,
-optional), `attachment_id` (FK→visit_attachments, SET NULL — an X-ray is a
-property OF a finding, never the finding itself, so losing the image never
-loses the finding), `created_by_doctor_id` (FK→doctors, SET NULL). RLS
-enabled, `hospital_isolation` policy, indexed on `visit_id`.
+`lib/dental/anatomy.ts` (geometry) · `lib/dental/types.ts` (vocabulary) ·
+`features/consult/DentalChartCard.tsx` (render only, owns no anatomy) ·
+`dental_findings` table · `npm run check:dental`
 
-`visit_attachments.laterality` (`left | right | bilateral`, nullable) and
-`visit_attachments.body_region` (free text, nullable) — added as plain
-nullable columns, not a new table, because tagging is optional metadata on
-an attachment that already exists, not a new entity. Never read by the
-Synapse engine (§14, guards/signals/ranking untouched) — presentation and
-documentation only, same boundary already drawn for specialty profiles.
+**The shape.** Two horseshoe arches mirrored across the occlusal plane, drawn
+as an ellipse wider than deep because a real arch is (~55mm across vs ~40mm
+front-to-back). Teeth are placed by **arc length, not by angle** — even
+angular spacing leaves gaps between the narrow front teeth and crowds the
+molars — so the arch is walked crown width by crown width and the curve
+parameter solved numerically at module load. Each crown rotates onto the arch
+normal, so buccal always faces the cheek. Crown outlines differ by class
+(incisor a flattened lens, canine a teardrop, premolar two lobes, molar four
+with the fissures showing) and carry the real cusp count.
 
-`TOOTH_OPTIONS` (`lib/dental/types.ts`) is generated programmatically —
-all 32 permanent teeth in FDI order — not hand-listed, so there's no way
-for it to silently miss a tooth.
-
-`DentalChartCard` (`features/consult/`) sits directly after
-`AttachmentsCard` in `cs-body-left`: tooth select → condition chips → note
-→ Add, same "button → small menu/panel → action" pattern as
-`MeasurementsCard` and `AttachmentsCard` for consistency, not because the
-data models are related. Deliberately its own card, not folded into
-Attachments — most caries/mobility findings never get photographed at all.
-
-Attachment tagging is a `Tag` icon per attachment row in `AttachmentsCard`,
-opening an inline panel (laterality chips + body-region text input). Saved
-tags show as compact badges next to the attachment's type label without
-opening the panel — the point of tagging is that a doctor glancing at the
-card later sees "Left · Lower jaw, tooth 36" without a click.
-
-### Verified, live, through the real UI
-
-Logged in as the real test doctor, created a real patient, started a real
-consult:
-
-- Dental finding added — tooth 36, condition "Caries", note "Deep caries,
-  sensitive to cold" — appeared correctly in the card
-- X-ray uploaded, then tagged laterality "Left" / body region "Lower jaw,
-  tooth 36" — both saved and rendered as badges, confirmed in a screenshot
-- Zero console errors across the session
-- All test data (patient, its 3 visits, the dental finding, the
-  attachment) deleted afterward — the attachment through the real
-  `attachment-delete` edge function (removes the B2 object too, not just
-  the DB row), the rest via direct delete — zero rows left behind
-
-### Still open
-
-- Toothache/abscess content gap: no `DENTAL_ABSCESS` signal, no Dentistry
-  referral intent at all yet (was mid-flight before this detour; the
-  research is done, the migration is not written).
-- Gynaecology LMP + G-P-L-A structured fields — not started, needs new
-  `MeasureInputKind` variants (date, structured code), separate in kind
-  from everything in this section.
-- Both deferred pending a scope check-in — a lot of ground already covered
-  this session, and Anmol has asked more than once to be told the plan
-  before further scope starts, not after.
-
-### 2026-08-10, later same night — the real clickable odontogram
-
-Anmol asked directly: "have you made the dental chart seriously? You click
-on it and see the tooth chart and all." The answer was no — §14.7 above
-describes the deliberate 2026-08-08 list-and-form backbone, not a diagram.
-Replaced `DentalChartCard` with a real two-arch odontogram:
-
-- `TOOTH_CHART_ROWS` (`lib/dental/types.ts`) lays out both arches in actual
-  dentist reading order — patient's right first, split at the midline —
-  not alphabetic/ascending FDI order (`TOOTH_OPTIONS` keeps that order for
-  anything that still just needs a flat list).
-- Each tooth is a clickable button. A tooth with findings is colored by its
-  *most recent* finding's condition (`DENTAL_CONDITION_COLOR`, one color per
-  condition, shared by the tooth cell, the legend dot, and the panel row so
-  the same color means the same thing everywhere); a count badge appears
-  when a tooth has more than one finding. "Missing" is deliberately
-  colorless — dashed border, struck-through code — an absent tooth isn't a
-  flavor of finding.
-- Clicking a tooth opens a panel below the chart: that tooth's findings
-  (with delete) plus a quick-add form with the tooth already fixed — no
-  dropdown needed once there's a diagram to click.
-- Verified live through a real headless-browser session: tooth 36 flagged
-  caries then a second finding (mobile) added on the same tooth, count
-  badge "2" confirmed, color correctly followed the most recent condition;
-  switching to tooth 16 correctly showed an empty panel; "Missing" applied
-  correctly. Zero console errors. Test patient
-  "TOOTHCHART UI TEST (delete me)" (9000000006) — **cleanup of this test
-  patient was NOT completed before the session ended; do this first next
-  session** (delete patient `+` its visit(s) + any dental_findings rows,
-  same pattern as every other verification round this session).
-- One cosmetic bug caught and fixed during verification: the panel title
-  briefly duplicated the tooth code (`TOOTH_LABEL` already includes it).
-
-### 2026-08-10, third pass — the real odontogram, and the body map
-
-Anmol again, and the criticism was correct both times: *"Why do you tell me
-one thing? Can you make a teeth diagram seriously? What do dentists use in
-real life? Meet that, not boxes. And same for other specialty too."* The
-previous pass produced 32 rectangles in two straight rows and I had called
-it a real odontogram. It was not. Two things were missing, and the second
-one matters more than the first.
-
-**The shape.** Two horseshoe arches mirrored across the occlusal plane,
-drawn as an ellipse wider than deep because a real arch is (~55mm across
-vs ~40mm front-to-back). Teeth are placed by **arc length**, not by angle —
-even angular spacing leaves gaps between the narrow front teeth and crowds
-the molars — so the arch is walked crown width by crown width and the curve
-parameter solved numerically. Each crown rotates onto the arch normal, so
-buccal always faces the cheek, and carries its real cusp count. All of it
-lives in `lib/dental/anatomy.ts`; the component renders and owns no anatomy.
-
-**The unit of record — the part that actually matters.** A dentist charts
-caries per *surface*: "36 MO" is the mesial and occlusal surfaces of the
+**The unit of record, which matters more than the shape.** A dentist charts
+caries per **surface**: "36 MO" is the mesial and occlusal surfaces of the
 lower left first molar. Recording "tooth 36 has caries" throws away the
 information the chart exists to carry. So every tooth is five independently
-clickable surfaces, and `dental_findings` gained a nullable `surface`
-column. **NULL is meaningful, not missing** — mobility, impaction, a missing
-tooth and a root canal are whole-tooth facts, so the chart asks for a
-surface only where one exists (`isSurfaceCondition`), and states in words
-which of the two it is about to write. Surface names follow the tooth: the
-outer surface is buccal on a molar but labial on an incisor, palatal above
-and lingual below, occlusal on a molar and incisal on an incisor.
+clickable surfaces (mesial, distal, buccal, lingual, occlusal), clipped to
+the crown outline so the fills follow the real shape while the zone maths
+stays rectangular and simple.
 
-`scripts/dental-anatomy.mjs` (`npm run check:dental`) checks the geometry
-numerically, because a mesial/distal swap on one quadrant looks *fine in a
-screenshot* and silently records the wrong surface — a wrong medical
-record. It verifies crowns touch without overlapping, that mesial genuinely
-faces the midline, and that buccal faces out of the arch. Confirmed
-non-vacuous by deliberately inverting the mesial calculation: 32 errors, as
-expected.
+`dental_findings.surface` is **nullable, and NULL is meaningful** — mobility,
+impaction, a missing tooth and a root canal are whole-tooth facts. The chart
+asks for a surface only where one exists (`isSurfaceCondition`), and states
+in words which of the two it is about to write, so what gets recorded can
+never differ from what the doctor thought they clicked.
 
-**The body map** (`lib/body/anatomy.ts`, `BodyMapCard`,
-`visit_body_sites`) is the same correction applied to the rest of the body.
-Attachments carried a free-text "body region" box, which is not what a
-dermatologist uses — they point at a body. Site is not documentation
-either: it decides topical potency (a steroid safe on a shin will thin an
-eyelid) and distribution is itself diagnostic (palms and soles, flexures,
-sun-exposed areas). Region + aspect + side is the addressable unit, exactly
-as tooth + surface is for the mouth. One silhouette serves front and back —
-a person's outline does not change when they turn around, only the names
-do: chest becomes upper back, shin becomes calf, palm becomes back of
-hand. The patient's right half is authored once and mirrored, with a guard
-that refuses to mirror any path containing an arc (the sweep flag would
-also have to flip).
+Surface names follow the tooth: the outer surface is *buccal* on a molar but
+*labial* on an incisor, *palatal* above and *lingual* below, *occlusal* on a
+molar and *incisal* on an incisor.
 
-Verified live in a real browser for both: 32 teeth / 160 surfaces, "36 MO"
-charted and displayed as `36 M` / `36 O`, whole-tooth conditions correctly
-ignoring the clicked surface, a missing tooth ghosting out of the arch, an
-upper incisor naming its outer surface "Labial"; 25 body zones, "Right
-palm" in front vs "Right back of hand" behind, "Shin" vs "Calf", and marks
-correctly scoped per aspect. Zero console errors. All test data removed.
+> **Why there is a check script.** A mesial/distal swap on one quadrant looks
+> completely fine in a screenshot and silently records caries on the wrong
+> surface — a wrong medical record. `check:dental` verifies numerically that
+> crowns touch without overlapping, that mesial genuinely faces the midline,
+> and that buccal faces out of the arch. It was confirmed non-vacuous by
+> deliberately inverting the mesial calculation (32 errors, as expected).
 
-Neither is read by the engine — §14's boundary is intact. Both are record
-and presentation, the same line drawn for specialty profiles.
+### The body map
 
-**Not yet done:** both cards are always visible. They should be driven by
-the specialty profile (a dermatologist should not scroll past a tooth
-chart), which is a presentation-config change, not a data one.
+`lib/body/anatomy.ts` · `features/consult/BodyMapCard.tsx` ·
+`visit_body_sites` table
 
-### 2026-08-10, closing out — the Dentistry gap and the obstetric fields
+The dermatology counterpart, deliberately the same shape of answer: where
+the mouth's addressable unit is tooth + surface, the body's is **region +
+aspect + side**. Site is not documentation — a steroid safe on a shin will
+thin an eyelid, and distribution is itself diagnostic (palms and soles,
+flexures, sun-exposed areas).
 
-**The Dentistry gap was worse than "a missing referral".** Cortex had
-TOOTHACHE and BLEEDING_GUMS signals and twenty referral specialties, none
-of them a dentist. Toothache resolved to ibuprofen and paracetamol and
-nothing else — which reads as *"take a painkiller"* for a condition whose
-treatment is always dental. Added:
+One silhouette serves both views, because a person's outline does not change
+when they turn around — only the names do: chest → upper back, shin → calf,
+palm → back of hand. The patient's right half is authored once and mirrored,
+with a guard that **refuses to mirror any path containing an arc**, since a
+sweep flag would also have to flip and the failure would be silent.
 
-- `Dentistry` referral intent (the 21st).
+It is an honest schematic, not an illustration — 14 regions, 25 zones. If
+dermatology becomes a real pilot target it wants finer regions (face split
+into cheek / periorbital / perioral, hands into fingers).
+
+### Shared presentation
+
+Both cards render through `ChartSurface`, which puts the *same children*
+inline or in a portal modal over a blurred backdrop — so there is no second
+copy of either chart and no state handed across; the card owns it either way.
+The expand button exists because the card column was sized for text, and
+charting "36 MO" on a 25px tooth is a mis-tap waiting to happen.
+
+Glass, depth and blur live **only on the container**. §12.1's rule is that
+colour carries meaning and never mood, so the teeth and body zones keep the
+flat clinical palette; the washes on the panel are near-transparent and
+cannot be mistaken for a finding.
+
+### Attachment tagging
+
+`visit_attachments.laterality` (`left|right|bilateral`) and `.body_region`
+(free text) are plain nullable columns rather than a table, because tagging
+is optional metadata on something that already exists. They predate the body
+map and now overlap it — `visit_body_sites` is the structured version.
+**Not yet reconciled:** an attachment should probably reference a body site
+rather than carry its own loose text.
+
+---
+
+## 14.8 Dentistry and obstetric content (2026-08-10)
+
+Engine content, not UI — these are rows, and they change ranking.
+
+### Dentistry
+
+Cortex had `TOOTHACHE` and `BLEEDING_GUMS` signals and twenty referral
+specialties, **none of them a dentist**. Toothache resolved to ibuprofen and
+paracetamol and nothing else, which reads as *"take a painkiller"* for a
+condition whose treatment is always dental.
+
+- `Dentistry` referral intent — the 21st.
 - `dental_abscess` observable + `DENTAL_ABSCESS` signal (idf 2.2, above
-  TOOTHACHE's 1.6 — a visible abscess is far more specific than "my tooth
+  toothache's 1.6 — a visible abscess is far more specific than "my tooth
   hurts"). `search_text` carries the Hindi transliterations the rest of the
-  catalogue uses: a patient says *daant mein pus*, not "periapical abscess".
-- Abscess routes to: Dentistry 0.90 (safety-critical — drainage/extraction/
-  RCT is the cure, antibiotics only buy time), amoxicillin 0.80,
-  metronidazole 0.75 (anaerobic cover, alongside amoxicillin not instead of
-  it), ibuprofen 0.70, paracetamol 0.65, and Emergency 0.55 safety-critical
-  for spreading facial-space infection — trismus, dysphagia, floor-of-mouth
-  or periorbital swelling is airway-threatening (Ludwig's angina).
-- Toothache → Dentistry 0.55, which now **outranks the painkillers** (0.45 /
-  0.35). Bleeding gums → Dentistry 0.50.
+  catalogue uses; a patient says *daant mein pus*.
+- Abscess routes to: **Dentistry 0.90** (safety-critical — drainage,
+  extraction or RCT is the cure; antibiotics only buy time), amoxicillin
+  0.80, metronidazole 0.75 (anaerobic cover *alongside* amoxicillin, not
+  instead of it), ibuprofen 0.70, paracetamol 0.65, and **Emergency 0.55**
+  safety-critical for spreading facial-space infection — trismus, dysphagia,
+  floor-of-mouth or periorbital swelling is airway-threatening (Ludwig's
+  angina).
+- Toothache → Dentistry 0.55, which now **outranks both painkillers**
+  (0.45 / 0.35). Bleeding gums → Dentistry 0.50.
 
-**Deliberately not done, and it matters:** no antibiotic is attached to
-plain toothache. Antibiotics do not treat uncomplicated pulpitis, and
-reflexive antibiotic prescribing for toothache is a real problem in Indian
-OPD. The antibiotics hang off DENTAL_ABSCESS — an actual infection — and
-nothing else. The rationale is written into the rule row so nobody
-"completes" it later.
+> **Deliberately not done — do not "complete" this.** No antibiotic is
+> attached to plain toothache. Antibiotics do not treat uncomplicated
+> pulpitis, and reflexive antibiotic prescribing for toothache is a real
+> problem in Indian OPD. The antibiotics hang off `DENTAL_ABSCESS` — an
+> actual infection — and nothing else. The rationale is written into the rule
+> rows themselves.
 
-**Obstetric fields.** Two new `MeasureInputKind`s:
+### Obstetric fields
 
-- `date`, for the LMP. This is the one field where what the doctor types and
-  what the engine scores differ: a date means nothing to a rule, so
-  `consultInput.ts` carries the date for the record and derives **LMP_DAYS**
-  for the ranking. New `measurement_rules` row: LMP_DAYS 35–400 →
-  AMENORRHEA (35 = a 28-day cycle plus a week's grace; 400 caps it so
-  lactational amenorrhoea and menopause don't fire "missed period"
-  forever). A **future date is recorded but never scored** — a mistyped year
-  would otherwise run the interval backwards.
-- `gpla`, following `bp`'s precedent exactly: one control, four
-  measurements. Stored "G/P/L/A", split into GRAVIDA / PARA / LIVING /
-  ABORTIONS. Blanks stay blank rather than becoming zeroes — a first
-  pregnancy is "1///" and asserting P=0 is asserting a fact nobody entered.
-  Warns when the arithmetic is impossible (living > births, or G < P+A).
+Two new `MeasureInputKind`s, both in `features/consult/measures.ts`:
 
-New `GYNAECOLOGY` specialty profile (the 6th) shows both by default with
-LMP first; everywhere else they stay behind `RELEVANT_FIELDS`, because a
-general OPD doctor seeing a man should never be shown an obstetric history
-box. `npm run check:obstetric` covers the derivation, since it is invisible
-in the UI — if it broke, the LMP box would still fill in, the record would
-still be right, and amenorrhoea would just quietly never fire again.
-Confirmed non-vacuous.
+**`date`**, for the LMP. This is the one field where what the doctor types
+and what the engine scores are different things: a date means nothing to a
+rule. `consultInput.ts` carries the date for the record and derives
+**`LMP_DAYS`** for the ranking, and a `measurement_rules` row maps
+LMP_DAYS 35–400 → `AMENORRHEA` (35 = a 28-day cycle plus a week's grace;
+400 caps it so lactational amenorrhoea and menopause don't fire "missed
+period" forever). A **future date is recorded but never scored** — a
+mistyped year would otherwise run the interval backwards.
 
-**Still open:** the dental chart and body map are always visible rather
-than driven by the specialty profile (see above). Guards are currently only
-wired for `exercise` targets — `intent_guards.target_type` has no other
-value in the table — so a medicine-level guard (e.g. amoxicillin under
-DRUG_ALLERGY) would be new engine territory, not a content row. Worth doing
-and deliberately not started here.
+**`gpla`**, following `bp`'s precedent exactly: one control, four
+measurements. Stored `"G/P/L/A"`, split into GRAVIDA / PARA / LIVING /
+ABORTIONS. **Blanks stay blank rather than becoming zeroes** — a first
+pregnancy is `"1///"`, and asserting P=0 asserts a fact nobody entered.
+Warns when the arithmetic is impossible (living > births, or G < P+A).
+
+New `GYNAECOLOGY` specialty profile (the 6th) shows both by default, LMP
+first. Everywhere else they stay behind `RELEVANT_FIELDS` — a general OPD
+doctor seeing a man should never be shown an obstetric history box.
+
+`npm run check:obstetric` exists because the derivation is invisible in the
+UI: if it broke, the LMP box would still fill in, the record would still be
+right, and amenorrhoea would quietly never fire again. Confirmed
+non-vacuous.
 
 ---
 
