@@ -3,7 +3,20 @@ import { DOCTOR_ID, HOSPITAL_ID } from "./reference";
 import type { DBSymptom, DBFinding } from "./reference";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
-export type DBPatient = { id: string; name: string; age: number; gender: string; phone: string };
+export type DBPatient = {
+    id: string; name: string; age: number; gender: string; phone: string;
+    /**
+     * Optional, ISO yyyy-mm-dd. When present it is the source of truth for
+     * exact age; `age` remains required and is what everything else reads.
+     *
+     * It exists because paediatric growth standards are indexed per MONTH and
+     * an integer year cannot express that — a 3-month-old and an 11-month-old
+     * are both `age: 0`, while WHO's median weight runs 3.35kg to 9.4kg
+     * across that same span. See lib/growth/growth.ts, which declines to
+     * score rather than guessing when this is absent.
+     */
+    date_of_birth?: string | null;
+};
 export type DBVisit = { id: string; patient_id: string; assigned_doctor_id: string; status: string; token_number?: number | null };
 
 // ── PATIENTS ───────────────────────────────────────────────────────────────────
@@ -12,7 +25,7 @@ export async function searchPatients(query: string): Promise<DBPatient[]> {
     const q = query.trim();
     const { data, error } = await supabase
         .from("patients")
-        .select("id, name, age, gender, phone")
+        .select("id, name, age, gender, phone, date_of_birth")
         .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
         .limit(8);
     if (error) throw new Error(`searchPatients: ${error.message}`);
@@ -22,7 +35,7 @@ export async function searchPatients(query: string): Promise<DBPatient[]> {
 export async function findPatientByPhone(phone: string): Promise<DBPatient | null> {
     const { data, error } = await supabase
         .from("patients")
-        .select("id, name, age, gender, phone")
+        .select("id, name, age, gender, phone, date_of_birth")
         .eq("phone", phone)
         .maybeSingle();
     if (error) throw new Error(`findPatientByPhone: ${error.message}`);
@@ -34,11 +47,13 @@ export async function createPatient(p: {
     age: number;
     gender: string;
     phone: string;
+    /** ISO yyyy-mm-dd, optional — see DBPatient.date_of_birth */
+    date_of_birth?: string | null;
 }): Promise<DBPatient> {
     const { data, error } = await supabase
         .from("patients")
-        .insert({ ...p, hospital_id: HOSPITAL_ID })
-        .select("id, name, age, gender, phone")
+        .insert({ ...p, date_of_birth: p.date_of_birth || null, hospital_id: HOSPITAL_ID })
+        .select("id, name, age, gender, phone, date_of_birth")
         .single();
     if (error) throw new Error(`createPatient: ${error.message}`);
     return data;
@@ -399,6 +414,32 @@ export async function fetchHospital(hospitalId: string): Promise<DBHospital | nu
     return data;
 }
 
+/**
+ * Testing-phase specialty switch — Settings page only.
+ *
+ * `specialty_profile` is documented (features/synapse/specialtyProfile.ts) as
+ * "set once at onboarding, per facility, never relearned at runtime". This
+ * function is the deliberate, temporary exception: during solo piloting there
+ * is no onboarding flow and no admin panel yet, so the doctor testing the app
+ * needs a fast way to switch which specialty's workspace they're looking at.
+ * `hospital_isolation` RLS (`id = current_user_hospital_id()`) is what makes a
+ * plain client update safe here — the same policy every other hospital write
+ * in this app relies on, no edge function needed.
+ *
+ * Once there's a real admin panel (§14.5 of the atlas), this same column is
+ * still the target — only who's allowed to write it changes.
+ */
+export async function updateHospitalSpecialtyProfile(
+    hospitalId: string,
+    specialtyProfileId: string
+): Promise<void> {
+    const { error } = await supabase
+        .from("hospitals")
+        .update({ specialty_profile: specialtyProfileId })
+        .eq("id", hospitalId);
+    if (error) throw new Error(`updateHospitalSpecialtyProfile: ${error.message}`);
+}
+
 // ── PAST VISITS ────────────────────────────────────────────────────────────────
 export type RealVisitMedicine = {
     medicine_id: number;
@@ -571,7 +612,7 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
 
     const { data: patients } = await supabase
         .from("patients")
-        .select("id, name, age, gender, phone")
+        .select("id, name, age, gender, phone, date_of_birth")
         .in("id", patientIds);
     const patMap = new Map<string, any>();
     (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
@@ -713,7 +754,7 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
 
     const { data: patients } = await supabase
         .from("patients")
-        .select("id, name, age, gender, phone")
+        .select("id, name, age, gender, phone, date_of_birth")
         .in("id", patientIds);
     const patMap = new Map<string, any>();
     (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
@@ -854,6 +895,8 @@ export type PatientDirectoryEntry = {
     id: string;
     name: string;
     age: number;
+    /** optional, ISO yyyy-mm-dd — see DBPatient.date_of_birth */
+    date_of_birth: string | null;
     gender: string;
     phone: string;
     abha_id: string | null;
@@ -868,7 +911,7 @@ export type PatientDirectoryEntry = {
 export async function fetchPatientDirectory(): Promise<PatientDirectoryEntry[]> {
     const { data: patients, error } = await supabase
         .from("patients")
-        .select("id, name, age, gender, phone, abha_id, created_at")
+        .select("id, name, age, gender, phone, abha_id, created_at, date_of_birth")
         .order("created_at", { ascending: false });
     if (error) throw new Error(`fetchPatientDirectory: ${error.message}`);
     if (!patients || patients.length === 0) return [];
@@ -915,6 +958,7 @@ export async function fetchPatientDirectory(): Promise<PatientDirectoryEntry[]> 
             id: p.id,
             name: p.name ?? "Unknown",
             age: p.age ?? 0,
+            date_of_birth: p.date_of_birth ?? null,
             gender: p.gender ?? "",
             phone: p.phone ?? "",
             abha_id: p.abha_id ?? null,
@@ -970,13 +1014,15 @@ export async function fetchPatientHistory(patientId: string): Promise<PatientHis
 // clinical. Returns the fresh row so callers can patch state in place.
 export async function updatePatient(
     patientId: string,
-    fields: { name: string; age: number; gender: string; phone: string }
+    fields: { name: string; age: number; gender: string; phone: string; date_of_birth?: string | null }
 ): Promise<DBPatient> {
     const { data, error } = await supabase
         .from("patients")
-        .update(fields)
+        // Empty string is not a date — normalise to null so clearing the field
+        // clears the column rather than failing the insert.
+        .update("date_of_birth" in fields ? { ...fields, date_of_birth: fields.date_of_birth || null } : fields)
         .eq("id", patientId)
-        .select("id, name, age, gender, phone")
+        .select("id, name, age, gender, phone, date_of_birth")
         .single();
     if (error) throw new Error(`updatePatient: ${error.message}`);
     return data;
@@ -1040,7 +1086,7 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
 
     const { data: patients } = await supabase
         .from("patients")
-        .select("id, name, age, gender, phone")
+        .select("id, name, age, gender, phone, date_of_birth")
         .in("id", patientIds);
     const patMap = new Map<string, any>();
     (patients ?? []).forEach((p: any) => patMap.set(p.id, p));

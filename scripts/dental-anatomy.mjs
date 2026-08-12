@@ -23,15 +23,16 @@
 // ---------------------------------------------------------------------------
 
 import { unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const TMP = new URL("../.dental-anatomy.tmp.mjs", import.meta.url);
 await build({
-    entryPoints: [new URL("../src/lib/dental/anatomy.ts", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../src/lib/dental/anatomy.ts", import.meta.url))],
     bundle: true,
     format: "esm",
     platform: "neutral",
-    outfile: TMP.pathname,
+    outfile: fileURLToPath(TMP),
     logLevel: "silent",
 });
 const { ALL_TEETH, TOOTH_BY_CODE, SURFACES } = await import(TMP.href);

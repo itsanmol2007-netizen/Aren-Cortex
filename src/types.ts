@@ -7,6 +7,12 @@ export type Patient = {
   gender: Gender;
   phone: string;
   address?: string;
+  /**
+   * ISO yyyy-mm-dd, optional. `age` stays the field everything reads; this is
+   * captured only because paediatric growth standards need age in months.
+   * See lib/growth/age.ts — the one place it becomes a number.
+   */
+  dateOfBirth?: string;
 };
 
 export type Doctor = {
@@ -32,6 +38,8 @@ export type Vitals = {
   pulse: string;
   temp: string;
   spo2: string;
+  /** respiratory rate, breaths/min (RR) */
+  respRate?: string;
   /** body weight, kg */
   weight: string;
   /** height, cm */
@@ -46,6 +54,12 @@ export type Vitals = {
   lmp?: string;
   /** obstetric history as "G/P/L/A" — one control, four measurements, like bp */
   gpla?: string;
+  /** fasting blood glucose, mg/dL (GLUCOSE_FASTING) */
+  glucoseFasting?: string;
+  /** random / post-prandial blood glucose, mg/dL (GLUCOSE_RANDOM) */
+  glucoseRandom?: string;
+  /** glycated haemoglobin, % (HBA1C) */
+  hba1c?: string;
 };
 
 export type Medicine = {

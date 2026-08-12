@@ -84,6 +84,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         name: string;
         phone: string;
         age: string;
+        dateOfBirth?: string;
         gender: string;
         observableIds: number[];
         doctorId: string;
@@ -99,6 +100,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
                         age: Number(opts.age) || 0,
                         gender: opts.gender,
                         phone: opts.phone.trim(),
+                        date_of_birth: opts.dateOfBirth || null,
                     }));
             }
 

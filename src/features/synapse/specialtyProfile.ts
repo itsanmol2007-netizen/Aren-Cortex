@@ -31,9 +31,11 @@
 //
 // A facility's profile lives on the facility: `hospitals.specialty_profile`
 // (nullable text, checked against PROFILES' ids). `profileFor()` is the single
-// read point. Nothing in this codebase writes that column yet — there is no
-// onboarding UI for it — so every live facility reads as General OPD until
-// one is set directly.
+// read point. Written today from Settings (`updateHospitalSpecialtyProfile`,
+// lib/db/patients.ts) — a deliberate, temporary, doctor-facing exception to
+// "set once at onboarding" for the solo-piloting phase, where there is no
+// onboarding flow and no admin panel yet. A facility with nothing set reads
+// as General OPD.
 // ---------------------------------------------------------------------------
 
 import type { IntentType } from "../../lib/synapse/engine";
@@ -44,6 +46,21 @@ export interface SpecialtySection {
     /** what this facility calls this intent type */
     label: string;
 }
+
+/**
+ * The specialty tools. `dental` and `body` (§14.7) are record and presentation
+ * only — the engine never reads them.
+ *
+ * `growth` (§14.12) differs in one way worth being precise about: the WAZ
+ * z-score behind it IS an engine input (it raises GROWTH_FALTERING). But that
+ * derivation lives in `consultInput.ts` and runs on EVERY consult, gated only
+ * on having a date of birth and a sex — never on this list. So turning the
+ * chart off hides the panel and changes nothing about the ranking, which is
+ * the correct split: a general physician seeing a malnourished child still
+ * gets the failure-to-thrive workup ranked, they just aren't shown a growth
+ * curve on every adult.
+ */
+export type ChartKind = "dental" | "body" | "growth";
 
 export interface SpecialtyProfile {
     id: string;
@@ -78,6 +95,21 @@ export interface SpecialtyProfile {
      * membership test and nothing more.
      */
     measurements: MeasureFieldKey[];
+    /**
+     * Which of the two specialty charts (§14.7 — dental odontogram, body map)
+     * this facility's consult screen shows. Empty for every profile that
+     * doesn't need either.
+     *
+     * This reverses the tools' original design intent, on purpose, per Anmol
+     * 2026-08-11: they shipped always-visible ("a general OPD doctor with an
+     * occasional dental walk-in needs this exactly as much as a dedicated
+     * dental clinic would"), but in practice that meant a dermatologist
+     * scrolling past a tooth chart on every single patient. Precision won —
+     * same "configuration, not inference" law as `primary` and `measurements`,
+     * just a third axis. Neither chart is ever read by the engine either way;
+     * this only changes what renders.
+     */
+    charts: ChartKind[];
 }
 
 /**
@@ -101,6 +133,7 @@ export const GENERAL_OPD: SpecialtyProfile = {
     // blood group, pain scale and range of motion are one click away rather
     // than absent — see `measurements` above.
     measurements: ["bp", "pulse", "spo2", "temp", "weight"],
+    charts: [],
 };
 
 /**
@@ -128,6 +161,7 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     // input here, not a general vital (SEVERE_HIGH_BP guards the whole
     // `exercise` type).
     measurements: ["painVas", "romPct", "bp", "pulse", "weight"],
+    charts: [],
 };
 
 /** Investigation-led practice — diagnostics, pre-op workup. */
@@ -143,8 +177,11 @@ export const DIAGNOSTICS: SpecialtyProfile = {
         { type: "advice", label: "Advice" },
         { type: "exercise", label: "Exercise" },
     ],
-    // Pre-op workup asks for the body habitus a general OPD usually skips.
-    measurements: ["bp", "pulse", "spo2", "temp", "weight", "height", "bloodGroup"],
+    // Pre-op workup asks for the body habitus a general OPD usually skips —
+    // and a fasting sugar, which is standard on essentially every pre-op and
+    // health-check panel rather than something the chart has to argue for.
+    measurements: ["bp", "pulse", "spo2", "temp", "weight", "height", "bloodGroup", "glucoseFasting"],
+    charts: [],
 };
 
 /**
@@ -170,6 +207,7 @@ export const CARDIOLOGY: SpecialtyProfile = {
     // overload in heart failure gets caught early. Pain/ROM stay excluded;
     // they're physiotherapy's signal, not cardiology's.
     measurements: ["bp", "pulse", "spo2", "weight", "height"],
+    charts: [],
 };
 
 /**
@@ -194,7 +232,17 @@ export const PEDIATRICS: SpecialtyProfile = {
     // Weight and temperature first — growth faltering and fever are the two
     // pediatric red flags a general OPD's BP-first ordering would bury.
     // Pain/ROM stay excluded; they're physiotherapy's signal, not paediatric.
-    measurements: ["weight", "temp", "height", "pulse", "spo2"],
+    //
+    // Respiratory rate is on by default here and nowhere else: counting
+    // breaths is the first thing WHO IMNCI asks for in a child with cough,
+    // and fast breathing is the sign that separates pneumonia from a cold.
+    // An adult OPD reaches for it only when the chart asks (RELEVANT_FIELDS);
+    // a paediatrician should never have to go looking.
+    measurements: ["weight", "temp", "height", "pulse", "respRate", "spo2"],
+    // The growth chart is the paediatric instrument, and unlike the other
+    // two it IS read by the engine — weight-for-age becomes WAZ, which
+    // raises GROWTH_FALTERING. See GrowthChartCard.
+    charts: ["growth"],
 };
 
 /**
@@ -225,6 +273,58 @@ export const GYNAECOLOGY: SpecialtyProfile = {
     // everything that follows. BP is not general-vitals padding here either —
     // it is the pre-eclampsia screen.
     measurements: ["lmp", "gpla", "bp", "weight", "pulse", "temp"],
+    charts: [],
+};
+
+/**
+ * Dentistry. Primary stays Medicines — a dental consult still ends in a
+ * prescription (analgesic, and amoxicillin+metronidazole when it's an
+ * abscess, §14.8) — but the record a dentist actually reaches for first is
+ * the odontogram, not the ranked list, so the dental chart is what this
+ * profile adds over General OPD.
+ */
+export const DENTISTRY: SpecialtyProfile = {
+    id: "dentistry",
+    label: "Dentistry",
+    primary: "medicine",
+    primaryLabel: "Medicines",
+    sections: [
+        { type: "finding", label: "Possible Finding" },
+        { type: "test", label: "Investigation" },
+        { type: "referral", label: "Referral" },
+        { type: "advice", label: "Advice" },
+        { type: "exercise", label: "Exercise" },
+    ],
+    // Temperature and pulse matter here specifically for a spreading facial
+    // abscess (§14.8's Ludwig's angina note) — this is not the general OPD
+    // vitals set copied over, it's the two numbers that show systemic spread.
+    measurements: ["temp", "pulse", "bp", "weight"],
+    charts: ["dental"],
+};
+
+/**
+ * Dermatology. Primary stays Medicines — topical and oral prescriptions are
+ * the output — with the body map as the record a dermatologist reaches for:
+ * site changes steroid potency and distribution is itself diagnostic (§14.7).
+ */
+export const DERMATOLOGY: SpecialtyProfile = {
+    id: "dermatology",
+    label: "Dermatology",
+    primary: "medicine",
+    primaryLabel: "Medicines",
+    sections: [
+        { type: "finding", label: "Possible Finding" },
+        { type: "test", label: "Investigation" },
+        { type: "referral", label: "Referral" },
+        { type: "advice", label: "Advice" },
+        { type: "exercise", label: "Exercise" },
+    ],
+    // Minimal general vitals — a dermatology consult rarely turns on BP or
+    // pulse, but pregnancy status (isotretinoin, class 4's teratogen guard)
+    // means weight and general fitness-for-treatment stay reachable by
+    // default rather than buried behind "Add Measurement".
+    measurements: ["weight", "bp"],
+    charts: ["body"],
 };
 
 export const PROFILES: Record<string, SpecialtyProfile> = {
@@ -234,6 +334,8 @@ export const PROFILES: Record<string, SpecialtyProfile> = {
     [CARDIOLOGY.id]: CARDIOLOGY,
     [PEDIATRICS.id]: PEDIATRICS,
     [GYNAECOLOGY.id]: GYNAECOLOGY,
+    [DENTISTRY.id]: DENTISTRY,
+    [DERMATOLOGY.id]: DERMATOLOGY,
 };
 
 /**

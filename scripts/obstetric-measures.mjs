@@ -21,15 +21,16 @@
 // ---------------------------------------------------------------------------
 
 import { unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const TMP = new URL("../.obstetric.tmp.mjs", import.meta.url);
 await build({
-    entryPoints: [new URL("../src/lib/synapse/consultInput.ts", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../src/lib/synapse/consultInput.ts", import.meta.url))],
     bundle: true,
     format: "esm",
     platform: "neutral",
-    outfile: TMP.pathname,
+    outfile: fileURLToPath(TMP),
     logLevel: "silent",
 });
 const { vitalsToMeasurements } = await import(TMP.href);

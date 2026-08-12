@@ -85,6 +85,29 @@ export const MEASURE_FIELDS: MeasureField[] = [
         warn: numberInRange(50, 100), warnText: "Outside 50–100 bpm",
     },
     {
+        // Sits with the cardiorespiratory numbers, where it is counted.
+        //
+        // ⚠ THE WARNING BAND HERE IS ADULT-ONLY, AND THAT IS A KNOWN LIMIT.
+        // Normal respiratory rate is profoundly age-dependent — WHO IMNCI
+        // calls breathing "fast" at ≥60/min under 2 months, ≥50 to 12 months,
+        // ≥40 to 5 years and ≥30 above that, and fast breathing is THE
+        // clinical sign of childhood pneumonia. A healthy newborn breathing
+        // 45/min is normal and would trip the adult band below.
+        //
+        // `MeasureField.warn` receives only the typed string — it cannot see
+        // the patient's age — so an age-banded threshold is not expressible
+        // today. Rather than warn wrongly on every infant, the band is stated
+        // as adult and the paediatric thresholds are left to the doctor. Fixing
+        // this properly means giving `warn` the patient context, which is the
+        // same change the paediatric growth work needs.
+        key: "respRate", label: "Resp Rate (/min)", shortLabel: "Respiratory rate",
+        placeholder: "16", kind: "number",
+        // Upper bound matches the measurement rule exactly (RR ≥ 22 raises
+        // BREATHLESSNESS), so the amber state and the engine never disagree.
+        warn: numberInRange(12, 21),
+        warnText: "Outside 12–21 /min for an adult — paediatric normals are much higher",
+    },
+    {
         key: "spo2", label: "SpO₂ (%)", shortLabel: "SpO₂",
         placeholder: "98", kind: "number",
         warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 95; },
@@ -111,6 +134,38 @@ export const MEASURE_FIELDS: MeasureField[] = [
         key: "bloodGroup", label: "Blood Group", shortLabel: "Blood group",
         placeholder: "—", kind: "select",
         options: ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"],
+    },
+    // ── Glycaemic panel (added 2026-08-11) ──────────────────────────────
+    // mg/dL, not mmol/L: every Indian lab and glucometer reports mg/dL, and
+    // the measurement_rules were authored in those units too (fasting ≥126,
+    // random ≥200 — the ADA diagnostic thresholds). A unit toggle would be
+    // the kind of ambiguity `temp`'s °F/°C heuristic exists to apologise for;
+    // there is no reason to import that problem here.
+    //
+    // Three fields rather than one "sugar" box because the THRESHOLD IS THE
+    // MEANING: 150 mg/dL is diabetic fasting and unremarkable post-meal. One
+    // field would have to guess which, and guessing wrong is a wrong diagnosis
+    // in both directions.
+    {
+        key: "glucoseFasting", label: "Fasting Glucose (mg/dL)", shortLabel: "Fasting glucose",
+        placeholder: "—", kind: "number",
+        warn: numberInRange(70, 125),
+        warnText: "≥126 is the diabetic range; under 70 is hypoglycaemia",
+    },
+    {
+        key: "glucoseRandom", label: "Random / PP Glucose (mg/dL)", shortLabel: "Random glucose",
+        placeholder: "—", kind: "number",
+        warn: numberInRange(70, 199),
+        warnText: "≥200 is the diabetic range; under 70 is hypoglycaemia",
+    },
+    {
+        key: "hba1c", label: "HbA1c (%)", shortLabel: "HbA1c",
+        placeholder: "—", kind: "number",
+        // No low-end warning: a low HbA1c is not a clinical event the way a
+        // low glucose is. 5.7–6.4 is prediabetic and 6.5 is the diagnostic
+        // cut-off, which is what the rule fires on.
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 5.7; },
+        warnText: "5.7–6.4% is prediabetic; ≥6.5% is the diabetic range",
     },
     {
         // Deliberately before the obstetric pair: those two are the only
@@ -191,11 +246,18 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     DENGUE_SUSPICION: ["temp"],
 
     // oxygenation and rate
-    BREATHLESSNESS: ["spo2", "pulse"],
-    BREATHLESSNESS_REST: ["spo2", "pulse"],
-    WHEEZE: ["spo2"],
-    CYANOSIS: ["spo2"],
-    COUGH: ["spo2"],
+    // Respiratory rate belongs beside SpO₂ on all of these: it is the vital
+    // that separates "short of breath" from respiratory distress, and in a
+    // child with cough it is the pneumonia sign (WHO IMNCI counts breaths
+    // before it counts anything else).
+    BREATHLESSNESS: ["spo2", "pulse", "respRate"],
+    BREATHLESSNESS_REST: ["spo2", "pulse", "respRate"],
+    WHEEZE: ["spo2", "respRate"],
+    CYANOSIS: ["spo2", "respRate"],
+    COUGH: ["spo2", "respRate"],
+    // Airway obstruction — the highest-idf respiratory signal in the base
+    // (3.1) and, until now, in no relevance row at all.
+    STRIDOR: ["spo2", "respRate"],
 
     // circulation
     CHEST_PAIN: ["bp", "pulse"],
@@ -211,12 +273,32 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     HEADACHE: ["bp"],
 
     // body habitus — dosing and load tolerance
-    WEIGHT_LOSS: ["weight", "height"],
+    // Unintentional weight loss with osmotic symptoms is how new diabetes
+    // most often presents, so it asks for a sugar as well as the trend.
+    WEIGHT_LOSS: ["weight", "height", "glucoseRandom"],
     WEIGHT_GAIN: ["weight", "height"],
     // paediatric dosing is by weight, always
     PEDIATRIC: ["weight"],
-    HIGH_BLOOD_GLUCOSE: ["weight", "height"],
-    KNOWN_DIABETES: ["weight", "height"],
+
+    // glycaemic — see the panel in MEASURE_FIELDS above.
+    // Once a random sugar has raised HIGH_BLOOD_GLUCOSE, the HbA1c is
+    // genuinely the next question (a spot reading diagnoses nothing on its
+    // own), so this is a real next step rather than the circular case.
+    HIGH_BLOOD_GLUCOSE: ["hba1c", "weight", "height"],
+    // The signal is `DIABETIC`. This entry read `KNOWN_DIABETES` until
+    // 2026-08-11 — a signal id that does not exist in the `signals` table and
+    // never has, so the row was dead and a known diabetic's chart surfaced
+    // nothing. The same class of mistake as the dead measurement keys: a
+    // plausible-looking name that nothing validates against reality.
+    DIABETIC: ["glucoseRandom", "hba1c", "weight", "height"],
+    // The classic osmotic triad — the presentation that most deserves a
+    // bedside sugar before the patient leaves the room.
+    POLYURIA: ["glucoseRandom"],
+    POLYDIPSIA: ["glucoseRandom"],
+    POLYPHAGIA: ["glucoseRandom"],
+    // Hyperglycaemia changes the lens osmotically; blurred vision is a real
+    // presenting complaint of undiagnosed diabetes, not only an eye problem.
+    VISION_BLURRED: ["glucoseRandom"],
 
     // volume status
     VOMITING: ["pulse", "bp"],

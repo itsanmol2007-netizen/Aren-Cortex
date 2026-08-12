@@ -295,26 +295,10 @@
     background: rgba(255, 255, 255, 0.06);
 }
 
+/* Log out moved to Settings, 2026-08-11 — see features/settings/. Nothing in
+   the sidebar reads .variant-logout / [data-logout] anymore. */
+
 /* ── Consult action — Blue = operational ─────────────────── */
-/* Log out — deliberately the quietest item in the panel: dimmer than nav
-   pages at rest, warms toward the destructive red only on hover. */
-.sidebar-nav-item.variant-logout {
-    color: rgba(255, 255, 255, 0.5);
-}
-
-.sidebar-nav-item.variant-logout .sidebar-nav-icon {
-    color: rgba(255, 255, 255, 0.38);
-}
-
-.sidebar-nav-item.variant-logout:hover {
-    background: rgba(210, 59, 52, 0.14);
-    color: #ffb4ae;
-}
-
-.sidebar-nav-item.variant-logout:hover .sidebar-nav-icon {
-    color: #ff8a84;
-}
-
 .sidebar-nav-item.variant-action {
     color: #fff;
     font-weight: 650;

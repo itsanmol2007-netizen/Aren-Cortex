@@ -1,17 +1,18 @@
-import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2 } from "lucide-react";
+import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2, CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 import { searchPatients, findPatientByPhone, type DBPatient } from "../lib/db";
 import type { Gender, Patient } from "../types";
+import { ageInYears, dobMattersFor, todayIso } from "../lib/growth/age";
 
 type PatientModalProps = {
   onClose: () => void;
   onConfirm: (patient: Patient) => void;
 };
 
-const emptyDraft: Patient = { name: "", age: "", gender: "", phone: "", address: "" };
+const emptyDraft: Patient = { name: "", age: "", gender: "", phone: "", address: "", dateOfBirth: "" };
 
 function dbToUiPatient(p: DBPatient): Patient {
-  return { id: p.id, name: p.name, age: String(p.age), gender: p.gender as Gender, phone: p.phone };
+  return { id: p.id, name: p.name, age: String(p.age), gender: p.gender as Gender, phone: p.phone, dateOfBirth: p.date_of_birth ?? "" };
 }
 
 export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
@@ -203,6 +204,40 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                   <option value="Other">Other</option>
                 </select>
               </div>
+            </div>
+
+            {/* Date of birth — optional for everyone, and marked as NEEDED
+                once the age entered says this is a child. WHO's growth
+                standards are indexed per month, so for an under-five the
+                integer age above is not precise enough to place them on a
+                growth curve at all; above five it changes nothing and the
+                field stays quiet. A prompt that fires on every adult is one
+                receptionists stop reading. */}
+            <div className="pm-field">
+              <label className="pm-label">
+                <CalendarDays size={12} className="pm-label-icon" />
+                Date of birth{" "}
+                {dobMattersFor(Number.parseInt(draft.age, 10))
+                  ? <span className="pm-dob-needed">needed for growth charts</span>
+                  : <span className="pm-optional">OPTIONAL</span>}
+              </label>
+              <input
+                className={`pm-input${dobMattersFor(Number.parseInt(draft.age, 10)) && !draft.dateOfBirth ? " pm-input-wanted" : ""}`}
+                type="date"
+                max={todayIso()}
+                value={draft.dateOfBirth ?? ""}
+                onChange={(e) => {
+                  const dob = e.target.value;
+                  // The date is the harder fact, so the age field FOLLOWS it
+                  // rather than being asked for twice and allowed to drift.
+                  const derived = ageInYears(dob);
+                  setDraft((d) => ({
+                    ...d,
+                    dateOfBirth: dob,
+                    age: derived === null ? d.age : String(derived),
+                  }));
+                }}
+              />
             </div>
 
             <div className="pm-field">

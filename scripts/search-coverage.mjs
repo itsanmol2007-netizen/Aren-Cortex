@@ -25,7 +25,12 @@ import { readFileSync } from "node:fs";
 function loadEnv() {
     const out = {};
     for (const line of readFileSync(new URL("../.env", import.meta.url), "utf8").split("\n")) {
-        const m = line.match(/^([A-Z_]+)=(.*)$/);
+        // Tolerant of CRLF and of stray spaces: this repo is checked out on
+        // Windows, so every line here ends "\r", and `(.*)$` cannot match a
+        // trailing carriage return — the strict version of this regex silently
+        // parsed the whole file to {} and the script died on "supabaseUrl is
+        // required". Same pattern as the other check scripts.
+        const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
         if (m) out[m[1]] = m[2].trim();
     }
     return out;

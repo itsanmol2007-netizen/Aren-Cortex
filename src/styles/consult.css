@@ -2842,3 +2842,154 @@
     font-size: 19px;
     font-weight: 660;
 }
+
+/* ============================================================
+   GROWTH CHART — features/consult/GrowthChartCard.tsx
+   The one specialty chart the ENGINE reads (WAZ feeds
+   GROWTH_FALTERING), so its palette follows §12.1 strictly:
+   amber = the soft cut-off, red = the severe one, blue = this
+   visit. No colour here is decorative.
+   ============================================================ */
+
+.cs-growth-head-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.cs-growth-toggle {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--cs-line);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.cs-growth-tab {
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cs-muted);
+    cursor: pointer;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cs-growth-tab:hover:not(:disabled) { color: var(--cs-ink); }
+.cs-growth-tab.is-on { background: #fff; color: var(--cs-blue); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08); }
+.cs-growth-tab:disabled { cursor: default; opacity: 0.6; }
+
+.cs-growth-plot {
+    padding: 6px 2px 0;
+}
+
+.cs-growth-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Expanded view: the card column is sized for text, and reading a centile off
+   a 240px-tall plot is guesswork. Same reasoning as the dental chart's expand. */
+.cs-growth-plot.is-large {
+    padding: 0;
+    min-width: min(78vw, 900px);
+}
+
+.cs-growth-tick {
+    font-size: 8px;
+    fill: var(--cs-faint);
+}
+
+.cs-growth-band-label {
+    font-size: 7.5px;
+    font-weight: 700;
+}
+
+.cs-growth-readout {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: var(--cs-radius-sm);
+    border: 1px solid var(--cs-line);
+    background: #f8fafc;
+}
+
+.cs-growth-readout.is-underweight,
+.cs-growth-readout.is-stunted {
+    border-color: rgba(180, 83, 9, 0.4);
+    background: rgba(255, 251, 235, 0.8);
+}
+
+.cs-growth-readout.is-severely-underweight,
+.cs-growth-readout.is-severely-stunted {
+    border-color: rgba(180, 35, 24, 0.45);
+    background: rgba(254, 242, 242, 0.85);
+}
+
+.cs-growth-z {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--cs-ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-growth-pct {
+    font-size: 12px;
+    color: var(--cs-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-growth-class {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cs-ink);
+    margin-left: auto;
+}
+
+.is-underweight .cs-growth-class,
+.is-stunted .cs-growth-class { color: var(--cs-amber); }
+
+.is-severely-underweight .cs-growth-class,
+.is-severely-stunted .cs-growth-class { color: var(--cs-red); }
+
+.cs-growth-tail {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--cs-faint);
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 5px;
+    padding: 1px 5px;
+    cursor: help;
+}
+
+/* Why this card cannot draw — always in words, never an empty box. */
+.cs-growth-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--cs-muted);
+}
+
+.cs-growth-note svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--cs-faint);
+}
+
+.cs-growth-foot {
+    margin: 8px 0 0;
+    font-size: 11px;
+    color: var(--cs-faint);
+    line-height: 1.45;
+}

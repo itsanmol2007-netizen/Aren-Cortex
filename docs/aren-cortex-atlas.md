@@ -35,9 +35,15 @@ its open question had been resolved) · the `App.tsx` line count and the boot
 description in §2.
 
 Sessions of **2026-08-08 → 2026-08-11** added the attachment pipeline (§14.6),
-the specialty tools (§14.7) and the dentistry/obstetric content (§14.8), and
-edge-function source was brought into the repo. Those sections are current as
-of 2026-08-11 and were each verified live — real browser, real database.
+the specialty tools (§14.7), the dentistry/obstetric content (§14.8), the
+drug-allergy guards (§14.9), and Settings + specialty self-service + chart
+gating (§14.10); edge-function source was brought into the repo. Those
+sections are current as of 2026-08-11. §14.6–§14.8 were verified live, real
+browser, real database. §14.9 by database read-back only (see its own note).
+§14.10's specialty toggle and DB constraint fix were verified live; the
+chart-gating and Settings-page UI itself were **not** browser-verified this
+pass — Anmol took over visual checks mid-session — so treat that part as
+implemented and type-checked, not yet eyeballed.
 
 **Everything else still carries its 2026-07-30 reading and was NOT re-checked.**
 Treat §3, §4, §7–§9 and §11–§13 as of that date. Where a claim there contradicts
@@ -82,7 +88,15 @@ npm run check:search     # search coverage
 npm run check:brands     # brand-family grouping, against the LIVE catalogue
 npm run check:dental     # odontogram geometry (§14.7)
 npm run check:obstetric  # LMP / G-P-L-A derivation (§14.8)
+npm run check:measures   # measurement wiring, end to end (§14.11)
+npm run check:growth     # WHO growth z-scores against WHO's own tables (§14.12)
 ```
+
+> All five run clean on Windows as of 2026-08-11. Four of them did **not**
+> before that date — they had only ever been run inside a Linux container, and
+> two failed on path handling, one on CRLF `.env` parsing, and one on a
+> duplicated database function. See §14.11. If you add a check script, run it
+> on the machine the work actually happens on.
 
 The two newest checks exist because both failures are **invisible**: a
 mesial/distal swap looks fine in a screenshot, and a broken LMP derivation
@@ -138,16 +152,16 @@ that has to change.
 
 Nothing is half-built — these are all "decided not to start", with reasons.
 
-1. **The charts are not specialty-gated.** The dental chart and body map are
-   always visible, so a dermatologist scrolls past a tooth chart. This is
-   presentation config (`specialtyProfile.ts`), not a data change — the
-   cheapest real win on this list.
-2. **Guards are `exercise`-only.** `intent_guards.target_type` contains no
-   other value in the entire table, so there is no mechanism today for a
-   medicine-level guard — amoxicillin under a known drug allergy, say. This
-   is genuine engine work, and it got sharper when §14.8 put amoxicillin on
-   the abscess route. **Of the open items this is the only one where the gap
-   is a safety gap rather than a polish gap.**
+1. ~~**The charts are not specialty-gated.**~~ **Fixed 2026-08-11 — see
+   §14.10.** Dental chart shows only for Dentistry, body map only for
+   Dermatology, via a new `charts` field on `SpecialtyProfile`. This also
+   reversed which way the two specialty tools default — see §14.10 for why.
+2. ~~**Guards are `exercise`-only.**~~ **This was wrong, and fixed 2026-08-11
+   — see §14.9.** `guardIntent()` was already fully generic over `IntentType`
+   / class / specific intent; 16 of the 20 live guards already targeted
+   medicines (pregnancy, pediatric, renal impairment) before this pass. The
+   real gap was content, not code — no allergy signal was specific enough to
+   safely gate a drug — and that's what §14.9 closes.
 3. **Attachment tags overlap the body map.** `visit_attachments.laterality` /
    `.body_region` predate `visit_body_sites` and now duplicate it loosely.
    An attachment should probably reference a body site.
@@ -1438,6 +1452,29 @@ active consult), not curl-only:
 - All test patients/visits/attachments created during verification deleted
   afterward through the real delete function, not a raw DB wipe
 
+### Bucket CORS was never actually set (found and fixed 2026-08-11)
+
+The 2026-08-08 verification above tested the presigned-URL *contract* (a
+valid URL comes back, a PUT to it succeeds) but every real upload from an
+actual browser tab failed at the CORS preflight —
+`No 'Access-Control-Allow-Origin' header is present`. The browser's PUT/GET
+against a presigned URL goes straight to B2, never through Supabase, so it's
+the *bucket's* CORS policy gating it, which is separate from whether the URL
+itself is valid — a new B2 bucket ships with no CORS rule at all, and none
+was ever set here. `curl` against the same URL was never affected, which is
+exactly why this slipped past that pass's verification.
+
+Fixed by a fourth edge function, `attachment-configure-cors`
+(`supabase/functions/README.md` has the full account) — `AllowedOrigins:
+['*']`, safe because the bucket is still private and every request still
+needs a real, doctor-minted, 5-minute presigned URL; CORS only decides
+whether the *browser* shows the response, never whether the bucket accepts
+the request. Verified by simulating the exact preflight the browser sends
+(`curl -X OPTIONS` with `Origin` / `Access-Control-Request-Method` headers)
+before and after — bucket returned bare 200s with no CORS headers before,
+`access-control-allow-origin: <origin>` + `allow-methods: PUT` + `allow-
+headers: content-type` after.
+
 ### Still open
 
 - QR phone-handoff (desktop doctor, photo on phone) — deliberately deferred,
@@ -1614,6 +1651,415 @@ doctor seeing a man should never be shown an obstetric history box.
 UI: if it broke, the LMP box would still fill in, the record would still be
 right, and amenorrhoea would quietly never fire again. Confirmed
 non-vacuous.
+
+---
+
+## 14.9 Medicine-level drug-allergy guards (2026-08-11)
+
+Content only — **zero lines of application code changed.** `guardIntent()`
+(`lib/synapse/engine.ts`) has always taken `targetType | targetClassId |
+targetIntentId` and compared whichever is set against any intent, of any
+type. §0's former "guards are `exercise`-only" claim was checked against
+`intent_guards.target_type` alone and missed that 16 of the 20 live guards
+already went through `target_class_id` / `target_intent_id` instead —
+pregnancy already hard-blocks isotretinoin, doxycycline and NSAIDs;
+pediatric already hard-blocks aspirin and nimesulide. The mechanism was
+never the gap.
+
+**The actual gap:** a "Known drug allergy" chip existed
+(`observables.id 39` → signal `DRUG_ALLERGY`) but only ever fed an Allergy
+Workup test suggestion — it doesn't say *which* drug, so nothing could
+safely gate on it. No guard read it at all.
+
+**What was added**, live migration `add_drug_allergy_guards`, purely
+additive:
+
+| Row | What |
+|---|---|
+| Guard: `DRUG_ALLERGY` → `warn`, `target_type = 'medicine'` | Generic net — any noted allergy softly flags *every* medicine ("confirm which one") until the doctor names it. First guard ever written directly against a `target_type`, proving that path works for something other than `exercise` too. |
+| 3 new signals: `PENICILLIN_ALLERGY`, `SULFA_ALLERGY`, `NSAID_ALLERGY` | Specific, distinct from `DRUG_ALLERGY` |
+| 3 new history chips | *Penicillin allergy* · *Sulfa drug allergy* · *NSAID / aspirin allergy* — `observables` 395–397 |
+| New class **Penicillins** (id 8) | amoxicillin, ampicillin, cloxacillin, dicloxacillin, piperacillin |
+| New class **Cephalosporins** (id 9) | all 10 cephalosporins in the catalogue |
+| Guard: `PENICILLIN_ALLERGY` → `warn_hard` on class 8 | The direct fix for the amoxicillin/dental-abscess case (§14.8) |
+| Guard: `PENICILLIN_ALLERGY` → `warn` on class 9 | Real but low (~1–2%) cross-reactivity — soft, not a block |
+| Guard: `SULFA_ALLERGY` → `warn_hard` on intent 720 (cotrimoxazole) | The only sulfonamide antibiotic in the catalogue, so targeted directly rather than a one-member class |
+| Guard: `NSAID_ALLERGY` → `warn_hard` on the existing class 1 (`nsaid`) | Reused, not duplicated |
+
+Verified live against `arenod` (ids and joins read back after insert, not
+assumed): guard ids 21–25 landed with the exact `signal_id` /
+`target_class_id` / `target_intent_id` / `reason` intended; `intent_class_map`
+carries exactly 5 rows under `penicillin` and 10 under `cephalosporin`;
+`observable_signals` links all three new chips to their new signals.
+Not re-verified through an actual browser consult this pass — the DB read-back
+plus the fact that this is the identical code path already exercised by the
+16 pre-existing medicine-class guards was judged sufficient; the loader
+(`loadRuleset`) and `guardIntent` were also read end-to-end to confirm both
+generalize over `target_type` with no `exercise`-specific branch anywhere.
+
+**Deliberately not done:** no guard targets `aspirin` (intent 470) through
+the NSAID class — it isn't a member of class 1 today (only `PEDIATRIC` guards
+it directly, for Reye's). Adding it would also pull aspirin under the
+`PREGNANCY` → class 1 guard, which is a real clinical nuance (low-dose
+aspirin has a legitimate use in some pregnancies) this pass didn't try to
+resolve — left for whoever next touches class 1 membership. No dedicated
+"cephalosporin allergy" chip either; the penicillin-allergy cross-reactivity
+guard covers the common real-world case, and a direct chip is a cheap
+follow-up if ever needed.
+
+---
+
+## 14.10 Settings page, specialty self-service, and chart gating (2026-08-11)
+
+Three connected changes, one session, Anmol's own instructions ("build a
+setting page... toggle the specialty... put exact things at exact setup like
+dental chart at dentist").
+
+**`features/settings/SettingsPage.tsx`** — real page now, was a 0-byte stub.
+Reachable from the sidebar. Two sections: a specialty grid (all 8 profiles,
+click to switch, saves immediately) and Session (doctor pill + Log out).
+
+**Log out moved off the sidebar, into Settings.** `SidebarNav` /
+`Sidebar.tsx` no longer take or render an `onLogout` — `SettingsPage` calls
+`useLogout()` itself. `sidebar.css`'s `.variant-logout` rules are gone with
+it.
+
+**Specialty is now doctor-self-service, deliberately temporarily.**
+`updateHospitalSpecialtyProfile()` (`lib/db/patients.ts`) does a plain
+RLS-scoped update on `hospitals.specialty_profile` — no edge function, same
+`hospital_isolation` policy every other hospital write already relies on.
+This is a real, on-the-record exception to "set once at onboarding, per
+facility" (§5.3's own words): there's no onboarding flow and no admin panel
+yet, so the doctor testing five specialties in one sitting needs a fast
+switch. Both `specialtyProfile.ts`'s header and §5.3 now say so explicitly.
+When the admin panel (§14.5) exists, this is a permissions change, not a
+schema change — same column.
+
+**Two new profiles: Dentistry and Dermatology** (`specialtyProfile.ts`),
+eight total now. Both keep Medicines as primary (a dental or derm consult
+still ends in a prescription); what's new is a third configuration axis,
+`charts: ChartKind[]` (`'dental' | 'body'`), empty for every other profile.
+
+**The two specialty-tool cards are now gated on it** — `App.tsx` wraps
+`<DentalChartCard>` / `<BodyMapCard>` in `specialty.charts.includes(...)`.
+This is a deliberate reversal of §14.7's original call, which shipped both
+cards always-visible on purpose ("a general OPD doctor with an occasional
+dental walk-in needs this exactly as much as a dedicated dental clinic
+would"). In practice that meant every specialty scrolling past a tooth chart
+on every patient, and precision won. Neither card changed; only whether they
+mount did.
+
+**A stale DB constraint surfaced immediately** —
+`hospitals_specialty_profile_check` was a hand-maintained whitelist that
+still only had five ids (`general_opd, physiotherapy, diagnostics,
+cardiology, pediatrics`). It predates this session: `gynaecology` was
+already missing before `dentistry`/`dermatology` were ever added, meaning
+Settings would have hard-failed switching to Gynaecology too, undetected
+until someone tried. Fixed by widening the constraint to all eight current
+ids (migration `widen_hospitals_specialty_profile_check`). **Worth
+remembering:** `specialtyProfile.ts`'s `PROFILES` map and this constraint are
+two copies of the same list with nothing keeping them in sync — adding a
+ninth profile needs both again.
+
+*Check:* `select pg_get_constraintdef(oid) from pg_constraint where
+conrelid = 'hospitals'::regclass and conname =
+'hospitals_specialty_profile_check';` — every id in `specialtyProfile.ts`'s
+`PROFILES` should appear.
+
+---
+
+## 14.11 The glycaemic panel, and the silent-wiring class of bug (2026-08-11)
+
+Started as "add a blood sugar field". Turned into finding that a whole class
+of failure had been running unchecked, three separate times.
+
+### What was actually broken
+
+`GLUCOSE_FASTING`, `GLUCOSE_RANDOM` and `HBA1C` had **live, correctly
+authored `measurement_rules`** — ADA thresholds, mg/dL, the right units for
+India — and **no field anywhere in the app emitting those keys.** Because
+`HIGH_BLOOD_GLUCOSE` and `LOW_BLOOD_GLUCOSE` carry **zero chips** (verified:
+`observable_signals` has no row for either), a number was the *only* way to
+raise them. So the entire authored diabetes pathway was unreachable:
+
+| Unreachable | Detail |
+|---|---|
+| 11 medicines | metformin, glimepiride, gliclazide, sitagliptin, teneligliptin, vildagliptin, empagliflozin, dapagliflozin, voglibose, pioglitazone, glibenclamide |
+| 2 conditions | Type 2 diabetes mellitus · Diabetic ketoacidosis |
+| 4 tests | HbA1c · FBS · PPBS · Urine Ketones |
+| 1 referral | Endocrinology |
+| 1 advice | Diabetic diet counselling |
+| **1 safety route** | hypoglycaemia → **Emergency / immediate hospital transfer** |
+
+Nothing was wrong with the knowledge base. Nothing ever sent it a value.
+
+**Two more instances of the same class, found the same hour:**
+
+- `RELEVANT_FIELDS` in `measures.ts` had a `KNOWN_DIABETES` key. **No such
+  signal exists** — it is `DIABETIC`. That row had never fired, so a known
+  diabetic's chart surfaced nothing.
+- `lmp` and `gpla`, added by §14.8 the previous day, reached **neither print
+  surface**. Recorded, saved, and invisible to both doctor and patient — the
+  identical defect §10.6 had already found and fixed once for height / blood
+  group / pain / ROM. It recurred within a day of the last fix.
+
+### What was built
+
+Three fields (`glucoseFasting`, `glucoseRandom`, `hba1c`), emitted in
+`consultInput.ts`, printed on both surfaces, plus relevance rows for
+`DIABETIC`, the osmotic triad (`POLYURIA` / `POLYDIPSIA` / `POLYPHAGIA`),
+`WEIGHT_LOSS` and `VISION_BLURRED` (hyperglycaemia changes the lens
+osmotically — blurred vision is a real presentation of undiagnosed diabetes).
+Fasting glucose added to the Diagnostics profile's defaults, since a fasting
+sugar is on essentially every pre-op and health-check panel.
+
+**Fasting and random are separate fields on purpose and must never be merged.**
+The rules fire at ≥126 and ≥200 respectively; 150 mg/dL is diabetic fasting
+and unremarkable post-meal. One "sugar" box would have to guess which, and
+guessing wrong is a wrong diagnosis in both directions.
+
+### `npm run check:measures`
+
+New, because every hop in `MEASURE_FIELDS → Vitals → vitalsToMeasurements →
+measure key → rule → print` fails silently and three of them had. It checks
+four things; two need no database and always run, two need a session.
+
+Confirmed non-vacuous by deleting the `GLUCOSE_FASTING` emission (caught) and
+by deleting the `lmp` line from `PrescriptionDocument` (caught).
+
+**`KNOWN_UNFED` is a baseline, not an excuse.** Three keys are still
+knowingly unfed and allowlisted, and the check fails if the list goes stale in
+either direction:
+
+| Key | Feeds | Why not yet |
+|---|---|---|
+| `MMT` | muscle weakness / atrophy / focal weakness | Graded per muscle group; belongs with the physiotherapy rebuild, where a single box would repeat the `ROM_PCT` mistake |
+| `GRIP_KG` | grip weakness | Same rebuild; most Indian OPDs have no dynamometer |
+| `RR` | breathlessness | A real core vital and **the cheapest remaining fix** — one field, one emission |
+
+### The check scripts were themselves broken
+
+Found while adding the new one. Every documented check was either dead or
+vacuous **on Anmol's actual Windows machine** — they had only ever run in the
+Linux container used for browser sessions:
+
+1. **`check:dental` and `check:obstetric` could not start.** They passed
+   `new URL(...).pathname` to esbuild, which on Windows yields `/X:/...` —
+   unresolvable. Both now use `fileURLToPath`. Both pass.
+2. **`check:search` parsed `.env` to `{}` and died.** Its regex ended `(.*)$`,
+   and this repo's `.env` is CRLF; `$` cannot match with a `\r` still pending.
+   Now uses the tolerant pattern the other scripts use.
+3. **`check:brands` failed at the first composition.** Two overloads of
+   `composition_brands` now exist in the live database (a four-argument one
+   and a five-argument hospital-scoped one), so a four-argument call matches
+   both and PostgREST refuses it. **The app was never affected** — it always
+   passes all five (`lib/db/synapse.ts:495`) — but the script did not. Fixed
+   by passing `p_hospital_id: null` explicitly. The redundant overload is
+   still there and is a latent trap for any future four-argument caller.
+
+> **The RLS trap, and why this nearly shipped as a fake check.** Every Synapse
+> reference table carries `synapse_read_all USING (auth.uid() IS NOT NULL)`.
+> A bare anon key is not signed in, so those reads return **zero rows and no
+> error**. The first version of `check:measures` read that as "nothing
+> matched": it reported almost every relevance row as broken while the rule
+> check passed by examining nothing at all. A check that silently examines
+> nothing is worse than no check, because it reads as coverage. It now proves
+> it can read before trusting a result, and **skips loudly** rather than
+> passing quietly. This is the same methodology error §14.6 records from the
+> attachment work, in the opposite direction — there `execute_sql` bypassed
+> RLS and made isolation look broken; here the anon key hit RLS and made
+> content look missing. **Neither the `postgres` role nor a bare anon key is
+> the role your app runs as.**
+
+*Check:* `npm run check:measures` · to include the database half,
+`AREN_CHECK_EMAIL=… AREN_CHECK_PASSWORD=… npm run check:measures`
+
+---
+
+## 14.12 Respiratory rate, and the paediatric growth foundation (2026-08-11)
+
+### Respiratory rate — the last cheap dead key
+
+`RR` had a live rule (≥22 → `BREATHLESSNESS`) and no field. Now a real field,
+emitted, printed on both surfaces, relevant on breathlessness / cough / wheeze
+/ cyanosis / stridor, and **on by default for Paediatrics only** — counting
+breaths is the first thing WHO IMNCI asks for in a child with cough, and fast
+breathing is what separates pneumonia from a cold.
+
+> **The warning band is adult-only, deliberately, and it is written into the
+> code.** Normal respiratory rate is profoundly age-dependent — WHO IMNCI
+> calls breathing fast at ≥60/min under 2 months, ≥50 to 12 months, ≥40 to 5
+> years, ≥30 above. `MeasureField.warn` receives **only the typed string**; it
+> cannot see the patient. Warning on every healthy infant would be textbook
+> alert fatigue, so the band says "for an adult" and paediatric thresholds are
+> left to the doctor. Fixing this properly means giving `warn` patient
+> context — the same change the growth work needs, and the natural time to do
+> both.
+
+Only `MMT` and `GRIP_KG` remain unfed, both allowlisted with reasons in
+`check:measures`.
+
+### The WHO growth engine
+
+`lib/growth/` — `whoStandards.ts` (generated), `growth.ts` (the maths),
+`age.ts` (date of birth → months), `npm run check:growth`.
+
+**The data is real and its provenance is recorded.** WHO Child Growth
+Standards 2006, expanded z-score tables, fetched from `cdn.who.int` on
+2026-08-11 by `scripts/extract-who-standards.mjs`, which is committed so the
+fetch is repeatable. Weight-for-age and height-for-age, both sexes, 0–60
+months. **These were NOT written from memory** — inventing percentile tables
+would produce confident, wrong numbers on real children, which is worse than
+having no growth chart. The extractor sanity-checks its own parse against
+WHO's published medians (boys birth weight 3.3464 kg, girls 3.2322, birth
+length 49.8842 / 49.1477) and refuses to write the file if they do not land.
+
+Monthly samples, interpolated at runtime: 6.7 KB instead of ~11,000 numbers,
+and L/M/S are smooth enough in age that the error is far below anything a
+decision turns on.
+
+Two behaviours worth knowing:
+
+- **It refuses rather than extrapolating.** Age outside 0–60 months, a
+  non-finite input, or a value ≤ 0 returns `null`. Past five years these
+  curves were never fitted, and a confident percentile from an unfitted curve
+  is a clinical assertion nobody made.
+- **WHO's ±3 SD tail correction is implemented, and it is not optional.**
+  Beyond ±3 SD the Box-Cox tail is fitted to almost no children, so WHO
+  rescales it linearly off the 2–3 SD band. Without it a severely wasted
+  2-year-old reads −7.5 SD instead of −6.0 — squarely in the range where the
+  number changes management. Applied to weight-for-age only; WHO does not
+  apply it to height-for-age, and `check:growth` asserts that asymmetry.
+
+*Check:* `npm run check:growth` — 72 of WHO's own published SD values must
+round-trip to their own z-score, plus refusal, boundary and tail cases. The
+fixtures are the `SD2neg` / `SD0` / `SD2` columns this codebase deliberately
+does **not** ship, so the check is independent of the data it validates.
+Confirmed non-vacuous three ways: flipping the sign of `L` (46 failures),
+disabling the tail correction (the two tail assertions, with the linearity
+test showing unequal steps — exactly the signature), and corrupting a single
+LMS row (caught at that one age).
+
+> **A note on writing checks.** An earlier draft of `check:growth` asserted
+> that a severely underweight child's z would be greater than −6. It failed on
+> correct code: 5.5 kg at two years really is about −6 SD. The fix was to test
+> the algorithm's **defining property** — that the corrected tail is linear,
+> so equal weight steps give equal z steps — instead of the author's guess at
+> a magnitude. Assert the property, not the number you expected.
+
+### Date of birth
+
+`patients.date_of_birth`, **nullable** (migration
+`add_patients_date_of_birth`). `patients.age` stays required and is still what
+everything reads; DOB is purely additive, so every existing row and every
+existing code path is untouched.
+
+It exists because the growth standards are indexed per month and an integer
+year cannot express that: a 3-month-old and an 11-month-old are both `age: 0`,
+across a span where WHO's median weight runs 3.35 kg to 9.4 kg. Deriving DOB
+from `age` would be the same rounding, hidden.
+
+Wired into **all three intake surfaces**, on Anmol's instruction — reception
+is where a birth date is actually known, so Cortex-only would have been the
+wrong half:
+
+| Surface | |
+|---|---|
+| `components/PatientModal.tsx` | Cortex intake |
+| `frontdesk/components/CreateVisitModal.tsx` | Front Desk new visit (i18n: `fldDob`, English + Hindi) |
+| `frontdesk/components/patients/EditPatientModal.tsx` | where a missing DOB gets filled in later — every patient predating the column has none |
+
+Two rules hold on all three:
+
+1. **Optional always; flagged only for an under-five** (`dobMattersFor`, ≤5y —
+   the exact window WHO's standards cover). Amber and worded, never a blocking
+   `*`. A prompt that fires on every adult is one receptionists stop reading.
+2. **The age field follows the date, never the reverse.** A date is the harder
+   fact; asking for both independently guarantees they drift.
+
+The lower bound (`> 1900-01-01`) is a DB constraint; "not in the future" is
+validated in the app, because a CHECK constraint cannot call `current_date`
+(Postgres requires IMMUTABLE). Stated here so nobody assumes the database is
+enforcing something it is not.
+
+### The chart, and the engine wiring
+
+`features/consult/GrowthChartCard.tsx` — WHO reference curves (−3, −2, 0, +2,
++3 SD) across the whole 0–60 month window, weight-for-age or height-for-age,
+with this visit plotted on them. Gated to Paediatrics via
+`SpecialtyProfile.charts` (`"growth"`), expandable through `ChartSurface` like
+the other two.
+
+It reads weight and height **straight off `vitals`** rather than holding its
+own copy — two renderings of one number is how a consultation ends up with two
+different numbers, the same reason the vitals strip left `PatientHeader`.
+
+The reference curves are drawn by binary-searching `growthZ` rather than
+reimplementing the LMS inversion, so the curve a dot is judged against and the
+z-score printed beside it cannot disagree. Slower, and completely irrelevant at
+61 points × 5 curves recomputed only on metric/sex change.
+
+**`WAZ` is now an engine input**, derived in `consultInput.ts` — migration
+`add_growth_zscore_measurement_rules`:
+
+| Rule | Raises |
+|---|---|
+| `WAZ` below −2 | `GROWTH_FALTERING` @ 0.800 |
+| `WAZ` below −3 | `GROWTH_FALTERING` @ 1.000 |
+
+Overlapping on purpose: `resolveSignals` keeps the highest weight seen, so a
+child at −4 SD matches both and the 1.0 wins — severity gets a gradient
+without a second signal. That finally makes the six rules behind
+`GROWTH_FALTERING` (Paediatrics referral, Failure to thrive, CBC, TSH, Serum
+Zinc, Stool Reducing Substances) follow from a measurement instead of from a
+doctor eyeballing a curve and ticking a chip.
+
+**`HAZ` is computed and recorded but ranks nothing.** Stunting has no signal in
+this knowledge base, and minting one means authoring its clinical consequences
+too — content, not wiring.
+
+**The derivation is NOT gated by the chart.** `charts` hides the panel only;
+`consultInput.ts` emits WAZ on every consult that has a date of birth and a
+sex. A general physician seeing a malnourished child still gets the
+failure-to-thrive workup ranked — they simply aren't shown a growth curve for
+every adult.
+
+Verified through the real `buildEngineInput`: median weight → WAZ 0.03; 9.5 kg
+at 24 months → −2.16 (fires at 0.8); 7.0 kg → −4.57 (fires at 1.0); and all
+three refusal paths — no date of birth, sex "Other", and a 7-year-old — emit
+nothing at all.
+
+### 🔴 The stale dependency list, found while wiring this
+
+`useConsultIntelligence`'s engine memo listed vitals fields **individually**,
+and that list had stopped at the original five (`bp`, `pulse`, `temp`, `spo2`,
+`weight`). Every field added since — height, blood group, pain, ROM, LMP,
+G-P-L-A, the glycaemic panel, respiratory rate — **did not re-run the engine
+when it changed.**
+
+So entering an LMP raised no `AMENORRHEA`, and entering a random sugar raised
+no `HIGH_BLOOD_GLUCOSE` — the pathway §14.11 had just finished unblocking.
+
+It hid for so long because it **self-heals**: `observableIds` is also a
+dependency, so adding any chip after typing the number recomputes the memo with
+current vitals. It only ever failed when a measurement was the **last or only**
+thing entered — which is exactly what a doctor does when they take a sugar on a
+patient whose chart is already filled in.
+
+Fixed by keying on `JSON.stringify(vitals)` instead of an enumeration. That
+makes the failure **structurally impossible** rather than merely fixed: there is
+no longer a list that can fall behind `MEASURE_FIELDS`. A dozen short strings
+per keystroke costs nothing next to the engine run it guards.
+
+> Third instance today of the same shape — an authored thing on one side, a
+> hand-maintained list on the other, and nothing checking they agree. Where a
+> check can't reach (React dependency arrays), prefer a construction with no
+> list at all.
+
+**Still to build:** the serial view across past visits. One visit is a dot;
+faltering is a *direction*, and `visit_measurements` already holds the history
+to draw it. The card says so in words rather than letting a single point imply
+a trend.
 
 ---
 

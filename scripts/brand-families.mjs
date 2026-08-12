@@ -25,6 +25,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { build } from "esbuild";
 
@@ -43,11 +44,11 @@ const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)
 // Load the real module — no second copy of the grouping rules.
 const TMP = new URL("../.brand-families.tmp.mjs", import.meta.url);
 await build({
-    entryPoints: [new URL("../src/lib/synapse/brands.ts", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../src/lib/synapse/brands.ts", import.meta.url))],
     bundle: true,
     format: "esm",
     platform: "neutral",
-    outfile: TMP.pathname,
+    outfile: fileURLToPath(TMP),
     logLevel: "silent",
 });
 const { groupBrandFamilies, brandFamilyLabel, brandVariantLabel } = await import(TMP.href);
@@ -85,11 +86,20 @@ console.log("BRAND FAMILY CHECK\n");
 for (const c of comps.sort((a, b) => a.name.localeCompare(b.name))) {
     // Mirror what the app fetches: single-molecule products only, the same
     // ordering the RPC applies, the same window size.
+    // `p_hospital_id` is passed explicitly even though it is null here.
+    // Two overloads of composition_brands exist in the live database — the
+    // original four-argument one and a five-argument hospital-scoped one —
+    // and a four-argument call matches BOTH, so PostgREST refuses it with
+    // "could not choose the best candidate function". The app was never
+    // affected (it always passes all five), but this script was, and it
+    // failed at the first composition. Null means "global catalogue only",
+    // which is what a catalogue-wide check wants.
     const { data, error } = await supabase.rpc("composition_brands", {
         p_composition_ids: [c.id],
         p_limit: 30,
         p_pediatric: false,
         p_keep_medicine_ids: [],
+        p_hospital_id: null,
     });
     if (error) throw new Error(`${c.name}: ${error.message}`);
 

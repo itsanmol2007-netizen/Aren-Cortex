@@ -14,7 +14,6 @@ import {
     Star,
     Layers,
     Syringe,
-    LogOut,
 } from "lucide-react";
 
 export type SidebarPage =
@@ -65,10 +64,9 @@ type SidebarNavProps = {
     activePage: SidebarPage | null;
     onNavigate: (page: SidebarPage) => void;
     onConsult: () => void;
-    onLogout?: () => void;
 };
 
-export function SidebarNav({ activePage, onNavigate, onConsult, onLogout }: SidebarNavProps) {
+export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProps) {
     const [practiceOpen, setPracticeOpen] = useState(false);
 
     const items: NavItem[] = [
@@ -243,23 +241,6 @@ export function SidebarNav({ activePage, onNavigate, onConsult, onLogout }: Side
                     </button>
                 );
             })}
-
-            {/* Session exit — quiet, last, after everything operational.
-                Rendered outside the registry so it never reads as a "page". */}
-            {onLogout && (
-                <>
-                    <div className="sidebar-divider" />
-                    <button
-                        type="button"
-                        className="sidebar-nav-item variant-logout"
-                        data-logout
-                        onClick={onLogout}
-                    >
-                        <span className="sidebar-nav-icon"><LogOut size={14} /></span>
-                        Log out
-                    </button>
-                </>
-            )}
         </nav>
     );
 }

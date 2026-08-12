@@ -440,13 +440,25 @@ export default function ReviewModal({
                 <div className="px-8 py-3 border-b border-blue-100/60 bg-blue-50/40 flex flex-wrap gap-6">
                   {vitals.bp && <VitalChip label="BP" value={vitals.bp} unit="mmHg" />}
                   {vitals.pulse && <VitalChip label="Pulse" value={vitals.pulse} unit="bpm" />}
+                  {vitals.respRate && <VitalChip label="Resp Rate" value={vitals.respRate} unit="/min" />}
                   {vitals.temp && <VitalChip label="Temp" value={vitals.temp} unit="°F" />}
                   {vitals.spo2 && <VitalChip label="SpO₂" value={vitals.spo2} unit="%" />}
                   {vitals.weight && <VitalChip label="Weight" value={vitals.weight} unit="kg" />}
                   {vitals.height && <VitalChip label="Height" value={vitals.height} unit="cm" />}
                   {vitals.bloodGroup && <VitalChip label="Blood Group" value={vitals.bloodGroup} unit="" />}
+                  {vitals.glucoseFasting && <VitalChip label="Fasting Glucose" value={vitals.glucoseFasting} unit="mg/dL" />}
+                  {vitals.glucoseRandom && <VitalChip label="Random Glucose" value={vitals.glucoseRandom} unit="mg/dL" />}
+                  {vitals.hba1c && <VitalChip label="HbA1c" value={vitals.hba1c} unit="%" />}
                   {vitals.painVas && <VitalChip label="Pain" value={vitals.painVas} unit="/10" />}
                   {vitals.romPct && <VitalChip label="ROM" value={vitals.romPct} unit="%" />}
+                  {/* Added 2026-08-11. These two shipped with §14.8 the day
+                      before and never reached either print surface — the same
+                      defect §10.6 had already found and fixed once for
+                      height / blood group / pain / ROM. Every field added to
+                      MEASURE_FIELDS has to be added here and in
+                      PrescriptionDocument, or it is recorded and invisible. */}
+                  {vitals.lmp && <VitalChip label="LMP" value={vitals.lmp} unit="" />}
+                  {vitals.gpla && <VitalChip label="G-P-L-A" value={vitals.gpla} unit="" />}
                 </div>
               )}
 

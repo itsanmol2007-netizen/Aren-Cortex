@@ -1,0 +1,216 @@
+/* ============================================================
+   SETTINGS — features/settings/SettingsPage.tsx
+   Scoped entirely under .settings-*; touches nothing outside it.
+   No backdrop-filter anywhere in this file on purpose — this page
+   should stay cheap to paint on a low-end doctor's-office PC.
+   ============================================================ */
+
+.settings-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #f5f6f8;
+}
+
+.settings-scroll {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.settings-body {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 32px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.settings-section {
+    background: #ffffff;
+    border: 1px solid #e7ebf1;
+    border-radius: 18px;
+    padding: 28px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03), 0 8px 24px rgba(16, 24, 40, 0.04);
+}
+
+.settings-section-head {
+    margin-bottom: 20px;
+}
+
+.settings-section-head h2 {
+    margin: 0 0 6px;
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: #0f1a30;
+}
+
+.settings-section-head p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #6b7688;
+    max-width: 56ch;
+}
+
+.settings-error {
+    margin: 14px 0 0;
+    font-size: 13px;
+    color: #b42318;
+}
+
+/* ── Specialty grid ─────────────────────────────────────────── */
+
+.settings-specialty-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 12px;
+}
+
+.settings-specialty-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+    padding: 16px 16px;
+    border-radius: 14px;
+    border: 1.5px solid #e7ebf1;
+    background: #fbfcfd;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    font: inherit;
+    min-height: 68px;
+}
+
+.settings-specialty-card:hover:not(:disabled) {
+    border-color: #c7d2e0;
+    background: #ffffff;
+    box-shadow: 0 4px 14px rgba(16, 24, 40, 0.06);
+}
+
+.settings-specialty-card:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.settings-specialty-card:disabled {
+    cursor: default;
+}
+
+.settings-specialty-card.is-active {
+    border-color: #1268e8;
+    background: #f0f6ff;
+    box-shadow: 0 0 0 1px rgba(18, 104, 232, 0.12);
+}
+
+.settings-specialty-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.settings-specialty-name {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #0f1a30;
+    letter-spacing: -0.01em;
+}
+
+.settings-specialty-check {
+    color: #1268e8;
+    flex-shrink: 0;
+}
+
+.settings-specialty-spinner {
+    color: #6b7688;
+    flex-shrink: 0;
+    animation: settings-spin 0.8s linear infinite;
+}
+
+@keyframes settings-spin {
+    to { transform: rotate(360deg); }
+}
+
+.settings-specialty-meta {
+    font-size: 12px;
+    color: #8792a2;
+    line-height: 1.4;
+}
+
+.settings-specialty-card.is-active .settings-specialty-meta {
+    color: #3c6bb0;
+}
+
+/* ── Session ────────────────────────────────────────────────── */
+
+.settings-session-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.settings-doctor-pill {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.settings-doctor-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(145deg, #1268e8, #6366f1);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.settings-doctor-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.settings-doctor-name {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #0f1a30;
+}
+
+.settings-doctor-spec {
+    font-size: 12.5px;
+    color: #8792a2;
+}
+
+.settings-logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    border: 1.5px solid #f3c8c4;
+    background: #fef4f3;
+    color: #b42318;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    flex-shrink: 0;
+}
+
+.settings-logout-btn:hover {
+    background: #fbe3e0;
+    border-color: #eaa79f;
+}
+
+.settings-logout-btn:active {
+    background: #f7d3ce;
+}

@@ -677,6 +677,24 @@
     margin-left: 2px;
 }
 
+/* Date of birth is optional for everyone and NEEDED for an under-five — the
+   label says which, in words, rather than relying on colour alone. Amber, not
+   the pink of a hard `*`: this is "we want this", never "you cannot proceed". */
+.pm-dob-needed {
+    font-size: 10px;
+    font-weight: 600;
+    color: #b45309;
+    font-style: normal;
+    margin-left: 2px;
+}
+
+/* The matching field state. Deliberately quieter than an error: a hairline
+   amber ring, and it disappears the moment a date is entered. */
+.pm-input-wanted {
+    border-color: rgba(180, 83, 9, 0.45);
+    background: rgba(255, 251, 235, 0.75);
+}
+
 .pm-input {
     height: 40px;
     border: 1px solid rgba(0, 0, 0, 0.1);

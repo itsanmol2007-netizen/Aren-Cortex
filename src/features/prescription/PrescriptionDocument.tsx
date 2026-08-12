@@ -227,13 +227,23 @@ function StandardDocument({
                 <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
                     {vitals.bp && <VitalItem label="BP" value={vitals.bp} unit="mmHg" />}
                     {vitals.pulse && <VitalItem label="Pulse" value={vitals.pulse} unit="bpm" />}
+                    {vitals.respRate && <VitalItem label="RR" value={vitals.respRate} unit="/min" />}
                     {vitals.temp && <VitalItem label="Temp" value={vitals.temp} unit="°F" />}
                     {vitals.spo2 && <VitalItem label="SpO₂" value={vitals.spo2} unit="%" />}
                     {vitals.weight && <VitalItem label="Wt" value={vitals.weight} unit="kg" />}
                     {vitals.height && <VitalItem label="Ht" value={vitals.height} unit="cm" />}
                     {vitals.bloodGroup && <VitalItem label="Blood Grp" value={vitals.bloodGroup} unit="" />}
+                    {/* FBS / RBS are what an Indian prescription says, and what
+                        the test catalogue itself calls them. */}
+                    {vitals.glucoseFasting && <VitalItem label="FBS" value={vitals.glucoseFasting} unit="mg/dL" />}
+                    {vitals.glucoseRandom && <VitalItem label="RBS" value={vitals.glucoseRandom} unit="mg/dL" />}
+                    {vitals.hba1c && <VitalItem label="HbA1c" value={vitals.hba1c} unit="%" />}
                     {vitals.painVas && <VitalItem label="Pain" value={vitals.painVas} unit="/10" />}
                     {vitals.romPct && <VitalItem label="ROM" value={vitals.romPct} unit="%" />}
+                    {/* See the note in ReviewModal — these two were recorded but
+                        printed nowhere until 2026-08-11. */}
+                    {vitals.lmp && <VitalItem label="LMP" value={vitals.lmp} unit="" />}
+                    {vitals.gpla && <VitalItem label="G-P-L-A" value={vitals.gpla} unit="" />}
                 </div>
             )}
 

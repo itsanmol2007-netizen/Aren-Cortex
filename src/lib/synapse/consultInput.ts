@@ -28,6 +28,7 @@
 
 import type { EngineInput } from "./engine";
 import type { Vitals } from "../../types";
+import { growthZ, type Sex } from "../growth/growth";
 
 /**
  * A measurement on its way to both the engine and `visit_measurements`.
@@ -84,6 +85,11 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
         out.push({ measureKey: "TEMP", value: round1(toCelsius(temp)), unit: "C" });
     }
 
+    // Respiratory rate. Had a live rule (RR ≥ 22 -> BREATHLESSNESS) and no
+    // field emitting it until 2026-08-11 — see §14.11 on that class of gap.
+    const respRate = num(vitals.respRate);
+    if (respRate !== null) out.push({ measureKey: "RR", value: respRate, unit: "/min" });
+
     const spo2 = num(vitals.spo2);
     if (spo2 !== null) out.push({ measureKey: "SPO2", value: spo2, unit: "%" });
 
@@ -104,6 +110,31 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
 
     const rom = num(vitals.romPct);
     if (rom !== null) out.push({ measureKey: "ROM_PCT", value: rom, unit: "%" });
+
+    // ── Glycaemic panel ──────────────────────────────────────────────────
+    // These three keys had LIVE measurement_rules and no field emitting them
+    // until 2026-08-11, so HIGH_BLOOD_GLUCOSE and LOW_BLOOD_GLUCOSE — which
+    // carry no chips at all and can therefore ONLY be raised by a number —
+    // were unreachable, and with them the entire authored diabetes pathway
+    // (11 medicines, T2DM and DKA as conditions, Endocrinology, four tests,
+    // and the hypoglycaemia → emergency-transfer route). Nothing was wrong
+    // with the rules; nothing ever sent them a value.
+    //
+    // Fasting and random are separate keys on purpose and must never be
+    // merged: the rules fire at ≥126 and ≥200 respectively, so collapsing
+    // them would call a normal post-meal sugar diabetic.
+    const glucoseFasting = num(vitals.glucoseFasting);
+    if (glucoseFasting !== null) {
+        out.push({ measureKey: "GLUCOSE_FASTING", value: glucoseFasting, unit: "mg/dL" });
+    }
+
+    const glucoseRandom = num(vitals.glucoseRandom);
+    if (glucoseRandom !== null) {
+        out.push({ measureKey: "GLUCOSE_RANDOM", value: glucoseRandom, unit: "mg/dL" });
+    }
+
+    const hba1c = num(vitals.hba1c);
+    if (hba1c !== null) out.push({ measureKey: "HBA1C", value: hba1c, unit: "%" });
 
     // ── Obstetric ────────────────────────────────────────────────────────
     // The LMP is entered as a date because that is what the patient knows,
@@ -157,6 +188,19 @@ export interface BuildInputArgs {
     vitals: Vitals;
     /** from the patient record — not typed by the doctor */
     ageYears: number | null;
+    /**
+     * Exact age in months, derived from `patients.date_of_birth` — see
+     * lib/growth/age.ts. Null whenever no date of birth is recorded, which is
+     * every patient created before that column existed.
+     *
+     * Separate from `ageYears` on purpose: the integer year is what ELDERLY and
+     * PEDIATRIC key on and is always present, while growth standards need month
+     * precision and are simply skipped without it. Never derive one from the
+     * other — `ageYears * 12` would be a fabricated month count.
+     */
+    ageMonths?: number | null;
+    /** from the patient record. WHO publishes separate standards per sex. */
+    sex?: Sex | null;
 }
 
 export interface BuiltInput {
@@ -174,6 +218,35 @@ export function buildEngineInput(args: BuildInputArgs): BuiltInput {
     // 3 — age, on every single run.
     if (args.ageYears !== null && Number.isFinite(args.ageYears)) {
         measurements.push({ measureKey: "AGE", value: args.ageYears, unit: "years" });
+    }
+
+    // 4 — paediatric growth. A raw weight matches no rule and never should:
+    // twelve kilos is a thriving two-year-old and a severely underweight
+    // five-year-old, so the number only becomes a finding once it is read
+    // against age and sex. That reading is a z-score, and WAZ/HAZ are what
+    // `measurement_rules` can actually key on.
+    //
+    // Every one of these guards is load-bearing. `growthZ` returns null
+    // outside 0–60 months, and both age-in-months and sex are frequently
+    // absent (no date of birth recorded, or gender "Other"), in which case
+    // NOTHING is emitted and the engine simply never hears about growth —
+    // which is the correct outcome. A fabricated z-score would be a clinical
+    // assertion nobody made.
+    const { ageMonths, sex } = args;
+    if (ageMonths !== null && ageMonths !== undefined && sex) {
+        const weightKg = num(args.vitals.weight);
+        if (weightKg !== null) {
+            const waz = growthZ("weight-for-age", weightKg, ageMonths, sex);
+            if (waz) measurements.push({ measureKey: "WAZ", value: waz.z, unit: "SD" });
+        }
+        const heightCm = num(args.vitals.height);
+        if (heightCm !== null) {
+            const haz = growthZ("height-for-age", heightCm, ageMonths, sex);
+            // Emitted for the record and the card. No rule keys on HAZ yet —
+            // stunting has no signal in this knowledge base, and inventing one
+            // is clinical content authoring, not wiring.
+            if (haz) measurements.push({ measureKey: "HAZ", value: haz.z, unit: "SD" });
+        }
     }
 
     const ids = [...observableIds];

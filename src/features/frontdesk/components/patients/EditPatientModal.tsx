@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Cake, Phone, UserRound, UserRoundPen, Users } from "lucide-react";
 import { searchPatients, updatePatient, type DBPatient, type PatientDirectoryEntry } from "@/lib/db";
 import { useT } from "../../i18n/i18n";
+import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 import { ModalShell } from "../ModalShell";
 import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "../fields";
 
@@ -21,6 +22,7 @@ export function EditPatientModal({ patient, onClose, onSaved }: Props) {
     const t = useT();
     const [name, setName] = useState(patient.name);
     const [age, setAge] = useState(patient.age > 0 ? String(patient.age) : "");
+    const [dateOfBirth, setDateOfBirth] = useState(patient.date_of_birth ?? "");
     const [gender, setGender] = useState(patient.gender);
     const [phone, setPhone] = useState(patient.phone);
     const [errors, setErrors] = useState<Record<string, boolean>>({});
@@ -64,6 +66,7 @@ export function EditPatientModal({ patient, onClose, onSaved }: Props) {
                 age: Number(age) || 0,
                 gender,
                 phone,
+                date_of_birth: dateOfBirth || null,
             });
             onSaved(fresh);
         } catch (err: any) {
@@ -115,6 +118,35 @@ export function EditPatientModal({ patient, onClose, onSaved }: Props) {
                             onChange={(v) => { setAge(v); if (v) setErrors((er) => ({ ...er, age: false })); }}
                             error={!!errors.age}
                             placeholder={t("phAge")}
+                        />
+                    </Field>
+                    {/* Editing is where a missing date of birth actually gets
+                        filled in — every patient created before this column
+                        existed has none, and this is the receptionist's normal
+                        correction surface. Same rule as intake: optional
+                        always, flagged for an under-five. */}
+                    <Field
+                        icon={<Cake size={13} />}
+                        label={
+                            dobMattersFor(Number.parseInt(age, 10))
+                                ? `${t("fldDob")} — ${t("fldDobNeeded")}`
+                                : t("fldDob")
+                        }
+                    >
+                        <input
+                            type="date"
+                            className="fd-field"
+                            max={todayIso()}
+                            value={dateOfBirth}
+                            onChange={(e) => {
+                                const dob = e.target.value;
+                                setDateOfBirth(dob);
+                                const derived = ageInYears(dob);
+                                if (derived !== null) {
+                                    setAge(String(derived));
+                                    setErrors((er) => ({ ...er, age: false }));
+                                }
+                            }}
                         />
                     </Field>
                     <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>

@@ -12,6 +12,7 @@ import { GlobalLogoTrigger } from "./components/GlobalLogoTrigger";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import type { SelectedSymptom, Medicine, Patient, PrescriptionMedicine, Vitals } from "./types";
 import { PatientsPage } from "./features/patients/PatientsPage";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
 import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
@@ -24,6 +25,7 @@ import { MeasurementsCard } from "./features/consult/MeasurementsCard";
 import { AttachmentsCard } from "./features/consult/AttachmentsCard";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { BodyMapCard } from "./features/consult/BodyMapCard";
+import { GrowthChartCard } from "./features/consult/GrowthChartCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
@@ -36,6 +38,8 @@ import { usePinnedMedicines } from "./features/consult/usePinnedMedicines";
 import type { AcceptPayload } from "./features/consult/types";
 import { BrandSheet } from "./features/synapse/BrandSheet";
 import { profileFor } from "./features/synapse/specialtyProfile";
+import { ageInMonths } from "./lib/growth/age";
+import type { Sex } from "./lib/growth/growth";
 import { useOnline } from "./features/frontdesk/operational/useOnline";
 import type { PersonalizedIntent } from "./lib/synapse/personalize";
 import type { CompanionSuggestion } from "./lib/synapse/companions";
@@ -68,8 +72,9 @@ const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
   communication: { title: "Communication", subtitle: "Patient messages & follow-ups" },
   practice: { title: "Practice", subtitle: "Preferences & clinical tools" },
   clinic: { title: "Clinic", subtitle: "Staff, schedule & operations" },
-  settings: { title: "Settings", subtitle: "Account & configuration" },
   support: { title: "Support", subtitle: "Help & documentation" },
+  // "settings" deliberately has no entry here — it's a real page
+  // (features/settings/SettingsPage.tsx), not a coming-soon stub.
 };
 
 /**
@@ -398,6 +403,23 @@ function App() {
     return Number.isFinite(n) ? n : null;
   }, [patient?.age]);
 
+  // Exact age, for the growth standards only. Null whenever no date of birth
+  // is recorded — which is every patient created before that column existed —
+  // and everything downstream is built to skip rather than approximate.
+  // Never derived from `ageYears`: twelve times an integer year is a made-up
+  // month count, and a made-up month puts a child on the wrong curve.
+  const ageMonths = useMemo(
+    () => ageInMonths(patient?.dateOfBirth),
+    [patient?.dateOfBirth]
+  );
+
+  // WHO publishes separate standards per sex, and has none for "Other" — so
+  // that maps to null and the chart says why instead of picking one.
+  const patientSex = useMemo<Sex | null>(() => {
+    const g = String(patient?.gender ?? "").toLowerCase();
+    return g === "male" ? "male" : g === "female" ? "female" : null;
+  }, [patient?.gender]);
+
   // The engine is a pure function over data already in memory, so ranking is
   // synchronous — the list re-ranks in the same frame the chip lands. The old
   // path posted every change to an edge function and waited 300 ms.
@@ -407,6 +429,8 @@ function App() {
     observableIds: chartObservableIds,
     vitals,
     ageYears,
+    ageMonths,
+    sex: patientSex,
     acceptedIntentIds: useMemo(() => [...acceptedIntents.keys()], [acceptedIntents]),
     hospitalId: identity.hospitalId,
   });
@@ -794,6 +818,7 @@ function App() {
             ...existing,
             age: String(existing.age),
             gender: existing.gender as Patient["gender"],
+            dateOfBirth: existing.date_of_birth ?? undefined,
           };
         } else {
           const created = await createPatient({
@@ -801,11 +826,13 @@ function App() {
             age: Number(incoming.age),
             gender: incoming.gender,
             phone: incoming.phone,
+            date_of_birth: incoming.dateOfBirth || null,
           });
           dbPatient = {
             ...created,
             age: String(created.age),
             gender: created.gender as Patient["gender"],
+            dateOfBirth: created.date_of_birth ?? undefined,
           };
         }
       }
@@ -1339,6 +1366,18 @@ function App() {
           logoRef={logoRef}
           onOpenSidebar={handleOpenSidebar}
         />
+      ) : activePage === "settings" ? (
+        <SettingsPage
+          logoRef={logoRef}
+          onOpenSidebar={handleOpenSidebar}
+          hospitalId={identity.hospitalId}
+          hospitalProfile={hospitalProfile}
+          doctorProfile={doctorProfile}
+          doctorName={DOCTOR.name}
+          onSpecialtyChanged={(id) =>
+            setHospitalProfile((prev) => (prev ? { ...prev, specialty_profile: id } : prev))
+          }
+        />
       ) : isFeaturePage && comingSoonMeta ? (
         <ComingSoonPage
           logoRef={logoRef}
@@ -1470,35 +1509,55 @@ function App() {
                 <AttachmentsCard visitId={visitId} disabled={!patient} />
 
                 {/* Per-tooth record, separate from Attachments — a finding
-                    can exist with no X-ray at all, and most do. Always
-                    reachable, same as every chip in the catalogue:
-                    specialtyProfile.ts only changes which panel is
-                    ELEVATED, never what exists ("Nothing in this file can
-                    change a score, a rank, or which intents exist" — its
-                    own header). A general OPD doctor with an occasional
-                    dental walk-in needs this exactly as much as a
-                    dedicated dental clinic would. */}
-                <DentalChartCard
-                  visitId={visitId}
-                  // Same corruption-risk gate as every other attribution
-                  // write in this file (line ~1143) — a fallback identity
-                  // must never write a real doctor's id onto a finding it
-                  // did not enter.
-                  doctorId={identity.isReal ? identity.doctorId : null}
-                  disabled={!patient}
-                />
+                    can exist with no X-ray at all, and most do. Gated on the
+                    facility's specialty profile (Settings → Specialty) since
+                    2026-08-11 — it shipped always-visible, which meant a
+                    dermatologist scrolling past a tooth chart on every
+                    patient. specialtyProfile.ts's `charts` field is the
+                    single read point; the card itself is unchanged and still
+                    presentation-only (the engine never reads it). */}
+                {specialty.charts.includes("dental") && (
+                  <DentalChartCard
+                    visitId={visitId}
+                    // Same corruption-risk gate as every other attribution
+                    // write in this file (line ~1143) — a fallback identity
+                    // must never write a real doctor's id onto a finding it
+                    // did not enter.
+                    doctorId={identity.isReal ? identity.doctorId : null}
+                    disabled={!patient}
+                  />
+                )}
 
                 {/* Same argument as the dental chart, for the rest of the
                     body: "where" is a clinical input a free-text box cannot
-                    carry. Dermatology is the clearest case — site decides
-                    topical potency and distribution is itself diagnostic —
-                    but pain, rashes and injuries in general OPD land here
-                    too. Also presentation only; the engine never reads it. */}
-                <BodyMapCard
-                  visitId={visitId}
-                  doctorId={identity.isReal ? identity.doctorId : null}
-                  disabled={!patient}
-                />
+                    carry — site decides topical potency and distribution is
+                    itself diagnostic. Same specialty gate, same reasoning,
+                    just `charts.includes("body")` instead. */}
+                {specialty.charts.includes("body") && (
+                  <BodyMapCard
+                    visitId={visitId}
+                    doctorId={identity.isReal ? identity.doctorId : null}
+                    disabled={!patient}
+                  />
+                )}
+
+                {/* Reads weight and height straight off `vitals` rather than
+                    holding its own copy — two renderings of one number is how
+                    a consultation ends up with two different numbers (the same
+                    reason the vitals strip left PatientHeader). Note this gate
+                    hides the PANEL only: the WAZ z-score is derived in
+                    consultInput.ts on every consult, so a general physician
+                    still gets GROWTH_FALTERING ranked for a malnourished
+                    child, they just aren't shown a growth curve for adults. */}
+                {specialty.charts.includes("growth") && (
+                  <GrowthChartCard
+                    ageMonths={ageMonths}
+                    sex={patientSex}
+                    weightKg={vitals.weight}
+                    heightCm={vitals.height ?? ""}
+                    disabled={!patient}
+                  />
+                )}
 
                 <div className="cs-engine">
                   <RecommendationsCard

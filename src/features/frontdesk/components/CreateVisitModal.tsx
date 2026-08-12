@@ -7,6 +7,7 @@ import { useT } from "../i18n/i18n";
 import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
 import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
+import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 
 type Props = {
     existingPatient: DBPatient | null;
@@ -23,6 +24,7 @@ type Props = {
         name: string;
         phone: string;
         age: string;
+        dateOfBirth: string;
         gender: string;
         observableIds: number[];
         doctorId: string;
@@ -36,6 +38,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [name, setName] = useState(prefillName);
     const [phone, setPhone] = useState("");
     const [age, setAge] = useState("");
+    const [dateOfBirth, setDateOfBirth] = useState("");
     const [gender, setGender] = useState("");
     const [selectedSymptoms, setSelectedSymptoms] = useState<IntakeChip[]>([]);
     const [doctorId, setDoctorId] = useState(defaultDoctorId);
@@ -154,6 +157,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             name,
             phone,
             age,
+            dateOfBirth,
             gender,
             observableIds: selectedSymptoms.map((s) => s.observableId),
             doctorId,
@@ -281,6 +285,40 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     onChange={(v) => { setAge(v); if (v) setErrors((er) => ({ ...er, age: false })); }}
                                     error={!!errors.age}
                                     placeholder={t("phAge")}
+                                />
+                            </Field>
+                            {/* Date of birth — optional always, flagged as needed
+                                once the age typed says this is an under-five.
+                                WHO growth standards are indexed per month, so
+                                for a small child the integer age beside it
+                                cannot place them on a curve at all. Reception is
+                                where this is genuinely known, which is why the
+                                field is here and not only in Cortex. */}
+                            <Field
+                                icon={<Cake size={13} />}
+                                label={
+                                    dobMattersFor(Number.parseInt(age, 10))
+                                        ? `${t("fldDob")} — ${t("fldDobNeeded")}`
+                                        : t("fldDob")
+                                }
+                            >
+                                <input
+                                    type="date"
+                                    className="fd-field"
+                                    max={todayIso()}
+                                    value={dateOfBirth}
+                                    onChange={(e) => {
+                                        const dob = e.target.value;
+                                        setDateOfBirth(dob);
+                                        // The date is the harder fact; the age
+                                        // field follows it rather than being
+                                        // asked twice and allowed to drift.
+                                        const derived = ageInYears(dob);
+                                        if (derived !== null) {
+                                            setAge(String(derived));
+                                            setErrors((er) => ({ ...er, age: false }));
+                                        }
+                                    }}
                                 />
                             </Field>
                             <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>

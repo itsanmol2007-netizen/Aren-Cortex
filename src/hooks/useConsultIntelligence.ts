@@ -28,6 +28,7 @@ import {
 } from "../lib/db/synapse";
 import type { SynapseData } from "./useSynapse";
 import type { Vitals } from "../types";
+import type { Sex } from "../lib/growth/growth";
 
 export interface ConsultIntelligenceArgs {
     data: SynapseData | null;
@@ -36,6 +37,10 @@ export interface ConsultIntelligenceArgs {
     observableIds: number[];
     vitals: Vitals;
     ageYears: number | null;
+    /** exact age in months from the date of birth — growth standards only */
+    ageMonths?: number | null;
+    /** WHO publishes separate growth standards per sex */
+    sex?: Sex | null;
     /** intent ids the doctor has actually taken — drives companions */
     acceptedIntentIds: number[];
     /**
@@ -75,20 +80,40 @@ const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
 });
 
 export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIntelligence {
-    const { data, visitId, observableIds, vitals, ageYears, acceptedIntentIds, hospitalId } = args;
+    const { data, visitId, observableIds, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
 
     // ---- 1. inputs -> signals -> ranked intents. Synchronous. ----
+    // `vitals` is rebuilt on every keystroke, so its identity is useless as a
+    // dependency — but the fix used to be an ENUMERATED list of fields, and
+    // that list silently stopped at the original five (bp, pulse, temp, spo2,
+    // weight).
+    //
+    // Every field added after them — height, blood group, pain, ROM, LMP,
+    // G-P-L-A, the glycaemic panel, respiratory rate — therefore did not
+    // re-run the engine when it changed. Entering an LMP raised no
+    // AMENORRHEA; entering a random sugar raised no HIGH_BLOOD_GLUCOSE. It
+    // went unnoticed for so long because it self-heals the moment anything
+    // else changes: add a chip after typing the number and the memo
+    // recomputes with the current vitals, so it only ever failed when a
+    // measurement was the LAST or ONLY thing entered.
+    //
+    // Serialising the whole object makes the enumeration — and therefore the
+    // chance of it going stale again — structurally impossible. `vitals` is a
+    // dozen short strings; stringifying it per keystroke costs nothing next to
+    // the engine run it guards.
+    const vitalsKey = JSON.stringify(vitals);
+
     const built = useMemo(() => {
         if (!data) return null;
-        return buildEngineInput({ observableIds, vitals, ageYears });
-        // vitals is a small object rebuilt on every keystroke; its FIELDS are
-        // the real dependency, so they are listed rather than the identity.
+        return buildEngineInput({ observableIds, vitals, ageYears, ageMonths, sex });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         data,
         observableIds.join(","),
-        vitals.bp, vitals.pulse, vitals.temp, vitals.spo2, vitals.weight,
+        vitalsKey,
         ageYears,
+        ageMonths,
+        sex,
     ]);
 
     const result = useMemo(() => {
