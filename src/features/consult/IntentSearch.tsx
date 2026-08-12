@@ -221,18 +221,34 @@ export function IntentSearchResults({
                             <Search size={13} />
                         </span>
 
+                        {/* ── BRAND FIRST, ALWAYS ──────────────────────────
+                            When a hit was reached by brand name, the BRAND is
+                            the headline and the molecule is the subtitle —
+                            never the other way round. The doctor typed
+                            "Acenac-P"; showing them "aceclofenac" as the
+                            answer makes them wonder whether the thing they
+                            searched for exists at all. The molecule still
+                            appears, because what is prescribed is ultimately
+                            a composition, but it sits underneath. */}
                         <div className="cs-sug-main">
                             <div className="cs-sug-name">
-                                <span>{hit.label}</span>
+                                <span>{hit.matchKind === "brand" && hit.viaLabel ? hit.viaLabel : hit.label}</span>
                                 {isWarn && <span className="cs-flag is-warn">Caution</span>}
                                 {isHard && (
                                     <span className="cs-flag is-hard"><ShieldAlert size={10} /> Check</span>
                                 )}
                             </div>
-                            <span className="cs-sug-rel">
-                                {MATCH_TEXT[hit.matchKind](hit.viaLabel)}
-                                {wasRanked && " · already in the list"}
-                            </span>
+                            {hit.matchKind === "brand" && hit.viaLabel ? (
+                                <span className="cs-sug-rel">
+                                    <b className="cs-sug-molecule">{hit.label}</b>
+                                    {wasRanked && " · already in the list"}
+                                </span>
+                            ) : (
+                                <span className="cs-sug-rel">
+                                    {MATCH_TEXT[hit.matchKind](hit.viaLabel)}
+                                    {wasRanked && " · already in the list"}
+                                </span>
+                            )}
                         </div>
 
                         {added ? (

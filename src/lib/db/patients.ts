@@ -1,5 +1,4 @@
 import { supabase } from "../supabase";
-import { DOCTOR_ID, HOSPITAL_ID } from "./reference";
 import type { DBSymptom, DBFinding } from "./reference";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
@@ -42,17 +41,27 @@ export async function findPatientByPhone(phone: string): Promise<DBPatient | nul
     return data;
 }
 
-export async function createPatient(p: {
-    name: string;
-    age: number;
-    gender: string;
-    phone: string;
-    /** ISO yyyy-mm-dd, optional — see DBPatient.date_of_birth */
-    date_of_birth?: string | null;
-}): Promise<DBPatient> {
+// `hospitalId` is REQUIRED and has no fallback, deliberately. It used to be the
+// `HOSPITAL_ID` constant, which meant every workspace wrote new patients into
+// one specific clinic no matter who was signed in. RLS on `patients` is
+// `hospital_id = current_user_hospital_id()`, so for any other clinic that
+// insert is not merely wrong — it is rejected outright (PostgREST 403), which
+// is how this was finally caught. Pass the signed-in clinic: `identity.hospitalId`
+// in Cortex, `useHospitalId()` in Front Desk.
+export async function createPatient(
+    p: {
+        name: string;
+        age: number;
+        gender: string;
+        phone: string;
+        /** ISO yyyy-mm-dd, optional — see DBPatient.date_of_birth */
+        date_of_birth?: string | null;
+    },
+    hospitalId: string
+): Promise<DBPatient> {
     const { data, error } = await supabase
         .from("patients")
-        .insert({ ...p, date_of_birth: p.date_of_birth || null, hospital_id: HOSPITAL_ID })
+        .insert({ ...p, date_of_birth: p.date_of_birth || null, hospital_id: hospitalId })
         .select("id, name, age, gender, phone, date_of_birth")
         .single();
     if (error) throw new Error(`createPatient: ${error.message}`);
@@ -64,23 +73,31 @@ export async function createPatient(p: {
 // (doctor registers + consults in one motion, no queue). Front Desk explicitly
 // passes "waiting" instead, since a receptionist-created visit isn't being
 // consulted yet — it just joins the queue until a doctor calls "Next Patient".
-// doctorId defaults to DOCTOR_ID to preserve every existing call site; Front
-// Desk passes the receptionist-selected doctor explicitly.
+//
+// `hospitalId` and `doctorId` are REQUIRED — see createPatient above for why the
+// constants were removed. This takes an options object rather than positional
+// arguments on purpose: patientId, hospitalId and doctorId are all `string`, so
+// a positional signature would let `createVisit(id, "waiting", doctorId)` put
+// the status into the hospital slot and still typecheck.
 //
 // token_number has no DB default (confirmed: column_default is null), so it is
 // computed here as (highest token_number for this hospital today) + 1. Applies
 // to every visit, not just Front Desk ones, since it's a general visit property.
-export async function createVisit(
-    patientId: string,
-    initialStatus: "serving" | "waiting" = "serving",
-    doctorId: string = DOCTOR_ID
-): Promise<DBVisit> {
+// Note this lookup is also hospital-scoped by RLS; passing the wrong clinic
+// silently restarts numbering at 1 rather than erroring.
+export async function createVisit(opts: {
+    patientId: string;
+    hospitalId: string;
+    doctorId: string;
+    initialStatus?: "serving" | "waiting";
+}): Promise<DBVisit> {
+    const { patientId, hospitalId, doctorId, initialStatus = "serving" } = opts;
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const { data: latestToday, error: tokenErr } = await supabase
         .from("visits")
         .select("token_number")
-        .eq("hospital_id", HOSPITAL_ID)
+        .eq("hospital_id", hospitalId)
         .gte("created_at", todayStart.toISOString())
         .order("token_number", { ascending: false, nullsFirst: false })
         .limit(1);
@@ -90,7 +107,7 @@ export async function createVisit(
     const insertPayload: Record<string, unknown> = {
         patient_id: patientId,
         assigned_doctor_id: doctorId,
-        hospital_id: HOSPITAL_ID,
+        hospital_id: hospitalId,
         status: initialStatus,
         token_number: nextToken,
     };
@@ -593,14 +610,18 @@ export type PatientRecordRow = {
     last_visit_at: string | null;
 };
 
-export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
+// `doctorId` is required — it was the DOCTOR_ID constant, which meant this page
+// asked for one specific doctor's visits regardless of who was signed in. Unlike
+// the write paths that turned into a 403, this failed silently: RLS filtered the
+// other clinic's rows away and the records page simply rendered empty forever.
+export async function fetchTodayPatients(doctorId: string): Promise<PatientRecordRow[]> {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
     const { data: visits, error } = await supabase
         .from("visits")
         .select("id, patient_id, status, started_at, completed_at")
-        .eq("assigned_doctor_id", DOCTOR_ID)
+        .eq("assigned_doctor_id", doctorId)
         .gte("started_at", todayStart.toISOString())
         .order("started_at", { ascending: false });
 
@@ -621,7 +642,7 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
         .from("visits")
         .select("patient_id, started_at")
         .in("patient_id", patientIds)
-        .eq("assigned_doctor_id", DOCTOR_ID)
+        .eq("assigned_doctor_id", doctorId)
         .order("started_at", { ascending: false });
     const visitCountMap = new Map<string, number>();
     const lastVisitMap = new Map<string, string>();
@@ -737,11 +758,12 @@ export async function fetchTodayPatients(): Promise<PatientRecordRow[]> {
 }
 
 // ── PATIENT RECORDS PAGE — ALL RECENT PATIENTS ────────────────────────────────
-export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[]> {
+// `doctorId` required — same reason as fetchTodayPatients above.
+export async function fetchRecentPatients(doctorId: string, limit = 40): Promise<PatientRecordRow[]> {
     const { data: visits, error } = await supabase
         .from("visits")
         .select("id, patient_id, status, started_at, completed_at")
-        .eq("assigned_doctor_id", DOCTOR_ID)
+        .eq("assigned_doctor_id", doctorId)
         .eq("status", "completed")
         .order("started_at", { ascending: false })
         .limit(limit);
@@ -763,7 +785,7 @@ export async function fetchRecentPatients(limit = 40): Promise<PatientRecordRow[
         .from("visits")
         .select("patient_id, started_at")
         .in("patient_id", patientIds)
-        .eq("assigned_doctor_id", DOCTOR_ID)
+        .eq("assigned_doctor_id", doctorId)
         .order("started_at", { ascending: false });
     const visitCountMap = new Map<string, number>();
     const lastVisitMap = new Map<string, string>();

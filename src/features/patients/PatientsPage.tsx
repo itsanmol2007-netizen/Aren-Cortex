@@ -19,6 +19,7 @@ import {
     type PatientRecordRow,
 } from "../../lib/db";
 import type { Patient } from "../../types";
+import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { PatientRecord } from "./PatientRecord";
 import { PatientsList, PatientsSearchBar } from "./PatientsList";
@@ -230,6 +231,7 @@ function RightPanel({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) {
+    const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
 
@@ -241,16 +243,23 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
 
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Both queries are scoped to the signed-in doctor. Until identity resolves
+    // there is no id to ask for, and asking with the wrong one is what used to
+    // render another clinic's records — so this waits rather than guessing.
     useEffect(() => {
+        if (!identity.ready) return;
         setLoading(true);
-        Promise.all([fetchTodayPatients(), fetchRecentPatients()])
+        Promise.all([
+            fetchTodayPatients(identity.doctorId),
+            fetchRecentPatients(identity.doctorId),
+        ])
             .then(([today, recent]) => {
                 setTodayRows(today);
                 setRecentRows(recent);
             })
             .catch(console.error)
             .finally(() => setLoading(false));
-    }, []);
+    }, [identity.ready, identity.doctorId]);
 
     useEffect(() => {
         if (!searchQuery.trim()) {

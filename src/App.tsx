@@ -1,4 +1,6 @@
-import { CircleDot, HeartPulse, RefreshCw, UserRound } from "lucide-react";
+import {
+  CircleDot, HeartPulse, PersonStanding, RefreshCw, Smile, TrendingUp, UserRound,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { systemLabel } from "./lib/synapse/systems";
 import { MedicineInspector } from "./components/MedicineInspector";
@@ -22,6 +24,10 @@ import { useConsultIntelligence } from "./hooks/useConsultIntelligence";
 import { PickerCard, type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MeasurementsCard } from "./features/consult/MeasurementsCard";
+import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
+import { MedicineAddSheet, type MedicineDraft } from "./features/consult/MedicineAddSheet";
+import { useChartSummaries } from "./features/consult/useChartSummaries";
+import { useJustAdded } from "./features/consult/useJustAdded";
 import { AttachmentsCard } from "./features/consult/AttachmentsCard";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { BodyMapCard } from "./features/consult/BodyMapCard";
@@ -37,7 +43,7 @@ import { topScoreByType } from "./features/consult/parts";
 import { usePinnedMedicines } from "./features/consult/usePinnedMedicines";
 import type { AcceptPayload } from "./features/consult/types";
 import { BrandSheet } from "./features/synapse/BrandSheet";
-import { profileFor } from "./features/synapse/specialtyProfile";
+import { profileFor, type ChartKind } from "./features/synapse/specialtyProfile";
 import { ageInMonths } from "./lib/growth/age";
 import type { Sex } from "./lib/growth/growth";
 import { useOnline } from "./features/frontdesk/operational/useOnline";
@@ -134,6 +140,8 @@ function App() {
   const chartSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const synapseSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const planRef = useRef<HTMLElement>(null) as React.RefObject<HTMLElement>;
+  /** the Plan row, so "Add Test" in the summary can bring it into view */
+  const planRowRef = useRef<HTMLDivElement>(null);
 
   const [dbReady, setDbReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -217,6 +225,19 @@ function App() {
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
   /** which picker's browse-everything sheet is open */
   const [browse, setBrowse] = useState<PickerKind | null>(null);
+  /**
+   * Which specialty chart is open, launched from the Measurements row.
+   * The charts render nowhere on the page otherwise — see the launcher
+   * comment in `MeasurementsCard` and `.cs-meas-tool` in consult.css.
+   */
+  const [openChart, setOpenChart] = useState<ChartKind | null>(null);
+  /** the medicine waiting on brand + dose confirmation — see MedicineAddSheet */
+  const [pendingMedicine, setPendingMedicine] = useState<{
+    payload: AcceptPayload;
+    compositionId: number;
+    brands: SynapseBrand[];
+    initialBrand: SynapseBrand | null;
+  } | null>(null);
   const [brandSheet, setBrandSheet] = useState<
     { intentId: number; compositionId: number; label: string; rect: DOMRect } | null
   >(null);
@@ -545,8 +566,12 @@ function App() {
       await markVisitServing(queued.id);
       return queued;
     }
-    return createVisit(patientId);
-  }, [identity.hospitalId]);
+    return createVisit({
+      patientId,
+      hospitalId: identity.hospitalId,
+      doctorId: identity.doctorId,
+    });
+  }, [identity.hospitalId, identity.doctorId]);
 
   const handleStartConsultFromRecord = useCallback(async (incomingPatient: Patient) => {
     try {
@@ -747,15 +772,54 @@ function App() {
       return;
     }
 
+    // STAGE, don't commit. A medicine used to go straight onto the plan with
+    // the resolver's brand and the composition's default dose; both are now
+    // confirmed once, in MedicineAddSheet, at the moment of the decision.
     resolveBrandFor(compositionId)
-      .then((brand) => commitAccept({ ...payload, medicine: brand }))
+      .then((brand) => {
+        const index = intelligence.brands.get(compositionId);
+        setPendingMedicine({
+          payload,
+          compositionId,
+          brands: index?.brands ?? (brand ? [brand] : []),
+          initialBrand: brand,
+        });
+      })
       .catch((err) => {
         // The ranking is unaffected — only the product lookup failed — so this
         // says which half broke rather than blaming the molecule.
         console.warn("brand resolution failed:", err);
         showToast(`Could not load a product for ${payload.label} — try again`);
       });
-  }, [commitAccept, resolveBrandFor]);
+  }, [resolveBrandFor, intelligence.brands]);
+
+  /** Confirmed in the sheet — now it becomes a prescription line. */
+  const confirmPendingMedicine = useCallback((draft: MedicineDraft) => {
+    if (!pendingMedicine) return;
+    const { payload } = pendingMedicine;
+    setPendingMedicine(null);
+    commitAccept({ ...payload, medicine: draft.medicine });
+
+    // The dose the doctor confirmed, applied over whatever the composition
+    // defaulted to. Deferred one frame so it lands after commitAccept's own
+    // state update rather than racing it.
+    window.setTimeout(() => {
+      setPrescription((curr) =>
+        curr.map((m) =>
+          m.intent_id === payload.intentId
+            ? {
+              ...m,
+              dosage_mg: draft.dosageMg ? Number(draft.dosageMg) : m.dosage_mg,
+              frequency: draft.frequency,
+              duration_days: draft.durationDays ? Number(draft.durationDays) : m.duration_days,
+              instructions: draft.instructions,
+              is_sos: draft.isSos,
+            }
+            : m
+        )
+      );
+    }, 0);
+  }, [pendingMedicine, commitAccept]);
 
   const appendAdvice = (line: string) => {
     setAdviceNotes((curr) => {
@@ -821,13 +885,16 @@ function App() {
             dateOfBirth: existing.date_of_birth ?? undefined,
           };
         } else {
-          const created = await createPatient({
-            name: incoming.name,
-            age: Number(incoming.age),
-            gender: incoming.gender,
-            phone: incoming.phone,
-            date_of_birth: incoming.dateOfBirth || null,
-          });
+          const created = await createPatient(
+            {
+              name: incoming.name,
+              age: Number(incoming.age),
+              gender: incoming.gender,
+              phone: incoming.phone,
+              date_of_birth: incoming.dateOfBirth || null,
+            },
+            identity.hospitalId
+          );
           dbPatient = {
             ...created,
             age: String(created.age),
@@ -1045,6 +1112,7 @@ function App() {
 
       await saveConsult({
         visitId,
+        doctorId: identity.doctorId,
         medicines: medicineRows,
         tests: selectedTests,
         vitals,
@@ -1158,6 +1226,96 @@ function App() {
   const specialty = useMemo(
     () => profileFor(hospitalProfile?.specialty_profile),
     [hospitalProfile?.specialty_profile]
+  );
+
+  /**
+   * The specialty charts, as launchers inside the Measurements row.
+   *
+   * Same `specialty.charts` gate as before — a dermatologist still never sees
+   * a tooth chart — but the gate now decides whether an ICON appears beside
+   * Temperature, not whether a full-width panel occupies the page on every
+   * consultation. Catalogue order, so the row does not reshuffle between
+   * facilities.
+   */
+  const chartTools = useMemo(
+    () =>
+      ([
+        { key: "dental", label: "Dental Chart", icon: <Smile size={20} /> },
+        { key: "body", label: "Body Map", icon: <PersonStanding size={20} /> },
+        { key: "growth", label: "Growth", icon: <TrendingUp size={20} /> },
+      ] as const)
+        .filter((t) => specialty.charts.includes(t.key))
+        .map((t) => ({ ...t })),
+    [specialty.charts]
+  );
+
+  /**
+   * What the chart says is worth examining for, as labels.
+   *
+   * `useConsultIntelligence` has computed this on every chart change since
+   * the engine was built and nothing consumed it — the rules table held 10
+   * rows against signal_intent_rules' 1,577, so wiring it would have lit up
+   * for eight signals and looked broken everywhere else. That table now holds
+   * 537 rules across 215 signals, so the cascade is finally live: symptoms
+   * suggest what to examine for → the doctor confirms → the engine re-runs →
+   * Possible Conditions firms up.
+   *
+   * Capped at six. This is a prompt, not a checklist, and a doctor handed
+   * twenty things to look for will read none of them.
+   */
+  const examSuggestionLabels = useMemo(() => {
+    const byId = new Map(observables.map((o) => [o.id, o.label]));
+    return intelligence.examSuggestions
+      .slice(0, 6)
+      .map((s) => byId.get(s.observableId))
+      .filter((l): l is string => !!l);
+  }, [intelligence.examSuggestions, observables]);
+
+  /**
+   * ── The two Plan placeholders ────────────────────────────────────────────
+   *
+   * This is where `specialtyProfile.ts`'s elevation mechanism finally reaches
+   * the screen. Until 2026-08-12 `primary`, `primaryLabel` and `sections`
+   * were read by exactly one place — the Settings page, which PRINTED them as
+   * a description — while the consult screen rendered a hardcoded
+   * medicines-then-everything-else pair. A physiotherapy clinic was told
+   * "Exercise Plans primary" in Settings and shown Medicines in the workspace.
+   *
+   * Slot 1 is the facility's `primary` type. Slot 2 is the remainder, derived
+   * from `sections` rather than typed out, so a type can never be listed twice
+   * or dropped entirely when a profile is edited.
+   */
+  /**
+   * Which plan lines just arrived. The doctor accepts from a ranked panel two
+   * columns away, so the summary has to show where it landed — otherwise the
+   * rail is a box that silently grows.
+   */
+  const justAdded = useJustAdded([
+    ...diagnoses,
+    ...selectedTests,
+    ...adviceLines,
+    ...prescription.map((m) => m.id),
+  ]);
+
+  const planSlots = useMemo(() => {
+    const rest = specialty.sections
+      .map((s) => s.type)
+      .filter((t) => t !== specialty.primary && t !== "finding");
+    return {
+      primaryIsMedicine: specialty.primary === "medicine",
+      restTypes: rest,
+    };
+  }, [specialty.primary, specialty.sections]);
+
+  /**
+   * The one-line extract under each launcher, so the doctor can see what is
+   * charted without opening the chart. Re-read when a chart modal closes,
+   * which is the only moment its contents can have changed.
+   */
+  const chartSummaries = useChartSummaries(
+    visitId,
+    chartTools.map((t) => t.key),
+    openChart
   );
 
   /**
@@ -1403,11 +1561,23 @@ function App() {
                 chip here still re-runs the engine in the same frame, so
                 ticking "Pregnant" still turns contraindicated medicines red
                 with no other click anywhere. */}
-            <div className="cs-context-strip">
-              <PickerCard
+            {/* ── The consultation, in SOAP order ──────────────────────────
+                Subjective (what they tell you) -> Objective (what you observe
+                and measure) -> Assessment (what you conclude). Everything
+                output-side lives in the strip to the right, so this column is
+                purely the consultation being TAKEN.
+
+                SOAP controls vertical order, not card size: a phase does not
+                earn a full-width card just by existing, and every module here
+                sizes to its content. */}
+            <div className="cs-work">
+              <div className="cs-phase">Subjective</div>
+
+              <div className="cs-row cs-row-sub">
+                <PickerCard
                 kind="history"
                 title="History / Context"
-                glyph={<UserRound size={12} />}
+                glyph={<UserRound size={16} />}
                 glyphTone="blue"
                 placeholder="Search history…"
                 observables={observables}
@@ -1418,18 +1588,11 @@ function App() {
                 emptyHint="Pregnancy, comorbidities, allergies — what frames the whole consultation."
                 disabled={!patient}
               />
-            </div>
 
-            {/* Three cards: what the patient reports, what the doctor finds,
-                and the engine's reading of both. Possible Conditions is last
-                because it reads from all three plus the measurements, and any
-                earlier position would imply it reflects only the card
-                beside it. */}
-            <div className="cs-pickers">
               <PickerCard
                 kind="symptom"
                 title="Symptoms"
-                glyph={<HeartPulse size={12} />}
+                glyph={<HeartPulse size={16} />}
                 glyphTone="rose"
                 placeholder="Search symptoms…"
                 observables={observables}
@@ -1443,12 +1606,21 @@ function App() {
                 disabled={!patient}
                 searchRef={chartSearchRef}
               />
+              </div>
 
-              <PickerCard
+              {/* Objective — what you observed and what you measured, on one
+                  row. Findings take the room because chips wrap; measurements
+                  are compact structured values and do not need a broad strip
+                  of their own (which is what the previous full-width band got
+                  wrong). */}
+              <div className="cs-phase">Objective</div>
+
+              <div className="cs-row cs-row-obj">
+                <PickerCard
                 kind="finding"
                 title="Findings"
                 note="On Examination"
-                glyph={<CircleDot size={12} />}
+                glyph={<CircleDot size={16} />}
                 glyphTone="teal"
                 placeholder="Search findings…"
                 observables={observables}
@@ -1456,40 +1628,11 @@ function App() {
                 onToggle={handleFindingToggle}
                 onChart={onChartSet}
                 onBrowse={() => setBrowse("finding")}
+                suggestions={examSuggestionLabels}
                 emptyHint="What you saw on examination — every entry here is an abnormal sign."
                 disabled={!patient}
               />
 
-              {/* The engine's reading, beside the chart it reads. It used to
-                  sit inside Clinical Suggestions between Investigations and
-                  Advice, which put the answer to "what is going on" below the
-                  answers to "what do I do about it". It re-ranks in the same
-                  frame a chip lands, so the doctor watches their own reasoning
-                  move as they type.
-
-                  It is DELIBERATELY the fourth card and not the second: it
-                  reads from all three pickers plus the measurements, and
-                  placing it after its inputs is the only arrangement that does
-                  not imply it only reflects the one beside it. */}
-              <ConditionsCard
-                intents={intelligence.byType.finding}
-                topScore={topOfType.get("finding") ?? 0}
-                acceptedIntentIds={acceptedIntentIdSet}
-                acknowledged={acknowledgedIntents}
-                onAcknowledge={handleAcknowledge}
-                onAccept={handleAcceptIntent}
-                onExplain={handleExplain}
-                ruleset={synapse.data?.ruleset ?? null}
-                activeSignals={intelligence.result?.activeSignals ?? []}
-                hasChart={intelligence.hasInput}
-                disabled={!patient}
-              />
-            </div>
-
-            <div className="cs-body">
-              <div className="cs-body-left">
-                {/* The single source of truth for these five numbers. The
-                    topbar strip that used to duplicate them is gone. */}
                 <MeasurementsCard
                   vitals={vitals}
                   onChange={setVitals}
@@ -1501,65 +1644,60 @@ function App() {
                   relevantBecause={measureRelevance.because}
                   disabled={!patient}
                 />
+              </div>
 
-                {/* Secondary by design (atlas S14.5's attachment philosophy —
-                    "structured first, artifact when necessary"): sits after
-                    the numbers, before the engine's own output, never
-                    competing with either for attention. */}
+              {/* Objective, second row — the specialty examination and the
+                  attachments that support it. Conditional by design: a
+                  general OPD has no specialty module, so this row does not
+                  render at all rather than rendering an empty placeholder. */}
+              <div className={chartTools.length > 0 ? "cs-row cs-row-exam" : "cs-row"}>
+                {/* Renders nothing for a facility with no specialty module,
+                    in which case Attachments takes the row on its own. */}
+                <SpecialtyExamCard
+                  tools={chartTools}
+                  onOpen={(key) => setOpenChart(key as ChartKind)}
+                  summaries={chartSummaries}
+                  disabled={!patient}
+                />
                 <AttachmentsCard visitId={visitId} disabled={!patient} />
+              </div>
 
-                {/* Per-tooth record, separate from Attachments — a finding
-                    can exist with no X-ray at all, and most do. Gated on the
-                    facility's specialty profile (Settings → Specialty) since
-                    2026-08-11 — it shipped always-visible, which meant a
-                    dermatologist scrolling past a tooth chart on every
-                    patient. specialtyProfile.ts's `charts` field is the
-                    single read point; the card itself is unchanged and still
-                    presentation-only (the engine never reads it). */}
-                {specialty.charts.includes("dental") && (
-                  <DentalChartCard
-                    visitId={visitId}
-                    // Same corruption-risk gate as every other attribution
-                    // write in this file (line ~1143) — a fallback identity
-                    // must never write a real doctor's id onto a finding it
-                    // did not enter.
-                    doctorId={identity.isReal ? identity.doctorId : null}
-                    disabled={!patient}
-                  />
-                )}
+              {/* Assessment — the engine's reading of everything above it.
+                  It re-ranks in the same frame a chip lands, so the doctor
+                  watches their own reasoning move as they type. */}
+              <div className="cs-phase">Assessment</div>
 
-                {/* Same argument as the dental chart, for the rest of the
-                    body: "where" is a clinical input a free-text box cannot
-                    carry — site decides topical potency and distribution is
-                    itself diagnostic. Same specialty gate, same reasoning,
-                    just `charts.includes("body")` instead. */}
-                {specialty.charts.includes("body") && (
-                  <BodyMapCard
-                    visitId={visitId}
-                    doctorId={identity.isReal ? identity.doctorId : null}
-                    disabled={!patient}
-                  />
-                )}
+              <ConditionsCard
+                intents={intelligence.byType.finding}
+                topScore={topOfType.get("finding") ?? 0}
+                acceptedIntentIds={acceptedIntentIdSet}
+                acknowledged={acknowledgedIntents}
+                onAcknowledge={handleAcknowledge}
+                onAccept={handleAcceptIntent}
+                onExplain={handleExplain}
+                ruleset={synapse.data?.ruleset ?? null}
+                activeSignals={intelligence.result?.activeSignals ?? []}
+                hasChart={intelligence.hasInput}
+                diagnoses={diagnoses}
+                onRemoveDiagnosis={removeDiagnosis}
+                disabled={!patient}
+              />
 
-                {/* Reads weight and height straight off `vitals` rather than
-                    holding its own copy — two renderings of one number is how
-                    a consultation ends up with two different numbers (the same
-                    reason the vitals strip left PatientHeader). Note this gate
-                    hides the PANEL only: the WAZ z-score is derived in
-                    consultInput.ts on every consult, so a general physician
-                    still gets GROWTH_FALTERING ranked for a malnourished
-                    child, they just aren't shown a growth curve for adults. */}
-                {specialty.charts.includes("growth") && (
-                  <GrowthChartCard
-                    ageMonths={ageMonths}
-                    sex={patientSex}
-                    weightKg={vitals.weight}
-                    heightCm={vitals.height ?? ""}
-                    disabled={!patient}
-                  />
-                )}
+              {/* ── PLAN ────────────────────────────────────────────────────
+                  Two placeholders, side by side. The MODULE is always the same
+                  shape; what goes in it is the facility's specialty profile.
+                  Slot 1 holds this facility's primary output — medicines for a
+                  general OPD, exercise plans for physiotherapy, investigations
+                  for a diagnostics practice. Slot 2 holds everything else.
 
-                <div className="cs-engine">
+                  Both are bounded to one shared height and scroll internally,
+                  so a slot holding eleven medicines cannot stretch the slot
+                  beside it holding two tests and leave dead space between
+                  them. See `.cs-row-plan` in consult.css. */}
+              <div className="cs-phase">Plan</div>
+
+              <div className="cs-row cs-row-plan" ref={planRowRef}>
+                {planSlots.primaryIsMedicine ? (
                   <RecommendationsCard
                     intents={intelligence.byType.medicine}
                     topScore={topOfType.get("medicine") ?? 0}
@@ -1581,8 +1719,14 @@ function App() {
                     hasChart={intelligence.hasInput}
                     searchRef={synapseSearchRef}
                   />
-
+                ) : (
+                  /* This facility does not lead with medicines. The primary
+                     type gets a plain ranked list — no brand picker, no dose
+                     editor, because those are properties of a MEDICINE and
+                     not of an elevated slot. */
                   <SuggestionsCard
+                    types={[specialty.primary]}
+                    title={specialty.primaryLabel}
                     byType={intelligence.byType}
                     topOfType={topOfType}
                     acceptedIntentIds={acceptedIntentIdSet}
@@ -1597,10 +1741,35 @@ function App() {
                     hasChart={intelligence.hasInput}
                     disabled={!patient}
                   />
-                </div>
-              </div>
+                )}
 
+                <SuggestionsCard
+                  types={planSlots.restTypes}
+                  byType={intelligence.byType}
+                  topOfType={topOfType}
+                  acceptedIntentIds={acceptedIntentIdSet}
+                  acknowledged={acknowledgedIntents}
+                  onAcknowledge={handleAcknowledge}
+                  onAccept={handleAcceptIntent}
+                  onExplain={handleExplain}
+                  ruleset={synapse.data?.ruleset ?? null}
+                  activeSignals={intelligence.result?.activeSignals ?? []}
+                  expanded={suggestionsExpanded}
+                  onToggleExpanded={() => setSuggestionsExpanded((v) => !v)}
+                  hasChart={intelligence.hasInput}
+                  disabled={!patient}
+                />
+              </div>
+            </div>
+
+            {/* ── THE SUMMARY RAIL ────────────────────────────────────────
+                What has been CHOSEN, not what is on offer. A narrow rail —
+                short lines, no ranked bars, no search — sticky so the doctor
+                can see the prescription taking shape from anywhere on the
+                page. The choosing happens in the Plan row above. */}
+            <aside className="cs-summary">
               <PlanCard
+                justAdded={justAdded}
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
                 prescription={prescription}
@@ -1619,12 +1788,18 @@ function App() {
                 onAddCompanion={handleAddCompanion}
                 onDismissCompanion={dismissCompanion}
                 onAddMedicine={() => synapseSearchRef.current?.focus()}
-                onAddTest={() => setSuggestionsExpanded(true)}
+                // Was `setSuggestionsExpanded(true)`, which became a no-op the
+                // moment cap-and-expand was removed. There is nothing to
+                // expand now, so the useful action is to put the panel that
+                // holds tests in front of the doctor.
+                onAddTest={() =>
+                  planRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+                }
                 onReviewRx={openReview}
                 onPrint={openReview}
                 panelRef={planRef}
               />
-            </div>
+            </aside>
           </main>
 
           <StatusBar
@@ -1634,6 +1809,68 @@ function App() {
             degraded={!!synapse.data?.degraded}
             unidentified={!identity.isReal}
             online={online}
+          />
+
+          {/* ── The specialty charts ────────────────────────────────────────
+              Mounted here as siblings of the page rather than inside it, and
+              only while open. Each renders nothing at all until its launcher
+              in the Measurements row is clicked, then takes over a modal with
+              the room the interaction actually needs — charting "36 MO" on a
+              25px tooth was a mis-tap waiting to happen.
+
+              The `identity.isReal` gate on doctorId is the same corruption
+              guard as every other attribution write in this file: a fallback
+              identity must never write a real doctor's id onto a finding it
+              did not enter. */}
+          {specialty.charts.includes("dental") && (
+            <DentalChartCard
+              presentation="modal"
+              open={openChart === "dental"}
+              onClose={() => setOpenChart(null)}
+              visitId={visitId}
+              doctorId={identity.isReal ? identity.doctorId : null}
+              disabled={!patient}
+            />
+          )}
+
+          {specialty.charts.includes("body") && (
+            <BodyMapCard
+              presentation="modal"
+              open={openChart === "body"}
+              onClose={() => setOpenChart(null)}
+              visitId={visitId}
+              doctorId={identity.isReal ? identity.doctorId : null}
+              disabled={!patient}
+            />
+          )}
+
+          {/* Reads weight and height straight off `vitals` rather than holding
+              its own copy — two renderings of one number is how a consultation
+              ends up with two different numbers. Note this gate hides the
+              CHART only: the WAZ z-score is derived in consultInput.ts on
+              every consult, so a general physician still gets
+              GROWTH_FALTERING ranked for a malnourished child. */}
+          {specialty.charts.includes("growth") && (
+            <GrowthChartCard
+              presentation="modal"
+              open={openChart === "growth"}
+              onClose={() => setOpenChart(null)}
+              ageMonths={ageMonths}
+              sex={patientSex}
+              weightKg={vitals.weight}
+              heightCm={vitals.height ?? ""}
+              disabled={!patient}
+            />
+          )}
+
+          {/* Brand + dose confirmation, between "ranked" and "prescribed". */}
+          <MedicineAddSheet
+            open={!!pendingMedicine}
+            compositionLabel={pendingMedicine?.payload.label ?? ""}
+            brands={pendingMedicine?.brands ?? []}
+            initialBrand={pendingMedicine?.initialBrand ?? null}
+            onCancel={() => setPendingMedicine(null)}
+            onConfirm={confirmPendingMedicine}
           />
 
           {/* The brand picker, anchored to the row that opened it. */}

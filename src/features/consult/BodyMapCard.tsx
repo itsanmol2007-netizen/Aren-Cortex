@@ -27,6 +27,10 @@ import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 interface Props {
     visitId: string | null;
     doctorId?: string | null;
+    /** see DentalChartCard — "modal" means launcher-driven, nothing inline */
+    presentation?: "card" | "modal";
+    open?: boolean;
+    onClose?: () => void;
     disabled?: boolean;
 }
 
@@ -35,7 +39,9 @@ interface Selection {
     side: BodySide | null;
 }
 
-export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
+export function BodyMapCard({
+    visitId, doctorId, presentation = "card", open = false, onClose, disabled = false,
+}: Props) {
     const [items, setItems] = useState<BodySiteFinding[]>([]);
     const [aspect, setAspect] = useState<BodyAspect>("front");
     const [sel, setSel] = useState<Selection | null>(null);
@@ -100,26 +106,7 @@ export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
         }
     };
 
-    return (
-        <section className="cs-card" aria-label="Body map">
-            <div className="cs-card-head">
-                <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><PersonStanding size={14} /></span>
-                    Body Map
-                    <em>{items.length > 0 ? `${items.length} site${items.length > 1 ? "s" : ""}` : "where on the body"}</em>
-                </h2>
-                <button
-                    type="button"
-                    className="cs-chart-expand"
-                    onClick={() => setExpanded(true)}
-                    aria-label="Open the map larger"
-                    title="Open larger"
-                >
-                    <Maximize2 size={12} />
-                </button>
-            </div>
-
-            <ChartSurface title="Body map" expanded={expanded} onClose={() => setExpanded(false)}>
+    const body = (
             <div className="cs-attach-body">
                 <div className="cs-attach-tagrow cs-body-aspect">
                     {(["front", "back"] as BodyAspect[]).map((a) => (
@@ -232,6 +219,38 @@ export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
 
                 {error && <p className="cs-attach-error">{error}</p>}
             </div>
+    );
+
+    if (presentation === "modal") {
+        if (!open) return null;
+        return (
+            <ChartSurface title="Body map" expanded onClose={onClose ?? (() => {})}>
+                {body}
+            </ChartSurface>
+        );
+    }
+
+    return (
+        <section className="cs-card" aria-label="Body map">
+            <div className="cs-card-head">
+                <h2 className="cs-card-title">
+                    <span className="cs-glyph is-slate"><PersonStanding size={16} /></span>
+                    Body Map
+                    <em>{items.length > 0 ? `${items.length} site${items.length > 1 ? "s" : ""}` : "where on the body"}</em>
+                </h2>
+                <button
+                    type="button"
+                    className="cs-chart-expand"
+                    onClick={() => setExpanded(true)}
+                    aria-label="Open the map larger"
+                    title="Open larger"
+                >
+                    <Maximize2 size={16} />
+                </button>
+            </div>
+
+            <ChartSurface title="Body map" expanded={expanded} onClose={() => setExpanded(false)}>
+                {body}
             </ChartSurface>
         </section>
     );

@@ -141,6 +141,8 @@ function Group({
 }
 
 interface Props {
+    /** plan lines added in the last few seconds — see useJustAdded */
+    justAdded: Set<string>;
     diagnoses: string[];
     onRemoveDiagnosis: (label: string) => void;
     prescription: PrescriptionMedicine[];
@@ -174,6 +176,7 @@ interface Props {
 }
 
 export function PlanCard({
+    justAdded,
     diagnoses, onRemoveDiagnosis,
     prescription, onSelectMedicine, onUpdateMedicine, onRemoveMedicine,
     tests, onRemoveTest,
@@ -215,7 +218,7 @@ export function PlanCard({
                         {diagnoses.length > 0 && (
                             <Group icon={<Stethoscope size={12} />} tone="rose" title="Diagnosis" count={diagnoses.length}>
                                 {diagnoses.map((dx) => (
-                                    <div key={dx} className="cs-line">
+                                    <div key={dx} className={`cs-line${justAdded.has(dx) ? " is-new" : ""}`}>
                                         <div className="cs-line-main">
                                             <div className="cs-line-name"><span>{dx}</span></div>
                                         </div>
@@ -247,7 +250,7 @@ export function PlanCard({
                                 return (
                                     <div
                                         key={m.id}
-                                        className={`cs-line is-click${openId === m.id ? " is-active" : ""}`}
+                                        className={`cs-line is-click${openId === m.id ? " is-active" : ""}${justAdded.has(m.id) ? " is-new" : ""}`}
                                     >
                                         <div
                                             className="cs-line-main"
@@ -319,7 +322,7 @@ export function PlanCard({
                             onAdd={onAddTest}
                         >
                             {tests.map((t) => (
-                                <div key={t} className="cs-line">
+                                <div key={t} className={`cs-line${justAdded.has(t) ? " is-new" : ""}`}>
                                     <div className="cs-line-main">
                                         <div className="cs-line-name"><span>{t}</span></div>
                                     </div>
@@ -341,7 +344,7 @@ export function PlanCard({
                                 count={adviceLines.length}
                             >
                                 {adviceLines.map((line) => (
-                                    <div key={line} className="cs-line">
+                                    <div key={line} className={`cs-line${justAdded.has(line) ? " is-new" : ""}`}>
                                         <div className="cs-line-main">
                                             <div className="cs-line-name"><span>{line}</span></div>
                                         </div>

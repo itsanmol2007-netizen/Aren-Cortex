@@ -26,11 +26,31 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Activity, Plus } from "lucide-react";
 import type { Vitals } from "../../types";
 import {
     FIELD_BY_KEY, MEASURE_FIELDS, type MeasureField, type MeasureFieldKey,
 } from "./measures";
+
+/**
+ * A specialty chart offered from this card — the odontogram, the body map,
+ * the growth curve.
+ *
+ * These render as PEERS OF THE NUMERIC FIELDS rather than as their own cards
+ * down the page. A dentist records teeth the way they record a temperature:
+ * it belongs in the row of things this facility measures, not in a permanent
+ * full-width panel that every other consultation has to scroll past. Which
+ * ones appear is the specialty profile's `charts` field, exactly as
+ * `defaultKeys` is its `measurements` field — one config, two axes.
+ */
+export interface ChartTool {
+    key: string;
+    label: string;
+    icon: ReactNode;
+    /** the chart already holds findings for this visit — mirrors `is-filled` */
+    filled?: boolean;
+}
 
 const valueOf = (vitals: Vitals, key: MeasureFieldKey): string =>
     String(vitals[key] ?? "");
@@ -44,11 +64,15 @@ interface Props {
     relevantKeys: Set<MeasureFieldKey>;
     /** field -> the signal label that asked for it, for the tooltip */
     relevantBecause: Map<MeasureFieldKey, string>;
+    /** specialty charts offered as launchers in this grid — see ChartTool */
+    charts?: ChartTool[];
+    onOpenChart?: (key: string) => void;
     disabled?: boolean;
 }
 
 export function MeasurementsCard({
-    vitals, onChange, defaultKeys, relevantKeys, relevantBecause, disabled = false,
+    vitals, onChange, defaultKeys, relevantKeys, relevantBecause,
+    charts = [], onOpenChart, disabled = false,
 }: Props) {
     // Enter walks the row, so the whole card is one hand on the number row
     // rather than one click per field.
@@ -116,6 +140,24 @@ export function MeasurementsCard({
                     />
                 ))}
 
+                {/* Charts sit AFTER the numbers and BEFORE "Add Measurement":
+                    they are things this facility records (so they belong with
+                    the fields, not after the way-in), but they are never the
+                    first thing typed, so they do not lead the row. */}
+                {charts.map((tool) => (
+                    <button
+                        key={tool.key}
+                        type="button"
+                        className={`cs-meas-tool${tool.filled ? " is-filled" : ""}`}
+                        disabled={disabled}
+                        onClick={() => onOpenChart?.(tool.key)}
+                        title={`Open the ${tool.label.toLowerCase()}`}
+                    >
+                        <span className="cs-meas-tool-icon">{tool.icon}</span>
+                        <span className="cs-meas-tool-label">{tool.label}</span>
+                    </button>
+                ))}
+
                 {hidden.length > 0 && (
                     <div className="cs-meas is-add">
                         <button
@@ -172,9 +214,13 @@ function MeasureCell({
     const filled = value.trim().length > 0;
     const warn = filled && field.warn ? field.warn(value) : false;
 
+    // Two-input fields (blood pressure's sys/dia, the four G-P-L-A boxes) take
+    // two grid cells — at one cell they clip their own digits.
+    const wide = field.kind === "bp" || field.kind === "gpla";
+
     const className =
         `cs-meas${filled ? " is-filled" : ""}${warn ? " is-warn" : ""}` +
-        `${suggested ? " is-suggested" : ""}`;
+        `${suggested ? " is-suggested" : ""}${wide ? " is-wide" : ""}`;
 
     // One title, chosen by what the doctor most needs to know right now: a
     // value that is out of range beats an explanation of why the field is here.

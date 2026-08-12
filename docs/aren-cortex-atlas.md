@@ -2152,6 +2152,13 @@ with eyes on the screen.
 
 ## 15. Further reading
 
+- ★ `aren-cortex-ui-doctrine.md` — **read this before touching the consult
+  screen.** The UI/UX architecture and the reasoning behind it, split out of
+  this atlas 2026-08-12 because the atlas had grown to mix edge functions and
+  RLS with design decisions. It argues that the screen's problem is
+  structural (SOAP used as a layout, everything visible at once, specialty
+  used as the gate instead of the encounter) and that visual work cannot fix
+  it. It also records what was already tried and failed.
 - `aren-technical-atlas.md` — the whole-repo map (both workspaces, auth, data
   layer, Front Desk's intake-alias layer over the shared `observables` table).
 - `aren-architecture-handoff.md` — product philosophy, the Visit object,
@@ -2171,3 +2178,86 @@ with eyes on the screen.
 
 *End. Update this document when the consult screen changes shape again — at
 minimum §5 (the screen), §10 (defects), §11 (the diff) and §13 (where-do-I-change-X).*
+
+---
+
+## 14.14 Session 2026-08-12 — SOAP layout, brand-first medicines, add-sheet
+
+Worked with a live browser this session. Several "UI polish" items turned out
+to be defects that only a rendered page reveals — recorded here because the
+pattern will repeat.
+
+### Defects found by looking, not by reading
+
+1. **`.cs-picker { min-height: 196px }`** — a second height floor. An earlier
+   pass removed `.cs-work .cs-picker` and reported cards as content-driven;
+   they were not. Every empty picker still reserved ~60px.
+2. **`.cs-shell { overflow: hidden }` disabled `position: sticky`** for every
+   descendant, so the summary rail silently scrolled away. Now `overflow:
+   clip`, which clips to the radius without creating a scroll container.
+3. **Measurement placeholders read as recorded vitals** — `120 / 80` at value
+   weight in mid-grey. Now much fainter and at normal weight.
+4. **`.cs-print` / `.cs-review` had no `:disabled` style**, so an empty plan
+   got the browser's wash over solid navy/teal and read as broken.
+5. **BP clipped to `12(/ 80`** at a single grid cell. Two-input fields now
+   carry `.is-wide` (`grid-column: span 2`).
+
+### `search_intents` — 46% of the catalogue was unreachable
+
+The brand branch joined `... having count(*) = 1` over
+`medicine_composition_map`, so **only single-composition medicines were
+searchable by brand**. 98,306 of 213,145 products (46.1%) were invisible —
+every combination. `Acenac-P`, `Acenac-MR`, `Combiflam`, `Zerodol SP` all
+returned nothing while plain `Acenac` worked.
+
+Fixed in two migrations. The second matters: a combination maps to N
+compositions and one must be chosen, and `is_primary` **cannot be trusted**
+(Acenac-P has it `false` on both rows; Acenac-MR Tablet has it `true` on
+two). Leadness is inferred from **rarity** instead — the composition carried
+by the fewest brands is the characteristic one, because that is what makes
+the combination distinctive. Paracetamol is in tens of thousands of products,
+aceclofenac in far fewer. Verified: `acenac-p` → aceclofenac, `combiflam` →
+ibuprofen.
+
+> Still imperfect: `zerodol sp` resolves to drotaverine rather than
+> aceclofenac. The real fix is for search to return **medicines** rather than
+> compositions, so a brand carries its whole composition list instead of
+> collapsing to one.
+
+### Brand is the headline. Always.
+
+Standing rule, from Anmol 2026-08-12: **in every surface, the brand name is
+primary and the composition is the subtitle — never the reverse.** The doctor
+prescribes a product and the patient buys a product. A search for "Acenac-P"
+that answers "aceclofenac" makes the doctor wonder whether what they typed
+exists. Applied in `IntentSearch.tsx` (brand-matched hits) and
+`MedicineAddSheet.tsx`.
+
+### `MedicineAddSheet` — the confirm step
+
+`+` used to commit a medicine with the resolver's brand and the composition's
+default dose. It now stages: `handleAcceptIntent` sets `pendingMedicine`
+instead of calling `commitAccept`, and the sheet confirms brand, strength,
+dose, slots, duration and timing in one place. Confirm commits, then applies
+the dose over the default one frame later.
+
+### Layout
+
+The consult screen is SOAP top-to-bottom in a left column, with a summary
+rail on the right — see the band comment in `consult.css`. Plan holds two
+placeholders whose CONTENT comes from `specialty.primary` (`planSlots` in
+App.tsx). **That wiring is new**: `primary`/`primaryLabel`/`sections` were
+previously read only by the Settings page, which printed them as a
+description while the consult screen rendered hardcoded medicines — so
+Physiotherapy was told "Exercise Plans primary" and shown Medicines.
+
+### Open
+
+- Ranked medicine row still needs restructuring to Ref2 (`docs/temp/`):
+  rank badge · brand · molecule · relevance bar · heart · add, alternates
+  below. Currently cluttered at the right edge.
+- `MedicineAddSheet` is **not browser-verified** — built and type-checked
+  only.
+- Findings ranking: `examSuggestions.ts` runs on every chart change and
+  nothing consumes it; `signal_finding_suggestions` has **10 rules** against
+  1,577 intent rules. Content project, not a code change.

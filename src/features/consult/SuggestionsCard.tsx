@@ -26,7 +26,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-    Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb,
+    Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
     ShieldAlert, Sparkles,
 } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
@@ -43,28 +43,53 @@ import type { AcceptPayload } from "./types";
  *
  * `finding` is deliberately absent — see the header comment.
  */
-const SECTIONS: {
+interface Section {
     type: IntentType;
     label: string;
     verb: string;
     icon: React.ReactNode;
-}[] = [
-        { type: "test", label: "Investigation", verb: "Order", icon: <FlaskConical size={14} /> },
-        { type: "referral", label: "Referral", verb: "Refer", icon: <ArrowUpRight size={14} /> },
-        { type: "advice", label: "Advice", verb: "Advise", icon: <Lightbulb size={14} /> },
-        { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
-    ];
+}
 
-const SEARCH_TYPES = SECTIONS.map((s) => s.type);
+/**
+ * The catalogue of every non-finding intent type this panel can render.
+ *
+ * It used to be the fixed list of four that this card always showed. It is a
+ * CATALOGUE now, and the caller picks which entries to render via `types` —
+ * that is what lets the same component be a facility's Primary Recommendation
+ * slot (one type, elevated) and its everything-else slot (the remainder), with
+ * no second component and no per-specialty branch in the render tree.
+ *
+ * `medicine` is included here even though `RecommendationsCard` normally owns
+ * it: for a facility whose primary output is NOT medicines — physiotherapy
+ * elevating exercise plans, diagnostics elevating investigations — medicines
+ * fall back into a plain ranked list, which is exactly what this renders.
+ * `finding` is deliberately absent; it has its own panel (see header).
+ */
+const CATALOGUE: Section[] = [
+    { type: "medicine", label: "Medicine", verb: "Add", icon: <Pill size={14} /> },
+    { type: "test", label: "Investigation", verb: "Order", icon: <FlaskConical size={14} /> },
+    { type: "referral", label: "Referral", verb: "Refer", icon: <ArrowUpRight size={14} /> },
+    { type: "advice", label: "Advice", verb: "Advise", icon: <Lightbulb size={14} /> },
+    { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
+];
 
 const VERB_OF: Record<string, string> = Object.fromEntries(
-    SECTIONS.map((s) => [s.type, s.verb])
+    CATALOGUE.map((s) => [s.type, s.verb])
 );
 
 /** Rows shown per type before the panel asks. */
-const CAP = 2;
 
 interface Props {
+    /** layout class from the plan row — which slot this panel occupies */
+    className?: string;
+    /**
+     * Which intent types this instance renders, in order. The facility's
+     * specialty profile decides this — see App.tsx's `planSlots`. Defaults to
+     * everything except medicines, which is the historical behaviour.
+     */
+    types?: IntentType[];
+    /** the heading — "Medicines", "Exercise Plans", "Clinical Suggestions"… */
+    title?: string;
     byType: Record<IntentType, PersonalizedIntent[]>;
     topOfType: Map<IntentType, number>;
     acceptedIntentIds: Set<number>;
@@ -84,8 +109,20 @@ interface Props {
 export function SuggestionsCard({
     byType, topOfType, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
-    disabled = false,
+    disabled = false, className = "",
+    types, title = "Clinical Suggestions",
 }: Props) {
+    // The sections this instance renders, in the caller's order.
+    const SECTIONS = useMemo(
+        () =>
+            types
+                ? types
+                    .map((t) => CATALOGUE.find((c) => c.type === t))
+                    .filter((s): s is Section => !!s)
+                : CATALOGUE.filter((s) => s.type !== "medicine"),
+        [types]
+    );
+    const SEARCH_TYPES = useMemo(() => SECTIONS.map((s) => s.type), [SECTIONS]);
     /**
      * Which category the search box is pointed at.
      *
@@ -104,19 +141,17 @@ export function SuggestionsCard({
      * sections in turn. The type stays legible on every row, so nothing is lost
      * by flattening.
      */
+    // Every row of every section, always — the panel is bounded by the output
+    // strip and scrolls internally, so there is nothing to expand into. The
+    // per-type CAP that used to sit here existed only to keep this card short
+    // beside its neighbour; in a stacked strip that job belongs to the scroll.
     const rows = useMemo(() => {
         const out: { intent: PersonalizedIntent; section: (typeof SECTIONS)[number] }[] = [];
         for (const section of SECTIONS) {
-            const list = byType[section.type] ?? [];
-            const take = expanded ? list : list.slice(0, CAP);
-            // Anything already taken stays visible regardless of the cap.
-            const kept = expanded
-                ? take
-                : [...take, ...list.slice(CAP).filter((i) => acceptedIntentIds.has(i.intentId))];
-            for (const intent of kept) out.push({ intent, section });
+            for (const intent of byType[section.type] ?? []) out.push({ intent, section });
         }
         return out;
-    }, [byType, expanded, acceptedIntentIds]);
+    }, [byType]);
 
     const total = useMemo(
         () => SECTIONS.reduce((n, s) => n + (byType[s.type]?.length ?? 0), 0),
@@ -128,8 +163,6 @@ export function SuggestionsCard({
         for (const s of SECTIONS) for (const i of byType[s.type] ?? []) ids.add(i.intentId);
         return ids;
     }, [byType]);
-
-    const hidden = total - rows.length;
 
     const body = () => {
         if (search.isSearching) {
@@ -205,9 +238,9 @@ export function SuggestionsCard({
     };
 
     return (
-        <section className="cs-card" aria-label="Clinical suggestions">
+        <section className={`cs-card ${className}`} aria-label="Clinical suggestions">
             <div className="cs-sug-head">
-                <span className="cs-sug-tab">Clinical Suggestions</span>
+                <span className="cs-sug-tab">{title}</span>
                 <span className="cs-sort">Sort by: <b>Relevance</b></span>
             </div>
 
@@ -235,13 +268,6 @@ export function SuggestionsCard({
             />
 
             <div className="cs-list">{body()}</div>
-
-            {!search.isSearching && hasChart && (hidden > 0 || expanded) && (
-                <button type="button" className="cs-more" onClick={onToggleExpanded}>
-                    {expanded ? "Show fewer" : "Show more suggestions"}
-                    <ChevronDown size={14} style={{ transform: expanded ? "rotate(180deg)" : undefined }} />
-                </button>
-            )}
         </section>
     );
 }

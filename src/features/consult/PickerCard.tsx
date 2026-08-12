@@ -78,6 +78,16 @@ interface Props {
     /** opens the browse-everything sheet */
     onBrowse: () => void;
     emptyHint: string;
+    /**
+     * Findings only: what the chart says is worth EXAMINING FOR, ranked.
+     *
+     * This is the output of `examSuggestions.ts` — the same additive scoring
+     * as the main engine, pointed at observables instead of intents. It is a
+     * prompt to look, never a claim that the sign is present: ticking one is
+     * a new observation that re-runs the whole engine, which is the cascade
+     * symptoms -> examine -> confirm -> conditions -> treatment.
+     */
+    suggestions?: string[];
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
 }
@@ -85,7 +95,7 @@ interface Props {
 export function PickerCard({
     kind, title, note, glyph, glyphTone, placeholder, observables, selected,
     onToggle, onChart, intensities, onIntensityChange, onBrowse, emptyHint,
-    disabled = false, searchRef,
+    suggestions = [], disabled = false, searchRef,
 }: Props) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -228,8 +238,34 @@ export function PickerCard({
                 </button>
             </div>
 
+            {/* What the chart says is worth examining for. Sits ABOVE the
+                empty hint, because once there is something to suggest, a
+                generic hint is the less useful of the two. Never mixed in
+                with the selected chips — a thing to check and a thing you
+                found must not look alike. */}
+            {suggestions.length > 0 && (
+                <div className="cs-exam-hint">
+                    <span className="cs-exam-hint-label">Worth examining for</span>
+                    <div className="cs-chips">
+                        {suggestions.map((label) => (
+                            <button
+                                key={label}
+                                type="button"
+                                className="cs-chip cs-chip--suggest"
+                                disabled={disabled}
+                                onClick={() => onToggle(label)}
+                                title="Add this finding"
+                            >
+                                <Plus size={11} />
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {selected.length === 0 ? (
-                <p className="cs-picker-hint">{emptyHint}</p>
+                suggestions.length === 0 && <p className="cs-picker-hint">{emptyHint}</p>
             ) : (
                 <div className="cs-chips">
                     {selected.map((label) => {

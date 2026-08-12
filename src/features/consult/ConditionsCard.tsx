@@ -31,7 +31,7 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, ShieldAlert, Stethoscope } from "lucide-react";
+import { Check, ChevronDown, ShieldAlert, Stethoscope, X } from "lucide-react";
 import type { ActiveSignal, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RELEVANCE_TEXT, rankFillOf, relevanceOf } from "./parts";
@@ -59,12 +59,16 @@ interface Props {
     ruleset: Ruleset | null;
     activeSignals: ActiveSignal[];
     hasChart: boolean;
+    /** the doctor's confirmed assessment, in confirmation order */
+    diagnoses: string[];
+    onRemoveDiagnosis: (label: string) => void;
     disabled?: boolean;
 }
 
 export function ConditionsCard({
     intents, topScore, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
-    onExplain, ruleset, activeSignals, hasChart, disabled = false,
+    onExplain, ruleset, activeSignals, hasChart,
+    diagnoses, onRemoveDiagnosis, disabled = false,
 }: Props) {
     const [expanded, setExpanded] = useState(false);
     const search = useIntentSearch(["finding"]);
@@ -153,40 +157,99 @@ export function ConditionsCard({
         ));
     };
 
+    // The doctor's own assessment, in the order they confirmed it. First is
+    // PRIMARY, the rest are SECONDARY — a convention, not a derivation: the
+    // engine never decides which diagnosis is primary, because that is the one
+    // judgement in this workspace that is entirely the doctor's.
+    const [primaryDx, ...secondaryDx] = diagnoses;
+
     return (
-        <section className="cs-card cs-picker" aria-label="Possible conditions">
+        <section className="cs-card cs-assess" aria-label="Assessment">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-violet"><Stethoscope size={14} /></span>
-                    Possible Conditions
+                    <span className="cs-glyph is-violet"><Stethoscope size={16} /></span>
+                    Assessment
                 </h2>
-                {!search.isSearching && intents.length > 0 && (
-                    <span className="cs-count is-quiet">{intents.length} ranked</span>
-                )}
             </div>
 
-            {/* The honesty line. It is permanent rather than a tooltip because
-                what this panel reads from is exactly the thing a doctor would
-                otherwise assume wrongly. */}
-            <p className="cs-cond-note">
-                Ranked from everything entered so far — symptoms, examination
-                findings and measurements. Not a diagnosis.
-            </p>
+            {/* ONE column, read top to bottom: search → what you have chosen →
+                what is ranked. The two-column version this replaces put the
+                doctor's decision beside the engine's list, which made the
+                module twice as wide as it needed to be and read as two
+                separate panels sharing a border. Sequence carries the
+                distinction better than adjacency does — the chip is above the
+                list because it is the OUTCOME of it. */}
+            <div className="cs-assess-body">
+                <div className="cs-assess-decide">
+                    <IntentSearchField
+                        state={search}
+                        placeholder="Search diagnosis / condition…"
+                        disabled={disabled}
+                    />
 
-            <IntentSearchField
-                state={search}
-                placeholder="Search conditions…"
-                disabled={disabled}
-            />
+                    {search.isSearching ? (
+                        <div className="cs-list">{body()}</div>
+                    ) : (
+                        <>
+                            <div className="cs-assess-slot">
+                                <span className="cs-assess-slot-label">Primary</span>
+                                {primaryDx ? (
+                                    <DxChip
+                                        label={primaryDx}
+                                        tone="primary"
+                                        onRemove={() => onRemoveDiagnosis(primaryDx)}
+                                    />
+                                ) : (
+                                    <span className="cs-assess-slot-empty">
+                                        Confirm one from the suggestions, or search above
+                                    </span>
+                                )}
+                            </div>
 
-            <div className="cs-list">{body()}</div>
+                            {secondaryDx.length > 0 && (
+                                <div className="cs-assess-slot">
+                                    <span className="cs-assess-slot-label">Secondary</span>
+                                    <span className="cs-assess-chips">
+                                        {secondaryDx.map((dx) => (
+                                            <DxChip
+                                                key={dx}
+                                                label={dx}
+                                                tone="secondary"
+                                                onRemove={() => onRemoveDiagnosis(dx)}
+                                            />
+                                        ))}
+                                    </span>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
 
-            {!search.isSearching && (hidden > 0 || expanded) && (
-                <button type="button" className="cs-more" onClick={() => setExpanded((v) => !v)}>
-                    {expanded ? "Show fewer" : "Show more conditions"}
-                    <ChevronDown size={14} style={{ transform: expanded ? "rotate(180deg)" : undefined }} />
-                </button>
-            )}
+                {/* The ranked list, full width beneath the decision. Titled as
+                    possibilities and never as an assessment — ranking is a
+                    safety property, not a verdict (handoff §1), and the
+                    heading is where that promise is kept or broken. */}
+                {!search.isSearching && (
+                    <div className="cs-assess-ranked">
+                        <div className="cs-assess-ranked-head">
+                            <span className="cs-assess-ranked-title">Ranked Conditions</span>
+                            {intents.length > 0 && (
+                                <span className="cs-count is-quiet">{intents.length} ranked</span>
+                            )}
+                        </div>
+                        <p className="cs-cond-note">
+                            Ranked from symptoms, findings and measurements. You decide.
+                        </p>
+                        <div className="cs-list">{body()}</div>
+                        {hidden > 0 && !expanded && (
+                            <button type="button" className="cs-more" onClick={() => setExpanded(true)}>
+                                Show {hidden} more
+                                <ChevronDown size={14} />
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
         </section>
     );
 }
@@ -255,5 +318,36 @@ function ConditionRow({
                 </div>
             )}
         </div>
+    );
+}
+
+/**
+ * One confirmed diagnosis, as a chip.
+ *
+ * Deliberately a different object from the suggestion rows beside it: those
+ * carry a relevance bar and a "Confirm" verb, this carries neither. A chip is
+ * a decision that has been made; a row is one that has not. Making them look
+ * alike is precisely how a ranked possibility gets read as a diagnosis.
+ */
+function DxChip({
+    label, tone, onRemove,
+}: {
+    label: string;
+    tone: "primary" | "secondary";
+    onRemove: () => void;
+}) {
+    return (
+        <span className={`cs-dx is-${tone}`}>
+            <i className="cs-dx-dot" aria-hidden="true" />
+            <span className="cs-dx-label">{label}</span>
+            <button
+                type="button"
+                className="cs-dx-x"
+                onClick={onRemove}
+                aria-label={`Remove ${label}`}
+            >
+                <X size={13} />
+            </button>
+        </span>
     );
 }

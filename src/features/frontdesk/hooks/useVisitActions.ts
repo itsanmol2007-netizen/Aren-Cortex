@@ -14,6 +14,7 @@ import {
 } from "@/lib/db";
 import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
+import { useHospitalId } from "./useHospitalId";
 import { padToken } from "../utils";
 
 type UseVisitActionsArgs = {
@@ -27,6 +28,10 @@ type UseVisitActionsArgs = {
 // the next silent 25s refresh will also self-correct either way.
 export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsArgs) {
     const t = useT();
+    // `useHospitalId` fixed the reception READS; the writes below still went to
+    // the hardcoded clinic, so registering a patient anywhere else was rejected
+    // by RLS with a 403. Same null-over-guess rule as the hook itself.
+    const hospitalId = useHospitalId();
 
     const patch = (visitId: string, fields: Partial<TodayVisit>) => {
         setVisits((vs) => vs.map((v) => (v.visit_id === visitId ? { ...v, ...fields } : v)));
@@ -89,22 +94,34 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         observableIds: number[];
         doctorId: string;
     }): Promise<{ patientName: string } | null> => {
+        if (!hospitalId) {
+            toast.error("Not signed in to a clinic — cannot register a visit.");
+            return null;
+        }
         try {
             let patient = opts.existingPatient;
             if (!patient) {
                 const byPhone = await findPatientByPhone(opts.phone.trim());
                 patient =
                     byPhone ??
-                    (await createPatient({
-                        name: opts.name.trim(),
-                        age: Number(opts.age) || 0,
-                        gender: opts.gender,
-                        phone: opts.phone.trim(),
-                        date_of_birth: opts.dateOfBirth || null,
-                    }));
+                    (await createPatient(
+                        {
+                            name: opts.name.trim(),
+                            age: Number(opts.age) || 0,
+                            gender: opts.gender,
+                            phone: opts.phone.trim(),
+                            date_of_birth: opts.dateOfBirth || null,
+                        },
+                        hospitalId
+                    ));
             }
 
-            const visit = await createVisit(patient.id, "waiting", opts.doctorId);
+            const visit = await createVisit({
+                patientId: patient.id,
+                hospitalId,
+                doctorId: opts.doctorId,
+                initialStatus: "waiting",
+            });
 
             // Symptoms are structured entities — the picker hands us observable
             // ids from the shared catalogue, never typed strings.

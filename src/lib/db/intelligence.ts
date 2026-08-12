@@ -1,5 +1,4 @@
 import { supabase } from "../supabase";
-import { DOCTOR_ID } from "./reference";
 
 // ---------------------------------------------------------------------------
 // What saving a consultation writes.
@@ -27,6 +26,14 @@ export type SaveConsultMedicine = {
 
 export async function saveConsult(opts: {
     visitId: string;
+    /**
+     * Who is signing this prescription. Required — it was the DOCTOR_ID
+     * constant, so every prescription written from any account was attributed
+     * to one specific doctor at one specific clinic. That is the worst of the
+     * tenancy bugs to leave silent: it is not a blank screen the doctor can
+     * see, it is a signed clinical document with the wrong name on it.
+     */
+    doctorId: string;
     medicines: SaveConsultMedicine[];
     tests: string[];
     vitals: Record<string, string>;
@@ -50,7 +57,7 @@ export async function saveConsult(opts: {
         .from("prescriptions")
         .insert({
             visit_id: opts.visitId,
-            assigned_doctor_id: DOCTOR_ID,
+            assigned_doctor_id: opts.doctorId,
             findings_text: opts.findingsText,
             follow_up_days: opts.followUpDays ?? null,
             advice_notes: opts.adviceNotes ?? null,

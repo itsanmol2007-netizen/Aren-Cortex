@@ -33,10 +33,20 @@
    ============================================================ */
 
 :root {
-    --cs-page: #f4f6fa;
+    /* ── Surfaces (refined 2026-08-12, premium clinical pass) ─────────────
+       A near-white neutral page with white cards, rather than the cool blue
+       grey it was. The page should read as paper under clinic lighting, not
+       as a tinted dashboard — colour belongs to clinical meaning, and a
+       tinted background spends it on nothing.
+
+       Borders are deliberately close to invisible. At this contrast a card
+       is defined by its FILL against the page, with the border only
+       catching the edge — which is what stops eight modules reading as
+       eight boxes. */
+    --cs-page: #f7f8fa;
     --cs-card: #ffffff;
-    --cs-line: #e7ecf3;
-    --cs-line-strong: #dbe2ec;
+    --cs-line: #ebedf2;
+    --cs-line-strong: #dfe3ea;
     --cs-ink: #0b1733;
     /* ── Text greys, set by CONTRAST rather than by eye (2026-08-11) ──────
        These were #64748b / #94a3b8, and `--cs-faint` measured 2.56:1 against
@@ -49,8 +59,21 @@
        them clears AA for body text. The visual hierarchy between the three
        is preserved — faint still reads as secondary — it just no longer
        achieves that by being unreadable. */
-    --cs-muted: #55647c;
-    --cs-faint: #68778d;
+    /* ── Second pass, 2026-08-12 ─────────────────────────────────────────
+       The contrast-measured greys above cleared AA and STILL read as "grey
+       on grey" in the clinic, because passing a contrast ratio and being
+       legible are not the same test. The screen's problem was never one
+       token — it was that primary content, secondary content and ornament
+       all sat within a few percent of each other, so nothing looked like
+       the thing you were meant to read.
+
+       The whole ramp moves one step darker: what was `muted` is now
+       `faint`, and `muted` takes a new darker value. Titles, values and
+       chip labels move to `--cs-ink` outright (see .cs-card-title etc.) —
+       real content is near-black, and grey is reserved for genuine
+       ornament. Ratios on white: muted 9.2:1, faint 6.0:1. */
+    --cs-muted: #37455c;
+    --cs-faint: #55647c;
     --cs-blue: #1268e8;
     --cs-blue-soft: #eef4ff;
     --cs-teal: #0f766e;
@@ -66,9 +89,14 @@
     --cs-orange: #c2410c;
     --cs-orange-soft: #fff7ed;
     --cs-green: #16a34a;
-    --cs-radius: 14px;
-    --cs-radius-sm: 9px;
-    --cs-shadow: 0 1px 2px rgba(16, 28, 46, 0.04);
+    /* Moderate radius. Enough to read as a considered surface, not enough to
+       become "bubble UI" — a clinical workstation, not a consumer app. */
+    --cs-radius: 12px;
+    --cs-radius-sm: 8px;
+    /* Restrained to the point of near-absence: one hairline of lift, no
+       spread. Shadows here separate a card from the page, they do not float
+       it above the page. */
+    --cs-shadow: 0 1px 1px rgba(16, 28, 46, 0.03);
 
     /* ── Spacing scale (2026-08-11) ───────────────────────────────────────
        This file previously used 4, 6, 7, 9, 12, 13, 14, 16, 20px more or
@@ -93,12 +121,18 @@
 
     /* Icon sizes, named so a card cannot quietly pick its own. Everything on
        this screen used to sit at 12–14px, which is below what is comfortable
-       to hit or read at arm's length across a desk. */
-    --cs-icon-sm: 14px;
-    --cs-icon-md: 16px;
+       to hit or read at arm's length across a desk.
+
+       Raised again 2026-08-12: 14/16 was still too small at arm's length,
+       which is the actual posture — the doctor is not leaning into the
+       monitor, the patient is sitting opposite. */
+    --cs-icon-sm: 16px;
+    --cs-icon-md: 18px;
+    --cs-icon-lg: 20px;
     /* Square hit target for an icon-only button. 24px was under the 24px
-       minimum for a pointer target with no padding around it. */
-    --cs-hit: 30px;
+       minimum for a pointer target with no padding around it; 30px still
+       made the attachment and chart buttons feel like afterthoughts. */
+    --cs-hit: 36px;
 
     /* The shared height of the two ranked columns — see `.cs-engine`. */
     --cs-engine-h: 540px;
@@ -116,100 +150,350 @@
     border: 1px solid var(--cs-line);
     border-radius: 16px;
     background: var(--cs-page);
-    overflow: hidden;
+    /* `clip`, NOT `hidden`. Both clip to the radius, but `hidden` creates a
+       scroll container — and a sticky descendant sticks to its nearest
+       scrolling ancestor, so `hidden` here silently disabled `position:
+       sticky` on the summary rail and it scrolled away with the page.
+       Found in the browser 2026-08-12; the rail is meant to be persistent. */
+    overflow: clip;
 }
 
 /* ════════════════════════════════════════════════════════════
-   PAGE GRID
+   PAGE GRID  (restructured 2026-08-12)
 
-   Not a uniform three-column grid: the consultation reads in
-   three bands, and each band splits differently.
+   Not a uniform grid: the consultation reads in bands, and each
+   band splits differently.
 
-     band 1 — the chart: three equal pickers
-     band 2 — measurements, beside the plan
+     band 1 — the chart, as a 2x2 quadrant:
+                History / Context │ Symptoms
+                Findings          │ Possible Conditions
+     band 2 — MEASUREMENTS, full width
      band 3 — recommendations + suggestions, beside the plan
 
-   The plan spans bands 2 and 3 because it is the destination of
-   both, and it must never scroll out of view while the doctor
-   is taking things from either.
+   Why 2x2 rather than the old row of three equal pickers: three
+   columns gave each input a third of the width and pushed
+   Possible Conditions — the one panel that is genuinely being
+   READ rather than filled in — into a column too narrow for the
+   sentences it renders. The quadrant gives all four the same
+   generous width and puts Conditions diagonally opposite
+   History, below Symptoms and beside Findings. That position is
+   load-bearing: Conditions reads from history, symptoms,
+   findings AND the measurements below, so it must sit after its
+   inputs. In the quadrant all three inputs surround it and none
+   of them reads as its sole source.
+
+   Measurements is a full-width band of its own, not a card in a
+   column, because it is a ROW of small numeric fields — the one
+   thing on this screen that genuinely wants horizontal room —
+   and because it now also hosts the specialty chart launchers
+   (see `.cs-meas-tool`), which are the entry point to the
+   odontogram, body map and growth curve.
+
+   The plan spans from band 2 down because it is the destination
+   of all of it, and it must never scroll out of view while the
+   doctor is taking things from either ranked column.
    ════════════════════════════════════════════════════════════ */
 
+/* ── SOAP + output strip (2026-08-12) ────────────────────────────────────
+   The page is two columns, and the split is the clinical one:
+
+     LEFT  — the consultation being taken, in SOAP order.
+             Subjective -> Objective -> Assessment.
+     RIGHT — everything output-side, in one persistent strip:
+             what the engine RECOMMENDS and what the doctor has CHOSEN.
+
+   Rules this encodes, from Anmol 2026-08-12:
+     · SOAP controls vertical ORDER, not card size. A phase does not earn a
+       full-width card just by existing.
+     · Module height is content-driven. Nothing reserves empty space.
+     · Whitespace separates clinical phases; borders contain interactive
+       modules. So the phase labels have air around them and no box.
+
+   The strip does not scroll with the page. Every ranked column and the plan
+   are reachable at any point in the consultation, because the doctor moves
+   between examining and prescribing continuously, not in one direction. */
 .cs-page {
     flex: 1;
     min-height: 0;
+    display: grid;
+    /* The summary is a narrow rail, not a second workspace. It lists what has
+       been chosen — short lines, no ranked bars, no search — so it needs far
+       less width than the working surfaces it summarises. */
+    /* 296px of card + the rail's own left gutter and divider */
+    grid-template-columns: minmax(0, 1fr) 312px;
+    gap: var(--cs-s4);
     padding: var(--cs-s4) var(--cs-s5) var(--cs-s3);
+    align-items: start;
 }
 
-/* History / Context, full-width and shorter than the three cards below —
-   see the comment at its call site in App.tsx for why it was pulled out of
-   this grid. */
-.cs-context-strip {
-    margin-bottom: var(--cs-s3);
+/* The left column — S, O, A stacked. */
+.cs-work {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
-.cs-context-strip .cs-picker {
-    min-height: 0;
+/* The phase label. Whitespace and a hairline, never a container: it names a
+   stage of thinking, it is not itself a module. */
+/* Bare on the page — no box, no rule, no container. A phase names a stage of
+   thinking; it is not itself a module, and the whitespace around it is what
+   separates the phases. Adding a hairline made it look like a section header
+   in a settings page, which is the generic-SaaS reading we are avoiding. */
+.cs-phase {
+    margin: var(--cs-s5) 0 var(--cs-s2);
+    padding-left: 2px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
 }
 
-/* Three cards: what the patient reports, what the doctor finds, and the
-   engine's reading of both. Possible Conditions is last because it reads
-   from all three (and from the measurements below), and any earlier
-   position would imply it reflects only the card beside it. */
-.cs-pickers {
+/* first phase sits flush with the top of the page */
+.cs-phase:first-child {
+    margin-top: 0;
+}
+
+/* A row of related clinical primitives. Ratios differ per row because the
+   content does — chips need room to wrap, numbers do not. */
+.cs-row {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--cs-s3);
-    align-items: stretch;
+    align-items: start;
 }
 
-.cs-body {
-    display: grid;
-    grid-template-columns: minmax(0, 2.94fr) minmax(330px, 1fr);
-    gap: var(--cs-s3);
+.cs-row + .cs-row {
     margin-top: var(--cs-s3);
-    align-items: stretch;
 }
 
-.cs-body-left {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--cs-s3);
-    min-width: 0;
+/* Subjective — two equal modules. */
+.cs-row-sub {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* ── the two ranked columns ──────────────────────────────────
-   Medicine Recommendations and Clinical Suggestions are given ONE
-   height and scroll inside it, rather than each sizing to its own
-   content.
-
-   Sizing to content meant the shorter column stretched to match the
-   taller one (grid `stretch`) and left the difference as dead white
-   space between its last row and its "Show more" button — the button
-   floating half a card away from the list it belongs to. A shared
-   height with independent internal scroll puts every "Show more"
-   back on the bottom edge of its own card, whatever either column
-   happens to contain.
-
-   The height is fixed rather than derived from the viewport: the
-   plan beside it is already sticky to the viewport, and two
-   different viewport-relative heights on one row is how a short
-   screen ends up with a 90px scroll area. */
-.cs-engine {
-    display: grid;
-    grid-template-columns: minmax(0, 0.83fr) minmax(0, 1fr);
-    gap: var(--cs-s3);
-    align-items: stretch;
-    min-width: 0;
-    height: var(--cs-engine-h);
+/* Objective, first row — findings need wrapping room, measurements do not. */
+/* 65/35 starved the measurement column: at that width only two cells fit per
+   row, so five fields became three ragged rows plus an "Add" box. 60/40 with
+   a smaller cell floor fits three across and the readout reads as a row of
+   numbers rather than a stack of boxes. */
+.cs-row-obj {
+    grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
 }
 
-/* `.cs-list` already carries `flex: 1; min-height: 0; overflow-y: auto`,
-   so each card scrolls its own list and nothing else. Stated here
-   because the fixed height above is what makes it load-bearing. */
-.cs-engine > .cs-card {
+/* Objective, second row — the specialty examination takes the room, and
+   attachments stay a lightweight utility beside it. Conditional: this row
+   renders only when there is a specialty module to show. */
+.cs-row-exam {
+    grid-template-columns: minmax(0, 72fr) minmax(0, 28fr);
+}
+
+/* Plan — the two output placeholders, side by side.
+
+   ── The dead-space rule ──────────────────────────────────────────────────
+   Two panels side by side WILL hold different amounts (a chart with eleven
+   ranked medicines beside one with two investigations). Left to size
+   themselves, the short one stretches to match the tall one and the
+   difference becomes dead white space inside a bordered card — which is the
+   single ugliest thing this screen does.
+
+   The fix is not alignment, it is BOUNDING. Both panels share one height and
+   scroll internally, so neither can grow to 1200px and neither has to
+   stretch to match. `align-items: stretch` is then correct rather than
+   harmful, because both are already the same height by construction.
+
+   Height is fixed rather than viewport-derived: the summary rail beside it is
+   already sticky to the viewport, and two different viewport-relative heights
+   on one screen is how a short display ends up with a 90px scroll area. */
+.cs-row-plan {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* `start`, not `stretch`: a short panel must not grow to match a tall one
+       and turn the difference into dead white space inside a bordered card. */
+    align-items: start;
+}
+
+/* A CEILING rather than a fixed height. Below it the panel is content-driven
+   (an empty plan is small); above it the list scrolls internally instead of
+   running the page to 1200px. That is both of Anmol's constraints at once —
+   content-driven height, and no dead space between unequal neighbours. */
+.cs-row-plan > .cs-card {
     min-height: 0;
+    max-height: var(--cs-engine-h);
     overflow: hidden;
 }
+
+/* ── the summary rail ────────────────────────────────────────────────────
+   It has to read as a DIFFERENT KIND OF SURFACE from the workspace beside
+   it, not as one more white card in a row of white cards. What is on the
+   left is being considered; what is here has been decided, and the eye
+   should be able to tell those apart without reading a word.
+
+   The separation is structural rather than decorative: a full-height rule
+   down its left edge, a cooler ground behind it, and a card that sits on
+   that ground rather than on the page. No accent colour, no heavier shadow
+   — this is a quieter surface than the workspace, not a louder one. */
+/* A hairline was not enough — it still read as one more card in a row of
+   cards. The rail gets its OWN GROUND: a darker, cooler panel that runs the
+   height of the workspace, with the plan sitting on it as a white sheet.
+   The workspace is paper on a light table; this is a slate beside it. You
+   should be able to tell the two apart from across the room, before reading
+   a single word. */
+.cs-summary {
+    position: relative;
+    /* Stretch so the slate runs the FULL height of the workspace, not just
+       the height of what is currently in the plan — a panel that stops
+       halfway down reads as another card again. */
+    align-self: stretch;
+    border-left: 1px solid var(--cs-line-strong);
+    background: linear-gradient(180deg, #eef1f6, #e9edf3);
+    padding: var(--cs-s3);
+    margin: calc(var(--cs-s4) * -1) calc(var(--cs-s5) * -1) calc(var(--cs-s3) * -1) 0;
+}
+
+.cs-summary .cs-plan {
+    border-color: #dbe1ea;
+    box-shadow: 0 1px 3px rgba(16, 28, 46, 0.07);
+}
+
+.cs-summary {
+    position: sticky;
+    top: var(--cs-s3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    max-height: calc(100vh - 132px);
+    min-width: 0;
+}
+
+/* Content-driven, like everything else. An empty consultation plan is a short
+   card, not a full-height column of white — the rail is a checkout summary,
+   and a checkout with nothing in it should look like one. It grows as the
+   consultation accumulates and scrolls once it reaches the viewport. */
+/* The sheet on the slate. Sticky lives HERE now rather than on the rail,
+   because the rail itself is full-height ground. */
+.cs-summary .cs-plan {
+    position: sticky;
+    top: var(--cs-s3);
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: calc(100vh - 150px);
+}
+
+/* The two chip pickers in Subjective, and Findings in Objective, all want a
+   floor so an empty consult reads as a workspace rather than a scatter of
+   small grey boxes. Deliberately a MIN, not a fixed height — module height is
+   content-driven, so a picker holding twelve chips simply grows. */
+/* No floor. Module height is content-driven: an empty picker is small, a
+   picker holding twelve chips grows. The 190px floor this replaces existed to
+   stop an empty consult looking like scattered boxes — but the real cause of
+   that was the borders and greys, not the heights, and reserving space for
+   content that is not there is what made a fresh consultation three screens
+   tall before anything had been entered. */
+
+/* ── the specialty examination module ────────────────────────────────────
+   A launcher per instrument, each carrying a one-line clinical extract of
+   what is currently charted, so the doctor never has to open a chart to
+   find out whether anything is in it. See SpecialtyExamCard.tsx. */
+.cs-exam-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s2);
+    padding: var(--cs-s3) var(--cs-s4) var(--cs-s4);
+}
+
+.cs-exam-tool {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s3);
+    width: 100%;
+    border: 1px solid var(--cs-line);
+    border-radius: 11px;
+    background: #fff;
+    padding: var(--cs-s3);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.cs-exam-tool:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--cs-blue-soft);
+}
+
+.cs-exam-tool:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.cs-exam-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* Charted is a state, and it must be visible without opening anything —
+   same rule as `.cs-meas.is-filled` for the numbers. */
+.cs-exam-tool.is-charted {
+    border-color: var(--cs-line-strong);
+}
+
+.cs-exam-tool.is-charted .cs-exam-icon {
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+
+.cs-exam-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.cs-exam-label {
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+/* The extract. Truncates rather than wrapping — it is a glance, and a
+   launcher that grows to three lines has become the chart it replaced. */
+.cs-exam-extract {
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-exam-tool.is-charted .cs-exam-extract {
+    color: var(--cs-teal);
+    font-weight: 550;
+}
+
+/* ── the ranked panels inside the strip ──────────────────────────────────
+   Previously two side-by-side columns sharing one fixed height. They are
+   stacked in the output strip now, and they share the strip's height rather
+   than a hardcoded one.
+
+   Each panel scrolls INTERNALLY and never grows the page. That is the fix
+   for the real complaint: "show more" expanded a list, which grew its card,
+   which stretched the row, which left dead white space in the column beside
+   it. With a bounded panel and an internal scroll there is nothing to
+   expand — the rest of the list is simply below the fold of its own panel,
+   which is where a doctor already expects more rows to be.
+
+   `flex` weights rather than fixed heights: the primary recommendation gets
+   the most room, the secondary less, and the plan sizes to what is in it.
+   `.cs-list` already carries `flex: 1; min-height: 0; overflow-y: auto`, so
+   the scroll lands on the list and nothing else. */
+/* Both plan slots are bounded by `.cs-row-plan` above; `.cs-list` already
+   carries `flex: 1; min-height: 0; overflow-y: auto`, so the scroll lands on
+   the list and nothing else. */
 
 /* ── the card primitive ── */
 
@@ -228,7 +512,7 @@
     align-items: center;
     gap: var(--cs-s2);
     flex: none;
-    padding: var(--cs-s4) var(--cs-s4) 0;
+    padding: var(--cs-s3) var(--cs-s4) 0;
 }
 
 .cs-card-title {
@@ -237,7 +521,7 @@
     gap: 9px;
     margin: 0;
     color: var(--cs-ink);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 700;
     letter-spacing: 0.045em;
     line-height: 1.2;
@@ -274,7 +558,7 @@
     background: var(--cs-blue-soft);
     padding: 3px 9px;
     color: var(--cs-blue);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 650;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -297,8 +581,13 @@
    come from the examination.
    ════════════════════════════════════════════════════════════ */
 
+/* No floor — content-driven, like every other module. This was 196px, which
+   is why an empty consultation showed four cards each reserving a block of
+   nothing below its own empty state. Verified in the browser 2026-08-12:
+   removing the `.cs-work .cs-picker` floor alone did nothing, because THIS
+   rule was still setting it. */
 .cs-picker {
-    min-height: 196px;
+    min-height: 0;
 }
 
 .cs-picker-search {
@@ -341,7 +630,7 @@
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 500;
     letter-spacing: -0.005em;
     outline: none;
@@ -395,7 +684,7 @@
     border: 1px solid transparent;
     border-radius: 8px;
     padding: 5px 9px 5px 11px;
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: -0.008em;
     line-height: 1.25;
@@ -431,7 +720,7 @@
     padding: 0;
     color: currentColor;
     opacity: 0.5;
-    font-size: 13px;
+    font-size: 14.5px;
     line-height: 1;
     transition: opacity 0.13s ease, background 0.13s ease;
 }
@@ -473,9 +762,9 @@
     flex: none;
     border: 0;
     background: none;
-    padding: 12px 16px 14px;
+    padding: 8px 16px 12px;
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 550;
     letter-spacing: -0.005em;
     transition: color 0.13s ease;
@@ -485,13 +774,16 @@
     color: var(--cs-blue);
 }
 
+/* The empty-state hint. Smaller and tighter than it was: at 13.5px/1.5 it
+   wrapped to two lines inside a 50%-width card, which made the emptiest
+   possible state the tallest thing in the Subjective row. */
 .cs-picker-hint {
-    padding: 4px 16px 0;
+    padding: 6px 16px 0;
     margin: 0;
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 450;
-    line-height: 1.5;
+    line-height: 1.45;
 }
 
 /* ── the search dropdown (portal) ── */
@@ -519,7 +811,7 @@
     background: none;
     padding: 8px 10px;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 550;
     letter-spacing: -0.008em;
     text-align: left;
@@ -537,7 +829,7 @@
 .cs-drop-zone {
     flex: none;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -547,7 +839,7 @@
     padding: 14px 12px;
     margin: 0;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 14px;
     text-align: center;
 }
 
@@ -559,22 +851,40 @@
    with two different numbers.
    ════════════════════════════════════════════════════════════ */
 
+/* A compact clinical readout, not a row of dashboard tiles. The label sits
+   above the value, left-aligned, and the cell is only as tall as the two
+   lines need — these are numbers a doctor scans, not KPIs to be celebrated. */
 .cs-meas-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
-    gap: 10px;
-    padding: 12px 16px 16px;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 6px;
+    padding: var(--cs-s3) var(--cs-s4) var(--cs-s4);
+}
+
+/* Two-input fields need two cells. Verified in the browser: at a single cell
+   width blood pressure rendered as "12(/ 80" — the systolic box clipped its
+   own digits, which on a vitals readout is worse than not showing it. */
+.cs-meas.is-wide {
+    grid-column: span 2;
+}
+
+/* Across two cells the two inputs would each take half the width and strand
+   the slash in the middle ("120        / 80"). They are one reading, so they
+   stay adjacent and the cell's extra width becomes trailing space. */
+.cs-meas.is-wide .cs-meas-value:not(.cs-meas-gpla) input {
+    flex: none;
+    width: 2.6em;
 }
 
 .cs-meas {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 5px;
+    align-items: flex-start;
+    gap: 1px;
     border: 1px solid var(--cs-line);
-    border-radius: 11px;
+    border-radius: var(--cs-radius-sm);
     background: #fff;
-    padding: 11px 10px 12px;
+    padding: var(--cs-s2) 10px 9px;
     transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
 }
 
@@ -596,10 +906,10 @@
 }
 
 .cs-meas-label {
-    color: var(--cs-muted);
+    color: var(--cs-faint);
     font-size: 11.5px;
     font-weight: 550;
-    letter-spacing: -0.005em;
+    letter-spacing: 0.01em;
     white-space: nowrap;
 }
 
@@ -610,8 +920,8 @@
 .cs-meas-value {
     display: flex;
     align-items: baseline;
-    justify-content: center;
-    gap: 5px;
+    justify-content: flex-start;
+    gap: 4px;
     width: 100%;
 }
 
@@ -622,11 +932,13 @@
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 21px;
-    font-weight: 660;
-    letter-spacing: -0.025em;
-    line-height: 1.15;
-    text-align: center;
+    /* Large enough to be the thing you read, small enough not to become a
+       dashboard KPI. Tabular figures so a column of numbers aligns. */
+    font-size: 18px;
+    font-weight: 640;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    text-align: left;
     font-variant-numeric: tabular-nums;
     outline: none;
     box-shadow: none;
@@ -639,9 +951,15 @@
     box-shadow: none;
 }
 
+/* A placeholder must never be mistakable for a reading. Seen in the browser
+   2026-08-12: "120 / 80" and "98.6" sitting at value weight in mid-grey read
+   as RECORDED VITALS at a glance — on a screen whose whole job is to be
+   glanced at, and whose numbers feed the ranking engine. Much fainter, and
+   at normal weight rather than the value's 640, so the difference between
+   "not taken" and "taken" is unmistakable without reading the digits. */
 .cs-meas input::placeholder {
-    color: #cbd5e1;
-    font-weight: 500;
+    color: #d7dde6;
+    font-weight: 400;
 }
 
 .cs-meas.is-warn input {
@@ -651,7 +969,7 @@
 .cs-meas-slash {
     flex: none;
     color: #cbd5e1;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 300;
 }
 
@@ -665,24 +983,30 @@
     border-color: var(--cs-line-strong);
     background: none;
     color: var(--cs-faint);
+    align-items: stretch;
     justify-content: center;
+    /* Matches a field cell's height so the row has one baseline — without
+       this the button collapsed and fell out of the grid visually. */
+    min-height: 52px;
     padding: 0;
 }
 
+/* The way in is a control, not a field — it should not occupy a full cell's
+   worth of height beside numbers that are two lines tall. */
 .cs-meas-add {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
     gap: 5px;
     width: 100%;
     height: 100%;
     border: 0;
-    border-radius: 11px;
+    border-radius: var(--cs-radius-sm);
     background: none;
-    padding: 11px 10px 12px;
+    padding: var(--cs-s2) 8px;
     color: inherit;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 560;
     transition: color 0.13s ease, background 0.13s ease;
 }
@@ -690,6 +1014,86 @@
 .cs-meas-add:hover:not(:disabled) {
     background: #f8fafc;
     color: var(--cs-blue);
+}
+
+/* ── specialty chart launchers ────────────────────────────────────────
+   The odontogram, body map and growth curve used to render inline, each
+   as a full card in the left column, on every single consultation for a
+   facility whose profile enabled them. That is a large permanent surface
+   for something a dentist opens a few times a day and reads at a glance
+   the rest of the time — and it pushed the ranked columns below the fold.
+
+   They are launchers now. A chart sits in this grid as a PEER OF THE
+   FIELDS — same cell, same size, same border — because that is exactly
+   what it is: another thing this facility records, alongside temperature.
+   The specialty profile decides which ones appear here, the same way it
+   decides which numeric fields appear; clicking one opens the real chart
+   full size in `ChartSurface`, where the interaction actually fits.
+
+   Deliberately NOT a small icon button in a corner: a dentist's primary
+   record must not be visually quieter than a pulse reading. */
+.cs-meas-tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cs-s2);
+    border: 1px solid var(--cs-line);
+    border-radius: 11px;
+    background: #fff;
+    padding: 11px 10px 12px;
+    color: var(--cs-ink);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+}
+
+.cs-meas-tool:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--cs-blue-soft);
+}
+
+.cs-meas-tool:focus-visible {
+    outline: none;
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
+}
+
+.cs-meas-tool:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+/* The icon is the object here, so it carries the weight a numeric field
+   gives its value — not the 12px afterthought these were before. */
+.cs-meas-tool-icon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+.cs-meas-tool-label {
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 570;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+}
+
+/* A chart holding findings must not look like an empty one — same rule as
+   `.cs-meas.is-filled` for the numbers beside it. */
+.cs-meas-tool.is-filled {
+    border-color: var(--cs-line-strong);
+}
+
+.cs-meas-tool.is-filled .cs-meas-tool-icon {
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
 }
 
 .cs-meas-menu {
@@ -713,7 +1117,7 @@
     background: none;
     padding: 8px 10px;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 520;
     text-align: left;
 }
@@ -728,6 +1132,61 @@
    never eagerly rendered here (AttachmentsCard fetches nothing until the
    doctor clicks View) so there is no image to lay out — a type icon, a
    label and a size is the whole row. */
+/* ── the collapsed attachments card ───────────────────────────────────────
+   Most consultations attach nothing ("structured first, artifact when
+   necessary"), and the empty state used to spend a whole card plus a
+   two-line explanation saying so — directly above the ranked columns that
+   needed the room. Empty is now one row: title on the left, the way in on
+   the right, no body at all. */
+.cs-attach.is-compact {
+    flex: none;
+}
+
+.cs-attach.is-compact .cs-card-head {
+    padding-bottom: var(--cs-s4);
+}
+
+/* The body still renders so an upload error has somewhere to land; with no
+   items and no error it has nothing in it and must not add height. */
+.cs-attach.is-compact .cs-attach-body {
+    padding: 0;
+    gap: 0;
+}
+
+.cs-attach.is-compact .cs-attach-body:empty {
+    display: none;
+}
+
+.cs-attach-add.is-inhead {
+    position: relative;
+    margin-left: auto;
+}
+
+.cs-attach-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    min-height: var(--cs-hit);
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 0 var(--cs-s3);
+    color: var(--cs-muted);
+    font-size: 13px;
+    font-weight: 560;
+    transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease;
+}
+
+.cs-attach-trigger:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+.cs-attach-trigger:disabled {
+    opacity: 0.55;
+}
+
 .cs-attach-input-hidden {
     display: none;
 }
@@ -742,7 +1201,7 @@
     margin: 0;
     padding: var(--cs-s1) 2px var(--cs-s2);
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 14px;
     line-height: 1.5;
 }
 
@@ -758,7 +1217,7 @@
 
 .cs-attach-row.is-busy {
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 13.5px;
 }
 
 .cs-attach-icon {
@@ -783,7 +1242,7 @@
 .cs-attach-label {
     overflow: hidden;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 560;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -792,7 +1251,7 @@
 .cs-attach-size {
     flex: none;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 13px;
 }
 
 .cs-attach-action {
@@ -841,7 +1300,7 @@
     border-radius: 5px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
-    font-size: 11px;
+    font-size: 12.5px;
     font-style: normal;
     font-weight: 600;
 }
@@ -869,7 +1328,7 @@
     background: none;
     padding: 4px 11px;
     color: var(--cs-ink);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 560;
     transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
 }
@@ -889,7 +1348,7 @@
     border: 1px solid var(--cs-line-strong);
     border-radius: 8px;
     padding: 6px 9px;
-    font-size: 12px;
+    font-size: 13.5px;
 }
 
 .cs-attach-tagsave {
@@ -899,7 +1358,7 @@
     background: var(--cs-blue);
     padding: 6px 12px;
     color: #fff;
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 600;
 }
 
@@ -965,7 +1424,7 @@
 
 .cs-odo-side {
     fill: var(--cs-faint);
-    font-size: 7.5px;
+    font-size: 8.5px;
     font-weight: 700;
     letter-spacing: 0.09em;
 }
@@ -1025,7 +1484,7 @@
 
 .cs-odo-num {
     fill: var(--cs-faint);
-    font-size: 8px;
+    font-size: 9px;
     font-weight: 700;
     text-anchor: middle;
     pointer-events: none;
@@ -1066,7 +1525,7 @@
     border-radius: 5px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
-    font-size: 11px;
+    font-size: 12.5px;
     font-style: normal;
     font-weight: 600;
 }
@@ -1077,7 +1536,7 @@
 .cs-odo-scope {
     margin: 0;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     line-height: 1.45;
 }
 
@@ -1086,7 +1545,7 @@
     flex-wrap: wrap;
     gap: 4px 12px;
     margin: 0 0 4px;
-    font-size: 11px;
+    font-size: 12.5px;
     color: var(--cs-muted);
 }
 
@@ -1136,7 +1595,7 @@
 }
 
 .cs-dchart-panel-title {
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--cs-ink);
 }
@@ -1158,7 +1617,7 @@
 .cs-attach-error {
     margin: 2px 0 0;
     color: #b23a2c;
-    font-size: 12px;
+    font-size: 13.5px;
 }
 
 .cs-spin {
@@ -1179,7 +1638,7 @@
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 19px;
+    font-size: 20px;
     font-weight: 660;
     letter-spacing: -0.02em;
     line-height: 1.15;
@@ -1210,7 +1669,7 @@
 .cs-meas-mark {
     margin-left: 4px;
     color: var(--cs-blue);
-    font-size: 12px;
+    font-size: 13.5px;
     font-style: normal;
     font-weight: 700;
 }
@@ -1244,7 +1703,7 @@
     height: 38px;
     max-width: 118px;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 580;
 }
 
@@ -1263,36 +1722,52 @@
 
 /* ── one ranked medicine ── */
 
+/* ── a ranked medicine is an OBJECT, not a table row (2026-08-12) ─────────
+   These were hairline-separated rows on the card's white — visually
+   identical to the tests, referrals and advice beside them. A medicine is
+   the one thing on this screen that carries a brand, a molecule, a dose and
+   a guard, and it is what the consultation is usually FOR. It should read as
+   a distinct object you could pick up.
+
+   So each one is its own surface: a soft vertical wash off the page tint,
+   a hairline, and a barely-there gloss along the top edge. Restrained on
+   purpose — the gradient is a few percent of luminance, not a coloured
+   card. Colour here still belongs to clinical meaning (§12.1), so the
+   accepted and guarded states below are the only places it appears. */
 .cs-rec {
     position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 3px 11px;
+    border: 1px solid var(--cs-line);
     border-radius: 10px;
-    padding: 10px 8px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 249, 252, 0.9));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 1px 1px rgba(16, 28, 46, 0.03);
+    padding: 10px;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
 }
 
-.cs-rec + .cs-rec::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 8px;
-    right: 8px;
-    border-top: 1px solid var(--cs-line);
+.cs-rec + .cs-rec {
+    margin-top: 6px;
 }
 
 .cs-rec:hover {
-    background: #f8fafc;
+    border-color: var(--cs-line-strong);
+    background: linear-gradient(180deg, #ffffff, #f4f7fb);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        0 2px 5px rgba(16, 28, 46, 0.06);
 }
 
-.cs-rec:hover::before,
-.cs-rec:hover + .cs-rec::before {
-    border-color: transparent;
-}
-
+/* Taken. Green is the "taken" colour in the palette and this is that event —
+   the one place a medicine card is allowed to carry a hue. */
 .cs-rec.is-added {
-    background: #f0fdf4;
+    border-color: rgba(22, 163, 74, 0.3);
+    background: linear-gradient(180deg, #f4fdf7, #ecfbf1);
 }
 
 /* A guarded item stays visible at its real rank, in red, saying
@@ -1312,7 +1787,7 @@
     border-radius: 50%;
     background: var(--cs-teal);
     color: #fff;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
@@ -1352,7 +1827,7 @@
     gap: 6px;
     min-width: 0;
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 15px;
     font-weight: 660;
     letter-spacing: -0.014em;
     line-height: 1.25;
@@ -1371,7 +1846,7 @@
 
 .cs-ident-comp {
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 500;
     letter-spacing: -0.004em;
     line-height: 1.3;
@@ -1502,7 +1977,7 @@
     background: none;
     padding: 13px;
     color: var(--cs-blue);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 620;
     letter-spacing: -0.005em;
     transition: background 0.13s ease;
@@ -1525,7 +2000,7 @@
 
 .cs-brands-or {
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
 }
 
@@ -1538,7 +2013,7 @@
     background: #fff;
     padding: 3px 9px;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -1554,7 +2029,7 @@
 
 .cs-brand-star {
     color: #d97706;
-    font-size: 11px;
+    font-size: 12.5px;
 }
 
 .cs-brand.is-skeleton {
@@ -1568,7 +2043,7 @@
     grid-column: 2 / -1;
     margin-top: 5px;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 500;
     line-height: 1.5;
 }
@@ -1579,7 +2054,7 @@
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 620;
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -1591,7 +2066,7 @@
     margin-top: 8px;
     border-left: 2px solid currentColor;
     padding: 1px 0 1px 10px;
-    font-size: 12px;
+    font-size: 13.5px;
     line-height: 1.5;
 }
 
@@ -1600,7 +2075,7 @@
 
 .cs-reason strong {
     display: block;
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 700;
     letter-spacing: -0.005em;
 }
@@ -1618,7 +2093,7 @@
     background: #fff;
     padding: 5px 11px;
     color: inherit;
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 650;
     letter-spacing: -0.005em;
     transition: background 0.13s ease, color 0.13s ease;
@@ -1648,7 +2123,7 @@
     flex: none;
     border-radius: 999px;
     padding: 2px 8px;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 650;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -1690,7 +2165,7 @@
     position: relative;
     padding-bottom: 11px;
     color: var(--cs-violet);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 700;
     letter-spacing: 0.045em;
     text-transform: uppercase;
@@ -1713,7 +2188,7 @@
     gap: 7px;
     padding-bottom: 9px;
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 500;
 }
 
@@ -1773,7 +2248,7 @@
 
 .cs-sug-kind {
     display: block;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.07em;
     line-height: 1.3;
@@ -1792,7 +2267,7 @@
     gap: 8px;
     margin-top: 2px;
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 15px;
     font-weight: 640;
     letter-spacing: -0.014em;
     line-height: 1.3;
@@ -1802,7 +2277,7 @@
     display: block;
     margin-top: 2px;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 500;
 }
 
@@ -1814,7 +2289,7 @@
     background: #fff;
     padding: 6px 13px;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 620;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -1856,18 +2331,27 @@
     padding: 4px 0 8px;
 }
 
+/* Group headers carry the rail's hierarchy. Each one gets a hairline above
+   it and real air, so the rail reads as DIAGNOSIS / MEDICINES / INVESTIGATIONS
+   at a glance instead of as one continuous column of text. */
 .cs-group-head {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 13px 16px 4px;
+    padding: 14px 16px 6px;
+}
+
+.cs-group-head:not(:first-child) {
+    margin-top: 6px;
+    border-top: 1px solid var(--cs-line);
+    padding-top: 14px;
 }
 
 .cs-group-title {
-    color: var(--cs-muted);
-    font-size: 11px;
+    color: var(--cs-ink);
+    font-size: 11.5px;
     font-weight: 700;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
 }
 
@@ -1880,7 +2364,7 @@
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 620;
     letter-spacing: -0.005em;
 }
@@ -1902,6 +2386,51 @@
 .cs-line.is-click:hover { background: #f8fafc; }
 .cs-line.is-active { background: #f8fafc; border-left-color: var(--cs-blue); }
 
+/* ── just added ───────────────────────────────────────────────────────────
+   A line that arrived in the last couple of seconds. The doctor accepts from
+   a ranked panel two columns away, so the summary has to say WHERE it landed.
+
+   Green, because this is the "taken" colour in the palette (§12.1) and this
+   is exactly that event. It SETTLES rather than persisting: "recently added"
+   is a fact about the last few seconds, not a property of the prescription,
+   and a permanent badge would still be sitting there at print time claiming
+   something false. The class is removed by `useJustAdded` after 2.6s; the
+   animation runs once and lands on the resting state so the two can never
+   disagree about what the row looks like. */
+.cs-line.is-new {
+    animation: cs-line-arrive 2.6s ease-out 1;
+}
+
+@keyframes cs-line-arrive {
+    0% {
+        background: rgba(22, 163, 74, 0.14);
+        border-left-color: var(--cs-green);
+    }
+    70% {
+        background: rgba(22, 163, 74, 0.09);
+        border-left-color: var(--cs-green);
+    }
+    100% {
+        background: transparent;
+        border-left-color: transparent;
+    }
+}
+
+/* An arriving line must not out-shout the one the doctor has open. */
+.cs-line.is-new.is-active {
+    animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* No fade, but the information is not optional — hold the mark statically
+       for the same window instead of animating it away. */
+    .cs-line.is-new {
+        animation: none;
+        background: rgba(22, 163, 74, 0.10);
+        border-left-color: var(--cs-green);
+    }
+}
+
 .cs-line-main { min-width: 0; }
 
 .cs-line-name {
@@ -1909,7 +2438,7 @@
     align-items: baseline;
     gap: 7px;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 620;
     letter-spacing: -0.012em;
     line-height: 1.3;
@@ -1918,7 +2447,7 @@
 .cs-line-sub {
     margin-top: 1px;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 500;
     letter-spacing: -0.004em;
 }
@@ -1935,7 +2464,7 @@
     border-radius: 6px;
     background: none;
     color: var(--cs-faint);
-    font-size: 15px;
+    font-size: 16px;
     line-height: 1;
     transition: background 0.13s ease, color 0.13s ease;
 }
@@ -1950,7 +2479,7 @@
     background: #f1f5f9;
     padding: 1px 6px;
     color: var(--cs-muted);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -1961,25 +2490,30 @@
     color: #b45309;
 }
 
+/* The rail's empty state. Was 40px of vertical padding around an icon, a
+   heading and three lines of prose — roughly 150px spent telling the doctor
+   that nothing has happened yet, at the exact moment of the consultation
+   when the screen should be at its shortest. It says the same thing in a
+   third of the room. */
 .cs-plan-empty {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 40px 22px;
+    gap: 4px;
+    padding: 18px 20px 22px;
     text-align: center;
 }
 
 .cs-plan-empty strong {
-    color: var(--cs-ink);
+    color: var(--cs-muted);
     font-size: 13px;
-    font-weight: 620;
+    font-weight: 600;
 }
 
 .cs-plan-empty span {
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 450;
-    line-height: 1.55;
+    line-height: 1.5;
 }
 
 /* ── companion slot: attached to the medicine that triggered it ──
@@ -2023,7 +2557,7 @@
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 620;
     letter-spacing: -0.005em;
     text-align: left;
@@ -2041,7 +2575,7 @@
     background: #f8fafc;
     padding: 1px 7px;
     color: var(--cs-faint);
-    font-size: 9.5px;
+    font-size: 10.5px;
     font-weight: 650;
     letter-spacing: 0.015em;
     white-space: nowrap;
@@ -2057,7 +2591,7 @@
 .cs-comp-why,
 .cs-comp-guard {
     margin-top: 1px;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 500;
     line-height: 1.4;
 }
@@ -2109,7 +2643,7 @@
 
 .cs-dose-field > span {
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 650;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -2123,7 +2657,7 @@
     background: #fff;
     padding: 5px 9px;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 550;
     outline: none;
 }
@@ -2152,7 +2686,7 @@
     border-radius: 5px;
     background: none;
     color: var(--cs-muted);
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1;
 }
 
@@ -2161,7 +2695,7 @@
 .cs-stepper b {
     min-width: 22px;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 650;
     text-align: center;
     font-variant-numeric: tabular-nums;
@@ -2179,7 +2713,7 @@
     border-radius: 6px;
     background: #fff;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 660;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
 }
@@ -2204,7 +2738,7 @@
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 620;
 }
 
@@ -2225,7 +2759,7 @@
     background: #fff;
     padding: 4px 10px;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: -0.005em;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
@@ -2253,7 +2787,7 @@
     background: #fff;
     padding: 10px 12px;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 500;
     line-height: 1.5;
     resize: vertical;
@@ -2286,7 +2820,26 @@
     transition: background 0.14s ease;
 }
 
-.cs-print:hover { background: #1c2f4a; }
+.cs-print:hover:not(:disabled) { background: #1c2f4a; }
+
+/* ── disabled actions ─────────────────────────────────────────────────────
+   Both of these are filled buttons, and neither had a disabled style — so an
+   empty plan got the browser's default wash over a solid navy and a solid
+   teal. Seen in the browser 2026-08-12: it reads as BROKEN, not as inactive.
+   A disabled action should look like an outline waiting to be filled. */
+.cs-print:disabled,
+.cs-review:disabled {
+    border: 1px solid var(--cs-line-strong);
+    background: none;
+    color: var(--cs-faint);
+    cursor: default;
+}
+
+.cs-review:disabled .cs-kbd {
+    border-color: var(--cs-line-strong);
+    background: none;
+    color: var(--cs-faint);
+}
 
 .cs-review {
     display: flex;
@@ -2299,7 +2852,7 @@
     background: #0e7c66;
     padding: 13px;
     color: #fff;
-    font-size: 13.5px;
+    font-size: 15px;
     font-weight: 660;
     letter-spacing: -0.008em;
     transition: background 0.14s ease;
@@ -2328,7 +2881,7 @@
     border-top: 1px solid var(--cs-line);
     padding: 11px 22px;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 500;
     letter-spacing: -0.003em;
 }
@@ -2407,7 +2960,7 @@
     background: #fff;
     padding: 13px 0 7px;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -2418,7 +2971,7 @@
     background: #f1f5f9;
     padding: 0 6px;
     color: var(--cs-muted);
-    font-size: 11px;
+    font-size: 12.5px;
     letter-spacing: 0;
     font-variant-numeric: tabular-nums;
 }
@@ -2435,7 +2988,7 @@
     background: #fff;
     padding: 5px 10px;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 550;
     letter-spacing: -0.006em;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
@@ -2458,7 +3011,7 @@
     border-top: 1px solid var(--cs-line);
     padding: 11px 16px;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 450;
 }
 
@@ -2468,7 +3021,7 @@
     background: #f8fafc;
     padding: 1px 5px;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 620;
 }
 
@@ -2490,13 +3043,13 @@
 
 .cs-empty strong {
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 15px;
     font-weight: 620;
 }
 
 .cs-empty span {
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 450;
     line-height: 1.55;
     max-width: 260px;
@@ -2523,7 +3076,7 @@
     flex: none;
     margin: 9px 16px 0;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 450;
     line-height: 1.5;
 }
@@ -2554,7 +3107,7 @@
     border-radius: 50%;
     background: none;
     color: var(--cs-faint);
-    font-size: 9.5px;
+    font-size: 10.5px;
     font-style: italic;
     font-weight: 700;
     font-family: Georgia, "Times New Roman", serif;
@@ -2584,7 +3137,7 @@
 
 .cs-why-title {
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 660;
     letter-spacing: -0.01em;
 }
@@ -2592,7 +3145,7 @@
 .cs-why-sub {
     margin-top: 3px;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 480;
 }
 
@@ -2613,7 +3166,7 @@
 
 .cs-why-name {
     color: var(--cs-ink);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 550;
     letter-spacing: -0.005em;
 }
@@ -2644,14 +3197,14 @@
 
 .cs-why-against {
     color: var(--cs-amber);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     letter-spacing: 0.01em;
 }
 
 .cs-why-rest {
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 13px;
     font-weight: 480;
 }
 
@@ -2660,32 +3213,37 @@
     background: #fafbfd;
     padding: 10px 14px 11px;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 450;
     line-height: 1.5;
 }
 
 /* ── responsive ────────────────────────────────────────────── */
 
-@media (max-width: 1500px) {
-    /* Three across stops being readable before the rest of the page does.
-       Two-and-one keeps every card at a usable width and keeps Possible
-       Conditions on the same band as the chart it reads. */
-    .cs-pickers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 1400px) {
-    .cs-body { grid-template-columns: minmax(0, 2.5fr) minmax(310px, 1fr); }
-    .cs-engine { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    /* The strip gives up width before the consultation column does — the
+       ranked lists tolerate a narrower row better than wrapping chips do. */
+    .cs-page { grid-template-columns: minmax(0, 1fr) minmax(360px, 400px); }
 }
 
 @media (max-width: 1180px) {
-    .cs-pickers { grid-template-columns: 1fr; }
-    .cs-body { grid-template-columns: 1fr; }
-    /* Stacked, there is no second column to match, so a fixed height would
-       only crop one card for no reason. */
-    .cs-engine { grid-template-columns: 1fr; height: auto; }
-    .cs-engine > .cs-card { overflow: visible; }
+    /* One column. The strip stops being a strip and becomes the last section
+       of the page, which is the only honest thing it can be at this width. */
+    .cs-page { grid-template-columns: 1fr; }
+    .cs-row-sub,
+    .cs-row-obj,
+    .cs-row-exam { grid-template-columns: 1fr; }
+    /* Nothing is beside anything at this width, so there is no neighbour to
+       stretch and a bounded height would crop for no reason. */
+    .cs-row-plan {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .cs-row-plan > .cs-card { overflow: visible; }
+    .cs-summary {
+        position: static;
+        max-height: none;
+    }
     .cs-plan { position: static; max-height: none; }
 }
 
@@ -2759,7 +3317,7 @@
    the reader to guess. */
 .cs-body-orient {
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
 }
 
 /* The chart modal — where the odontogram and the body map go when the doctor
@@ -2786,6 +3344,19 @@
     color: var(--cs-blue);
 }
 
+/* The growth chart carries its metric switch into the modal, since which
+   curve you are reading is part of the chart and not of the card that used
+   to frame it. */
+.cs-growth-modal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+}
+
+.cs-growth-modal .cs-growth-toggle {
+    align-self: flex-start;
+}
+
 .cs-chartmodal {
     position: fixed;
     inset: 0;
@@ -2804,11 +3375,14 @@
     backdrop-filter: blur(14px) saturate(1.1);
 }
 
+/* Widened 2026-08-12: these are now the ONLY place the odontogram and body
+   map render, not an occasional enlargement of an inline card, so the panel
+   should be sized for the chart rather than for a peek at it. */
 .cs-chartmodal-panel {
     position: relative;
     display: flex;
     flex-direction: column;
-    width: min(760px, 100%);
+    width: min(920px, 100%);
     max-height: 100%;
     border: 1px solid rgba(255, 255, 255, 0.85);
     border-radius: 22px;
@@ -2829,7 +3403,7 @@
 
 .cs-chartmodal-title {
     color: var(--cs-ink);
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 700;
     letter-spacing: 0.055em;
     text-transform: uppercase;
@@ -2872,7 +3446,7 @@
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
 }
 
@@ -2893,7 +3467,7 @@
 
 .cs-meas-gpla-letter {
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 12.5px;
     font-style: normal;
     font-weight: 700;
 }
@@ -2905,7 +3479,7 @@
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 19px;
+    font-size: 20px;
     font-weight: 660;
 }
 
@@ -2938,7 +3512,7 @@
     background: transparent;
     border-radius: 6px;
     padding: 3px 9px;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--cs-muted);
     cursor: pointer;
@@ -2967,12 +3541,12 @@
 }
 
 .cs-growth-tick {
-    font-size: 8px;
+    font-size: 9px;
     fill: var(--cs-faint);
 }
 
 .cs-growth-band-label {
-    font-size: 7.5px;
+    font-size: 8.5px;
     font-weight: 700;
 }
 
@@ -3001,20 +3575,20 @@
 }
 
 .cs-growth-z {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--cs-ink);
     font-variant-numeric: tabular-nums;
 }
 
 .cs-growth-pct {
-    font-size: 12px;
+    font-size: 13.5px;
     color: var(--cs-muted);
     font-variant-numeric: tabular-nums;
 }
 
 .cs-growth-class {
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 600;
     color: var(--cs-ink);
     margin-left: auto;
@@ -3027,7 +3601,7 @@
 .is-severely-stunted .cs-growth-class { color: var(--cs-red); }
 
 .cs-growth-tail {
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--cs-faint);
     border: 1px solid var(--cs-line-strong);
@@ -3042,7 +3616,7 @@
     align-items: flex-start;
     gap: 6px;
     margin: 6px 0 0;
-    font-size: 12px;
+    font-size: 13.5px;
     line-height: 1.5;
     color: var(--cs-muted);
 }
@@ -3055,7 +3629,402 @@
 
 .cs-growth-foot {
     margin: 8px 0 0;
-    font-size: 11px;
+    font-size: 12.5px;
     color: var(--cs-faint);
     line-height: 1.45;
+}
+
+/* ════════════════════════════════════════════════════════════
+   ASSESSMENT — a compact decision interface (2026-08-12)
+
+   This replaced a full-size "Possible Conditions" panel. The
+   problem was not its size, it was its shape: a ranked list
+   presented as the section called Assessment implies the engine
+   is doing the assessing. It is not, and must never look as
+   though it is.
+
+   So the module is split. The LEFT is the doctor's decision —
+   a search field and the confirmed diagnoses as chips. The
+   RIGHT is the engine's reading, explicitly titled as
+   suggestions and carrying relevance rather than certainty.
+   A confirmed diagnosis and a ranked possibility never share
+   an object, a column, or a visual weight.
+   ════════════════════════════════════════════════════════════ */
+
+/* One column. Search, then what has been chosen, then what is ranked —
+   sequence, not adjacency. */
+.cs-assess-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    padding: var(--cs-s3) var(--cs-s4) var(--cs-s4);
+}
+
+.cs-assess-decide {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    min-width: 0;
+}
+
+/* The ranked list, separated from the decision above it by a rule rather
+   than by a column. */
+.cs-assess-ranked {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--cs-line);
+    padding-top: var(--cs-s3);
+}
+
+.cs-assess-ranked-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cs-s2);
+}
+
+.cs-assess-ranked-title {
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.cs-assess-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cs-assess-slot-label {
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.cs-assess-slot-empty {
+    color: var(--cs-faint);
+    font-size: 13px;
+    font-weight: 450;
+}
+
+.cs-assess-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* ── the confirmed diagnosis chip ── */
+.cs-dx {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    max-width: 100%;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 5px 6px 5px 11px;
+}
+
+.cs-dx-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cs-faint);
+}
+
+/* Primary carries the accent; secondary stays neutral. The distinction is
+   the doctor's ranking of their own conclusions, so it earns colour where
+   the engine's ranking does not. */
+.cs-dx.is-primary {
+    border-color: rgba(124, 58, 237, 0.34);
+    background: var(--cs-violet-soft);
+}
+
+.cs-dx.is-primary .cs-dx-dot {
+    background: var(--cs-violet);
+}
+
+.cs-dx-label {
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 560;
+    letter-spacing: -0.005em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-dx-x {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+
+.cs-dx-x:hover {
+    background: rgba(11, 23, 51, 0.06);
+    color: var(--cs-ink);
+}
+
+/* ── the engine's side ── */
+.cs-assess-ai {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-left: 1px solid var(--cs-line);
+    padding-left: var(--cs-s5);
+}
+
+.cs-assess-ai-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cs-s2);
+}
+
+.cs-assess-ai-title {
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+/* The assessment module never scrolls internally — it is compact by
+   construction, and a scroll inside a decision surface hides options. */
+.cs-assess .cs-list {
+    overflow: visible;
+}
+
+@media (max-width: 1180px) {
+    /* The two halves of Assessment stack, and the divider becomes a rule
+       above the engine's side rather than beside it. */
+    .cs-assess-body { grid-template-columns: 1fr; gap: var(--cs-s4); }
+    .cs-assess-ai {
+        border-left: 0;
+        border-top: 1px solid var(--cs-line);
+        padding-left: 0;
+        padding-top: var(--cs-s3);
+    }
+}
+
+/* The molecule under a brand-matched search hit. Brand is the headline
+   (see IntentSearch.tsx); this is what it actually is. */
+.cs-sug-molecule {
+    color: var(--cs-muted);
+    font-weight: 600;
+}
+
+/* ════════════════════════════════════════════════════════════
+   ADD MEDICINE SHEET — the confirm step (2026-08-12)
+   Brand is the headline; the molecule is the subtitle. Never
+   the other way round: the doctor prescribes a product and the
+   patient buys a product.
+   ════════════════════════════════════════════════════════════ */
+.cs-addmed {
+    position: fixed;
+    inset: 0;
+    z-index: 820;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+}
+.cs-addmed-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 23, 51, 0.3);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+.cs-addmed-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(520px, 100%);
+    max-height: 100%;
+    border: 1px solid #fff;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fff, #f7f9fc);
+    box-shadow: 0 32px 64px -28px rgba(11, 23, 51, 0.5);
+    overflow: hidden;
+}
+.cs-addmed-head {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s3);
+    flex: none;
+    border-bottom: 1px solid var(--cs-line);
+    padding: var(--cs-s4);
+}
+.cs-addmed-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.cs-addmed-title strong {
+    color: var(--cs-ink);
+    font-size: 16px;
+    font-weight: 660;
+    letter-spacing: -0.015em;
+}
+.cs-addmed-title span {
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 500;
+}
+.cs-addmed-x {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--cs-hit);
+    height: var(--cs-hit);
+    margin-left: auto;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-addmed-x:hover { background: rgba(11, 23, 51, 0.06); color: var(--cs-ink); }
+.cs-addmed-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s4);
+    padding: var(--cs-s4);
+}
+.cs-addmed-sec { display: flex; flex-direction: column; gap: 6px; }
+.cs-addmed-label {
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+.cs-addmed-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--cs-s3);
+}
+.cs-addmed-input {
+    width: 100%;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 9px 11px;
+    color: var(--cs-ink);
+    font-size: 14.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.cs-addmed-input:focus {
+    outline: none;
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
+}
+.cs-addmed-brands { display: flex; flex-direction: column; gap: 5px; }
+.cs-addmed-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 9px 11px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.13s ease, background 0.13s ease;
+}
+.cs-addmed-brand.is-strength { display: inline-flex; }
+.cs-addmed-brand:hover { border-color: var(--cs-line-strong); }
+.cs-addmed-brand.is-on {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--cs-blue-soft);
+}
+.cs-addmed-brand-name {
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+.cs-addmed-tag {
+    margin-left: auto;
+    border-radius: 999px;
+    background: var(--cs-teal-soft);
+    padding: 2px 7px;
+    color: var(--cs-teal);
+    font-size: 10.5px;
+    font-weight: 650;
+}
+.cs-addmed-slots { display: flex; flex-wrap: wrap; gap: 5px; }
+.cs-addmed-slot {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 6px 12px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 560;
+    cursor: pointer;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+.cs-addmed-slot.is-on {
+    border-color: rgba(18, 104, 232, 0.5);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+.cs-addmed-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--cs-s2);
+    flex: none;
+    border-top: 1px solid var(--cs-line);
+    background: #fafbfc;
+    padding: var(--cs-s3) var(--cs-s4);
+}
+.cs-addmed-cancel {
+    border: 0;
+    border-radius: var(--cs-radius-sm);
+    background: none;
+    padding: 9px 14px;
+    color: var(--cs-muted);
+    font-size: 13.5px;
+    font-weight: 570;
+    cursor: pointer;
+}
+.cs-addmed-cancel:hover { background: rgba(11, 23, 51, 0.05); }
+.cs-addmed-confirm {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 0;
+    border-radius: var(--cs-radius-sm);
+    background: #0e7c66;
+    padding: 9px 16px;
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 640;
+    cursor: pointer;
+}
+.cs-addmed-confirm:hover:not(:disabled) { background: #0f8d74; }
+.cs-addmed-confirm:disabled {
+    border: 1px solid var(--cs-line-strong);
+    background: none;
+    color: var(--cs-faint);
+    cursor: default;
 }

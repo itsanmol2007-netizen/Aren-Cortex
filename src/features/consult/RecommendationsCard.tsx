@@ -52,9 +52,10 @@ const INLINE_ALTS = 3;
  * accepted, and anything pinned, is always shown regardless of the cap — what
  * the doctor took, or asked for, must never sit behind a "show more".
  */
-const CAP = 5;
 
 interface Props {
+    /** layout class from the output strip — which slot this panel occupies */
+    className?: string;
     /** the ranked medicines, in engine order */
     intents: PersonalizedIntent[];
     /** the strongest final score among them — the bar's denominator */
@@ -85,9 +86,8 @@ export function RecommendationsCard({
     intents, topScore, brands, brandsLoading, brandError, brandPreferences,
     acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept,
     isPinned, onTogglePin, onOpenBrandSheet, onExplain, ruleset, activeSignals,
-    hasChart, searchRef,
+    hasChart, searchRef, className = "",
 }: Props) {
-    const [expanded, setExpanded] = useState(false);
 
     const internalRef = useRef<HTMLInputElement>(null);
     const inputRef = (searchRef ?? internalRef) as React.RefObject<HTMLInputElement>;
@@ -128,13 +128,15 @@ export function RecommendationsCard({
         return [...pins, ...rest];
     }, [intents, isPinned]);
 
-    const shown = expanded
-        ? ordered
-        : [
-            ...ordered.slice(0, CAP),
-            ...ordered.slice(CAP).filter((i) => acceptedIntentIds.has(i.intentId)),
-        ];
-    const hidden = ordered.length - shown.length;
+    // The whole ranked list, always. This card is bounded by the output strip
+    // and `.cs-list` scrolls inside it, so there is nothing to expand INTO —
+    // the rest of the list is simply below the fold of its own panel, which is
+    // where a doctor already expects more rows to be.
+    //
+    // The cap-and-expand it replaces was actively harmful in the strip layout:
+    // expanding grew the card, which stretched its row, which left dead white
+    // space in the column beside it (Anmol, 2026-08-12).
+    const shown = ordered;
 
     const brandsFor = (intent: PersonalizedIntent) =>
         intent.refTable === "compositions" && intent.refId != null
@@ -230,7 +232,7 @@ export function RecommendationsCard({
     };
 
     return (
-        <section className="cs-card" aria-label="Medicine recommendations">
+        <section className={`cs-card ${className}`} aria-label="Medicine recommendations">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
                     <span className="cs-glyph is-teal"><Pill size={14} /></span>
@@ -255,13 +257,6 @@ export function RecommendationsCard({
             )}
 
             <div className="cs-list">{body()}</div>
-
-            {!isSearching && (hidden > 0 || expanded) && (
-                <button type="button" className="cs-more" onClick={() => setExpanded((v) => !v)}>
-                    {expanded ? "Show fewer" : `Show more medicines`}
-                    <ChevronDown size={14} style={{ transform: expanded ? "rotate(180deg)" : undefined }} />
-                </button>
-            )}
         </section>
     );
 }

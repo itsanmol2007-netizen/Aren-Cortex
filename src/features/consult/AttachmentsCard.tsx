@@ -142,13 +142,53 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
         }
     };
 
+    // Empty is the overwhelmingly common case — "structured first, artifact
+    // when necessary" means most consultations attach nothing at all. So an
+    // empty card collapses to a single row: title, the Attach control, and
+    // nothing else. It used to spend a full card and a two-line explanation
+    // on saying "there is nothing here", directly above the ranked columns
+    // that actually needed the room.
+    const isEmpty = items.length === 0 && !busy;
+
     return (
-        <section className="cs-card" aria-label="Attachments">
+        <section
+            className={`cs-card cs-attach${isEmpty ? " is-compact" : ""}`}
+            aria-label="Attachments"
+        >
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Paperclip size={14} /></span>
+                    <span className="cs-glyph is-slate"><Paperclip size={16} /></span>
                     Attachments
+                    {items.length > 0 && (
+                        <em>{items.length} file{items.length > 1 ? "s" : ""}</em>
+                    )}
                 </h2>
+
+                {/* The way in lives in the header when there is nothing to
+                    show, so the empty state costs one row instead of a card. */}
+                {isEmpty && (
+                    <div className="cs-attach-add is-inhead">
+                        <button
+                            type="button"
+                            className="cs-attach-trigger"
+                            disabled={disabled || !visitId}
+                            aria-expanded={menuOpen}
+                            onClick={() => setMenuOpen((v) => !v)}
+                        >
+                            <Paperclip size={15} />
+                            Attach
+                        </button>
+                        {menuOpen && (
+                            <div className="cs-meas-menu" role="menu">
+                                {ATTACHMENT_TYPES.map((t) => (
+                                    <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
+                                        {ATTACHMENT_TYPE_LABEL[t]}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <input
@@ -160,12 +200,6 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
             />
 
             <div className="cs-attach-body">
-                {items.length === 0 && !busy && (
-                    <p className="cs-attach-empty">
-                        X-rays, lab reports, ultrasound images — attached when a chip or a
-                        number can't say it.
-                    </p>
-                )}
 
                 {items.map((att) => (
                     <div key={att.id} className="cs-attach-item">
@@ -253,27 +287,31 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                     </div>
                 )}
 
-                <div className="cs-attach-add">
-                    <button
-                        type="button"
-                        className="cs-meas-add"
-                        disabled={disabled || !visitId || !!busy}
-                        aria-expanded={menuOpen}
-                        onClick={() => setMenuOpen((v) => !v)}
-                    >
-                        <Paperclip size={15} />
-                        <span className="cs-meas-label">Attach</span>
-                    </button>
-                    {menuOpen && (
-                        <div className="cs-meas-menu" role="menu">
-                            {ATTACHMENT_TYPES.map((t) => (
-                                <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
-                                    {ATTACHMENT_TYPE_LABEL[t]}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                {/* Once there IS something here, the way in returns to the
+                    body, below the list it adds to. */}
+                {!isEmpty && (
+                    <div className="cs-attach-add">
+                        <button
+                            type="button"
+                            className="cs-meas-add"
+                            disabled={disabled || !visitId || !!busy}
+                            aria-expanded={menuOpen}
+                            onClick={() => setMenuOpen((v) => !v)}
+                        >
+                            <Paperclip size={16} />
+                            <span className="cs-meas-label">Attach</span>
+                        </button>
+                        {menuOpen && (
+                            <div className="cs-meas-menu" role="menu">
+                                {ATTACHMENT_TYPES.map((t) => (
+                                    <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
+                                        {ATTACHMENT_TYPE_LABEL[t]}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {error && <p className="cs-attach-error">{error}</p>}
             </div>

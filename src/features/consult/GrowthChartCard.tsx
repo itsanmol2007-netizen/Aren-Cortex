@@ -33,6 +33,10 @@ interface Props {
     sex: Sex | null;
     weightKg: string;
     heightCm: string;
+    /** see DentalChartCard — "modal" means launcher-driven, nothing inline */
+    presentation?: "card" | "modal";
+    open?: boolean;
+    onClose?: () => void;
     disabled?: boolean;
 }
 
@@ -56,7 +60,10 @@ const BAND_STYLE: Record<string, { stroke: string; width: number; dash?: string 
 // Plot box, in SVG units.
 const W = 460, H = 240, PAD_L = 34, PAD_B = 24, PAD_T = 10, PAD_R = 8;
 
-export function GrowthChartCard({ ageMonths, sex, weightKg, heightCm, disabled = false }: Props) {
+export function GrowthChartCard({
+    ageMonths, sex, weightKg, heightCm,
+    presentation = "card", open = false, onClose, disabled = false,
+}: Props) {
     const [metric, setMetric] = useState<GrowthMetric>("weight-for-age");
     const [expanded, setExpanded] = useState(false);
 
@@ -139,92 +146,115 @@ export function GrowthChartCard({ ageMonths, sex, weightKg, heightCm, disabled =
         </svg>
     );
 
+    // The metric switch. Shared by both presentations, because which curve you
+    // are reading is part of the chart, not part of the card that framed it.
+    const metricToggle = (
+        <div className="cs-growth-toggle" role="tablist">
+            {METRICS.map((m) => (
+                <button
+                    key={m.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={metric === m.key}
+                    className={`cs-growth-tab${metric === m.key ? " is-on" : ""}`}
+                    onClick={() => setMetric(m.key)}
+                    disabled={disabled}
+                >
+                    {m.label}
+                </button>
+            ))}
+        </div>
+    );
+
+    /* Every reason this card cannot draw, said in words rather than left as an
+       empty box. Each one is a different fix. `large` only decides the plot
+       size, so the modal and the card can never disagree about WHAT they say —
+       there is one body, rendered at two scales. */
+    const renderBody = (large: boolean) =>
+        ageMonths === null ? (
+            <p className="cs-growth-note">
+                <Info size={14} />
+                Add this patient’s <strong>date of birth</strong> to plot growth. Age in years is not
+                precise enough — WHO’s standards are indexed by month.
+            </p>
+        ) : outOfRange ? (
+            <p className="cs-growth-note">
+                <Info size={14} />
+                WHO growth standards cover birth to 5 years. This patient is older, so no percentile
+                is shown rather than one read off a curve that does not apply.
+            </p>
+        ) : !sex ? (
+            <p className="cs-growth-note">
+                <Info size={14} />
+                Growth standards are published separately for boys and girls. Record the patient’s sex
+                to plot this.
+            </p>
+        ) : (
+            <>
+                <div className={`cs-growth-plot${large ? " is-large" : ""}`}>{chart}</div>
+
+                {reading ? (
+                    <div className={`cs-growth-readout is-${classify(reading)}`}>
+                        <span className="cs-growth-z">
+                            {reading.z > 0 ? "+" : ""}{reading.z} SD
+                        </span>
+                        <span className="cs-growth-pct">{reading.percentile}th centile</span>
+                        <span className="cs-growth-class">{CLASS_LABEL[classify(reading)]}</span>
+                        {reading.tailCorrected && (
+                            <span className="cs-growth-tail" title="Beyond ±3 SD, WHO rescales the tail rather than reading the raw curve">
+                                tail-corrected
+                            </span>
+                        )}
+                    </div>
+                ) : (
+                    <p className="cs-growth-note">
+                        <Info size={14} />
+                        Enter {metric === "weight-for-age" ? "a weight" : "a height"} in Measurements to
+                        place this visit on the chart.
+                    </p>
+                )}
+
+                {/* One visit is a dot. Faltering is a direction, and this
+                    card cannot yet show one — said plainly rather than
+                    letting a single point imply a trend. */}
+                <p className="cs-growth-foot">
+                    This visit only. Growth faltering is a <em>trajectory</em> — plotting past visits
+                    is not built yet.
+                </p>
+            </>
+        );
+
+    if (presentation === "modal") {
+        if (!open) return null;
+        return (
+            <ChartSurface title="Growth" expanded onClose={onClose ?? (() => {})}>
+                <div className="cs-growth-modal">
+                    {metricToggle}
+                    {renderBody(true)}
+                </div>
+            </ChartSurface>
+        );
+    }
+
     return (
         <section className="cs-card" aria-label="Growth chart">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><TrendingUp size={14} /></span>
+                    <span className="cs-glyph is-slate"><TrendingUp size={16} /></span>
                     Growth
                 </h2>
                 <div className="cs-growth-head-right">
-                    <div className="cs-growth-toggle" role="tablist">
-                        {METRICS.map((m) => (
-                            <button
-                                key={m.key}
-                                type="button"
-                                role="tab"
-                                aria-selected={metric === m.key}
-                                className={`cs-growth-tab${metric === m.key ? " is-on" : ""}`}
-                                onClick={() => setMetric(m.key)}
-                                disabled={disabled}
-                            >
-                                {m.label}
-                            </button>
-                        ))}
-                    </div>
+                    {metricToggle}
                     {curves && (
                         <button type="button" className="cs-chart-expand" onClick={() => setExpanded(true)}
                             aria-label="Open growth chart larger">
-                            <Maximize2 size={13} />
+                            <Maximize2 size={16} />
                         </button>
                     )}
                 </div>
             </div>
 
-            {/* Every reason this card cannot draw, said in words rather than
-                left as an empty box. Each one is a different fix. */}
-            {ageMonths === null ? (
-                <p className="cs-growth-note">
-                    <Info size={12} />
-                    Add this patient’s <strong>date of birth</strong> to plot growth. Age in years is not
-                    precise enough — WHO’s standards are indexed by month.
-                </p>
-            ) : outOfRange ? (
-                <p className="cs-growth-note">
-                    <Info size={12} />
-                    WHO growth standards cover birth to 5 years. This patient is older, so no percentile
-                    is shown rather than one read off a curve that does not apply.
-                </p>
-            ) : !sex ? (
-                <p className="cs-growth-note">
-                    <Info size={12} />
-                    Growth standards are published separately for boys and girls. Record the patient’s sex
-                    to plot this.
-                </p>
-            ) : (
-                <>
-                    <div className="cs-growth-plot">{chart}</div>
-
-                    {reading ? (
-                        <div className={`cs-growth-readout is-${classify(reading)}`}>
-                            <span className="cs-growth-z">
-                                {reading.z > 0 ? "+" : ""}{reading.z} SD
-                            </span>
-                            <span className="cs-growth-pct">{reading.percentile}th centile</span>
-                            <span className="cs-growth-class">{CLASS_LABEL[classify(reading)]}</span>
-                            {reading.tailCorrected && (
-                                <span className="cs-growth-tail" title="Beyond ±3 SD, WHO rescales the tail rather than reading the raw curve">
-                                    tail-corrected
-                                </span>
-                            )}
-                        </div>
-                    ) : (
-                        <p className="cs-growth-note">
-                            <Info size={12} />
-                            Enter {metric === "weight-for-age" ? "a weight" : "a height"} in Measurements to
-                            place this visit on the chart.
-                        </p>
-                    )}
-
-                    {/* One visit is a dot. Faltering is a direction, and this
-                        card cannot yet show one — said plainly rather than
-                        letting a single point imply a trend. */}
-                    <p className="cs-growth-foot">
-                        This visit only. Growth faltering is a <em>trajectory</em> — plotting past visits
-                        is not built yet.
-                    </p>
-                </>
-            )}
+            {renderBody(false)}
 
             <ChartSurface title="Growth" expanded={expanded} onClose={() => setExpanded(false)}>
                 <div className="cs-growth-plot is-large">{chart}</div>

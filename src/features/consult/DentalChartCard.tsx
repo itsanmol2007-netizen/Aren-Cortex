@@ -43,6 +43,20 @@ import type { DentalFinding, DentalCondition } from "../../lib/dental/types";
 interface Props {
     visitId: string | null;
     doctorId?: string | null;
+    /**
+     * `"card"` renders the old inline card with its own expand button.
+     * `"modal"` renders NOTHING on the page — the chart exists only while
+     * `open`, inside `ChartSurface`, launched from the Measurements row.
+     *
+     * Modal is what the consult screen uses now. A permanent full-width
+     * odontogram on every consultation was a large fixed surface for
+     * something read at a glance, and it pushed the ranked columns below
+     * the fold. The launcher keeps it one click away without spending the
+     * screen on it.
+     */
+    presentation?: "card" | "modal";
+    open?: boolean;
+    onClose?: () => void;
     disabled?: boolean;
 }
 
@@ -60,7 +74,9 @@ interface ToothPaint {
     count: number;
 }
 
-export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) {
+export function DentalChartCard({
+    visitId, doctorId, presentation = "card", open = false, onClose, disabled = false,
+}: Props) {
     const [items, setItems] = useState<DentalFinding[]>([]);
     const [sel, setSel] = useState<Selection | null>(null);
     const [condition, setCondition] = useState<DentalCondition>("caries");
@@ -207,30 +223,7 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
         );
     };
 
-    return (
-        <section className="cs-card" aria-label="Dental chart">
-            <div className="cs-card-head">
-                <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Smile size={14} /></span>
-                    Dental Chart
-                    <em>
-                        {items.length > 0
-                            ? `${items.length} finding${items.length > 1 ? "s" : ""}`
-                            : "FDI · charted per surface"}
-                    </em>
-                </h2>
-                <button
-                    type="button"
-                    className="cs-chart-expand"
-                    onClick={() => setExpanded(true)}
-                    aria-label="Open the chart larger"
-                    title="Open larger"
-                >
-                    <Maximize2 size={12} />
-                </button>
-            </div>
-
-            <ChartSurface title="Dental chart" expanded={expanded} onClose={() => setExpanded(false)}>
+    const body = (
             <div className="cs-attach-body">
                 <div className={`cs-odo${disabled || !visitId ? " is-disabled" : ""}`}>
                     <svg viewBox={CHART_VIEWBOX} className="cs-odo-svg" role="img"
@@ -344,6 +337,44 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
 
                 {error && <p className="cs-attach-error">{error}</p>}
             </div>
+    );
+
+    // Launcher-driven: nothing occupies the page, and the chart mounts only
+    // while it is actually open.
+    if (presentation === "modal") {
+        if (!open) return null;
+        return (
+            <ChartSurface title="Dental chart" expanded onClose={onClose ?? (() => {})}>
+                {body}
+            </ChartSurface>
+        );
+    }
+
+    return (
+        <section className="cs-card" aria-label="Dental chart">
+            <div className="cs-card-head">
+                <h2 className="cs-card-title">
+                    <span className="cs-glyph is-slate"><Smile size={16} /></span>
+                    Dental Chart
+                    <em>
+                        {items.length > 0
+                            ? `${items.length} finding${items.length > 1 ? "s" : ""}`
+                            : "FDI · charted per surface"}
+                    </em>
+                </h2>
+                <button
+                    type="button"
+                    className="cs-chart-expand"
+                    onClick={() => setExpanded(true)}
+                    aria-label="Open the chart larger"
+                    title="Open larger"
+                >
+                    <Maximize2 size={16} />
+                </button>
+            </div>
+
+            <ChartSurface title="Dental chart" expanded={expanded} onClose={() => setExpanded(false)}>
+                {body}
             </ChartSurface>
         </section>
     );
