@@ -10,7 +10,25 @@ one `supabase functions delete` away from being gone. Now they are in git.
 | `attachment-upload-url` | ✅ | Validates mime / size / type, presigns a PUT, returns a random storage path |
 | `attachment-view-url` | ✅ | Confirms the row is visible to the caller, presigns a GET |
 | `attachment-delete` | ✅ | Deletes the metadata row first (that *is* the auth check), then the object |
+| `attachment-configure-cors` | ✅ | One-time (or re-run-if-needed) infra action — sets the bucket's CORS policy. See below. |
 | `rank-compositions` | ❌ | Pre-existing, not part of this pipeline, **not** mirrored here yet |
+
+## Bucket CORS (fixed 2026-08-11)
+
+The browser PUTs/GETs straight against B2's presigned URLs — that traffic never
+touches Supabase, so it's the *bucket's* CORS policy that decides whether the
+browser is allowed to see the response, independent of whether the presigned
+URL itself is valid. A new B2 bucket ships with no CORS rule at all, and
+`aren-packets-attachment` never had one set, so every upload failed at the
+preflight stage (`No 'Access-Control-Allow-Origin' header`) — a browser-only
+failure; `curl` against the same presigned URL would have worked fine, which
+is why this was easy to miss.
+
+Fixed by `attachment-configure-cors`, invoked once (`AllowedOrigins: ['*']` —
+the bucket is already private and every request still needs a real 5-minute
+presigned URL, so a wide-open origin list costs nothing and avoids re-editing
+this every time dev runs on a different port). Re-invoke it any time this
+error resurfaces; it's idempotent.
 
 ## The authorization pattern, and why it looks like nothing
 
@@ -33,9 +51,10 @@ Requires the Supabase CLI and a login with access to project
 `ieimvjprtltancxapuzg`.
 
 ```bash
-supabase functions deploy attachment-upload-url --project-ref ieimvjprtltancxapuzg
-supabase functions deploy attachment-view-url   --project-ref ieimvjprtltancxapuzg
-supabase functions deploy attachment-delete     --project-ref ieimvjprtltancxapuzg
+supabase functions deploy attachment-upload-url      --project-ref ieimvjprtltancxapuzg
+supabase functions deploy attachment-view-url        --project-ref ieimvjprtltancxapuzg
+supabase functions deploy attachment-delete          --project-ref ieimvjprtltancxapuzg
+supabase functions deploy attachment-configure-cors  --project-ref ieimvjprtltancxapuzg
 ```
 
 All three must keep `verify_jwt` enabled. With it off, the `Authorization`
