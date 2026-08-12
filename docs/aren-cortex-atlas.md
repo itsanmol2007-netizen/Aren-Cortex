@@ -36,14 +36,19 @@ description in §2.
 
 Sessions of **2026-08-08 → 2026-08-11** added the attachment pipeline (§14.6),
 the specialty tools (§14.7), the dentistry/obstetric content (§14.8), the
-drug-allergy guards (§14.9), and Settings + specialty self-service + chart
-gating (§14.10); edge-function source was brought into the repo. Those
-sections are current as of 2026-08-11. §14.6–§14.8 were verified live, real
-browser, real database. §14.9 by database read-back only (see its own note).
-§14.10's specialty toggle and DB constraint fix were verified live; the
-chart-gating and Settings-page UI itself were **not** browser-verified this
-pass — Anmol took over visual checks mid-session — so treat that part as
-implemented and type-checked, not yet eyeballed.
+drug-allergy guards (§14.9), Settings + specialty self-service + chart gating
+(§14.10), the glycaemic panel and the measurement-wiring guard (§14.11),
+respiratory rate + the WHO growth engine and date of birth (§14.12), and the
+first UI polish pass (§14.13); edge-function source was brought into the repo.
+All current as of 2026-08-11.
+
+**What was verified how, because it differs by section.** §14.6–§14.8: live,
+real browser, real database. §14.9 and the §14.11–§14.12 data work: database
+read-back and the check scripts, which is stronger than a screenshot for
+anything numeric. **§14.10, §14.12's card and §14.13's polish were NOT
+browser-verified** — Anmol took over visual checking partway through the
+session — so treat every UI change from §14.10 onward as implemented,
+type-checked and building, but **not yet eyeballed**.
 
 **Everything else still carries its 2026-07-30 reading and was NOT re-checked.**
 Treat §3, §4, §7–§9 and §11–§13 as of that date. Where a claim there contradicts
@@ -186,6 +191,10 @@ Nothing is half-built — these are all "decided not to start", with reasons.
 - **Colour carries meaning, never mood** (§12.1). This survived the
   glassmorphism pass in §14.7 — the glass is on containers only.
 - **Guards warn, never hide** (§14).
+- **Greys are chosen by measured contrast, not by eye** (§14.13). The text
+  floor is 11px. Assume a dim, low-grade 1366×768 panel in a bright room.
+- **Spacing comes off the 4px scale** (`--cs-s1`…`--cs-s5`), not from
+  whatever looked right (§14.13).
 
 ---
 
@@ -2060,6 +2069,84 @@ per keystroke costs nothing next to the engine run it guards.
 faltering is a *direction*, and `visit_measurements` already holds the history
 to draw it. The card says so in words rather than letting a single point imply
 a trend.
+
+---
+
+## 14.13 UI polish — first pass (2026-08-11)
+
+Anmol's brief, verbatim in substance: *"look how much white space and
+terrible spacing there is. Terrible box-like spacing, anything scattering
+anywhere... how much small their icon is looking right now... how much gray
+they are... keeping in mind that doctor's PC could be low grade also or maybe
+with a small screen. I don't want to reshuffle everything."*
+
+Taken as four separate problems, because they are. **Nothing was moved** — same
+bands, same columns, same order, same components.
+
+### The grey was a defect, not a preference
+
+`--cs-faint` measured **2.56:1** against a white card. That is a WCAG failure,
+not a taste call, and it was carrying real content: attachment sizes, empty
+states, relevance hints, tick labels. On the dim, low-grade panel a clinic
+actually owns, in a bright room, that text was close to invisible.
+
+Both text greys are now set by **measured** contrast rather than by eye:
+
+| Token | Was | Now | Contrast on white |
+|---|---|---|---|
+| `--cs-muted` | `#64748b` | `#55647c` | 4.76 → **6.00:1** |
+| `--cs-faint` | `#94a3b8` | `#68778d` | 2.56 → **4.55:1** |
+
+Both clear AA for body text. The three-step hierarchy (ink / muted / faint)
+survives — faint still reads as secondary, it simply no longer achieves that
+by being unreadable. One token change, every card lifted at once.
+
+> The rule now written into the file header: **assume the doctor's monitor is
+> not yours.** Pick greys by ratio, not by how they look on the machine the
+> CSS was written on.
+
+### "Scattered boxes" had a specific, findable cause
+
+`consult.css` used 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 16 and 20px more or less
+interchangeably. Every value was defensible in isolation; together they left
+the page with no rhythm — and the eye registers a broken beat long before it
+can name the cause, which is exactly why the complaint arrives as "everything
+is scattered" rather than as a measurement.
+
+One 4px scale now drives the layout (`--cs-s1`…`--cs-s5`), applied to the page
+padding, all three band gaps, the body/engine grids and the card header. The
+steps are deliberately tight: the philosophy doc asks for high information
+density and low *visual* density, and the whole consult has to fit a 1366×768
+clinic screen. Air was never the goal; consistency was.
+
+### Icons and hit targets were genuinely too small
+
+Named tokens (`--cs-icon-sm`, `--cs-icon-md`, `--cs-hit`) so no card can
+quietly drift smaller again. Card title glyph tiles 22 → 26px with 14px icons
+throughout (7 cards). Text floor raised to 11px — 16 declarations sat at
+10–10.5px.
+
+The attachment card, called out by name: its file-type icon was a 14px glyph in
+the failing grey, floating in the row. It is now a **32px tinted tile**, the
+row has real padding, the icon-only actions went 24 → 30px (24 was under a
+comfortable pointer target with no surrounding padding), and the file name and
+size both moved up a step and off `--cs-faint`.
+
+### Where the white space actually came from
+
+`.cs-empty` carried 44px of vertical padding *inside* a column already pinned
+to a fixed 540px (`--cs-engine-h`). That is not breathing room, it is a hole —
+and the shorter the message, the larger the hole looked. Now centred in
+whatever space exists rather than reserving a stadium around itself.
+
+### Deliberately not done
+
+Roughly 40 internal gaps (chip rows, dose fields, sheet internals) are still
+off-scale. Stopping was the point: Anmol owns visual verification for this
+session, and sweeping dozens of unverifiable spacing changes across surfaces
+nobody has looked at is how a polish pass turns into a regression hunt. The
+foundation — tokens, contrast, floor, rhythm — is in; the next pass should run
+with eyes on the screen.
 
 ---
 

@@ -16,6 +16,20 @@
        blue = the action · rose = reported · teal = examined
        amber = soft guard · red = hard guard · green = taken
      · The chrome is dark so the paper is what the eye lands on.
+
+   Added 2026-08-11, after a polish pass:
+     · TEXT FLOOR 11px, and every grey is chosen by MEASURED
+       contrast, never by eye. `--cs-faint` had been sitting at
+       2.56:1 on a white card — a WCAG failure, on text that
+       carries real content. Assume the doctor is reading a dim,
+       low-grade 1366x768 panel in a bright room, not your display.
+     · ONE 4px spacing scale (--cs-s1..--cs-s5). The file used
+       4/5/6/7/8/9/10/12/13/14/16/20px more or less at random;
+       each was defensible alone, but together they gave the page
+       no rhythm — which is what reads as "boxes scattered about"
+       even when every box is perfectly aligned.
+     · Icon and hit-target sizes are named (--cs-icon-*, --cs-hit)
+       so no card can quietly pick its own and drift smaller.
    ============================================================ */
 
 :root {
@@ -24,8 +38,19 @@
     --cs-line: #e7ecf3;
     --cs-line-strong: #dbe2ec;
     --cs-ink: #0b1733;
-    --cs-muted: #64748b;
-    --cs-faint: #94a3b8;
+    /* ── Text greys, set by CONTRAST rather than by eye (2026-08-11) ──────
+       These were #64748b / #94a3b8, and `--cs-faint` measured 2.56:1 against
+       a white card — an outright WCAG failure, not a matter of taste. It is
+       used for real text all over this screen (attachment sizes, empty
+       states, hints, ticks), so on the dim, low-grade monitor a clinic
+       actually owns, that text was close to invisible.
+
+       Both are now measured: muted 6.00:1, faint 4.55:1, so every one of
+       them clears AA for body text. The visual hierarchy between the three
+       is preserved — faint still reads as secondary — it just no longer
+       achieves that by being unreadable. */
+    --cs-muted: #55647c;
+    --cs-faint: #68778d;
     --cs-blue: #1268e8;
     --cs-blue-soft: #eef4ff;
     --cs-teal: #0f766e;
@@ -44,6 +69,37 @@
     --cs-radius: 14px;
     --cs-radius-sm: 9px;
     --cs-shadow: 0 1px 2px rgba(16, 28, 46, 0.04);
+
+    /* ── Spacing scale (2026-08-11) ───────────────────────────────────────
+       This file previously used 4, 6, 7, 9, 12, 13, 14, 16, 20px more or
+       less interchangeably. Individually each was defensible; together they
+       gave the screen no rhythm, which is what reads as "boxes scattered
+       about" even when every box is correctly aligned. The eye notices a
+       broken beat long before it can name the cause.
+
+       One 4px-based scale, used everywhere. Nothing is being MOVED — same
+       layout, same columns, same order — the intervals between things are
+       simply quantised so the page has a pulse.
+
+       Density note: the steps are tight on purpose. The philosophy doc asks
+       for high information density and low VISUAL density, and a doctor on a
+       1366×768 clinic screen needs the whole consult without scrolling. Air
+       is not the goal; consistency is. */
+    --cs-s1: 4px;
+    --cs-s2: 8px;
+    --cs-s3: 12px;
+    --cs-s4: 16px;
+    --cs-s5: 20px;
+
+    /* Icon sizes, named so a card cannot quietly pick its own. Everything on
+       this screen used to sit at 12–14px, which is below what is comfortable
+       to hit or read at arm's length across a desk. */
+    --cs-icon-sm: 14px;
+    --cs-icon-md: 16px;
+    /* Square hit target for an icon-only button. 24px was under the 24px
+       minimum for a pointer target with no padding around it. */
+    --cs-hit: 30px;
+
     /* The shared height of the two ranked columns — see `.cs-engine`. */
     --cs-engine-h: 540px;
 }
@@ -81,14 +137,14 @@
 .cs-page {
     flex: 1;
     min-height: 0;
-    padding: 14px 20px 12px;
+    padding: var(--cs-s4) var(--cs-s5) var(--cs-s3);
 }
 
 /* History / Context, full-width and shorter than the three cards below —
    see the comment at its call site in App.tsx for why it was pulled out of
    this grid. */
 .cs-context-strip {
-    margin-bottom: 12px;
+    margin-bottom: var(--cs-s3);
 }
 
 .cs-context-strip .cs-picker {
@@ -102,22 +158,22 @@
 .cs-pickers {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    gap: var(--cs-s3);
     align-items: stretch;
 }
 
 .cs-body {
     display: grid;
     grid-template-columns: minmax(0, 2.94fr) minmax(330px, 1fr);
-    gap: 13px;
-    margin-top: 12px;
+    gap: var(--cs-s3);
+    margin-top: var(--cs-s3);
     align-items: stretch;
 }
 
 .cs-body-left {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--cs-s3);
     min-width: 0;
 }
 
@@ -141,7 +197,7 @@
 .cs-engine {
     display: grid;
     grid-template-columns: minmax(0, 0.83fr) minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--cs-s3);
     align-items: stretch;
     min-width: 0;
     height: var(--cs-engine-h);
@@ -170,9 +226,9 @@
 .cs-card-head {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: var(--cs-s2);
     flex: none;
-    padding: 14px 16px 0;
+    padding: var(--cs-s4) var(--cs-s4) 0;
 }
 
 .cs-card-title {
@@ -181,9 +237,9 @@
     gap: 9px;
     margin: 0;
     color: var(--cs-ink);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.055em;
+    letter-spacing: 0.045em;
     line-height: 1.2;
     text-transform: uppercase;
 }
@@ -201,9 +257,9 @@
     display: grid;
     place-items: center;
     flex: none;
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
 }
 
 .cs-glyph.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
@@ -481,7 +537,7 @@
 .cs-drop-zone {
     flex: none;
     color: var(--cs-faint);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -679,25 +735,25 @@
 .cs-attach-body {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--cs-s2);
 }
 
 .cs-attach-empty {
     margin: 0;
-    padding: 4px 2px 6px;
-    color: var(--cs-faint);
-    font-size: 12px;
+    padding: var(--cs-s1) 2px var(--cs-s2);
+    color: var(--cs-muted);
+    font-size: 12.5px;
     line-height: 1.5;
 }
 
 .cs-attach-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--cs-s3);
     border: 1px solid var(--cs-line);
-    border-radius: 9px;
+    border-radius: var(--cs-radius-sm);
     background: #fafbfc;
-    padding: 7px 9px;
+    padding: var(--cs-s2) var(--cs-s3);
 }
 
 .cs-attach-row.is-busy {
@@ -706,9 +762,14 @@
 }
 
 .cs-attach-icon {
-    display: flex;
+    display: grid;
+    place-items: center;
     flex: none;
-    color: var(--cs-faint);
+    width: 32px;
+    height: 32px;
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
 }
 
 .cs-attach-meta {
@@ -722,7 +783,7 @@
 .cs-attach-label {
     overflow: hidden;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 560;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -730,8 +791,8 @@
 
 .cs-attach-size {
     flex: none;
-    color: var(--cs-faint);
-    font-size: 11px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
 }
 
 .cs-attach-action {
@@ -739,8 +800,8 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--cs-hit);
+    height: var(--cs-hit);
     border: 0;
     border-radius: 7px;
     background: none;
@@ -780,7 +841,7 @@
     border-radius: 5px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
-    font-size: 10.5px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 600;
 }
@@ -1005,7 +1066,7 @@
     border-radius: 5px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
-    font-size: 10.5px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 600;
 }
@@ -1025,7 +1086,7 @@
     flex-wrap: wrap;
     gap: 4px 12px;
     margin: 0 0 4px;
-    font-size: 10.5px;
+    font-size: 11px;
     color: var(--cs-muted);
 }
 
@@ -1493,7 +1554,7 @@
 
 .cs-brand-star {
     color: #d97706;
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .cs-brand.is-skeleton {
@@ -1587,7 +1648,7 @@
     flex: none;
     border-radius: 999px;
     padding: 2px 8px;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 650;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -1629,9 +1690,9 @@
     position: relative;
     padding-bottom: 11px;
     color: var(--cs-violet);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.055em;
+    letter-spacing: 0.045em;
     text-transform: uppercase;
 }
 
@@ -1712,7 +1773,7 @@
 
 .cs-sug-kind {
     display: block;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.07em;
     line-height: 1.3;
@@ -1804,7 +1865,7 @@
 
 .cs-group-title {
     color: var(--cs-muted);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -1889,7 +1950,7 @@
     background: #f1f5f9;
     padding: 1px 6px;
     color: var(--cs-muted);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -2048,7 +2109,7 @@
 
 .cs-dose-field > span {
     color: var(--cs-faint);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 650;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -2346,7 +2407,7 @@
     background: #fff;
     padding: 13px 0 7px;
     color: var(--cs-faint);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -2357,7 +2418,7 @@
     background: #f1f5f9;
     padding: 0 6px;
     color: var(--cs-muted);
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0;
     font-variant-numeric: tabular-nums;
 }
@@ -2407,7 +2468,7 @@
     background: #f8fafc;
     padding: 1px 5px;
     font-family: inherit;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 620;
 }
 
@@ -2417,20 +2478,25 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    padding: 44px 24px;
+    justify-content: center;
+    gap: var(--cs-s2);
+    /* Was 44px top and bottom. Inside a fixed-height column that is not
+       breathing room, it is a hole — and the shorter the message, the
+       bigger the hole looked. Centring in whatever space exists does the
+       same job without reserving any. */
+    padding: var(--cs-s5) var(--cs-s4);
     text-align: center;
 }
 
 .cs-empty strong {
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 620;
 }
 
 .cs-empty span {
-    color: var(--cs-faint);
-    font-size: 12px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
     font-weight: 450;
     line-height: 1.55;
     max-width: 260px;
@@ -2578,7 +2644,7 @@
 
 .cs-why-against {
     color: var(--cs-amber);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.01em;
 }
@@ -2693,7 +2759,7 @@
    the reader to guess. */
 .cs-body-orient {
     color: var(--cs-faint);
-    font-size: 10.5px;
+    font-size: 11px;
 }
 
 /* The chart modal — where the odontogram and the body map go when the doctor
@@ -2961,7 +3027,7 @@
 .is-severely-stunted .cs-growth-class { color: var(--cs-red); }
 
 .cs-growth-tail {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--cs-faint);
     border: 1px solid var(--cs-line-strong);

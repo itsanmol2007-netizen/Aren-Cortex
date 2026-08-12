@@ -157,7 +157,7 @@ export function ConditionsCard({
         <section className="cs-card cs-picker" aria-label="Possible conditions">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-violet"><Stethoscope size={12} /></span>
+                    <span className="cs-glyph is-violet"><Stethoscope size={14} /></span>
                     Possible Conditions
                 </h2>
                 {!search.isSearching && intents.length > 0 && (

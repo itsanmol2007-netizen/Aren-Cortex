@@ -89,7 +89,7 @@ export function MeasurementsCard({
         <section className="cs-card" aria-label="Measurements">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Activity size={12} /></span>
+                    <span className="cs-glyph is-slate"><Activity size={14} /></span>
                     Measurements
                 </h2>
             </div>

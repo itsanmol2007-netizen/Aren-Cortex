@@ -143,7 +143,7 @@ export function GrowthChartCard({ ageMonths, sex, weightKg, heightCm, disabled =
         <section className="cs-card" aria-label="Growth chart">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><TrendingUp size={12} /></span>
+                    <span className="cs-glyph is-slate"><TrendingUp size={14} /></span>
                     Growth
                 </h2>
                 <div className="cs-growth-head-right">

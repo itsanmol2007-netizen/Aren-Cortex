@@ -104,7 +104,7 @@ export function BodyMapCard({ visitId, doctorId, disabled = false }: Props) {
         <section className="cs-card" aria-label="Body map">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><PersonStanding size={12} /></span>
+                    <span className="cs-glyph is-slate"><PersonStanding size={14} /></span>
                     Body Map
                     <em>{items.length > 0 ? `${items.length} site${items.length > 1 ? "s" : ""}` : "where on the body"}</em>
                 </h2>

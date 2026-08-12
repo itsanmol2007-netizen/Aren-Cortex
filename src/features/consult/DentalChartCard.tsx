@@ -211,7 +211,7 @@ export function DentalChartCard({ visitId, doctorId, disabled = false }: Props) 
         <section className="cs-card" aria-label="Dental chart">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Smile size={12} /></span>
+                    <span className="cs-glyph is-slate"><Smile size={14} /></span>
                     Dental Chart
                     <em>
                         {items.length > 0

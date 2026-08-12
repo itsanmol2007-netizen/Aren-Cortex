@@ -146,7 +146,7 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
         <section className="cs-card" aria-label="Attachments">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Paperclip size={12} /></span>
+                    <span className="cs-glyph is-slate"><Paperclip size={14} /></span>
                     Attachments
                 </h2>
             </div>
@@ -171,7 +171,7 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                     <div key={att.id} className="cs-attach-item">
                         <div className="cs-attach-row">
                             <span className="cs-attach-icon">
-                                {att.mimeType?.startsWith("image/") ? <ImageIcon size={14} /> : <FileText size={14} />}
+                                {att.mimeType?.startsWith("image/") ? <ImageIcon size={17} /> : <FileText size={17} />}
                             </span>
                             <span className="cs-attach-meta">
                                 <span className="cs-attach-label">
@@ -192,7 +192,7 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                                 aria-expanded={tagging === att.id}
                                 title="Which side / where"
                             >
-                                <Tag size={13} />
+                                <Tag size={15} />
                             </button>
                             <button
                                 type="button"
@@ -202,7 +202,7 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                                 aria-label="View"
                                 title="View"
                             >
-                                {viewing === att.id ? <Loader2 size={13} className="cs-spin" /> : <ExternalLink size={13} />}
+                                {viewing === att.id ? <Loader2 size={15} className="cs-spin" /> : <ExternalLink size={15} />}
                             </button>
                             <button
                                 type="button"
@@ -211,7 +211,7 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                                 aria-label="Remove"
                                 title="Remove"
                             >
-                                <Trash2 size={13} />
+                                <Trash2 size={15} />
                             </button>
                         </div>
 
@@ -261,7 +261,7 @@ export function AttachmentsCard({ visitId, disabled = false }: Props) {
                         aria-expanded={menuOpen}
                         onClick={() => setMenuOpen((v) => !v)}
                     >
-                        <Paperclip size={13} />
+                        <Paperclip size={15} />
                         <span className="cs-meas-label">Attach</span>
                     </button>
                     {menuOpen && (

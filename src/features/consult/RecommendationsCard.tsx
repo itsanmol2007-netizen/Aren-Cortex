@@ -233,7 +233,7 @@ export function RecommendationsCard({
         <section className="cs-card" aria-label="Medicine recommendations">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-teal"><Pill size={12} /></span>
+                    <span className="cs-glyph is-teal"><Pill size={14} /></span>
                     Medicine Recommendations
                 </h2>
                 {hasChart && !isSearching && ordered.length > 0 && (
