@@ -63,6 +63,30 @@ export interface Medicine {
    * and falls through to the name.
    */
   catalogueRank?: number
+  /**
+   * EVERY molecule in this product, ascending, when the product was resolved
+   * as a product rather than as one molecule's brand (see lib/db/medicines.ts).
+   *
+   * `compositionId` above stays the molecule this product was REACHED
+   * through, because the preference model and the decision log are keyed on
+   * it. This is what the product actually contains, and the two differ for
+   * every combination: Acenac-P is reached through aceclofenac and contains
+   * aceclofenac plus paracetamol.
+   *
+   * Optional because `composition_brands` cannot populate it: that RPC filters
+   * to `ingredient_count = 1`, so anything it returns has exactly one molecule
+   * and `[compositionId]` is the whole truth. Absent therefore means
+   * single-molecule, and every reader should fall back to `[compositionId]`.
+   *
+   * Load-bearing downstream. `prescription_medicines.composition_ids` is an
+   * array column documented as "all composition IDs (1 for single, 2+ for
+   * combos)", and it was being written as `[compositionId]` unconditionally,
+   * so a combination was recorded in the clinical record as a single molecule
+   * and its second drug was invisible to duplicate checking.
+   */
+  compositionIds?: number[]
+  /** their display names, same order as `compositionIds`, for the subtitle */
+  compositionLabels?: string[]
 }
 
 export interface BrandPreference {

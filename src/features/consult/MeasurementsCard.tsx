@@ -27,7 +27,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Activity, Plus } from "lucide-react";
+import { Activity, ChevronDown, Plus } from "lucide-react";
+import { ChartSurface } from "./ChartSurface";
+import { useDismiss } from "./useDismiss";
 import type { Vitals } from "../../types";
 import {
     FIELD_BY_KEY, MEASURE_FIELDS, type MeasureField, type MeasureFieldKey,
@@ -68,12 +70,27 @@ interface Props {
     charts?: ChartTool[];
     onOpenChart?: (key: string) => void;
     disabled?: boolean;
+    /**
+     * How many cells fit on the card before the rest move behind "More".
+     *
+     * The card sits in a fixed-height row (see `.cs-rowone-right`), so it must
+     * not grow: a chart that raises four extra fields would otherwise push the
+     * Assessment off the screen. Six is two rows of three, which is what the
+     * 40% column fits without the readout wrapping into a pile.
+     *
+     * Nothing is hidden by this. Overflow opens in a modal with every field,
+     * and a field HOLDING A VALUE is never in the overflow, because a
+     * measurement the doctor took must stay on the screen that took it.
+     */
+    maxInline?: number;
 }
 
 export function MeasurementsCard({
     vitals, onChange, defaultKeys, relevantKeys, relevantBecause,
-    charts = [], onOpenChart, disabled = false,
+    charts = [], onOpenChart, disabled = false, maxInline,
 }: Props) {
+    /** the full field set, opened over the page rather than expanded in place */
+    const [showAll, setShowAll] = useState(false);
     // Enter walks the row, so the whole card is one hand on the number row
     // rather than one click per field.
     const refs = useRef<Record<string, HTMLElement | null>>({});
@@ -81,6 +98,10 @@ export function MeasurementsCard({
     /** Fields the doctor asked for by name. Never shrinks during a consult. */
     const [added, setAdded] = useState<Set<MeasureFieldKey>>(new Set());
     const [pickerOpen, setPickerOpen] = useState(false);
+    const headRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useDismiss(pickerOpen, () => setPickerOpen(false), [headRef, menuRef]);
 
     const shown = useMemo(() => {
         const keys = new Set<MeasureFieldKey>(defaultKeys);
@@ -109,17 +130,80 @@ export function MeasurementsCard({
     const set = (key: MeasureFieldKey, value: string) =>
         onChange({ ...vitals, [key]: value });
 
+    /**
+     * What fits on the card. A field holding a value is never dropped, so the
+     * cap trims from the unfilled end and a recorded measurement can never be
+     * pushed behind "More".
+     */
+    const inline = useMemo(() => {
+        if (maxInline == null || shown.length <= maxInline) return shown;
+        const filled = shown.filter((f) => valueOf(vitals, f.key).trim());
+        const empty = shown.filter((f) => !valueOf(vitals, f.key).trim());
+        const keep = new Set([...filled, ...empty].slice(0, maxInline).map((f) => f.key));
+        return shown.filter((f) => keep.has(f.key));
+    }, [shown, maxInline, vitals]);
+
+    const overflow = shown.length - inline.length;
+
+    const grid = (fields: MeasureField[]) => (
+        <div className="cs-meas-grid">
+            {fields.map((field) => (
+                <MeasureCell
+                    key={field.key}
+                    field={field}
+                    value={valueOf(vitals, field.key)}
+                    onChange={(v) => set(field.key, v)}
+                    onEnter={() => focusNext(field.key)}
+                    registerRef={(el) => { refs.current[field.key] = el; }}
+                    suggested={
+                        relevantKeys.has(field.key) && !valueOf(vitals, field.key).trim()
+                    }
+                    because={relevantBecause.get(field.key) ?? null}
+                    disabled={disabled}
+                />
+            ))}
+        </div>
+    );
+
     return (
-        <section className="cs-card" aria-label="Measurements">
-            <div className="cs-card-head">
-                <h2 className="cs-card-title">
+        <section className="cs-card cs-meas-card" aria-label="Measurements">
+            {/* The heading carries the add control, on the same line, so the
+                field picker costs no row of its own. Pressing anywhere on it
+                opens the list. */}
+            <div className="cs-card-head is-trigger" ref={headRef}>
+                <button
+                    type="button"
+                    className="cs-head-action"
+                    disabled={disabled || hidden.length === 0}
+                    aria-expanded={pickerOpen}
+                    aria-haspopup="menu"
+                    onClick={() => setPickerOpen((v) => !v)}
+                >
                     <span className="cs-glyph is-slate"><Activity size={14} /></span>
-                    Measurements
-                </h2>
+                    <span className="cs-card-title">Measurements</span>
+                    {hidden.length > 0 && <Plus size={15} className="cs-head-plus" />}
+                </button>
+
+                {pickerOpen && (
+                    <div className="cs-meas-menu" role="menu" ref={menuRef}>
+                        {hidden.map((f) => (
+                            <button
+                                key={f.key}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                    setAdded((curr) => new Set(curr).add(f.key));
+                                    setPickerOpen(false);
+                                    window.setTimeout(() => refs.current[f.key]?.focus(), 0);
+                                }}
+                            >{f.label}</button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <div className="cs-meas-grid">
-                {shown.map((field) => (
+                {inline.map((field) => (
                     <MeasureCell
                         key={field.key}
                         field={field}
@@ -158,38 +242,47 @@ export function MeasurementsCard({
                     </button>
                 ))}
 
-                {hidden.length > 0 && (
-                    <div className="cs-meas is-add">
-                        <button
-                            type="button"
-                            className="cs-meas-add"
-                            disabled={disabled}
-                            aria-expanded={pickerOpen}
-                            onClick={() => setPickerOpen((v) => !v)}
-                        >
-                            <Plus size={14} />
-                            <span className="cs-meas-label">Add Measurement</span>
-                        </button>
-
-                        {pickerOpen && (
-                            <div className="cs-meas-menu" role="menu">
-                                {hidden.map((f) => (
-                                    <button
-                                        key={f.key}
-                                        type="button"
-                                        role="menuitem"
-                                        onClick={() => {
-                                            setAdded((curr) => new Set(curr).add(f.key));
-                                            setPickerOpen(false);
-                                            window.setTimeout(() => refs.current[f.key]?.focus(), 0);
-                                        }}
-                                    >{f.label}</button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
+
+            {/* The count, then the way to the rest. States plainly how much of
+                the readout is on screen, so a capped card never silently
+                implies it is showing everything. */}
+            {maxInline != null && (
+                <div className="cs-card-foot">
+                    <span className="cs-card-foot-count">
+                        {inline.length} / {shown.length} shown
+                    </span>
+                    <button
+                        type="button"
+                        className="cs-card-foot-more"
+                        onClick={() => setShowAll(true)}
+                    >
+                        More
+                        <ChevronDown size={13} />
+                    </button>
+                </div>
+            )}
+
+            {showAll && (
+                <ChartSurface title="Measurements" expanded onClose={() => setShowAll(false)}>
+                    {grid(shown)}
+                    {hidden.length > 0 && (
+                        <div className="cs-meas-menu is-inline" role="menu">
+                            {hidden.map((f) => (
+                                <button
+                                    key={f.key}
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                        setAdded((curr) => new Set(curr).add(f.key));
+                                        window.setTimeout(() => refs.current[f.key]?.focus(), 0);
+                                    }}
+                                >{f.label}</button>
+                            ))}
+                        </div>
+                    )}
+                </ChartSurface>
+            )}
         </section>
     );
 }

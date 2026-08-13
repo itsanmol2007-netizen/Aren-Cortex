@@ -40,6 +40,7 @@ import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
+import { BlankMedicineArt } from "./BlankArt";
 
 /** Alternatives shown beside the default before the sheet takes over. */
 const INLINE_ALTS = 3;
@@ -190,6 +191,7 @@ export function RecommendationsCard({
         if (!hasChart) {
             return (
                 <div className="cs-empty">
+                    <BlankMedicineArt />
                     <strong>Nothing on the chart yet</strong>
                     <span>
                         Add a symptom, a finding or a measurement and recommendations
@@ -202,6 +204,7 @@ export function RecommendationsCard({
         if (ordered.length === 0) {
             return (
                 <div className="cs-empty">
+                    <BlankMedicineArt />
                     <strong>No medicine ranked for this chart</strong>
                     <span>Search above to reach one directly, or add more to the chart.</span>
                 </div>
@@ -288,6 +291,17 @@ function MedicineRow({
     onSearchProducts: () => void;
 }) {
     const moreRef = useRef<HTMLButtonElement>(null);
+    /**
+     * Whether this row is the OPEN one.
+     *
+     * Alternates and "Change brand" belong to a row the doctor has actually
+     * turned their attention to. Shown on every row they were pure clutter:
+     * the column is scanned far more often than it is acted on, and four brand
+     * chips plus a "1,782 more" under each of eight medicines is a wall.
+     * Anmol, 2026-08-13: "change brand option should only appear when you click
+     * on the medicine."
+     */
+    const [open, setOpen] = useState(false);
     const rowRef = useRef<HTMLDivElement>(null);
     const isHard = intent.status === "warn_hard";
     const isWarn = intent.status === "warn";
@@ -311,8 +325,15 @@ function MedicineRow({
             ref={rowRef}
             className={
                 `cs-rec${added ? " is-added" : ""}${isHard ? " is-hard" : ""}` +
-                `${pinned ? " is-pinned" : ""}`
+                `${pinned ? " is-pinned" : ""}${open ? " is-open" : ""}`
             }
+            // Clicking the row opens it: alternates and "Change brand" appear.
+            // Clicks on the buttons inside stop here, so pressing Prescribe
+            // does not also expand the row it is leaving.
+            onClick={(e) => {
+                if ((e.target as HTMLElement).closest("button")) return;
+                setOpen((v) => !v);
+            }}
             // The shortcut into the contribution sheet. The info button beside
             // the name is the discoverable route and the one a keyboard reaches.
             onDoubleClick={() => {
@@ -349,21 +370,41 @@ function MedicineRow({
 
             <div className="cs-rec-side">
                 <RankBar fill={fill} rank={position} hard={isHard} />
-                <PinButton pinned={pinned} label={face?.name ?? intent.label} onToggle={onTogglePin} />
                 {added ? (
                     <span className="cs-added" aria-label="On the plan"><Check size={15} /></span>
                 ) : locked || !primary ? (
-                    // Withheld, not disabled. A greyed-out + still reads as
-                    // "press me once you scroll past the red text".
-                    <span style={{ width: 29 }} aria-hidden="true" />
+                    // Withheld, not disabled. A greyed-out button still reads
+                    // as "press me once you scroll past the red text".
+                    <span style={{ width: 76 }} aria-hidden="true" />
                 ) : (
-                    <button
-                        type="button"
-                        className="cs-add"
-                        aria-label={`Prescribe ${face?.name ?? intent.label}`}
-                        onClick={() => onAccept(intent, primary, false)}
-                    ><Plus size={15} /></button>
+                    <>
+                        {/* Named, not a "+". The verb is what the doctor is
+                            doing, and a plus sign on a medicine row could as
+                            easily mean "add another". */}
+                        <button
+                            type="button"
+                            className="cs-prescribe"
+                            onClick={() => onAccept(intent, primary, false)}
+                        >Prescribe</button>
+                        {/* Revealed on the open row only. Every row carrying a
+                            "Change brand" control plus a line of alternate
+                            chips is what made this column read as scattered:
+                            three competing actions per row, on a list the
+                            doctor mostly scans rather than acts on. */}
+                        {open && (alts.length > 0 || rest > 0) && (
+                            <button
+                                ref={moreRef}
+                                type="button"
+                                className="cs-changebrand"
+                                onClick={() => {
+                                    const r = moreRef.current?.getBoundingClientRect();
+                                    if (r) onOpenSheet(r);
+                                }}
+                            >Change brand</button>
+                        )}
+                    </>
                 )}
+                <PinButton pinned={pinned} label={face?.name ?? intent.label} onToggle={onTogglePin} />
             </div>
 
             {/* The brand picker is WITHHELD while a hard warning is unread, for
@@ -386,7 +427,12 @@ function MedicineRow({
                         <>Rankable, but no product in the catalogue contains it on its own.</>
                     )}
                 </div>
-            ) : (alts.length > 0 || rest > 0) ? (
+            ) : open && (alts.length > 0 || rest > 0) ? (
+                /* The alternates only exist on the OPEN row. As a permanent
+                   second line under every medicine they were the single
+                   biggest source of clutter in this column: four brand chips
+                   and a "1,782 more" on a row the doctor had not yet decided
+                   to act on. */
                 <div className="cs-brands">
                     <span className="cs-brands-or">or</span>
                     {alts.map((m) => (

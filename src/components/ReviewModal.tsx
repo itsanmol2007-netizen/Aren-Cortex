@@ -12,6 +12,8 @@ import type { PrescriptionMedicine, Vitals } from "../types";
 import PrescriptionDocument from "../features/prescription/PrescriptionDocument";
 import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
 import { usePrintFormat } from "../features/prescription/usePrintFormat";
+import { accentPalette } from "../lib/brand/accent";
+import { RxMonogram, RxWatermark } from "./RxMarks";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -176,6 +178,14 @@ export default function ReviewModal({
   const { format, remembered, choose } = usePrintFormat();
   const instructions = pickInstructions(visitId);
   const accentColor = hospital?.accent_color ?? "#1268e8";
+  /**
+   * The clinic's colour, as a usable ramp. One stored hex cannot serve a
+   * heading, a hairline and a tinted band at once, and the clinic picks the
+   * hex, so the tones have to be derived rather than chosen. `ink` is contrast
+   * clamped against white: brand expression stops where legibility starts on a
+   * document that gets printed. See lib/brand/accent.ts.
+   */
+  const rx = accentPalette(hospital?.accent_color);
   const isPrintMode = mode === "print";
   const today = formatDate(date);
 
@@ -346,9 +356,19 @@ export default function ReviewModal({
                         className="w-16 h-16 rounded-xl object-cover border-2 shadow-xl"
                         style={{ borderColor: "rgba(255,255,255,0.2)" }} />
                     ) : (
-                      <div className="w-16 h-16 rounded-xl flex items-center justify-center text-xl font-black text-white shadow-xl"
-                        style={{ background: accentColor }}>
-                        {initials(clinicName)}
+                      /* The fallback crest. Initials over the clinic's own
+                         colour, with the monogram behind them, so a clinic
+                         that has not uploaded a logo still gets a mark that is
+                         theirs rather than a coloured square. */
+                      <div className="w-16 h-16 rounded-xl flex items-center justify-center relative overflow-hidden shadow-xl"
+                        style={{ background: rx.base }}>
+                        <RxMonogram
+                          color={rx.onBase}
+                          className="absolute inset-0 w-full h-full opacity-20"
+                        />
+                        <span className="relative text-xl font-black" style={{ color: rx.onBase }}>
+                          {initials(clinicName)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -389,11 +409,13 @@ export default function ReviewModal({
                       </p>
                     )}
                     {doctorSpec && (
+                      /* Was hardcoded pink, on every clinic's sheet. It takes
+                         the clinic's own colour now. */
                       <span className="inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-black tracking-wide"
                         style={{
-                          color: "#f9a8d4",
-                          background: "rgba(236,72,153,0.18)",
-                          border: "1px solid rgba(236,72,153,0.35)",
+                          color: rx.tint,
+                          background: `${rx.base}2e`,
+                          border: `1px solid ${rx.base}66`,
                         }}>
                         {doctorSpec}
                       </span>
@@ -401,9 +423,18 @@ export default function ReviewModal({
                   </div>
                 </div>
 
-                {/* Accent line */}
+                {/* ── The accent line ──────────────────────────────────────
+                    This blended the clinic's colour into hardcoded #7c3aed and
+                    #ec4899, so a clinic that chose forest green got green
+                    fading through purple into pink, and every clinic's
+                    prescription came out looking like the same violet house
+                    style. The stored colour is now the only hue in it. */}
                 <div className="absolute bottom-0 left-0 right-0 h-[2px]"
-                  style={{ background: `linear-gradient(90deg, transparent 0%, ${accentColor} 25%, #7c3aed 50%, #ec4899 75%, transparent 100%)` }} />
+                  style={{
+                    background:
+                      `linear-gradient(90deg, ${rx.base}00 0%, ${rx.base} 18%, ` +
+                      `${rx.base} 62%, ${rx.base}00 100%)`,
+                  }} />
               </div>
 
               {/* ══ Patient strip ══ */}
@@ -502,10 +533,22 @@ export default function ReviewModal({
 
               {/* ══ Prescription table ══ */}
               {prescription.length > 0 && (
-                <div className="px-8 py-5 border-b border-gray-100">
-                  <SectionTitle icon={() => <RxIcon />} title="Prescription" />
+                <div className="px-8 py-5 border-b border-gray-100 relative">
+                  {/* The watermark. Held at 4% and pinned behind the table, in
+                      the clinic's colour, so the sheet is recognisably theirs
+                      at arm's length. Stroke-drawn rather than filled so a
+                      printer that renders it heavy still leaves the dosage
+                      text on top readable. `pointer-events-none` so it can
+                      never intercept a click on a row. */}
+                  <RxWatermark
+                    color={rx.base}
+                    className="pointer-events-none absolute right-6 top-8 w-[132px] h-[132px] opacity-[0.04]"
+                  />
+                  <div className="relative">
+                    <SectionTitle icon={() => <RxIcon />} title="Prescription" />
+                  </div>
 
-                  <div className="mt-3 rounded-xl border border-gray-200/80 overflow-hidden">
+                  <div className="relative mt-3 rounded-xl border border-gray-200/80 overflow-hidden">
                     {/* Header */}
                     <div className="bg-gray-50/80 border-b border-gray-200">
                       <div className="grid items-center"

@@ -114,7 +114,16 @@ export function MedicineAddSheet({
                     <div className="cs-addmed-title">
                         {/* Brand leads. Always. */}
                         <strong>{brand?.name ?? compositionLabel}</strong>
-                        <span>{compositionLabel}</span>
+                        {/* EVERY molecule, joined. The subtitle used to print
+                            the one composition this was ranked through, so a
+                            combination showed half of what the doctor was
+                            about to prescribe: "Acenac-P / Aceclofenac", with
+                            the paracetamol nowhere on screen. */}
+                        <span>
+                            {brand?.compositionLabels?.length
+                                ? brand.compositionLabels.join(" + ")
+                                : compositionLabel}
+                        </span>
                     </div>
                     <button type="button" className="cs-addmed-x" onClick={onCancel} aria-label="Cancel">
                         <X size={16} />
@@ -125,20 +134,40 @@ export function MedicineAddSheet({
                     {brands.length > 1 && (
                         <section className="cs-addmed-sec">
                             <span className="cs-addmed-label">Brand</span>
-                            <div className="cs-addmed-brands">
-                                {brands.slice(0, 8).map((b) => (
-                                    <button
-                                        key={b.id}
-                                        type="button"
-                                        className={`cs-addmed-brand${brand?.id === b.id ? " is-on" : ""}`}
-                                        onClick={() => setBrand(b)}
-                                    >
-                                        <span className="cs-addmed-brand-name">{b.name}</span>
-                                        {b.isClinicDefault && (
-                                            <span className="cs-addmed-tag">clinic default</span>
-                                        )}
-                                    </button>
-                                ))}
+                            {/* Was `brands.slice(0, 8)` with nothing behind it.
+                                `BRAND_CANDIDATES` fetches 30, so 22 products
+                                were rendered unreachable by a hard slice, on a
+                                panel whose entire job is choosing between
+                                them. The list scrolls instead. */}
+                            <div className="cs-addmed-brands is-scroll">
+                                {brands.map((b) => {
+                                    const molecules = b.compositionLabels ?? [];
+                                    return (
+                                        <button
+                                            key={b.id}
+                                            type="button"
+                                            className={`cs-addmed-brand${brand?.id === b.id ? " is-on" : ""}`}
+                                            onClick={() => setBrand(b)}
+                                            title={molecules.join(" + ") || undefined}
+                                        >
+                                            <span className="cs-addmed-brand-name">{b.name}</span>
+                                            {/* Said plainly, because taking a
+                                                combination means prescribing a
+                                                molecule the doctor did not
+                                                search for. Never a reason to
+                                                hide it, always a reason to
+                                                state it. */}
+                                            {molecules.length > 1 && (
+                                                <span className="cs-addmed-tag">
+                                                    {molecules.length} molecules
+                                                </span>
+                                            )}
+                                            {b.isClinicDefault && (
+                                                <span className="cs-addmed-tag">clinic default</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </section>
                     )}
@@ -241,7 +270,14 @@ export function MedicineAddSheet({
                     <button
                         type="button"
                         className="cs-addmed-confirm"
-                        disabled={!anySlot && !sos}
+                        // A null brand used to be confirmable. `commitAccept`
+                        // then rejected it, fired a toast and DELETED the
+                        // intent again, so the doctor pressed "Add to plan"
+                        // and watched nothing happen. Refuse at the button,
+                        // where the reason is still visible, not two steps
+                        // later in a toast.
+                        title={!brand ? "Choose a product first" : undefined}
+                        disabled={!brand || (!anySlot && !sos)}
                         onClick={() =>
                             onConfirm({
                                 medicine: brand,

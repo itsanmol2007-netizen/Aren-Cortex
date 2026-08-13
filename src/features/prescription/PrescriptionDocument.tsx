@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { accentPalette } from "../../lib/brand/accent";
+import { RxWatermark, RxMonogram } from "../../components/RxMarks";
 import { freqLabelToSlot, freqSlotToLabel } from "../../lib/db";
 import type { DBDoctor, DBHospital } from "../../lib/db";
 import type { PrescriptionMedicine, Vitals } from "../../types";
@@ -86,6 +88,17 @@ function StandardDocument({
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const accentColor = hospital?.accent_color ?? "#1268e8";
+    /**
+     * The clinic's colour as a usable ramp. THIS is the document the patient
+     * actually receives: it renders off-screen and feeds print, PDF and
+     * WhatsApp. The on-screen review preview is a different component, and
+     * styling that one alone changed nothing a patient ever sees.
+     *
+     * `ink` is contrast-clamped against white, because this lands on cheap
+     * stock out of a clinic laser printer and a pale brand colour must not
+     * produce unreadable headings. See lib/brand/accent.ts.
+     */
+    const rx = accentPalette(hospital?.accent_color);
     const today = formatDate(date);
 
     const doctorName = doctor?.name ?? "Doctor";
@@ -142,8 +155,20 @@ function StandardDocument({
                 fontFamily: "'Arial', sans-serif",
                 color: "#111111",
                 boxSizing: "border-box",
+                position: "relative",
             }}
         >
+            {/* ── The clinic's watermark ──────────────────────────────────
+                Held at 3.5% so it is present at arm's length and invisible
+                under text. Stroke-drawn rather than filled, because a filled
+                shape at low opacity is the first thing a toner-starved clinic
+                printer renders as a grey smear across the dosage column.
+                Pinned behind everything and non-interactive. */}
+            <RxWatermark
+                color={rx.base}
+                className="rx-doc-watermark"
+            />
+
             {/* ── Letterhead ── */}
             <div
                 style={{
@@ -164,12 +189,21 @@ function StandardDocument({
                         <img src={doctorAvatar} alt={doctorName}
                             style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, border: `2px solid ${accentColor}` }} />
                     ) : (
+                        /* The fallback crest: initials over the clinic's colour
+                           with the monogram behind them, so a clinic with no
+                           uploaded logo still gets a mark of its own instead of
+                           a coloured square. */
                         <div style={{
-                            width: 52, height: 52, borderRadius: 8, background: accentColor,
+                            width: 52, height: 52, borderRadius: 8, background: rx.base,
                             display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 18, fontWeight: 900, color: "#fff",
+                            fontSize: 18, fontWeight: 900, color: rx.onBase,
+                            position: "relative", overflow: "hidden",
                         }}>
-                            {initials(clinicName)}
+                            <RxMonogram
+                                color={rx.onBase}
+                                className="rx-crest-mark"
+                            />
+                            <span style={{ position: "relative" }}>{initials(clinicName)}</span>
                         </div>
                     )}
                 </div>
@@ -196,7 +230,7 @@ function StandardDocument({
                         {doctorName}
                     </div>
                     {doctorQual && (
-                        <div style={{ fontSize: bodySize, fontWeight: 700, color: accentColor, marginTop: 2 }}>
+                        <div style={{ fontSize: bodySize, fontWeight: 700, color: rx.ink, marginTop: 2 }}>
                             {doctorQual}
                         </div>
                     )}
@@ -252,7 +286,7 @@ function StandardDocument({
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                     {symptoms.length > 0 && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
-                            <div style={{ fontSize: smallSize, fontWeight: 700, color: accentColor, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                            <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                                 Presenting Complaints
                             </div>
                             {symptoms.map((s) => (
@@ -262,7 +296,7 @@ function StandardDocument({
                     )}
                     {findings.length > 0 && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
-                            <div style={{ fontSize: smallSize, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                            <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                                 Clinical Findings
                             </div>
                             {findings.map((f) => (
@@ -303,7 +337,7 @@ function StandardDocument({
                                 const [m, a, e, n] = resolveSlot(med.frequency);
                                 return (
                                     <tr key={idx} style={{ background: idx % 2 === 1 ? "#fafafa" : "#fff", borderBottom: "1px solid #eee" }}>
-                                        <td style={{ ...tdStyle, textAlign: "center", fontWeight: 700, color: accentColor }}>{idx + 1}</td>
+                                        <td style={{ ...tdStyle, textAlign: "center", fontWeight: 700, color: rx.ink }}>{idx + 1}</td>
                                         <td style={{ ...tdStyle }}>
                                             <div style={{ fontWeight: 700, color: "#111" }}>{med.name}</div>
                                             {(med.composition || med.dosage_mg) && (
@@ -335,7 +369,7 @@ function StandardDocument({
             {/* ── Investigations ── */}
             {tests.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: smallSize, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                         Investigations
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -366,7 +400,7 @@ function StandardDocument({
                         <div style={{ height: format === "a4" ? 56 : 44, borderBottom: "1.5px solid #555", marginBottom: 4 }} />
                     )}
                     <div style={{ fontSize: format === "a4" ? "12px" : "10px", fontWeight: 900, color: "#111" }}>{doctorName}</div>
-                    {doctorQual && <div style={{ fontSize: smallSize, fontWeight: 700, color: accentColor }}>{doctorQual}</div>}
+                    {doctorQual && <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink }}>{doctorQual}</div>}
                     {doctorReg && <div style={{ fontSize: smallSize, color: "#999" }}>Reg. {doctorReg}</div>}
                 </div>
 
@@ -395,7 +429,7 @@ function StandardDocument({
 
                 {/* Instructions */}
                 <div>
-                    <div style={{ fontSize: smallSize, fontWeight: 700, color: accentColor, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                         Instructions
                     </div>
                     {adviceNotes && adviceNotes.split("\n").filter(Boolean).map((line, i) => (

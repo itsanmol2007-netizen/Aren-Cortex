@@ -67,15 +67,32 @@ export function BrandSheet({
         const onDown = (e: MouseEvent) => {
             if (ref.current && !ref.current.contains(e.target as Node)) onClose();
         };
+        /**
+         * Close when the PAGE moves under the sheet, because the sheet is
+         * anchored to a row that has just moved out from under it.
+         *
+         * Not when the sheet scrolls ITSELF. This was a bare capture-phase
+         * listener, so `.cx-sheet-list` scrolling its own brands closed the
+         * drawer: the doctor could not scroll to a brand without dismissing
+         * the thing they were scrolling, which made the whole panel unusable
+         * for any composition with more than a screenful of products. Anmol
+         * found it 2026-08-13.
+         */
+        const onScroll = (e: Event) => {
+            const t = e.target as Node | null;
+            if (t && ref.current && ref.current.contains(t)) return;
+            onClose();
+        };
+
         window.addEventListener("keydown", onKey);
         // `mousedown` in the capture phase, so a click that opens another sheet
         // closes this one first rather than leaving two on screen.
         window.addEventListener("mousedown", onDown, true);
-        window.addEventListener("scroll", onClose, true);
+        window.addEventListener("scroll", onScroll, true);
         return () => {
             window.removeEventListener("keydown", onKey);
             window.removeEventListener("mousedown", onDown, true);
-            window.removeEventListener("scroll", onClose, true);
+            window.removeEventListener("scroll", onScroll, true);
         };
     }, [onClose]);
 

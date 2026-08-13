@@ -165,8 +165,10 @@ in here is rearrangement; this is the thing that changes what the product
 
 ## 4. What the screen should probably become
 
-Held loosely — this is a direction, not a spec, and it needs Anmol's
-judgement before anyone builds it.
+**Status: BUILT for General OPD, 2026-08-13.** Anmol's instruction was "one
+specialty UI at a time, not all, not placeholder ... start with general OPD."
+So this stopped being a direction and became a spec, but for one profile
+only. See §8 for what shipped.
 
 1. **One input surface, not four.** The chip vocabulary is already unified
    (`observables`). A single omni-search takes history, symptoms and findings;
@@ -267,7 +269,78 @@ Click a `+` before trusting it.
 
 ---
 
-## 8. Further reading
+## 8. General OPD, as built
+
+Built 2026-08-13, driven from the browser. `CaseSheet.tsx`, `BlankArt.tsx`,
+`useDismiss.ts`; `ConditionsCard` rewritten to two columns; wired behind
+`isGeneralOpd` in App.tsx.
+
+### The law that was broken, on purpose
+
+`specialtyProfile.ts`: "there is no per-specialty branch anywhere in the
+render tree." Now false, deliberately. Configuration can change what goes
+INSIDE a module. It can never remove a module another profile requires, and
+removing modules was the entire task. Every other profile keeps the shared
+SOAP column untouched until its own turn, so a dentist's screen cannot
+regress while this one is rebuilt.
+
+### The shape
+
+A page-level command bar; a fixed-height row of Case Sheet beside
+Measurements over Attachments; a two-column Assessment with ranked on the
+left and confirmed on the right; then the plan panels.
+
+**Nothing in row 1 grows.** `ROW_BUDGET` gives each group a budget in chip
+rows (history 1, reported 2, examined 2, related 2) and overflow goes to the
+browse modal, never down the page. The panel directly below that row is the
+Assessment, and pushing it off screen exactly when the consultation gets
+interesting is the failure this prevents.
+
+The height is DERIVED, not decreed. A first attempt hard-set 268px on both
+columns and sliced the BP and Pulse cells in half. The right column sizes to
+its own bounded content and the left card stretches to match it.
+
+### What reverted, and why it matters
+
+Hiding the empty ranked panels was tried and **undone the same evening**.
+Each of those panels carries the SEARCH BOX that reaches a medicine or a test
+the engine never ranked, so hiding the panel hid the only way in. Ranking
+decides what is OFFERED, never what is REACHABLE, and tidiness does not
+outrank that. Empty states were made compact and illustrated instead.
+
+### Rules this pass added
+
+- **Reordering, not revealing, for INPUTS.** The system may hide what it has
+  nothing to say about. It may never hide what the doctor might want to say.
+  An empty ranked list is safe to hide; a measurement field is not.
+- **Relevance marks by ADDING, never by dimming its neighbours.** Same size,
+  same position, same weight, and the mark clears the moment a value lands.
+- **Blue tint means "worth taking"; amber means "the value you entered is out
+  of range".** Two different states. Sharing a colour would blur "please
+  measure this" into "this reading is bad".
+- **Relevance in words, never numbers.** A percentage is a verdict, a word is
+  a reading. Ref2 dropped Ref1's percentage bars for exactly this reason.
+- **Blank states are drawn, not apologised for.** `BlankArt.tsx` is one
+  family: inline SVG, one line weight, palette only from the colour rule at
+  its lightest, and the subject is always the thing that will fill the panel,
+  at rest. Never a magnifying glass, never a sad face.
+- **Gloss on the objects, flat paper for the ground.** This overrides
+  consult.css's "no gradients" line, narrowly. If the card were glossy too,
+  nothing would read as foreground.
+- **History is violet, not blue.** Blue is the action colour and was being
+  spent on a chip category.
+
+### Naming
+
+The input surface is the **Case Sheet**: named after the doctor's own
+artefact, never after the software's function. "Master search" is a feature
+name and that is precisely what makes it grate. The exam suggestions are
+**Related findings**, not "worth examining for" — worth is a verdict the
+software should not be issuing; a relationship is a fact.
+
+---
+
+## 9. Further reading
 
 - `docs/temp/Cortex_Ref2.png` — the visual target. Language, not pixels.
 - `docs/Aren cortex visual philosophy.md` — the original doctrine.

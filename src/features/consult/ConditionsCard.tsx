@@ -31,6 +31,7 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { Check, ChevronDown, ShieldAlert, Stethoscope, X } from "lucide-react";
 import type { ActiveSignal, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
@@ -40,9 +41,16 @@ import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
+import { BlankSelectedArt } from "./BlankArt";
 
 /** Rows shown before the panel asks. */
 const CAP = 4;
+
+/**
+ * One collapsed row, measured rather than guessed, so the animated height
+ * lands on a row edge instead of slicing the fifth one in half.
+ */
+const ROW_H = 46;
 
 interface Props {
     /** the ranked `finding` intents, in engine order */
@@ -71,6 +79,7 @@ export function ConditionsCard({
     diagnoses, onRemoveDiagnosis, disabled = false,
 }: Props) {
     const [expanded, setExpanded] = useState(false);
+    const reduce = useReducedMotion();
     const search = useIntentSearch(["finding"]);
 
     const shown = expanded
@@ -125,10 +134,11 @@ export function ConditionsCard({
             );
         }
 
-        return shown.map((intent) => (
+        return shown.map((intent, i) => (
             <ConditionRow
                 key={intent.intentId}
                 intent={intent}
+                rank={i + 1}
                 // A list of one has no other side to the comparison, and the
                 // word could only ever read "High relevance" however weakly the
                 // engine scored it.
@@ -164,100 +174,175 @@ export function ConditionsCard({
     const [primaryDx, ...secondaryDx] = diagnoses;
 
     return (
-        <section className="cs-card cs-assess" aria-label="Assessment">
-            <div className="cs-card-head">
-                <h2 className="cs-card-title">
-                    <span className="cs-glyph is-violet"><Stethoscope size={16} /></span>
+        <section
+            aria-label="Assessment"
+            className="flex min-w-0 flex-col rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] pb-4 shadow-[var(--cs-shadow)]"
+        >
+            <div className="flex items-center gap-2 px-4 pt-3.5">
+                <span className="grid size-[26px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f7f2ff_0%,#ede2fe_100%)] text-[#6d28d9] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                    <Stethoscope size={14} />
+                </span>
+                <h2 className="m-0 text-[13.5px] font-bold uppercase tracking-[0.045em] text-[var(--cs-ink)]">
                     Assessment
                 </h2>
             </div>
 
-            {/* ONE column, read top to bottom: search → what you have chosen →
-                what is ranked. The two-column version this replaces put the
-                doctor's decision beside the engine's list, which made the
-                module twice as wide as it needed to be and read as two
-                separate panels sharing a border. Sequence carries the
-                distinction better than adjacency does — the chip is above the
-                list because it is the OUTCOME of it. */}
-            <div className="cs-assess-body">
-                <div className="cs-assess-decide">
-                    <IntentSearchField
-                        state={search}
-                        placeholder="Search diagnosis / condition…"
-                        disabled={disabled}
-                    />
+            <div className="mt-3 px-4">
+                <IntentSearchField
+                    state={search}
+                    placeholder="Search diagnosis / condition…"
+                    disabled={disabled}
+                />
+            </div>
 
-                    {search.isSearching ? (
-                        <div className="cs-list">{body()}</div>
-                    ) : (
-                        <>
-                            <div className="cs-assess-slot">
-                                <span className="cs-assess-slot-label">Primary</span>
-                                {primaryDx ? (
+            {/* ── TWO COLUMNS ──────────────────────────────────────────────
+                What the engine offers, beside what the doctor has taken.
+
+                This was one column, top to bottom, on the reasoning that
+                sequence carries the distinction better than adjacency. In the
+                browser it does not: the ranked list and the confirmed
+                diagnoses ended up a screen apart, so confirming something felt
+                like it went nowhere. Side by side, the click has a visible
+                destination two inches away.
+
+                The two halves stay visually unlike each other on purpose. Left
+                is a ranked list with badges and a verb; right is a set of
+                chips with neither. Ranking is a safety property, never a
+                verdict, and the moment a possibility and a decision look alike
+                is the moment rank 1 starts reading as a diagnosis. */}
+            {search.isSearching ? (
+                <div className="mt-3 px-4">{body()}</div>
+            ) : (
+                <div className="mt-3.5 grid gap-4 px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+                    {/* left: what is ranked */}
+                    <div className="min-w-0">
+                        <div className="flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
+                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-faint)]">
+                                Ranked conditions
+                            </span>
+                            {intents.length > 0 && (
+                                <span className="ml-auto text-[11.5px] font-medium tabular-nums text-[var(--cs-faint)]">
+                                    {shown.length} of {intents.length}
+                                </span>
+                            )}
+                            {/* At the TOP, beside the count it modifies, not at
+                                the bottom of a list you have to reach the end
+                                of before you learn there is more. */}
+                            {hidden > 0 && !expanded && (
+                                <button
+                                    type="button"
+                                    onClick={() => setExpanded(true)}
+                                    className="flex-none rounded-md border-0 bg-transparent px-1 py-0 text-[11.5px] font-semibold text-[var(--cs-blue)] hover:underline"
+                                >
+                                    Show more
+                                </button>
+                            )}
+                            {expanded && intents.length > CAP && (
+                                <button
+                                    type="button"
+                                    onClick={() => setExpanded(false)}
+                                    className="flex-none rounded-md border-0 bg-transparent px-1 py-0 text-[11.5px] font-semibold text-[var(--cs-faint)] hover:text-[var(--cs-blue)] hover:underline"
+                                >
+                                    Show less
+                                </button>
+                            )}
+                        </div>
+                        <p className="mt-1.5 text-[12px] leading-snug text-[var(--cs-faint)]">
+                            Ranked from symptoms, findings and measurements. You decide.
+                        </p>
+                        {/* ── SCROLL IS OFF UNTIL ASKED FOR ────────────────
+                            Collapsed, the list shows CAP rows and simply ends:
+                            no inner scrollbar, because a scroll region the
+                            doctor did not ask for steals the page's wheel and
+                            hides its own contents behind an edge they have no
+                            reason to look at.
+
+                            "Show more" is what unlocks it. Expanded, the list
+                            scrolls INSIDE a bounded box rather than growing,
+                            so a chart with fifteen conditions cannot push the
+                            prescription off the screen. Anmol, 2026-08-13:
+                            "keep the nested scrolling off by default, but when
+                            you click show more, more will be shown there ...
+                            it should not grow endlessly." */}
+                        {/* The collapse-to-scroll transition is animated on
+                            max-height rather than switched, so the panel grows
+                            into its scroll box instead of snapping and shoving
+                            everything below it down a screen. */}
+                        <motion.div
+                            initial={false}
+                            animate={{ maxHeight: expanded ? 236 : 4 * ROW_H }}
+                            transition={
+                                reduce
+                                    ? { duration: 0 }
+                                    : { type: "spring", stiffness: 260, damping: 32 }
+                            }
+                            className={
+                                "mt-1.5 flex flex-col " +
+                                (expanded ? "overflow-y-auto pr-1" : "overflow-hidden")
+                            }
+                        >
+                            {body()}
+                        </motion.div>
+                    </div>
+
+                    {/* right: what has been taken */}
+                    <div className="min-w-0">
+                        <div className="flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
+                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-faint)]">
+                                Selected / confirmed
+                            </span>
+                            {diagnoses.length > 0 && (
+                                <span className="ml-auto rounded-[6px] bg-[var(--cs-blue-soft)] px-1.5 py-[2px] text-[11px] font-semibold text-[var(--cs-blue)]">
+                                    {diagnoses.length} selected
+                                </span>
+                            )}
+                        </div>
+
+                        {diagnoses.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center gap-2 py-7 text-center">
+                                <BlankSelectedArt />
+                                <span className="text-[12.5px] font-medium text-[var(--cs-faint)]">
+                                    Add more from the ranked list
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="mt-2 flex flex-col gap-1.5">
+                                {/* First confirmed is PRIMARY, the rest are
+                                    secondary. A convention, never a derivation:
+                                    the engine does not decide which diagnosis
+                                    is primary, because that is the one
+                                    judgement here that is entirely the
+                                    doctor's. */}
+                                {primaryDx && (
                                     <DxChip
                                         label={primaryDx}
                                         tone="primary"
                                         onRemove={() => onRemoveDiagnosis(primaryDx)}
                                     />
-                                ) : (
-                                    <span className="cs-assess-slot-empty">
-                                        Confirm one from the suggestions, or search above
-                                    </span>
                                 )}
+                                {secondaryDx.map((dx) => (
+                                    <DxChip
+                                        key={dx}
+                                        label={dx}
+                                        tone="secondary"
+                                        onRemove={() => onRemoveDiagnosis(dx)}
+                                    />
+                                ))}
                             </div>
-
-                            {secondaryDx.length > 0 && (
-                                <div className="cs-assess-slot">
-                                    <span className="cs-assess-slot-label">Secondary</span>
-                                    <span className="cs-assess-chips">
-                                        {secondaryDx.map((dx) => (
-                                            <DxChip
-                                                key={dx}
-                                                label={dx}
-                                                tone="secondary"
-                                                onRemove={() => onRemoveDiagnosis(dx)}
-                                            />
-                                        ))}
-                                    </span>
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-
-                {/* The ranked list, full width beneath the decision. Titled as
-                    possibilities and never as an assessment — ranking is a
-                    safety property, not a verdict (handoff §1), and the
-                    heading is where that promise is kept or broken. */}
-                {!search.isSearching && (
-                    <div className="cs-assess-ranked">
-                        <div className="cs-assess-ranked-head">
-                            <span className="cs-assess-ranked-title">Ranked Conditions</span>
-                            {intents.length > 0 && (
-                                <span className="cs-count is-quiet">{intents.length} ranked</span>
-                            )}
-                        </div>
-                        <p className="cs-cond-note">
-                            Ranked from symptoms, findings and measurements. You decide.
-                        </p>
-                        <div className="cs-list">{body()}</div>
-                        {hidden > 0 && !expanded && (
-                            <button type="button" className="cs-more" onClick={() => setExpanded(true)}>
-                                Show {hidden} more
-                                <ChevronDown size={14} />
-                            </button>
                         )}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </section>
     );
 }
 
 function ConditionRow({
-    intent, relevance, confirmed, acknowledged, onAcknowledge, onExplain, onAccept,
+    intent, rank, relevance, confirmed, acknowledged, onAcknowledge, onExplain, onAccept,
 }: {
     intent: PersonalizedIntent;
+    /** position in the list, 1-based, for the badge */
+    rank: number;
     relevance: string | null;
     confirmed: boolean;
     acknowledged: boolean;
@@ -273,7 +358,6 @@ function ConditionRow({
     return (
         <div
             ref={rowRef}
-            className={`cs-sug${confirmed ? " is-added" : ""}${isHard ? " is-hard" : ""}`}
             // The second way in. The info button is the discoverable one and
             // the only one a keyboard reaches; double-click is the shortcut for
             // a doctor who already knows it is there.
@@ -281,14 +365,37 @@ function ConditionRow({
                 const r = rowRef.current?.getBoundingClientRect();
                 if (r) onExplain(r);
             }}
+            className={
+                "flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-150 " +
+                (confirmed
+                    ? "border-[#b6e6cd] bg-[linear-gradient(180deg,#f4fdf8_0%,#e6f8ef_100%)] "
+                    : isHard
+                        ? "border-[#f4cfcb] bg-[#fef6f5] "
+                        : "border-transparent hover:border-[var(--cs-line)] hover:bg-[#fafbfd] ")
+            }
         >
-            <span className="cs-sug-icon is-finding" aria-hidden="true">
-                <Stethoscope size={14} />
+            {/* The rank, as a number. It was a stethoscope glyph repeated down
+                the column, which said the same thing on every row and so said
+                nothing. A ranked list should be numbered: the position IS the
+                content. Green once taken, so the state is legible from the
+                badge alone. */}
+            <span
+                aria-hidden="true"
+                className={
+                    "grid size-[22px] flex-none place-items-center rounded-full text-[11.5px] font-bold tabular-nums " +
+                    (confirmed
+                        ? "bg-[linear-gradient(180deg,#22a565_0%,#16924f_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+                        : "bg-[linear-gradient(180deg,#1e293b_0%,#0f172a_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]")
+                }
+            >
+                {rank}
             </span>
 
-            <div className="cs-sug-main">
-                <div className="cs-sug-name">
-                    <span>{intent.label}</span>
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[13.5px] font-semibold leading-tight text-[var(--cs-ink)]">
+                        {intent.label}
+                    </span>
                     {intent.isSafetyCritical && (
                         <span className="cs-flag is-safety"><ShieldAlert size={10} /> Safety</span>
                     )}
@@ -296,19 +403,34 @@ function ConditionRow({
                     {isHard && <span className="cs-flag is-hard">Check</span>}
                     <WhyButton label={intent.label} onOpen={onExplain} />
                 </div>
-                {relevance && <span className="cs-sug-rel">{relevance}</span>}
+                {relevance && (
+                    <span className="mt-[1px] block text-[11.5px] font-medium text-[var(--cs-faint)]">
+                        {relevance}
+                    </span>
+                )}
             </div>
 
             {confirmed ? (
-                <span className="cs-added" aria-label="Confirmed"><Check size={15} /></span>
+                <span
+                    aria-label="Confirmed"
+                    className="grid size-[22px] flex-none place-items-center rounded-full bg-[#dcf5e8] text-[#15803d]"
+                >
+                    <Check size={14} />
+                </span>
             ) : locked ? (
-                <span style={{ width: 29 }} aria-hidden="true" />
+                <span className="w-[62px] flex-none" aria-hidden="true" />
             ) : (
-                <button type="button" className="cs-act" onClick={onAccept}>Confirm</button>
+                <button
+                    type="button"
+                    onClick={onAccept}
+                    className="flex-none rounded-md border border-[var(--cs-line-strong)] bg-white px-2.5 py-[5px] text-[12px] font-semibold text-[var(--cs-muted)] transition-colors duration-150 hover:border-[rgba(18,104,232,0.5)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)]"
+                >
+                    Select
+                </button>
             )}
 
             {(isWarn || isHard) && intent.guardReasons.length > 0 && (
-                <div style={{ gridColumn: "2 / -1" }}>
+                <div className="basis-full">
                     <GuardReason
                         hard={isHard}
                         reasons={intent.guardReasons}
@@ -337,14 +459,27 @@ function DxChip({
     onRemove: () => void;
 }) {
     return (
-        <span className={`cs-dx is-${tone}`}>
-            <i className="cs-dx-dot" aria-hidden="true" />
-            <span className="cs-dx-label">{label}</span>
+        <span
+            className={
+                "flex items-center gap-2 rounded-lg border px-3 py-2 " +
+                (tone === "primary"
+                    ? "border-[#d9c9fb] bg-[linear-gradient(180deg,#faf7ff_0%,#efe7fe_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+                    : "border-[#e6ddfb] bg-[#faf8ff]")
+            }
+        >
+            <span
+                className={
+                    "min-w-0 flex-1 truncate text-[13.5px] leading-tight text-[#5b21b6] " +
+                    (tone === "primary" ? "font-bold" : "font-semibold")
+                }
+            >
+                {label}
+            </span>
             <button
                 type="button"
-                className="cs-dx-x"
                 onClick={onRemove}
                 aria-label={`Remove ${label}`}
+                className="grid size-[18px] flex-none place-items-center rounded border-0 bg-transparent p-0 text-[#7c5bd0] opacity-60 transition hover:bg-black/5 hover:opacity-100"
             >
                 <X size={13} />
             </button>

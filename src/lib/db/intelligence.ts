@@ -34,6 +34,21 @@ export async function saveConsult(opts: {
      * see, it is a signed clinical document with the wrong name on it.
      */
     doctorId: string;
+    /**
+     * The facility this prescription belongs to. REQUIRED.
+     *
+     * `prescriptions.hospital_id` exists and its RLS policy checks it on
+     * INSERT. This insert never set it, so the column went in NULL, the
+     * WITH CHECK failed, and every save died on
+     * `42501: new row violates row-level security policy for table
+     * "prescriptions"` — a 403 at the last step of the consultation, after
+     * the visit had already been marked completed by step 1.
+     *
+     * Nothing else in the chain needs it: `prescription_medicines` and
+     * `diagnostic_orders` have no `hospital_id` of their own and scope
+     * through the prescription. Verified against the live schema 2026-08-13.
+     */
+    hospitalId: string;
     medicines: SaveConsultMedicine[];
     tests: string[];
     vitals: Record<string, string>;
@@ -58,6 +73,8 @@ export async function saveConsult(opts: {
         .insert({
             visit_id: opts.visitId,
             assigned_doctor_id: opts.doctorId,
+            // The tenancy discriminator the RLS policy checks. See `hospitalId`.
+            hospital_id: opts.hospitalId,
             findings_text: opts.findingsText,
             follow_up_days: opts.followUpDays ?? null,
             advice_notes: opts.adviceNotes ?? null,

@@ -28,4 +28,16 @@ export interface AcceptPayload {
      * the model reinforce its own output.
      */
     brandDeliberate?: boolean;
+    /**
+     * The product NAME the doctor actually typed, when this was reached by a
+     * brand match in search.
+     *
+     * Without it the accept carried only a composition id, and the resolver
+     * answered with `composition_brands`, which returns single-molecule
+     * products only. A doctor who searched "Acenac-P" therefore could not be
+     * given Acenac-P: the lookup was incapable of returning it. This carries
+     * the name through so the exact product can be resolved whole, with every
+     * molecule it contains. See lib/db/medicines.ts.
+     */
+    brandHint?: string | null;
 }

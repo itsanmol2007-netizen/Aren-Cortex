@@ -37,6 +37,7 @@ import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
+import { BlankTestArt } from "./BlankArt";
 
 /**
  * Section order, labels, glyphs and the verb each type is accepted with.
@@ -184,6 +185,7 @@ export function SuggestionsCard({
         if (!hasChart) {
             return (
                 <div className="cs-empty">
+                    <BlankTestArt />
                     <strong>Start adding observations to activate Synapse</strong>
                     <span>
                         Symptoms, findings and measurements all feed the same reading —
@@ -196,6 +198,7 @@ export function SuggestionsCard({
         if (rows.length === 0) {
             return (
                 <div className="cs-empty">
+                    <BlankTestArt />
                     <strong>Nothing else to suggest for this chart</strong>
                     <span>Search above to order or refer something directly.</span>
                 </div>

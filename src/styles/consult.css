@@ -854,9 +854,20 @@
 /* A compact clinical readout, not a row of dashboard tiles. The label sits
    above the value, left-aligned, and the cell is only as tall as the two
    lines need — these are numbers a doctor scans, not KPIs to be celebrated. */
+/* A FIXED three-column grid, not `auto-fit`.
+
+   `auto-fit` with a 96px floor packed a different number of cells per row at
+   every container width, and because blood pressure spans two columns the
+   result was a ragged readout: one wide cell, two narrow, then a short row
+   with the "Add Measurement" box wedged on the end at a third width. Numbers
+   that should scan as a row of vitals instead read as a pile of boxes.
+
+   Three columns is what the reference shows and what the 40% column fits: BP
+   takes two of them and sits alone on its row, and everything after it lands
+   on a consistent grid. */
 .cs-meas-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     padding: var(--cs-s3) var(--cs-s4) var(--cs-s4);
 }
@@ -1657,9 +1668,26 @@
 
    Deliberately weaker than `.is-warn`: an out-of-range number the doctor
    already recorded always outranks a field they have not filled in. */
+/* Strengthened 2026-08-12. This was `#fcfdff`, which is white to within a
+   rounding error, so the relevance engine looked like it was doing nothing:
+   ticking Fever did surface Temperature and the field was indistinguishable
+   from its neighbours.
+
+   A tint, not a highlight. Anmol's rule, and it is the right one: the marked
+   cell is changed by ADDING to it, never by dimming the rest. Same size, same
+   position, same type weight, and the field never moves. It clears the moment
+   a value lands, because a mark that outlives its own question is noise.
+
+   Blue, and amber is left alone on purpose. These are two different states
+   and a doctor must be able to tell them apart at a glance:
+     is-suggested = the chart suggests taking this   (nothing entered yet)
+     is-warn      = the number you entered is out of range
+   They cannot collide, since `suggested` requires an empty field, but sharing
+   a colour would still blur "please measure this" into "this reading is bad".
+   Amber already means soft guard everywhere else on this screen. */
 .cs-meas.is-suggested {
-    border-color: rgba(18, 104, 232, 0.34);
-    background: #fcfdff;
+    border-color: rgba(18, 104, 232, 0.30);
+    background: linear-gradient(180deg, #f6faff 0%, #e9f1ff 100%);
 }
 
 .cs-meas.is-suggested .cs-meas-label {
@@ -3938,6 +3966,16 @@
     box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
 }
 .cs-addmed-brands { display: flex; flex-direction: column; gap: 5px; }
+
+/* The brand list was hard-sliced to 8 in the component, which made the other
+   22 of BRAND_CANDIDATES unreachable on the one panel whose job is choosing
+   between them. All of them render now; the list scrolls rather than running
+   the sheet off the screen. */
+.cs-addmed-brands.is-scroll {
+    max-height: 188px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
 .cs-addmed-brand {
     display: flex;
     align-items: center;
@@ -4027,4 +4065,427 @@
     background: none;
     color: var(--cs-faint);
     cursor: default;
+}
+
+/* The overflow row on a capped Attachments card. Deliberately quiet: it is a
+   way to the rest of the files, not a file itself. */
+.cs-attach-more {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: none;
+    margin: 2px 0 0;
+    padding: 7px 11px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 550;
+    cursor: pointer;
+    transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease;
+}
+
+.cs-attach-more:hover {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* ── THE ROW-1 HEIGHT CONTRACT (2026-08-13) ───────────────────────────────
+   Case Sheet on the left, Measurements above Attachments on the right, all
+   locked to ONE height. Every card in this row overflows into a "More"
+   control rather than growing, because the panel directly below them is the
+   Assessment, and a row that grows with its contents pushes the Assessment
+   off screen exactly when the consultation has become interesting enough to
+   need it.
+
+   Anmol, 2026-08-13: "It needs a fixed height, and it should not increase
+   with adding elements there."
+
+   The height is DERIVED, not decreed. A first attempt hard-set 268px on both
+   columns and split the right one with a 1fr/auto grid, which handed
+   Measurements less room than its own grid needs: the BP and Pulse cells were
+   sliced in half by the footer. Seen in the browser the same day.
+
+   So the RIGHT column sizes to its content, which is already bounded by the
+   caps (six cells, one strip row, two footers), and the LEFT card stretches to
+   match whatever that comes to. The floor stops the pair collapsing on an
+   empty consult. Nothing here grows with what the doctor enters, which is the
+   property that actually mattered. */
+:root {
+    --cs-sheet-min-h: 252px;
+}
+
+/* Stretch, so the Case Sheet takes its height from the column beside it
+   rather than from its own contents. */
+.cs-row-obj.is-locked {
+    align-items: stretch;
+}
+
+.cs-rowone-right {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    min-width: 0;
+    min-height: var(--cs-sheet-min-h);
+}
+
+/* Measurements takes the room it needs, Attachments takes what is left. That
+   is the right way round: a vitals grid has a natural size, and a file strip
+   is one row however many files it holds. */
+.cs-rowone-right > .cs-meas-card {
+    flex: none;
+}
+
+/* Content-sized, and NOT clipping. `overflow: hidden` here cut the Attach
+   type menu off mid-word, so the doctor chose a file type from a list whose
+   last options were invisible. Seen in the browser 2026-08-13. */
+.cs-rowone-right > .cs-attach.is-strip {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+}
+
+/* ── The shared card footer: "n / m shown" + More ─────────────────────────
+   Every capped card in row 1 carries this. It exists so a fixed-height card
+   can never silently imply it is showing everything: the count is stated, and
+   the way to the rest is beside it. */
+.cs-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cs-s2);
+    flex: none;
+    margin-top: auto;
+    border-top: 1px solid var(--cs-line);
+    padding: 7px var(--cs-s4);
+}
+
+.cs-card-foot-count {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-card-foot-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 2px 5px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cs-card-foot-more:hover { color: var(--cs-blue); }
+
+/* Measurements is a fixed-height card now: the grid takes the room and the
+   footer sits on the floor of it. */
+.cs-meas-card { min-height: 0; }
+.cs-meas-card .cs-meas-grid { align-content: start; }
+
+.cs-meas-menu.is-inline {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: var(--cs-s3) var(--cs-s4) 0;
+    box-shadow: none;
+    border: 0;
+    padding: 0;
+}
+
+/* ── Attachments, as a horizontal strip ──────────────────────────────────
+   One row of small cards instead of one full row per file. The row form cost
+   a line of page height per attachment in a column that must not grow. */
+.cs-attach.is-strip { min-height: 0; }
+
+.cs-attach-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: var(--cs-s3) var(--cs-s4) 0;
+}
+
+.cs-attach-tile {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 6px 9px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.13s ease, background 0.13s ease;
+}
+
+.cs-attach-tile:hover:not(:disabled) {
+    border-color: rgba(18, 104, 232, 0.4);
+    background: var(--cs-blue-soft);
+}
+
+.cs-attach-tile.is-add {
+    border-style: dashed;
+    color: var(--cs-faint);
+}
+
+.cs-attach-tile-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #f4f7fc 0%, #e8eef7 100%);
+    color: #47597a;
+}
+
+.cs-attach-tile-meta { display: flex; flex-direction: column; min-width: 0; }
+
+.cs-attach-tile-name {
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-attach-tile-size {
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.cs-attach-hint {
+    margin: var(--cs-s2) 0 0;
+    padding: 0 var(--cs-s4);
+    max-width: 46ch;
+    color: var(--cs-faint);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.cs-attach-add.is-tile { position: relative; }
+
+/* The blank attachments strip: art above the line, both centred, so the
+   panel reads as waiting rather than as unfinished. */
+.cs-attach-blank {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: var(--cs-s3) var(--cs-s4) 0;
+    text-align: center;
+}
+
+.cs-attach-blank .cs-attach-hint {
+    padding: 0;
+    max-width: 38ch;
+}
+
+/* Every cs-empty now leads with a drawing. */
+.cs-empty svg { margin-bottom: 2px; }
+
+/* ── The locked row is TIGHTER than the general layout ───────────────────
+   Measured in the browser 2026-08-13: with BP spanning two columns the grid
+   needed three rows (BP+Pulse / SpO2+Temp+Weight / Add), and the row came to
+   ~510px. The reference fits the same six cells in TWO rows because blood
+   pressure occupies one column, not two.
+
+   At three equal columns in this 40% panel a cell is ~128px, which clears the
+   ~110px that "120 / 80" needs. The two-cell span exists for the narrow
+   general layout, where it genuinely clipped to "12(/ 80"; here there is
+   room, so the span is dropped and a whole row comes back. */
+.cs-rowone-right .cs-meas.is-wide {
+    grid-column: span 1;
+}
+
+.cs-rowone-right .cs-meas-grid {
+    padding: var(--cs-s3) var(--cs-s4);
+    gap: 5px;
+}
+
+/* Attachments sizes to its content. Letting it take the remaining space made
+   the blank state a 200px well of white with a small drawing floating in it. */
+.cs-rowone-right > .cs-attach.is-strip {
+    flex: none;
+}
+
+.cs-rowone-right .cs-attach-blank {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--cs-s2);
+    padding: var(--cs-s2) var(--cs-s4) 0;
+    text-align: left;
+}
+
+.cs-rowone-right .cs-attach-blank svg {
+    flex: none;
+    width: 34px;
+    height: 30px;
+}
+
+.cs-rowone-right .cs-attach-blank .cs-attach-hint {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+/* The Attach type menu escapes the card. Seen clipped mid-word in the
+   browser 2026-08-13: the strip card clipped to its own box and cut the last
+   file-type options off. The card is content-sized, so nothing here needs to
+   clip, and the menu needs to sit above the card below it. */
+.cs-attach.is-strip {
+    overflow: visible;
+}
+
+.cs-attach.is-strip .cs-meas-menu {
+    z-index: 40;
+}
+
+/* ── The heading IS the control ──────────────────────────────────────────
+   Measurements and Attachments each had a separate add button on its own
+   row, restating what the icon beside the title already said and costing a
+   line of a card that must not grow. The whole heading is the trigger now.
+   Anmol, 2026-08-13. */
+.cs-card-head.is-trigger {
+    position: relative;
+    padding-right: var(--cs-s3);
+}
+
+.cs-head-action {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    border-radius: var(--cs-radius-sm);
+    background: none;
+    padding: 2px 4px 2px 0;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cs-head-action:disabled { cursor: default; }
+
+.cs-head-action .cs-card-title { min-width: 0; }
+
+.cs-head-count {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 550;
+    white-space: nowrap;
+}
+
+/* The plus sits at the far end of the heading, so the whole row reads as one
+   affordance rather than a title with a button stuck beside it. */
+.cs-head-plus {
+    flex: none;
+    margin-left: auto;
+    color: var(--cs-faint);
+    transition: color 0.13s ease;
+}
+
+.cs-head-action:hover:not(:disabled) .cs-head-plus { color: var(--cs-blue); }
+.cs-head-action:hover:not(:disabled) .cs-card-title { color: var(--cs-blue); }
+
+.cs-card-head.is-trigger .cs-meas-menu {
+    top: calc(100% + 2px);
+    left: var(--cs-s4);
+    right: auto;
+    z-index: 45;
+}
+
+/* ── The plan rail is a COLUMN, not a floating box ───────────────────────
+   It was a card sitting on a slate panel with page background visible below
+   it, so on a short consult it read as a widget parked in the corner rather
+   than as the other half of the workspace. It runs the full height now and
+   the sheet inside it fills that height. Anmol, 2026-08-13: "make it take
+   full screen space by default, don't make it a floating box in the side". */
+.cs-summary .cs-plan {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── The medicine row's two verbs ────────────────────────────────────────
+   "Prescribe" is named rather than drawn as a plus: the verb is what the
+   doctor is doing, and a plus on a medicine row could as easily mean "add
+   another". "Change brand" appears only on the open row. */
+.cs-prescribe {
+    flex: none;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 5px 11px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 620;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.cs-prescribe:hover {
+    border-color: rgba(14, 124, 102, 0.5);
+    background: #f2fbf8;
+    color: #0b6a62;
+}
+
+.cs-changebrand {
+    flex: none;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    background: none;
+    padding: 5px 10px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 550;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.cs-changebrand:hover { border-color: var(--cs-line-strong); color: var(--cs-blue); }
+
+/* The open row is marked, quietly, so it is obvious which one the extra
+   controls belong to. */
+.cs-rec { cursor: pointer; }
+.cs-rec.is-open { background: #fafbfd; }
+
+/* ── Marks on the PRINT prescription ──────────────────────────────────────
+   These live in the off-screen document that feeds print, PDF and WhatsApp,
+   so they are plain CSS rather than Tailwind: html2canvas rasterises that
+   node directly and it must not depend on a utility layer being present at
+   capture time. */
+.rx-doc-watermark {
+    position: absolute;
+    right: 26px;
+    bottom: 96px;
+    width: 190px;
+    height: 190px;
+    opacity: 0.035;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* The monogram behind the initials on a clinic with no uploaded logo. */
+.rx-crest-mark {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.22;
 }

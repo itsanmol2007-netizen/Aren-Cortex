@@ -32,6 +32,7 @@ import {
     guardIntent, type ActiveSignal, type IntentType, type Ruleset,
 } from "../../lib/synapse/engine";
 import { searchIntents, type IntentSearchHit } from "../../lib/db/synapse";
+import { fetchProductsByNames, type ResolvedProduct } from "../../lib/db/medicines";
 import type { AcceptPayload } from "./types";
 import { GuardReason } from "./parts";
 
@@ -128,6 +129,44 @@ export function IntentSearchField({
     );
 }
 
+/**
+ * What each brand hit ACTUALLY contains, resolved for the whole result set.
+ *
+ * `search_intents` returns one composition per hit and picks it by rarity,
+ * which selects the minor ingredient more often than the major one, so a
+ * combination was being described on screen by the half the doctor was least
+ * likely to have wanted. This fills in the rest.
+ *
+ * Deliberately additive. If the lookup fails the row still renders with the
+ * RPC's single composition, exactly as before, because a product list that
+ * disappears because a secondary read failed is worse than one that is
+ * briefly less specific.
+ */
+export function useHitProducts(hits: IntentSearchHit[]): Map<string, ResolvedProduct> {
+    const [products, setProducts] = useState<Map<string, ResolvedProduct>>(new Map());
+
+    const names = hits
+        .filter((h) => h.matchKind === "brand" && h.viaLabel)
+        .map((h) => h.viaLabel!)
+        .join("|");
+
+    useEffect(() => {
+        if (!names) { setProducts(new Map()); return; }
+        let cancelled = false;
+        fetchProductsByNames(names.split("|"))
+            .then((m) => { if (!cancelled) setProducts(m); })
+            .catch((e) => {
+                // Loud in the console, invisible on screen. This read is a
+                // refinement of a row that already works.
+                console.warn("product composition lookup failed:", e);
+                if (!cancelled) setProducts(new Map());
+            });
+        return () => { cancelled = true; };
+    }, [names]);
+
+    return products;
+}
+
 /** How a hit was reached, said plainly. Never "score 2.4". */
 const MATCH_TEXT: Record<IntentSearchHit["matchKind"], (via: string | null) => string> = {
     label: () => "Matched by name",
@@ -177,6 +216,8 @@ export function IntentSearchResults({
         }
         return m;
     }, [ruleset, activeSignals, state.hits]);
+
+    const products = useHitProducts(state.hits);
 
     if (state.error) {
         return (
@@ -240,7 +281,18 @@ export function IntentSearchResults({
                             </div>
                             {hit.matchKind === "brand" && hit.viaLabel ? (
                                 <span className="cs-sug-rel">
-                                    <b className="cs-sug-molecule">{hit.label}</b>
+                                    {/* EVERY molecule, when the product has been
+                                        resolved. The RPC's single `hit.label` is
+                                        the fallback and it is frequently the
+                                        MINOR ingredient: Acenac-MR comes back as
+                                        thiocolchicoside with its aceclofenac
+                                        nowhere on the row. */}
+                                    <b className="cs-sug-molecule">
+                                        {products.get(hit.viaLabel)?.compositionLabels.join(" + ")
+                                            ?? hit.label}
+                                    </b>
+                                    {(products.get(hit.viaLabel)?.compositionIds.length ?? 0) > 1 &&
+                                        " · combination"}
                                     {wasRanked && " · already in the list"}
                                 </span>
                             ) : (
@@ -269,6 +321,15 @@ export function IntentSearchResults({
                                         // App resolves the brand for a medicine
                                         // it was handed without one.
                                         medicine: null,
+                                        // The product the doctor NAMED. Until
+                                        // this was carried, the accept knew
+                                        // only the molecule, and the resolver
+                                        // behind it returns single-molecule
+                                        // products only, so a combination the
+                                        // search had just displayed could
+                                        // never be the thing prescribed.
+                                        brandHint:
+                                            hit.matchKind === "brand" ? hit.viaLabel : null,
                                         // Only a pick the ranking never offered
                                         // is a miss. Anything already on screen
                                         // is an ordinary accept.

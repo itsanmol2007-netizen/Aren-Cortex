@@ -2261,3 +2261,149 @@ Physiotherapy was told "Exercise Plans primary" and shown Medicines.
 - Findings ranking: `examSuggestions.ts` runs on every chart change and
   nothing consumes it; `signal_finding_suggestions` has **10 rules** against
   1,577 intent rules. Content project, not a code change.
+
+---
+
+## 14.15 Session 2026-08-13 — General OPD as its own screen, and three bugs
+           that were structural rather than cosmetic
+
+Driven from the browser throughout. Every defect below was found by loading
+the page, and none of them were findable by reading the code — which is the
+same lesson §14.14 recorded and the same one this session had to relearn
+twice before it stuck.
+
+### The three bugs
+
+**1. Combinations could not be prescribed. At all.**
+
+`composition_brands` states its own rule at `lib/db/synapse.ts:448`: a brand
+is only offered when the product contains that molecule ALONE, filtering on
+`ingredient_count = 1`. So the resolver behind every accept was structurally
+incapable of returning a combination. A doctor could search "Acenac-P", see
+it in the results, press the button, and get either a different
+single-molecule product or nothing: `resolveBrandFor` returned null, the
+sheet opened with no brand, and `commitAccept` deleted the intent again on
+confirm.
+
+Combinations are a large share of Indian prescribing and are frequently the
+correct choice — aceclofenac with paracetamol answers pain and fever in one
+product. This was most of a working day, not an edge case.
+
+Fixed with `lib/db/medicines.ts`, which sits BESIDE `composition_brands`
+rather than replacing it: the ranked list keeps its single-molecule filter,
+because there the engine genuinely scored one molecule, and every product the
+doctor NAMES is resolved whole. `AcceptPayload.brandHint` carries the typed
+name through. `Medicine.compositionIds` carries every molecule back.
+
+Two measurements that shaped the implementation, both taken against the live
+catalogue:
+
+  * `medicine_composition_map` has NO `strength_mg` column. An earlier
+    version selected it and every call threw.
+  * `.ilike("name", "acenac%")` is CANCELLED BY THE STATEMENT TIMEOUT on
+    213,145 rows. `.eq("name", ...)` returns in ~730ms. Exact match is not a
+    compromise here: `search_intents` returns the row's own name.
+
+The RPC's rarity heuristic also picks the MINOR ingredient far more often
+than the major one — "Acenac-MR" comes back as thiocolchicoside, "Acenac-N"
+as pregabalin — so the search row now resolves and prints every molecule
+rather than the one the RPC chose.
+
+`npm run check:combos` verifies the whole path. It needs credentials: the
+catalogue tables return zero rows to an anonymous client while
+`search_intents` is SECURITY DEFINER and answers anyone, and that asymmetry
+is exactly how this hid for so long.
+
+**2. Recommended medicines never showed the confirm sheet.**
+
+`handleAcceptIntent` short-circuited on `payload.type !== "medicine" ||
+payload.medicine`. The ranked list always resolves a brand before calling, so
+every RECOMMENDED medicine skipped `MedicineAddSheet` entirely and landed on
+the prescription at the composition's default dose with nothing shown. Only
+searched medicines, which arrive without a product, got the sheet. The dose
+is a clinical decision on every route to a prescription.
+
+**3. Saving a prescription was impossible. 403, every time.**
+
+`POST /rest/v1/prescriptions` → `42501: new row violates row-level security
+policy`. The insert never set `hospital_id`, which exists on that table and
+is what its RLS policy checks. It went in NULL and the WITH CHECK failed.
+
+The shape of this one is worth remembering: step 1 marks the visit
+`completed`, step 2 inserts the prescription. So a failed save left the visit
+closed with no prescription attached. `prescription_medicines` and
+`diagnostic_orders` have no `hospital_id` and scope through the parent, so
+only the one insert needed the field.
+
+### General OPD is now its own screen
+
+`specialtyProfile.ts` says "there is no per-specialty branch anywhere in the
+render tree". That is now false, deliberately, and the reasoning is in
+`aren-cortex-ui-doctrine.md` §8: configuration can change what goes INSIDE a
+module but can never remove a module another profile requires, and removing
+modules was the whole task. Every other profile still renders the shared SOAP
+column untouched until its own turn.
+
+What the screen is now: a page-level command bar, then a fixed-height row of
+Case Sheet │ Measurements over Attachments, then a two-column Assessment
+(ranked left, confirmed right), then the plan panels.
+
+`ROW_BUDGET` in `CaseSheet.tsx` is the load-bearing idea. Each group gets a
+budget in CHIP ROWS (history 1, reported 2, examined 2, related 2) and
+overflow goes to the browse modal rather than down the page. Nothing in that
+row grows, because the panel directly below it is the Assessment.
+
+### Smaller things found by looking
+
+  * `.cs-meas.is-suggested` was `background: #fcfdff`, white to within a
+    rounding error. The relevance engine had been working and invisible.
+  * The brand drawer closed on its own scroll: a bare capture-phase `scroll`
+    listener treated `.cx-sheet-list` scrolling as the page moving, so the
+    doctor could not scroll to a brand without dismissing the list.
+  * `prescription_medicines.composition_ids` was written as
+    `[brand.compositionId]` against a column documented as "all composition
+    IDs", so a combination entered the record as a single molecule and its
+    second drug was invisible to duplicate checking.
+  * `MedicineAddSheet` hard-sliced brands to 8 of the 30 fetched, on the one
+    panel whose job is choosing between them.
+  * Small menus had no outside-click close at all — `useDismiss` now serves
+    all of them.
+
+### The prescription is TWO components
+
+`ReviewModal.tsx` renders an on-screen preview AND mounts
+`PrescriptionDocument.tsx` off-screen at `left: -9999px`. The second is what
+feeds print, PDF and WhatsApp — it is the document the patient receives.
+
+Styling one does nothing to the other, which cost a round trip this session.
+**If you are changing what a patient sees, change `PrescriptionDocument`.**
+Collapsing the two is worth doing and has not been done.
+
+### The clinic accent was overridden, not underused
+
+`hospitals.accent_color` was blended into hardcoded `#7c3aed` and `#ec4899`
+in the accent rule, and the specialisation pill was hardcoded pink outright.
+A clinic choosing forest green got green fading through purple into pink, so
+every clinic's prescription looked like the same violet house style.
+
+`lib/brand/accent.ts` derives a ramp from the single stored hex, because one
+colour cannot serve a heading, a hairline and a tinted band. `ink` is
+CONTRAST-CLAMPED against white: a clinic choosing `#facc15` gets headings at
+`#8f7306`. Brand expression stops where legibility starts, because this
+document is printed on cheap stock. `components/RxMarks.tsx` holds
+stroke-based SVG that takes any hue and survives greyscale.
+
+### Open
+
+- The print document's new look is **not browser-verified**. It builds and
+  type-checks; it has not been seen rendered.
+- Ranking combinations by coverage is not done. They are REACHABLE but not
+  OFFERED: the engine still ranks compositions, so a product answering two
+  active needs is not scored as such. `fetchCombinationProducts` is written
+  and deliberately unwired.
+- The whole screen is tuned such that it reads best at ~80% browser zoom on a
+  14" display, which means the type and spacing scale is one step too large
+  at 100%. Needs a deliberate density pass, not per-card nudges.
+- With a rich chart every visible measurement cell is tinted at once, and a
+  mark that applies to everything marks nothing. Needs a cap or a
+  most-recently-raised rule.

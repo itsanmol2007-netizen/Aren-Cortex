@@ -28,6 +28,7 @@ import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { MedicineAddSheet, type MedicineDraft } from "./features/consult/MedicineAddSheet";
 import { useChartSummaries } from "./features/consult/useChartSummaries";
 import { useJustAdded } from "./features/consult/useJustAdded";
+import { CaseSheet, ClinicalCommandBar, type CaseSheetEntry } from "./features/consult/CaseSheet";
 import { AttachmentsCard } from "./features/consult/AttachmentsCard";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { BodyMapCard } from "./features/consult/BodyMapCard";
@@ -53,8 +54,11 @@ import {
   commitConsultation, setClinicBrandDefault, clearClinicBrandDefault,
   fetchCompositionBrands, resolvePanelTests,
   type SearchedAccept,
+  type Observable,
 } from "./lib/db/synapse";
+import { resolveProductByName } from "./lib/db/medicines";
 import type { Medicine as SynapseBrand } from "./lib/synapse/brands";
+import { guardIntent } from "./lib/synapse/engine";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   createPatient, findPatientByPhone, createVisit,
@@ -99,13 +103,27 @@ function toPrescriptionLine(
   return {
     id: String(brand.id),
     medicine_id: brand.id,
-    composition_ids: [brand.compositionId],
+    // EVERY molecule in the product, not just the one it was ranked through.
+    // This read `[brand.compositionId]` unconditionally, so a combination was
+    // written into the clinical record as a single molecule and its second
+    // drug was invisible to `prescriptionCompositionIds`, which is what
+    // duplicate and interaction checking reads. Absent means single-molecule,
+    // where the fallback is exactly correct.
+    composition_ids: brand.compositionIds ?? [brand.compositionId],
     primary_composition_id: brand.compositionId,
     name: brand.name,
     category: payload.label,
     use: "",
     match: 0,
-    composition: payload.label,
+    // The molecules, joined. `payload.label` is the INTENT's label, which is
+    // the single composition this product was ranked or searched through, so
+    // the summary rail and the prescription preview were both printing one
+    // molecule of a combination. They read this one field, so they are both
+    // fixed here. `composition_ids` above is the machine-readable half; this
+    // is what the doctor and the patient actually see on the page.
+    composition: brand.compositionLabels?.length
+      ? brand.compositionLabels.join(" + ")
+      : payload.label,
     dosage: "1 tab",
     frequency: "Morning and Night",
     duration: "5 days",
@@ -350,6 +368,24 @@ function App() {
     [selectedSymptoms, selectedFindings]
   );
 
+  /**
+   * The same chart as ONE list, each entry carrying its own classification.
+   *
+   * `CaseSheet` renders these grouped, but the split is a readout: this is one
+   * collection with a `kind` on each, not three collections drawn next to each
+   * other. Built from the existing three sets rather than replacing them,
+   * because `selectedSymptoms` stays the single array the engine, the v1
+   * compatibility write and the review modal all read.
+   */
+  const caseSheetEntries = useMemo<CaseSheetEntry[]>(
+    () => [
+      ...symptomChips.map((label) => ({ label, kind: "symptom" as const })),
+      ...selectedFindings.map((label) => ({ label, kind: "finding" as const })),
+      ...contextChips.map((label) => ({ label, kind: "history" as const })),
+    ],
+    [symptomChips, selectedFindings, contextChips]
+  );
+
   /** The symptoms picker owns the complaints half; context survives its edits. */
   const handleSymptomToggle = useCallback((label: string) => {
     setSelectedSymptoms((curr) =>
@@ -386,6 +422,32 @@ function App() {
     // Context is never graded mild/moderate/severe. If an intensity row exists
     // for this label — a chart built before the bar existed — drop it.
     setSelectedSymptomsWithIntensity((curr) => curr.filter((s) => s.name !== label));
+  }, []);
+
+  // ── The Case Sheet, one input surface ───────────────────────────────────
+  // Three handlers above, one entry point below. `CaseSheet` does not know
+  // which state an entry belongs in, and must not: the observable's own
+  // `kind` is the answer, and it is the same answer the engine already uses.
+  // The doctor stops choosing a container, and the routing that used to be
+  // their decision becomes a lookup on data that was always there.
+  const handleObservableToggle = useCallback((o: Observable) => {
+    if (o.kind === "finding") handleFindingToggle(o.label);
+    else if (o.kind === "history") handleContextToggle(o.label);
+    else handleSymptomToggle(o.label);
+  }, [handleFindingToggle, handleContextToggle, handleSymptomToggle]);
+
+  /**
+   * Remove by label alone, which is all a rendered chip knows.
+   *
+   * Kept separate from the toggle rather than folded into it. A chip on
+   * screen has already been classified, so re-deriving its kind from the
+   * catalogue in order to decide how to delete it would be a lookup that can
+   * miss. Removing from both sets is unconditional and cannot.
+   */
+  const handleCaseSheetRemove = useCallback((label: string) => {
+    setSelectedSymptoms((curr) => curr.filter((l) => l !== label));
+    setSelectedSymptomsWithIntensity((curr) => curr.filter((s) => s.name !== label));
+    setSelectedFindings((curr) => curr.filter((l) => l !== label));
   }, []);
 
   useEffect(() => {
@@ -623,6 +685,40 @@ function App() {
   // `commitAccept` is the second half: everything below assumes a medicine
   // intent already knows its product. `handleAcceptIntent` guarantees that.
   // ────────────────────────────────────────────────────────────────────
+  /**
+   * The guard verdict for a PRODUCT, across every molecule it contains.
+   *
+   * `guardIntent` is keyed on an intent, and the engine's medicine intents are
+   * one per composition. A combination therefore had exactly one of its
+   * molecules guarded: the one it was ranked or searched through. Taking
+   * Acenac-P off an aceclofenac intent ran aceclofenac's contraindications and
+   * never ran paracetamol's.
+   *
+   * This finds the medicine intent behind each of the product's compositions
+   * and merges the verdicts, worst wins. It WARNS and never blocks: the
+   * standing rule is that guards warn, never hide, and reachability is
+   * absolute. The doctor is told what is in the product and decides.
+   */
+  const guardProduct = useCallback((brand: SynapseBrand): string[] => {
+    const ruleset = synapse.data?.ruleset;
+    const compositionIds = brand.compositionIds ?? [brand.compositionId];
+    if (!ruleset || compositionIds.length < 2) return [];
+
+    const active = intelligence.result?.activeSignals ?? [];
+    const reasons = new Set<string>();
+
+    for (const [, intent] of ruleset.intents) {
+      if (intent.type !== "medicine" || intent.refTable !== "compositions") continue;
+      if (intent.refId == null || !compositionIds.includes(intent.refId)) continue;
+      // Skip the molecule the row already guarded and displayed; this exists
+      // for the ones the doctor never saw a verdict for.
+      if (intent.refId === brand.compositionId) continue;
+      const verdict = guardIntent(ruleset, active, { id: intent.id, type: intent.type });
+      for (const r of verdict.reasons) reasons.add(r);
+    }
+    return [...reasons];
+  }, [synapse.data?.ruleset, intelligence.result?.activeSignals]);
+
   const commitAccept = useCallback((payload: AcceptPayload, panelTestNames?: string[]) => {
     setAcceptedIntents((curr) => {
       if (curr.has(payload.intentId)) return curr;
@@ -664,9 +760,21 @@ function App() {
           setDeliberateBrands((curr) => new Map(curr).set(payload.intentId, brand.id));
         }
         setPrescription((curr) => {
-          if (curr.some((m) => m.medicine_id === brand.id)) return curr;
+          // Silently returning `curr` showed the row a tick for something that
+          // was never added. Say so instead.
+          if (curr.some((m) => m.medicine_id === brand.id)) {
+            showToast(`${brand.name} is already on the plan`);
+            return curr;
+          }
           return [...curr, toPrescriptionLine(payload, brand, curr.length)];
         });
+        // A combination carries molecules the doctor did not search for, and
+        // the ranked row only ever guarded the one it was ranked through.
+        // Surface the rest at the moment it lands, never by refusing it.
+        const extra = guardProduct(brand);
+        if (extra.length > 0) {
+          showToast(`${brand.name}: ${extra.join(" · ")}`);
+        }
         // Deliberately NOT opening the dose editor. The defaults are right most
         // of the time, and a modal after every single accept was the largest
         // click cost in the old workspace. The line is editable on the Plan.
@@ -758,16 +866,32 @@ function App() {
         .catch((err: any) => showToast(`Could not load tests for ${payload.label}: ${err.message}`));
       return;
     }
-    if (payload.type !== "medicine" || payload.medicine) {
+    if (payload.type !== "medicine") {
       commitAccept(payload);
       return;
     }
 
+    // ── EVERY medicine confirms in the sheet ──────────────────────────────
+    // This read `|| payload.medicine`, which meant a payload that ALREADY had
+    // a product skipped the sheet entirely. The ranked list always resolves a
+    // brand before calling, so RECOMMENDED medicines never showed the confirm
+    // step at all: pressing the button on a ranked row put a medicine on the
+    // prescription at the composition's default dose with no dose, duration,
+    // timing or brand ever shown. Only searched medicines, which arrive
+    // without a product, got the sheet.
+    //
+    // The dose is a clinical decision on every route to a prescription, not
+    // only on the one that happens to lack a brand.
     const compositionId =
       payload.refTable === "compositions" ? payload.refId : null;
     if (compositionId == null) {
-      // A medicine intent with no composition behind it is a data problem, not
-      // a lookup failure, and must not be reported as one.
+      // No composition behind it. If a product came with the payload there is
+      // still something to prescribe, so take it rather than refusing; only a
+      // medicine with neither is a genuine data problem.
+      if (payload.medicine) {
+        commitAccept(payload);
+        return;
+      }
       showToast(`${payload.label} is not linked to a composition`);
       return;
     }
@@ -775,14 +899,40 @@ function App() {
     // STAGE, don't commit. A medicine used to go straight onto the plan with
     // the resolver's brand and the composition's default dose; both are now
     // confirmed once, in MedicineAddSheet, at the moment of the decision.
-    resolveBrandFor(compositionId)
-      .then((brand) => {
+    //
+    // ── The named product comes first ─────────────────────────────────────
+    // When the doctor reached this by typing a brand, THAT product is the
+    // answer, whatever its ingredient count. `composition_brands` cannot
+    // return it if it is a combination, so it is resolved separately and put
+    // at the head of the list. The molecule's own single-molecule brands still
+    // follow, because swapping to one of them is a legitimate next thought.
+    Promise.all([
+      resolveBrandFor(compositionId),
+      payload.brandHint
+        ? resolveProductByName(payload.brandHint).catch((err) => {
+          // A failed product lookup must never cost the doctor the accept.
+          // The molecule's own brands are still below.
+          console.warn("named product lookup failed:", err);
+          return null;
+        })
+        : Promise.resolve(null),
+    ])
+      .then(([brand, named]) => {
         const index = intelligence.brands.get(compositionId);
+        const single = index?.brands ?? (brand ? [brand] : []);
+        const brands = named
+          ? [named, ...single.filter((b) => b.id !== named.id)]
+          : single;
         setPendingMedicine({
           payload,
           compositionId,
-          brands: index?.brands ?? (brand ? [brand] : []),
-          initialBrand: brand,
+          brands,
+          // Preference order: the product the doctor NAMED in search, then the
+          // one the ranked row already chose and displayed, then the
+          // resolver's default. A ranked row that shows "Crocin" must open the
+          // sheet on Crocin, never on whatever the resolver would have picked
+          // independently.
+          initialBrand: named ?? payload.medicine ?? brand,
         });
       })
       .catch((err) => {
@@ -1113,6 +1263,7 @@ function App() {
       await saveConsult({
         visitId,
         doctorId: identity.doctorId,
+        hospitalId: identity.hospitalId,
         medicines: medicineRows,
         tests: selectedTests,
         vitals,
@@ -1229,6 +1380,20 @@ function App() {
   );
 
   /**
+   * ── Which consultation surface this facility gets ────────────────────────
+   *
+   * General OPD is being rewritten as its own screen, one piece at a time.
+   * Every other profile keeps the shared SOAP column untouched until its own
+   * turn comes, so a dentist's workspace cannot regress while this one is
+   * rebuilt. `specialtyProfile.ts` says there is no per-specialty branch in
+   * the render tree; that is now false, deliberately, and the doctrine
+   * records why: configuration can change what goes INSIDE a module, but it
+   * can never remove a module some other profile requires, and removing
+   * modules is the whole task.
+   */
+  const isGeneralOpd = specialty.id === "general_opd";
+
+  /**
    * The specialty charts, as launchers inside the Measurements row.
    *
    * Same `specialty.charts` gate as before — a dermatologist still never sees
@@ -1269,6 +1434,22 @@ function App() {
       .slice(0, 6)
       .map((s) => byId.get(s.observableId))
       .filter((l): l is string => !!l);
+  }, [intelligence.examSuggestions, observables]);
+
+  /**
+   * The same suggestions as whole observables, for the Case Sheet.
+   *
+   * `CaseSheet` routes an entry by its `kind`, so it needs the object rather
+   * than the label. Handing it a bare string would mean looking the kind back
+   * up by display text, which is the fragile step one input surface exists to
+   * remove.
+   */
+  const relatedFindings = useMemo(() => {
+    const byId = new Map(observables.map((o) => [o.id, o]));
+    return intelligence.examSuggestions
+      .slice(0, 6)
+      .map((s) => byId.get(s.observableId))
+      .filter((o): o is Observable => !!o);
   }, [intelligence.examSuggestions, observables]);
 
   /**
@@ -1571,8 +1752,29 @@ function App() {
                 earn a full-width card just by existing, and every module here
                 sizes to its content. */}
             <div className="cs-work">
-              <div className="cs-phase">Subjective</div>
+              {/* The page's one input, above every card because it belongs to
+                  the consultation rather than to any single module. Taking it
+                  out of the Case Sheet is also the cheapest vertical space on
+                  the screen: the card no longer reserves a field plus padding
+                  before it can show a chip. */}
+              {isGeneralOpd && (
+                <ClinicalCommandBar
+                  observables={observables}
+                  onSheet={onChartSet}
+                  onToggle={handleObservableToggle}
+                  disabled={!patient}
+                  searchRef={chartSearchRef}
+                />
+              )}
 
+              {/* Both band labels are hidden for General OPD because the Case
+                  Sheet spans them: one card cannot be labelled Subjective at
+                  the top and Objective in the middle, so the label would be
+                  saying something untrue. The remaining two are still true and
+                  stay until the layout pass. */}
+              {!isGeneralOpd && <div className="cs-phase">Subjective</div>}
+
+              {!isGeneralOpd && (
               <div className="cs-row cs-row-sub">
                 <PickerCard
                 kind="history"
@@ -1607,15 +1809,32 @@ function App() {
                 searchRef={chartSearchRef}
               />
               </div>
+              )}
 
               {/* Objective — what you observed and what you measured, on one
                   row. Findings take the room because chips wrap; measurements
                   are compact structured values and do not need a broad strip
                   of their own (which is what the previous full-width band got
                   wrong). */}
-              <div className="cs-phase">Objective</div>
+              {!isGeneralOpd && <div className="cs-phase">Objective</div>}
 
-              <div className="cs-row cs-row-obj">
+              <div className={`cs-row cs-row-obj${isGeneralOpd ? " is-locked" : ""}`}>
+                {isGeneralOpd ? (
+                  /* One box in place of three. The row ratio is unchanged:
+                     the Case Sheet needs the wrapping room the findings
+                     picker needed, and measurements are still compact
+                     structured values that do not want a broad strip. */
+                  <CaseSheet
+                    entries={caseSheetEntries}
+                    onToggle={handleObservableToggle}
+                    onRemove={handleCaseSheetRemove}
+                    intensities={selectedSymptomsWithIntensity}
+                    onIntensityChange={handleIntensityChange}
+                    related={relatedFindings}
+                    onBrowse={() => setBrowse("finding")}
+                    disabled={!patient}
+                  />
+                ) : (
                 <PickerCard
                 kind="finding"
                 title="Findings"
@@ -1632,24 +1851,51 @@ function App() {
                 emptyHint="What you saw on examination — every entry here is an abnormal sign."
                 disabled={!patient}
               />
+                )}
 
-                <MeasurementsCard
-                  vitals={vitals}
-                  onChange={setVitals}
-                  // Which fields this facility shows without being asked —
-                  // the same one-time onboarding config that decides which
-                  // intent type gets the Primary Recommendation slot.
-                  defaultKeys={specialty.measurements}
-                  relevantKeys={measureRelevance.keys}
-                  relevantBecause={measureRelevance.because}
-                  disabled={!patient}
-                />
+                {/* General OPD stacks Measurements and Attachments into one
+                    column beside the Case Sheet. Attachments used to take a
+                    full-width band of its own, because the row it shared with
+                    SpecialtyExamCard renders empty for a profile with no
+                    chart, so the files got a whole horizontal slice of the
+                    page. Two list inline and the rest open in a modal, so the
+                    column cannot grow with the file count. */}
+                {isGeneralOpd ? (
+                  /* Same fixed height as the Case Sheet beside it. See
+                     `.cs-rowone-right` and the height-contract note in
+                     consult.css: nothing in this row grows. */
+                  <div className="cs-rowone-right">
+                    <MeasurementsCard
+                      vitals={vitals}
+                      onChange={setVitals}
+                      defaultKeys={specialty.measurements}
+                      relevantKeys={measureRelevance.keys}
+                      relevantBecause={measureRelevance.because}
+                      disabled={!patient}
+                      maxInline={6}
+                    />
+                    <AttachmentsCard visitId={visitId} disabled={!patient} maxInline={3} strip />
+                  </div>
+                ) : (
+                  <MeasurementsCard
+                    vitals={vitals}
+                    onChange={setVitals}
+                    // Which fields this facility shows without being asked —
+                    // the same one-time onboarding config that decides which
+                    // intent type gets the Primary Recommendation slot.
+                    defaultKeys={specialty.measurements}
+                    relevantKeys={measureRelevance.keys}
+                    relevantBecause={measureRelevance.because}
+                    disabled={!patient}
+                  />
+                )}
               </div>
 
               {/* Objective, second row — the specialty examination and the
                   attachments that support it. Conditional by design: a
                   general OPD has no specialty module, so this row does not
                   render at all rather than rendering an empty placeholder. */}
+              {!isGeneralOpd && (
               <div className={chartTools.length > 0 ? "cs-row cs-row-exam" : "cs-row"}>
                 {/* Renders nothing for a facility with no specialty module,
                     in which case Attachments takes the row on its own. */}
@@ -1661,12 +1907,25 @@ function App() {
                 />
                 <AttachmentsCard visitId={visitId} disabled={!patient} />
               </div>
+              )}
 
               {/* Assessment — the engine's reading of everything above it.
                   It re-ranks in the same frame a chip lands, so the doctor
-                  watches their own reasoning move as they type. */}
-              <div className="cs-phase">Assessment</div>
+                  watches their own reasoning move as they type.
 
+                  The band label is hidden for General OPD because the card
+                  directly beneath it is also titled ASSESSMENT. The same word
+                  twice, 40px apart, is not a hierarchy. */}
+              {!isGeneralOpd && <div className="cs-phase">Assessment</div>}
+
+              {/* ALWAYS RENDERED. Hiding these on an empty chart was a real
+                  regression, made 2026-08-12 and reverted the same evening:
+                  each of these panels carries the SEARCH BOX that reaches a
+                  medicine, a test or a condition the engine never ranked.
+                  Hiding the panel hid the only way in, which breaks the one
+                  rule that outranks tidiness: ranking decides what is
+                  OFFERED, never what is REACHABLE.
+                  The empty states are made compact instead. */}
               <ConditionsCard
                 intents={intelligence.byType.finding}
                 topScore={topOfType.get("finding") ?? 0}
@@ -1694,7 +1953,10 @@ function App() {
                   so a slot holding eleven medicines cannot stretch the slot
                   beside it holding two tests and leave dead space between
                   them. See `.cs-row-plan` in consult.css. */}
-              <div className="cs-phase">Plan</div>
+              {/* The band label goes for General OPD, not the panels. "Plan"
+                  was always the wrong word here anyway: the plan is the rail
+                  on the right, and these two are where the doctor picks FROM. */}
+              {!isGeneralOpd && <div className="cs-phase">Plan</div>}
 
               <div className="cs-row cs-row-plan" ref={planRowRef}>
                 {planSlots.primaryIsMedicine ? (

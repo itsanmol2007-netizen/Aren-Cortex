@@ -147,7 +147,7 @@ ready-made hooks for a real Investigations feature.
 | `visit_symptoms` | visit_id, symptom_id, intensity | Symptoms are **structured** — always IDs from the catalog, never free text. |
 | `visit_findings` | visit_id, finding_id | |
 | `symptoms` / `findings` | id, name (…) | ~51-row symptom catalog feeds everything. |
-| `prescriptions` | id, visit_id, assigned_doctor_id, findings_text, follow_up_days, advice_notes, created_at | **No print-tracking columns** — see §6, print log. |
+| `prescriptions` | id, visit_id, assigned_doctor_id, **hospital_id**, findings_text, follow_up_days, advice_notes, created_at | **`hospital_id` is REQUIRED on insert** — its RLS policy checks it, and omitting it fails with `42501` (403), not a null column. This row omitted the field until 2026-08-13, and `saveConsult` omitted it to match, so every save 403'd *after* step 1 had already marked the visit `completed`. **No print-tracking columns** — see §6, print log. |
 | `prescription_medicines` | prescription_id, medicine_id, composition_id, composition_ids[], dosage_mg, frequency (slot string, nullable), duration_days, route, notes, instructions, is_sos, sort_order | |
 | `medicines` | id, name, manufacturer, strength_mg | No composition text here — |
 | `compositions` | id, name, specialization_scope[] | …composition labels come from this table. |
@@ -161,7 +161,8 @@ ready-made hooks for a real Investigations feature.
 | `coprescription_observations` | doctor_id, visit_id, primary_composition_id, coprescribed_composition_id, tag_signature | Written after every save (all pairs). Raw material for future hints. |
 | `symptom_cluster_test_hints` | trigger_tag_id, test_name, test_group, clinical_reason, priority | Read by `fetchDynamicTests` — which nothing calls. |
 | `clinical_snapshots` + `snapshot_symptoms` / `snapshot_findings` | id, name, description, tags | Named bundles of symptoms+findings applied in one click (Ctrl+Z undoes). |
-| `medicine_composition_map` | medicine_id, composition_id, is_primary | Brand ⇄ molecule. |
+| `medicine_composition_map` | medicine_id, composition_id, route, is_primary | Brand ⇄ molecule. **No `strength_mg`** — that appears on `composition_brands`' output, composed elsewhere; selecting it here throws. `route` is the dosage form. `is_primary` **cannot be trusted** (Acenac-P has it false on both rows). Probed live 2026-08-13. |
+| `medicines` | id, name, manufacturer, hospital_id | 213,145 rows. **Query by `.eq("name", …)` only.** A prefix `ilike` is cancelled by the statement timeout; equality returns in ~730ms. Readable to an authenticated client, **zero rows to anon** — which is why catalogue bugs hide from anonymous check scripts while `search_intents` (SECURITY DEFINER) answers everyone. |
 
 (`doctor_requests` now exists and is live — see the table above. The old
 "session-local mock / Simulate button" is gone.)
