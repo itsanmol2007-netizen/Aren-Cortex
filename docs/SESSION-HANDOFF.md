@@ -61,13 +61,17 @@ what he asked for next.
 
 | # | Task | Status |
 |---|---|---|
-| 1 | Rank combination medicines, not just single molecules | **not started** |
-| 2 | Make brand the headline in medicine search | **not started** |
-| 3 | Add sheet: circles, dose prefill, timing prefill, blue confirm | **in progress — see §2** |
+| 1 | Rank combination medicines, not just single molecules | **done 2026-08-14 — see §8** |
+| 2 | Make brand the headline in medicine search | **done 2026-08-14 — see §8** |
+| 3 | Add sheet: circles, dose prefill, timing prefill, blue confirm | **done 2026-08-14 — see §8** |
 | 4 | Correct the stale claims in the doctrine and atlas | **not started** |
 
 Task 1 is the one Anmol called a very big flaw. Task 3 is partly done. Do task
 3 first (it is nearly finished and self-contained), then task 1, then 2, then 4.
+
+Only task 4 is left. §8 below records what shipped and, for task 2
+specifically, a fix that lives ONLY in the live database — there is no
+`supabase/migrations/` directory, so nothing in git shows it happened.
 
 ---
 
@@ -284,3 +288,76 @@ that were invisible in the code and obvious on a rendered page — a stale row
 height slicing a card, a relevance tint that was white, a font ramp that was
 being authored and thrown away. If a change here is reported as done without
 the page being loaded, it is not done.
+
+---
+
+## 8. Session 2026-08-14b — tasks 3, 1 and 2 closed
+
+Continued from a fresh machine (branch had been cut from the wrong base —
+`main` is a stale, unrelated 11-commit history with no `docs/` at all; restarted
+it from `master`, which cost nothing since it carried zero unique commits).
+Not browser-verified against the real app — no doctor login was available in
+this environment. Verified instead with `tsc -b`, `vite build`, static renders
+of the new markup against the real stylesheet, `npm run check:search` /
+`check:brands`, and read-only SQL against the live database. **Open the
+browser before trusting any of this**, per §7.
+
+### Task 3 — the add sheet, finished
+
+`doseFieldValue` wired into the sheet (initial seed + strength-variant click).
+Added `features/consult/dosing.ts`: a short, conservative static map from
+composition name to food instruction — no DB column exists for this (§4.1
+still holds), so it stays a pre-fill, never a guard. Circles replaced the
+four M/A/E/N buttons. Confirm button moved green -> blue.
+
+### Task 1 — combination ranking wired, the "very big flaw"
+
+`fetchCombinationProducts` wired into `RecommendationsCard`: a ranked
+molecule now offers its combination products as alternates (fewest extra
+molecules first), and a molecule with NO standalone product gets a real
+Prescribe button off its best combination for the first time. The engine
+gained two pure functions, `medicineIntentIndex` and `guardCombination`
+(`lib/synapse/engine.ts`) — a combination's guard verdict is computed across
+EVERY molecule it carries, not just the one the ranked list scored, and a
+hard verdict on any combination offered under a row locks the whole row.
+Same fix applied to the manual search path (`IntentSearch.tsx`), which had
+the identical gap. See the commit on `claude/medicine-add-sheet-ranking-y8on0i`
+for the full reasoning.
+
+### Task 2 — brand as the headline in search, root cause was in the database
+
+The client (`IntentSearch.tsx`) was already correct — brand-first rendering
+was really applied 2026-08-12 as the atlas claims. The bug was upstream, in
+the `search_intents` SQL function itself, and NO amount of client-side work
+would have found it by reading `IntentSearch.tsx`.
+
+`search_intents` computes a `by_label` hit (query matches the composition
+name) and a `by_brand` hit (query matches a real product name) separately,
+then keeps exactly one per intent via `distinct on (m.id) order by m.id,
+m.provenance, ...`. Provenance was `label=1, symptom=2, brand=3` — so
+whenever BOTH fired for the same intent, the LABEL match won and the brand
+match, `via_label` included, was silently discarded before it ever reached
+the app. Confirmed live: typing "ace" returned bare "aceclofenac" even
+though "Ace-P Tablet" — a real, prescribable product — matched too. This
+collision is common, not an edge case: most Indian brand names are prefixed
+by their own molecule ("Acenac" / aceclofenac, "Dolowin" is coincidence but
+plenty aren't).
+
+Fixed with `CREATE OR REPLACE FUNCTION public.search_intents(...)` —
+migration `search_intents_prefer_brand_over_label`, applied 2026-08-14 with
+Anmol's authorisation. Only the three provenance literals changed:
+`brand=1, symptom=2, label=3`, so a brand match wins whenever one exists.
+Same signature, same output columns, every other clause byte-identical.
+Verified after: "ace" now returns "Ace-P Tablet" (brand) for aceclofenac;
+"dolo" is unaffected (was already all-brand, no collision to have); a pure
+molecule search like "metformin" still correctly returns the composition
+when no brand collides. **This fix is NOT in git** — there is no
+`supabase/migrations/` directory (§0), so the function body above, and this
+paragraph, are its only record. If the schema is ever dumped or migrated
+to a real migrations directory, carry this change forward explicitly.
+
+### Still open
+
+Only task 4 — folding the now-stale parts of the doctrine and atlas (start
+with doctrine §3, flagged wrong by this file's own §4.2) back into a single
+accurate document, and deleting this file once that is done.
