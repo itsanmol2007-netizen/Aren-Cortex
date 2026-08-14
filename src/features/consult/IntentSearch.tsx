@@ -29,7 +29,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Plus, Search, ShieldAlert } from "lucide-react";
 import {
-    guardIntent, type ActiveSignal, type IntentType, type Ruleset,
+    guardCombination, guardIntent, medicineIntentIndex,
+    type ActiveSignal, type GuardStatus, type GuardVerdict, type IntentType, type Ruleset,
 } from "../../lib/synapse/engine";
 import { searchIntents, type IntentSearchHit } from "../../lib/db/synapse";
 import { fetchProductsByNames, type ResolvedProduct } from "../../lib/db/medicines";
@@ -202,22 +203,48 @@ export function IntentSearchResults({
     onAcknowledge: (intentId: number, ack: boolean) => void;
     onAccept: (payload: AcceptPayload) => void;
 }) {
+    const products = useHitProducts(state.hits);
+
+    // The reverse of `ruleset.intents`, for reaching a combination's OTHER
+    // molecules by composition id — see its doc comment in engine.ts.
+    const intentIndex = useMemo(
+        () => (ruleset ? medicineIntentIndex(ruleset) : new Map()),
+        [ruleset]
+    );
+
     /**
      * The guard verdict for every hit, on the same ruleset and signals the
      * ranked list used. Computed here rather than left to the caller so that no
      * search surface can forget it — a silent contraindication is the one
      * failure mode §14 does not tolerate.
+     *
+     * `search_intents` matches a combination through ONE composition, chosen
+     * by rarity — frequently the minor ingredient (§14.15 / atlas). Checking
+     * only THAT composition's guard would let a genuinely contraindicated
+     * combination reach the doctor with a weaker warning than the same
+     * product gets through the ranked list — doctrine rule 11. When the hit
+     * resolves to a product carrying more than one molecule, its verdict is
+     * the worse of the two: the hit's own composition, and every molecule the
+     * resolved product actually contains.
      */
     const verdicts = useMemo(() => {
-        const m = new Map<number, { status: string; reasons: string[] }>();
+        const m = new Map<number, GuardVerdict>();
         if (!ruleset) return m;
         for (const h of state.hits) {
-            m.set(h.intentId, guardIntent(ruleset, activeSignals, { id: h.intentId, type: h.type }));
+            const base = guardIntent(ruleset, activeSignals, { id: h.intentId, type: h.type });
+            const resolved = h.matchKind === "brand" && h.viaLabel ? products.get(h.viaLabel) : undefined;
+            if (!resolved || resolved.compositionIds.length <= 1) {
+                m.set(h.intentId, base);
+                continue;
+            }
+            const full = guardCombination(ruleset, activeSignals, intentIndex, resolved.compositionIds);
+            const status: GuardStatus =
+                base.status === "warn_hard" || full.status === "warn_hard" ? "warn_hard"
+                    : base.status === "warn" || full.status === "warn" ? "warn" : "ok";
+            m.set(h.intentId, { status, reasons: [...new Set([...base.reasons, ...full.reasons])] });
         }
         return m;
-    }, [ruleset, activeSignals, state.hits]);
-
-    const products = useHitProducts(state.hits);
+    }, [ruleset, activeSignals, state.hits, products, intentIndex]);
 
     if (state.error) {
         return (

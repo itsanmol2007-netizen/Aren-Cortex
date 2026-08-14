@@ -920,9 +920,21 @@ function App() {
       .then(([brand, named]) => {
         const index = intelligence.brands.get(compositionId);
         const single = index?.brands ?? (brand ? [brand] : []);
+        // A combination product carried straight in `payload.medicine` — a
+        // ranked row's own combination alternate (RecommendationsCard), or a
+        // companion — gets the same head-of-list treatment as one reached by
+        // typing a brand name. Without this it opened the sheet correctly
+        // selected but absent from its own Brand list, so nothing in that
+        // list ever showed as chosen.
+        const comboMedicine =
+          !named && payload.medicine && (payload.medicine.compositionIds?.length ?? 0) > 1
+            ? payload.medicine
+            : null;
         const brands = named
           ? [named, ...single.filter((b) => b.id !== named.id)]
-          : single;
+          : comboMedicine
+            ? [comboMedicine, ...single.filter((b) => b.id !== comboMedicine.id)]
+            : single;
         setPendingMedicine({
           payload,
           compositionId,
@@ -1966,6 +1978,8 @@ function App() {
                     brands={intelligence.brands}
                     brandsLoading={intelligence.brandsLoading}
                     brandError={intelligence.brandError}
+                    combinations={intelligence.combinations}
+                    combinationsLoading={intelligence.combinationsLoading}
                     brandPreferences={synapse.data?.brandPreferences}
                     acceptedIntentIds={acceptedIntentIdSet}
                     chosenBrands={chosenBrands}

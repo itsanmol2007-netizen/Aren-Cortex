@@ -263,6 +263,67 @@ export function guardIntent(
     };
 }
 
+/**
+ * Every catalogued medicine intent, keyed by the composition it is FOR.
+ *
+ * `rs.intents` is keyed by intent id, and a combination product's other
+ * molecules are reached by composition id, not intent id — this is the
+ * lookup between the two. Built once per ruleset load and passed in, rather
+ * than rebuilt per row: `rs.intents` holds every intent the catalogue knows
+ * about (hundreds), not just the handful the engine scored this consult.
+ */
+export function medicineIntentIndex(rs: Ruleset): Map<number, Intent> {
+    const index = new Map<number, Intent>();
+    for (const intent of rs.intents.values()) {
+        if (intent.type === 'medicine' && intent.refTable === 'compositions' && intent.refId != null) {
+            index.set(intent.refId, intent);
+        }
+    }
+    return index;
+}
+
+/**
+ * The guard verdict for a PRODUCT that carries more than one composition —
+ * a combination the engine only ever scored ONE molecule of.
+ *
+ * `guardIntent` answers for a single, already-ranked intent. Every other
+ * molecule a combination carries was never scored and therefore never
+ * guarded either, so checking only the intent it was ranked or searched
+ * through would let a genuinely contraindicated ingredient reach a doctor
+ * silently. Doctrine rule 11: nothing reached by any route may show a
+ * weaker warning than the ranked list would have given it directly.
+ *
+ * Computed by finding the catalogued medicine intent for EVERY composition
+ * the product contains (via `index`), running `guardIntent` on each, and
+ * keeping the worst status and every reason that fired anywhere in the set.
+ * A composition with no catalogued intent contributes nothing — it can only
+ * ever make the verdict the same or harder than the strongest single
+ * result, never softer.
+ */
+export function guardCombination(
+    rs: Ruleset,
+    active: ActiveSignal[] | Set<string>,
+    index: Map<number, Intent>,
+    compositionIds: number[],
+): GuardVerdict {
+    const activeIds = active instanceof Set ? active : new Set(active.map(a => a.signalId));
+
+    let hard = false;
+    let soft = false;
+    const reasons = new Set<string>();
+
+    for (const compositionId of compositionIds) {
+        const intent = index.get(compositionId);
+        if (!intent) continue;
+        const v = guardIntent(rs, activeIds, intent);
+        if (v.status === 'warn_hard') hard = true;
+        else if (v.status === 'warn') soft = true;
+        v.reasons.forEach((r) => reasons.add(r));
+    }
+
+    return { status: hard ? 'warn_hard' : soft ? 'warn' : 'ok', reasons: [...reasons] };
+}
+
 // ============================================================
 // RUN
 // ============================================================

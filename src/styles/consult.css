@@ -2091,6 +2091,36 @@
     border-color: transparent;
 }
 
+/* A combination product offered beside a ranked molecule's own brands — task
+   1 of docs/SESSION-HANDOFF.md. Same chip, plus the extra molecule(s) stated
+   plainly rather than left to a tooltip: taking a combination means
+   prescribing something the doctor did not search for, and that is always a
+   reason to say so, never a reason to hide it (MedicineAddSheet carries the
+   identical rule for its own brand list). */
+.cs-brand-extra {
+    color: var(--cs-teal);
+    font-weight: 500;
+}
+
+/* Its OWN full-strength guard verdict — checked across every molecule the
+   product carries, not only the one composition this row was ranked
+   through, so a combination can flag red here even on an otherwise-clean
+   row. See guardCombination in lib/synapse/engine.ts. */
+.cs-brand.is-warn {
+    border-color: rgba(180, 83, 9, 0.35);
+    color: var(--cs-amber);
+}
+
+.cs-brand.is-warn .cs-brand-extra { color: inherit; opacity: 0.85; }
+
+.cs-brand.is-hard {
+    border-color: rgba(180, 35, 24, 0.4);
+    color: var(--cs-red);
+}
+
+.cs-brand.is-hard .cs-brand-extra { color: inherit; opacity: 0.85; }
+.cs-brand.is-hard svg { opacity: 1; }
+
 .cs-nobrand {
     grid-column: 2 / -1;
     margin-top: 5px;

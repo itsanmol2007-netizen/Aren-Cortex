@@ -26,6 +26,7 @@ import {
     type BrandIndex,
     type CompositionBrands,
 } from "../lib/db/synapse";
+import { fetchCombinationProducts, type ResolvedProduct } from "../lib/db/medicines";
 import type { SynapseData } from "./useSynapse";
 import type { Vitals } from "../types";
 import type { Sex } from "../lib/growth/growth";
@@ -70,6 +71,15 @@ export interface ConsultIntelligence {
     brands: BrandIndex;
     brandsLoading: boolean;
     brandError: string | null;
+    /**
+     * Combination products containing a ranked (or companion) composition —
+     * the counterpart to `brands`, which `composition_brands` restricts to
+     * single-molecule products only. compositionId -> combos, fewest extra
+     * molecules first. Empty for a composition with no combination products
+     * or none fetched yet.
+     */
+    combinations: Map<number, ResolvedProduct[]>;
+    combinationsLoading: boolean;
     isPediatric: boolean;
     measurements: MeasurementRow[];
     hasInput: boolean;
@@ -277,6 +287,66 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [brandKey, data, isPediatric, hospitalId]);
 
+    // ---- 4b. combination products, beside the single-molecule brands. ----
+    // Task 1 of docs/SESSION-HANDOFF.md: "Synapse does not recommend medicines
+    // with more than one composition." `fetchCombinationProducts` (lib/db/
+    // medicines.ts) was written 2026-08-13 and called from nowhere — this is
+    // that wiring. Same shape as the brands cache just above, deliberately:
+    // async, cannot block the ranking, and a failure here must not touch it.
+    //
+    // Catalogue-only (no doctor preference, no clinic default, no paediatric
+    // form applies to which molecules a product CONTAINS), so unlike brands
+    // the cache key is the composition id alone and is never invalidated.
+    const [combinations, setCombinations] = useState<Map<number, ResolvedProduct[]>>(new Map());
+    const [combinationsLoading, setCombinationsLoading] = useState(false);
+    const combinationCache = useRef(new Map<number, ResolvedProduct[]>());
+    const combinationKey = wantedCompositions.join(",");
+
+    useEffect(() => {
+        const missing = wantedCompositions.filter((id) => !combinationCache.current.has(id));
+
+        if (missing.length === 0) {
+            const next = new Map<number, ResolvedProduct[]>();
+            for (const id of wantedCompositions) {
+                const hit = combinationCache.current.get(id);
+                if (hit) next.set(id, hit);
+            }
+            setCombinations(next);
+            return;
+        }
+
+        let cancelled = false;
+        setCombinationsLoading(true);
+        fetchCombinationProducts({ compositionIds: missing })
+            .then((fetched) => {
+                // Record a miss too — an empty array for a molecule with no
+                // combination product, so it is never re-fetched.
+                for (const id of missing) combinationCache.current.set(id, fetched.get(id) ?? []);
+                if (cancelled) return;
+                const next = new Map<number, ResolvedProduct[]>();
+                for (const id of wantedCompositions) {
+                    const hit = combinationCache.current.get(id);
+                    if (hit) next.set(id, hit);
+                }
+                setCombinations(next);
+            })
+            .catch((e) => {
+                // Same rule as brands: a failure here must not blank the
+                // ranking, and the single-molecule brands beside it still work.
+                console.warn("combination products fetch failed:", e);
+            })
+            .finally(() => {
+                if (!cancelled) setCombinationsLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+        // `combinationKey` is the identity of the request, same reasoning as
+        // `brandKey` above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [combinationKey]);
+
     // ---- 5. the raw input, persisted. Debounced, fire-and-forget. ----
     const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
@@ -305,6 +375,8 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         brands,
         brandsLoading,
         brandError,
+        combinations,
+        combinationsLoading,
         isPediatric,
         measurements: built?.measurements ?? [],
         hasInput: !!built && (built.observableIds.length > 0 || built.measurements.length > 0),
