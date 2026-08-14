@@ -257,6 +257,77 @@ export function brandVariantLabel(m: Medicine): string {
   return parts.length > 0 ? parts.join(' ') : 'standard'
 }
 
+/** A concentration — "125mg/5ml", "80mg/ml". NOT a dose. */
+const CONCENTRATION_RE = /\d+(?:\.\d+)?\s*(?:mg|mcg|gm|g|iu)\s*\/\s*\d*(?:\.\d+)?\s*(?:ml|gm|g)/i
+
+/** A mass strength with its unit, captured — "650mg", "1 g", "50 mcg". */
+const MASS_RE = /(\d+(?:\.\d+)?)\s*(mg|mcg|gm|g)\b/gi
+
+/** A bare number left in a name that carries no unit at all — "Dolo 650 Tablet". */
+const LONE_NUM_RE = /\b(\d+(?:\.\d+)?)\b/g
+
+const TO_MG: Record<string, number> = { mg: 1, mcg: 0.001, g: 1000, gm: 1000 }
+
+/**
+ * The dose to pre-fill a prescription with, in mg, read out of the product's
+ * own NAME. Null whenever the name does not say so unambiguously.
+ *
+ * `medicines.strength_mg` is null on 66,166 of 213,145 rows, and 12,760 of
+ * those carry the strength in the name instead ("Dolo 650 Tablet") — measured
+ * live 2026-08-14. Those are the rows this recovers. The doctor was otherwise
+ * retyping a number that was already on screen in the product they had just
+ * picked.
+ *
+ * Three things it refuses to guess, because a wrong pre-filled dose is worse
+ * than an empty box — an empty box is obviously unanswered, a wrong number
+ * looks answered:
+ *
+ *  * A CONCENTRATION IS NOT A DOSE. "125mg/5ml" is how much drug is in a
+ *    spoonful of syrup; the dose depends on how many spoonfuls. This is the
+ *    same distinction `brandVariantLabel` is careful about, and writing 125
+ *    into the dose box states a quantity the product does not contain.
+ *  * A COMBINATION HAS NO SINGLE STRENGTH. "Acenac S 100 mg/15 mg Tablet"
+ *    holds two numbers and neither one is "the" dose.
+ *  * A BARE NUMBER IS ONLY TRUSTED WHEN IT IS ALONE and lands in a plausible
+ *    range, so a pack count or a release code cannot be read as milligrams.
+ */
+export function doseMgFromName(name: string): number | null {
+  const n = name.trim()
+  if (!n) return null
+
+  // A syrup or suspension states a concentration; there is no dose to derive.
+  if (CONCENTRATION_RE.test(n)) return null
+
+  const masses: number[] = []
+  for (const m of n.matchAll(MASS_RE)) {
+    const value = Number(m[1]) * (TO_MG[m[2].toLowerCase()] ?? 0)
+    if (Number.isFinite(value) && value > 0) masses.push(value)
+  }
+
+  // More than one distinct strength means a combination — no single answer.
+  const distinct = [...new Set(masses)]
+  if (distinct.length === 1) return distinct[0]
+  if (distinct.length > 1) return null
+
+  // No unit anywhere. Accept a lone number in a plausible oral-dose range;
+  // anything else is a pack size, a release code or a brand that happens to
+  // contain a digit.
+  const bare = [...new Set([...n.matchAll(LONE_NUM_RE)].map((m) => Number(m[1])))]
+  if (bare.length !== 1) return null
+  const only = bare[0]
+  return only > 0 && only <= 2000 ? only : null
+}
+
+/**
+ * The same answer as a string, ready for the dose input. Prefers the
+ * catalogue's own column and falls back to the name.
+ */
+export function doseFieldValue(m: Pick<Medicine, 'name' | 'strengthMg'>): string {
+  if (m.strengthMg != null && m.strengthMg > 0) return String(m.strengthMg)
+  const parsed = doseMgFromName(m.name)
+  return parsed == null ? '' : String(parsed)
+}
+
 export interface BrandFamily {
   /** grouping key, unique within the composition */
   key: string
