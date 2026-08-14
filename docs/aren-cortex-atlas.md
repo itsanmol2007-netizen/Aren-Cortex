@@ -2407,3 +2407,131 @@ stroke-based SVG that takes any hue and survives greyscale.
 - With a rich chart every visible measurement cell is tinted at once, and a
   mark that applies to everything marks nothing. Needs a cap or a
   most-recently-raised rule.
+
+---
+
+## 14.16 Session 2026-08-13b — the General OPD visual pass
+
+Brief: *"better fonts, no greyscale texts, better contrast and better visual
+hierarchy and less dead white space even in the cold start and blank state."*
+
+Driven from the browser at **1422×595**, which is the viewport this account
+actually renders at (1920 panel, 135% Windows scaling). That number matters:
+it is a *short* screen, and almost every finding below is a finding about
+vertical space rather than about colour.
+
+**Nothing moved.** Same modules, same order, same columns. This is the pass
+`aren-cortex-ui-doctrine.md` §0 says cannot fix a structural fault — and it
+is only being run because §8 fixed the structural fault this morning.
+
+### The type ramp was being written and then thrown away
+
+`index.html` requested `Inter:wght@400;500;600;700` — four static cuts —
+while `consult.css` sets **450, 480, 520, 550, 600, 620, 640, 650 and 660**
+across the workspace. Every one of those snapped to the nearest of the four,
+so a card title at 700 and a measurement value at 640 rendered *identically*
+and the weight hierarchy collapsed into three visible steps. Nine authored
+weights, three rendered.
+
+Inter is now requested with its `wght` and `opsz` axes. Verified by
+measuring rendered text width at each weight — 400/450/500/550/600/620/650/700
+now give **eight distinct widths** (301.3 → 318.5px at 40px), where before
+they gave four.
+
+`font-optical-sizing: auto` rides the `opsz` axis, which matters here because
+nearly all of this screen is 11–13px. `cv05` and `cv08` are on globally: they
+give lowercase `l` a tail and uppercase `I` serifs, so `l / I / 1` stop being
+three identical strokes on a surface that prints drug names. Clinical numerals
+(measurement inputs, dose fields, counts) get `tabular-nums slashed-zero`.
+
+> This is the reason to check a *rendered* page rather than the stylesheet.
+> Every one of those nine weights is correct in the CSS.
+
+### "Greyscale text" was an allocation problem, not a colour value
+
+The 2026-08-11 and 2026-08-12 passes both moved the grey ramp darker and both
+were told it still read grey. They were tuning the wrong variable: the ramp had
+**three rungs doing four jobs** — content, secondary content, structural
+micro-labels (`RANKED CONDITIONS`, `Reported`, `BP (mmHg)`) and ornament. Labels
+and ornament shared `--cs-faint`, so the words giving the page its skeleton
+rendered at the same weight as the apologies in the empty states.
+
+A fourth rung, `--cs-label`, splits them. The ramp moved one more step down with
+it: muted 12.1:1, label 8.9:1, faint 6.8:1 on white. Every rung keeps blue ~40
+above red, so nothing on this screen is actually a neutral grey — a true grey on
+a faintly cool ground is what reads as washed out even when the ratio passes.
+
+Then sentences a doctor is meant to READ moved off the ornament rung: empty-state
+bodies, the Ranked Conditions honesty line, attachment hints, relevance words.
+
+**The one deliberate exception is the measurement placeholder**, which stays at
+`#dbe1ea`. §14.14 found `120 / 80` reading as a recorded vital at a glance. A
+placeholder that passes a contrast check is a placeholder that lies about
+whether the patient has been examined.
+
+### Hierarchy: everything was tier 1, so nothing was
+
+Six modules rendered their titles identically (13.5px/700/uppercase/ink, 26px
+tinted glyph), so ATTACHMENTS shouted exactly as loudly as ASSESSMENT.
+
+- **Tier 1** — where the consultation is reasoned: Case Sheet, Measurements,
+  Assessment, and the two ranked panels.
+- **Tier 2** (`.cs-card-head.is-utility`) — Attachments: 12px/650 on the label
+  rung, 22px glyph. Still present, told to stop competing.
+- **The Assessment** gets a stronger edge and one more degree of lift. Border
+  and shadow, not an accent band — structure survives greyscale and does not
+  spend a meaning-bearing colour on "this one matters".
+- **Clinical Suggestions wore a nav tab.** `.cs-sug-tab` was violet, underlined
+  and anchored to the card's bottom edge — tab-strip language, on a panel with
+  no second tab, in the colour that already means *assessment* two cards above.
+  It is a card title with a slate glyph now, so the two plan panels read as
+  siblings.
+
+### Where the cold-start white space actually was
+
+Measured with a patient open and nothing entered:
+
+| | |
+|---|---|
+| command bar helper line | 27px, saying at the top of the page what the empty Case Sheet says 200px below it |
+| `0 / 0 shown` | 31px of footer counting nothing, on the card whose only state is empty |
+| `.cs-empty` padding | 20px top and bottom, ×4 panels on screen at once |
+| plan rail blank state | pinned to the top of a full-height column, ~180px of white under it |
+
+Row 1 came to **372px and the Assessment header sat below the fold** — the
+doctor could not see the panel the whole screen is built around without
+scrolling to it. That is the real cost, and why this was not cosmetic.
+
+After: row 1 **338px**, document **1207 → 1079px**, and the Assessment header
+plus its first ranked rows are on the first screen.
+
+Two rules came out of it:
+
+- **An empty panel should be SHORT, and what is in it should be CENTRED IN
+  WHAT IS LEFT** rather than reserving a stadium. Applied to `.cs-empty`, the
+  plan rail (`:has(> .cs-plan-empty)`) and the Selected/Confirmed column.
+- **Where a void CANNOT be removed, fill it rather than float in it.** The
+  Case Sheet is height-locked to the column beside it (§14.15), so its blank
+  state has ~300px it cannot give back. A 62px drawing floating in that is what
+  made the void read as an accident; the drawing is 104px now with an ink
+  heading above the line. This is the documented exception to BlankArt.tsx's
+  44–62px cap, and the reason is written in the file.
+
+### Found by looking, again
+
+`ConditionsCard`'s `ROW_H` was **46 against a real row of 52.9px**, so the
+collapsed box came to 184px over 212px of content and **the fourth ranked
+condition was sliced a quarter of the way through**. The constant carried a
+comment saying it was "measured rather than guessed" — it had simply gone stale
+and nobody had looked. Now 53, and four rows end on an edge.
+
+### Open
+
+- Only General OPD was eyeballed. The shared SOAP column inherits the token,
+  `.cs-empty` and `.cs-sug-head` changes — all improvements on paper, none
+  browser-verified on that profile.
+- The Case Sheet void is reduced, not removed. Removing it means relaxing the
+  row-1 height lock when the sheet is empty, which trades a void for a
+  one-time reflow when the first chip lands. Not attempted.
+- `:has()` carries the plan rail's centring. Chrome-only concern in practice;
+  the fallback is the previous top-anchored layout, so it degrades quietly.

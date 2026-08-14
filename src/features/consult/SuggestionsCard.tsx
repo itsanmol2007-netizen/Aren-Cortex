@@ -242,8 +242,21 @@ export function SuggestionsCard({
 
     return (
         <section className={`cs-card ${className}`} aria-label="Clinical suggestions">
+            {/* The title takes a glyph tile so this panel and MEDICINE
+                RECOMMENDATIONS beside it read as the two halves of one row.
+                Before this it was a violet underlined tab — the language of a
+                tab strip, on a panel with no second tab, in a colour that
+                already means "assessment" two cards above. The restyle is in
+                consult.css under `.cs-sug-tab`. */}
             <div className="cs-sug-head">
-                <span className="cs-sug-tab">{title}</span>
+                <span className="cs-sug-tab">
+                    {/* Slate, not a hue. This panel mixes four intent types
+                        that already carry their own row colours (test, referral,
+                        advice, exercise), and the standing rule reserves blue
+                        for the action — a category tile is not one. */}
+                    <span className="cs-glyph is-slate"><Sparkles size={14} /></span>
+                    {title}
+                </span>
                 <span className="cs-sort">Sort by: <b>Relevance</b></span>
             </div>
 

@@ -293,7 +293,12 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                     a card that must not grow, to say a second time what the
                     paperclip already says. Pressing anywhere on the heading
                     opens the type list. */}
-                <div className="cs-card-head is-trigger" ref={headRef}>
+                {/* `is-utility` puts this title in the second tier. Attachments
+                    is supporting evidence — "structured first, artifact when
+                    necessary" — and it was rendering its heading at exactly the
+                    weight of ASSESSMENT two cards below. See the hierarchy note
+                    in consult.css. */}
+                <div className="cs-card-head is-trigger is-utility" ref={headRef}>
                     <button
                         type="button"
                         className="cs-head-action"
@@ -337,17 +342,22 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                     <div className="cs-attach-blank">
                         <BlankAttachmentArt />
                         <p className="cs-attach-hint">
-                            X-rays, scans and lab reports. Structured entry first, a
-                            file when it genuinely cannot be.
+                            X-rays, scans and reports — when structured entry cannot
+                            carry it.
                         </p>
                     </div>
                 )}
 
-                <div className="cs-card-foot">
-                    <span className="cs-card-foot-count">
-                        {visible.length} / {items.length} shown
-                    </span>
-                    {items.length > 0 && (
+                {/* The footer exists so a CAPPED card can never silently imply
+                    it is showing everything. With no files there is nothing to
+                    cap, so "0 / 0 shown" was a hairline and 31px of page height
+                    spent counting nothing — on the exact screen state this pass
+                    is about. It comes back the moment a file does. */}
+                {items.length > 0 && (
+                    <div className="cs-card-foot">
+                        <span className="cs-card-foot-count">
+                            {visible.length} / {items.length} shown
+                        </span>
                         <button
                             type="button"
                             className="cs-card-foot-more"
@@ -356,8 +366,8 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                             More
                             <ChevronDown size={13} />
                         </button>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 {error && <p className="cs-attach-error">{error}</p>}
 

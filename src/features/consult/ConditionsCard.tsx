@@ -49,8 +49,14 @@ const CAP = 4;
 /**
  * One collapsed row, measured rather than guessed, so the animated height
  * lands on a row edge instead of slicing the fifth one in half.
+ *
+ * Re-measured in the browser 2026-08-13: a row is 52.9px, not 46. At 46 the
+ * collapsed box came to 184px against 212px of rows, so the FOURTH row was
+ * being sliced a quarter of the way through and the panel looked broken
+ * rather than bounded — the exact failure the comment above was written to
+ * prevent. Rounded up to 53 so four rows end on an edge.
  */
-const ROW_H = 46;
+const ROW_H = 53;
 
 interface Props {
     /** the ranked `finding` intents, in engine order */
@@ -176,7 +182,13 @@ export function ConditionsCard({
     return (
         <section
             aria-label="Assessment"
-            className="flex min-w-0 flex-col rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] pb-4 shadow-[var(--cs-shadow)]"
+            // `cs-assess` carries the one piece of hierarchy this card needs
+            // and Tailwind should not own: it is the pivot of the screen —
+            // everything above feeds it, everything below reads from it — and
+            // it was rendering as one more white card in a stack of five. A
+            // stronger edge and one more degree of lift, in consult.css beside
+            // the tokens it depends on.
+            className="cs-assess flex min-w-0 flex-col rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] pb-4 shadow-[var(--cs-shadow)]"
         >
             <div className="flex items-center gap-2 px-4 pt-3.5">
                 <span className="grid size-[26px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f7f2ff_0%,#ede2fe_100%)] text-[#6d28d9] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
@@ -217,7 +229,7 @@ export function ConditionsCard({
                     {/* left: what is ranked */}
                     <div className="min-w-0">
                         <div className="flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
-                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-faint)]">
+                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-label)]">
                                 Ranked conditions
                             </span>
                             {intents.length > 0 && (
@@ -247,7 +259,12 @@ export function ConditionsCard({
                                 </button>
                             )}
                         </div>
-                        <p className="mt-1.5 text-[12px] leading-snug text-[var(--cs-faint)]">
+                        {/* The honesty line, and it is content rather than
+                            ornament: a doctor who assumes this column reads
+                            only from the symptom chips is reading a list that
+                            silently includes their BP. It belongs at reading
+                            contrast. */}
+                        <p className="mt-1.5 text-[12px] font-[460] leading-snug text-[var(--cs-muted)]">
                             Ranked from symptoms, findings and measurements. You decide.
                         </p>
                         {/* ── SCROLL IS OFF UNTIL ASKED FOR ────────────────
@@ -270,7 +287,10 @@ export function ConditionsCard({
                             everything below it down a screen. */}
                         <motion.div
                             initial={false}
-                            animate={{ maxHeight: expanded ? 236 : 4 * ROW_H }}
+                            // Expanded stops on a HALF row on purpose: this one
+                            // is a scroll box, and a clean edge there would say
+                            // the list ends where it does not.
+                            animate={{ maxHeight: expanded ? 4.5 * ROW_H : CAP * ROW_H }}
                             transition={
                                 reduce
                                     ? { duration: 0 }
@@ -286,9 +306,15 @@ export function ConditionsCard({
                     </div>
 
                     {/* right: what has been taken */}
-                    <div className="min-w-0">
+                    {/* A flex column so the blank state can take the space the
+                        ranked list decides. This column is as tall as its
+                        neighbour by grid, and with the blank pinned under the
+                        heading a four-row chart left ~230px of white below one
+                        line of text — the largest single void left on a
+                        WORKING screen rather than an empty one. */}
+                    <div className="flex min-w-0 flex-col">
                         <div className="flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
-                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-faint)]">
+                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-label)]">
                                 Selected / confirmed
                             </span>
                             {diagnoses.length > 0 && (
@@ -299,10 +325,12 @@ export function ConditionsCard({
                         </div>
 
                         {diagnoses.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center gap-2 py-7 text-center">
+                            /* py-7 was 56px of padding around one line, in a
+                               column whose neighbour is already short. */
+                            <div className="flex flex-1 flex-col items-center justify-center gap-1.5 py-4 text-center">
                                 <BlankSelectedArt />
-                                <span className="text-[12.5px] font-medium text-[var(--cs-faint)]">
-                                    Add more from the ranked list
+                                <span className="text-[12.5px] font-[460] text-[var(--cs-muted)]">
+                                    Confirm a condition from the ranked list
                                 </span>
                             </div>
                         ) : (
@@ -404,7 +432,7 @@ function ConditionRow({
                     <WhyButton label={intent.label} onOpen={onExplain} />
                 </div>
                 {relevance && (
-                    <span className="mt-[1px] block text-[11.5px] font-medium text-[var(--cs-faint)]">
+                    <span className="mt-[1px] block text-[11.5px] font-semibold text-[var(--cs-label)]">
                         {relevance}
                     </span>
                 )}

@@ -40,6 +40,22 @@ body {
         var(--bg);
     color: var(--text);
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    /* Inter is loaded as a variable font (see index.html). These two lines are
+       what make that worth doing.
+
+       `font-optical-sizing: auto` drives the `opsz` axis from the rendered
+       size, so the 11px labels get the more open, slightly looser cut and the
+       larger numbers get the tighter one. Everything on this screen is small
+       text on a monitor we do not control, which is the case the axis exists
+       for.
+
+       The two character variants are a legibility choice, not a style one.
+       `cv05` gives lowercase l a tail and `cv08` gives uppercase I serifs, so
+       l / I / 1 stop being three near-identical vertical strokes — on a
+       surface that prints drug names and doses ("Levoc 1 tab", "Iloprost"),
+       that ambiguity is a clinical problem rather than a typographic one. */
+    font-optical-sizing: auto;
+    font-feature-settings: "cv05" 1, "cv08" 1;
     overflow-y: scroll;
     scrollbar-gutter: stable;
 }

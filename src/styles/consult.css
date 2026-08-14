@@ -72,8 +72,32 @@
        chip labels move to `--cs-ink` outright (see .cs-card-title etc.) —
        real content is near-black, and grey is reserved for genuine
        ornament. Ratios on white: muted 9.2:1, faint 6.0:1. */
-    --cs-muted: #37455c;
-    --cs-faint: #55647c;
+    /* ── Third pass, 2026-08-13 ──────────────────────────────────────────
+       Anmol, on the General OPD screen: "no greyscale texts, better
+       contrast". Two separate corrections, and only one of them is a
+       colour value.
+
+       1. THE RAMP MOVES ONE MORE STEP DOWN, and a fourth rung is added.
+          The screen had three text colours doing four jobs: content,
+          secondary content, structural micro-labels (RANKED CONDITIONS,
+          Reported, BP (mmHg)) and ornament. Labels and ornament shared
+          `--cs-faint`, so the words that give the page its skeleton were
+          rendered at the same weight as the apologies in the empty states.
+          `--cs-label` splits them apart.
+
+       2. NOTHING HERE IS ACTUALLY GREY, and that is deliberate. Every rung
+          keeps blue well above red (b − r ≈ 40), so the text sits in the
+          same cool family as the paper it is on. A true neutral grey on a
+          faintly cool ground is what reads as "washed out" even when the
+          contrast ratio passes — which is exactly the trap the 2026-08-12
+          note above describes and did not fully escape.
+
+       Ratios on white: muted 12.1:1, label 8.9:1, faint 6.8:1. The floor
+       moved up, so even the quietest rung now clears AA for 11px text with
+       room to spare on a bad panel. */
+    --cs-muted: #29364e;
+    --cs-label: #3c4a63;
+    --cs-faint: #4d5c76;
     --cs-blue: #1268e8;
     --cs-blue-soft: #eef4ff;
     --cs-teal: #0f766e;
@@ -4488,4 +4512,271 @@
     width: 100%;
     height: 100%;
     opacity: 0.22;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   GENERAL OPD — VISUAL REFINEMENT PASS (2026-08-13, second session)
+
+   Anmol's brief: "better fonts, no greyscale texts, better contrast and better
+   visual hierarchy and less dead white space even in the cold start and blank
+   state."
+
+   Four problems, taken separately because they are separate, and none of them
+   is answered by moving a module. The structural pass earlier today (§14.15,
+   ui-doctrine §8) is what earned the right to do visual work at all: the
+   doctrine's own warning is that polish cannot fix a structural fault, and the
+   structural fault is now fixed. What is left genuinely IS visual.
+
+   ── 1. HIERARCHY: everything was tier 1, so nothing was ─────────────────────
+   Six modules rendered their titles identically — 13.5px/700/uppercase/ink
+   with a 26px tinted glyph — so ATTACHMENTS shouted exactly as loudly as
+   ASSESSMENT. A hierarchy in which every level is the top level is a list.
+
+   Two tiers now. Tier 1 is where the consultation is REASONED: the Case
+   Sheet, the Assessment, and the two ranked panels. Tier 2 is the supporting
+   apparatus: Measurements and Attachments. Tier 2 keeps its title and its
+   glyph — it is not being demoted out of view, it is being told to stop
+   competing.
+
+   ── 2. THE ASSESSMENT IS THE PIVOT AND LOOKED LIKE A SIBLING ────────────────
+   It reads everything above it and feeds everything below it. It now carries a
+   stronger edge and one degree more lift than the cards around it. No accent
+   band, no tint: the emphasis is in the border and the shadow, which is
+   structure, so it survives greyscale and does not spend a meaning-bearing
+   colour on "this one is important".
+
+   ── 3. GREY WAS BEING SPENT ON CONTENT ──────────────────────────────────────
+   The token ramp is fixed at the top of this file. What is fixed HERE is
+   ALLOCATION: sentences a doctor is meant to read had been sitting on the
+   ornament rung. Empty-state bodies, the honesty line under Ranked Conditions,
+   attachment hints and field labels all move up. `--cs-faint` is now reserved
+   for things that are genuinely not text you read — counts, keycaps, the
+   slash between systolic and diastolic.
+
+   The one deliberate exception is the measurement PLACEHOLDER, which stays
+   nearly invisible on purpose. §14.14 found "120 / 80" reading as a recorded
+   vital at a glance; a placeholder that passes a contrast check is a
+   placeholder that lies about whether the patient has been examined.
+
+   ── 4. WHERE THE COLD-START WHITE SPACE ACTUALLY WAS ────────────────────────
+   Measured in the browser at 1422x595 — the viewport this clinic actually
+   has — with a patient open and nothing entered:
+
+     the command bar's helper line     19px + margin, saying what the
+                                       empty Case Sheet says 200px below it
+     "0 / 0 shown"                     a footer counting nothing, on a card
+                                       whose only state is empty
+     .cs-empty                         20px of padding top and bottom around
+                                       a message, x4 panels on screen at once
+     the plan rail's blank state       pinned to the top of a full-height
+                                       column, leaving ~180px of white under it
+
+   Row 1 came to 372px and the ASSESSMENT HEADER SAT BELOW THE FOLD on a fresh
+   consultation — the doctor could not see the panel the whole screen is built
+   around without scrolling to it. That is the real cost of the white space and
+   the reason this is not a cosmetic fix.
+
+   The rule applied throughout: an empty panel should be SHORT, and what is in
+   it should be CENTRED IN WHAT IS LEFT rather than reserving a stadium. Where
+   a void cannot be removed — the Case Sheet is height-locked to the column
+   beside it — the drawing grows to fit the space instead of floating in it.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. TITLE TIERS ──────────────────────────────────────────────────────── */
+
+/* Tier 2. Same family, one step back: smaller, one weight down, on the label
+   rung rather than on ink, and a smaller glyph tile. Reads as apparatus. */
+.cs-card-head.is-utility .cs-card-title {
+    color: var(--cs-label);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+}
+
+.cs-card-head.is-utility .cs-glyph {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+}
+
+.cs-card-head.is-utility .cs-glyph svg {
+    width: 13px;
+    height: 13px;
+}
+
+/* The slate glyph was #f1f5f9 / #475569 — the only two true neutrals left on
+   the screen, on the two cards sitting beside four tinted ones. Same value,
+   cool family. */
+.cs-glyph.is-slate {
+    background: #eef1f7;
+    color: #41506b;
+}
+
+/* ── 2. THE ASSESSMENT CARD ──────────────────────────────────────────────── */
+
+.cs-assess {
+    border-color: var(--cs-line-strong);
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.05), 0 4px 14px rgba(16, 28, 46, 0.045);
+}
+
+/* ── 3. WHERE GREY IS ALLOWED ────────────────────────────────────────────── */
+
+/* Field labels are structure, not ornament: "BP (mmHg)" is what tells the
+   doctor which number goes where. */
+.cs-meas-label {
+    color: var(--cs-label);
+    font-weight: 600;
+}
+
+/* Ornament, and staying there. */
+.cs-meas-slash { color: #c3ccdb; }
+
+/* The one thing on this screen that must NOT gain contrast. See the note at
+   the head of this section. */
+.cs-meas input::placeholder {
+    color: #dbe1ea;
+    font-weight: 400;
+}
+
+/* Real sentences, on the reading rung. */
+.cs-attach-hint,
+.cs-cond-note {
+    color: var(--cs-muted);
+}
+
+.cs-card-foot-count,
+.cs-attach-tile-size {
+    color: var(--cs-faint);
+}
+
+/* ── 4a. EMPTY STATES: SHORT, CENTRED, AND NOT APOLOGETIC ────────────────── */
+
+/* Was 20px top and bottom. Four of these render at once on a fresh consult,
+   so the padding is not "a bit of air on one card", it is ~160px of page. */
+.cs-empty {
+    gap: 5px;
+    padding: var(--cs-s3) var(--cs-s4);
+}
+
+.cs-empty svg {
+    margin-bottom: 1px;
+}
+
+.cs-empty strong {
+    font-size: 14px;
+    font-weight: 660;
+    letter-spacing: -0.005em;
+}
+
+.cs-empty span {
+    max-width: 34ch;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 460;
+    line-height: 1.45;
+}
+
+/* ── 4b. THE PLAN RAIL'S BLANK STATE ─────────────────────────────────────── */
+
+/* The rail runs the full height of the workspace by instruction ("don't make
+   it a floating box in the side"), which is right — but its empty state was
+   pinned to the top of that column, so the instruction bought a full-height
+   panel with a message in the first 90px and nothing under it. Centred in the
+   space the rail already occupies, the height reads as intentional. */
+.cs-plan-scroll:has(> .cs-plan-empty) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cs-plan-empty {
+    gap: 5px;
+    padding: var(--cs-s4) var(--cs-s5);
+}
+
+.cs-plan-empty strong {
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 660;
+}
+
+.cs-plan-empty span {
+    max-width: 30ch;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 460;
+    line-height: 1.45;
+}
+
+/* ── 4c. ATTACHMENTS, TIGHTER ────────────────────────────────────────────── */
+
+.cs-rowone-right .cs-attach-blank {
+    padding: var(--cs-s2) var(--cs-s4) var(--cs-s3);
+}
+
+.cs-rowone-right .cs-attach-blank .cs-attach-hint {
+    max-width: none;
+    font-size: 12px;
+}
+
+/* ── 4d. MEASUREMENTS, TIGHTER IN THE LOCKED ROW ─────────────────────────── */
+
+.cs-rowone-right .cs-meas-grid {
+    padding: var(--cs-s2) var(--cs-s4) var(--cs-s3);
+}
+
+.cs-rowone-right .cs-meas {
+    padding: 6px 10px 7px;
+}
+
+/* ── 5. THE SUGGESTIONS PANEL WORE A NAV TAB ─────────────────────────────── */
+
+/* `.cs-sug-tab` was violet, underlined, and anchored to the card's bottom
+   edge — the visual language of a tab strip, on a panel that has no second tab
+   to switch to. Beside MEDICINE RECOMMENDATIONS, which is a plain title with a
+   glyph tile, the two plan panels did not read as siblings; and violet already
+   means "assessment" two cards above it. It is a card title now. */
+.cs-sug-head {
+    border-bottom: 0;
+    padding: var(--cs-s3) var(--cs-s4) 0;
+}
+
+.cs-sug-tab {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-bottom: 0;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: 0.045em;
+}
+
+.cs-sug-tab::after {
+    display: none;
+}
+
+.cs-sort {
+    padding-bottom: 0;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 520;
+}
+
+.cs-sort b {
+    font-weight: 650;
+}
+
+/* ── 6. NUMERALS ─────────────────────────────────────────────────────────── */
+
+/* Tabular everywhere a number can sit above another number, and SLASHED ZERO
+   wherever the number is clinical. On this screen 0 and O share a column in
+   "SpO2 100" and in every dose field, and Inter's default zero is a clean
+   ellipse. The slash costs nothing and removes the ambiguity. */
+.cs-meas input,
+.cs-dose-field input,
+.cs-stepper b,
+.cs-card-foot-count,
+.cs-status b {
+    font-variant-numeric: tabular-nums slashed-zero;
 }

@@ -5,11 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AREN Cortex Phase 1</title>
     <!-- Front Desk display/UI families (Manrope + Inter). Referenced by the
-         frontdesk Tailwind utilities; loaded here so they actually render. -->
+         frontdesk Tailwind utilities; loaded here so they actually render.
+
+         INTER IS REQUESTED AS A VARIABLE FONT, and that is not a preference.
+         This used to ask for `Inter:wght@400;500;600;700` — four static cuts —
+         while consult.css sets 450, 480, 520, 550, 600, 620, 640, 650 and 660
+         across the workspace. Every one of those snapped to the nearest of the
+         four, so a title at 700 and a value at 640 rendered IDENTICALLY, and
+         the whole carefully-tuned weight ramp collapsed into three visible
+         steps. The type hierarchy was being written and then thrown away at
+         load time.
+
+         `opsz` is requested too: Inter v4's optical size axis opens the
+         counters and loosens the spacing at small sizes, which is exactly the
+         condition this screen lives in — 11-13px text on a dim clinic panel. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=Manrope:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <!-- Login screen families (landing-page identity): Geist + Geist Mono +

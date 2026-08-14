@@ -340,12 +340,15 @@ export function ClinicalCommandBar({
                     Ctrl K
                 </kbd>
             </div>
-            {/* Says what the box does without instructing the doctor how to
-                work. "Cortex will place it" is a statement about the software's
-                job, not about theirs. */}
-            <p className="mt-2 px-1 text-[12.5px] text-[var(--cs-faint)]">
-                Type or search anything. Cortex will place it in the right context.
-            </p>
+            {/* The helper line that used to sit here — "Type or search
+                anything. Cortex will place it in the right context." — is
+                gone. It was 19px of grey plus its margin saying, at the top of
+                the page, exactly what the empty Case Sheet says 200px below
+                it, and it said it on every consult forever rather than only
+                while the doctor needs telling. The Case Sheet's own blank
+                state is the right place for it: it is attached to the thing
+                being explained, and it disappears the moment the first chip
+                lands. */}
             {dropdown}
         </div>
     );
@@ -364,10 +367,22 @@ export function ClinicalCommandBar({
  *
  * The subject is a clipboard with three empty rules and a cursor at the first
  * one: the card is waiting for a line, and the line arrives from the bar above.
+ *
+ * ── Why this one is bigger than the rest of the family ─────────────────────
+ * BlankArt.tsx caps its drawings at 44-62px, and that cap is right for the
+ * panels it serves: those are content-driven, so an empty one is a short card
+ * and a large drawing would be the loudest thing on the screen.
+ *
+ * This card is the exception, because it is the one blank state whose height
+ * is NOT its own. The row-1 contract locks it to whatever Measurements plus
+ * Attachments comes to (~330px), so on a fresh consult there is a void here
+ * that cannot be removed by tightening anything. A 62px drawing floating in
+ * the middle of it is what makes the void read as an accident. Filling the
+ * space is the honest response to a space that has to exist.
  */
 function EmptySheetArt() {
     return (
-        <svg width="62" height="54" viewBox="0 0 62 54" fill="none" aria-hidden="true">
+        <svg width="104" height="90" viewBox="0 0 62 54" fill="none" aria-hidden="true">
             <rect x="17" y="7" width="28" height="38" rx="4"
                 fill="#fbfcfe" stroke="#d9e0ec" strokeWidth="1.5" />
             <rect x="24.5" y="3.5" width="13" height="7" rx="2.2"
@@ -479,11 +494,19 @@ export function CaseSheet({
                 grey saying nothing. Nothing has been recorded, so the card
                 should look like nothing has been recorded. */}
             {entries.length === 0 && (
-                <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-4 py-6 text-center">
+                <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-4 text-center">
                     <EmptySheetArt />
-                    <p className="max-w-[30ch] text-[12.5px] leading-relaxed text-[var(--cs-faint)]">
-                        Search above to add symptoms, findings or history. Each entry
-                        files itself.
+                    {/* A heading in ink, then the line. The card previously
+                        held a single sentence of grey, which is what an
+                        unfinished screen looks like — nothing on it was at
+                        reading weight, so the eye found no anchor and read the
+                        whole panel as absent rather than as empty. */}
+                    <strong className="mt-1 text-[14px] font-[660] leading-tight tracking-[-0.005em] text-[var(--cs-ink)]">
+                        Nothing recorded yet
+                    </strong>
+                    <p className="max-w-[32ch] text-[12.5px] font-[460] leading-[1.45] text-[var(--cs-muted)]">
+                        Search above for symptoms, findings or history. Cortex files
+                        each entry in the right place.
                     </p>
                 </div>
             )}
@@ -499,7 +522,7 @@ export function CaseSheet({
                         layout={!reduce}
                         className="flex items-start gap-2.5 px-4 py-[3px]"
                     >
-                        <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-semibold uppercase leading-tight tracking-[0.085em] text-[var(--cs-faint)]">
+                        <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
                             {TONE[g.kind].group}
                         </span>
                         <div className="flex flex-1 flex-wrap content-start gap-[6px]">
@@ -582,7 +605,7 @@ export function CaseSheet({
                         exit={{ opacity: 0 }}
                         className="mx-4 mt-2 flex items-start gap-2.5 border-t border-dashed border-[var(--cs-line-strong)] pt-2.5"
                     >
-                        <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-semibold uppercase leading-tight tracking-[0.085em] text-[var(--cs-faint)]">
+                        <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
                             Related
                         </span>
                         <div className="flex flex-1 flex-wrap content-start gap-[6px]">

@@ -340,6 +340,42 @@ software should not be issuing; a relationship is a fact.
 
 ---
 
+## 8a. The visual pass that followed, and why it was allowed
+
+2026-08-13, same day, after §8 shipped. §0 of this document says visual work
+cannot fix this screen. That was true of the screen §0 described. Once the
+structure was rebuilt, the remaining complaints — grey text, weak hierarchy,
+dead white space — stopped being symptoms of the structural fault and became
+the actual defects. Details in `aren-cortex-atlas.md` §14.16.
+
+Four rules came out of it that belong here rather than in a changelog:
+
+- **A stylesheet's type ramp is a claim, not a fact.** `consult.css` authored
+  nine font weights; `index.html` loaded four static cuts, so six of the nine
+  rendered as something else and the hierarchy the CSS described did not exist
+  on screen. Check the rendered page, not the declaration.
+
+- **"It still looks grey" after darkening the greys means the ramp has too few
+  rungs, not the wrong values.** Two passes moved the tokens darker and both
+  were rejected. The fault was that structural micro-labels and ornament shared
+  one rung, so the words carrying the page's skeleton were rendered as
+  decoration. A fourth rung fixed what two rounds of tuning could not.
+
+- **A hierarchy in which every level is the top level is a list.** Six modules
+  at one title treatment meant Attachments shouted as loudly as the Assessment.
+  Emphasis is only visible where something else is de-emphasised.
+
+- **An empty panel should be SHORT, and centred in what is left.** Reserve
+  nothing. And where a void genuinely cannot be removed — the Case Sheet is
+  height-locked to the column beside it — FILL it rather than float a small
+  drawing in the middle of it. A 62px illustration in a 300px well is what
+  makes the well read as an accident.
+
+The test in §4 still stands and this pass passes it: an empty consultation got
+**128px shorter**, and the Assessment header came above the fold.
+
+---
+
 ## 9. Further reading
 
 - `docs/temp/Cortex_Ref2.png` — the visual target. Language, not pixels.
