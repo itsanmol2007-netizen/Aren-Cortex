@@ -134,6 +134,25 @@ opposite of it. An empty consult should be close to blank.
 
 ## 3. The asset we are not using
 
+> **STALE — read as history, not as current state.** Corrected 2026-08-14
+> (`SESSION-HANDOFF.md` §4.2 of that date's session). Everything below this
+> box was true on 2026-08-12 and drove the decision to build §8 the next
+> day. It is no longer true in two load-bearing ways:
+>
+> 1. **`examSuggestions` is wired.** §8's General OPD rebuild (2026-08-13)
+>    consumes it as **Related Findings** — `App.tsx` builds `relatedFindings`
+>    off it and passes it to `CaseSheet`'s `related` prop. The "computed and
+>    thrown away" claim is false as of the very next day.
+> 2. **The content blocker has largely closed.** `signal_finding_suggestions`
+>    measured at **537 active rules across 215 of 304 signals** on
+>    2026-08-14, not 10 — 527 were added 2026-08-12 and, as far as anyone has
+>    checked, never audited. The ratio this section calls "the single
+>    highest-leverage number in this document" moved by more than an order of
+>    magnitude before anyone came back to re-measure it.
+>
+> What's actually open now is a content-QUALITY question — are those 527
+> rules any good? — not a wiring one. Do not plan off the numbers below.
+
 `src/lib/synapse/examSuggestions.ts` is a pure, working engine that ranks
 **what is worth examining for** given the symptoms already entered. Its
 header describes the exact cascade the product wants:
@@ -236,8 +255,16 @@ when there is genuine ambiguity (several strengths, no clinic default) and
 otherwise commit on one key with the choices visible and correctable
 afterwards.
 
-It is **not browser-verified** as of 2026-08-12. It type-checks and builds.
-Click a `+` before trusting it.
+**Update, 2026-08-13:** Anmol reviewed the sheet as it stood that day himself
+and likes it — treat that shape (brand, strength, dose, slots, duration,
+timing, staged not committed) as verified, not merely type-checked.
+
+**Still not browser-verified, as of 2026-08-14:** the same day's second
+session added the ●○●○ circle notation for the timing slots, a food-
+instruction pre-fill (`features/consult/dosing.ts`), and moved the confirm
+button from green to blue — see `aren-cortex-atlas.md` §14.17. All three
+type-check and build; none has been seen rendered by anyone. Click a `+`
+before trusting them.
 
 ---
 

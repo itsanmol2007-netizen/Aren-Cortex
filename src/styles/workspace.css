@@ -1,6 +1,11 @@
 /* ============================================================
-   WORKSPACE.CSS — the redesigned consult workspace (`cx-*`)
-   AREN Cortex redesign, Step 1 (docs/aren-cortex-redesign-plan.md)
+   WORKSPACE.CSS — the DELETED three-column consult workspace (`cx-*`)
+
+   Its spec, docs/aren-cortex-redesign-plan.md, was removed 2026-08-14 as
+   historical noise (aren-cortex-atlas.md §15) — that workspace is gone; only
+   24 of this file's classes are still live (atlas §12, §10.4), kept for a
+   handful of sheets and one selector hook. Do not treat this file as a
+   description of the current consult screen — see the doctrine instead.
 
    The one deliberate styling decision (atlas §10.6 / rule 7):
    the redesign is authored HERE, as plain global CSS under a

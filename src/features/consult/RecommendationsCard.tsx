@@ -406,7 +406,7 @@ function MedicineRow({
 
     const all = composition?.brands ?? [];
     // A molecule with no standalone product still has combinations to offer —
-    // task 1 of docs/SESSION-HANDOFF.md. When there is no single-molecule
+    // docs/aren-cortex-atlas.md §14.17. When there is no single-molecule
     // brand at all, the best combination (fewest extra molecules) IS the
     // primary: `primary` gates every action on this row (Prescribe, the pin
     // label, the identity's brand line), so this one fallback is what makes

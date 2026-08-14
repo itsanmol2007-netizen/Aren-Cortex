@@ -2091,8 +2091,8 @@
     border-color: transparent;
 }
 
-/* A combination product offered beside a ranked molecule's own brands — task
-   1 of docs/SESSION-HANDOFF.md. Same chip, plus the extra molecule(s) stated
+/* A combination product offered beside a ranked molecule's own brands — see
+   docs/aren-cortex-atlas.md §14.17. Same chip, plus the extra molecule(s) stated
    plainly rather than left to a tooltip: taking a combination means
    prescribing something the doctor did not search for, and that is always a
    reason to say so, never a reason to hide it (MedicineAddSheet carries the

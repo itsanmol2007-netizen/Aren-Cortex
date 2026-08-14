@@ -288,7 +288,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
     }, [brandKey, data, isPediatric, hospitalId]);
 
     // ---- 4b. combination products, beside the single-molecule brands. ----
-    // Task 1 of docs/SESSION-HANDOFF.md: "Synapse does not recommend medicines
+    // docs/aren-cortex-atlas.md §14.17: "Synapse does not recommend medicines
     // with more than one composition." `fetchCombinationProducts` (lib/db/
     // medicines.ts) was written 2026-08-13 and called from nowhere — this is
     // that wiring. Same shape as the brands cache just above, deliberately:

@@ -1,7 +1,12 @@
 // ---------------------------------------------------------------------------
 // The consult, without a mouse.
 //
-// Spec: docs/aren-cortex-workspace-design.md §7.
+// Originally specced in docs/aren-cortex-workspace-design.md §7, deleted
+// 2026-08-14 as historical noise — see aren-cortex-atlas.md §15. That doc
+// described the three-column workspace this screen no longer is (see the
+// doctrine's §0/§8), so treat the "three columns" framing below as a
+// leftover from that layout rather than a description of the current one —
+// not re-audited against the General OPD rebuild.
 //
 // The target is a doctor who never lifts their hands from the keyboard between
 // "next patient" and "save". Everything below exists to serve that, and the

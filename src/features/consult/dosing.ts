@@ -2,7 +2,7 @@
 // DOSING — the food-instruction PRE-FILL for the medicine add sheet.
 //
 // There is no food-instruction data anywhere in the schema. Checked against
-// the live database 2026-08-14 (docs/SESSION-HANDOFF.md §4.1): `compositions`
+// the live database 2026-08-14 (docs/aren-cortex-atlas.md §14.17): `compositions`
 // carries only `id`, `name`, `specialization_scope`; `medicines` has no such
 // column either; `medicine_composition_map.route` is the dosage FORM
 // (tablet / syrup / ...), not a timing. So this file is authored content, not

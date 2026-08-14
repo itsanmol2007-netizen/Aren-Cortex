@@ -1213,6 +1213,9 @@ A `prefers-reduced-motion` block disables the transitions.
 | The "why did this rank" panel | `features/consult/ContributionSheet.tsx` |
 | The prescription, dose / frequency / duration / SOS editing | `features/consult/PlanCard.tsx` (`DoseEditor`) |
 | Frequency ⇄ dose-slot conversion (M/A/E/N) | `lib/db/reference.ts` — `freqLabelToKeys` / `keysToFreqLabel`. **The slot string is canonical; never parse the human label.** |
+| The add sheet's food-instruction pre-fill | `features/consult/dosing.ts` — a documented static map, not a DB lookup (§14.17) |
+| A combination product's guard verdict | `lib/synapse/engine.ts` → `guardCombination` / `medicineIntentIndex` — checks EVERY molecule the product carries, not just the one it was ranked or searched through (§14.17) |
+| Which combination products a ranked molecule offers | `lib/db/medicines.ts` → `fetchCombinationProducts`, wired in `useConsultIntelligence.ts` §4b |
 | Keyboard shortcuts | `hooks/useConsultKeyboard.ts` + `components/ShortcutsSheet.tsx` (keep both in step) |
 | Ranking, guards, personalisation, brands, companions — the MATH | `src/lib/synapse/*.ts` (pure, no I/O — safe to unit-test) |
 | Vitals → engine measurements (BP split, °F→°C, age, text values) | `lib/synapse/consultInput.ts` — **the one place** |
@@ -2165,16 +2168,23 @@ with eyes on the screen.
   Universal Cortex, Solo Mode. Read for *why*.
 - `Aren cortex visual philosophy.md` + `Aren Cortex Mock 2.png` — the layout law
   the consult screen is built to. "Configure, never redesign."
-- `aren-cortex-workspace-design.md` / `aren-cortex-redesign-plan.md` — the
-  2026-07-28 three-column redesign. **Historical only** — that workspace is
-  deleted.
 - `confirmed-conditions-investigation.md` — the open design question: making a
   confirmed condition a durable patient fact. Findings and a proposal; not built.
 - `referance (synapsev2)/Synapse v2 handoff .md` — the sandbox-side doctrine for
   the engine itself: the guard philosophy (§14 there), the personalisation model
   (§10a there), the migration checklist this port followed. **Read before
   changing anything under `lib/synapse/`.**
-- `Coretx File Str.md` — Session 31. Historical only.
+
+**Deleted 2026-08-14** (§14.17), as pure noise once the docs above and
+`aren-technical-atlas.md` said everything they still had to say: `aren-cortex-workspace-design.md`
+and `aren-cortex-redesign-plan.md` (both already marked historical-only above
+— the three-column workspace they specified was torn down), `Coretx File
+Str.md` (a 2026-08's-predecessor file tree, superseded by §1's own "Where it
+lives" table since the day this atlas was split out), and `Authentication &
+RLS Implementation Plan.md` (described a pre-auth, RLS-off state that §8 of
+`aren-technical-atlas.md` says has been false since 2026-07-19 — auth and RLS
+are both live). If any of the four is needed again, `git log` on this repo
+still has them.
 
 *End. Update this document when the consult screen changes shape again — at
 minimum §5 (the screen), §10 (defects), §11 (the diff) and §13 (where-do-I-change-X).*
@@ -2256,11 +2266,16 @@ Physiotherapy was told "Exercise Plans primary" and shown Medicines.
 - Ranked medicine row still needs restructuring to Ref2 (`docs/temp/`):
   rank badge · brand · molecule · relevance bar · heart · add, alternates
   below. Currently cluttered at the right edge.
-- `MedicineAddSheet` is **not browser-verified** — built and type-checked
-  only.
-- Findings ranking: `examSuggestions.ts` runs on every chart change and
-  nothing consumes it; `signal_finding_suggestions` has **10 rules** against
-  1,577 intent rules. Content project, not a code change.
+- ~~`MedicineAddSheet` is **not browser-verified**~~ Anmol reviewed it
+  2026-08-13 and likes it — see doctrine §6. (Its 2026-08-14 additions —
+  circles, food-instruction pre-fill, blue confirm — are a fresh
+  not-yet-verified layer on top; §14.17.)
+- ~~Findings ranking: `examSuggestions.ts` runs on every chart change and
+  nothing consumes it; `signal_finding_suggestions` has 10 rules against
+  1,577 intent rules.~~ **Wired 2026-08-13** as Related Findings (§8 of the
+  doctrine, `CaseSheet`'s `related` prop) and the rule count is **537** as of
+  2026-08-14, not 10 — see doctrine §3's correction box. The open question
+  is now content quality (527 rules added 2026-08-12, unaudited), not wiring.
 
 ---
 
@@ -2397,10 +2412,12 @@ stroke-based SVG that takes any hue and survives greyscale.
 
 - The print document's new look is **not browser-verified**. It builds and
   type-checks; it has not been seen rendered.
-- Ranking combinations by coverage is not done. They are REACHABLE but not
-  OFFERED: the engine still ranks compositions, so a product answering two
-  active needs is not scored as such. `fetchCombinationProducts` is written
-  and deliberately unwired.
+- ~~Ranking combinations by coverage is not done... `fetchCombinationProducts`
+  is written and deliberately unwired.~~ **Wired 2026-08-14 — see §14.17.**
+  A combination is now OFFERED as an alternate under the ranked molecule it
+  contains (still not itself scored as answering two needs — that remains
+  future work, see §14.17's own "Open"), and a molecule with no standalone
+  product can be prescribed directly from its best combination.
 - The whole screen is tuned such that it reads best at ~80% browser zoom on a
   14" display, which means the type and spacing scale is one step too large
   at 100%. Needs a deliberate density pass, not per-card nudges.
@@ -2535,3 +2552,150 @@ and nobody had looked. Now 53, and four rows end on an edge.
   one-time reflow when the first chip lands. Not attempted.
 - `:has()` carries the plan rail's centring. Chrome-only concern in practice;
   the fallback is the previous top-anchored layout, so it degrades quietly.
+
+---
+
+## 14.17 Session 2026-08-14 — combination ranking wired, search's brand
+           priority fixed at the root, add sheet finished
+
+Picked up on a fresh machine from `SESSION-HANDOFF.md`, a temporary file
+written to move this session across machines without losing what the
+previous one had already established — including live database numbers.
+That file is now folded in here (this section, plus the corrections to
+§14.14/§14.15's "Open" bullets and doctrine §3/§6 above) and deleted, per
+its own instruction. Not browser-verified against the running app — no
+doctor login was available in this environment. Verified instead with
+`tsc -b`, `vite build`, static renders of new markup against the real
+stylesheet, `npm run check:search` / `check:brands`, and read-only SQL
+against the live database. **Open the browser before trusting any of
+this**, per §7 of the doctrine — the same lesson every session before this
+one had to relearn.
+
+### The add sheet, finished (doctrine §6)
+
+`doseFieldValue` (already committed the session before, in `brands.ts`)
+wired into `MedicineAddSheet`'s re-seed effect and its strength-variant
+click handler — the doctor no longer retypes a dose already in the product
+name they just picked. A new `features/consult/dosing.ts` adds a
+documented, conservative static map from composition name to a default food
+instruction (NSAIDs after food, PPIs/sulfonylureas before food,
+levothyroxine/bisphosphonates empty stomach, metformin after food) — there
+is no food-instruction column anywhere in the schema (confirmed live
+2026-08-14: `compositions` carries only `id`, `name`,
+`specialization_scope`; `medicine_composition_map.route` is the dosage
+FORM, not a timing), so this stays a PRE-FILL the doctor can change, never a
+guard. The four Morning/Afternoon/Evening/Night buttons became the ●○●○
+circle notation doctors already write by hand — filled when on, a small
+label under each so the notation is learnable, same underlying `"1-0-1-0"`
+slot string. `.cs-addmed-confirm` moved green → blue: it stages a medicine
+onto the plan, which has not been taken yet, and the colour law (doctrine
+§5 / §12.1 below) reserves green for TAKEN and blue for THE ACTION.
+
+### Combination ranking wired — the "very big flaw"
+
+Anmol, on this being unwired: *"That's a very big flaw."* `fetchCombinationProducts`
+(`lib/db/medicines.ts`) was written 2026-08-13 and called from nowhere —
+§14.15 flagged it as dead code. It is wired now, without touching the
+engine, which still ranks compositions and stays pure:
+
+- `useConsultIntelligence.ts` fetches combination products for every ranked
+  (and companion) composition, cached by composition id, same
+  async/never-blocks-the-ranking shape as the existing brand fetch.
+- `RecommendationsCard.tsx`: a ranked molecule now offers its combination
+  products as alternates on the open row, **fewest extra molecules first**,
+  each stating every molecule it carries on the chip itself — never only a
+  tooltip, the same rule `MedicineAddSheet`'s brand list already followed. A
+  molecule with **no standalone product** — previously a dead end needing a
+  manual search — now offers its best combination directly as the row's
+  primary, with a real Prescribe button, for the first time.
+- **The safety-critical half.** A combination carries molecules the engine
+  never scored, so its guard verdict cannot come from the one composition
+  it happens to be filed under. `lib/synapse/engine.ts` gains two pure
+  functions — `medicineIntentIndex` (composition id → the catalogued
+  medicine intent for it, the reverse of how `rs.intents` is keyed) and
+  `guardCombination` (the worst status and every reason across ALL of a
+  product's molecules, via that index) — neither imports React or Supabase.
+  A hard verdict on ANY combination offered under a row locks the WHOLE
+  row — every alternate, single-molecule or combination — until it is read
+  and acknowledged, the same mechanism the engine's own hard warnings use.
+  This is doctrine rule 11 (§14 below): nothing reached by any route may
+  show a weaker warning than the ranked list would give it directly.
+- The identical gap existed in the manual search path: `IntentSearch.tsx`
+  computed a hit's verdict from only the ONE composition `search_intents`
+  matched through, even when the resolved product carried more. Same fix
+  applied there, reusing `guardCombination`.
+- Two smaller correctness fixes the wiring forced into view: `chosenFor()`
+  in `RecommendationsCard` only ever searched the single-molecule brand list
+  when redrawing an already-accepted row, so an accepted combination would
+  have displayed under the wrong brand name — it now searches both lists. A
+  combination handed to the accept flow directly (from either surface
+  above, with no typed brand name) now heads its own brand list in the add
+  sheet, matching the treatment a brand-searched combination already got —
+  otherwise it opened correctly selected but never showed as "chosen"
+  anywhere in its own picker (`App.tsx`'s `handleAcceptIntent`).
+
+### `search_intents` — the brand-priority bug was in the database, not the app
+
+Task 2, "brand is the headline in search," turned out to need **zero app
+code changes**. `IntentSearch.tsx` was already rendering brand-first
+correctly — verified while fixing the above. The actual bug was upstream,
+in the `search_intents` Postgres function itself, and no amount of reading
+`IntentSearch.tsx` would ever have found it.
+
+The function computes a `by_label` hit (query matches a composition's own
+name) and a `by_brand` hit (query matches a real product's name) as
+separate rows, then keeps exactly one per intent via `distinct on (m.id)
+order by m.id, m.provenance, m.score desc`. Provenance was `label=1,
+symptom=2, brand=3` — so whenever BOTH fired for the same intent, the LABEL
+match won and the brand match, `via_label` included, was discarded before
+it ever reached the app. Confirmed live: typing "ace" returned bare
+"aceclofenac" even though "Ace-P Tablet" — a real, prescribable product —
+matched too. Not an edge case: most Indian brand names are prefixed by
+their own molecule ("Acenac" / aceclofenac, "Acer" / cefadroxil, "Ace-TH" /
+thiocolchicoside — all four turned up in one `search_intents('ace', ...)`
+call), so this collision is closer to the common case than the rare one.
+
+Fixed live, with Anmol's authorisation, by
+`CREATE OR REPLACE FUNCTION public.search_intents(...)` — migration
+`search_intents_prefer_brand_over_label`. The only change: the three
+provenance literals became `brand=1, symptom=2, label=3`, so a brand match
+wins whenever one exists for the same intent. Same signature, same output
+columns, every other clause byte-identical. Verified after, read-only:
+"ace" now surfaces "Ace-P Tablet" (brand) for aceclofenac; "dolo" is
+unchanged (was already all-brand, nothing to collide with); a pure molecule
+search like "metformin" still correctly returns the composition when no
+brand collides with it.
+
+**This fix has no other record than this paragraph.** There is no
+`supabase/migrations/` directory (§0) — the schema's history lives entirely
+in Supabase's own migration log and in whatever prose someone wrote down.
+If a migrations directory is ever introduced, carry this one forward
+explicitly; it will not be there otherwise.
+
+### Branch hygiene, for whoever reads git history here
+
+The working branch for this session had been cut from `main`, an 11-commit
+history unrelated to `master` (no common ancestor) with no `docs/` at all —
+`master` is where this atlas, the doctrine, and everything else actually
+live. Restarted the branch from `master` before anything else; it cost
+nothing, since the branch carried zero unique commits. Only worth recording
+here in case `main` and `master` are ever meant to converge — right now
+they are two different repositories that happen to share a remote.
+
+### Open
+
+- Combinations are still not scored AS combinations. The engine ranks the
+  one composition it was reached through; a product that answers two active
+  needs at once is offered (this session) but not ranked any higher for
+  covering both. Doctrine's ranking law (§5 there) says ranking is a
+  proportional property of the engine, not the brand layer, so this is a
+  bigger change than wiring — flagged, not attempted.
+- The add sheet's three 2026-08-14 additions (circles, food-instruction
+  pre-fill, blue confirm) are not browser-verified — see doctrine §6.
+- `search_intents`'s fix changes final list ORDER slightly for any query
+  that used to collide: the surviving row's `score` is now the brand
+  match's score, not the label match's (usually somewhat lower — 2.0ish
+  against 3.0ish in the cases checked), so a previously-top result can move
+  down a few places even though it is now labelled correctly. Not checked
+  against `check:search`'s weak-match list beyond confirming 0 terms went to
+  no-result.
