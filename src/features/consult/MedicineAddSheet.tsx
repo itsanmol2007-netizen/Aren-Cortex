@@ -21,7 +21,7 @@
 // underneath so the two are never confused, never the other way round.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, Pill, X } from "lucide-react";
@@ -112,6 +112,53 @@ export function MedicineAddSheet({
     const frequency = slots.map((s) => (s ? 1 : 0)).join("-");
     const anySlot = slots.some(Boolean);
     const canConfirm = !!brand && (anySlot || sos);
+
+    /**
+     * ── The sheet takes focus, and gives it back ────────────────────────────
+     *
+     * Found by driving this component in Chromium, 2026-08-15, and it is the
+     * bug that made half the shortcuts below a lie:
+     *
+     * The sheet is opened by Enter on a ranked row, and NOTHING moved focus —
+     * so it stayed in the medicine search field, which is now behind the
+     * scrim. Two consequences, one invisible and one worse:
+     *
+     *   · The bare digits did nothing. `matches()` refuses a binding without
+     *     `whileTyping` whenever the event came from a field, and the focused
+     *     element was a text input, so 1-4 and 0 were dropped on every single
+     *     press. Enter worked (it is bound `whileTyping`), which is exactly
+     *     what made this hard to notice: the common path was fine.
+     *   · Everything else the doctor typed went INTO that hidden search box.
+     *     They would cancel the sheet and find their query mangled by whatever
+     *     they had pressed while looking at a dose form.
+     *
+     * So the panel takes focus on open. It is `tabIndex={-1}` — programmatic
+     * focus only, never a Tab stop of its own — and focusing the panel rather
+     * than the Dose input is deliberate: landing in a text field would put the
+     * digits right back inside a field and reintroduce the bug.
+     *
+     * On close, focus goes back to whatever opened it. That is what makes the
+     * sheet a step in a flow rather than a dead end — the doctor adds a
+     * medicine and the caret is already in the search box, ready for the next
+     * one, with no reach for the mouse in between.
+     */
+    const panelRef = useRef<HTMLDivElement>(null);
+    const returnFocusTo = useRef<HTMLElement | null>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        returnFocusTo.current = document.activeElement as HTMLElement | null;
+        // After paint: AnimatePresence has only just mounted the panel.
+        const frame = window.requestAnimationFrame(() => panelRef.current?.focus());
+        return () => {
+            window.cancelAnimationFrame(frame);
+            const back = returnFocusTo.current;
+            returnFocusTo.current = null;
+            // Guard the node still being in the document: a patient switch can
+            // unmount the whole workspace while this sheet is open.
+            if (back?.isConnected) back.focus();
+        };
+    }, [open]);
 
     const commit = () =>
         onConfirm({
@@ -226,6 +273,10 @@ export function MedicineAddSheet({
                     />
                     <motion.div
                         className="cs-addmed-panel"
+                        ref={panelRef}
+                        // Programmatic focus only — the panel is a landing
+                        // place for the keyboard, never a Tab stop of its own.
+                        tabIndex={-1}
                         initial={reduce ? false : { opacity: 0, y: 16, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.12 } }}

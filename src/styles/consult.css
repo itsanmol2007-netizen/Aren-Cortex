@@ -5051,3 +5051,11 @@ body.cs-locked-shell {
     font-weight: 560;
     letter-spacing: 0;
 }
+
+/* The add sheet takes focus when it opens so the bare digits reach the dose
+   slots instead of a text field behind the scrim (see MedicineAddSheet.tsx).
+   The panel is not a control, so it must not wear a focus ring for it. */
+.cs-addmed-panel:focus,
+.cs-addmed-panel:focus-visible {
+    outline: none;
+}

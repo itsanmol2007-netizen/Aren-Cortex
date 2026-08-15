@@ -3287,11 +3287,62 @@ what they read as — overrides for the green ground.
   real row class names: walking, wrapping, exactly-one-cursor, focus never
   leaving the search field, Enter on a row with no verb being a no-op, → / ←
   driving the row's own expander idempotently, and the two re-rank cases above.
-- **NOT verified against the live app.** The consult screen is behind the auth
-  gate and this session had no doctor credentials, so nothing here was driven
-  through the real screen or the real database. That is the gap in this entry:
-  the mechanism is proven, the wiring into each card is typed and reviewed but
-  not clicked. **Worth one pass through a real consult before trusting it**, in
-  particular the four `searchRef` / `listRef` attachments and the Assessment
-  Tab stop.
+- **12 assertions in Chromium against the REAL `MedicineAddSheet`**, opened
+  the way the real card opens it. This is what found §14.22a below.
+- **NOT verified against the live app.** Credentials were provided, but
+  **Chromium in this environment has no outbound network at all** — every
+  HTTPS host returns `ERR_CONNECTION_RESET`, with or without the agent proxy,
+  while the same requests succeed from `curl`. So the login could not complete
+  and nothing was driven through the real screen or the real database. The
+  mechanism is proven and the add sheet was driven for real; the wiring into
+  the other cards is typed and reviewed but not clicked. **Worth one pass
+  through a real consult**, in particular the four `searchRef` / `listRef`
+  attachments and the Assessment Tab stop.
 - No DB writes. No test data created.
+
+---
+
+## 14.22a The focus bug underneath all of it (same session)
+
+Found by mounting the real `MedicineAddSheet` in a harness and driving it,
+after Anmol asked a good question: *"if everything seems fine and the doctor
+just wants to continue, does he have an option, or does he still have to go
+through all those things?"*
+
+The answer was yes — Enter commits — but checking it exposed something worse.
+
+**Nothing moved focus when an overlay opened.** The add sheet is opened by
+Enter on a ranked row, so focus stayed in the medicine search field, which is
+now behind the scrim. Two consequences:
+
+1. **Every bare-key binding in the sheet silently did nothing.** `matches()`
+   refuses a binding without `whileTyping` when the event came from a field,
+   and the focused element was a text input — so `1`-`4` and `0` were dropped
+   on every press. Verified: pressing "2" toggled no slot.
+2. **Everything else typed went into that hidden search box.** Cancel the
+   sheet and find the query mangled by whatever was pressed while looking at
+   a dose form.
+
+Enter worked throughout, because it is bound `whileTyping` — which is exactly
+what made this hard to see. **The common path was fine and only the shortcuts
+were broken**, which is the failure mode that survives a casual test.
+
+The fix: the panel takes focus on open (`tabIndex={-1}`, programmatic only),
+and hands it back to whatever opened it on close. Focusing the PANEL and not
+the Dose input is deliberate — landing in a text field would put the digits
+right back inside a field.
+
+Handing focus back is what makes the sheet a step in a flow rather than a dead
+end: the doctor presses Enter, Enter, and the caret is already back in the
+medicine search ready for the next drug, with no mouse reach anywhere.
+
+`ReviewModal` had the same bug and the same fix, for one extra reason: with
+focus behind the scrim, Page Down and the arrows scrolled the *workspace*
+instead of the prescription being read, which on a long Rx reads as the scroll
+being broken. Its scrollable body takes focus rather than the card, so those
+keys reach the thing that actually scrolls.
+
+**The general rule this leaves behind:** an overlay that binds any un-modified
+key MUST take focus when it opens, or those bindings are dead on arrival. If
+you add a modal with bare-key shortcuts, focus something inside it that is not
+a text field.

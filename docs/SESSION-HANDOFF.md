@@ -83,11 +83,24 @@ Three real bugs fell out of writing it down:
 - **`isAnyModalOpen` was missing `pendingMedicine`** (and four others), so Tab
   moved focus out of the add sheet mid-edit.
 
-**What was NOT verified:** the consult screen is behind the auth gate and this
-session had no doctor credentials, so none of this was driven through the real
-screen. The mechanism is proven (199 matcher assertions, 25 in real Chromium
-including the re-rank cases); the per-card wiring is typed and reviewed but not
-clicked. **Do one pass through a real consult before trusting it** — especially
+A fourth bug turned up when the real `MedicineAddSheet` was driven in a
+browser (atlas §14.22a): **no overlay took focus when it opened**, so focus
+stayed in the search field behind the scrim. Every bare-key binding in the
+sheet was dead — `1`-`4` and `0` were dropped on every press because the
+keystroke belonged to a text input — and anything else typed went into that
+hidden field. Enter worked the whole time, which is why it was invisible: the
+common path was fine and only the shortcuts were broken. Overlays now take
+focus on open and hand it back on close.
+
+**The rule that leaves behind:** an overlay binding any un-modified key MUST
+take focus when it opens, and must focus something that is not a text field.
+
+**What was NOT verified:** credentials were provided, but **Chromium in this
+environment has no outbound network** — every HTTPS host resets, with or
+without the agent proxy, while `curl` to the same hosts succeeds. Login could
+not complete, so nothing was driven through the real consult screen. The add
+sheet was driven for real; the rest of the per-card wiring is typed and
+reviewed but not clicked. **Do one pass through a real consult** — especially
 the four `searchRef`/`listRef` attachments and the Assessment Tab stop.
 
 ---
@@ -155,6 +168,12 @@ These cost real time and none of them are visible on screen.
    in the shortcuts sheet described features that were never built, because the
    table and the handler were two files a rule said to edit together. When two
    things must agree, make one of them read the other.
+8. **A modal that does not take focus silently kills its own bare-key
+   shortcuts** — the keystroke belongs to whatever field is behind the scrim,
+   and any handler that (correctly) ignores keys typed into a field drops it.
+   Modified chords keep working, so the common path looks fine and only the
+   shortcuts are dead. Focus something inside the overlay that is not a text
+   field, and hand focus back on close.
 
 ---
 

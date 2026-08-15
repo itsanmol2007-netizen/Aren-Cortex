@@ -172,6 +172,32 @@ export default function ReviewModal({
 }: ReviewModalProps) {
 
   const printRef = useRef<HTMLDivElement>(null);
+  /**
+   * The review takes focus while it is open, and hands it back on close.
+   *
+   * Same fix, same reason as `MedicineAddSheet` — this modal is opened by
+   * Ctrl+Enter from the workspace and nothing moved focus, so it stayed in
+   * whichever search field was behind the scrim. Two things went wrong with
+   * that: anything the doctor typed while reading the prescription landed in
+   * that hidden field, and Page Down / the arrows scrolled the workspace
+   * underneath instead of the document they were looking at, which on a long
+   * prescription reads as the scroll being broken.
+   *
+   * The scrollable body takes it rather than the card, so those keys reach the
+   * thing that actually scrolls.
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const returnFocusTo = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    returnFocusTo.current = document.activeElement as HTMLElement | null;
+    const frame = window.requestAnimationFrame(() => bodyRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const back = returnFocusTo.current;
+      returnFocusTo.current = null;
+      if (back?.isConnected) back.focus();
+    };
+  }, []);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
   const [showFormatPicker, setShowFormatPicker] = useState(false);
@@ -379,8 +405,10 @@ export default function ReviewModal({
             </button>
           </div>
 
-          {/* Scrollable body */}
-          <div className="overflow-y-auto flex-1 bg-gray-50/80">
+          {/* Scrollable body. `tabIndex={-1}` is programmatic focus only —
+              never a Tab stop — and `outline-none` because a scroll region is
+              not a control and should not wear a ring for being scrolled. */}
+          <div ref={bodyRef} tabIndex={-1} className="overflow-y-auto flex-1 bg-gray-50/80 outline-none">
             <div className="m-4 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white">
 
               {/* ══ Letterhead ══ */}
