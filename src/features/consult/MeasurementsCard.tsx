@@ -30,6 +30,8 @@ import type { ReactNode } from "react";
 import { Activity, ChevronDown, Plus } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
 import { useDismiss } from "./useDismiss";
+import { useOverlayFocus } from "../../hooks/useOverlayFocus";
+import { useRovingList } from "../../hooks/useRovingList";
 import type { Vitals } from "../../types";
 import {
     FIELD_BY_KEY, MEASURE_FIELDS, type MeasureField, type MeasureFieldKey,
@@ -83,11 +85,19 @@ interface Props {
      * measurement the doctor took must stay on the screen that took it.
      */
     maxInline?: number;
+    /**
+     * The outer card, for the workspace's Measurements Tab stop
+     * (`useConsultKeyboard.ts`) to land on and to recognise focus returning
+     * to. Optional so this card keeps working, unwired, in a context that
+     * has no such stop (there is none today, but nothing here should require
+     * one to exist).
+     */
+    containerRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function MeasurementsCard({
     vitals, onChange, defaultKeys, relevantKeys, relevantBecause,
-    charts = [], onOpenChart, disabled = false, maxInline,
+    charts = [], onOpenChart, disabled = false, maxInline, containerRef,
 }: Props) {
     /** the full field set, opened over the page rather than expanded in place */
     const [showAll, setShowAll] = useState(false);
@@ -121,12 +131,6 @@ export function MeasurementsCard({
         [shown]
     );
 
-    const order = shown.map((f) => f.key);
-    const focusNext = (key: MeasureFieldKey) => {
-        const next = order[order.indexOf(key) + 1];
-        if (next) refs.current[next]?.focus();
-    };
-
     const set = (key: MeasureFieldKey, value: string) =>
         onChange({ ...vitals, [key]: value });
 
@@ -144,6 +148,37 @@ export function MeasurementsCard({
     }, [shown, maxInline, vitals]);
 
     const overflow = shown.length - inline.length;
+    /** The main card's own field order — see `focusNext`'s doc comment. */
+    const order = inline.map((f) => f.key);
+    /** The card-foot "More" button, so Enter has somewhere to go past the last field. */
+    const footMoreRef = useRef<HTMLButtonElement>(null);
+
+    /**
+     * Enter walks `fields` — but WHICH fields depends on where the walk is
+     * happening, and conflating them was a live bug: the main card only ever
+     * registers a ref for `inline` (what it actually renders — `shown` can
+     * hold MORE than that once a facility or a busy chart pushes past
+     * `maxInline`), while the "More" modal renders the whole of `shown`. A
+     * single `order` built from `shown` would let Enter, on the main card,
+     * walk into a field whose ref was never registered there — silently
+     * doing nothing, on a key a doctor would reasonably lean on. So the
+     * caller passes the list it is actually rendering, and the two grids
+     * below pass their own.
+     *
+     * Falling off the end lands on the card-foot "More" button rather than
+     * doing nothing — bare `Tab` is reserved GLOBALLY for moving between the
+     * workspace's Tab stops (`useConsultKeyboard.ts`), so it cannot also be
+     * how a doctor reaches this button; Enter finishing the walk here is the
+     * only way in. `footMoreRef.current` is null inside the "More" modal,
+     * where this button does not exist, so the fallback is a correct no-op
+     * there — nowhere further to go once everything is already on screen.
+     */
+    const focusNext = (fields: MeasureField[], key: MeasureFieldKey) => {
+        const keys = fields.map((f) => f.key);
+        const next = keys[keys.indexOf(key) + 1];
+        if (next) refs.current[next]?.focus();
+        else footMoreRef.current?.focus();
+    };
 
     const grid = (fields: MeasureField[]) => (
         <div className="cs-meas-grid">
@@ -153,7 +188,7 @@ export function MeasurementsCard({
                     field={field}
                     value={valueOf(vitals, field.key)}
                     onChange={(v) => set(field.key, v)}
-                    onEnter={() => focusNext(field.key)}
+                    onEnter={() => focusNext(fields, field.key)}
                     registerRef={(el) => { refs.current[field.key] = el; }}
                     suggested={
                         relevantKeys.has(field.key) && !valueOf(vitals, field.key).trim()
@@ -166,7 +201,7 @@ export function MeasurementsCard({
     );
 
     return (
-        <section className="cs-card cs-meas-card" aria-label="Measurements">
+        <section className="cs-card cs-meas-card" aria-label="Measurements" ref={containerRef as React.Ref<HTMLElement>}>
             {/* The heading carries the add control, on the same line, so the
                 field picker costs no row of its own. Pressing anywhere on it
                 opens the list. */}
@@ -178,6 +213,23 @@ export function MeasurementsCard({
                     aria-expanded={pickerOpen}
                     aria-haspopup="menu"
                     onClick={() => setPickerOpen((v) => !v)}
+                    // ↓ from the header jumps into the readings, ↑ escapes
+                    // back to whatever comes before this stop on the
+                    // workspace's Tab ring. Needed because bare Tab is
+                    // reserved GLOBALLY for moving BETWEEN stops
+                    // (useConsultKeyboard.ts) — it does not, and must not,
+                    // also walk fields within one, so landing here (by Alt+M
+                    // or by Tab-cycling to this stop) had no local way
+                    // forward into the grid at all until this. Skipped while
+                    // the Add Measurement menu is open — that menu owns
+                    // ArrowDown itself, and this must not race it.
+                    onKeyDown={(e) => {
+                        if (pickerOpen) return;
+                        if (e.key === "ArrowDown" && order.length > 0) {
+                            e.preventDefault();
+                            refs.current[order[0]]?.focus();
+                        }
+                    }}
                 >
                     <span className="cs-glyph is-slate"><Activity size={14} /></span>
                     <span className="cs-card-title">Measurements</span>
@@ -185,20 +237,15 @@ export function MeasurementsCard({
                 </button>
 
                 {pickerOpen && (
-                    <div className="cs-meas-menu" role="menu" ref={menuRef}>
-                        {hidden.map((f) => (
-                            <button
-                                key={f.key}
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                    setAdded((curr) => new Set(curr).add(f.key));
-                                    setPickerOpen(false);
-                                    window.setTimeout(() => refs.current[f.key]?.focus(), 0);
-                                }}
-                            >{f.label}</button>
-                        ))}
-                    </div>
+                    <MeasurementPicker
+                        menuRef={menuRef}
+                        fields={hidden}
+                        onPick={(key) => {
+                            setAdded((curr) => new Set(curr).add(key));
+                            setPickerOpen(false);
+                            window.setTimeout(() => refs.current[key]?.focus(), 0);
+                        }}
+                    />
                 )}
             </div>
 
@@ -209,7 +256,7 @@ export function MeasurementsCard({
                         field={field}
                         value={valueOf(vitals, field.key)}
                         onChange={(v) => set(field.key, v)}
-                        onEnter={() => focusNext(field.key)}
+                        onEnter={() => focusNext(inline, field.key)}
                         registerRef={(el) => { refs.current[field.key] = el; }}
                         // The quiet treatment: a hairline ring and a "+" mark on
                         // a field the chart has asked for and the doctor has not
@@ -254,6 +301,7 @@ export function MeasurementsCard({
                     </span>
                     <button
                         type="button"
+                        ref={footMoreRef}
                         className="cs-card-foot-more"
                         onClick={() => setShowAll(true)}
                     >
@@ -267,23 +315,83 @@ export function MeasurementsCard({
                 <ChartSurface title="Measurements" expanded onClose={() => setShowAll(false)}>
                     {grid(shown)}
                     {hidden.length > 0 && (
-                        <div className="cs-meas-menu is-inline" role="menu">
-                            {hidden.map((f) => (
-                                <button
-                                    key={f.key}
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => {
-                                        setAdded((curr) => new Set(curr).add(f.key));
-                                        window.setTimeout(() => refs.current[f.key]?.focus(), 0);
-                                    }}
-                                >{f.label}</button>
-                            ))}
-                        </div>
+                        <MeasurementPicker
+                            inline
+                            fields={hidden}
+                            onPick={(key) => {
+                                setAdded((curr) => new Set(curr).add(key));
+                                window.setTimeout(() => refs.current[key]?.focus(), 0);
+                            }}
+                        />
                     )}
                 </ChartSurface>
             )}
         </section>
+    );
+}
+
+/**
+ * ADD MEASUREMENT — the "which field" picker, in both of its homes.
+ *
+ * One implementation for two renderings: the popup that drops from the card
+ * head, and the inline strip inside the "More" modal. They were two hand-
+ * written copies of the same `role="menu"` markup until 2026-08-15b, which
+ * meant a fix to one silently left the other exactly as broken. Now there is
+ * one place to add a fourth.
+ *
+ * Keyboard added the same day, using the roving-cursor mechanism every other
+ * list in this app already uses (`useRovingList`) rather than a bespoke one:
+ * ↓ ↑ walk the hidden fields, Enter adds the highlighted one. Only the POPUP
+ * variant takes focus on mount (`useOverlayFocus`, gated on `!inline`) — the
+ * inline one lives inside a modal `ChartSurface` already focused when it
+ * opened, and a second component grabbing focus the instant it mounts would
+ * fight that. `[role="menuitem"]` is the roving list's selector rather than a
+ * bespoke class, because it already uniquely and correctly identifies these
+ * buttons.
+ */
+function MeasurementPicker({
+    fields, onPick, inline = false, menuRef,
+}: {
+    fields: MeasureField[];
+    onPick: (key: MeasureFieldKey) => void;
+    inline?: boolean;
+    menuRef?: React.RefObject<HTMLDivElement | null>;
+}) {
+    const localRef = useRef<HTMLDivElement>(null);
+    const ref = (menuRef ?? localRef) as React.RefObject<HTMLDivElement | null>;
+
+    useOverlayFocus(ref, !inline);
+
+    const roving = useRovingList({
+        containerRef: ref,
+        rowSelector: '[role="menuitem"]',
+        actionSelector: '[role="menuitem"]',
+    });
+
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            roving.move(e.key === "ArrowUp" ? -1 : 1);
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            roving.activate();
+        }
+    };
+
+    return (
+        <div
+            ref={ref}
+            className={`cs-meas-menu${inline ? " is-inline" : ""} cx-kbd-surface`}
+            role="menu"
+            tabIndex={-1}
+            onKeyDown={onKeyDown}
+        >
+            {fields.map((f) => (
+                <button key={f.key} type="button" role="menuitem" onClick={() => onPick(f.key)}>
+                    {f.label}
+                </button>
+            ))}
+        </div>
     );
 }
 

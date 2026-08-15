@@ -72,6 +72,7 @@ export type Scope =
     | "global"
     | "patient"
     | "chart"
+    | "measurements"
     | "assessment"
     | "medicines"
     | "addsheet"
@@ -82,6 +83,7 @@ export const SCOPE_TITLE: Record<Scope, string> = {
     global: "Anywhere",
     patient: "Starting a patient",
     chart: "Building the case sheet",
+    measurements: "Measurements",
     assessment: "Assessment",
     medicines: "Choosing a medicine",
     addsheet: "The add-medicine sheet",
@@ -91,18 +93,21 @@ export const SCOPE_TITLE: Record<Scope, string> = {
 
 /** The order the sheet prints the groups in — the order a consult happens in. */
 export const SCOPE_ORDER: Scope[] = [
-    "global", "patient", "chart", "assessment",
+    "global", "patient", "chart", "measurements", "assessment",
     "medicines", "addsheet", "plan", "review",
 ];
 
 export type BindingId =
     // global
-    | "shortcuts" | "newPatient" | "focusChart" | "nextStop" | "prevStop"
+    | "shortcuts" | "newPatient" | "focusChart" | "focusMeasurements" | "nextStop" | "prevStop"
     | "review" | "escape"
     // patient intake
     | "patientMove" | "patientPick" | "patientNew" | "patientSearch" | "patientNext"
     // the case sheet
     | "chartMove" | "chartTake" | "chartClear" | "severity"
+    | "chartRelatedMove" | "chartRelatedTake"
+    // measurements
+    | "measFieldNext" | "measMenuMove" | "measMenuPick"
     // assessment
     | "conditionMove" | "conditionTake"
     // medicines
@@ -172,6 +177,13 @@ export const BINDINGS: Binding[] = [
         whileTyping: true,
     },
     {
+        id: "focusMeasurements",
+        keys: [alt("m")],
+        scope: "global",
+        what: "Jump to Measurements",
+        whileTyping: true,
+    },
+    {
         id: "nextStop",
         // `shift: false` is load-bearing, not tidiness. An unspecified `shift`
         // is NOT compared (see `chordMatches`), so a bare `Tab` chord matches
@@ -180,7 +192,7 @@ export const BINDINGS: Binding[] = [
         // test them in. Stated, it cannot.
         keys: [{ key: "Tab", shift: false }],
         scope: "global",
-        what: "Case sheet → assessment → medicines → plan",
+        what: "Case sheet → measurements → assessment → medicines → plan",
         whileTyping: true,
     },
     {
@@ -270,6 +282,40 @@ export const BINDINGS: Binding[] = [
         scope: "chart",
         what: "Mild · moderate · severe, on the symptom you just recorded",
         whileTyping: true,
+    },
+    {
+        id: "chartRelatedMove",
+        keys: [k("ArrowDown"), k("ArrowUp")],
+        scope: "chart",
+        what: "With nothing typed: browse the related findings this chart has surfaced",
+        whileTyping: true,
+    },
+    {
+        id: "chartRelatedTake",
+        keys: [k("Enter")],
+        scope: "chart",
+        what: "With nothing typed: record the highlighted related finding",
+        whileTyping: true,
+    },
+
+    // ── measurements ───────────────────────────────────────────────────────
+    {
+        id: "measFieldNext",
+        keys: [k("Enter")],
+        scope: "measurements",
+        what: "Move to the next measurement field",
+    },
+    {
+        id: "measMenuMove",
+        keys: [k("ArrowDown"), k("ArrowUp")],
+        scope: "measurements",
+        what: "Move through Add Measurement",
+    },
+    {
+        id: "measMenuPick",
+        keys: [k("Enter")],
+        scope: "measurements",
+        what: "Add the highlighted measurement",
     },
 
     // ── assessment ─────────────────────────────────────────────────────────

@@ -3563,3 +3563,119 @@ reasoning that a scroll usually means its anchor row moved. A plain
 which for an already-fully-visible `position: fixed` popover is pure noise —
 but it still fires a `scroll` event, which those overlays' own listeners
 would misread as "the anchor moved" and close on the spot.
+
+---
+
+## 14.22d Session 2026-08-15e — Measurements and Related, and building it to scale
+
+Anmol's next report, with three screenshots of the real screen: no keyboard
+path to Measurements or its "More" sheet, none to the Case Sheet's Related
+suggestions, and a request that mattered as much as the bugs — **build it so
+the next specialty can copy the same binding**, since more specialties are
+coming in the next few weeks.
+
+### The scalability question decided the architecture
+
+Checked first, before writing anything: `MeasurementsCard` and `ChartSurface`
+are not General-OPD-specific. `SoapInputs.tsx` — the shared fallback every
+other specialty profile renders today — already mounts `MeasurementsCard`
+directly, and `ChartSurface` is the same modal shell the dental chart, the
+body map and the growth chart already open through. So fixing either ONCE, at
+that shared layer, reaches every current profile and every future one that
+reuses them — no per-specialty copy required for those two. `CaseSheet`'s
+Related row is the one piece that IS General-OPD-specific (the doctrine
+already says `GeneralOpdInputs.tsx` is a template to be copied, not a shared
+module), so that wiring lives in the file meant to be copied, documented as
+exactly the three lines a copy needs to keep or drop.
+
+### Measurements — a fifth Tab stop, and a Tab-inside-a-stop problem it exposed
+
+`STOPS` gains `measurements`, right after `chart` (the clinical order:
+complaints, then the numbers taken while examining for them). New global
+chord `Alt+M` jumps there directly; landing via either Alt+M or ordinary
+Tab-cycling puts focus on the card's own "Add Measurement" trigger button —
+a real `<button>`, so Enter opens it for free with no new code.
+
+Building the rest of the reach surfaced a real design gap, not a bug:
+**bare Tab is reserved globally for moving BETWEEN stops** (`nextStop` in
+`keymap.ts`), so it was never available to also walk WITHIN a stop's own
+fields — a doctor Tab-ing from the Measurements head would just jump straight
+to Assessment, never touching BP or Pulse. Every other stop sidesteps this
+with its own local arrow-key surface (a search box, a roving list); the
+Measurements grid had neither. Fixed with the same idiom used everywhere
+else in this app: `↓` from the header enters the grid (the first field), and
+Enter — which the grid's `MeasureCell` already used to hop to the next
+field, pre-existing — now falls through to the card's own "More" button once
+the fields run out, so the whole card is reachable by keyboard from the
+header down to its own overflow button, with no reliance on Tab at all past
+the first press.
+
+That fall-through fix also closed a real, pre-existing correctness gap:
+`focusNext`'s field order was built from `shown` (everything the specialty
+profile, the chart and the doctor have asked for) rather than `inline` (what
+the capped card actually renders a ref for). Once a facility or a busy chart
+pushed `shown` past `maxInline`, Enter could walk into a field whose ref was
+never registered — silently doing nothing. `focusNext` now takes the field
+list it should walk as an argument, so the main card and the "More" modal —
+which legitimately need different lists, `inline` vs the full `shown` — each
+pass their own instead of sharing one that was only ever correct for one of
+them.
+
+**The Add Measurement menu** — the popup from the head, and the identical
+inline strip inside the "More" modal — was two hand-copied `role="menu"`
+renderings, mouse-only, until they became one `MeasurementPicker` component
+with `useRovingList` keyboard nav built in once. Only the popup variant
+takes focus on mount (`useOverlayFocus`, gated on `!inline`); the inline one
+lives inside a `ChartSurface` that is now ALREADY focused when it opens, and
+a second component grabbing focus the instant it mounts would fight that —
+Tab from wherever the modal's own focus landed reaches it in ordinary DOM
+order instead, no extra code needed.
+
+**`ChartSurface` itself picked up `useOverlayFocus`.** It did not take focus
+before this — opening "More" left focus on the button now covered by the
+modal, so Tab from there walked into the PAGE BEHIND it rather than into the
+modal in front of the doctor. One fix, and the dental chart / body map /
+growth chart inherit it without being touched.
+
+### Related suggestions — arrow keys the search box already had, doing something new
+
+`ClinicalCommandBar`'s ↓ ↑ Enter did real work only while its catalogue
+dropdown was open (a non-empty query); with nothing typed they were provably
+inert — `results` is `[]` for an empty query, so the existing `setActive`
+math clamped to a no-op. That idle state is what the Related row's own
+suggestions sit in, unreachable, most of a consult. Three optional callback
+props — `onEmptyDown` / `onEmptyUp` / `onEmptyEnter` — are the entire seam:
+`GeneralOpdInputs.tsx` (the one file that renders `ClinicalCommandBar` and
+`CaseSheet` as siblings) wires them to a `useRovingList` scoped to
+`CaseSheet`'s own Related row via a new `relatedRef` prop. Typing still does
+exactly what it always did — the branch is gated on the same `open` flag the
+dropdown already used, so nothing about the catalogue search changed.
+
+Reaching the "More" pseudo-chip (the overflow beyond `RELATED_VISIBLE`) and
+pressing Enter opens the SAME `BrowseSheet` the mouse already did — no new
+affordance, just a second way in.
+
+`SoapInputs.tsx`'s own version of "related" (`examSuggestionLabels`, rendered
+through `PickerCard`) deliberately did NOT get the same treatment this
+session — different component, different shape, and this pass was driven by
+the General OPD screen specifically. Recorded as a known gap in that file's
+own header rather than left silent.
+
+### Verification
+
+233 matcher assertions (three new intentional same-chord pairs added to the
+allowlist, same shape as `patientPick`/`patientNext`: `chartMove`/
+`chartRelatedMove`, `chartTake`/`chartRelatedTake`, `measFieldNext`/
+`measMenuPick` — each pair is two MODES of one surface, gated in code, never
+racing for a keystroke). 15 assertions against the real `GeneralOpdInputs`
+wired to the real `useConsultKeyboard`: Related walk-and-pick, walking past
+all suggestions to "More", the ORIGINAL catalogue search proven unaffected,
+Alt+M, ↓-into-the-grid, Enter-walked-to-the-card's-own-More-button, and the
+Add Measurement popup end to end. 3 assertions on the real `ChartSurface`.
+Every earlier suite re-run clean — 42 more. **293 total, zero failures.**
+`tsc -b` and `vite build` clean.
+
+Not independently harnessed: `SoapInputs.tsx`'s wiring of the same
+`measurementsRef` (a two-line mirror of `GeneralOpdInputs.tsx`'s, not new
+logic). Not verified against the live app, same reason as every entry in
+this run of sessions.

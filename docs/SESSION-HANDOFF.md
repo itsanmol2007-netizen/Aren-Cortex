@@ -135,6 +135,53 @@ each fix is not obvious from the diff alone.
 
 ---
 
+## 0.5 Measurements + Related reachable, built to scale (atlas §14.22d)
+
+Anmol's next report, with screenshots: no keyboard path to Measurements (or
+its "More" sheet) or to the Case Sheet's Related suggestions, plus an
+explicit ask — build it so the next specialty (coming in weeks) can copy the
+same binding.
+
+**Checked the architecture before writing code**: `MeasurementsCard` and
+`ChartSurface` are already shared — `SoapInputs.tsx` (the fallback every
+non-General-OPD profile uses today) renders `MeasurementsCard` directly, and
+`ChartSurface` is the same modal the dental/body/growth charts already open
+through. Fixed both ONCE at that shared layer; every current and future
+profile gets it for free. Only the Related-row wiring lives in
+`GeneralOpdInputs.tsx` — the file the doctrine already says gets copied per
+specialty — documented as the three lines a copy needs to keep or drop.
+
+- **`Alt+M`** jumps to Measurements (new fifth Tab stop, right after `chart`).
+- Building it surfaced a real gap: **bare Tab is reserved globally for
+  moving BETWEEN stops**, so it was never available to walk within one —
+  `↓` from the header now enters the grid, and Enter (which already hopped
+  field-to-field) now falls through to the card's own "More" button once the
+  fields run out.
+- That fix also caught a **pre-existing correctness bug**: the field-walk
+  order was built from `shown` (everything relevant) rather than `inline`
+  (what's actually rendered with a ref) — silently dead once a chart pushed
+  past the card's cap. `focusNext` now takes the list it should walk as an
+  argument.
+- The Add Measurement menu — two hand-copied mouse-only renderings — is one
+  `MeasurementPicker` component now, with `useRovingList` nav built in once.
+- `ChartSurface` takes focus on open. It didn't before — Tab from "More"
+  walked into the page BEHIND the modal. One fix, dental/body/growth charts
+  inherit it too.
+- Related suggestions: `ClinicalCommandBar`'s arrows did nothing with an
+  empty query (provably inert — checked the math). Three optional callbacks
+  (`onEmptyDown`/`onEmptyUp`/`onEmptyEnter`) are the whole seam to
+  `CaseSheet`'s Related row, wired from `GeneralOpdInputs.tsx`. Typing is
+  completely unaffected — same `open` gate as before.
+
+**Known, recorded gap**: `SoapInputs.tsx`'s own "related" equivalent
+(`examSuggestionLabels` via `PickerCard`) did NOT get this — different
+component, out of scope for a pass driven by the General OPD screen.
+
+293 assertions total across every suite this session, zero failures. `tsc -b`
+and `vite build` clean. Still not verified against the live app.
+
+---
+
 ## 1. What to do next — the specialty work
 
 **Read `docs/Cortex Specialties/cortex-longitudinal-spec.md` first.** It is the

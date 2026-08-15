@@ -238,6 +238,17 @@ interface BarProps {
     onToggle: (o: Observable) => void;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
+    /**
+     * ↓ ↑ Enter, but only with an EMPTY query — the catalogue dropdown is not
+     * open and there is nothing here for those keys to do on their own, which
+     * is what made them free to repurpose. `GeneralOpdInputs.tsx` wires these
+     * to walk the Related suggestions sitting right below this bar; a future
+     * specialty's own input layout can wire them to whatever fills the same
+     * role there, or leave them out.
+     */
+    onEmptyDown?: () => void;
+    onEmptyUp?: () => void;
+    onEmptyEnter?: () => void;
 }
 
 /**
@@ -246,6 +257,7 @@ interface BarProps {
  */
 export function ClinicalCommandBar({
     observables, onSheet, onToggle, disabled = false, searchRef,
+    onEmptyDown, onEmptyUp, onEmptyEnter,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -283,6 +295,16 @@ export function ClinicalCommandBar({
     };
 
     const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        // With nothing typed, the catalogue dropdown is not open and these
+        // three keys have nothing of THIS bar's to act on — handed to
+        // Related instead, if the parent wired anything there. Genuinely a
+        // no-op if it did not: `open` stays false either way.
+        if (!open) {
+            if (e.key === "ArrowDown" && onEmptyDown) { e.preventDefault(); onEmptyDown(); }
+            else if (e.key === "ArrowUp" && onEmptyUp) { e.preventDefault(); onEmptyUp(); }
+            else if (e.key === "Enter" && onEmptyEnter) { e.preventDefault(); onEmptyEnter(); }
+            return;
+        }
         if (e.key === "ArrowDown") {
             e.preventDefault();
             setActive((i) => Math.min(i + 1, results.length - 1));
@@ -455,11 +477,17 @@ interface SheetProps {
     /** opens the browse-everything modal, which is also where "More" goes */
     onBrowse: () => void;
     disabled?: boolean;
+    /**
+     * The Related row's own container, for the command bar's empty-query
+     * arrow keys to walk (see `ClinicalCommandBar`'s `onEmptyDown` and
+     * `GeneralOpdInputs.tsx`, which owns the roving list this ref feeds).
+     */
+    relatedRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export function CaseSheet({
     entries, onRemove, onToggle, intensities, onIntensityChange,
-    related, onBrowse, disabled = false,
+    related, onBrowse, disabled = false, relatedRef,
 }: SheetProps) {
     const reduce = useReducedMotion();
 
@@ -644,6 +672,7 @@ export function CaseSheet({
             <AnimatePresence>
                 {shown.length > 0 && (
                     <motion.div
+                        ref={relatedRef}
                         layout={!reduce}
                         initial={reduce ? false : { opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -672,7 +701,7 @@ export function CaseSheet({
                                         disabled={disabled}
                                         onClick={() => onToggle(o)}
                                         title={`Record ${o.label}`}
-                                        className="inline-flex items-center gap-[6px] rounded-lg border border-dashed border-[var(--cs-line-strong)] bg-transparent py-[4px] pl-[8px] pr-[10px] text-[13.5px] font-medium leading-tight whitespace-nowrap text-[var(--cs-muted)] transition-colors duration-150 hover:border-solid hover:border-[#a4e3d1] hover:bg-[linear-gradient(180deg,#f4fdfa_0%,#dbf4eb_100%)] hover:text-[#0b6a62] disabled:opacity-50"
+                                        className="cx-related-chip inline-flex items-center gap-[6px] rounded-lg border border-dashed border-[var(--cs-line-strong)] bg-transparent py-[4px] pl-[8px] pr-[10px] text-[13.5px] font-medium leading-tight whitespace-nowrap text-[var(--cs-muted)] transition-colors duration-150 hover:border-solid hover:border-[#a4e3d1] hover:bg-[linear-gradient(180deg,#f4fdfa_0%,#dbf4eb_100%)] hover:text-[#0b6a62] disabled:opacity-50"
                                     >
                                         <Plus size={11} className="flex-none opacity-55" />
                                         {o.label}
@@ -689,7 +718,7 @@ export function CaseSheet({
                                     type="button"
                                     disabled={disabled}
                                     onClick={onBrowse}
-                                    className="inline-flex items-center gap-[5px] rounded-lg border border-[var(--cs-line-strong)] bg-white py-[4px] pl-[9px] pr-[8px] text-[13.5px] font-semibold leading-tight text-[var(--cs-muted)] transition-colors duration-150 hover:border-[rgba(18,104,232,0.45)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)] disabled:opacity-50"
+                                    className="cx-related-chip inline-flex items-center gap-[5px] rounded-lg border border-[var(--cs-line-strong)] bg-white py-[4px] pl-[9px] pr-[8px] text-[13.5px] font-semibold leading-tight text-[var(--cs-muted)] transition-colors duration-150 hover:border-[rgba(18,104,232,0.45)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)] disabled:opacity-50"
                                 >
                                     More
                                     <Plus size={11} className="flex-none opacity-70" />

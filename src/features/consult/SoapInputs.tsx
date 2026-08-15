@@ -13,6 +13,17 @@
 // day a second profile earns its own input layout the way General OPD did,
 // it gets its own file copied from GeneralOpdInputs.tsx — this one keeps
 // serving everyone who still hasn't.
+//
+// `measurementsRef` (2026-08-15b) is wired here because `MeasurementsCard` is
+// the one part of this file that IS shared, unconditionally, with General
+// OPD — see App.tsx and useConsultKeyboard.ts for the Tab stop it feeds.
+// `examSuggestionLabels` below is this profile's OWN version of "related
+// findings" and does NOT get the same keyboard reach GeneralOpdInputs.tsx's
+// Related row got that day — `PickerCard`'s suggestion chips are a different
+// component with a different shape, and wiring them was out of scope for a
+// pass driven by the General OPD screen specifically. Known gap, not an
+// oversight; worth closing the same way if this profile gets its own
+// complaint about it.
 // ---------------------------------------------------------------------------
 
 import { CircleDot, HeartPulse, UserRound } from "lucide-react";
@@ -59,6 +70,8 @@ interface Props {
     visitId: string | null;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
+    /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
+    measurementsRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function SoapInputs({
@@ -69,7 +82,7 @@ export function SoapInputs({
     onBrowse,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     chartTools, onOpenChart, chartSummaries,
-    visitId, disabled = false, searchRef,
+    visitId, disabled = false, searchRef, measurementsRef,
 }: Props) {
     return (
         <>
@@ -146,6 +159,7 @@ export function SoapInputs({
                     relevantKeys={relevantMeasureKeys}
                     relevantBecause={relevantMeasureBecause}
                     disabled={disabled}
+                    containerRef={measurementsRef}
                 />
             </div>
 

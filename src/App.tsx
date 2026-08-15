@@ -72,6 +72,15 @@ function App() {
   // (useConsultKeyboard.ts). The old findings/tests refs are gone with the
   // panels they pointed at.
   const chartSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  /**
+   * The Measurements card — a Tab stop added 2026-08-15b. Shared by every
+   * specialty profile (`MeasurementsCard` is one component, configured, not
+   * forked per specialty — see its own header), so this one ref and its
+   * one line below in each Inputs component is the whole of what a future
+   * specialty's copy of `GeneralOpdInputs.tsx` needs to keep to get this for
+   * free; see that file's own header for the "copy it, rename it" rule.
+   */
+  const measurementsRef = useRef<HTMLElement>(null) as React.RefObject<HTMLElement>;
   /** the Assessment card's search — the second Tab stop, added 2026-08-15 */
   const assessmentSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const synapseSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
@@ -285,6 +294,7 @@ function App() {
 
   useConsultKeyboard({
     chartRef: chartSearchRef,
+    measurementsRef,
     assessmentRef: assessmentSearchRef,
     synapseRef: synapseSearchRef,
     planRef,
@@ -727,6 +737,7 @@ function App() {
                   visitId={visitId}
                   disabled={!patient}
                   searchRef={chartSearchRef}
+                  measurementsRef={measurementsRef}
                 />
               ) : (
                 <SoapInputs
@@ -753,6 +764,7 @@ function App() {
                   visitId={visitId}
                   disabled={!patient}
                   searchRef={chartSearchRef}
+                  measurementsRef={measurementsRef}
                 />
               )}
 

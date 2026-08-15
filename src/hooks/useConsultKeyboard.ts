@@ -40,6 +40,13 @@ type El = HTMLElement | HTMLInputElement | null;
 interface UseConsultKeyboardProps {
     /** the case sheet search — where a consult begins */
     chartRef: React.RefObject<HTMLInputElement | null>;
+    /**
+     * The Measurements card's outer element. Only the CONTAINER — landing
+     * focuses its "Add Measurement" trigger button (queried inside, see
+     * `focusStop`), never a specific reading, because there is no one field
+     * every consult starts with the way there is a first line of a plan.
+     */
+    measurementsRef: React.RefObject<HTMLElement | null>;
     /** the Assessment card's search */
     assessmentRef: React.RefObject<HTMLInputElement | null>;
     /** the medicine recommendations search */
@@ -63,16 +70,22 @@ interface UseConsultKeyboardProps {
 
 /**
  * The Tab order, and it is the order a consultation is built in: what the
- * patient tells you, what you conclude, what you prescribe, what you have
- * taken. Assessment was missing from this list until 2026-08-15 — Tab jumped
- * straight from the case sheet to the medicines, so the one panel where a
- * condition is confirmed was reachable only by mouse.
+ * patient tells you, what you found on them, what you conclude, what you
+ * prescribe, what you have taken. Assessment was missing from this list
+ * until 2026-08-15 — Tab jumped straight from the case sheet to the
+ * medicines. Measurements was missing until the day after that: it sits
+ * beside the case sheet on screen but had no Tab stop of its own, so BP,
+ * pulse, temperature and every other reading — plus the "More" sheet that
+ * holds the rest of the catalogue — were reachable by mouse only.
+ *
+ * `measurements` sits right after `chart` because that is the clinical
+ * order: complaints, then the numbers taken while examining for them.
  */
-const STOPS = ["chart", "assessment", "synapse", "plan"] as const;
+const STOPS = ["chart", "measurements", "assessment", "synapse", "plan"] as const;
 type Stop = typeof STOPS[number];
 
 export function useConsultKeyboard({
-    chartRef, assessmentRef, synapseRef, planRef,
+    chartRef, measurementsRef, assessmentRef, synapseRef, planRef,
     medicineCount, onNewPatient, onReviewRx, onToggleShortcuts, onSeverity,
     isAnyModalOpen,
 }: UseConsultKeyboardProps) {
@@ -83,6 +96,14 @@ export function useConsultKeyboard({
             activeStop.current = stop;
             let el: El = null;
             if (stop === "chart") el = chartRef.current;
+            else if (stop === "measurements") {
+                // The trigger button, not a specific reading — see the prop's
+                // doc comment. It is a real `<button>`, so Enter/Space already
+                // opens Add Measurement for free once landed on it, and plain
+                // Tab from there walks the fields in the same order the eye
+                // reads them, same as everywhere else in this app.
+                el = measurementsRef.current?.querySelector<HTMLElement>(".cs-head-action") ?? null;
+            }
             else if (stop === "assessment") el = assessmentRef.current;
             else if (stop === "synapse") el = synapseRef.current;
             else {
@@ -131,6 +152,12 @@ export function useConsultKeyboard({
             if (matches(e, "focusChart")) {
                 take();
                 focusStop("chart");
+                return;
+            }
+
+            if (matches(e, "focusMeasurements")) {
+                take();
+                focusStop("measurements");
                 return;
             }
 
@@ -183,7 +210,7 @@ export function useConsultKeyboard({
         window.addEventListener("keydown", handler, true);
         return () => window.removeEventListener("keydown", handler, true);
     }, [
-        chartRef, assessmentRef, synapseRef, planRef,
+        chartRef, measurementsRef, assessmentRef, synapseRef, planRef,
         medicineCount, isAnyModalOpen,
         onNewPatient, onReviewRx, onToggleShortcuts, onSeverity,
     ]);
@@ -193,11 +220,15 @@ export function useConsultKeyboard({
         const onFocus = (e: FocusEvent) => {
             const t = e.target as HTMLElement;
             if (t === chartRef.current) activeStop.current = "chart";
+            // `.contains`, not `===`, because Tab can land anywhere in the
+            // grid (any reading, any chart-tool button) once inside — same
+            // reason `plan` below uses it rather than matching one element.
+            else if (measurementsRef.current?.contains(t)) activeStop.current = "measurements";
             else if (t === assessmentRef.current) activeStop.current = "assessment";
             else if (t === synapseRef.current) activeStop.current = "synapse";
             else if (planRef.current?.contains(t)) activeStop.current = "plan";
         };
         window.addEventListener("focusin", onFocus);
         return () => window.removeEventListener("focusin", onFocus);
-    }, [chartRef, assessmentRef, synapseRef, planRef]);
+    }, [chartRef, measurementsRef, assessmentRef, synapseRef, planRef]);
 }

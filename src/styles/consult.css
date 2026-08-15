@@ -1239,6 +1239,36 @@ body.cs-locked-shell {
     color: var(--cs-blue);
 }
 
+/* Layers on top of the popup's own drop shadow instead of replacing it,
+   same reason as `.cs-addmed-panel.cx-kbd-surface:focus` above — this is the
+   POPUP variant only; `.is-inline` already zeroes its box-shadow, so the
+   plain `.cx-kbd-surface:focus` rule applies there with nothing to layer. */
+.cs-meas-menu.cx-kbd-surface:focus {
+    box-shadow:
+        0 0 0 3px var(--cs-blue-soft), 0 0 0 1px var(--cs-blue),
+        0 12px 28px rgba(16, 28, 46, 0.13);
+}
+
+/* One cursor style for every roving list in the workspace that walks a
+   role="menuitem" list — the measurement pickers today, whatever a future
+   specialty's own menu reuses this shape for tomorrow. */
+[role="menuitem"][data-cx-cursor] {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* The Related suggestions row, reachable by keyboard since 2026-08-15b — see
+   GeneralOpdInputs.tsx. Solid border + fill in place of the dashed-outline
+   "offer, not yet taken" look those chips otherwise carry (CaseSheet.tsx's
+   own header comment), because the cursor is a stronger claim than that: not
+   just "available", but "this is what Enter takes right now". */
+.cx-related-chip[data-cx-cursor] {
+    border-style: solid;
+    border-color: #a4e3d1;
+    background: linear-gradient(180deg, #f4fdfa 0%, #dbf4eb 100%);
+    color: #0b6a62;
+}
+
 /* ── Attachments ──────────────────────────────────────────────────────────
    Deliberately plain: a list of small rows, not a gallery. Thumbnails are
    never eagerly rendered here (AttachmentsCard fetches nothing until the
@@ -3603,6 +3633,15 @@ body.cs-locked-shell {
         inset 0 1px 0 rgba(255, 255, 255, 1),
         0 40px 80px -32px rgba(11, 23, 51, 0.55);
     overflow: hidden;
+}
+
+/* Layers on top of the panel's own shadow rather than replacing it — same
+   convention as `.cs-addmed-panel` and `.cs-meas-menu`, see either for why. */
+.cs-chartmodal-panel.cx-kbd-surface:focus {
+    box-shadow:
+        0 0 0 3px var(--cs-blue-soft), 0 0 0 1px var(--cs-blue),
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        0 40px 80px -32px rgba(11, 23, 51, 0.55);
 }
 
 .cs-chartmodal-head {

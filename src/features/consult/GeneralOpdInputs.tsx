@@ -24,9 +24,11 @@
 // branch to the picker in App.tsx. Nothing else moves.
 // ---------------------------------------------------------------------------
 
+import { useRef } from "react";
 import { ClinicalCommandBar, CaseSheet, type CaseSheetEntry } from "./CaseSheet";
 import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
+import { useRovingList } from "../../hooks/useRovingList";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
 import type { SelectedSymptom, Vitals } from "../../types";
@@ -52,14 +54,40 @@ interface Props {
     visitId: string | null;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
+    /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
+    measurementsRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function GeneralOpdInputs({
     observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
-    visitId, disabled = false, searchRef,
+    visitId, disabled = false, searchRef, measurementsRef,
 }: Props) {
+    /**
+     * ── Reaching "Related" without a mouse ───────────────────────────────
+     *
+     * Added 2026-08-15b. The command bar's own arrow keys already walk its
+     * catalogue search results while there is a query; they did nothing at
+     * all with an EMPTY query, which is the state most of a consult is in —
+     * the Related row sat right there on screen with no way into it.
+     *
+     * `relatedRef` is CaseSheet's own related-chips row; the roving list
+     * lives here, in the file that renders both `ClinicalCommandBar` and
+     * `CaseSheet` as siblings, because neither of those two shared
+     * components should need to know the other exists. `onEmptyDown` /
+     * `onEmptyEnter` are the entire seam between them — two callbacks, one
+     * ref. A copy of this file for a future specialty either keeps these
+     * three lines to get the same behaviour for free, or drops them if that
+     * specialty's own input layout has nothing equivalent to be reached.
+     */
+    const relatedRef = useRef<HTMLDivElement>(null);
+    const relatedRoving = useRovingList({
+        containerRef: relatedRef,
+        rowSelector: ".cx-related-chip",
+        actionSelector: ".cx-related-chip",
+    });
+
     return (
         <>
             {/* The page's one input, above every card because it belongs to the
@@ -70,6 +98,9 @@ export function GeneralOpdInputs({
                 onToggle={onObservableToggle}
                 disabled={disabled}
                 searchRef={searchRef}
+                onEmptyDown={() => relatedRoving.move(1)}
+                onEmptyUp={() => relatedRoving.move(-1)}
+                onEmptyEnter={() => relatedRoving.activate()}
             />
 
             {/* One box in place of three (History, Symptoms, Findings): the Case
@@ -87,6 +118,7 @@ export function GeneralOpdInputs({
                     related={relatedFindings}
                     onBrowse={onBrowseFinding}
                     disabled={disabled}
+                    relatedRef={relatedRef}
                 />
 
                 {/* Same fixed height as the Case Sheet beside it — see
@@ -101,6 +133,7 @@ export function GeneralOpdInputs({
                         relevantBecause={relevantMeasureBecause}
                         disabled={disabled}
                         maxInline={6}
+                        containerRef={measurementsRef}
                     />
                     <AttachmentsCard visitId={visitId} disabled={disabled} maxInline={3} strip />
                 </div>

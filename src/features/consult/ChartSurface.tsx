@@ -14,9 +14,10 @@
 // way, this only decides where the DOM lands.
 // ---------------------------------------------------------------------------
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 interface Props {
     title: string;
@@ -34,12 +35,25 @@ export function ChartSurface({ title, expanded, onClose, children }: Props) {
         return () => window.removeEventListener("keydown", onKey);
     }, [expanded, onClose]);
 
+    /**
+     * Takes focus on open, hands it back on close — see `useOverlayFocus.ts`.
+     * Added 2026-08-15b. Every consumer of this shell (Measurements' "More",
+     * the dental chart, the body map, the growth chart — present and future,
+     * since a new specialty's own chart tool has nowhere else to render its
+     * expanded form) picks this up automatically: without it, opening "More"
+     * left focus on the button underneath the modal, so Tab from there
+     * walked into the PAGE BEHIND the overlay rather than the content in
+     * front of the doctor.
+     */
+    const panelRef = useRef<HTMLDivElement>(null);
+    useOverlayFocus(panelRef, expanded);
+
     if (!expanded) return <>{children}</>;
 
     return createPortal(
         <div className="cs-chartmodal" role="dialog" aria-modal="true" aria-label={title}>
             <div className="cs-chartmodal-scrim" onClick={onClose} />
-            <div className="cs-chartmodal-panel">
+            <div className="cs-chartmodal-panel cx-kbd-surface" ref={panelRef} tabIndex={-1}>
                 <div className="cs-chartmodal-head">
                     <span className="cs-chartmodal-title">{title}</span>
                     <button type="button" className="cs-chartmodal-close" onClick={onClose} aria-label="Close">
