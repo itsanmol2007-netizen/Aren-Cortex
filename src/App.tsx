@@ -1,5 +1,5 @@
 import {
-  CircleDot, HeartPulse, PersonStanding, RefreshCw, Smile, TrendingUp, UserRound,
+  PersonStanding, RefreshCw, Smile, TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { systemLabel } from "./lib/synapse/systems";
@@ -21,15 +21,14 @@ import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
 import { useClinicalIdentity } from "./hooks/useClinicalIdentity";
 import { useSynapse } from "./hooks/useSynapse";
 import { useConsultIntelligence } from "./hooks/useConsultIntelligence";
-import { PickerCard, type PickerKind } from "./features/consult/PickerCard";
+import { type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
-import { MeasurementsCard } from "./features/consult/MeasurementsCard";
-import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { MedicineAddSheet, type MedicineDraft } from "./features/consult/MedicineAddSheet";
 import { useChartSummaries } from "./features/consult/useChartSummaries";
 import { useJustAdded } from "./features/consult/useJustAdded";
-import { CaseSheet, ClinicalCommandBar, type CaseSheetEntry } from "./features/consult/CaseSheet";
-import { AttachmentsCard } from "./features/consult/AttachmentsCard";
+import { type CaseSheetEntry } from "./features/consult/CaseSheet";
+import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
+import { SoapInputs } from "./features/consult/SoapInputs";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { BodyMapCard } from "./features/consult/BodyMapCard";
 import { GrowthChartCard } from "./features/consult/GrowthChartCard";
@@ -1778,161 +1777,57 @@ function App() {
                 earn a full-width card just by existing, and every module here
                 sizes to its content. */}
             <div className="cs-work">
-              {/* The page's one input, above every card because it belongs to
-                  the consultation rather than to any single module. Taking it
-                  out of the Case Sheet is also the cheapest vertical space on
-                  the screen: the card no longer reserves a field plus padding
-                  before it can show a chip. */}
-              {isGeneralOpd && (
-                <ClinicalCommandBar
+              {/* The input half of the screen — the one part that genuinely
+                  differs by profile. GeneralOpdInputs / SoapInputs.tsx: see
+                  their headers for why the split stops exactly here and does
+                  not reach into Possible Conditions or the plan row below,
+                  which stay shared and unchanged. */}
+              {isGeneralOpd ? (
+                <GeneralOpdInputs
                   observables={observables}
-                  onSheet={onChartSet}
-                  onToggle={handleObservableToggle}
+                  onChartSet={onChartSet}
+                  onObservableToggle={handleObservableToggle}
+                  caseSheetEntries={caseSheetEntries}
+                  onCaseSheetRemove={handleCaseSheetRemove}
+                  intensities={selectedSymptomsWithIntensity}
+                  onIntensityChange={handleIntensityChange}
+                  relatedFindings={relatedFindings}
+                  onBrowseFinding={() => setBrowse("finding")}
+                  vitals={vitals}
+                  onVitalsChange={setVitals}
+                  defaultMeasureKeys={specialty.measurements}
+                  relevantMeasureKeys={measureRelevance.keys}
+                  relevantMeasureBecause={measureRelevance.because}
+                  visitId={visitId}
                   disabled={!patient}
                   searchRef={chartSearchRef}
                 />
-              )}
-
-              {/* Both band labels are hidden for General OPD because the Case
-                  Sheet spans them: one card cannot be labelled Subjective at
-                  the top and Objective in the middle, so the label would be
-                  saying something untrue. The remaining two are still true and
-                  stay until the layout pass. */}
-              {!isGeneralOpd && <div className="cs-phase">Subjective</div>}
-
-              {!isGeneralOpd && (
-              <div className="cs-row cs-row-sub">
-                <PickerCard
-                kind="history"
-                title="History / Context"
-                glyph={<UserRound size={16} />}
-                glyphTone="blue"
-                placeholder="Search history…"
-                observables={observables}
-                selected={contextChips}
-                onToggle={handleContextToggle}
-                onChart={onChartSet}
-                onBrowse={() => setBrowse("history")}
-                emptyHint="Pregnancy, comorbidities, allergies — what frames the whole consultation."
-                disabled={!patient}
-              />
-
-              <PickerCard
-                kind="symptom"
-                title="Symptoms"
-                glyph={<HeartPulse size={16} />}
-                glyphTone="rose"
-                placeholder="Search symptoms…"
-                observables={observables}
-                selected={symptomChips}
-                onToggle={handleSymptomToggle}
-                onChart={onChartSet}
-                intensities={selectedSymptomsWithIntensity}
-                onIntensityChange={handleIntensityChange}
-                onBrowse={() => setBrowse("symptom")}
-                emptyHint="What the patient came in with. Hindi works too — बुखार, bukhar."
-                disabled={!patient}
-                searchRef={chartSearchRef}
-              />
-              </div>
-              )}
-
-              {/* Objective — what you observed and what you measured, on one
-                  row. Findings take the room because chips wrap; measurements
-                  are compact structured values and do not need a broad strip
-                  of their own (which is what the previous full-width band got
-                  wrong). */}
-              {!isGeneralOpd && <div className="cs-phase">Objective</div>}
-
-              <div className={`cs-row cs-row-obj${isGeneralOpd ? " is-locked" : ""}`}>
-                {isGeneralOpd ? (
-                  /* One box in place of three. The row ratio is unchanged:
-                     the Case Sheet needs the wrapping room the findings
-                     picker needed, and measurements are still compact
-                     structured values that do not want a broad strip. */
-                  <CaseSheet
-                    entries={caseSheetEntries}
-                    onToggle={handleObservableToggle}
-                    onRemove={handleCaseSheetRemove}
-                    intensities={selectedSymptomsWithIntensity}
-                    onIntensityChange={handleIntensityChange}
-                    related={relatedFindings}
-                    onBrowse={() => setBrowse("finding")}
-                    disabled={!patient}
-                  />
-                ) : (
-                <PickerCard
-                kind="finding"
-                title="Findings"
-                note="On Examination"
-                glyph={<CircleDot size={16} />}
-                glyphTone="teal"
-                placeholder="Search findings…"
-                observables={observables}
-                selected={selectedFindings}
-                onToggle={handleFindingToggle}
-                onChart={onChartSet}
-                onBrowse={() => setBrowse("finding")}
-                suggestions={examSuggestionLabels}
-                emptyHint="What you saw on examination — every entry here is an abnormal sign."
-                disabled={!patient}
-              />
-                )}
-
-                {/* General OPD stacks Measurements and Attachments into one
-                    column beside the Case Sheet. Attachments used to take a
-                    full-width band of its own, because the row it shared with
-                    SpecialtyExamCard renders empty for a profile with no
-                    chart, so the files got a whole horizontal slice of the
-                    page. Two list inline and the rest open in a modal, so the
-                    column cannot grow with the file count. */}
-                {isGeneralOpd ? (
-                  /* Same fixed height as the Case Sheet beside it. See
-                     `.cs-rowone-right` and the height-contract note in
-                     consult.css: nothing in this row grows. */
-                  <div className="cs-rowone-right">
-                    <MeasurementsCard
-                      vitals={vitals}
-                      onChange={setVitals}
-                      defaultKeys={specialty.measurements}
-                      relevantKeys={measureRelevance.keys}
-                      relevantBecause={measureRelevance.because}
-                      disabled={!patient}
-                      maxInline={6}
-                    />
-                    <AttachmentsCard visitId={visitId} disabled={!patient} maxInline={3} strip />
-                  </div>
-                ) : (
-                  <MeasurementsCard
-                    vitals={vitals}
-                    onChange={setVitals}
-                    // Which fields this facility shows without being asked —
-                    // the same one-time onboarding config that decides which
-                    // intent type gets the Primary Recommendation slot.
-                    defaultKeys={specialty.measurements}
-                    relevantKeys={measureRelevance.keys}
-                    relevantBecause={measureRelevance.because}
-                    disabled={!patient}
-                  />
-                )}
-              </div>
-
-              {/* Objective, second row — the specialty examination and the
-                  attachments that support it. Conditional by design: a
-                  general OPD has no specialty module, so this row does not
-                  render at all rather than rendering an empty placeholder. */}
-              {!isGeneralOpd && (
-              <div className={chartTools.length > 0 ? "cs-row cs-row-exam" : "cs-row"}>
-                {/* Renders nothing for a facility with no specialty module,
-                    in which case Attachments takes the row on its own. */}
-                <SpecialtyExamCard
-                  tools={chartTools}
-                  onOpen={(key) => setOpenChart(key as ChartKind)}
-                  summaries={chartSummaries}
+              ) : (
+                <SoapInputs
+                  observables={observables}
+                  onChartSet={onChartSet}
+                  contextChips={contextChips}
+                  onContextToggle={handleContextToggle}
+                  symptomChips={symptomChips}
+                  onSymptomToggle={handleSymptomToggle}
+                  intensities={selectedSymptomsWithIntensity}
+                  onIntensityChange={handleIntensityChange}
+                  selectedFindings={selectedFindings}
+                  onFindingToggle={handleFindingToggle}
+                  examSuggestionLabels={examSuggestionLabels}
+                  onBrowse={setBrowse}
+                  vitals={vitals}
+                  onVitalsChange={setVitals}
+                  defaultMeasureKeys={specialty.measurements}
+                  relevantMeasureKeys={measureRelevance.keys}
+                  relevantMeasureBecause={measureRelevance.because}
+                  chartTools={chartTools}
+                  onOpenChart={(key) => setOpenChart(key as ChartKind)}
+                  chartSummaries={chartSummaries}
+                  visitId={visitId}
                   disabled={!patient}
+                  searchRef={chartSearchRef}
                 />
-                <AttachmentsCard visitId={visitId} disabled={!patient} />
-              </div>
               )}
 
               {/* Assessment — the engine's reading of everything above it.
