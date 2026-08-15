@@ -2699,3 +2699,85 @@ they are two different repositories that happen to share a remote.
   down a few places even though it is now labelled correctly. Not checked
   against `check:search`'s weak-match list beyond confirming 0 terms went to
   no-result.
+
+---
+
+## 14.18 Session 2026-08-15 — content gap: antimalarials had zero rules
+
+Anmol, on Synapse ranking nothing but paracetamol for a malaria picture:
+*"I don't think so you only take paracetamol in malaria... it's not about
+ranking or something. It's just saying that doctor know there is malaria...
+Both things should rank there [tablet and injection] ... that's the
+philosophy of synapse."* Investigated live, read-only, before touching
+anything.
+
+**Root cause: a pure content gap, not a code one — the same shape as
+doctrine §3's `signal_finding_suggestions` gap.** `compositions` has real
+antimalarial rows — artesunate, artemether, quinine, hydroxychloroquine
+(doxycycline too, but only wired to acne/discharge/cough, nothing malaria-
+related) — and `intents` has a medicine intent for each. But
+`signal_intent_rules` had **zero rows for any of the four**, for any
+signal, unconditionally. Not ranked low, not guarded — structurally
+unreachable by the engine no matter what was on the chart. "Malaria" itself
+(the Possible Condition) IS wired — `RIGORS`, `FEVER_RECURRENT`,
+`HIGH_FEVER`, `FEVER` all map to it — which is exactly why the condition
+surfaces while nothing to treat it with ever could. Paracetamol showed only
+because plain `FEVER`/`HIGH_FEVER` map to it directly (0.75/0.70); nothing
+about that path is malaria-specific.
+
+Confirming a Possible Condition doesn't currently feed anything back into
+the engine at all — see `confirmed-conditions-investigation.md`, which
+found and proposed a fix for exactly that gap weeks ago and was never
+built. Worth noting because it means the fix below could NOT have waited
+for that: even a working confirm-reranks-the-chart mechanism would have had
+nothing to boost, because the drugs had no rules to activate in the first
+place.
+
+**Fixed live, with Anmol's authorisation**: 16 new `signal_intent_rules`
+rows — the same 4 signals already driving "Malaria" × the 4 antimalarial
+medicine intents, `is_safety_critical = true` on all of them (so a doctor
+who rarely prescribes for malaria doesn't have personalisation quietly bury
+them). Weights deliberately lower than paracetamol's own FEVER/HIGH_FEVER
+rules (0.75/0.70) and shaped like "Malaria"'s own weights: `RIGORS` and
+`FEVER_RECURRENT` (the two genuinely malaria-suggestive signals) at 0.45,
+`HIGH_FEVER` at 0.25, bare `FEVER` at 0.15. All four drugs carry identical
+weights per signal — deliberately: differentiating which antimalarial
+ranks higher is a clinical judgement this session has no authority to
+make, and the standing rule is that ranking offers options, it never picks
+one. `rationale` filled on every row, matching the table's own existing
+convention of documenting non-obvious pairings inline.
+
+Verified by replaying the engine's own scoring arithmetic (read-only,
+against live weights) for three charts: `RIGORS` + `FEVER_RECURRENT` alone
+ranks all four antimalarials at 0.90 with paracetamol absent (it has no
+rule for either signal) — a doctor who has ticked a genuinely malaria-
+shaped picture and nothing else sees only the antimalarials, which is
+correct, not a bug. `RIGORS` + plain `FEVER` together — the realistic
+case, a doctor recording both the specific sign and the general complaint —
+ranks paracetamol first (0.75) with all four antimalarials right behind it
+(0.60). Plain `FEVER` alone — an ordinary fever, nothing malaria-shaped —
+keeps paracetamol at 0.75 and drops the antimalarials to 0.15, present and
+reachable but not intrusive.
+
+**Same rule this whole session kept landing on**: this fix has no other
+record than this paragraph. No `supabase/migrations/` directory exists
+(§0), so the live `signal_intent_rules` rows above and this write-up are
+the only trace of it.
+
+### Open
+
+- No guard content was added alongside this. Quinine and hydroxychloroquine
+  both carry real cardiac (QT) and other risk considerations a full pass
+  would want guarded, the same way §14.9's medicine-level guards cover
+  other drug classes. Flagged, not attempted — inventing guard reasons
+  without real clinical review would be worse than leaving the gap open.
+- The four drugs are undifferentiated by design (see above) — no
+  first-line/second-line ordering between artesunate, artemether, quinine
+  and hydroxychloroquine. If that ordering matters clinically, it needs a
+  clinician's input, not a weight guessed here.
+- Only 4 of the well-known antimalarial molecules are in the catalogue at
+  all (no lumefantrine, primaquine, mefloquine, atovaquone-proguanil,
+  piperaquine). Artemether typically ships combined with lumefantrine
+  (Coartem) — the combination-ranking work in this same session (§14.17)
+  means a lumefantrine composition, if added to the catalogue later, would
+  need its own rules to be reachable; it would not inherit artemether's.
