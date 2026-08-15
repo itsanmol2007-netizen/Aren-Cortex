@@ -41,6 +41,21 @@
 // every future consultation and looks freshly entered every time. So the map is
 // deliberately small and hand-curated, and an unmapped condition falls through
 // to exactly the old behaviour rather than guessing.
+//
+// ⚠ ── KNOWN GAP: this write is currently ONE-WAY ────────────────────────────
+//
+// There is no resolve/refute control yet (step 6 of the investigation's §4,
+// atlas §14.21 "Open"). Un-ticking a carried-forward chip removes it from
+// TODAY's chart only — the `patient_conditions` row survives and carries
+// forward again at the next visit. So from the doctor's point of view a
+// mis-confirmation is permanent, which is precisely the failure this feature's
+// design is otherwise built to avoid.
+//
+// `status` ('active' | 'resolved' | 'refuted') and its check constraint already
+// exist and `loadPatientConditions` already filters on active, so the fix is a
+// UI plus one update call — no schema work. Do it before widening the map:
+// every row added to `condition_observable_map` widens the blast radius of a
+// mistake that cannot currently be taken back.
 // ---------------------------------------------------------------------------
 
 import { useCallback } from "react";

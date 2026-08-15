@@ -331,6 +331,12 @@ export async function loadPatientConditions(patientId: string): Promise<PatientC
  *
  * Non-fatal by rule, like the decision log: a consultation must never fail
  * because the longitudinal write did. The caller logs and carries on.
+ *
+ * ⚠ There is no counterpart to this function yet. Nothing sets `status` to
+ * 'resolved' or 'refuted', so a condition confirmed in error cannot be taken
+ * back — see the KNOWN GAP block in `hooks/useLongitudinalRecord.ts` and atlas
+ * §14.21. If you are here to add that, it is one update call plus a UI; the
+ * column and its check constraint are already in place.
  */
 export async function upsertPatientCondition(opts: {
     patientId: string;
