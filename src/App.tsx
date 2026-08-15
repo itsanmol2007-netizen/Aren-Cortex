@@ -562,6 +562,20 @@ function App() {
   }, [visitId, synapse.data, selectedSymptoms, selectedFindings,
       selectedSymptomsWithIntensity, observableByLabel]);
 
+  // The consult workspace's shell (`.cs-shell`, consult.css) locks its own
+  // height and gives `.cs-work` the only scrollbar, so the plan rail beside
+  // it never has to move — see the 2026-08-15 comment block on `.cs-shell`.
+  // `body.cs-locked-shell` is the guarantee behind "never," not the height
+  // math: it stops the OUTER page from scrolling at all, so a small mismatch
+  // in that math can't wobble the rail by even a couple of pixels. Scoped to
+  // exactly when the workspace itself is showing (`activePage === null`) —
+  // every feature page (Patients, Settings, ...) keeps its ordinary scroll,
+  // and the class is removed on unmount so it can never leak onto them.
+  useEffect(() => {
+    document.body.classList.toggle("cs-locked-shell", activePage === null);
+    return () => { document.body.classList.remove("cs-locked-shell"); };
+  }, [activePage]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(""), 2400);
@@ -1941,6 +1955,7 @@ function App() {
               <ConditionsCard
                 intents={intelligence.byType.finding}
                 topScore={topOfType.get("finding") ?? 0}
+                thinkingKey={intelligence.thinkingKey}
                 acceptedIntentIds={acceptedIntentIdSet}
                 acknowledged={acknowledgedIntents}
                 onAcknowledge={handleAcknowledge}
@@ -1975,6 +1990,7 @@ function App() {
                   <RecommendationsCard
                     intents={intelligence.byType.medicine}
                     topScore={topOfType.get("medicine") ?? 0}
+                    thinkingKey={intelligence.thinkingKey}
                     brands={intelligence.brands}
                     brandsLoading={intelligence.brandsLoading}
                     brandError={intelligence.brandError}
@@ -2005,6 +2021,7 @@ function App() {
                     title={specialty.primaryLabel}
                     byType={intelligence.byType}
                     topOfType={topOfType}
+                    thinkingKey={intelligence.thinkingKey}
                     acceptedIntentIds={acceptedIntentIdSet}
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}
@@ -2023,6 +2040,7 @@ function App() {
                   types={planSlots.restTypes}
                   byType={intelligence.byType}
                   topOfType={topOfType}
+                  thinkingKey={intelligence.thinkingKey}
                   acceptedIntentIds={acceptedIntentIdSet}
                   acknowledged={acknowledgedIntents}
                   onAcknowledge={handleAcknowledge}

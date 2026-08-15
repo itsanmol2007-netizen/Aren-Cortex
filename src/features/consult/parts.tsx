@@ -7,9 +7,51 @@
 // ---------------------------------------------------------------------------
 
 import { Heart, Sparkles, X } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { IntentType } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { CompanionScope, CompanionSuggestion } from "../../lib/synapse/companions";
+
+// ============================================================
+// THE THINKING RING — Synapse recomputing, said in motion
+// ============================================================
+
+/**
+ * A brief violet ripple on a card's glyph icon, fired once whenever the
+ * ranking behind that card actually recomputes — not a loop, not an idle
+ * decoration. `pulseKey` is `useConsultIntelligence`'s `thinkingKey`: a
+ * value that only changes identity when the engine's OUTPUT changes (a
+ * different set of ranked intents or different scores), so typing in an
+ * unrelated search box never fires it and neither does a re-render with
+ * nothing new to say.
+ *
+ * The same three cards (Possible Conditions, Medicine Recommendations,
+ * Suggestions) all receive the identical `pulseKey`, so they ripple in the
+ * same frame — the point is not "this list changed", it is "the one engine
+ * behind all three just thought again". Violet because doctrine's colour
+ * law already reserves it for "the engine's reading" (§12.1); this reuses
+ * that meaning rather than inventing a new one.
+ *
+ * Render it inside a `position: relative` wrapper around the glyph — see
+ * `.cs-glyph-live` in consult.css.
+ */
+export function ThinkingRing({ pulseKey }: { pulseKey: string }) {
+    const reduce = useReducedMotion();
+    if (!pulseKey) return null;
+    if (reduce) return null; // a ring that never fades is a decoration, not a cue
+    return (
+        <AnimatePresence>
+            <motion.span
+                key={pulseKey}
+                className="cs-thinking-ring"
+                aria-hidden="true"
+                initial={{ opacity: 0.6, scale: 0.5 }}
+                animate={{ opacity: 0, scale: 1.9 }}
+                transition={{ duration: 0.85, ease: "easeOut" }}
+            />
+        </AnimatePresence>
+    );
+}
 
 // ============================================================
 // MEDICINE IDENTITY — two lines, everywhere, always
@@ -166,6 +208,14 @@ export function PinButton({ pinned, label, onToggle }: {
  * red, with its reason attached, and the accept action and brand picker are
  * withheld until the doctor acknowledges it. Acknowledgement is
  * per-consultation and reversible. Nothing is ever hidden outright.
+ *
+ * Self-animates its own arrival: every caller already mounts this
+ * conditionally (`{isWarn && <GuardReason .../>}`), so a `motion` root here
+ * gives every one of those call sites a smooth reveal for free — a warning
+ * that snaps into existence reads as the page jumping, not as a message
+ * arriving. Height, not just opacity, because a badge shifting straight
+ * from nothing to full height above content that is about to move is what
+ * makes a guard feel like it shoved the row.
  */
 export function GuardReason({
     hard, reasons, acknowledged, onAcknowledge,
@@ -175,8 +225,15 @@ export function GuardReason({
     acknowledged: boolean;
     onAcknowledge: (v: boolean) => void;
 }) {
+    const reduce = useReducedMotion();
     return (
-        <div className={`cs-reason ${hard ? "is-hard" : "is-warn"}`}>
+        <motion.div
+            className={`cs-reason ${hard ? "is-hard" : "is-warn"}`}
+            initial={reduce ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            transition={{ type: "spring", stiffness: 420, damping: 34 }}
+            style={{ overflow: "hidden" }}
+        >
             {hard && <strong>Contraindicated — read before prescribing</strong>}
             {reasons.map((r, i) => <p key={i}>{r}</p>)}
             {hard && (
@@ -190,7 +247,7 @@ export function GuardReason({
                         : "I've read this — allow prescribing"}
                 </button>
             )}
-        </div>
+        </motion.div>
     );
 }
 

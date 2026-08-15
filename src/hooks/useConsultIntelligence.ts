@@ -56,6 +56,8 @@ export interface ConsultIntelligenceArgs {
 
 export interface ConsultIntelligence {
     result: EngineResult | null;
+    /** changes identity exactly when the engine's output changes — see ThinkingRing */
+    thinkingKey: string;
     /** re-ranked by this doctor's history; safety-critical intents exempt */
     intents: PersonalizedIntent[];
     byType: Record<IntentType, PersonalizedIntent[]>;
@@ -133,6 +135,20 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         if (!hasAnything) return null;
         return runEngine(data.ruleset, built.input);
     }, [data, built]);
+
+    // "Synapse is thinking" — see ThinkingRing in features/consult/parts.tsx.
+    // A value that changes identity exactly when the engine's OUTPUT changes
+    // (a different set of ranked intents, or the same set with different
+    // scores), and only then: recomputing to the SAME answer, or a render
+    // with nothing new to say, must not re-fire the cue. Rounded scores so
+    // floating-point noise below the two-decimal place a doctor could ever
+    // perceive doesn't retrigger it either. Every ranked card (Possible
+    // Conditions, Medicine Recommendations, Suggestions) is handed this same
+    // string, so they ripple in the same frame — one engine, not three.
+    const thinkingKey = useMemo(() => {
+        if (!result) return "";
+        return result.intents.map((i) => `${i.intentId}:${i.rawScore.toFixed(2)}`).join("|");
+    }, [result]);
 
     // ---- 2. personalisation. Reorders only; never introduces an intent. ----
     const intents = useMemo(() => {
@@ -366,6 +382,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
 
     return {
         result,
+        thinkingKey,
         intents,
         byType,
         hardWarned,

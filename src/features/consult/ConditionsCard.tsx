@@ -35,7 +35,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { Check, ChevronDown, ShieldAlert, Stethoscope, X } from "lucide-react";
 import type { ActiveSignal, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
-import { GuardReason, RELEVANCE_TEXT, rankFillOf, relevanceOf } from "./parts";
+import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -63,6 +63,8 @@ interface Props {
     intents: PersonalizedIntent[];
     /** the strongest score among them — the relevance denominator */
     topScore: number;
+    /** "Synapse is thinking" cue — see ThinkingRing in parts.tsx */
+    thinkingKey: string;
     acceptedIntentIds: Set<number>;
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
@@ -80,7 +82,7 @@ interface Props {
 }
 
 export function ConditionsCard({
-    intents, topScore, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
+    intents, topScore, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, hasChart,
     diagnoses, onRemoveDiagnosis, disabled = false,
 }: Props) {
@@ -191,7 +193,11 @@ export function ConditionsCard({
             className="cs-assess flex min-w-0 flex-col rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] pb-4 shadow-[var(--cs-shadow)]"
         >
             <div className="flex items-center gap-2 px-4 pt-3.5">
-                <span className="grid size-[26px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f7f2ff_0%,#ede2fe_100%)] text-[#6d28d9] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                {/* `cs-glyph-live` is the one plain-CSS class on an otherwise
+                    Tailwind icon — it only supplies `position: relative` for
+                    ThinkingRing to anchor to; see consult.css. */}
+                <span className="cs-glyph-live grid size-[26px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f7f2ff_0%,#ede2fe_100%)] text-[#6d28d9] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                    <ThinkingRing pulseKey={thinkingKey} />
                     <Stethoscope size={14} />
                 </span>
                 <h2 className="m-0 text-[13.5px] font-bold uppercase tracking-[0.045em] text-[var(--cs-ink)]">

@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
     AlertTriangle, Check, ChevronDown, Pill, Pin, Plus, ShieldAlert,
 } from "lucide-react";
@@ -37,7 +38,7 @@ import { brandKey } from "../../lib/synapse/brands";
 import type { CompositionBrands } from "../../lib/db/synapse";
 import type { ResolvedProduct } from "../../lib/db/medicines";
 import {
-    GuardReason, MedicineIdentity, PinButton, RankBar, rankFillOf,
+    GuardReason, MedicineIdentity, PinButton, RankBar, ThinkingRing, rankFillOf,
 } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
@@ -65,6 +66,8 @@ interface Props {
     intents: PersonalizedIntent[];
     /** the strongest final score among them — the bar's denominator */
     topScore: number;
+    /** "Synapse is thinking" cue — see ThinkingRing in parts.tsx */
+    thinkingKey: string;
     /** compositionId -> the brands under it */
     brands: Map<number, CompositionBrands>;
     brandsLoading: boolean;
@@ -95,7 +98,7 @@ interface Props {
 }
 
 export function RecommendationsCard({
-    intents, topScore, brands, brandsLoading, brandError, combinations,
+    intents, topScore, thinkingKey, brands, brandsLoading, brandError, combinations,
     combinationsLoading, brandPreferences,
     acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept,
     isPinned, onTogglePin, onOpenBrandSheet, onExplain, ruleset, activeSignals,
@@ -328,7 +331,10 @@ export function RecommendationsCard({
         <section className={`cs-card ${className}`} aria-label="Medicine recommendations">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-teal"><Pill size={14} /></span>
+                    <span className="cs-glyph is-teal cs-glyph-live">
+                        <ThinkingRing pulseKey={thinkingKey} />
+                        <Pill size={14} />
+                    </span>
                     Medicine Recommendations
                 </h2>
                 {hasChart && !isSearching && ordered.length > 0 && (
@@ -388,6 +394,7 @@ function MedicineRow({
     onSearchProducts: () => void;
 }) {
     const moreRef = useRef<HTMLButtonElement>(null);
+    const reduceMotion = useReducedMotion();
     /**
      * Whether this row is the OPEN one.
      *
@@ -562,8 +569,19 @@ function MedicineRow({
                    second line under every medicine they were the single
                    biggest source of clutter in this column: four brand chips
                    and a "1,782 more" on a row the doctor had not yet decided
-                   to act on. */
-                <div className="cs-brands">
+                   to act on.
+
+                   Animated open, 2026-08-15: this used to just appear the
+                   instant the row was clicked, which read as the row
+                   flinching rather than opening. Height + a slight rise, so
+                   the chips arrive FROM the row that produced them. */
+                <motion.div
+                    className="cs-brands"
+                    initial={reduceMotion ? false : { opacity: 0, height: 0, y: -4 }}
+                    animate={{ opacity: 1, height: "auto", y: 0 }}
+                    transition={{ type: "spring", stiffness: 460, damping: 34 }}
+                    style={{ overflow: "hidden" }}
+                >
                     <span className="cs-brands-or">or</span>
                     {alts.map((m) => (
                         <button
@@ -623,7 +641,7 @@ function MedicineRow({
                             </button>
                         );
                     })}
-                </div>
+                </motion.div>
             ) : null}
 
             {added && (composition?.singleTotal ?? 0) > 1 && (

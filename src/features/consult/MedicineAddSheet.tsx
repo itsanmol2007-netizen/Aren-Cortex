@@ -23,6 +23,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, Pill, X } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandVariantLabel, doseFieldValue } from "../../lib/synapse/brands";
@@ -69,6 +70,7 @@ export function MedicineAddSheet({
     const [dosage, setDosage] = useState("");
     const [timing, setTiming] = useState(TIMINGS[0]);
     const [sos, setSos] = useState(false);
+    const reduce = useReducedMotion();
 
     // Re-seed whenever a different medicine opens the sheet.
     useEffect(() => {
@@ -113,15 +115,38 @@ export function MedicineAddSheet({
         return same.length > 1 ? same : [];
     }, [brand, brands]);
 
-    if (!open) return null;
-
     const frequency = slots.map((s) => (s ? 1 : 0)).join("-");
     const anySlot = slots.some(Boolean);
 
+    // AnimatePresence needs the exiting element to stay mounted for the
+    // duration of its `exit` animation, so the `!open` check moved from an
+    // early return into this condition — `open` was previously the ONLY
+    // reason this component ever rendered nothing, so closing the sheet used
+    // to be instant, no different from it never having existed on screen.
     return createPortal(
-        <div className="cs-addmed" role="dialog" aria-modal="true" aria-label="Add medicine">
-            <div className="cs-addmed-scrim" onClick={onCancel} />
-            <div className="cs-addmed-panel">
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    className="cs-addmed"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Add medicine"
+                >
+                    <motion.div
+                        className="cs-addmed-scrim"
+                        onClick={onCancel}
+                        initial={reduce ? false : { opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.16 }}
+                    />
+                    <motion.div
+                        className="cs-addmed-panel"
+                        initial={reduce ? false : { opacity: 0, y: 16, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.12 } }}
+                        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    >
                 <div className="cs-addmed-head">
                     <span className="cs-glyph is-teal"><Pill size={16} /></span>
                     <div className="cs-addmed-title">
@@ -316,8 +341,10 @@ export function MedicineAddSheet({
                         Add to plan
                     </button>
                 </div>
-            </div>
-        </div>,
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
     );
 }
