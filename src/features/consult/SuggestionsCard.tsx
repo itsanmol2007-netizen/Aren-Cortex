@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
-import { GuardReason, RELEVANCE_TEXT, rankFillOf, relevanceOf } from "./parts";
+import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -93,6 +93,8 @@ interface Props {
     title?: string;
     byType: Record<IntentType, PersonalizedIntent[]>;
     topOfType: Map<IntentType, number>;
+    /** "Synapse is thinking" cue — see ThinkingRing in parts.tsx */
+    thinkingKey: string;
     acceptedIntentIds: Set<number>;
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
@@ -108,7 +110,7 @@ interface Props {
 }
 
 export function SuggestionsCard({
-    byType, topOfType, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
+    byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
     types, title = "Clinical Suggestions",
@@ -254,7 +256,10 @@ export function SuggestionsCard({
                         that already carry their own row colours (test, referral,
                         advice, exercise), and the standing rule reserves blue
                         for the action — a category tile is not one. */}
-                    <span className="cs-glyph is-slate"><Sparkles size={14} /></span>
+                    <span className="cs-glyph is-slate cs-glyph-live">
+                        <ThinkingRing pulseKey={thinkingKey} />
+                        <Sparkles size={14} />
+                    </span>
                     {title}
                 </span>
                 <span className="cs-sort">Sort by: <b>Relevance</b></span>

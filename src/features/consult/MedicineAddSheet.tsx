@@ -23,9 +23,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, Pill, X } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
-import { brandVariantLabel } from "../../lib/synapse/brands";
+import { brandVariantLabel, doseFieldValue } from "../../lib/synapse/brands";
+import { defaultTimingFor } from "./dosing";
 
 export interface MedicineDraft {
     medicine: Medicine | null;
@@ -68,6 +70,7 @@ export function MedicineAddSheet({
     const [dosage, setDosage] = useState("");
     const [timing, setTiming] = useState(TIMINGS[0]);
     const [sos, setSos] = useState(false);
+    const reduce = useReducedMotion();
 
     // Re-seed whenever a different medicine opens the sheet.
     useEffect(() => {
@@ -75,10 +78,22 @@ export function MedicineAddSheet({
         setBrand(initialBrand);
         setSlots([true, false, true, false]);
         setDuration("5");
-        setDosage(initialBrand?.strengthMg ? String(initialBrand.strengthMg) : "");
-        setTiming(TIMINGS[0]);
+        // The doctor should not have to retype a number that is already in the
+        // name of the product they just picked. `doseFieldValue` prefers the
+        // catalogue's own strength_mg and falls back to reading the name; see
+        // its doc comment for the three cases it refuses to guess.
+        setDosage(initialBrand ? doseFieldValue(initialBrand) : "");
+        // Same idea for the food instruction: a documented, conservative
+        // static map (dosing.ts), never a guard — the doctor can still pick
+        // any of the four. Every molecule the brand carries is checked, not
+        // just the one it was ranked through, so a combination matches on
+        // whichever ingredient dosing.ts recognises.
+        const molecules = initialBrand?.compositionLabels?.length
+            ? initialBrand.compositionLabels.join(" + ")
+            : compositionLabel;
+        setTiming(defaultTimingFor(molecules) ?? TIMINGS[0]);
         setSos(false);
-    }, [open, initialBrand]);
+    }, [open, initialBrand, compositionLabel]);
 
     useEffect(() => {
         if (!open) return;
@@ -100,15 +115,38 @@ export function MedicineAddSheet({
         return same.length > 1 ? same : [];
     }, [brand, brands]);
 
-    if (!open) return null;
-
     const frequency = slots.map((s) => (s ? 1 : 0)).join("-");
     const anySlot = slots.some(Boolean);
 
+    // AnimatePresence needs the exiting element to stay mounted for the
+    // duration of its `exit` animation, so the `!open` check moved from an
+    // early return into this condition — `open` was previously the ONLY
+    // reason this component ever rendered nothing, so closing the sheet used
+    // to be instant, no different from it never having existed on screen.
     return createPortal(
-        <div className="cs-addmed" role="dialog" aria-modal="true" aria-label="Add medicine">
-            <div className="cs-addmed-scrim" onClick={onCancel} />
-            <div className="cs-addmed-panel">
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    className="cs-addmed"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Add medicine"
+                >
+                    <motion.div
+                        className="cs-addmed-scrim"
+                        onClick={onCancel}
+                        initial={reduce ? false : { opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.16 }}
+                    />
+                    <motion.div
+                        className="cs-addmed-panel"
+                        initial={reduce ? false : { opacity: 0, y: 16, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.12 } }}
+                        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    >
                 <div className="cs-addmed-head">
                     <span className="cs-glyph is-teal"><Pill size={16} /></span>
                     <div className="cs-addmed-title">
@@ -183,7 +221,11 @@ export function MedicineAddSheet({
                                         className={`cs-addmed-brand is-strength${brand?.id === v.id ? " is-on" : ""}`}
                                         onClick={() => {
                                             setBrand(v);
-                                            if (v.strengthMg) setDosage(String(v.strengthMg));
+                                            // Same rule as the initial seed: prefer the catalogue
+                                            // column, fall back to the name, and leave whatever the
+                                            // doctor already typed alone when neither answers.
+                                            const value = doseFieldValue(v);
+                                            if (value) setDosage(value);
                                         }}
                                     >
                                         {brandVariantLabel(v)}
@@ -221,18 +263,24 @@ export function MedicineAddSheet({
 
                     <section className="cs-addmed-sec">
                         <span className="cs-addmed-label">When</span>
-                        <div className="cs-addmed-slots">
+                        {/* The circle notation doctors already write by hand —
+                            1-0-1-0 as ●○●○ — rather than four word buttons.
+                            Rendering only: the value underneath is still the
+                            existing slot string, built the same way below. */}
+                        <div className="cs-addmed-circles" role="group" aria-label="Dose timing">
                             {SLOTS.map((s) => (
                                 <button
                                     key={s.key}
                                     type="button"
-                                    className={`cs-addmed-slot${slots[s.key] ? " is-on" : ""}`}
+                                    className={`cs-addmed-circle${slots[s.key] ? " is-on" : ""}`}
                                     aria-pressed={slots[s.key]}
+                                    title={s.label}
                                     onClick={() =>
                                         setSlots((cur) => cur.map((v, i) => (i === s.key ? !v : v)))
                                     }
                                 >
-                                    {s.label}
+                                    <span className="cs-addmed-circle-mark" aria-hidden="true" />
+                                    <span className="cs-addmed-circle-label">{s.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -293,8 +341,10 @@ export function MedicineAddSheet({
                         Add to plan
                     </button>
                 </div>
-            </div>
-        </div>,
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
     );
 }

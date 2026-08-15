@@ -165,21 +165,48 @@
 /* The consult surface sits BELOW the existing topbar, inside `.app-shell`.
    It owns the page from there down — hence its own background — but it must
    not assume the full viewport, or the header's height would push a
-   scrollbar onto every consultation. */
+   scrollbar onto every consultation.
+
+   ── Locked shell, 2026-08-15 ──────────────────────────────────────────
+   Was `min-height`, letting `.cs-shell` grow with content and the whole
+   PAGE scroll — which is what made `.cs-summary` (the plan rail) merely
+   STICKY rather than truly still: sticky always moves through a catch-up
+   phase before it locks, and that catch-up was Anmol's "it still moves
+   slightly" complaint. `height` makes this a hard ceiling instead of a
+   floor: `.cs-work` becomes the one thing that scrolls (below), so nothing
+   beside it ever has to catch up to anything — this is the Windows 11
+   Settings model, a fixed nav pane beside an independently scrolling
+   content pane, not a page that scrolls with a rail chasing it. See
+   `body.cs-locked-shell` further down for why the number here only has to
+   be reasonably close, not pixel-perfect. */
 .cs-shell {
     display: flex;
     flex-direction: column;
-    min-height: calc(100vh - 110px);
+    height: calc(100vh - 110px);
     margin: 12px 18px 0;
     border: 1px solid var(--cs-line);
     border-radius: 16px;
     background: var(--cs-page);
     /* `clip`, NOT `hidden`. Both clip to the radius, but `hidden` creates a
-       scroll container — and a sticky descendant sticks to its nearest
-       scrolling ancestor, so `hidden` here silently disabled `position:
-       sticky` on the summary rail and it scrolled away with the page.
-       Found in the browser 2026-08-12; the rail is meant to be persistent. */
+       scroll container, and nothing below should ever look to `.cs-shell`
+       itself for a scrollbar — `.cs-work` owns that now. */
     overflow: clip;
+}
+
+/* The actual guarantee behind "completely immovable," not the height math
+   above. `.cs-shell`'s height is a close estimate of the chrome above it
+   (topbar + margins), not an exact one — measured live 2026-08-15, the
+   estimate can be a couple of pixels short, which without this would still
+   let the OUTER page wheel-scroll by that couple of pixels and drag the
+   plan rail with it. `body` cannot scroll at all while this class is on
+   it, so a small estimate error becomes invisible instead of a wobble.
+   App.tsx toggles the class for exactly as long as the consult workspace
+   itself is showing (`activePage === null`) — every other screen (Patients,
+   Settings, ...) is untouched and keeps the ordinary page scroll it
+   expects. */
+body.cs-locked-shell {
+    overflow: hidden;
+    height: 100%;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -245,16 +272,42 @@
        less width than the working surfaces it summarises. */
     /* 296px of card + the rail's own left gutter and divider */
     grid-template-columns: minmax(0, 1fr) 312px;
+    /* The single implicit row must be allowed to be SHORTER than its
+       content, or `.cs-work`'s `overflow-y: auto` below never engages — a
+       grid row defaults to sizing itself to the tallest content instead.
+       `align-items: stretch` (was `start`) is the other half of the same
+       fix: both columns now deliberately fill the bounded row height,
+       `.cs-work` to have something to scroll within, `.cs-summary` to
+       never need to (its own `align-self: stretch` already assumed this). */
+    grid-auto-rows: minmax(0, 1fr);
     gap: var(--cs-s4);
     padding: var(--cs-s4) var(--cs-s5) var(--cs-s3);
-    align-items: start;
+    align-items: stretch;
 }
 
-/* The left column — S, O, A stacked. */
+/* The left column — S, O, A stacked.
+   The one column that scrolls, 2026-08-15 (see `.cs-shell` above): bounded
+   to the row's height and given its own scrollbar, so the plan rail beside
+   it never has reason to move. `min-height: 0` overrides the grid item
+   default of `min-height: auto`, which refuses to shrink below content
+   size — without it this column would just grow past its row instead of
+   scrolling, exactly as it did before this change. */
 .cs-work {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* A bounded flex column shrinks its children to fit by default — verified
+   in a static harness before landing this: every card here quietly
+   compressed to a fraction of its height instead of overflowing, which is
+   the opposite of what a scrollable column needs. Every direct child keeps
+   its natural, content-driven height; `.cs-work` scrolls past them instead
+   of squashing them. */
+.cs-work > * {
+    flex-shrink: 0;
 }
 
 /* The phase label. Whitespace and a hairline, never a container: it names a
@@ -378,28 +431,33 @@
     box-shadow: 0 1px 3px rgba(16, 28, 46, 0.07);
 }
 
+/* Locked, not sticky, 2026-08-15 — see `.cs-shell` above for why. Sticky
+   moved through a catch-up phase before it locked; this doesn't need to
+   catch up to anything, because the row it sits in is already bounded to
+   the viewport height. `max-height` is dropped too — it existed to keep a
+   sticky, viewport-relative rail from overflowing its own scroll context,
+   and a bounded grid row already caps the height exactly; keeping both
+   would just be two ceilings disagreeing with each other. */
 .cs-summary {
-    position: sticky;
-    top: var(--cs-s3);
+    position: static;
     display: flex;
     flex-direction: column;
     gap: var(--cs-s3);
-    max-height: calc(100vh - 132px);
     min-width: 0;
+    min-height: 0;
 }
 
 /* Content-driven, like everything else. An empty consultation plan is a short
    card, not a full-height column of white — the rail is a checkout summary,
    and a checkout with nothing in it should look like one. It grows as the
    consultation accumulates and scrolls once it reaches the viewport. */
-/* The sheet on the slate. Sticky lives HERE now rather than on the rail,
-   because the rail itself is full-height ground. */
+/* The sheet on the slate. No longer sticky (2026-08-15) — `.cs-summary`
+   above is a bounded box now, not a viewport-relative one, so the sheet
+   just fills it (sizing rules further down, "make it take full screen
+   space by default"); `.cs-plan-scroll` inside `PlanCard` already owns the
+   actual internal scrolling for a long prescription. */
 .cs-summary .cs-plan {
-    position: sticky;
-    top: var(--cs-s3);
-    flex: 0 1 auto;
-    min-height: 0;
-    max-height: calc(100vh - 150px);
+    position: static;
 }
 
 /* The two chip pickers in Subjective, and Findings in Objective, all want a
@@ -574,6 +632,25 @@
 .cs-glyph.is-rose { background: var(--cs-rose-soft); color: var(--cs-rose); }
 .cs-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .cs-glyph.is-slate { background: #f1f5f9; color: #475569; }
+
+/* Anchors the ThinkingRing (parts.tsx) to the glyph it sits on, rather than
+   to whatever the nearest positioned ancestor further up the tree happens
+   to be. Add alongside a card's existing `.cs-glyph is-*` classes, or —
+   Possible Conditions styles its icon in Tailwind directly — alongside
+   whatever classes that icon already carries; the ring only needs the
+   `position: relative` this provides and doesn't care what else is on the
+   element. */
+.cs-glyph-live { position: relative; }
+
+.cs-thinking-ring {
+    position: absolute;
+    inset: -3px;
+    display: block;
+    border-radius: 50%;
+    border: 1.5px solid var(--cs-violet);
+    background: rgba(124, 58, 237, 0.14);
+    pointer-events: none;
+}
 
 .cs-count {
     margin-left: auto;
@@ -2091,6 +2168,36 @@
     border-color: transparent;
 }
 
+/* A combination product offered beside a ranked molecule's own brands — see
+   docs/aren-cortex-atlas.md §14.17. Same chip, plus the extra molecule(s) stated
+   plainly rather than left to a tooltip: taking a combination means
+   prescribing something the doctor did not search for, and that is always a
+   reason to say so, never a reason to hide it (MedicineAddSheet carries the
+   identical rule for its own brand list). */
+.cs-brand-extra {
+    color: var(--cs-teal);
+    font-weight: 500;
+}
+
+/* Its OWN full-strength guard verdict — checked across every molecule the
+   product carries, not only the one composition this row was ranked
+   through, so a combination can flag red here even on an otherwise-clean
+   row. See guardCombination in lib/synapse/engine.ts. */
+.cs-brand.is-warn {
+    border-color: rgba(180, 83, 9, 0.35);
+    color: var(--cs-amber);
+}
+
+.cs-brand.is-warn .cs-brand-extra { color: inherit; opacity: 0.85; }
+
+.cs-brand.is-hard {
+    border-color: rgba(180, 35, 24, 0.4);
+    color: var(--cs-red);
+}
+
+.cs-brand.is-hard .cs-brand-extra { color: inherit; opacity: 0.85; }
+.cs-brand.is-hard svg { opacity: 1; }
+
 .cs-nobrand {
     grid-column: 2 / -1;
     margin-top: 5px;
@@ -3297,6 +3404,19 @@
         max-height: none;
     }
     .cs-plan { position: static; max-height: none; }
+
+    /* The locked-shell model (`.cs-shell` / `.cs-work`, 2026-08-15) is a
+       two-COLUMN idea — a rail that never has to move because it isn't
+       sharing a scroll region with the thing beside it. At this width
+       `.cs-work` and `.cs-summary` stack into ONE column instead (above),
+       so there is no rail to protect and a fixed-height shell would just
+       crop the second half of the page. Undo it: ordinary page flow and
+       page-level scroll, same as this breakpoint already gave `.cs-summary`
+       itself. Desktop-only, per atlas §12.3 — not re-verified below 1120px. */
+    .cs-shell { height: auto; min-height: calc(100vh - 110px); }
+    .cs-work { min-height: auto; overflow-y: visible; }
+    .cs-work > * { flex-shrink: 1; }
+    body.cs-locked-shell { overflow: visible; height: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4032,6 +4152,43 @@
     font-size: 10.5px;
     font-weight: 650;
 }
+/* The M/A/E/N dose-timing control, drawn as the ●○●○ circle notation doctors
+   already write by hand rather than four word buttons — Anmol, 2026-08-14.
+   Filled when on, hollow when off, morning-afternoon-evening-night left to
+   right; the small label under each keeps the notation learnable rather than
+   requiring the doctor to already know which circle is which. */
+.cs-addmed-circles { display: flex; gap: var(--cs-s3); }
+.cs-addmed-circle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    background: none;
+    padding: 2px;
+    cursor: pointer;
+}
+.cs-addmed-circle-mark {
+    display: block;
+    width: 26px;
+    height: 26px;
+    border: 1.5px solid var(--cs-line-strong);
+    border-radius: 50%;
+    background: #fff;
+    transition: background 0.13s ease, border-color 0.13s ease;
+}
+.cs-addmed-circle:hover .cs-addmed-circle-mark { border-color: var(--cs-blue); }
+.cs-addmed-circle.is-on .cs-addmed-circle-mark {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue);
+}
+.cs-addmed-circle-label {
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 560;
+}
+.cs-addmed-circle.is-on .cs-addmed-circle-label { color: var(--cs-blue); font-weight: 640; }
+
 .cs-addmed-slots { display: flex; flex-wrap: wrap; gap: 5px; }
 .cs-addmed-slot {
     border: 1px solid var(--cs-line-strong);
@@ -4070,20 +4227,25 @@
     cursor: pointer;
 }
 .cs-addmed-cancel:hover { background: rgba(11, 23, 51, 0.05); }
+/* Blue, not green: the colour law (doctrine §5 / atlas §12.1) reserves green
+   for TAKEN and blue for THE ACTION. Confirming this sheet stages a medicine
+   onto the plan — it has not been taken yet — so it is the action colour,
+   the same one every other primary action in this sheet already uses
+   (`.cs-addmed-brand.is-on`, `.cs-addmed-circle.is-on`, the input focus ring). */
 .cs-addmed-confirm {
     display: inline-flex;
     align-items: center;
     gap: 7px;
     border: 0;
     border-radius: var(--cs-radius-sm);
-    background: #0e7c66;
+    background: var(--cs-blue);
     padding: 9px 16px;
     color: #fff;
     font-size: 13.5px;
     font-weight: 640;
     cursor: pointer;
 }
-.cs-addmed-confirm:hover:not(:disabled) { background: #0f8d74; }
+.cs-addmed-confirm:hover:not(:disabled) { background: #2f7ded; }
 .cs-addmed-confirm:disabled {
     border: 1px solid var(--cs-line-strong);
     background: none;

@@ -24,16 +24,21 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
     AlertTriangle, Check, ChevronDown, Pill, Pin, Plus, ShieldAlert,
 } from "lucide-react";
-import type { ActiveSignal, Ruleset } from "../../lib/synapse/engine";
+import {
+    guardCombination, medicineIntentIndex,
+    type ActiveSignal, type GuardStatus, type GuardVerdict, type Intent, type Ruleset,
+} from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandKey } from "../../lib/synapse/brands";
 import type { CompositionBrands } from "../../lib/db/synapse";
+import type { ResolvedProduct } from "../../lib/db/medicines";
 import {
-    GuardReason, MedicineIdentity, PinButton, RankBar, rankFillOf,
+    GuardReason, MedicineIdentity, PinButton, RankBar, ThinkingRing, rankFillOf,
 } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
@@ -61,10 +66,19 @@ interface Props {
     intents: PersonalizedIntent[];
     /** the strongest final score among them — the bar's denominator */
     topScore: number;
+    /** "Synapse is thinking" cue — see ThinkingRing in parts.tsx */
+    thinkingKey: string;
     /** compositionId -> the brands under it */
     brands: Map<number, CompositionBrands>;
     brandsLoading: boolean;
     brandError: string | null;
+    /**
+     * compositionId -> combination products containing it, fewest extra
+     * molecules first — the counterpart to `brands`, which only ever holds
+     * single-molecule products. See useConsultIntelligence.ts §4b.
+     */
+    combinations: Map<number, ResolvedProduct[]>;
+    combinationsLoading: boolean;
     brandPreferences?: Map<string, { preference: number }>;
     acceptedIntentIds: Set<number>;
     chosenBrands: Map<number, number>;
@@ -84,7 +98,8 @@ interface Props {
 }
 
 export function RecommendationsCard({
-    intents, topScore, brands, brandsLoading, brandError, brandPreferences,
+    intents, topScore, thinkingKey, brands, brandsLoading, brandError, combinations,
+    combinationsLoading, brandPreferences,
     acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept,
     isPinned, onTogglePin, onOpenBrandSheet, onExplain, ruleset, activeSignals,
     hasChart, searchRef, className = "",
@@ -144,14 +159,83 @@ export function RecommendationsCard({
             ? brands.get(intent.refId) ?? null
             : null;
 
-    const chosenFor = (intent: PersonalizedIntent, list: Medicine[]): Medicine | null => {
+    const combosFor = (intent: PersonalizedIntent): ResolvedProduct[] =>
+        intent.refTable === "compositions" && intent.refId != null
+            ? combinations.get(intent.refId) ?? []
+            : [];
+
+    // The reverse of `ruleset.intents`: a combination's OTHER molecules are
+    // reached by composition id, not by the intent id they were ranked
+    // through. Built once per ruleset load, not per row — see its doc comment.
+    const intentIndex = useMemo<Map<number, Intent>>(
+        () => (ruleset ? medicineIntentIndex(ruleset) : new Map()),
+        [ruleset]
+    );
+
+    /**
+     * Every combination product's OWN full-strength verdict, keyed by its
+     * medicine id — checked across EVERY molecule it carries, not only the one
+     * composition it happens to sit under in `combinations`. Computed once for
+     * the whole card rather than per row, since the same product can appear
+     * under more than one ranked composition.
+     */
+    const comboVerdicts = useMemo(() => {
+        const m = new Map<number, GuardVerdict>();
+        if (!ruleset) return m;
+        for (const list of combinations.values()) {
+            for (const product of list) {
+                if (!m.has(product.id)) {
+                    m.set(
+                        product.id,
+                        guardCombination(ruleset, activeSignals, intentIndex, product.compositionIds)
+                    );
+                }
+            }
+        }
+        return m;
+    }, [combinations, ruleset, activeSignals, intentIndex]);
+
+    /**
+     * The row's REAL guard status: the ranked composition's own verdict,
+     * merged with every combination product offered beside it.
+     *
+     * A combination carries molecules the engine never scored, so checking
+     * only the molecule it was ranked through would let it reach the doctor
+     * with a WEAKER warning than a direct search for the same product would
+     * give it — doctrine rule 11, and the reason this exists rather than
+     * reading `intent.status` straight off the engine's output everywhere
+     * below. A hard verdict on any one combination locks the whole row —
+     * every alternate under it, single-molecule or combination — until it is
+     * read and acknowledged, the same as the engine's own hard warnings.
+     */
+    const effectiveVerdicts = useMemo(() => {
+        const m = new Map<number, GuardVerdict>();
+        for (const intent of intents) {
+            let status: GuardStatus = intent.status;
+            const reasons = new Set(intent.guardReasons);
+            for (const product of combosFor(intent)) {
+                const v = comboVerdicts.get(product.id);
+                if (!v) continue;
+                if (v.status === "warn_hard") status = "warn_hard";
+                else if (v.status === "warn" && status !== "warn_hard") status = "warn";
+                v.reasons.forEach((r) => reasons.add(r));
+            }
+            m.set(intent.intentId, { status, reasons: [...reasons] });
+        }
+        return m;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [intents, combinations, comboVerdicts]);
+
+    const chosenFor = (
+        intent: PersonalizedIntent, list: Medicine[], combos: ResolvedProduct[]
+    ): Medicine | null => {
         const id = chosenBrands.get(intent.intentId);
-        if (id != null) return list.find((m) => m.id === id) ?? null;
+        if (id != null) return [...list, ...combos].find((m) => m.id === id) ?? null;
         return list[0] ?? null;
     };
 
     const accept = (intent: PersonalizedIntent, medicine: Medicine | null, deliberate = false) => {
-        const isHard = intent.status === "warn_hard";
+        const isHard = (effectiveVerdicts.get(intent.intentId)?.status ?? intent.status) === "warn_hard";
         if (isHard && !acknowledged.has(intent.intentId)) return;
         onAccept({
             intentId: intent.intentId,
@@ -211,34 +295,46 @@ export function RecommendationsCard({
             );
         }
 
-        return shown.map((intent) => (
-            <MedicineRow
-                key={intent.intentId}
-                intent={intent}
-                position={engineRank.get(intent.intentId) ?? 1}
-                fill={rankFillOf(intent, topScore)}
-                pinned={isPinned(intent.intentId)}
-                onTogglePin={() => onTogglePin(intent.intentId)}
-                added={acceptedIntentIds.has(intent.intentId)}
-                acknowledged={acknowledged.has(intent.intentId)}
-                onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
-                composition={brandsFor(intent)}
-                brandsLoading={brandsLoading}
-                chosen={chosenFor(intent, brandsFor(intent)?.brands ?? [])}
-                brandPreferences={brandPreferences}
-                onAccept={accept}
-                onOpenSheet={(rect) => onOpenBrandSheet(intent, rect)}
-                onExplain={(rect) => onExplain(intent, rect)}
-                onSearchProducts={() => { search.setQuery(intent.label); inputRef.current?.focus(); }}
-            />
-        ));
+        return shown.map((intent) => {
+            const combos = combosFor(intent);
+            const verdict = effectiveVerdicts.get(intent.intentId)
+                ?? { status: intent.status, reasons: intent.guardReasons };
+            return (
+                <MedicineRow
+                    key={intent.intentId}
+                    intent={intent}
+                    verdict={verdict}
+                    position={engineRank.get(intent.intentId) ?? 1}
+                    fill={rankFillOf(intent, topScore)}
+                    pinned={isPinned(intent.intentId)}
+                    onTogglePin={() => onTogglePin(intent.intentId)}
+                    added={acceptedIntentIds.has(intent.intentId)}
+                    acknowledged={acknowledged.has(intent.intentId)}
+                    onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
+                    composition={brandsFor(intent)}
+                    brandsLoading={brandsLoading}
+                    combos={combos}
+                    combosLoading={combinationsLoading}
+                    comboVerdictOf={(productId) => comboVerdicts.get(productId) ?? null}
+                    chosen={chosenFor(intent, brandsFor(intent)?.brands ?? [], combos)}
+                    brandPreferences={brandPreferences}
+                    onAccept={accept}
+                    onOpenSheet={(rect) => onOpenBrandSheet(intent, rect)}
+                    onExplain={(rect) => onExplain(intent, rect)}
+                    onSearchProducts={() => { search.setQuery(intent.label); inputRef.current?.focus(); }}
+                />
+            );
+        });
     };
 
     return (
         <section className={`cs-card ${className}`} aria-label="Medicine recommendations">
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-teal"><Pill size={14} /></span>
+                    <span className="cs-glyph is-teal cs-glyph-live">
+                        <ThinkingRing pulseKey={thinkingKey} />
+                        <Pill size={14} />
+                    </span>
                     Medicine Recommendations
                 </h2>
                 {hasChart && !isSearching && ordered.length > 0 && (
@@ -269,11 +365,14 @@ export function RecommendationsCard({
 // ============================================================
 
 function MedicineRow({
-    intent, position, fill, pinned, onTogglePin, added, acknowledged, onAcknowledge,
-    composition, brandsLoading, chosen, brandPreferences, onAccept, onOpenSheet,
-    onExplain, onSearchProducts,
+    intent, verdict, position, fill, pinned, onTogglePin, added, acknowledged, onAcknowledge,
+    composition, brandsLoading, combos, combosLoading, comboVerdictOf, chosen, brandPreferences,
+    onAccept, onOpenSheet, onExplain, onSearchProducts,
 }: {
     intent: PersonalizedIntent;
+    /** the row's REAL status — the engine's own verdict merged with every
+     *  combination offered beside it. See `effectiveVerdicts` in the parent. */
+    verdict: GuardVerdict;
     position: number;
     fill: number;
     pinned: boolean;
@@ -283,6 +382,10 @@ function MedicineRow({
     onAcknowledge: (v: boolean) => void;
     composition: CompositionBrands | null;
     brandsLoading: boolean;
+    /** combination products containing this molecule, fewest extra molecules first */
+    combos: ResolvedProduct[];
+    combosLoading: boolean;
+    comboVerdictOf: (productId: number) => GuardVerdict | null;
     chosen: Medicine | null;
     brandPreferences?: Map<string, { preference: number }>;
     onAccept: (i: PersonalizedIntent, m: Medicine | null, deliberate?: boolean) => void;
@@ -291,6 +394,7 @@ function MedicineRow({
     onSearchProducts: () => void;
 }) {
     const moreRef = useRef<HTMLButtonElement>(null);
+    const reduceMotion = useReducedMotion();
     /**
      * Whether this row is the OPEN one.
      *
@@ -303,15 +407,25 @@ function MedicineRow({
      */
     const [open, setOpen] = useState(false);
     const rowRef = useRef<HTMLDivElement>(null);
-    const isHard = intent.status === "warn_hard";
-    const isWarn = intent.status === "warn";
+    const isHard = verdict.status === "warn_hard";
+    const isWarn = verdict.status === "warn";
     const locked = isHard && !acknowledged;
 
     const all = composition?.brands ?? [];
-    const primary = all[0] ?? null;
-    const alts = all.slice(1, 1 + INLINE_ALTS);
+    // A molecule with no standalone product still has combinations to offer —
+    // docs/aren-cortex-atlas.md §14.17. When there is no single-molecule
+    // brand at all, the best combination (fewest extra molecules) IS the
+    // primary: `primary` gates every action on this row (Prescribe, the pin
+    // label, the identity's brand line), so this one fallback is what makes
+    // all of them work for a combination-only molecule with no extra code.
+    const primary = all[0] ?? combos[0] ?? null;
+    const alts = all.length > 0 ? all.slice(1, 1 + INLINE_ALTS) : [];
     const rest = Math.max(0, (composition?.singleTotal ?? 0) - 1 - alts.length);
     const combinationTotal = composition?.combinationTotal ?? 0;
+    // Combinations shown as ALTERNATES, i.e. not already claimed as `primary`
+    // above — every one of them when a standalone brand leads the row, all
+    // but the lead combination when a combination itself leads it.
+    const comboAlts = all.length > 0 ? combos : combos.slice(1);
 
     const isYours = (m: Medicine) => {
         const p = brandPreferences?.get(brandKey(m.compositionId, m.id, m.form));
@@ -319,6 +433,16 @@ function MedicineRow({
     };
 
     const face = added ? chosen : primary;
+    // EVERY molecule the face actually contains, when it is a combination —
+    // the same fix `MedicineAddSheet`'s header applies, and for the same
+    // reason: `intent.label` alone is the ONE molecule the engine scored, and
+    // printing only that under a combination states half of what is being
+    // prescribed. `Medicine.compositionLabels` is exactly this: present when
+    // the product was resolved whole (see its doc comment in brands.ts),
+    // absent for an ordinary single-molecule brand.
+    const faceComposition = face?.compositionLabels?.length
+        ? face.compositionLabels.join(" + ")
+        : intent.label;
 
     return (
         <div
@@ -346,7 +470,7 @@ function MedicineRow({
             <div className="cs-rec-main">
                 <MedicineIdentity
                     brand={face?.name ?? null}
-                    composition={intent.label}
+                    composition={faceComposition}
                     trailing={
                         <>
                             {face?.isClinicDefault && <Pin size={10} aria-label="Clinic default" />}
@@ -391,6 +515,11 @@ function MedicineRow({
                             chips is what made this column read as scattered:
                             three competing actions per row, on a list the
                             doctor mostly scans rather than acts on. */}
+                        {/* Tied to the single-molecule browse sheet only —
+                            `onOpenSheet` has no idea combinations exist. Those
+                            are already fully inline below when the row is
+                            open; there is nothing this button would add for
+                            them. */}
                         {open && (alts.length > 0 || rest > 0) && (
                             <button
                                 ref={moreRef}
@@ -416,24 +545,43 @@ function MedicineRow({
                     <span className="cs-brand is-skeleton" />
                 </div>
             ) : !primary ? (
-                <div className="cs-nobrand">
-                    {combinationTotal > 0 ? (
-                        <>
-                            No standalone product — {combinationTotal.toLocaleString("en-IN")} combination
-                            {combinationTotal === 1 ? "" : "s"} contain this molecule.
-                            <button type="button" onClick={onSearchProducts}>Search products</button>
-                        </>
-                    ) : (
-                        <>Rankable, but no product in the catalogue contains it on its own.</>
-                    )}
-                </div>
-            ) : open && (alts.length > 0 || rest > 0) ? (
+                combosLoading ? (
+                    // Avoid a flash of "go search manually" the instant before
+                    // the real combinations (fetched in parallel, see
+                    // useConsultIntelligence.ts §4b) land — this molecule may
+                    // turn out to have a direct offer a moment later.
+                    <div className="cs-nobrand">Checking for combination products…</div>
+                ) : (
+                    <div className="cs-nobrand">
+                        {combinationTotal > 0 ? (
+                            <>
+                                No standalone product — {combinationTotal.toLocaleString("en-IN")} combination
+                                {combinationTotal === 1 ? "" : "s"} contain this molecule.
+                                <button type="button" onClick={onSearchProducts}>Search products</button>
+                            </>
+                        ) : (
+                            <>Rankable, but no product in the catalogue contains it on its own.</>
+                        )}
+                    </div>
+                )
+            ) : open && (alts.length > 0 || rest > 0 || comboAlts.length > 0) ? (
                 /* The alternates only exist on the OPEN row. As a permanent
                    second line under every medicine they were the single
                    biggest source of clutter in this column: four brand chips
                    and a "1,782 more" on a row the doctor had not yet decided
-                   to act on. */
-                <div className="cs-brands">
+                   to act on.
+
+                   Animated open, 2026-08-15: this used to just appear the
+                   instant the row was clicked, which read as the row
+                   flinching rather than opening. Height + a slight rise, so
+                   the chips arrive FROM the row that produced them. */
+                <motion.div
+                    className="cs-brands"
+                    initial={reduceMotion ? false : { opacity: 0, height: 0, y: -4 }}
+                    animate={{ opacity: 1, height: "auto", y: 0 }}
+                    transition={{ type: "spring", stiffness: 460, damping: 34 }}
+                    style={{ overflow: "hidden" }}
+                >
                     <span className="cs-brands-or">or</span>
                     {alts.map((m) => (
                         <button
@@ -461,7 +609,39 @@ function MedicineRow({
                             {rest.toLocaleString("en-IN")} more <ChevronDown size={11} />
                         </button>
                     )}
-                </div>
+                    {/* Combinations — never hidden behind the "N more" count
+                        above, which only ever counted single-molecule brands.
+                        `fetchCombinationProducts` already caps this list, so
+                        there is no overflow control to build here. Every
+                        molecule the product carries is stated on the chip
+                        itself, per the same rule MedicineAddSheet follows:
+                        taking a combination means prescribing a molecule the
+                        doctor did not search for, and that is never a reason
+                        to hide it. */}
+                    {comboAlts.map((c) => {
+                        const cv = comboVerdictOf(c.id);
+                        const cHard = cv?.status === "warn_hard";
+                        const cWarn = cv?.status === "warn";
+                        const extra = c.compositionLabels.filter(
+                            (label) => label.toLowerCase() !== intent.label.toLowerCase()
+                        );
+                        return (
+                            <button
+                                key={c.id}
+                                type="button"
+                                className={`cs-brand is-combo${cHard ? " is-hard" : cWarn ? " is-warn" : ""}`}
+                                onClick={() => onAccept(intent, c, true)}
+                                title={`Contains ${c.compositionLabels.join(" + ")}`}
+                            >
+                                {cHard && <ShieldAlert size={11} />}
+                                {c.name}
+                                {extra.length > 0 && (
+                                    <span className="cs-brand-extra">+ {extra.join(", ")}</span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </motion.div>
             ) : null}
 
             {added && (composition?.singleTotal ?? 0) > 1 && (
@@ -478,11 +658,11 @@ function MedicineRow({
                 </div>
             )}
 
-            {(isWarn || isHard) && intent.guardReasons.length > 0 && (
+            {(isWarn || isHard) && verdict.reasons.length > 0 && (
                 <div className="cs-rec-guard">
                     <GuardReason
                         hard={isHard}
-                        reasons={intent.guardReasons}
+                        reasons={verdict.reasons}
                         acknowledged={acknowledged}
                         onAcknowledge={onAcknowledge}
                     />

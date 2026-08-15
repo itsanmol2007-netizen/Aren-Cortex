@@ -26,6 +26,7 @@ import {
     type BrandIndex,
     type CompositionBrands,
 } from "../lib/db/synapse";
+import { fetchCombinationProducts, type ResolvedProduct } from "../lib/db/medicines";
 import type { SynapseData } from "./useSynapse";
 import type { Vitals } from "../types";
 import type { Sex } from "../lib/growth/growth";
@@ -55,6 +56,8 @@ export interface ConsultIntelligenceArgs {
 
 export interface ConsultIntelligence {
     result: EngineResult | null;
+    /** changes identity exactly when the engine's output changes — see ThinkingRing */
+    thinkingKey: string;
     /** re-ranked by this doctor's history; safety-critical intents exempt */
     intents: PersonalizedIntent[];
     byType: Record<IntentType, PersonalizedIntent[]>;
@@ -70,6 +73,15 @@ export interface ConsultIntelligence {
     brands: BrandIndex;
     brandsLoading: boolean;
     brandError: string | null;
+    /**
+     * Combination products containing a ranked (or companion) composition —
+     * the counterpart to `brands`, which `composition_brands` restricts to
+     * single-molecule products only. compositionId -> combos, fewest extra
+     * molecules first. Empty for a composition with no combination products
+     * or none fetched yet.
+     */
+    combinations: Map<number, ResolvedProduct[]>;
+    combinationsLoading: boolean;
     isPediatric: boolean;
     measurements: MeasurementRow[];
     hasInput: boolean;
@@ -123,6 +135,20 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         if (!hasAnything) return null;
         return runEngine(data.ruleset, built.input);
     }, [data, built]);
+
+    // "Synapse is thinking" — see ThinkingRing in features/consult/parts.tsx.
+    // A value that changes identity exactly when the engine's OUTPUT changes
+    // (a different set of ranked intents, or the same set with different
+    // scores), and only then: recomputing to the SAME answer, or a render
+    // with nothing new to say, must not re-fire the cue. Rounded scores so
+    // floating-point noise below the two-decimal place a doctor could ever
+    // perceive doesn't retrigger it either. Every ranked card (Possible
+    // Conditions, Medicine Recommendations, Suggestions) is handed this same
+    // string, so they ripple in the same frame — one engine, not three.
+    const thinkingKey = useMemo(() => {
+        if (!result) return "";
+        return result.intents.map((i) => `${i.intentId}:${i.rawScore.toFixed(2)}`).join("|");
+    }, [result]);
 
     // ---- 2. personalisation. Reorders only; never introduces an intent. ----
     const intents = useMemo(() => {
@@ -277,6 +303,66 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [brandKey, data, isPediatric, hospitalId]);
 
+    // ---- 4b. combination products, beside the single-molecule brands. ----
+    // docs/aren-cortex-atlas.md §14.17: "Synapse does not recommend medicines
+    // with more than one composition." `fetchCombinationProducts` (lib/db/
+    // medicines.ts) was written 2026-08-13 and called from nowhere — this is
+    // that wiring. Same shape as the brands cache just above, deliberately:
+    // async, cannot block the ranking, and a failure here must not touch it.
+    //
+    // Catalogue-only (no doctor preference, no clinic default, no paediatric
+    // form applies to which molecules a product CONTAINS), so unlike brands
+    // the cache key is the composition id alone and is never invalidated.
+    const [combinations, setCombinations] = useState<Map<number, ResolvedProduct[]>>(new Map());
+    const [combinationsLoading, setCombinationsLoading] = useState(false);
+    const combinationCache = useRef(new Map<number, ResolvedProduct[]>());
+    const combinationKey = wantedCompositions.join(",");
+
+    useEffect(() => {
+        const missing = wantedCompositions.filter((id) => !combinationCache.current.has(id));
+
+        if (missing.length === 0) {
+            const next = new Map<number, ResolvedProduct[]>();
+            for (const id of wantedCompositions) {
+                const hit = combinationCache.current.get(id);
+                if (hit) next.set(id, hit);
+            }
+            setCombinations(next);
+            return;
+        }
+
+        let cancelled = false;
+        setCombinationsLoading(true);
+        fetchCombinationProducts({ compositionIds: missing })
+            .then((fetched) => {
+                // Record a miss too — an empty array for a molecule with no
+                // combination product, so it is never re-fetched.
+                for (const id of missing) combinationCache.current.set(id, fetched.get(id) ?? []);
+                if (cancelled) return;
+                const next = new Map<number, ResolvedProduct[]>();
+                for (const id of wantedCompositions) {
+                    const hit = combinationCache.current.get(id);
+                    if (hit) next.set(id, hit);
+                }
+                setCombinations(next);
+            })
+            .catch((e) => {
+                // Same rule as brands: a failure here must not blank the
+                // ranking, and the single-molecule brands beside it still work.
+                console.warn("combination products fetch failed:", e);
+            })
+            .finally(() => {
+                if (!cancelled) setCombinationsLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+        // `combinationKey` is the identity of the request, same reasoning as
+        // `brandKey` above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [combinationKey]);
+
     // ---- 5. the raw input, persisted. Debounced, fire-and-forget. ----
     const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
@@ -296,6 +382,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
 
     return {
         result,
+        thinkingKey,
         intents,
         byType,
         hardWarned,
@@ -305,6 +392,8 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         brands,
         brandsLoading,
         brandError,
+        combinations,
+        combinationsLoading,
         isPediatric,
         measurements: built?.measurements ?? [],
         hasInput: !!built && (built.observableIds.length > 0 || built.measurements.length > 0),

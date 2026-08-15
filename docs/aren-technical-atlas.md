@@ -510,9 +510,15 @@ never wired), `components/PrescriptionPanel.tsx` (81),
 investigations,communication,practice,clinic,settings,support}/`, and the
 `lib/db` exports `fetchDraftVisits` / `fetchVisitWithDetails` (no callers).
 
-Stale docs (history only): `docs/aren-session33-handoff.md` (styling),
-`docs/Coretx File Str.md` (Session 31 Cortex map — superseded by
-`aren-cortex-atlas.md`, which lists its errors in §11).
+Stale docs, deleted 2026-08-14 as noise (history only now — still reachable
+in `git log`, not in the working tree): `aren-session33-handoff.md`
+(styling), `Coretx File Str.md` (a Session 31 Cortex file tree, superseded
+by `aren-cortex-atlas.md` §1's own "Where it lives" table), `aren-cortex-workspace-design.md`
+/ `aren-cortex-redesign-plan.md` (the 2026-07-28 three-column redesign —
+that workspace was itself torn down), `Authentication & RLS Implementation
+Plan.md` (described a pre-auth, RLS-off state; §8 below says that has been
+false since 2026-07-19). See `aren-cortex-atlas.md` §15 for the same note
+from the Cortex side.
 
 ---
 
