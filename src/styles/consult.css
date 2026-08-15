@@ -2154,6 +2154,16 @@ body.cs-locked-shell {
     color: var(--cs-blue);
 }
 
+/* The keyboard cursor, once alternates joined the roving walk (2026-08-15).
+   Reuses the hover treatment's colour so a doctor arrowing through the chips
+   and one sweeping a mouse over them see the same "this one" signal, plus a
+   fill so it reads at a glance on a row already full of small text. */
+.cs-brand[data-cx-cursor] {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
 .cs-brand svg { opacity: 0.5; }
 
 .cs-brand-star {
@@ -3294,11 +3304,41 @@ body.cs-locked-shell {
     padding: 12px 14px 10px;
 }
 
+/* Added 2026-08-15 alongside the close button — the title used to be the
+   whole of `.cs-why-head`'s first line; now it shares the line with an
+   explicit way out. */
+.cs-why-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .cs-why-title {
     color: var(--cs-ink);
     font-size: 14.5px;
     font-weight: 660;
     letter-spacing: -0.01em;
+}
+
+.cs-why-close {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin-top: -2px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.cs-why-close:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--cs-ink);
 }
 
 .cs-why-sub {
@@ -4973,7 +5013,8 @@ body.cs-locked-shell {
 
 .cs-rec[data-cx-cursor],
 .cs-sug[data-cx-cursor],
-.cs-line[data-cx-cursor] {
+.cs-line[data-cx-cursor],
+.cx-cond-row[data-cx-cursor] {
     background: var(--cs-blue-soft);
     box-shadow: inset 2px 0 0 var(--cs-blue);
 }
@@ -4996,7 +5037,8 @@ body.cs-locked-shell {
 @media (prefers-reduced-motion: no-preference) {
     .cs-rec[data-cx-cursor],
     .cs-sug[data-cx-cursor],
-    .cs-line[data-cx-cursor] {
+    .cs-line[data-cx-cursor],
+    .cx-cond-row[data-cx-cursor] {
         transition: background 0.12s ease, box-shadow 0.12s ease;
     }
 }

@@ -276,12 +276,39 @@ export function RecommendationsCard({
      * unacknowledged hard guard — stays in the walk and does nothing on Enter.
      * Skipping it would make ↓ jump silently over a red warning, which is the
      * exact failure the guards exist to prevent (doctrine rule 11).
+     *
+     * ── Opening a row's alternates joins the SAME walk, in place ────────────
+     *
+     * Found live, 2026-08-15: → opened a row's alternates, but ↓ from there
+     * jumped straight to the NEXT MEDICINE — the alternate brand chips
+     * `.cs-brand` were never part of the walk at all, so there was no way to
+     * reach a second brand of the SAME molecule without a mouse.
+     *
+     * `rowSelector` now excludes an OPEN row from counting as its own step
+     * (`:not(.is-open)`) and, in its place, counts each of its `.cs-brand`
+     * chips — the regular alternates, the combination alternates, and the "N
+     * more" chip that opens the full `BrandSheet`, all of which already carry
+     * that class. So the walk becomes, in order: …previous row → [this row's
+     * alternates, one step each] → next row… with no branch needed for it.
+     * `actionSelector` gaining `button.cs-brand` is what makes Enter correct
+     * on those steps too: a `.cs-brand` chip already matches the selector by
+     * itself, so `activate()` clicks it directly rather than hunting inside
+     * it for something else — the same "row IS the action" shape
+     * `PatientModal`'s match rows and `BrandSheet`'s own rows use.
      */
     const listRef = useRef<HTMLDivElement>(null);
     const roving = useRovingList({
         containerRef: listRef,
-        rowSelector: ".cs-rec, .cs-sug",
-        actionSelector: "button.cs-prescribe, button.cs-act",
+        // The middle clause is the guard for a row that opens to NOTHING —
+        // one brand, no combinations, so `.cs-brands` never renders at all
+        // (see MedicineRow's body). Without it, an open-but-empty row would
+        // match neither the first clause (it IS open) nor the last (it has
+        // no `.cs-brand` children), vanishing from the walk entirely and
+        // stranding ↓ on whatever the list's next stale index happens to be.
+        rowSelector:
+            ".cs-rec:not(.is-open), .cs-rec.is-open:not(:has(.cs-brand)), " +
+            ".cs-sug, .cs-rec.is-open .cs-brand",
+        actionSelector: "button.cs-prescribe, button.cs-act, button.cs-brand",
     });
 
     const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -300,16 +327,44 @@ export function RecommendationsCard({
         }
         const brands = firedChord(e, "medBrands");
         if (brands) {
-            const row = roving.current();
-            if (!row) return;
+            const cur = roving.current();
+            if (!cur) return;
             e.preventDefault();
             e.stopPropagation();
-            // The row's own onClick is the toggle, so → and ← have to know
-            // which way it is already pointing rather than both just clicking.
-            // `is-open` is that state, and reading it off the class keeps this
-            // from needing a second copy of it up here.
+            // The cursor might be sitting on the row itself (closed) or on
+            // one of its alternate chips (open) — either way, the row that
+            // owns the toggle is the nearest `.cs-rec` ancestor-or-self.
+            const row = cur.classList.contains("cs-brand") ? cur.closest<HTMLElement>(".cs-rec") : cur;
+            if (!row) return;
             const open = row.classList.contains("is-open");
-            if (brands.key === "ArrowRight" ? !open : open) row.click();
+            if (brands.key === "ArrowRight" && !open) {
+                // The row's own onClick is the toggle (see MedicineRow). Its
+                // alternates don't exist in the DOM until the state update
+                // this triggers has actually rendered, so the cursor can only
+                // be moved onto the first one a frame later — see the
+                // `useOverlayFocus.ts` header for why this codebase already
+                // treats "wait a frame for React, then touch the DOM" as a
+                // normal pattern rather than something to route around.
+                row.click();
+                window.requestAnimationFrame(() => {
+                    const firstAlt = row.querySelector<HTMLElement>(".cs-brand");
+                    if (firstAlt) {
+                        roving.clear();
+                        firstAlt.setAttribute("data-cx-cursor", "on");
+                        firstAlt.scrollIntoView({ block: "nearest" });
+                    }
+                });
+            } else if (brands.key === "ArrowLeft" && open) {
+                row.click();
+                // Land back on the row itself, not on a chip that is about to
+                // stop existing — the doctor asked to leave the alternates,
+                // not to lose their place in the list that contains them.
+                window.requestAnimationFrame(() => {
+                    roving.clear();
+                    row.setAttribute("data-cx-cursor", "on");
+                    row.scrollIntoView({ block: "nearest" });
+                });
+            }
             return;
         }
         if (matches(e, "medWhy")) {

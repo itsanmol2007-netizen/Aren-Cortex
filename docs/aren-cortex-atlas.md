@@ -3408,3 +3408,158 @@ shared class — doctrine rule 7, don't mix vocabularies in one file.
 - **Still not through the real consult screen** — see §14.22a's note on why;
   unchanged this session. `Sidebar` and `ContributionSheet`'s focus-return
   specifically were reviewed but not driven in a harness.
+
+---
+
+## 14.22c Session 2026-08-15d — six bugs from actually using it
+
+Anmol drove the real app this time and reported six distinct problems in one
+message. All six were real, all six had a specific, findable root cause, and
+all six are fixed and verified in Chromium (component-level; the live app
+itself is still unreachable from this session, see §14.22a).
+
+### 1. Ctrl+N tore open patient intake over an active consult, no warning
+
+The literal top bug. `onNewPatient: () => setPatientModalOpen(true)` had NO
+guard — it bypassed the exact check `onOpenPatientModal` (the mouse button in
+`PatientHeader`) already enforces:
+```js
+if (patient && visitId) setActiveConsultGuardOpen(true);
+else setPatientModalOpen(true);
+```
+The keyboard path skipped straight past `ActiveConsultGuard` and threw the
+intake modal over a running consult. Fixed by making the keyboard call the
+identical check — not a new guard, the SAME one the mouse already had, so
+the two can no longer disagree about what "new patient" means mid-consult.
+`hasActiveConsult` (`!!patient` alone, used for the softer sidebar-navigation
+toast) was deliberately NOT reused here — this needed the stricter check the
+mouse path already used, `patient && visitId`, because THIS guard is for the
+destructive case (abandoning/overwriting the visit), not the soft one.
+
+### 2. Assessment's ranked list: ↓ did nothing until you searched
+
+`ConditionsCard`'s roving list was wired to `rowSelector: ".cs-sug"` —
+`.cs-sug` is what `IntentSearchResults` (search hits) renders. The RANKED
+list renders `ConditionRow`, a bespoke Tailwind component carrying neither
+`cs-sug` nor `cs-act`. `useRovingList.rows()` found zero matching elements
+the instant a doctor wasn't searching, which is the state most doctors are in
+most of the time. `SuggestionsCard` (tests/referrals) was never affected —
+its rows genuinely do carry `cs-sug`/`cs-act` — so this was isolated to
+Assessment specifically, matching exactly what was reported.
+
+Fixed with two pure selector-hook classes, no styling of their own, same
+convention as `ActiveConsultGuard`'s `.cx-guard-opt`: `.cx-cond-row` on the
+row, `.cx-cond-act` on its Select button. `rowSelector`/`actionSelector` now
+match both the search-hit shape and the ranked-row shape.
+
+### 3. Alt+E (why-ranked) opened a popover with no way out, and everything froze
+
+Two separate bugs stacked:
+
+- `explain` had been added to `isAnyModalOpen`, so the ENTIRE global keyboard
+  handler stood down — correct behaviour for a real modal, wrong for a
+  read-only tooltip. Every other key (Tab, arrows, next patient, review) went
+  dead the instant this opened.
+- `ContributionSheet` had picked up `useOverlayFocus`, stealing DOM focus off
+  whatever list the doctor was navigating. Even with the modal block removed,
+  the underlying list's own arrow-key handler is on the SEARCH INPUT's
+  `onKeyDown` — with focus moved away, that handler stops firing too.
+
+Reverted both: `explain` is out of `isAnyModalOpen`, and `ContributionSheet`
+no longer takes focus at all — see its header comment for why a read-only
+popover beside a list the doctor is still working in is not the same shape as
+a modal. The effect is exactly the "any new key overrides it" behaviour
+asked for, with no special case anywhere for it: focus never left the list,
+so the next arrow-press just keeps moving that list's own cursor as if the
+popover were not there. Also added a literal, visible X close button — no
+keyboard nuance should be required to find a way out of something on screen.
+
+### 4. → opened alternates; ↓ then jumped to the NEXT MEDICINE instead of cycling them
+
+The reported flow — open alternates, walk down through them, Enter picks one
+— had no path at all: the roving list's `rowSelector` only ever covered the
+top-level `.cs-rec`/`.cs-sug` rows, never descended into an open row's
+`.cs-brand` chips.
+
+Fixed by folding the alternates into the SAME walk rather than branching:
+```
+rowSelector:
+    ".cs-rec:not(.is-open), .cs-rec.is-open:not(:has(.cs-brand)), " +
+    ".cs-sug, .cs-rec.is-open .cs-brand"
+```
+An open row stops counting as its own step and its `.cs-brand` chips (plain
+alternates, combination alternates, and the "N more" chip that opens the full
+`BrandSheet` — all three already carry that class) become the steps in its
+place. The middle clause is the guard for a row that opens to literally
+nothing (one brand, no combinations) — without it that row would match
+neither clause and vanish from the walk, stranding the cursor. `:has()` is
+used deliberately; this is a Chromium-only internal app.
+
+→ on a closed row still opens it, then (one `requestAnimationFrame` later,
+since the alternates don't exist in the DOM until the triggered state update
+actually renders) plants the cursor on the first one and scrolls it into
+view. ← on an open alternate closes the row and lands the cursor back on the
+row itself, not on a chip that is about to stop existing. Enter is unchanged
+— `activate()` already handles "the row IS the action" (a `.cs-brand` chip
+matches its own action selector directly) the same way `BrandSheet`'s and
+`PatientModal`'s rows do.
+
+### 5. The add-sheet's brand list: selection walked past the visible scroll edge
+
+`sheetBrand`'s ↑↓ updated `.is-on` correctly but never touched
+`.cs-addmed-brands.is-scroll`'s own scroll position — reported as "the scroll
+bar is not going down with your down arrow." Fixed with `data-brand-id` on
+every brand/strength button and a `scrollIntoView({ block: "nearest" })`
+after each move, deferred a frame for the same reason as everywhere else in
+this pass: the id-to-node mapping doesn't exist with the new selection until
+`setBrand`'s render has actually committed.
+
+### 6. A multi-strength brand (e.g. a 250mg/650mg suspension) had no way to reach its other strength
+
+↑↓ walks the flat `brands` array, and two strengths of one family are two
+separate entries in it — reaching the second meant scrolling past every
+unrelated brand between them, exactly as reported. Added a genuinely separate
+axis: `sheetStrength` (← →), new in `keymap.ts`, walks `variants` — already
+computed, already rendered as its own "Strength" section — instead of
+`brands`. ↑↓ answers "which drug"; ← → answers "which strength of the drug
+already chosen," matching the two section headings already on screen. A
+`← →` hint is now printed on the Strength label itself, the same "the control
+teaches its own shortcut" pattern the digits already used.
+
+### What "Tab reaches Dose/Duration/Instructions" turned out to be
+
+Asked as a question — "how can someone go into doses and manually add
+duration/instructions?" Verified rather than assumed: Tab already reaches
+every field in a sane order (brand → strength → Dose → Duration → the four
+timing circles → the four instruction buttons → SOS → Cancel → Confirm), and
+typing digits into Dose is already safe — `matches()` refuses `sheetSlot`
+whenever the event target is a field. This was never broken; it just was
+not discoverable, which is a fair complaint on its own. No code change here
+beyond what already existed; worth a small on-screen hint if it comes up
+again.
+
+### Verification
+
+All six fixed and driven for real in Chromium against the actual components
+(not mocked logic): 4 assertions for Assessment's ranked list, 7 for the why
+popover no longer locking the page, 8 for the alternates open/cycle/pick/
+close/continue flow, 6 for strength navigation + scroll-follow, 5 for Tab
+reaching every field safely. Plus the 199 matcher assertions and the earlier
+sessions' 25 (roving list) + 18 (focus) + 11 (guard/brand sheet) re-run clean
+— **270 total, zero failures.** `tsc -b` and `vite build` clean.
+
+The Ctrl+N fix is the one item in this entry NOT independently harnessed —
+it is a one-line mirror of `onOpenPatientModal`'s already-proven logic, not
+new logic, so a dedicated harness would mostly be re-testing `ActiveConsultGuard`
+(already covered). Still genuinely unverified against the live app for the
+same reason as every other entry in this pass: no route from this session's
+Chromium to the outside network.
+
+`useOverlayFocus.ts` also picked up `focus({ preventScroll: true })`, found
+while chasing bug 3: `BrandSheet` (and, before it was reverted, the earlier
+version of `ContributionSheet`) closes itself on any page scroll, on the
+reasoning that a scroll usually means its anchor row moved. A plain
+`.focus()` call is allowed to trigger a scroll-into-view as a side effect,
+which for an already-fully-visible `position: fixed` popover is pure noise —
+but it still fires a `scroll` event, which those overlays' own listeners
+would misread as "the anchor moved" and close on the spot.

@@ -289,17 +289,40 @@ function App() {
     synapseRef: synapseSearchRef,
     planRef,
     medicineCount: prescription.length,
-    onNewPatient: () => setPatientModalOpen(true),
+    // Was `() => setPatientModalOpen(true)` unconditionally — Ctrl+N bypassed
+    // the exact guard `onOpenPatientModal` (PatientHeader's mouse button)
+    // already enforces below, so a doctor mid-consult who reflexively hit
+    // Ctrl+N had the patient-intake modal thrown over their work with no
+    // warning and no way back to it. This is the same check, so the keyboard
+    // and the mouse can no longer disagree about what "new patient" means
+    // while a consult is running.
+    onNewPatient: () => {
+      if (patient && visitId) setActiveConsultGuardOpen(true);
+      else setPatientModalOpen(true);
+    },
     onReviewRx: () => openReview(),
     onToggleShortcuts: () => setShortcutsOpen((v) => !v),
     onSeverity: handleSeverityKey,
     // `pendingMedicine` was missing from this list, so every chord the global
     // handler owns stayed live underneath the add sheet — Tab moved focus out
     // of a modal the doctor was mid-way through filling in.
+    //
+    // `explain` is deliberately NOT here. It was, briefly, and the effect was
+    // exactly what "an overlay owns the keyboard" is supposed to prevent from
+    // happening to a lightweight popover: Alt+E opened the contribution
+    // sheet, and every other key on the page — Tab, the arrows, next patient,
+    // review — went dead until the doctor found Escape, with nothing on
+    // screen saying that was the way out. `ContributionSheet` is read-only
+    // and never takes DOM focus (see its header comment), so the ranked list
+    // underneath it keeps its own cursor and keeps responding to every key
+    // exactly as if the popover were not there — pressing ↓ to keep moving
+    // is what makes it get out of the way, which is the "any new key
+    // overrides it" behaviour asked for, without a special case here for one
+    // overlay.
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
-      !!browse || !!brandSheet || !!explain || openChart !== null || sidebarOpen,
+      !!browse || !!brandSheet || openChart !== null || sidebarOpen,
   });
 
   // The consult workspace's shell (`.cs-shell`, consult.css) locks its own

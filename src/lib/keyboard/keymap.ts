@@ -108,7 +108,7 @@ export type BindingId =
     // medicines
     | "medMove" | "medPrescribe" | "medBrands" | "medWhy"
     // the add sheet
-    | "sheetBrand" | "sheetSlot" | "sheetSos" | "sheetConfirm" | "sheetCancel"
+    | "sheetBrand" | "sheetStrength" | "sheetSlot" | "sheetSos" | "sheetConfirm" | "sheetCancel"
     // the plan
     | "planMove" | "planOpen" | "planRemove"
     // review
@@ -324,6 +324,12 @@ export const BINDINGS: Binding[] = [
         keys: [k("ArrowDown"), k("ArrowUp")],
         scope: "addsheet",
         what: "Move through the brands",
+    },
+    {
+        id: "sheetStrength",
+        keys: [k("ArrowLeft"), k("ArrowRight")],
+        scope: "addsheet",
+        what: "Cycle the strengths of the selected brand, when it has more than one",
     },
     {
         id: "sheetSlot",

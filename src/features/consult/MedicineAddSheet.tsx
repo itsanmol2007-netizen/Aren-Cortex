@@ -124,6 +124,27 @@ export function MedicineAddSheet({
     const panelRef = useRef<HTMLDivElement>(null);
     useOverlayFocus(panelRef, open);
 
+    /**
+     * Scrolls the newly selected brand or strength button into view.
+     *
+     * Found live, 2026-08-15: walking `brands` with ↑↓ updates `.is-on`
+     * correctly but nothing ever moved `.cs-addmed-brands.is-scroll`'s own
+     * scroll position, so the highlighted brand walked off the visible edge
+     * while the scrollbar stayed put — reported as "the scroll bar is not
+     * going down with your down arrow." `data-brand-id` on each button is
+     * what this looks the new selection up by; `requestAnimationFrame`
+     * because `setBrand` has only just been called and the button carrying
+     * that id does not exist with the RIGHT id-to-node mapping until the
+     * next render commits.
+     */
+    const followSelection = (id: number) => {
+        window.requestAnimationFrame(() => {
+            panelRef.current
+                ?.querySelector<HTMLElement>(`[data-brand-id="${id}"]`)
+                ?.scrollIntoView({ block: "nearest" });
+        });
+    };
+
     const commit = () =>
         onConfirm({
             medicine: brand,
@@ -207,11 +228,45 @@ export function MedicineAddSheet({
                 // exactly as clicking a strength variant does.
                 const value = doseFieldValue(picked);
                 if (value) setDosage(value);
+                followSelection(picked.id);
+                return;
+            }
+
+            /**
+             * ← → — a SEPARATE axis from ↑ ↓, and deliberately so.
+             *
+             * Found live, 2026-08-15: a brand with several strengths (an
+             * "A250" suspension at 250mg/650mg, say) has no keyboard path to
+             * the OTHER strength at all — ↓ only walks `brands`, and a family
+             * of two strengths is two SEPARATE entries in that flat list, so
+             * reaching the second one meant scrolling past every unrelated
+             * brand in between rather than moving sideways within the one
+             * already chosen. ↑↓ answers "which drug"; ← → answers "which
+             * strength of the drug already chosen" — the same split the
+             * Brand/Strength section headings already draw on screen.
+             *
+             * A no-op while the selected brand has no siblings (`variants`
+             * is empty for anything that isn't part of a multi-strength
+             * family), so ← → falls through to whatever else might want it —
+             * nothing does today, but it means adding one later costs
+             * nothing here.
+             */
+            const strength = firedChord(e, "sheetStrength");
+            if (strength && variants.length > 1) {
+                take();
+                const at = variants.findIndex((v) => v.id === brand?.id);
+                const dir = strength.key === "ArrowLeft" ? -1 : 1;
+                const next = at === -1 ? 0 : (at + dir + variants.length) % variants.length;
+                const picked = variants[next];
+                setBrand(picked);
+                const value = doseFieldValue(picked);
+                if (value) setDosage(value);
+                followSelection(picked.id);
             }
         };
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
-    }, [open, onCancel, canConfirm, brands, brand, dosage, duration, frequency, timing, sos]);
+    }, [open, onCancel, canConfirm, brands, variants, brand, dosage, duration, frequency, timing, sos]);
 
     // AnimatePresence needs the exiting element to stay mounted for the
     // duration of its `exit` animation, so the `!open` check moved from an
@@ -283,6 +338,7 @@ export function MedicineAddSheet({
                                         <button
                                             key={b.id}
                                             type="button"
+                                            data-brand-id={b.id}
                                             className={`cs-addmed-brand${brand?.id === b.id ? " is-on" : ""}`}
                                             onClick={() => setBrand(b)}
                                             title={molecules.join(" + ") || undefined}
@@ -311,12 +367,20 @@ export function MedicineAddSheet({
 
                     {variants.length > 1 && (
                         <section className="cs-addmed-sec">
-                            <span className="cs-addmed-label">Strength</span>
+                            {/* The digit hint follows the "When" row's own
+                                convention. ← → is deliberately DIFFERENT from
+                                the ↑↓ that walks Brand above: up/down asks
+                                "which drug", left/right asks "which strength
+                                of the drug already chosen" — the same split
+                                the two section headings already draw, just
+                                said in keys too. */}
+                            <span className="cs-addmed-label">Strength <em className="cs-addmed-keyhint">← →</em></span>
                             <div className="cs-addmed-brands">
                                 {variants.map((v) => (
                                     <button
                                         key={v.id}
                                         type="button"
+                                        data-brand-id={v.id}
                                         className={`cs-addmed-brand is-strength${brand?.id === v.id ? " is-on" : ""}`}
                                         onClick={() => {
                                             setBrand(v);

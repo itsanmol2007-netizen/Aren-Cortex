@@ -104,8 +104,16 @@ export function ConditionsCard({
     const listRef = useRef<HTMLDivElement>(null);
     const roving = useRovingList({
         containerRef: listRef,
-        rowSelector: ".cs-sug",
-        actionSelector: "button.cs-act",
+        // ".cs-sug" is what a SEARCH hit renders as (IntentSearchResults) —
+        // the RANKED list renders `ConditionRow`, a bespoke Tailwind
+        // component that carries neither `cs-sug` nor `cs-act`. Missing that
+        // meant ↓ found zero rows and did nothing the instant a doctor
+        // wasn't searching, which is the only state most doctors are in.
+        // `.cx-cond-row`/`.cx-cond-act` are pure selector hooks on
+        // `ConditionRow` below — no styling of their own, same convention as
+        // `ActiveConsultGuard`'s `.cx-guard-opt`.
+        rowSelector: ".cs-sug, .cx-cond-row",
+        actionSelector: "button.cs-act, button.cx-cond-act",
         enabled: !disabled,
     });
 
@@ -440,7 +448,7 @@ function ConditionRow({
                 if (r) onExplain(r);
             }}
             className={
-                "flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-150 " +
+                "cx-cond-row flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-150 " +
                 (confirmed
                     ? "border-[#b6e6cd] bg-[linear-gradient(180deg,#f4fdf8_0%,#e6f8ef_100%)] "
                     : isHard
@@ -497,7 +505,7 @@ function ConditionRow({
                 <button
                     type="button"
                     onClick={onAccept}
-                    className="flex-none rounded-md border border-[var(--cs-line-strong)] bg-white px-2.5 py-[5px] text-[12px] font-semibold text-[var(--cs-muted)] transition-colors duration-150 hover:border-[rgba(18,104,232,0.5)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)]"
+                    className="cx-cond-act flex-none rounded-md border border-[var(--cs-line-strong)] bg-white px-2.5 py-[5px] text-[12px] font-semibold text-[var(--cs-muted)] transition-colors duration-150 hover:border-[rgba(18,104,232,0.5)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)]"
                 >
                     Select
                 </button>

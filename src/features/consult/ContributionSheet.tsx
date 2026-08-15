@@ -32,8 +32,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
-import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 const SHEET_WIDTH = 320;
 const MARGIN = 10;
@@ -58,12 +58,24 @@ export function ContributionSheet({
     const { intent, anchor } = target;
     const [pos, setPos] = useState({ top: anchor.bottom + 6, left: anchor.left });
 
-    // Read-only content, but still an overlay a keyboard user can reach (a
-    // double-click opens it with no button ever focused) — see
-    // useOverlayFocus.ts. Focus returns to the WhyButton, or wherever the
-    // double-click landed, so Escape leaves the doctor exactly where they
-    // were rather than nowhere.
-    useOverlayFocus(ref);
+    /**
+     * ── Deliberately does NOT take focus ─────────────────────────────────
+     *
+     * Tried `useOverlayFocus` here first and reverted it, 2026-08-15: a
+     * doctor opened this with Alt+E and then had EVERY OTHER KEY on the
+     * page — Tab, the arrows, next patient, review — go dead, with no
+     * visible affordance for the one key (Escape) that still worked. That is
+     * the right behaviour for a MODAL and the wrong one for a read-only
+     * popover that exists beside a list the doctor is still working in.
+     *
+     * So this stays out of `isAnyModalOpen` (App.tsx) and never steals DOM
+     * focus. Focus stays on whatever list the doctor was navigating, and
+     * because of that the NEXT arrow-key press keeps moving that list's own
+     * cursor exactly as if this were not open — which is "any new key
+     * overrides the popup" without a special case anywhere for it. The X
+     * button below and the outside-click/scroll/Escape handlers are for a
+     * doctor who wants to dismiss it explicitly without doing anything else.
+     */
 
     useLayoutEffect(() => {
         const h = ref.current?.offsetHeight ?? 260;
@@ -107,14 +119,25 @@ export function ContributionSheet({
     return createPortal(
         <div
             ref={ref}
-            className="cs-why cx-kbd-surface"
+            className="cs-why"
             style={{ top: pos.top, left: pos.left, width: SHEET_WIDTH }}
             role="dialog"
             aria-label={`Why ${intent.label} is in this list`}
-            tabIndex={-1}
         >
             <div className="cs-why-head">
-                <div className="cs-why-title cs-cap">{intent.label}</div>
+                <div className="cs-why-title-row">
+                    <div className="cs-why-title cs-cap">{intent.label}</div>
+                    {/* An explicit, literal way out — Escape and clicking
+                        anywhere else already close this, but neither was
+                        visible on the popover itself, which is what made it
+                        feel stuck rather than merely quiet. */}
+                    <button
+                        type="button"
+                        className="cs-why-close"
+                        onClick={onClose}
+                        aria-label="Close"
+                    ><X size={13} /></button>
+                </div>
                 <div className="cs-why-sub">
                     {all.length === 0
                         ? "No contributing signal recorded"

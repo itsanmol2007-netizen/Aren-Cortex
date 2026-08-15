@@ -105,6 +105,36 @@ the four `searchRef`/`listRef` attachments and the Assessment Tab stop.
 
 ---
 
+## 0.4 Six bugs from actually using it (atlas §14.22c)
+
+Anmol drove the app for real and reported six problems in one message. All
+six had a specific root cause, all six are fixed, all six are verified in
+Chromium against the real components:
+
+1. **Ctrl+N tore open patient intake over an active consult, no warning** —
+   the keyboard path skipped the guard the mouse button already had. One-line
+   fix: call the same check.
+2. **Assessment's ranked list: ↓ did nothing until you searched** — wrong CSS
+   selector, isolated to that one card.
+3. **Alt+E's why-popup had no way to close and froze everything else** — it
+   had wrongly become a modal; reverted to a read-only popover that never
+   takes focus and is out of `isAnyModalOpen`.
+4. **→ opened alternates but ↓ jumped to the next medicine** — alternates now
+   join the same roving walk in place of the row they belong to.
+5. **The add-sheet's brand list scrolled independently of the selection** —
+   added `scrollIntoView` on every move.
+6. **A multi-strength brand had no way to reach its other strength** — new
+   ← → axis (`sheetStrength`), separate from ↑↓.
+
+Full root-cause writeups and the exact fix for each are in atlas §14.22c —
+read that before touching any of these six files again, the reasoning for
+each fix is not obvious from the diff alone.
+
+**Still not verified against the live app** — same network gap as before.
+270 assertions across 8 harnesses instead, all against the real components.
+
+---
+
 ## 1. What to do next — the specialty work
 
 **Read `docs/Cortex Specialties/cortex-longitudinal-spec.md` first.** It is the

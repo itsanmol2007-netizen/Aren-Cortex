@@ -54,7 +54,20 @@ export function useOverlayFocus(
         // Next frame: for a component that only mounts while open, the ref's
         // node has only just been attached; for `AnimatePresence`-driven ones
         // it needs a tick to exist in the accessibility tree at all.
-        const frame = window.requestAnimationFrame(() => ref.current?.focus());
+        //
+        // `preventScroll: true` — found 2026-08-15 while chasing "the why
+        // popup opens and then nothing responds": several of these overlays
+        // (`BrandSheet`, and the popover this hook no longer manages) close
+        // THEMSELVES on any page scroll, because a scroll usually means the
+        // row they are anchored to has moved. A plain `.focus()` call is
+        // allowed to scroll its target into view as a side effect, and a
+        // `position: fixed` popover that is already fully on screen is
+        // exactly the case where that side-effect scroll is pure noise — but
+        // it still fires a `scroll` event, which those overlays' own
+        // listeners would read as "the anchor moved" and close on the spot.
+        // `preventScroll` stops the browser from ever taking that step, so
+        // taking focus can no longer trigger an overlay closing itself.
+        const frame = window.requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }));
         return () => {
             window.cancelAnimationFrame(frame);
             const back = returnTo.current;
@@ -62,7 +75,7 @@ export function useOverlayFocus(
             // Guard the node still being in the document: a patient switch, or
             // the sidebar navigating away, can unmount the opener itself while
             // this overlay was open.
-            if (back?.isConnected) back.focus();
+            if (back?.isConnected) back.focus({ preventScroll: true });
         };
     }, [active, ref]);
 }
