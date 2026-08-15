@@ -22,6 +22,8 @@ import {
     loadSynapseRuleset,
     loadSignalLabels,
     loadObservableMaps,
+    loadConditionMap,
+    type ConditionMap,
     fetchObservables,
     type Observable,
     loadPreferences,
@@ -45,6 +47,13 @@ export interface SynapseData {
     observables: Observable[];
     /** observable -> legacy symptom/finding id, for the v1 compatibility write */
     observableMaps: ObservableMaps;
+    /**
+     * finding intent -> the history observable representing the same clinical
+     * fact as an INPUT. Empty when the map could not load, which degrades
+     * confirming a condition to its pre-longitudinal behaviour (lands on the
+     * plan, prints, does not rerank) rather than failing the consult.
+     */
+    conditionMap: ConditionMap;
     /** signal -> examination finding worth checking for — the entry-band cascade */
     findingSuggestionRules: FindingSuggestionRule[];
     /** this doctor's learned preferences — local to them, never global */
@@ -98,13 +107,24 @@ export function useSynapse(): UseSynapse {
 
             try {
                 // The clinical half. If any of this fails there is no ranking.
-                const [ruleset, signalLabels, observables, observableMaps, findingSuggestionRules] =
+                const [ruleset, signalLabels, observables, observableMaps, findingSuggestionRules, conditionMap] =
                     await Promise.all([
                         loadSynapseRuleset(doctorId),
                         loadSignalLabels(),
                         fetchObservables(),
                         loadObservableMaps(),
                         loadFindingSuggestionRules(),
+                        // Deliberately NOT a hard failure, and deliberately not
+                        // counted as `degraded` either. An empty map makes
+                        // confirming a condition behave exactly as it did before
+                        // the longitudinal record existed — it lands on the plan
+                        // and prints, it just does not rerank or carry forward.
+                        // That is a lost feature, not a broken consultation, and
+                        // it must not read as "personalisation is down".
+                        loadConditionMap().catch((e) => {
+                            console.warn("condition_observable_map (non-fatal):", e);
+                            return new Map() as ConditionMap;
+                        }),
                     ]);
 
                 // The personalisation half. Each piece degrades on its own —
@@ -148,6 +168,7 @@ export function useSynapse(): UseSynapse {
                     observables,
                     observableMaps,
                     findingSuggestionRules,
+                    conditionMap,
                     preferences: buildPreferenceModel(prefRows),
                     brandPreferences: buildBrandModel(brandRows),
                     clinicBrandDefaults,

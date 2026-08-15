@@ -1,0 +1,359 @@
+// ---------------------------------------------------------------------------
+// THE CONSULT LIFECYCLE — starting one, repeating a past one, saving it, and
+// ending it.
+//
+// Extracted 2026-08-15 as Stage 2, step 3 (atlas §14.19), the layer-3 half of
+// the split whose layer-1 half is useConsultSession.ts. Read that file's
+// header for the layering; the short version is that everything here needs
+// the ENGINE's result at render time (the learning write records the ranking
+// as the doctor saw it), so it cannot be declared before the engine — while
+// the patient and visit it reads must be.
+//
+// This is the only hook in the consult that spans all four of the others. A
+// consultation begins by resetting the chart AND the plan AND the ledger and
+// minting a visit; it ends by writing all of them and resetting all of them.
+// That spanning is exactly why it is one hook rather than five methods spread
+// across the others: the ORDER these resets happen in, and the fact that none
+// of them may be forgotten, is the thing worth keeping in one readable place.
+// App.tsx had three near-copies of that reset sequence and they had already
+// drifted apart — one cleared the past-visit rail, the others did not.
+//
+// Navigation is NOT owned here. `setActivePage` / `setSidebarOpen` are passed
+// in, because which screen is showing is the shell's business and a consult
+// that silently navigated would be very hard to follow.
+// ---------------------------------------------------------------------------
+
+import { useCallback } from "react";
+import type { Patient, PrescriptionMedicine } from "../types";
+import type { SidebarPage } from "../features/sidebar/SidebarNav";
+import { commitConsultation, type Observable } from "../lib/db/synapse";
+import {
+  createPatient, findPatientByPhone, createVisit,
+  findQueuedVisit, markVisitServing,
+  saveConsult,
+  freqSlotToLabel, freqLabelToSlot,
+  type SaveConsultMedicine, type RealVisit,
+} from "../lib/db";
+import type { ClinicalIdentity } from "./useClinicalIdentity";
+import type { ConsultChart } from "./useConsultChart";
+import type { AcceptLedger } from "./useAcceptLedger";
+import type { ConsultSession } from "./useConsultSession";
+import type { ConsultPlan } from "./useConsultPlan";
+import type { ConsultIntelligence } from "./useConsultIntelligence";
+
+export interface ConsultLifecycleArgs {
+  identity: ClinicalIdentity;
+  /** the catalogue, for canonicalising a past visit's v1 names */
+  observables: Observable[];
+  chart: ConsultChart;
+  ledger: AcceptLedger;
+  session: ConsultSession;
+  plan: ConsultPlan;
+  intelligence: ConsultIntelligence;
+  /**
+   * Pull this patient's standing conditions onto the fresh chart.
+   *
+   * Called on the two paths that START a consult, and deliberately NOT on
+   * Repeat Rx: that path rebuilds the chart wholesale from a past visit, and
+   * seeding carried-forward chips into it would race the replace.
+   */
+  carryForwardFor: (patientId: string) => Promise<void>;
+  showToast: (msg: string) => void;
+  /** put the cursor where a consult actually begins — the chart search box */
+  focusChartSearch: () => void;
+  setActivePage: (page: SidebarPage | null) => void;
+  setSidebarOpen: (open: boolean) => void;
+}
+
+export interface ConsultLifecycle {
+  /** Start (or resume) a consult for a patient chosen from the records page. */
+  handleStartConsultFromRecord: (incomingPatient: Patient) => Promise<void>;
+  /** Start a consult from the patient modal, creating the patient if new. */
+  handlePatientConfirm: (incoming: Patient) => Promise<void>;
+  /** Carry a past visit's chart and medicines into this one. */
+  handleRepeatRx: (visit: RealVisit) => void;
+  /** Write the consultation, log the decision, and clear the workspace. */
+  handleConfirmAndSave: () => Promise<void>;
+  /** Open Review — refused while a prescribed hard warning is unread. */
+  openReview: () => void;
+  /** Abandon this consultation and go back to an empty workspace. */
+  resetConsultState: () => void;
+}
+
+export function useConsultLifecycle({
+  identity,
+  observables,
+  chart,
+  ledger,
+  session,
+  plan,
+  intelligence,
+  carryForwardFor,
+  showToast,
+  focusChartSearch,
+  setActivePage,
+  setSidebarOpen,
+}: ConsultLifecycleArgs): ConsultLifecycle {
+  /**
+   * The one reset sequence.
+   *
+   * Every path that starts or ends a consultation goes through this, so a
+   * field added to any of the three hooks below cannot be cleared on one path
+   * and left stale on another — which is exactly what had happened to the
+   * three hand-copied versions this replaces.
+   */
+  const clearWorkspace = useCallback(() => {
+    chart.reset();
+    plan.reset();
+  }, [chart, plan]);
+
+  const resetConsultState = useCallback(() => {
+    clearWorkspace();
+    session.reset();
+  }, [clearWorkspace, session]);
+
+  // Front Desk may already have this patient waiting in today's queue. Resume
+  // that visit instead of minting a second, disconnected one with its own
+  // token — createVisit remains the fallback for Solo Mode / no queue entry.
+  const resolveVisitForConsult = useCallback(async (patientId: string) => {
+    const queued = await findQueuedVisit(patientId, identity.hospitalId);
+    if (queued) {
+      await markVisitServing(queued.id);
+      return queued;
+    }
+    return createVisit({
+      patientId,
+      hospitalId: identity.hospitalId,
+      doctorId: identity.doctorId,
+    });
+  }, [identity.hospitalId, identity.doctorId]);
+
+  const handleStartConsultFromRecord = useCallback(async (incomingPatient: Patient) => {
+    try {
+      const visit = await resolveVisitForConsult(incomingPatient.id!);
+      session.setVisitId(visit.id);
+      session.setPatient(incomingPatient);
+      clearWorkspace();
+      session.setRepeatRxBanner(null);
+      setActivePage(null);
+      setSidebarOpen(false);
+      showToast(`Consult started for ${incomingPatient.name}`);
+      focusChartSearch();
+
+      session.loadPastVisits(incomingPatient.id!);
+      // After clearWorkspace, never before — the reset would wipe them.
+      carryForwardFor(incomingPatient.id!);
+    } catch (err: any) {
+      showToast(`Error starting consult: ${err.message}`);
+    }
+  }, [resolveVisitForConsult, session, clearWorkspace, setActivePage, setSidebarOpen,
+      showToast, focusChartSearch, carryForwardFor]);
+
+  const handlePatientConfirm = useCallback(async (incoming: Patient) => {
+    try {
+      let dbPatient: Patient;
+
+      if (incoming.id) {
+        dbPatient = incoming;
+      } else {
+        const existing = await findPatientByPhone(incoming.phone);
+        if (existing) {
+          dbPatient = {
+            ...existing,
+            age: String(existing.age),
+            gender: existing.gender as Patient["gender"],
+            dateOfBirth: existing.date_of_birth ?? undefined,
+          };
+        } else {
+          const created = await createPatient(
+            {
+              name: incoming.name,
+              age: Number(incoming.age),
+              gender: incoming.gender,
+              phone: incoming.phone,
+              date_of_birth: incoming.dateOfBirth || null,
+            },
+            identity.hospitalId
+          );
+          dbPatient = {
+            ...created,
+            age: String(created.age),
+            gender: created.gender as Patient["gender"],
+            dateOfBirth: created.date_of_birth ?? undefined,
+          };
+        }
+      }
+
+      const visit = await resolveVisitForConsult(dbPatient.id!);
+      session.setVisitId(visit.id);
+      session.setPatient(dbPatient);
+      clearWorkspace();
+      session.setRepeatRxBanner(null);
+      session.setPatientModalOpen(false);
+      setActivePage(null);
+      showToast(`Consult started for ${dbPatient.name}`);
+      // The chart is where a consult actually begins, so the cursor lands there
+      // and the first complaint is one keystroke away (spec §4.2).
+      focusChartSearch();
+
+      session.loadPastVisits(dbPatient.id!);
+      // After clearWorkspace, never before — the reset would wipe them.
+      carryForwardFor(dbPatient.id!);
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`);
+    }
+  }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId,
+      setActivePage, showToast, focusChartSearch, carryForwardFor]);
+
+  const handleRepeatRx = useCallback((visit: RealVisit) => {
+    // A past visit stores v1 names ("fever"); the catalogue now speaks
+    // observable labels ("Fever"). Match case-insensitively and carry the
+    // CATALOGUE's spelling forward, so an imported chip is a real chip that
+    // the engine can score — not a string that merely looks like one.
+    const canonical = (name: string) =>
+      observables.find((o) => o.label.toLowerCase() === name.toLowerCase())?.label;
+
+    // Complaints AND context: a repeated Rx that quietly dropped "Known
+    // diabetic" would re-rank the new consult without the frame the old one
+    // had. The ContextBar picks the history half back up automatically.
+    const validSymptoms = visit.symptoms
+      .map(canonical)
+      .filter((n): n is string => !!n && chart.reportableLabels.has(n));
+
+    const validFindings = visit.findings
+      .map((f) => canonical(f.name))
+      .filter((n): n is string => !!n && chart.findingsAsDb.some((a) => a.name === n));
+
+    const importedMeds: PrescriptionMedicine[] = visit.medicines.map((med, i) => ({
+      id: `repeat-${med.medicine_id}-${i}`,
+      medicine_id: med.medicine_id,
+      composition_ids: [],
+      primary_composition_id: 0,
+      name: med.name,
+      category: "",
+      use: "",
+      match: 0,
+      composition: "",
+      dosage: med.dosage_mg ? `${med.dosage_mg}mg` : "1 tab",
+      frequency: med.frequency ? freqSlotToLabel(med.frequency) : "Morning and Night",
+      duration: med.duration_days ? `${med.duration_days} days` : "5 days",
+      notes: "",
+      dosage_mg: med.dosage_mg,
+      duration_days: med.duration_days,
+      route: med.route ?? "oral",
+      instructions: "",
+      is_sos: false,
+      sort_order: i,
+    }));
+
+    chart.replaceChart(validSymptoms, validFindings);
+    plan.loadRepeatRx(importedMeds);
+
+    const dateLabel = new Date(visit.created_at).toLocaleDateString("en-IN", {
+      day: "numeric", month: "short", year: "numeric",
+    });
+    session.setRepeatRxBanner(`Repeat Rx from ${dateLabel}, Please review and edit before saving`);
+    setTimeout(() => session.setRepeatRxBanner(null), 6000);
+  }, [observables, chart, plan, session]);
+
+  const handleConfirmAndSave = useCallback(async () => {
+    const { visitId } = session;
+    if (!visitId) { showToast("No active consult to save"); return; }
+    session.setIsSaving(true);
+    try {
+      const medicineRows: SaveConsultMedicine[] = plan.prescription.map((m, i) => ({
+        medicine_id: m.medicine_id,
+        composition_ids: m.composition_ids ?? [],
+        dosage_mg: m.dosage_mg ?? null,
+        frequency: freqLabelToSlot(m.frequency),
+        duration_days: m.duration_days ?? null,
+        route: m.route ?? "oral",
+        notes: m.notes ?? "",
+        instructions: m.instructions ?? "",
+        is_sos: m.is_sos ?? false,
+        sort_order: i,
+      }));
+
+      await saveConsult({
+        visitId,
+        doctorId: identity.doctorId,
+        hospitalId: identity.hospitalId,
+        medicines: medicineRows,
+        tests: plan.selectedTests,
+        vitals: chart.vitals,
+        // The working diagnosis leads, then what was seen on examination.
+        findingsText: [...plan.diagnoses, ...chart.selectedFindings].join(", "),
+        followUpDays: plan.followUpDays,
+        adviceNotes: plan.reviewAdvice,
+      });
+
+      // ★ The learning write. One insert, at the close of a consultation the
+      // doctor actually finished — nothing is logged while they are still
+      // working, because an abandoned draft is not evidence of anything.
+      //
+      // It records the ranking AS THE DOCTOR SAW IT (`intelligence.result` is
+      // the same object that fed the panel), which is the only thing that makes
+      // a past decision interpretable. Re-running the engine here to get a
+      // "fresh" result would log a screen that never existed.
+      //
+      // Non-fatal by rule: a consult save must never fail because
+      // personalisation did.
+      //
+      // Guarded on a REAL identity. Several signed-in doctor accounts have no
+      // `doctors` row yet, and for those `useClinicalIdentity` falls back to the
+      // MVP constant — which would file their prescribing under a different
+      // doctor entirely. A missing row costs them personalisation until it is
+      // created; writing anyway would corrupt someone else's model permanently,
+      // and there is no way to unpick it afterwards. Ranking still works for
+      // them: global evidence is identical for every doctor.
+      if (intelligence.result && identity.isReal) {
+        commitConsultation({
+          visitId,
+          doctorId: identity.doctorId,
+          hospitalId: identity.hospitalId,
+          result: intelligence.result,
+          accepted: new Set(ledger.acceptedIntents.keys()),
+          // Nothing is explicitly skipped in this UI yet; the implicit-skip
+          // inference inside commitConsultation covers "shown, left untouched,
+          // in a type where something else was taken".
+          skipped: new Set<number>(),
+          // Only deliberate picks — never the default the panel offered.
+          chosenBrands: ledger.deliberateBrands,
+          searched: ledger.searchedAccepts,
+        }).catch((e) => console.warn("decision_log (non-fatal):", e));
+      } else if (intelligence.result && !identity.isReal) {
+        console.warn(
+          "decision_log skipped: this account has no doctors row, so the " +
+          "decision cannot be attributed. Create one to enable personalisation."
+        );
+      }
+
+      session.setIsReviewOpen(false);
+      resetConsultState();
+      showToast("Prescription saved ✓");
+    } catch (err: any) {
+      showToast(`Save failed: ${err.message}`);
+    } finally {
+      session.setIsSaving(false);
+    }
+  }, [session, plan, chart, ledger, intelligence.result, identity,
+      resetConsultState, showToast]);
+
+  const openReview = useCallback(() => {
+    const blocking = plan.unreadPrescribedWarnings[0];
+    if (blocking) {
+      showToast(`Read the contraindication on ${blocking.label} before finishing`);
+      return;
+    }
+    session.setIsReviewOpen(true);
+  }, [plan.unreadPrescribedWarnings, session, showToast]);
+
+  return {
+    handleStartConsultFromRecord,
+    handlePatientConfirm,
+    handleRepeatRx,
+    handleConfirmAndSave,
+    openReview,
+    resetConsultState,
+  };
+}

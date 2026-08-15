@@ -249,6 +249,114 @@ export async function loadObservableMaps(): Promise<ObservableMaps> {
 }
 
 // ============================================================
+// THE LONGITUDINAL RECORD
+// ============================================================
+//
+// See docs/confirmed-conditions-investigation.md for the full reasoning. The
+// short version: `intents (type='finding')` are OUTPUTS the engine ranks, and
+// `observables (kind='history')` are INPUTS the engine reads. They describe the
+// same clinical facts and had zero overlap — "Type 2 diabetes mellitus" the
+// rankable condition and "Known diabetic" the readable context were two
+// unrelated rows. `condition_observable_map` is that join, and it is what turns
+// confirming a condition from a display label into an engine input.
+
+export interface ConditionMapEntry {
+    observableId: number;
+    /**
+     * True only when confirming this establishes a STANDING fact about the
+     * patient. Most finding intents are episodes — nobody is permanently
+     * appendicitic — and only chronic rows are allowed to reach
+     * `patient_conditions` and follow the patient to their next visit.
+     */
+    isChronic: boolean;
+}
+
+/** intent id -> the observable that represents the same fact as an INPUT. */
+export type ConditionMap = Map<number, ConditionMapEntry>;
+
+export async function loadConditionMap(): Promise<ConditionMap> {
+    const { data, error } = await supabase
+        .from("condition_observable_map")
+        .select("intent_id, observable_id, is_chronic");
+    if (error) throw new Error(`condition_observable_map: ${error.message}`);
+
+    const m: ConditionMap = new Map();
+    for (const r of data ?? []) {
+        m.set(Number(r.intent_id), {
+            observableId: Number(r.observable_id),
+            isChronic: !!r.is_chronic,
+        });
+    }
+    return m;
+}
+
+export interface PatientCondition {
+    observableId: number;
+    status: "active" | "resolved" | "refuted";
+    confirmedAt: string;
+    visitId: string | null;
+}
+
+/**
+ * This patient's standing conditions, for pre-ticking on the next visit.
+ *
+ * Active only. A resolved or refuted condition is deliberately still a row —
+ * "confirmed and later disproved" is a different fact from "never confirmed",
+ * and deleting it would lose the difference — but it must not re-enter the
+ * engine, so it is filtered here rather than at the call site.
+ */
+export async function loadPatientConditions(patientId: string): Promise<PatientCondition[]> {
+    const { data, error } = await supabase
+        .from("patient_conditions")
+        .select("observable_id, status, confirmed_at, visit_id")
+        .eq("patient_id", patientId)
+        .eq("status", "active");
+    if (error) throw new Error(`patient_conditions: ${error.message}`);
+
+    return (data ?? []).map((r: any) => ({
+        observableId: Number(r.observable_id),
+        status: r.status,
+        confirmedAt: r.confirmed_at,
+        visitId: r.visit_id,
+    }));
+}
+
+/**
+ * Record a confirmed chronic condition as a durable patient fact.
+ *
+ * Idempotent on `(patient_id, observable_id)`: confirming the same condition at
+ * a later visit refreshes provenance rather than creating a second row, and it
+ * revives a previously resolved one — a doctor re-confirming something is
+ * asserting it is true again.
+ *
+ * Non-fatal by rule, like the decision log: a consultation must never fail
+ * because the longitudinal write did. The caller logs and carries on.
+ */
+export async function upsertPatientCondition(opts: {
+    patientId: string;
+    observableId: number;
+    visitId: string | null;
+    doctorId: string | null;
+}): Promise<void> {
+    const { error } = await supabase
+        .from("patient_conditions")
+        .upsert(
+            {
+                patient_id: opts.patientId,
+                observable_id: opts.observableId,
+                status: "active",
+                confirmed_at: new Date().toISOString(),
+                confirmed_by: opts.doctorId,
+                visit_id: opts.visitId,
+                source: "confirmed",
+                updated_at: new Date().toISOString(),
+            },
+            { onConflict: "patient_id,observable_id" }
+        );
+    if (error) throw new Error(`patient_conditions upsert: ${error.message}`);
+}
+
+// ============================================================
 // PREFERENCE MODELS — all per-doctor
 // ============================================================
 
@@ -750,10 +858,35 @@ export async function resolvePanelTests(panelId: number): Promise<string[]> {
  * actually ran on, which is the only thing that makes a past ranking
  * reproducible.
  */
+/**
+ * The UI's names for provenance, translated to the column's vocabulary.
+ *
+ * `visit_observations.source` is guarded by a CHECK constraint, so an unknown
+ * value does not degrade — it rejects the WHOLE insert, and this write is
+ * deliberately fire-and-forget, so the failure is invisible. Every value here
+ * must exist in `visit_observations_source_check`. Translating at this single
+ * boundary is what stops UI wording drifting into a silent data outage.
+ */
+const DB_SOURCE: Record<"doctor" | "confirmed" | "carried", string> = {
+    doctor: "doctor",
+    confirmed: "confirmed_intent",
+    carried: "carried_forward",
+};
+
 export async function persistVisitInput(opts: {
     visitId: string;
     observableIds: number[];
     measurements: MeasurementRow[];
+    /**
+     * Observables that did NOT come from the doctor tapping a chip.
+     *
+     * `visit_observations.source` has always existed and always said 'doctor'.
+     * Now that a chip can arrive by confirming a condition, or be carried
+     * forward from a previous visit's confirmation, the permanent record should
+     * say which — otherwise a ranking re-derived from this table looks like the
+     * doctor typed something they never touched.
+     */
+    sources?: Map<number, "confirmed" | "carried">;
 }): Promise<void> {
     await supabase.from("visit_observations").delete().eq("visit_id", opts.visitId);
     if (opts.observableIds.length) {
@@ -762,7 +895,7 @@ export async function persistVisitInput(opts: {
                 visit_id: opts.visitId,
                 observable_id,
                 is_negated: false,
-                source: "doctor",
+                source: DB_SOURCE[opts.sources?.get(observable_id) ?? "doctor"],
             }))
         );
         if (error) throw new Error(`visit_observations: ${error.message}`);

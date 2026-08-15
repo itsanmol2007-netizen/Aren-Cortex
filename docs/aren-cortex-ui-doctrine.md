@@ -259,12 +259,13 @@ afterwards.
 and likes it — treat that shape (brand, strength, dose, slots, duration,
 timing, staged not committed) as verified, not merely type-checked.
 
-**Still not browser-verified, as of 2026-08-14:** the same day's second
-session added the ●○●○ circle notation for the timing slots, a food-
-instruction pre-fill (`features/consult/dosing.ts`), and moved the confirm
-button from green to blue — see `aren-cortex-atlas.md` §14.17. All three
-type-check and build; none has been seen rendered by anyone. Click a `+`
-before trusting them.
+**Update, 2026-08-15 — now verified.** The 2026-08-14 session added the ●○●○
+circle notation for the timing slots, a food-instruction pre-fill
+(`features/consult/dosing.ts`), and moved the confirm button from green to
+blue (see `aren-cortex-atlas.md` §14.17). All three were type-checked and
+built but unseen at the time, and this section said so. They were driven in
+the real running app with real data on 2026-08-15 and are verified — treat
+them as live, not provisional.
 
 ---
 

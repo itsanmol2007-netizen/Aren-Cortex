@@ -308,6 +308,12 @@ activePage === anything else  → components/ComingSoonPage
 activePage === null           → the consult workspace  (.cs-shell)
 ```
 
+Inside the consult workspace there is one further branch, and only one:
+`isGeneralOpd` picks `GeneralOpdInputs` over `SoapInputs` for the **input
+half** of the screen. Everything below that row — Possible Conditions, the
+plan row, the Consultation Plan rail, every modal — is shared by all
+profiles. See §14.19.
+
 Always rendered: `Sidebar`, `GlobalLogoTrigger`. Rendered only when
 `!isFeaturePage`: `PatientHeader` and the three overlays (`ActiveConsultGuard`,
 `PatientModal`, `ReviewModal`), each guarded *both* by `!isFeaturePage` and
@@ -1027,13 +1033,25 @@ motion: `ReviewModal.tsx:446-449` and `PrescriptionDocument.tsx:233-236`.
 *Check:* `grep -n "bloodGroup\|painVas\|romPct" src/components/ReviewModal.tsx
 src/features/prescription/PrescriptionDocument.tsx`
 
-### 10.7 🟡 `App.tsx` is now 1,670 lines
+### 10.7 ✅ CLOSED — `App.tsx` is 1,053 lines
 
-Still open and still growing — 999 → 1,586 (2026-07-30) → **1,670**
-(2026-08-06). The intelligence layer is cleanly separated into hooks and the
-screen into `features/consult/`, so the obvious seam is unchanged: a
-`useConsult()` hook owning patient / visit / chart / prescription /
-accepted-intent state, leaving `App.tsx` as routing plus overlays.
+999 → 1,586 (2026-07-30) → 1,670 (2026-08-06) → ~2,300 (2026-08-14, after the
+General OPD rebuild) → 2,196 (2026-08-15, after the render split in §14.19)
+→ **1,053** (2026-08-15, after the state split in §14.20).
+
+Both halves of the seam this entry named on 2026-07-30 are now cut. The
+*render* half went to `GeneralOpdInputs.tsx` / `SoapInputs.tsx` (§14.19); the
+*state* half went to five hooks in `src/hooks/` (§14.20) rather than the one
+`useConsultWorkspace()` this entry used to predict — the single hook turned
+out to be three layers with a forced declaration order, and pretending it was
+one would have hidden that. What is left in this file is genuinely the shell:
+boot, navigation, the toast, and which overlay is open.
+
+Kept as a marker rather than deleted, because the growth pattern is the
+lesson: this file went from 999 to 2,300 lines over six weeks without any
+single change looking unreasonable at the time. If it starts climbing again,
+the question to ask is which of the five hooks the new state belongs in —
+§14.20's layering answers it — not whether App.tsx can hold one more thing.
 
 ### 10.8 ✅ FIXED — Two tables have RLS disabled
 
@@ -2690,8 +2708,11 @@ they are two different repositories that happen to share a remote.
   covering both. Doctrine's ranking law (§5 there) says ranking is a
   proportional property of the engine, not the brand layer, so this is a
   bigger change than wiring — flagged, not attempted.
-- The add sheet's three 2026-08-14 additions (circles, food-instruction
-  pre-fill, blue confirm) are not browser-verified — see doctrine §6.
+- ~~The add sheet's three 2026-08-14 additions (circles, food-instruction
+  pre-fill, blue confirm) are not browser-verified.~~ **Closed 2026-08-15**:
+  all three were verified against the real running app with real data that
+  session, along with everything else in §14.18/§14.19. Doctrine §6's
+  matching claim is corrected too.
 - `search_intents`'s fix changes final list ORDER slightly for any query
   that used to collide: the surviving row's `score` is now the brand
   match's score, not the label match's (usually somewhat lower — 2.0ish
@@ -2781,3 +2802,339 @@ the only trace of it.
   (Coartem) — the combination-ranking work in this same session (§14.17)
   means a lumefantrine composition, if added to the catalogue later, would
   need its own rules to be reachable; it would not inherit artemether's.
+
+---
+
+## 14.19 Session 2026-08-15 — `App.tsx` Stage 1: the render split
+
+Recorded after the fact. The split below shipped in PR #1 with §14.18's
+content work; the session that made it did not get as far as writing it
+down, and said so in its handoff. This section is that entry, plus the
+§10.7 line-count correction it asked for.
+
+Anmol's framing, which is what set the boundary: 2,200 lines is "definitely
+now in something big category"; multiple files per specialty scale better
+than "appending onto the same file"; `App.tsx` should "just import them and
+not actually build the DOM."
+
+### What moved
+
+`App.tsx`'s `isGeneralOpd`-branched render block — about 155 lines, behind a
+boolean checked roughly ten times through one 2,300-line render function —
+became two files in `features/consult/`:
+
+| File | Lines | What it is |
+|---|---|---|
+| `GeneralOpdInputs.tsx` | 110 | The TRUE branch: the command bar, the Case Sheet, and Measurements/Attachments locked to one height beside it. |
+| `SoapInputs.tsx` | 167 | The FALSE branch: three pickers (History/Context, Symptoms, Findings), then Measurements beside the specialty examination and Attachments. |
+
+Both take props and nothing else. They own **no state and no handlers** —
+that was the deliberate stopping line, see Stage 2 below. `App.tsx` went
+~2,300 → 2,196 lines, the first time this file has ever got shorter.
+
+### What deliberately did NOT move
+
+Possible Conditions, the plan row, the Consultation Plan rail, `StatusBar`,
+and every modal/sheet (`MedicineAddSheet`, `BrandSheet`, `ContributionSheet`,
+`BrowseSheet`, the three specialty chart modals) all stayed in `App.tsx`,
+shared.
+
+The reason is doctrine §8's law, applied to files rather than modules:
+*configuration can change what goes INSIDE a module, it can never remove a
+module another profile requires.* Every one of those surfaces was already
+identical for every profile before the split — General OPD never touched
+them. Copying them down into the two new files, or into either one, would
+have been one bug fixed in two places from the day it landed. The branch in
+§2.3 is therefore the input half only, and stays that way.
+
+### `GeneralOpdInputs.tsx` is the template, not a one-off
+
+This is the part worth carrying forward. `features/synapse/specialtyProfile.ts`
+has 8 profiles, but every one of them is pure *configuration* — which intent
+type is primary, which measurements default on, which of the two specialty
+charts render. General OPD is the only profile that ever earned its own
+render path, because it is the only one whose input surface is structurally
+different (the Case Sheet replacing three pickers).
+
+The day a second profile earns the same thing the same way: copy
+`GeneralOpdInputs.tsx`, rename it, change what it renders, add one branch to
+the picker in `App.tsx`. Nothing else moves. `SoapInputs.tsx` stays the
+shared fallback for every profile that has not earned a divergence — it is
+deliberately **not** pre-split into seven near-identical copies, which would
+be exactly the placeholder-building doctrine already warned a past session
+off of. Both files carry this reasoning in their own headers; this entry
+exists so it is findable without opening them.
+
+### Open
+
+- ~~**Stage 2 is not started.**~~ **Done 2026-08-15 — see §14.20.** It did
+  not land as the single `useConsultWorkspace.ts` predicted here; it landed
+  as five hooks, for a reason that entry explains.
+- ~~A second profile could adopt the template today, but it would still be
+  threading its handlers through `App.tsx`.~~ **No longer true after §14.20**
+  — the state layer is out, so a profile can now own both its own input file
+  and its own slice of state. Still nobody has needed to.
+- §5.1's inventory table is stale independently of this split — it still says
+  "fourteen files" and omits `CaseSheet.tsx`, `BlankArt.tsx`,
+  `AttachmentsCard.tsx`, `SpecialtyExamCard.tsx`, `dosing.ts`, `useDismiss.ts`
+  and the two files above. Not refreshed here; flagged.
+- Specialty selection is still a doctor-facing Settings toggle (§14.10), a
+  deliberate temporary exception Anmol wants replaced by admin-driven
+  assignment once every profile is tested. Not blocking anything
+  architectural.
+
+---
+
+## 14.20 Session 2026-08-15 — `App.tsx` Stage 2: the state split
+
+Stage 1 (§14.19) moved the RENDER of the input surface out. This moves the
+STATE behind it. `App.tsx` went **2,196 → 1,053 lines**, and §10.7 — open
+since 2026-07-30 — is closed.
+
+### It is five hooks, not the one this was predicted to be
+
+§10.7 and §14.19 both predicted a single `useConsultWorkspace()`. Writing it
+that way turned out to be impossible without hiding the thing worth knowing:
+the consult's state is three layers with a **declaration order that React
+forces**, not a preference.
+
+| Layer | Hook | Depends on |
+|---|---|---|
+| 1 — facts | `useConsultChart` · `useAcceptLedger` · `useConsultSession` | nothing |
+| 2 — the engine | `useConsultIntelligence` (already existed) | layer 1 |
+| 3 — behaviour | `useConsultPlan` · `useConsultLifecycle` | layer 2, mutates layer 1 |
+
+The order is forced twice over, and both are worth stating because both look
+like they could be "simplified" away:
+
+- `useConsultIntelligence` needs the accepted intent ids at render time (they
+  drive companions), and `useConsultPlan` needs the intelligence back at the
+  same render (brand index, active signals, hard warnings). Both cannot be
+  second. **The ledger is the piece they genuinely share**, so it is declared
+  first and handed to both — that is why `useAcceptLedger` is its own hook and
+  not six more fields on the plan.
+- The same shape one level up: the engine needs the patient's age and the
+  visit id at render time, and everything that starts or ends a consultation
+  needs the engine's result at render time. So the session *record* is layer 1
+  and the *transitions on it* are layer 3 — `useConsultSession` against
+  `useConsultLifecycle`, exactly mirroring ledger against plan.
+
+A single hook would have had to contain all of this and would have read as one
+flat 1,100-line list where the layering is invisible. Five files with the
+dependency in the signature is the same code with the constraint made
+checkable by the compiler.
+
+### What each hook owns
+
+- **`useConsultChart`** (291) — what was RECORDED: symptoms + intensities,
+  findings, vitals, the handlers that mutate them, and everything derived from
+  them or the catalogue. Does not know a patient exists.
+- **`useAcceptLedger`** (125) — which engine intent each thing on the plan came
+  from: six collections answering six different questions (`acceptedIntents`,
+  `chosenBrands`, `deliberateBrands`, `searchedAccepts`, `acknowledgedIntents`,
+  `dismissedCompanions`). This is `commitConsultation`'s input. Collapsing any
+  of them into the prescription array loses a distinction the decision log
+  depends on — notably `deliberateBrands`, which is the only set that teaches
+  the brand model, because logging a default as a choice trains the model on
+  its own output.
+- **`useConsultSession`** (197) — who the consult is with, which visit, and the
+  where-are-we flags. Owns the v1 compatibility write to `visit_symptoms` /
+  `visit_findings` (it needs a visit id, which the chart deliberately has no
+  access to), plus the age/sex derivations the growth standards need.
+- **`useConsultPlan`** (838) — what was DECIDED, and the accept-to-plan
+  pipeline. `handleAcceptIntent` stays the one entry point for every intent
+  type, because the decision log must not be able to tell apart the route a
+  doctor reached something by; anything bypassing it is invisible to the
+  learning loop.
+- **`useConsultLifecycle`** (346) — starting, repeating, saving, ending. The
+  only hook spanning all four others, and one hook rather than five methods
+  spread across them for a concrete reason: `App.tsx` had **three hand-copied
+  reset sequences and they had already drifted** — one cleared the past-visit
+  rail, the others did not. There is now one `clearWorkspace()`, so a field
+  added to any hook cannot be cleared on one path and left stale on another.
+  Navigation is NOT owned here — `setActivePage` / `setSidebarOpen` are passed
+  in, because which screen is showing is the shell's business.
+
+### What stayed in `App.tsx`
+
+Boot (`dbReady`, `bootError`, the doctor/hospital profiles), navigation
+(`activePage`, `sidebarOpen`), the toast, and which overlay is open
+(`browse`, `openChart`, `brandSheet`, `explain`). That is the shell, and it is
+what §10.7 always said should be left.
+
+### Behaviour is unchanged by design
+
+This was a move, not a rewrite. Two things were found and deliberately NOT
+fixed in the same pass, so the diff stays reviewable as a move:
+
+- `stagedMedicine` / `pendingMedicine` are not cleared by `plan.reset()`,
+  because none of `App.tsx`'s three reset paths cleared them either. **This is
+  a real bug** — an add sheet left open across a patient switch can commit onto
+  a blank consult. Recorded in `useConsultPlan.ts`'s own header at the reset
+  function; fix it separately.
+- `handleStartConsultFromRecord` / `handlePatientConfirm` had `useCallback`
+  dependency lists naming only `resolveVisitForConsult` while closing over much
+  more. The hook versions declare full dependencies, which is a fix, not a
+  move — worth knowing if anything downstream depended on those handlers being
+  referentially stable across a patient change.
+
+Verified by `npm run build` (`tsc -b` clean, 2,409 modules).
+
+### Open
+
+- ~~Not browser-verified.~~ **Verified 2026-08-15, same session.** A full
+  consult was driven in the real running app against the live DB — new
+  patient → "Fever" → Calpol prescribed → CBC ordered → Confirm & Save — and
+  every hook's write path was then checked in Postgres for that visit:
+
+  | Row written | Count | Proves |
+  |---|---|---|
+  | `visits.status = completed` + `prescriptions` / `prescription_medicines` | 1 / 1 | `useConsultLifecycle`'s `handleConfirmAndSave` |
+  | `visit_observations` | 1 | `useConsultIntelligence`, unchanged |
+  | `visit_symptoms` | 1 | **`useConsultSession`'s v1 compatibility effect** — the one that moved hooks |
+  | `decision_log` | 40 | **`useConsultLifecycle`'s learning write**, with `identity.isReal` true |
+
+  The reset was confirmed visually as well, which was the actual risk: after
+  save, the review modal closed, the patient header cleared, the case sheet
+  went back to "Nothing recorded yet", the plan to "0 items", and the intake
+  modal reopened — i.e. the single `clearWorkspace()` does what the three
+  drifted hand-copies used to. Test patient and visit were deleted afterward
+  per §0's convention; the DB is clean.
+
+  Also confirmed incidentally: §14.17's add-sheet work (dose circles, blue
+  confirm) and §14.18's antimalarial rules both render correctly — fever
+  ranked artesunate, artemether, quinine and HCQS alongside paracetamol.
+- The `stagedMedicine` reset bug above — **still open**, and note the
+  verification run above would not have caught it: it commits the add sheet
+  before saving, which is the path that works.
+- §5.1's inventory table remains stale — now also missing the five hooks
+  above. Same flag as §14.19 carried forward.
+
+---
+
+## 14.21 Session 2026-08-15 — the longitudinal record, steps 1–5
+
+A confirmed condition is no longer a string that prints. It re-ranks the
+consultation it was confirmed in, and — when it is chronic — becomes a durable
+fact that comes back on the patient's next visit.
+
+Built from `docs/confirmed-conditions-investigation.md` (2026-07-30), which had
+already checked every claim against the live schema. Read that first; this
+entry records what changed against it.
+
+### The investigation was right about the mechanism and wrong about the size
+
+Re-verified, still true: **zero** label overlap between finding intents and
+observables, no `patient_conditions`, `visits.patient_id` still the only
+`patient_id` column in the database. Drift: the catalogue grew from 68 to **87**
+active finding intents, and history observables from 22 to 28.
+
+Where it was wrong: it framed step 1 as "pick the ~12 chronic intents, half a
+day of curation". That assumes the mapping TARGETS exist. They mostly do not —
+and a new history observable does nothing until `signal_intent_rules` reference
+its signal, so creating "Known coronary artery disease" today would produce a
+chip that displays, carries forward and re-ranks **nothing**. That is the
+placeholder-building doctrine already forbids.
+
+So the seed is **7 rows, not 20** — only mappings whose target observable
+already carries a signal that rules actually use:
+
+| Confirming this | Records this standing fact | Signal | Intents re-ranked |
+|---|---|---|---|
+| Type 2 diabetes mellitus | Known diabetic | `DIABETIC` | 14 |
+| Diabetic ketoacidosis | Known diabetic | `DIABETIC` | 14 |
+| Dyslipidaemia | Known dyslipidaemia | `DYSLIPIDEMIA` | 6 |
+| Essential hypertension | Known hypertensive | `HYPERTENSIVE` | 5 |
+| Hypertensive urgency | Known hypertensive | `HYPERTENSIVE` | 5 |
+| Asthma / reactive airway | Known asthma / COPD | `ASTHMA_COPD_KNOWN` | 3 |
+| COPD exacerbation | Known asthma / COPD | `ASTHMA_COPD_KNOWN` | 3 |
+
+**The best part of the idea is one the investigation did not make.** Because the
+map is intent→observable, an acute EPISODE can point at the chronic fact it
+proves: confirming diabetic ketoacidosis establishes that the patient is
+diabetic. Three of the seven rows are that shape, and they are arguably worth
+more than the direct ones, because that inference is the one a busy doctor
+skips.
+
+**Rejected: Acute coronary syndrome → Family history of heart disease.** It was
+the only remaining candidate with an existing target and it is simply false — a
+patient having a heart attack is not a family history of one. It would have
+written a wrong standing fact that follows them forever. ACS stays unmapped
+until a "Known coronary artery disease" observable exists with rules behind it.
+
+### What was built
+
+- `condition_observable_map` (intent_id, observable_id, **is_chronic**) and
+  `patient_conditions` (patient, observable, status active/resolved/refuted,
+  provenance). Both RLS-enabled matching the existing posture: the map reads
+  like the rest of the catalogue, `patient_conditions` uses hospital isolation.
+- `useLongitudinalRecord.ts` — a new hook between the session and the plan,
+  the only position that works (it needs the patient at render time and the
+  plan needs it at render time).
+- `useConsultChart` gained `chipOrigins` and `addContextObservable`.
+  **Confirming a condition is genuinely one line**: the mapped observable's
+  LABEL joins `selectedSymptoms`, `chartObservableIds` already derives from
+  that, and the engine re-runs in the same frame.
+- Carried-forward chips render dashed and drained beside solid same-hue chips.
+  Not decoration — a doctor must be able to tell that "Known diabetic" came
+  from a confirmation three visits ago rather than from the patient in front of
+  them, or one wrong confirmation propagates forever looking fresh every time.
+
+### Two bugs found by checking the database rather than the screen
+
+1. **`visit_observations.source` has a CHECK constraint** allowing only
+   `doctor | confirmed_intent | import`. The investigation said to write
+   `'confirmed'` — it had read the column default, not the constraint. Writing
+   it rejected the **entire insert**, and because that write is deliberately
+   fire-and-forget (`.catch(console.warn)`), every consult with a confirmed
+   condition silently recorded ZERO observations. The screen looked perfect.
+   Fixed by adding `carried_forward` to the constraint and translating UI names
+   to column vocabulary at one boundary (`DB_SOURCE` in `lib/db/synapse.ts`).
+   **The lesson generalises: a fire-and-forget write plus a CHECK constraint is
+   a silent data outage, and no amount of UI testing finds it.**
+2. **`handleAcceptIntent` has a deliberate empty dependency list** (§14.20).
+   `confirmCondition` closes over the patient and visit id, both of which
+   change mid-consult, so calling it directly would have filed standing facts
+   against whichever patient was on screen first — unpickable on real data.
+   Reached through a ref instead, which fixes this path without disturbing the
+   dependency list the medicine path still relies on.
+
+Also found: `opacity-*` cannot style these chips — they animate in, and motion
+writes an inline `opacity` that beats any class. And two Tailwind utilities
+setting the same property resolve by generated-stylesheet order, not class-string
+order, so the carried-forward treatment is a full class REPLACEMENT rather than
+an override appended to `TONE[kind].chip`.
+
+### Verified live, end to end
+
+New patient → confirm "Type 2 diabetes mellitus" on an otherwise **empty**
+chart → medicine recommendations went from "No medicine ranked for this chart"
+to **8 matched** with metformin first, a Diabetes Follow-up investigation
+appeared, the exam cascade offered non-healing wound / diminished reflex / nail
+changes, and Height and Weight were promoted to relevant. `patient_conditions`
+recorded the fact with attribution and provenance. A **second** consult for the
+same patient opened with "Known diabetic" already on the chart, dashed, before
+anything was typed. `visit_observations` for one visit ended up holding all
+three provenances correctly: `carried_forward`, `confirmed_intent`, `doctor`.
+
+Test patient and visits deleted afterwards per §0; the 7 catalogue rows stay.
+
+### Open
+
+- **Step 6 is not built** — there is no resolve/refute control. A condition
+  confirmed in error can be un-ticked from the chart for that visit, but the
+  `patient_conditions` row survives and will carry forward again next time. The
+  status column and its check constraint already exist; only the UI is missing.
+  This is the most important gap: the feature currently makes a mistake
+  permanent from the doctor's point of view.
+- **The remaining ~12 chronic conditions need signal content, not schema.**
+  Coronary artery disease, atrial fibrillation, treated TB, osteoarthritis,
+  gout, iron deficiency anaemia. Each needs an observable, a signal, and
+  `signal_intent_rules` rows — clinical curation, and the reason they were left
+  out rather than stubbed.
+- **Hypoglycaemia → Known diabetic was deliberately NOT seeded.** It usually
+  implies diabetes on treatment but genuinely occurs without it, and this map
+  has no "probably". Wants a clinical decision.
+- Confirming an episode still records nothing durable and shows no history of
+  "had appendicitis, Jan 2026". That is §5.3 of the investigation and remains a
+  display question, not an engine one.

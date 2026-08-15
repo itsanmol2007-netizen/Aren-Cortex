@@ -36,6 +36,13 @@ export interface ConsultIntelligenceArgs {
     visitId: string | null;
     /** every observable on the chart: symptoms, findings and history alike */
     observableIds: number[];
+    /**
+     * How an observable got onto the chart, for the ones the doctor did not tap.
+     * Written to `visit_observations.source` so a ranking re-derived from the
+     * permanent record does not claim the doctor entered a chip that arrived by
+     * confirmation or was carried forward. Absent means 'doctor'.
+     */
+    observableSources?: Map<number, "confirmed" | "carried">;
     vitals: Vitals;
     ageYears: number | null;
     /** exact age in months from the date of birth — growth standards only */
@@ -92,7 +99,7 @@ const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
 });
 
 export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIntelligence {
-    const { data, visitId, observableIds, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
+    const { data, visitId, observableIds, observableSources, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
 
     // ---- 1. inputs -> signals -> ranked intents. Synchronous. ----
     // `vitals` is rebuilt on every keystroke, so its identity is useless as a
@@ -365,6 +372,11 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
 
     // ---- 5. the raw input, persisted. Debounced, fire-and-forget. ----
     const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Read through a ref so provenance changing does not by itself restart the
+    // debounce: `built` is what decides a write is needed, and the sources are
+    // just how that write labels each row.
+    const sourcesRef = useRef(observableSources);
+    sourcesRef.current = observableSources;
     useEffect(() => {
         if (!visitId || !built) return;
         if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -373,6 +385,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
                 visitId,
                 observableIds: built.observableIds,
                 measurements: built.measurements,
+                sources: sourcesRef.current,
             }).catch((e) => console.warn("visit input persist (non-fatal):", e));
         }, 600);
         return () => {

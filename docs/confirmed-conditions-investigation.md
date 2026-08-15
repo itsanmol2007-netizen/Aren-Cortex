@@ -1,5 +1,25 @@
 # Confirmed conditions as durable input — investigation
 
+> **STATUS 2026-08-15 — steps 1–5 are BUILT. See `aren-cortex-atlas.md` §14.21.**
+>
+> This document remains the reasoning; the atlas entry records what actually
+> shipped and where this document turned out to be wrong. Three corrections
+> worth carrying, so nobody re-derives them from here:
+>
+> 1. **§4 step 1 is undersized.** It assumes the mapping targets exist. They
+>    mostly do not, and a new history observable re-ranks nothing until
+>    `signal_intent_rules` reference its signal. The seed shipped with **7**
+>    rows, not ~12, for exactly that reason.
+> 2. **§1's "one line" claim was right**, but the line moved: `chartObservableIds`
+>    is now `useConsultChart.ts`, not `App.tsx:363` (see §14.20).
+> 3. **§1.2 is wrong about the value.** `visit_observations.source` is guarded
+>    by a CHECK constraint permitting `doctor | confirmed_intent | import` —
+>    writing `'confirmed'` rejects the whole insert silently. Use
+>    `confirmed_intent`; `carried_forward` was added to the constraint.
+>
+> Counts have drifted too: **87** active finding intents now (was 68), 28
+> history observables (was 22). The zero-overlap finding still holds.
+
 *Findings and a proposed approach. Nothing in this document is built yet.*
 
 Investigated: 2026-07-30 · Branch `master` · Live DB `arenod` (`ieimvjprtltancxapuzg`)

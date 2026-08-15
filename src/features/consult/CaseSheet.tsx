@@ -172,7 +172,43 @@ const RELATED_VISIBLE = 4;
 export interface CaseSheetEntry {
     label: string;
     kind: Observable["kind"];
+    /**
+     * Set only when this chip did NOT come from the doctor tapping it.
+     *
+     * 'confirmed' — they confirmed a condition this visit and it became input.
+     * 'carried'   — it was confirmed at an EARLIER visit and follows the patient.
+     *
+     * The second one has to look different, and this is not decoration. A
+     * doctor reading a chart must be able to tell that "Known diabetic" came
+     * from a confirmation three visits ago rather than from the patient sitting
+     * in front of them — otherwise one wrong confirmation propagates forever
+     * and looks freshly entered every single time.
+     */
+    origin?: "confirmed" | "carried";
 }
+
+/**
+ * Carried-forward chips: same hue, drained of the gloss, on a dashed edge.
+ *
+ * Deliberately NOT a different colour. The colour still has to say what KIND of
+ * entry it is; what changes is the confidence of the surface it sits on, which
+ * is the honest signal — this is real, and it is not from today.
+ *
+ * A full replacement rather than extra classes appended to `TONE[kind].chip`,
+ * for two reasons found the hard way:
+ *   · Two utilities setting the same property (`bg-*` over `bg-*`) resolve by
+ *     their order in the GENERATED stylesheet, not in the class string, so
+ *     layering an override is a coin flip.
+ *   · `opacity-*` loses outright — the chips animate in, and motion writes an
+ *     inline `opacity` that beats any class.
+ * So the muting is baked into flat colours here, and nothing has to win a
+ * specificity fight.
+ */
+const TONE_CARRIED: Record<Observable["kind"], string> = {
+    history: "border-dashed border-[#c4b5e8] bg-[#f6f3fd] text-[#7c60b8] shadow-none",
+    symptom: "border-dashed border-[#e8b9c4] bg-[#fdf5f6] text-[#b5697f] shadow-none",
+    finding: "border-dashed border-[#9dcfc3] bg-[#f2fbf8] text-[#4a8b84] shadow-none",
+};
 
 // ── shared search ──────────────────────────────────────────────────────────
 
@@ -547,10 +583,19 @@ export function CaseSheet({
                                             layout={!reduce}
                                             {...pop}
                                             transition={{ type: "spring", stiffness: 480, damping: 32 }}
+                                            title={
+                                                entry.origin === "carried"
+                                                    ? "Carried forward from a previous visit's confirmation. Remove it if it no longer applies."
+                                                    : entry.origin === "confirmed"
+                                                        ? "Added by confirming a condition in this consultation."
+                                                        : undefined
+                                            }
                                             className={
                                                 "inline-flex items-center gap-[6px] rounded-lg border py-[4px] pl-[10px] pr-[7px] " +
                                                 "text-[13.5px] font-semibold leading-tight whitespace-nowrap " +
-                                                TONE[entry.kind].chip
+                                                (entry.origin === "carried"
+                                                    ? TONE_CARRIED[entry.kind]
+                                                    : TONE[entry.kind].chip)
                                             }
                                         >
                                             {intensity && (
