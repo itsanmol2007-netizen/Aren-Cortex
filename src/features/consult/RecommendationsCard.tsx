@@ -46,6 +46,8 @@ import {
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
 import { BlankMedicineArt } from "./BlankArt";
+import { useRovingList } from "../../hooks/useRovingList";
+import { firedChord, matches } from "../../lib/keyboard/keymap";
 
 /** Alternatives shown beside the default before the sheet takes over. */
 const INLINE_ALTS = 3;
@@ -255,6 +257,70 @@ export function RecommendationsCard({
         [intents]
     );
 
+    /**
+     * ── Walking the list from the search field ──────────────────────────────
+     *
+     * The cursor covers the ranked rows AND the search hits with no branch,
+     * because both render into the same `.cs-list` and the selector picks up
+     * whichever is on screen. That is not a coincidence worth relying on
+     * accidentally, so it is stated: `.cs-rec` is a ranked medicine and
+     * `.cs-sug` is a search hit, and a doctor pressing ↓ after typing
+     * "acenac" means the same thing either way.
+     *
+     * The action selector is deliberately narrow. `.cs-prescribe` and
+     * `.cs-act` are the row's verb; the pin, the "why" button and the brand
+     * chips are not, and Enter must never fire one of those by being generous
+     * about what counts as the primary action.
+     *
+     * A row whose verb is missing — already prescribed, or withheld behind an
+     * unacknowledged hard guard — stays in the walk and does nothing on Enter.
+     * Skipping it would make ↓ jump silently over a red warning, which is the
+     * exact failure the guards exist to prevent (doctrine rule 11).
+     */
+    const listRef = useRef<HTMLDivElement>(null);
+    const roving = useRovingList({
+        containerRef: listRef,
+        rowSelector: ".cs-rec, .cs-sug",
+        actionSelector: "button.cs-prescribe, button.cs-act",
+    });
+
+    const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const move = firedChord(e, "medMove");
+        if (move) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.move(move.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (matches(e, "medPrescribe")) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.activate();
+            return;
+        }
+        const brands = firedChord(e, "medBrands");
+        if (brands) {
+            const row = roving.current();
+            if (!row) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // The row's own onClick is the toggle, so → and ← have to know
+            // which way it is already pointing rather than both just clicking.
+            // `is-open` is that state, and reading it off the class keeps this
+            // from needing a second copy of it up here.
+            const open = row.classList.contains("is-open");
+            if (brands.key === "ArrowRight" ? !open : open) row.click();
+            return;
+        }
+        if (matches(e, "medWhy")) {
+            const row = roving.current();
+            if (!row) return;
+            e.preventDefault();
+            e.stopPropagation();
+            row.querySelector<HTMLElement>("button.cs-why-btn")?.click();
+        }
+    };
+
     const body = () => {
         if (isSearching) {
             return (
@@ -346,6 +412,7 @@ export function RecommendationsCard({
                 state={search}
                 placeholder="Search medicine or composition…"
                 inputRef={inputRef}
+                onKeyDown={onSearchKeyDown}
             />
 
             {brandError && !isSearching && (
@@ -355,7 +422,7 @@ export function RecommendationsCard({
                 </p>
             )}
 
-            <div className="cs-list">{body()}</div>
+            <div className="cs-list" ref={listRef}>{body()}</div>
         </section>
     );
 }

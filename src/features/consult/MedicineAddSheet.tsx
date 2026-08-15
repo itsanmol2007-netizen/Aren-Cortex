@@ -28,6 +28,7 @@ import { Check, Pill, X } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandVariantLabel, doseFieldValue } from "../../lib/synapse/brands";
 import { defaultTimingFor } from "./dosing";
+import { firedChord, matches } from "../../lib/keyboard/keymap";
 
 export interface MedicineDraft {
     medicine: Medicine | null;
@@ -95,13 +96,6 @@ export function MedicineAddSheet({
         setSos(false);
     }, [open, initialBrand, compositionLabel]);
 
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [open, onCancel]);
-
     /**
      * Strength variants of the SELECTED brand family, so "Acenac-P 100mg" and
      * "Acenac-P 200mg" are one choice with two strengths rather than two
@@ -117,6 +111,96 @@ export function MedicineAddSheet({
 
     const frequency = slots.map((s) => (s ? 1 : 0)).join("-");
     const anySlot = slots.some(Boolean);
+    const canConfirm = !!brand && (anySlot || sos);
+
+    const commit = () =>
+        onConfirm({
+            medicine: brand,
+            dosageMg: dosage.trim(),
+            frequency,
+            durationDays: duration.trim(),
+            instructions: timing,
+            isSos: sos,
+        });
+
+    /**
+     * ── The sheet, on the keyboard ──────────────────────────────────────────
+     *
+     * This is the one modal in the consult that a doctor hits on EVERY
+     * medicine, so it is the one where a mouse reach compounds: five medicines
+     * is five trips to the brand list, the four timing circles and the confirm
+     * button. Everything on it is now one keystroke.
+     *
+     * The digits are the interesting choice. 1-2-3-4 map to morning, noon,
+     * evening and night — the same four positions doctors already write by
+     * hand as 1-0-1-0, and the same order the circles sit in on screen — so
+     * "1", "4" is literally the notation for a BD dose. `0` is SOS because it
+     * is the one that is not a time of day.
+     *
+     * All of them are bare keys with no modifier, which is only safe because
+     * `matches()` refuses a binding without `whileTyping` whenever the event
+     * came from a field: this panel has a Dose box and a Duration box, and
+     * typing "500" into the first must not silently reschedule the drug. Enter
+     * is bound twice for the same reason — bare Enter for a doctor whose hands
+     * are on the digits, Ctrl+Enter for one who is still in the Dose field and
+     * does not want to Tab out first.
+     *
+     * Capture phase, matching every other keyboard surface here, so Escape
+     * reaches this sheet rather than the panel underneath it.
+     */
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (e: KeyboardEvent) => {
+            const take = () => { e.preventDefault(); e.stopPropagation(); };
+
+            if (matches(e, "sheetCancel")) { take(); onCancel(); return; }
+
+            if (matches(e, "sheetConfirm")) {
+                take();
+                // Same refusal as the button: a null brand used to be
+                // confirmable and `commitAccept` then deleted the intent
+                // again, so the doctor pressed Add and watched nothing happen.
+                if (canConfirm) commit();
+                return;
+            }
+
+            const slot = firedChord(e, "sheetSlot");
+            if (slot) {
+                take();
+                const i = Number(slot.key) - 1;
+                setSlots((cur) => cur.map((v, j) => (j === i ? !v : v)));
+                return;
+            }
+
+            if (matches(e, "sheetSos")) {
+                take();
+                setSos((v) => !v);
+                return;
+            }
+
+            const nav = firedChord(e, "sheetBrand");
+            if (nav) {
+                take();
+                // Walks `brands` rather than the rendered buttons: the list
+                // scrolls, and the strength variants below it are a VIEW of
+                // the same products, so the DOM holds some of them twice.
+                if (brands.length === 0) return;
+                const at = brands.findIndex((b) => b.id === brand?.id);
+                const dir = nav.key === "ArrowUp" ? -1 : 1;
+                const next = at === -1
+                    ? (dir === 1 ? 0 : brands.length - 1)
+                    : (at + dir + brands.length) % brands.length;
+                const picked = brands[next];
+                setBrand(picked);
+                // Keep the dose honest with the strength that was just chosen,
+                // exactly as clicking a strength variant does.
+                const value = doseFieldValue(picked);
+                if (value) setDosage(value);
+            }
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [open, onCancel, canConfirm, brands, brand, dosage, duration, frequency, timing, sos]);
 
     // AnimatePresence needs the exiting element to stay mounted for the
     // duration of its `exit` animation, so the `!open` check moved from an
@@ -262,7 +346,13 @@ export function MedicineAddSheet({
                     </div>
 
                     <section className="cs-addmed-sec">
-                        <span className="cs-addmed-label">When</span>
+                        {/* The digit is printed ON the label rather than only in
+                            the shortcuts sheet: this is the one control where the
+                            key and the thing it toggles are the same notation the
+                            doctor already writes (1-0-1-0), so saying it here is
+                            what makes the shortcut discoverable at the moment it
+                            is useful. */}
+                        <span className="cs-addmed-label">When <em className="cs-addmed-keyhint">1 – 4</em></span>
                         {/* The circle notation doctors already write by hand —
                             1-0-1-0 as ●○●○ — rather than four word buttons.
                             Rendering only: the value underneath is still the
@@ -325,20 +415,12 @@ export function MedicineAddSheet({
                         // where the reason is still visible, not two steps
                         // later in a toast.
                         title={!brand ? "Choose a product first" : undefined}
-                        disabled={!brand || (!anySlot && !sos)}
-                        onClick={() =>
-                            onConfirm({
-                                medicine: brand,
-                                dosageMg: dosage.trim(),
-                                frequency,
-                                durationDays: duration.trim(),
-                                instructions: timing,
-                                isSos: sos,
-                            })
-                        }
+                        disabled={!canConfirm}
+                        onClick={commit}
                     >
                         <Check size={15} />
                         Add to plan
+                        <span className="cs-kbd">Enter</span>
                     </button>
                 </div>
                     </motion.div>

@@ -1,8 +1,10 @@
 import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2, CalendarDays } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { searchPatients, findPatientByPhone, type DBPatient } from "../lib/db";
 import type { Gender, Patient } from "../types";
 import { ageInYears, dobMattersFor, todayIso } from "../lib/growth/age";
+import { useRovingList } from "../hooks/useRovingList";
+import { matches } from "../lib/keyboard/keymap";
 
 type PatientModalProps = {
   onClose: () => void;
@@ -28,6 +30,95 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
 
   // Phone duplicate check state
   const [phoneCheckLoading, setPhoneCheckLoading] = useState(false);
+
+  // ── The keyboard path through intake ────────────────────────────────────
+  //
+  // This modal opens on every consult and is the first thing between the
+  // doctor and the patient in front of them, so it is the one surface where a
+  // mouse reach costs the most. The flow Anmol described is exactly the one
+  // wired below: type a name, the matches appear, walk them, press Enter.
+  //
+  // The result rows ARE buttons, so the roving cursor's row selector and its
+  // action selector are the same element — `activate()` clicks the row itself
+  // and the existing onClick starts the consult. No new handler, no second
+  // path to keep in step with the mouse one.
+  const listRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+  const roving = useRovingList({
+    containerRef: listRef,
+    rowSelector: ".pm-match-row",
+    actionSelector: ".pm-match-row",
+    enabled: mode === "search",
+  });
+
+  // A fresh query is a fresh list; leaving the cursor on row 3 of the previous
+  // one would put Enter on a patient who is no longer on screen.
+  useEffect(() => { roving.clear(); }, [searchResults, roving]);
+
+  // Focus follows the mode, both ways. Switching to the form with Alt+N and
+  // landing on nothing would make the shortcut feel broken even though it
+  // worked; `autoFocus` only fires on the first mount, so it cannot do this.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      if (mode === "search") searchInputRef.current?.focus();
+      else formRef.current?.querySelector<HTMLElement>("input, select")?.focus();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [mode]);
+
+  /**
+   * Enter walks the form.
+   *
+   * Seven fields is seven Tabs, and a doctor who has just typed a name expects
+   * Enter to mean "next" — in every paper form and every till in the country
+   * it does. On the last field, or as soon as the form is valid and the
+   * remaining fields are optional, it submits instead.
+   *
+   * Deliberately NOT a `<form onSubmit>`: this modal renders inside the app
+   * shell rather than a form element, and turning it into one would put a
+   * native submit (and a full page reload on any stray button without
+   * `type="button"`) between the doctor and the consult.
+   */
+  const advance = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const fields = Array.from(
+      formRef.current?.querySelectorAll<HTMLElement>("input, select") ?? []
+    );
+    const i = fields.indexOf(e.currentTarget as HTMLElement);
+    const next = fields[i + 1];
+    if (next) { next.focus(); return; }
+    // Off the end of the form. When the phone matched somebody the form has
+    // ALREADY collapsed to the duplicate card — address is unmounted, so the
+    // phone field is the last one — and the primary action on that card is
+    // "Use this patient", not "create a second record with the same number".
+    // Falling through to handleConfirm here would quietly mint the duplicate
+    // the card exists to prevent.
+    if (matchedPatient) { onConfirm(dbToUiPatient(matchedPatient)); return; }
+    handleConfirm();
+  };
+
+  // Alt+N / Alt+F switch modes, and Escape leaves. Bound on the card rather
+  // than the window so the sheet cannot swallow keys once it has closed.
+  const onCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (matches(e, "patientNew")) {
+      e.preventDefault();
+      setMode("create");
+      return;
+    }
+    if (matches(e, "patientSearch")) {
+      e.preventDefault();
+      setMode("search");
+      return;
+    }
+    if (e.key === "Escape") {
+      // `onClose` is a no-op while there is no patient yet — intake is
+      // mandatory, not dismissable — so this is safe to call unconditionally.
+      e.preventDefault();
+      onClose();
+    }
+  };
 
   // Live search — 300ms debounce
   useEffect(() => {
@@ -83,7 +174,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
     <div className="pm-overlay" role="dialog" aria-modal="true" aria-label="Patient intake">
       <button className="pm-backdrop" type="button" onClick={onClose} aria-label="Close" />
 
-      <div className="pm-card">
+      <div className="pm-card" onKeyDown={onCardKeyDown}>
         <div className="pm-top-stripe" />
 
         {/* Header — no close button: patient intake is mandatory, not dismissable */}
@@ -116,11 +207,42 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                 : <Search size={14} className="pm-search-icon" />
               }
               <input
+                ref={searchInputRef}
                 autoFocus
                 value={searchQuery}
                 placeholder="Search by name or phone number…"
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pm-search-input"
+                // ↓/↑ and Enter never leave the field. The doctor keeps
+                // typing to narrow, walks the matches, and takes one —
+                // all without the caret going anywhere, so a name that
+                // matched three patients can be refined without a click.
+                //
+                // Tab does the same as ↓ here, and only here: Anmol's own
+                // description of this flow was "write the name, the patient
+                // appears, click tab and that patient is selected, then
+                // enter". Tab into a result list is not how the rest of the
+                // app moves, but it is what this modal was described as
+                // doing, and it costs nothing — there is no other focusable
+                // thing between this field and the list.
+                onKeyDown={(e) => {
+                  if (matches(e, "patientMove") || (e.key === "Tab" && !e.shiftKey && searchResults.length > 0)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    roving.move(e.key === "ArrowUp" ? -1 : 1);
+                    return;
+                  }
+                  if (matches(e, "patientPick")) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Enter with nothing highlighted takes the top match,
+                    // which is what a doctor who typed a full phone number
+                    // and stopped means by it.
+                    if (!roving.activate()) {
+                      roving.rows()[0]?.click();
+                    }
+                  }
+                }}
               />
             </div>
 
@@ -138,7 +260,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
             )}
 
             {searchResults.length > 0 && (
-              <div className="pm-match-list">
+              <div className="pm-match-list" ref={listRef}>
                 {searchResults.map((p) => (
                   <button
                     key={p.id}
@@ -163,7 +285,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
 
         {/* ── CREATE MODE ── */}
         {mode === "create" && (
-          <div className="pm-section">
+          <div className="pm-section" ref={formRef}>
 
             <div className="pm-field">
               <label className="pm-label">
@@ -176,6 +298,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                 value={draft.name}
                 placeholder="Patient's full name"
                 onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                onKeyDown={advance}
               />
             </div>
 
@@ -189,6 +312,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                   value={draft.age}
                   placeholder="e.g. 34"
                   onChange={(e) => setDraft((d) => ({ ...d, age: e.target.value.replace(/\D/g, "") }))}
+                  onKeyDown={advance}
                 />
               </div>
               <div className="pm-field">
@@ -197,6 +321,10 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                   className="pm-input pm-select"
                   value={draft.gender}
                   onChange={(e) => setDraft((d) => ({ ...d, gender: e.target.value as Gender }))}
+                  // A native select already owns ↑↓ and Space to open, so
+                  // Enter is the only key left to mean "next" — which is
+                  // also the only thing a doctor tries after typing "M".
+                  onKeyDown={advance}
                 >
                   <option value="">Select</option>
                   <option value="Male">Male</option>
@@ -237,6 +365,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                     age: derived === null ? d.age : String(derived),
                   }));
                 }}
+                onKeyDown={advance}
               />
             </div>
 
@@ -254,6 +383,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                   value={draft.phone}
                   placeholder="10-digit mobile"
                   onChange={(e) => handlePhoneChange(e.target.value)}
+                  onKeyDown={advance}
                 />
                 {phoneCheckLoading && <Loader2 size={13} className="pm-spin" style={{ color: "#6b7280", marginLeft: 6 }} />}
               </div>
@@ -295,6 +425,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                     value={draft.address ?? ""}
                     placeholder="Street, locality, city"
                     onChange={(e) => setDraft((d) => ({ ...d, address: e.target.value }))}
+                    onKeyDown={advance}
                   />
                 </div>
                 <div className="pm-actions">

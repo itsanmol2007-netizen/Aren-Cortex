@@ -68,9 +68,12 @@ const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
 
 function App() {
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
-  // One ref per column — the three Tab stops of the workspace. The old
-  // findings/tests refs are gone with the panels they pointed at.
+  // One ref per Tab stop of the workspace, in the order STOPS walks them
+  // (useConsultKeyboard.ts). The old findings/tests refs are gone with the
+  // panels they pointed at.
   const chartSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
+  /** the Assessment card's search — the second Tab stop, added 2026-08-15 */
+  const assessmentSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const synapseSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const planRef = useRef<HTMLElement>(null) as React.RefObject<HTMLElement>;
   /** the Plan row, so "Add Test" in the summary can bring it into view */
@@ -257,17 +260,46 @@ function App() {
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
+  /**
+   * Alt+1/2/3 — severity, on the symptom the doctor just recorded.
+   *
+   * "Just recorded" is the LAST entry of kind `symptom` on the case sheet,
+   * which is where the one they are still thinking about always is: chips are
+   * appended in the order they were taken. The alternative — a roving focus
+   * over the chips — costs three more keys to reach the chip that is already
+   * the obvious subject, and severity entered three keystrokes later is
+   * severity entered at the wrong moment.
+   *
+   * Silent when there is no symptom yet: an Alt+2 typed a moment early should
+   * do nothing, not file "moderate" against whatever is nearest.
+   */
+  const handleSeverityKey = useCallback(
+    (intensity: "mild" | "moderate" | "severe") => {
+      const last = [...caseSheetEntries].reverse().find((e) => e.kind === "symptom");
+      if (!last) return;
+      handleIntensityChange(last.label, intensity);
+      showToast(`${last.label} — ${intensity}`);
+    },
+    [caseSheetEntries, handleIntensityChange, showToast]
+  );
+
   useConsultKeyboard({
     chartRef: chartSearchRef,
+    assessmentRef: assessmentSearchRef,
     synapseRef: synapseSearchRef,
     planRef,
     medicineCount: prescription.length,
     onNewPatient: () => setPatientModalOpen(true),
     onReviewRx: () => openReview(),
     onToggleShortcuts: () => setShortcutsOpen((v) => !v),
+    onSeverity: handleSeverityKey,
+    // `pendingMedicine` was missing from this list, so every chord the global
+    // handler owns stayed live underneath the add sheet — Tab moved focus out
+    // of a modal the doctor was mid-way through filling in.
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
-      shortcutsOpen || !!stagedMedicine || !!selectedMedicineId,
+      shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
+      !!browse || !!brandSheet || !!explain || openChart !== null || sidebarOpen,
   });
 
   // The consult workspace's shell (`.cs-shell`, consult.css) locks its own
@@ -733,6 +765,7 @@ function App() {
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
                 disabled={!patient}
+                searchRef={assessmentSearchRef}
               />
 
               {/* ── PLAN ────────────────────────────────────────────────────
@@ -869,6 +902,7 @@ function App() {
             degraded={!!synapse.data?.degraded}
             unidentified={!identity.isReal}
             online={online}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
           />
 
           {/* ── The specialty charts ────────────────────────────────────────

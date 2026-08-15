@@ -1269,3 +1269,19 @@
     transform: scale(0.97);
     box-shadow: 0 2px 6px rgba(168, 85, 247, 0.3);
 }
+/* ── the keyboard cursor on a patient match (2026-08-15) ──────────────
+   Same object as `[data-cx-cursor]` in consult.css, in this modal's own
+   violet rather than the workspace blue: these rows are already violet on
+   hover, and two different "you are here" colours inside one modal would
+   read as two different states. Written by useRovingList.ts.
+
+   It borrows the hover treatment ON PURPOSE — the doctor arrowing down a
+   list and the doctor sweeping a mouse over it are pointing at the same
+   thing, so they should look the same. The transform is the part that is
+   NOT shared: nudging each row as the cursor passes turns a five-name list
+   into a wave. */
+.pm-match-row[data-cx-cursor] {
+    border-color: rgba(168, 85, 247, 0.55);
+    background: rgba(250, 245, 255, 0.95);
+    box-shadow: inset 2px 0 0 #a855f7;
+}

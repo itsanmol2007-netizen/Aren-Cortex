@@ -38,6 +38,8 @@ import {
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
 import { BlankTestArt } from "./BlankArt";
+import { useRovingList } from "../../hooks/useRovingList";
+import { firedChord, matches } from "../../lib/keyboard/keymap";
 
 /**
  * Section order, labels, glyphs and the verb each type is accepted with.
@@ -136,6 +138,36 @@ export function SuggestionsCard({
      */
     const [scope, setScope] = useState<IntentType | null>(null);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
+
+    /**
+     * The same walk-and-take the other two ranked panels have. This card holds
+     * the investigations, so it is the one a doctor reaches for after the
+     * medicines — the verb differs per row type ("Order", "Refer", "Add") but
+     * `.cs-act` is the class all of them wear, so nothing here needs to know
+     * which is which.
+     */
+    const listRef = useRef<HTMLDivElement>(null);
+    const roving = useRovingList({
+        containerRef: listRef,
+        rowSelector: ".cs-sug",
+        actionSelector: "button.cs-act",
+        enabled: !disabled,
+    });
+
+    const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const move = firedChord(e, "conditionMove");
+        if (move) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.move(move.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (matches(e, "conditionTake")) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.activate();
+        }
+    };
 
     /**
      * One flat, ordered list rather than four sub-lists.
@@ -286,9 +318,10 @@ export function SuggestionsCard({
                         ))}
                     </select>
                 }
+                onKeyDown={onSearchKeyDown}
             />
 
-            <div className="cs-list">{body()}</div>
+            <div className="cs-list" ref={listRef}>{body()}</div>
         </section>
     );
 }

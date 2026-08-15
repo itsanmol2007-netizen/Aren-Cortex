@@ -4942,3 +4942,112 @@ body.cs-locked-shell {
 .cs-status b {
     font-variant-numeric: tabular-nums slashed-zero;
 }
+
+/* ════════════════════════════════════════════════════════════
+   THE KEYBOARD CURSOR, and the key caps that advertise it
+
+   Added 2026-08-15 with the keyboard pass. Two objects live here:
+
+   1. `[data-cx-cursor]` — where the doctor is in a list. Written
+      onto the row by useRovingList.ts rather than held in React
+      state, because these lists re-rank in the same frame a chip
+      lands on the case sheet; see that file's header.
+
+      It is deliberately NOT the browser's focus ring. Focus stays
+      in the search field above the list — the doctor is still
+      typing to narrow it — so the ring is in the wrong place and
+      an outline on the row would claim a focus the row does not
+      have. Blue, per the standing rule that blue is the action
+      colour, and drawn as a left bar plus a tint so it reads at a
+      glance on a dim 1366x768 panel without competing with the
+      guard reds already on these rows.
+
+   2. `.cs-kbd` — a key cap printed on the control it fires.
+
+      This class was in use before today on the Review button and
+      had no base rule at all: `.cs-review .cs-kbd` sets a
+      `border-color` with no `border-width`, so it never drew one.
+      The base is defined here and those two rules become what
+      they read as — overrides for the green ground.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-rec[data-cx-cursor],
+.cs-sug[data-cx-cursor],
+.cs-line[data-cx-cursor] {
+    background: var(--cs-blue-soft);
+    box-shadow: inset 2px 0 0 var(--cs-blue);
+}
+
+/* The ranked medicine row already owns a border and a gradient, so it
+   takes the cursor on the border instead of fighting its own background. */
+.cs-rec[data-cx-cursor] {
+    border-color: rgba(18, 104, 232, 0.45);
+    background: linear-gradient(180deg, #fff, var(--cs-blue-soft));
+}
+
+/* A guarded row keeps its red. The cursor says "you are here"; it must
+   never overwrite "read this before prescribing". */
+.cs-rec.is-hard[data-cx-cursor],
+.cs-sug.is-hard[data-cx-cursor] {
+    background: var(--cs-red-soft);
+    box-shadow: inset 2px 0 0 var(--cs-red);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .cs-rec[data-cx-cursor],
+    .cs-sug[data-cx-cursor],
+    .cs-line[data-cx-cursor] {
+        transition: background 0.12s ease, box-shadow 0.12s ease;
+    }
+}
+
+.cs-kbd {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 5px;
+    background: #f7f8fa;
+    padding: 1px 6px;
+    color: var(--cs-faint);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 620;
+    line-height: 1.5;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+/* ── the way in to the keyboard map ── */
+
+.cs-status-keys {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: color 0.14s ease;
+}
+
+.cs-status-keys:hover { color: var(--cs-blue); }
+
+.cs-status-keys kbd {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 4px;
+    background: #f7f8fa;
+    padding: 0 5px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 620;
+}
+
+/* The digit hint on the add sheet's timing circles. Quieter than the
+   label it sits beside — it is a reminder, not a second heading. */
+.cs-addmed-keyhint {
+    margin-left: 6px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 560;
+    letter-spacing: 0;
+}

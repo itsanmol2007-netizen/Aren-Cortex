@@ -8,17 +8,19 @@ Rewrite or delete this file the same way when the next session ends.
 
 **Read order for a cold start:** this file, then `aren-cortex-ui-doctrine.md`,
 then `aren-cortex-atlas.md` §14 (newest entries at the bottom — §14.19, §14.20,
-§14.21 are this day's). Don't re-survey the repo; both docs are current.
+§14.21, §14.22 are this day's). Don't re-survey the repo; both docs are current.
 
 ---
 
 ## 0. Where things stand
 
-`master`. Everything below is committed, built clean (`tsc -b` + `vite build`),
-and **verified in the real running app against the live database**, not merely
-type-checked. No work in flight.
+`master`. Everything below is committed and built clean (`tsc -b` +
+`vite build`). The first two pieces were **verified in the real running app
+against the live database**; the third (keyboard) was verified by harness and
+in Chromium but **not through the real consult screen** — see §0.3. No work in
+flight.
 
-Two pieces of work landed on 2026-08-15, in this order:
+Three pieces of work landed on 2026-08-15, in this order:
 
 ### `App.tsx` Stage 2 — the state split (atlas §14.20)
 
@@ -56,6 +58,37 @@ already carries a signal that `signal_intent_rules` actually reference — the
 rest would carry forward and re-rank nothing. Three of the seven are the shape
 worth knowing about: an acute *episode* pointing at the chronic fact it proves
 (diabetic ketoacidosis → Known diabetic).
+
+### 0.3 The keyboard pass (atlas §14.22)
+
+Cortex claimed to be keyboard-first and was not. `ShortcutsSheet.tsx` held a
+hand-written table and **four of its eleven rows documented shortcuts that had
+never been implemented**.
+
+Bindings are now data — `src/lib/keyboard/keymap.ts`, the one place. The
+handler dispatches from it and the sheet prints it, so they cannot drift.
+**Add or change a shortcut there and nowhere else.**
+
+The whole flow is now reachable without a mouse: intake → case sheet →
+assessment → medicines → the add sheet → the plan → review → save. Assessment
+had no Tab stop at all before this, so that step was mouse-only.
+
+Three real bugs fell out of writing it down:
+
+- **Ctrl+Enter did nothing in the review modal** — the global handler caught it
+  and re-opened the review it was already showing. The one key that finishes a
+  consult was inert.
+- **`Tab` and `Shift+Tab` both matched "next stop"**; only handler ordering hid
+  it.
+- **`isAnyModalOpen` was missing `pendingMedicine`** (and four others), so Tab
+  moved focus out of the add sheet mid-edit.
+
+**What was NOT verified:** the consult screen is behind the auth gate and this
+session had no doctor credentials, so none of this was driven through the real
+screen. The mechanism is proven (199 matcher assertions, 25 in real Chromium
+including the re-rank cases); the per-card wiring is typed and reviewed but not
+clicked. **Do one pass through a real consult before trusting it** — especially
+the four `searchRef`/`listRef` attachments and the Assessment Tab stop.
 
 ---
 
@@ -113,11 +146,23 @@ These cost real time and none of them are visible on screen.
 5. **`diagnostic_orders` has an FK to `prescriptions` as well as `visits`**, so
    test-data cleanup must delete it before prescriptions. The obvious order
    fails.
+6. **A browser tab never delivers Ctrl+N, Ctrl+T or Ctrl+W.** The browser
+   consumes them before any listener runs, so `preventDefault` cannot help —
+   the event never arrives. An installed PWA does get them. Any shortcut that
+   matters needs a chord from outside that set (Alt+letter is free); see the
+   three tiers at the top of `lib/keyboard/keymap.ts`.
+7. **Documentation kept in step by discipline drifts.** Four of the eleven rows
+   in the shortcuts sheet described features that were never built, because the
+   table and the handler were two files a rule said to edit together. When two
+   things must agree, make one of them read the other.
 
 ---
 
 ## 3. Open items, most important first
 
+- **The keyboard pass needs one live pass through a real consult** (§0.3). It
+  is the newest work and the only piece of today's three not driven through the
+  real screen.
 - **Longitudinal step 6 — resolve / refute — is NOT built.** A condition
   confirmed in error can be un-ticked from today's chart, but the
   `patient_conditions` row survives and carries forward again next visit. From

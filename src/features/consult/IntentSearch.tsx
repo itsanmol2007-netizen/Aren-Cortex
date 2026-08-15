@@ -102,7 +102,7 @@ export function useIntentSearch(types: IntentType[], limit = 20): IntentSearchSt
 
 /** The input itself. Identical on every card, by construction. */
 export function IntentSearchField({
-    state, placeholder, inputRef, disabled, trailing,
+    state, placeholder, inputRef, disabled, trailing, onKeyDown,
 }: {
     state: IntentSearchState;
     placeholder: string;
@@ -110,6 +110,17 @@ export function IntentSearchField({
     disabled?: boolean;
     /** an optional control beside the field, e.g. a type filter */
     trailing?: React.ReactNode;
+    /**
+     * The card's list navigation — ↑ ↓ to walk its rows and Enter to take one.
+     *
+     * It belongs to the CARD rather than to this field because only the card
+     * knows what its rows are and what taking one means ("Prescribe" on a
+     * medicine, "Confirm" on a condition, "Order" on a test). This field just
+     * hands the keystroke over first and keeps Escape for itself, which is the
+     * same division of labour as the rest of the keyboard work: this module
+     * owns the input, the surface owns what is in the list under it.
+     */
+    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
     return (
         <div className="cs-rec-search">
@@ -121,7 +132,14 @@ export function IntentSearchField({
                     placeholder={placeholder}
                     disabled={disabled}
                     onChange={(e) => state.setQuery(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Escape") state.setQuery(""); }}
+                    onKeyDown={(e) => {
+                        onKeyDown?.(e);
+                        // Escape clears the query and is not offered to the
+                        // card: every one of them would do the same thing with
+                        // it, and a card that forgot to would leave the doctor
+                        // with a search they cannot get out of.
+                        if (!e.defaultPrevented && e.key === "Escape") state.setQuery("");
+                    }}
                     aria-label={placeholder}
                 />
             </div>

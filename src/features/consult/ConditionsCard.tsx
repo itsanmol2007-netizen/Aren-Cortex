@@ -42,6 +42,8 @@ import {
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
 import { BlankSelectedArt } from "./BlankArt";
+import { useRovingList } from "../../hooks/useRovingList";
+import { firedChord, matches } from "../../lib/keyboard/keymap";
 
 /** Rows shown before the panel asks. */
 const CAP = 4;
@@ -79,16 +81,48 @@ interface Props {
     diagnoses: string[];
     onRemoveDiagnosis: (label: string) => void;
     disabled?: boolean;
+    /** the Assessment Tab stop — see STOPS in useConsultKeyboard.ts */
+    searchRef?: React.RefObject<HTMLInputElement>;
 }
 
 export function ConditionsCard({
     intents, topScore, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, hasChart,
-    diagnoses, onRemoveDiagnosis, disabled = false,
+    diagnoses, onRemoveDiagnosis, disabled = false, searchRef,
 }: Props) {
     const [expanded, setExpanded] = useState(false);
     const reduce = useReducedMotion();
     const search = useIntentSearch(["finding"]);
+
+    /**
+     * This card is the second Tab stop, so its search field is where a doctor
+     * arrives with their hands already on the keyboard — it needs the same
+     * walk-and-take the medicines panel has. See `useRovingList` for why the
+     * cursor is in the DOM rather than in state here: this list re-ranks in the
+     * same frame a chip lands on the case sheet above it.
+     */
+    const listRef = useRef<HTMLDivElement>(null);
+    const roving = useRovingList({
+        containerRef: listRef,
+        rowSelector: ".cs-sug",
+        actionSelector: "button.cs-act",
+        enabled: !disabled,
+    });
+
+    const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const move = firedChord(e, "conditionMove");
+        if (move) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.move(move.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (matches(e, "conditionTake")) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.activate();
+        }
+    };
 
     const shown = expanded
         ? intents
@@ -210,6 +244,8 @@ export function ConditionsCard({
                     state={search}
                     placeholder="Search diagnosis / condition…"
                     disabled={disabled}
+                    inputRef={searchRef}
+                    onKeyDown={onSearchKeyDown}
                 />
             </div>
 
@@ -229,7 +265,10 @@ export function ConditionsCard({
                 verdict, and the moment a possibility and a decision look alike
                 is the moment rank 1 starts reading as a diagnosis. */}
             {search.isSearching ? (
-                <div className="mt-3 px-4">{body()}</div>
+                /* Same ref on both branches: only one of them is mounted at a
+                   time, so the cursor walks whichever list the card is
+                   currently showing — ranked conditions, or search hits. */
+                <div className="mt-3 px-4" ref={listRef}>{body()}</div>
             ) : (
                 <div className="mt-3.5 grid gap-4 px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
                     {/* left: what is ranked */}
@@ -306,6 +345,7 @@ export function ConditionsCard({
                                 "mt-1.5 flex flex-col " +
                                 (expanded ? "overflow-y-auto pr-1" : "overflow-hidden")
                             }
+                            ref={listRef}
                         >
                             {body()}
                         </motion.div>

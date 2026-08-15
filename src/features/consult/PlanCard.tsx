@@ -13,7 +13,7 @@
 // never in a section of its own.
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
     CalendarClock, ClipboardList, FileText, FlaskConical, NotebookPen, Pill,
     Printer, Stethoscope,
@@ -22,6 +22,8 @@ import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
 import { CompanionLine, MedicineIdentity } from "./parts";
+import { useRovingList } from "../../hooks/useRovingList";
+import { firedChord, matches } from "../../lib/keyboard/keymap";
 
 const SLOTS = [
     { key: "M", label: "Morning" },
@@ -188,6 +190,68 @@ export function PlanCard({
 }: Props) {
     const [openId, setOpenId] = useState<string | null>(null);
 
+    /**
+     * ── The plan, on the keyboard ───────────────────────────────────────────
+     *
+     * The fourth Tab stop, and the only one that is not a search box: the
+     * keyboard hook lands focus on the first `[data-cx-planline]` and the walk
+     * carries on from there. Every line is walkable — diagnoses, medicines,
+     * tests, advice — because "take that off again" applies to all of them and
+     * a cursor that silently skipped three of the four kinds would be worse
+     * than none.
+     *
+     * Only medicines have anything to OPEN, so Enter on the others does
+     * nothing rather than something surprising; `[data-cx-planline]` is on the
+     * medicine lines alone, which makes that fall out of the selector instead
+     * of needing a check.
+     *
+     * Backspace is bound beside Delete because the plan rail is where a doctor
+     * ends up after typing, and on a laptop Delete is a chord. It is safe here
+     * for the same reason the digits are safe in the add sheet: `matches()`
+     * refuses both keys the moment the event comes from a field, and this
+     * panel has a notes textarea at the bottom of it.
+     */
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const roving = useRovingList({
+        containerRef: scrollRef,
+        rowSelector: ".cs-line",
+        actionSelector: "[data-cx-planline]",
+    });
+
+    const onListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        const move = firedChord(e, "planMove");
+        if (move) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.move(move.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (matches(e, "planOpen")) {
+            if (!roving.current()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            roving.activate();
+            return;
+        }
+        if (matches(e, "planRemove")) {
+            const row = roving.current();
+            if (!row) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // Step the cursor first, then remove: the row is about to leave the
+            // DOM, and a cursor sitting on a detached node means the next ↓
+            // restarts from the top of a list the doctor was halfway down.
+            const rows = roving.rows();
+            const at = rows.indexOf(row);
+            const after = rows[at + 1] ?? rows[at - 1] ?? null;
+            row.querySelector<HTMLElement>("button.cs-x")?.click();
+            if (after) {
+                roving.clear();
+                after.setAttribute("data-cx-cursor", "on");
+            }
+        }
+    };
+
     const itemCount =
         diagnoses.length + prescription.length + tests.length + adviceLines.length +
         (followUpDays != null ? 1 : 0);
@@ -203,7 +267,11 @@ export function PlanCard({
                 </span>
             </div>
 
-            <div className="cs-plan-scroll">
+            {/* The keydown sits on the scroll container rather than on each
+                line: focus lands on ONE line (the hook's landing target) and
+                the arrows have to keep working from there as the cursor moves
+                to lines that were never focused. */}
+            <div className="cs-plan-scroll" ref={scrollRef} onKeyDown={onListKeyDown}>
                 {isEmpty ? (
                     <div className="cs-plan-empty">
                         <ClipboardList size={18} style={{ margin: "0 auto 4px", opacity: 0.35 }} />

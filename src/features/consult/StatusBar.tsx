@@ -7,7 +7,7 @@
 // on the page smaller and quieter than the body text.
 // ---------------------------------------------------------------------------
 
-import { Cloud, CloudOff } from "lucide-react";
+import { Cloud, CloudOff, Keyboard } from "lucide-react";
 
 interface Props {
     /** ruleset loaded and ranking */
@@ -20,9 +20,13 @@ interface Props {
     /** signed-in account has no `doctors` row — running on the shared fallback identity */
     unidentified: boolean;
     online: boolean;
+    /** opens the keyboard map — see the comment on the button */
+    onOpenShortcuts: () => void;
 }
 
-export function StatusBar({ active, modelVersion, specialty, degraded, unidentified, online }: Props) {
+export function StatusBar({
+    active, modelVersion, specialty, degraded, unidentified, online, onOpenShortcuts,
+}: Props) {
     return (
         <footer className="cs-status">
             <span className="cs-status-item">
@@ -67,6 +71,32 @@ export function StatusBar({ active, modelVersion, specialty, degraded, unidentif
                 {online ? <Cloud size={13} /> : <CloudOff size={13} />}
                 {online ? "Data cached locally" : "Offline — working from cache"}
             </span>
+
+            {/* ── The way in to the keyboard map ──────────────────────────────
+                "?" has opened this since the sheet was built and nothing on
+                screen ever said so, which makes it a shortcut for people who
+                already know it — the exact opposite of what a help affordance
+                is for.
+
+                It lives in the status bar rather than the sidebar because the
+                sidebar is two clicks away behind an overlay, and this is
+                needed WHILE working. The status bar is priority-3 metadata by
+                the philosophy doc, and a permanently available help control is
+                precisely that: present so the doctor can trust the screen,
+                never competing with it. The chord is printed on the button, so
+                the button teaches its own replacement and a doctor only needs
+                it once. */}
+            <button
+                type="button"
+                className="cs-status-item cs-status-keys"
+                onClick={onOpenShortcuts}
+                aria-label="Keyboard shortcuts"
+                title="Keyboard shortcuts"
+            >
+                <Keyboard size={13} />
+                Shortcuts
+                <kbd>?</kbd>
+            </button>
         </footer>
     );
 }

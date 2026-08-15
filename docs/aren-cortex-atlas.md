@@ -1234,7 +1234,9 @@ A `prefers-reduced-motion` block disables the transitions.
 | The add sheet's food-instruction pre-fill | `features/consult/dosing.ts` — a documented static map, not a DB lookup (§14.17) |
 | A combination product's guard verdict | `lib/synapse/engine.ts` → `guardCombination` / `medicineIntentIndex` — checks EVERY molecule the product carries, not just the one it was ranked or searched through (§14.17) |
 | Which combination products a ranked molecule offers | `lib/db/medicines.ts` → `fetchCombinationProducts`, wired in `useConsultIntelligence.ts` §4b |
-| Keyboard shortcuts | `hooks/useConsultKeyboard.ts` + `components/ShortcutsSheet.tsx` (keep both in step) |
+| **Keyboard shortcuts — adding or changing a binding** | `lib/keyboard/keymap.ts`, the **one place**. The handler dispatches from it and `ShortcutsSheet` prints it, so they can no longer drift (§14.22) |
+| Where a key is *handled* | `hooks/useConsultKeyboard.ts` for the global ones; the surface itself for anything inside a list or a modal |
+| ↑ ↓ / Enter over a ranked list | `hooks/useRovingList.ts` — **don't fork it**; four cards share it |
 | Ranking, guards, personalisation, brands, companions — the MATH | `src/lib/synapse/*.ts` (pure, no I/O — safe to unit-test) |
 | Vitals → engine measurements (BP split, °F→°C, age, text values) | `lib/synapse/consultInput.ts` — **the one place** |
 | Loading the ruleset / catalogue / preference models | `src/lib/db/synapse.ts` |
@@ -3138,3 +3140,158 @@ Test patient and visits deleted afterwards per §0; the 7 catalogue rows stay.
 - Confirming an episode still records nothing durable and shows no history of
   "had appendicitis, Jan 2026". That is §5.3 of the investigation and remains a
   display question, not an engine one.
+
+---
+
+## 14.22 Session 2026-08-15c — the consult, without a mouse
+
+Cortex has claimed to be keyboard-first since the first version. It was not,
+and the gap between the claim and the truth was written down in the one place a
+doctor would look.
+
+### The defect that started this
+
+`ShortcutsSheet.tsx` held a hand-written table of eleven shortcuts. **Four of
+them did not exist**: arrow-key navigation of the ranked lists, the severity
+digits, "Delete removes the focused chip", and "← → move between brands" were
+all documented and none were implemented. A doctor who pressed `?` was told
+about a keyboard that had never been built.
+
+Nobody wrote them down wrongly on purpose. The bindings lived in
+`useConsultKeyboard.ts` and their documentation lived in `ShortcutsSheet.tsx`,
+and this atlas's own §13 row said "keep both in step" — a rule that works right
+up until it doesn't.
+
+### The fix is structural, not editorial
+
+`src/lib/keyboard/keymap.ts` is now the only declaration of a binding. The
+handler dispatches from it and the sheet prints it, so a binding that is not
+dispatched cannot be documented and one that is dispatched cannot be silently
+dropped from the help. **Add or change a shortcut there and nowhere else.**
+
+Each binding carries its chords, its scope, the sentence the sheet prints, and
+`whileTyping` — which is enforced inside `matches()` rather than at each call
+site, so a new binding cannot accidentally steal a keystroke from a search box
+by being wired up in a hurry. `whileTyping` is also settable per-CHORD, for the
+two bindings whose two chords disagree about it: `Ctrl+K` must work mid-word
+and a bare `/` must not, or typing "b.d./tds" into the medicine search jumps
+focus to the case sheet and leaves a stray slash behind.
+
+### Three real bugs found by writing it down
+
+1. **Ctrl+Enter did nothing in the review modal.** The global handler kept
+   Ctrl+N and Ctrl+Enter live over every overlay, deliberately, so Ctrl+Enter
+   in the review was caught by the global binding and RE-OPENED the review it
+   was already showing. The one key that finishes a consult was inert. The hook
+   now stands down entirely while an overlay is up — an overlay owns the
+   keyboard — with the single exception of the shortcuts sheet, because "what
+   can I press" has to be answerable from inside the modal that prompted it.
+2. **`Tab` and `Shift+Tab` both matched "next stop".** An unspecified `shift`
+   is not compared, so the bare `Tab` chord matched both, and only the order
+   the handler happened to test them in made Shift+Tab work. `nextStop` now
+   states `shift: false`, and the harness asserts no Tab chord anywhere omits
+   it.
+3. **`isAnyModalOpen` did not include `pendingMedicine`.** Every global chord
+   stayed live underneath the add sheet, so Tab moved focus out of a modal the
+   doctor was halfway through filling in. `browse`, `brandSheet`, `explain`,
+   `openChart` and `sidebarOpen` were missing too.
+
+### Assessment was unreachable by keyboard
+
+`STOPS` was chart → medicines → plan. The one panel where a condition is
+confirmed had no Tab stop, so the whole Assessment step was mouse-only. It is
+now chart → **assessment** → medicines → plan, which is also the order a
+consultation is built in.
+
+### `useRovingList` — why the cursor is in the DOM
+
+Four cards need ↑ ↓ and Enter over their rows. The obvious implementation is a
+`cursor` index in each card's state and it is **wrong here for a specific
+reason: these lists re-rank underneath the cursor.** The engine is pure and
+re-runs in the same frame a chip lands, so the row at index 3 a moment ago is a
+different medicine now. An index in React state is a claim about a list that
+has already changed.
+
+So the cursor is a `data-cx-cursor` attribute, read back from the DOM on every
+keystroke. There is no second copy to reconcile. Verified in Chromium: after a
+re-rank the cursor is **still on the same drug**, not on the same rank, and
+when its row is removed the next ↓ restarts cleanly from the top.
+
+The side benefit is that the ranked list and the SEARCH RESULTS are walked by
+one cursor without either knowing about the other — they render into the same
+`.cs-list`, so they are one list as far as the hook is concerned, which is what
+a doctor pressing ↓ after typing already assumes.
+
+**A row whose verb is missing stays in the walk and does nothing on Enter.**
+Skipping it would make ↓ jump silently over a red guard, which is the exact
+failure rule 11 exists to prevent.
+
+### What is now reachable, end to end
+
+Patient intake (type → ↑↓ or Tab → Enter; Alt+N for the new-patient form,
+where Enter walks the seven fields and saves on the last) → case sheet (↑↓
+Enter, Alt+1/2/3 for severity on the symptom just recorded) → assessment (↑↓
+Enter) → medicines (↑↓ Enter, → for other brands, Alt+E for why) → the add
+sheet (↑↓ brands, **1-4 for morning/noon/evening/night**, 0 for SOS, Enter to
+add) → the plan (↑↓, Enter for the dose editor, Del to remove) → review
+(Ctrl+P print, Ctrl+Enter confirm and save).
+
+The digits in the add sheet are the notation doctors already write by hand:
+`1` and `4` is literally 1-0-0-1.
+
+### Browser conflicts, handled rather than hoped about
+
+Three tiers, documented at the top of `keymap.ts`. **Ctrl+N, Ctrl+T and Ctrl+W
+are never delivered to a browser tab at all** — the browser eats them before
+any listener runs, and `preventDefault` cannot reach an event that never
+arrives. An installed PWA does receive them. So every action has at least one
+chord from the tiers that *are* reachable: Ctrl+N is kept for next-patient
+because it is what every doctor reaches for and it works the day Cortex is
+installed, and **Alt+N is bound to the same action** so nothing is unreachable
+today. The shortcuts sheet prints that caveat on the row rather than hiding it.
+
+`Ctrl+P` is claimed rather than left to the browser deliberately, and that one
+is a correctness fix: the browser's own print renders the MODAL — scrim,
+buttons and all — instead of `PrescriptionDocument`, which is a wrong
+prescription on real paper.
+
+### The keyboard map has a way in now
+
+`?` has opened the sheet since it was built and nothing on screen ever said so,
+which makes it a shortcut for people who already know it. There is a
+**Shortcuts button in the status bar** with the chord printed on it, so the
+button teaches its own replacement. The status bar rather than the sidebar
+because the sidebar is two clicks away behind an overlay and this is needed
+*while* working; priority-3 metadata is exactly the right tier for it.
+
+`.cx-keys-hint` in `workspace.css` had been sitting unused since the sheet was
+built — it was written for a control that was never added.
+
+### A latent CSS bug, fixed in passing
+
+`.cs-kbd` was in use on the Review button and **had no base rule at all**:
+`.cs-review .cs-kbd` sets a `border-color` with no `border-width`, so it never
+drew one. The base is now defined in `consult.css` and those two rules become
+what they read as — overrides for the green ground.
+
+### Verification
+
+- `tsc -b` and `npm run build` clean.
+- **199 assertions** over the real `keymap.ts` matcher: the chords a doctor
+  presses, the `whileTyping` contract (a digit typed into the Dose box must not
+  reschedule the drug; Backspace in the notes textarea must not delete a plan
+  line), Tab vs Shift+Tab, and a sweep asserting **no two bindings in one scope
+  claim the same chord** — the failure mode where whichever the handler tests
+  first silently wins.
+- **25 assertions in real Chromium** against the real `useRovingList` and the
+  real row class names: walking, wrapping, exactly-one-cursor, focus never
+  leaving the search field, Enter on a row with no verb being a no-op, → / ←
+  driving the row's own expander idempotently, and the two re-rank cases above.
+- **NOT verified against the live app.** The consult screen is behind the auth
+  gate and this session had no doctor credentials, so nothing here was driven
+  through the real screen or the real database. That is the gap in this entry:
+  the mechanism is proven, the wiring into each card is typed and reviewed but
+  not clicked. **Worth one pass through a real consult before trusting it**, in
+  particular the four `searchRef` / `listRef` attachments and the Assessment
+  Tab stop.
+- No DB writes. No test data created.

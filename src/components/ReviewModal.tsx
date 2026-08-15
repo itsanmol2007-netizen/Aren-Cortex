@@ -14,6 +14,7 @@ import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
 import { usePrintFormat } from "../features/prescription/usePrintFormat";
 import { accentPalette } from "../lib/brand/accent";
 import { RxMonogram, RxWatermark } from "./RxMarks";
+import { matches } from "../lib/keyboard/keymap";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -269,6 +270,57 @@ export default function ReviewModal({
     // Small delay so format state updates before print fires
     setTimeout(() => handlePrint(), 100);
   }
+
+  /**
+   * ── The last three keys of a consult ────────────────────────────────────
+   *
+   * This is the end of the keyboard path that starts at patient intake, and
+   * until now it was where that path stopped: the doctor arrived here with
+   * Ctrl+Enter and then had to reach for the mouse to press the button two
+   * inches away. Worse, the global handler was catching Ctrl+Enter over this
+   * modal and re-opening the review it was already showing, so the obvious
+   * key did visibly nothing. `useConsultKeyboard` now stands down while an
+   * overlay is up, which is what makes these three bindings reachable at all.
+   *
+   * Ctrl+P is claimed rather than left to the browser deliberately. The
+   * browser's own print would render the MODAL — scrim, buttons and all —
+   * instead of `PrescriptionDocument`, which is a wrong prescription on real
+   * paper, so cancelling that default is a correctness fix and not a
+   * convenience.
+   *
+   * Escape means "back to editing" rather than "discard": nothing here is
+   * saved yet, `onEdit` returns the doctor to the workspace with the plan
+   * intact, and in print mode there is no edit to go back to so it closes.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // The format picker is a modal ON this modal and owns its own keys.
+      if (showFormatPicker) return;
+
+      if (matches(e, "reviewPrint")) {
+        e.preventDefault();
+        e.stopPropagation();
+        handlePrintClick();
+        return;
+      }
+      if (matches(e, "reviewSave")) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Print mode is a reprint of something already saved — there is no
+        // `onSave` wired, and inventing one would write a second consult.
+        if (!isPrintMode && onSave && !isSaving) onSave();
+        return;
+      }
+      if (matches(e, "reviewBack")) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isPrintMode && onEdit) onEdit(); else onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFormatPicker, isPrintMode, isSaving, onSave, onEdit, onClose, remembered, format]);
 
   return (
     <>
@@ -771,6 +823,13 @@ export default function ReviewModal({
               <button onClick={handlePrintClick}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
                 <Printer className="w-4 h-4" /> Print / Save PDF
+                {/* The chord, on the control it fires. This modal is Tailwind
+                    end to end, so the key cap is built from utilities here
+                    rather than borrowing consult.css's `.cs-kbd` — mixing the
+                    two vocabularies in one component is doctrine rule 7. */}
+                <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold not-italic leading-5 text-gray-400">
+                  Ctrl P
+                </kbd>
               </button>
 
               <button
@@ -783,6 +842,9 @@ export default function ReviewModal({
                 style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
                 <CheckCircle className="w-4 h-4" />
                 {isSaving ? "Saving..." : "Confirm & Save"}
+                <kbd className="rounded border border-white/25 bg-white/15 px-1.5 text-[11px] font-semibold not-italic leading-5 text-white/80">
+                  Ctrl ⏎
+                </kbd>
               </button>
             </div>
           )}

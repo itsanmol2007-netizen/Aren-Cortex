@@ -2840,3 +2840,18 @@
         transition: none;
     }
 }
+
+/* ── a caveat under one row of the keyboard map (2026-08-15) ──────────
+   Ctrl+N is the chord every doctor reaches for and a browser tab never
+   delivers it. The row prints both chords; this is where it says which
+   one to trust. Quieter than the description above it — a footnote, not
+   a second instruction. See `note` in lib/keyboard/keymap.ts. */
+.cx-keys-note {
+    display: block;
+    margin-top: 2px;
+    color: var(--faint);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 1.4;
+}
