@@ -3346,3 +3346,65 @@ keys reach the thing that actually scrolls.
 key MUST take focus when it opens, or those bindings are dead on arrival. If
 you add a modal with bare-key shortcuts, focus something inside it that is not
 a text field.
+
+---
+
+## 14.22b One hook, six overlays — visible focus as a system (same session)
+
+Anmol's follow-up, after §14.22a's fix landed: *"whenever the actual action is
+happening, the focus should be there, which will tell you where the keystrokes
+will actually go... even the options being selected and all. Build that
+thing."* Right call — §14.22a fixed two overlays inline and left the same gap
+open everywhere else, and it suppressed the visible ring on the ground that a
+landing pad isn't a control, which was backwards: the landing pad is exactly
+what needs to be visible.
+
+**`src/hooks/useOverlayFocus.ts`** is the one mechanism now, extracted from
+the duplicated logic `MedicineAddSheet` and `ReviewModal` each had: remember
+`document.activeElement`, focus the given ref next frame, restore on close.
+Applied to all six overlays that can be driven by keyboard:
+
+| Overlay | Before | After |
+|---|---|---|
+| `MedicineAddSheet` | fixed in §14.22a | refactored onto the shared hook |
+| `ReviewModal` | fixed in §14.22a | refactored onto the shared hook |
+| `ActiveConsultGuard` | **no keyboard path at all** — not even Escape | Escape closes, ↑↓ walks the four options, Enter activates the highlighted one (or the safe "continue" default with nothing highlighted) |
+| `BrandSheet` | **no keyboard path at all** — mouse only | ↑↓ walks every brand row across strength families, Enter chooses and closes |
+| `ContributionSheet` | opened without moving focus | takes focus, returns it — a double-click had left focus nowhere |
+| `BrowseSheet` | focused its search field but never returned focus | now via the shared hook, so closing it restores the caller |
+| `Sidebar` | Escape only | takes focus on open, hands it back on close |
+
+`ActiveConsultGuard` and `BrandSheet` were the real gaps — genuinely
+mouse-only before this, not shortcuts that were merely undiscoverable. The
+guard can interrupt a doctor mid-keystroke (opening patient intake while a
+consult is active triggers it), which makes it the overlay most likely to
+appear while hands are already on the keyboard and, until this pass, the least
+reachable from there.
+
+### `.cx-kbd-surface` — the visible answer, not a suppressed one
+
+Every container this hook focuses carries `tabIndex={-1}` (programmatic focus
+only, never a Tab stop) and a blue ring on `:focus` — plain `:focus`, not
+`:focus-visible`, because these containers are never subject to a mouse-click
+focus case to distinguish from. `ReviewModal` and `ActiveConsultGuard` are
+Tailwind end to end, so they get the equivalent as utilities rather than the
+shared class — doctrine rule 7, don't mix vocabularies in one file.
+
+### Verified in Chromium, real components
+
+- **6 assertions on the real `ActiveConsultGuard`**, DB call stubbed at the
+  bundle boundary rather than mocked in-process (ESM named exports are
+  read-only, so monkeypatching the import after the fact silently failed and
+  produced a blank render — worth knowing if this pattern is reused): Escape
+  closes safely, bare Enter with nothing highlighted defaults to "continue"
+  and never a destructive action, ↑↓ visibly walks to Discard, Enter there
+  fires the real handler through to the stub.
+- **5 assertions on the real `BrandSheet`**: focus lands on the sheet on open,
+  ↑↓ walks Dolo → Calpol across separate single-variant families, Enter
+  chooses and closes.
+- The two suites from §14.22a re-run clean against the refactored components
+  (18 assertions), plus the 199 matcher assertions — 228 total, zero failures.
+- `tsc -b` and `vite build` clean.
+- **Still not through the real consult screen** — see §14.22a's note on why;
+  unchanged this session. `Sidebar` and `ContributionSheet`'s focus-return
+  specifically were reviewed but not driven in a harness.

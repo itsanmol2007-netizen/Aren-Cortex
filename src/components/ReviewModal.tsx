@@ -15,6 +15,7 @@ import { usePrintFormat } from "../features/prescription/usePrintFormat";
 import { accentPalette } from "../lib/brand/accent";
 import { RxMonogram, RxWatermark } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
+import { useOverlayFocus } from "../hooks/useOverlayFocus";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -173,31 +174,14 @@ export default function ReviewModal({
 
   const printRef = useRef<HTMLDivElement>(null);
   /**
-   * The review takes focus while it is open, and hands it back on close.
-   *
-   * Same fix, same reason as `MedicineAddSheet` — this modal is opened by
-   * Ctrl+Enter from the workspace and nothing moved focus, so it stayed in
-   * whichever search field was behind the scrim. Two things went wrong with
-   * that: anything the doctor typed while reading the prescription landed in
-   * that hidden field, and Page Down / the arrows scrolled the workspace
-   * underneath instead of the document they were looking at, which on a long
-   * prescription reads as the scroll being broken.
-   *
-   * The scrollable body takes it rather than the card, so those keys reach the
-   * thing that actually scrolls.
+   * Takes focus on the scrollable body, not the card — see
+   * `useOverlayFocus.ts`. The body specifically, because with focus behind
+   * the scrim Page Down and the arrows scrolled the WORKSPACE instead of the
+   * prescription being read, which on a long Rx reads as the scroll being
+   * broken.
    */
   const bodyRef = useRef<HTMLDivElement>(null);
-  const returnFocusTo = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    returnFocusTo.current = document.activeElement as HTMLElement | null;
-    const frame = window.requestAnimationFrame(() => bodyRef.current?.focus());
-    return () => {
-      window.cancelAnimationFrame(frame);
-      const back = returnFocusTo.current;
-      returnFocusTo.current = null;
-      if (back?.isConnected) back.focus();
-    };
-  }, []);
+  useOverlayFocus(bodyRef);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
   const [showFormatPicker, setShowFormatPicker] = useState(false);
@@ -406,9 +390,17 @@ export default function ReviewModal({
           </div>
 
           {/* Scrollable body. `tabIndex={-1}` is programmatic focus only —
-              never a Tab stop — and `outline-none` because a scroll region is
-              not a control and should not wear a ring for being scrolled. */}
-          <div ref={bodyRef} tabIndex={-1} className="overflow-y-auto flex-1 bg-gray-50/80 outline-none">
+              never a Tab stop. The focus ring IS shown, deliberately — see
+              `.cx-kbd-surface` in consult.css for why an overlay's landing
+              pad must stay visible rather than being suppressed. This
+              component is Tailwind end to end, so the equivalent ring is
+              built from utilities here instead of that shared class
+              (doctrine rule 7 — don't mix styling vocabularies in one file). */}
+          <div
+            ref={bodyRef}
+            tabIndex={-1}
+            className="overflow-y-auto flex-1 bg-gray-50/80 outline-none focus:ring-[3px] focus:ring-blue-100 focus:ring-inset focus:shadow-[inset_0_0_0_1px_#1268e8]"
+          >
             <div className="m-4 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white">
 
               {/* ══ Letterhead ══ */}

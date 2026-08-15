@@ -1,6 +1,8 @@
 import { X, AlertTriangle, Stethoscope, Clock, Trash2, FileText, ArrowRight, Activity, Pill } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { updateVisitStatus } from "@/lib/db";
+import { useOverlayFocus } from "@/hooks/useOverlayFocus";
+import { useRovingList } from "@/hooks/useRovingList";
 
 type Props = {
     visitId: string;
@@ -26,6 +28,48 @@ export function ActiveConsultGuard({
     onClose
 }: Props) {
     const [loading, setLoading] = useState<string | null>(null);
+
+    /**
+     * ── This guard had NO keyboard path at all before 2026-08-15 ────────────
+     *
+     * Not "some shortcuts missing" — Escape did not close it, the four
+     * options were reachable only by mouse, and nothing took focus when it
+     * appeared over the workspace. It can interrupt a doctor mid-keystroke
+     * (opening patient intake while a consult is active triggers it), so it
+     * is the one overlay in this app most likely to appear while the doctor's
+     * hands are already on the keyboard and least likely to be reachable from
+     * there.
+     *
+     * `.cx-guard-opt` marks the four action rows so `useRovingList` can walk
+     * them the same way the ranked panels are walked — the class is local to
+     * this file rather than one of the shared `.cs-*`/`.cx-*` vocabulary,
+     * because this component is Tailwind end to end (doctrine rule 7) and the
+     * class exists only to be a selector, never to carry a style.
+     */
+    const cardRef = useRef<HTMLDivElement>(null);
+    useOverlayFocus(cardRef);
+    const roving = useRovingList({
+        containerRef: cardRef,
+        rowSelector: ".cx-guard-opt",
+        actionSelector: ".cx-guard-opt",
+    });
+
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (loading) return; // a request is already in flight — don't fire a second
+        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            roving.move(e.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (e.key === "Enter") {
+            e.preventDefault();
+            // Nothing highlighted: Enter means "continue", the same default
+            // Escape and the backdrop already mean — the safe option, never
+            // one of the two destructive ones.
+            if (!roving.activate()) onClose();
+        }
+    };
 
     const getTimeElapsed = () => {
         if (!startedAt) return null;
@@ -79,8 +123,17 @@ export function ActiveConsultGuard({
             {/* Modal */}
             <div className="relative z-10 w-full max-w-[460px] animate-in fade-in zoom-in-95 duration-200">
 
-                {/* Modal Card */}
-                <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                {/* Modal Card. tabIndex -1: programmatic focus only, never a
+                    Tab stop. focus:ring is the same "you are here" answer as
+                    `.cx-kbd-surface` elsewhere — see useOverlayFocus.ts — kept
+                    as Tailwind utilities here rather than that shared class
+                    because this component has no CSS file of its own. */}
+                <div
+                    ref={cardRef}
+                    tabIndex={-1}
+                    onKeyDown={onKeyDown}
+                    className="bg-white rounded-2xl shadow-lg overflow-hidden outline-none focus:ring-[3px] focus:ring-blue-100 focus:shadow-[0_0_0_1px_#1268e8]"
+                >
 
                     {/* Signature AREN Gradient Strip - More Visible */}
                     <div className="h-[3px] w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 shadow-sm" />
@@ -152,7 +205,7 @@ export function ActiveConsultGuard({
                             <button
                                 onClick={handleRefer}
                                 disabled={!!loading}
-                                className="w-full text-left rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50/50 to-purple-50/30 hover:from-purple-100 hover:to-purple-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                className="cx-guard-opt w-full text-left rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50/50 to-purple-50/30 hover:from-purple-100 hover:to-purple-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group data-[cx-cursor]:ring-2 data-[cx-cursor]:ring-purple-300"
                             >
                                 <div className="flex items-center gap-3 px-3.5 py-3">
                                     <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center group-hover:bg-purple-200 transition-colors">
@@ -174,7 +227,7 @@ export function ActiveConsultGuard({
                             <button
                                 onClick={handleSaveDraft}
                                 disabled={!!loading}
-                                className="w-full text-left rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                className="cx-guard-opt w-full text-left rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group data-[cx-cursor]:ring-2 data-[cx-cursor]:ring-slate-300"
                             >
                                 <div className="flex items-center gap-3 px-3.5 py-3">
                                     <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-slate-200 transition-colors">
@@ -196,7 +249,7 @@ export function ActiveConsultGuard({
                             <button
                                 onClick={handleDiscard}
                                 disabled={!!loading}
-                                className="w-full text-left rounded-xl border border-red-200 bg-white hover:bg-red-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                className="cx-guard-opt w-full text-left rounded-xl border border-red-200 bg-white hover:bg-red-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group data-[cx-cursor]:ring-2 data-[cx-cursor]:ring-red-300"
                             >
                                 <div className="flex items-center gap-3 px-3.5 py-3">
                                     <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition-colors">
@@ -216,7 +269,7 @@ export function ActiveConsultGuard({
                             <button
                                 onClick={onClose}
                                 disabled={!!loading}
-                                className="w-full text-left rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/50 to-blue-50/30 hover:from-blue-100 hover:to-blue-50 transition-all duration-150 mt-3 group"
+                                className="cx-guard-opt w-full text-left rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/50 to-blue-50/30 hover:from-blue-100 hover:to-blue-50 transition-all duration-150 mt-3 group data-[cx-cursor]:ring-2 data-[cx-cursor]:ring-blue-300"
                             >
                                 <div className="flex items-center gap-3 px-3.5 py-3">
                                     <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
@@ -230,6 +283,18 @@ export function ActiveConsultGuard({
                                 </div>
                             </button>
                         </div>
+
+                        {/* This modal had no keyboard affordance at all before
+                            2026-08-15 — worth saying so on the one control a
+                            doctor might otherwise never discover works. */}
+                        <p className="mt-3 text-center text-[10.5px] font-medium text-slate-300">
+                            <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-px text-slate-400">↑↓</kbd>{" "}
+                            choose ·{" "}
+                            <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-px text-slate-400">Enter</kbd>{" "}
+                            continue ·{" "}
+                            <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-px text-slate-400">Esc</kbd>{" "}
+                            close
+                        </p>
                     </div>
                 </div>
             </div>

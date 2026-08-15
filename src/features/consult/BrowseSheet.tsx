@@ -12,6 +12,7 @@ import { Search, X } from "lucide-react";
 import type { Observable } from "../../lib/db/synapse";
 import { systemLabel, systemRank } from "../../lib/synapse/systems";
 import type { PickerKind } from "./PickerCard";
+import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 const TITLE: Record<PickerKind, string> = {
     history: "Patient history & context",
@@ -31,16 +32,20 @@ export function BrowseSheet({
     const [query, setQuery] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
 
+    // Takes focus on the search field — a real field, not a landing-pad
+    // container, so typing works the instant the sheet is open — and gives
+    // it back to whatever opened the browse (the picker's own search, or its
+    // "browse all" button) on close. Previously the field was focused but
+    // nothing was ever returned, so closing the sheet could leave the
+    // keyboard nowhere in particular.
+    useOverlayFocus(searchRef);
+
     useEffect(() => {
-        const t = window.setTimeout(() => searchRef.current?.focus(), 0);
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") { e.stopPropagation(); onClose(); }
         };
         document.addEventListener("keydown", onKey);
-        return () => {
-            window.clearTimeout(t);
-            document.removeEventListener("keydown", onKey);
-        };
+        return () => document.removeEventListener("keydown", onKey);
     }, [onClose]);
 
     const groups = useMemo(() => {

@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import logo from "../../assets/aren-logo.png";
 import { SidebarNav, type SidebarPage } from "./SidebarNav";
 import type { Doctor } from "../../types";
+import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 type SidebarProps = {
     isOpen: boolean;
@@ -35,6 +36,13 @@ export function Sidebar({
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [isOpen, onClose]);
+
+    // Takes focus on the panel while open, hands it back to whatever opened
+    // it (the logo, or the launch trigger) on close — see useOverlayFocus.ts.
+    // This drawer previously had Escape but never took focus at all, so a
+    // doctor who opened it another way than clicking would land with the
+    // keyboard still pointed at the workspace behind it.
+    useOverlayFocus(panelRef, isOpen);
 
     // JS morph: when sidebar opens, measure topbar logo rect,
     // compute the transform delta from sidebar logo position to topbar logo,
@@ -93,7 +101,8 @@ export function Sidebar({
 
             <aside
                 ref={panelRef}
-                className={`sidebar-panel${isOpen ? " is-open" : ""}`}
+                tabIndex={-1}
+                className={`sidebar-panel cx-kbd-surface${isOpen ? " is-open" : ""}`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Navigation menu"

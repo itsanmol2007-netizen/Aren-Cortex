@@ -5052,10 +5052,33 @@ body.cs-locked-shell {
     letter-spacing: 0;
 }
 
-/* The add sheet takes focus when it opens so the bare digits reach the dose
-   slots instead of a text field behind the scrim (see MedicineAddSheet.tsx).
-   The panel is not a control, so it must not wear a focus ring for it. */
-.cs-addmed-panel:focus,
-.cs-addmed-panel:focus-visible {
+/* ── "if I press a key now, where does it go?" ─────────────────────────────
+   Added 2026-08-15, replacing an `outline: none` that shipped on the same
+   day: the panel took focus so its bare-key shortcuts would work, and the
+   browser's default ring was suppressed on the reasoning that "it's a landing
+   pad, not a control." Anmol's objection was correct — the landing pad is
+   exactly the thing that needs to be visible, or the doctor has no way to
+   tell where the keyboard currently goes without testing it.
+
+   `.cx-kbd-surface` is that visible answer, shared by every overlay
+   `useOverlayFocus.ts` focuses: a container that is never a Tab stop
+   (`tabIndex={-1}`) and is only ever focused programmatically, so plain
+   `:focus` is the right selector — there is no mouse-click case to
+   distinguish it from with `:focus-visible`. Blue, per the standing rule
+   that blue is the action colour; a ring rather than a border-color change
+   so it reads at a glance without being confused with the card's own edge. */
+.cx-kbd-surface {
     outline: none;
+}
+
+.cx-kbd-surface:focus {
+    box-shadow: 0 0 0 3px var(--cs-blue-soft), 0 0 0 1px var(--cs-blue);
+}
+
+.cs-addmed-panel.cx-kbd-surface:focus {
+    /* Layers on top of the panel's own drop shadow instead of replacing it —
+       see `.cs-addmed-panel`'s `box-shadow` above. */
+    box-shadow:
+        0 0 0 3px var(--cs-blue-soft), 0 0 0 1px var(--cs-blue),
+        0 32px 64px -28px rgba(11, 23, 51, 0.5);
 }

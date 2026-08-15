@@ -25,6 +25,8 @@ import { Check, Pin, PinOff } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandKey, brandVariantLabel, type BrandPreferenceModel } from "../../lib/synapse/brands";
 import { clinicBrandKey, type ClinicBrandDefaults, type CompositionBrands } from "../../lib/db/synapse";
+import { useOverlayFocus } from "../../hooks/useOverlayFocus";
+import { useRovingList } from "../../hooks/useRovingList";
 
 interface Props {
     anchor: DOMRect;
@@ -47,6 +49,45 @@ export function BrandSheet({
 }: Props) {
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState({ top: anchor.bottom + 6, left: anchor.right - SHEET_WIDTH });
+
+    /**
+     * ── This popover had NO keyboard path at all ────────────────────────────
+     *
+     * Opened by → on the ranked row, and until this pass every row inside it
+     * was reachable by mouse only — no ↑ ↓, no Enter. A doctor who had used
+     * the keyboard to get this far had to reach for the mouse for the one
+     * decision the sheet exists for: which brand.
+     *
+     * `useOverlayFocus` takes focus on the container (it is the door in, per
+     * `role="listbox"` below) and hands it back to the row that opened this —
+     * `RecommendationsCard`'s "Change brand" button or the → chord — on close.
+     * `useRovingList` walks `.cx-brandrow`, which is emitted for every product
+     * whether it sits inside a strength family or on its own, so ↓ moves
+     * through the WHOLE list in the order it is drawn, families included.
+     */
+    useOverlayFocus(ref);
+    const roving = useRovingList({
+        containerRef: ref,
+        rowSelector: ".cx-brandrow",
+        actionSelector: ".cx-brandrow",
+    });
+
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            roving.move(e.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (e.key === "Enter") {
+            e.preventDefault();
+            // Nothing highlighted yet: Enter takes the current brand, which
+            // is what "just accept the default and continue" means here —
+            // the same shape as Enter on a ranked medicine row.
+            if (!roving.activate()) {
+                ref.current?.querySelector<HTMLElement>(".cx-brandrow.is-current")?.click();
+            }
+        }
+    };
 
     useLayoutEffect(() => {
         const h = ref.current?.offsetHeight ?? 320;
@@ -148,10 +189,12 @@ export function BrandSheet({
     return createPortal(
         <div
             ref={ref}
-            className="cx-sheet"
+            className="cx-sheet cx-kbd-surface"
             style={{ top: pos.top, left: pos.left }}
             role="listbox"
             aria-label={`Brands for ${compositionLabel}`}
+            tabIndex={-1}
+            onKeyDown={onKeyDown}
         >
             <div className="cx-sheet-head">
                 <div className="cx-sheet-title cx-cap">{compositionLabel}</div>
