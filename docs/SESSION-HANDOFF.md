@@ -7,8 +7,9 @@ everything the previous version said is either folded into
 Rewrite or delete this file the same way when the next session ends.
 
 **Read order for a cold start:** this file, then `aren-cortex-ui-doctrine.md`,
-then `aren-cortex-atlas.md` §14 (newest entries at the bottom — §14.19, §14.20,
-§14.21, §14.22 are this day's). Don't re-survey the repo; both docs are current.
+then `aren-cortex-atlas.md` §14 (newest entries at the bottom — §14.19 through
+§14.22e are this run of sessions'). Don't re-survey the repo; both docs are
+current.
 
 ---
 
@@ -179,6 +180,47 @@ component, out of scope for a pass driven by the General OPD screen.
 
 293 assertions total across every suite this session, zero failures. `tsc -b`
 and `vite build` clean. Still not verified against the live app.
+
+---
+
+## 0.6 Tab escaping the Measurements modal, plus a dedicated way in (atlas §14.22e)
+
+Anmol's reaction to §0.5, immediately: the "More" modal had no dedicated
+control once it was actually open. Real bug, worse than "missing control" —
+`showAll`/`pickerOpen` (`MeasurementsCard`'s own local `useState`) were never
+added to `App.tsx`'s `isAnyModalOpen`, so Tab, while the modal was open and
+correctly focused, silently reached through it to the Assessment stop behind
+it. The modal stayed open on screen; the keyboard had already left.
+
+Fixed structurally rather than by adding two more flags to that list, on
+purpose — a hand-maintained list is exactly what a future specialty's own
+local modal is one honest omission away from falling outside of, same as
+this one did:
+
+- `useOverlayFocus` now marks whatever it focuses with `data-cx-kbd-owner`
+  for as long as it holds the keyboard.
+- `useConsultKeyboard` checks the DOM for that mark as a backstop to
+  `isAnyModalOpen`, which stays first-line for the one frame before focus
+  actually lands.
+- Confirmed via `App.tsx`'s real `isAnyModalOpen` expression that every
+  OTHER overlay was already listed there — `MeasurementsCard`'s two flags
+  were the only gap, so this is a no-op everywhere else.
+
+Second half: `ChartSurface` gained an optional `onEnterContent` prop — ↓ on
+the modal panel itself (not a descendant field) jumps into whatever the
+caller says is "the first thing." `MeasurementsCard` wires it to the first
+reading in the full list the modal shows. Documented as `measModalEnter` in
+`keymap.ts` so the shortcuts sheet prints it.
+
+237 matcher assertions (four new). 14 fresh Chromium assertions against the
+real `MeasurementsCard` + `useConsultKeyboard`, proving Tab is now trapped
+in both the "More" modal and the Add Measurement popup, ↓ on a fresh panel
+reaches the first reading, Escape still closes and returns focus, and Tab
+resumes normal stop-cycling once the modal is closed. `tsc -b` and
+`vite build` clean. Full regression on other `useOverlayFocus` consumers was
+done by reading `isAnyModalOpen` rather than re-running every earlier
+harness — see above for why that's sound. Still not verified against the
+live app.
 
 ---
 

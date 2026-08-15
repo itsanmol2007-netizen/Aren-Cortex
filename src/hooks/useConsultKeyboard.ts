@@ -30,10 +30,27 @@
 //    preference: Ctrl+Enter in the review modal means "confirm and save", and
 //    the global handler was catching it first and RE-OPENING the review it was
 //    already showing, so the one key that finishes a consult did nothing.
+//
+//    "An overlay is up" is checked TWO ways, deliberately not one.
+//    `isAnyModalOpen` is the explicit list App.tsx maintains by hand, and it
+//    is the only signal available in the one frame between a modal's `open`
+//    state flipping true and `useOverlayFocus` actually landing focus a
+//    frame later. But a hand-maintained list is exactly the kind of thing a
+//    new LOCAL modal — one that lives entirely inside some card's own
+//    `useState`, never touching App.tsx — is one honest omission away from
+//    falling outside of, which is precisely what happened to
+//    `MeasurementsCard`'s "More" sheet and its "Add Measurement" popup:
+//    Tab, while either was open and correctly focused, silently reached
+//    straight through them to the next workspace stop. So this hook ALSO
+//    asks the DOM directly — is focus currently inside anything
+//    `useOverlayFocus` has marked as holding the keyboard? — which is
+//    correct for every overlay built on that hook with no list to keep in
+//    step, past that first single frame.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef } from "react";
 import { firedChord, matches } from "../lib/keyboard/keymap";
+import { KBD_OWNER_ATTR } from "./useOverlayFocus";
 
 type El = HTMLElement | HTMLInputElement | null;
 
@@ -131,8 +148,10 @@ export function useConsultKeyboard({
                 return;
             }
 
-            // Everything else belongs to whatever is on top. See the header.
+            // Everything else belongs to whatever is on top. See the header
+            // for why this is two checks rather than one.
             if (isAnyModalOpen) return;
+            if ((document.activeElement as HTMLElement | null)?.closest(`[${KBD_OWNER_ATTR}]`)) return;
 
             if (matches(e, "newPatient")) {
                 take();

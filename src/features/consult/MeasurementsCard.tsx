@@ -312,7 +312,17 @@ export function MeasurementsCard({
             )}
 
             {showAll && (
-                <ChartSurface title="Measurements" expanded onClose={() => setShowAll(false)}>
+                <ChartSurface
+                    title="Measurements"
+                    expanded
+                    onClose={() => setShowAll(false)}
+                    // The dedicated way in, per ChartSurface's own doc
+                    // comment: ArrowDown from the panel jumps straight to
+                    // the first reading — everything in `shown`, not just
+                    // `inline`, since the whole point of this modal is that
+                    // it holds what the capped card does not.
+                    onEnterContent={() => refs.current[shown[0]?.key]?.focus()}
+                >
                     {grid(shown)}
                     {hidden.length > 0 && (
                         <MeasurementPicker

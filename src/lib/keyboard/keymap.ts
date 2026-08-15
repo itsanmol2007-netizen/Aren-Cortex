@@ -107,7 +107,7 @@ export type BindingId =
     | "chartMove" | "chartTake" | "chartClear" | "severity"
     | "chartRelatedMove" | "chartRelatedTake"
     // measurements
-    | "measFieldNext" | "measMenuMove" | "measMenuPick"
+    | "measFieldNext" | "measMenuMove" | "measMenuPick" | "measModalEnter"
     // assessment
     | "conditionMove" | "conditionTake"
     // medicines
@@ -316,6 +316,12 @@ export const BINDINGS: Binding[] = [
         keys: [k("Enter")],
         scope: "measurements",
         what: "Add the highlighted measurement",
+    },
+    {
+        id: "measModalEnter",
+        keys: [k("ArrowDown")],
+        scope: "measurements",
+        what: "Right after opening “More”: jump into the first reading",
     },
 
     // ── assessment ─────────────────────────────────────────────────────────

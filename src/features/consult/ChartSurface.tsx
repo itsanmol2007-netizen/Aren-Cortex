@@ -24,9 +24,27 @@ interface Props {
     expanded: boolean;
     onClose: () => void;
     children: React.ReactNode;
+    /**
+     * ArrowDown, but ONLY while the panel itself still has focus — the
+     * instant after opening, before the doctor has moved anywhere. This is
+     * the dedicated, discoverable way IN to whatever the modal holds.
+     *
+     * Added 2026-08-16 next to the fix above: taking focus on the PANEL
+     * (a plain container) is a safe, always-correct landing spot, but it is
+     * not a DESTINATION — a doctor who has just opened "More" and starts
+     * pressing keys should not have to guess whether Tab, an arrow, or
+     * something else is what moves them into the content. Optional, because
+     * not every chart built on this shell has one obvious "first thing":
+     * Measurements wires this to its first reading; the odontogram or the
+     * body map, which have no equivalent single entry point, leave it unset
+     * and Tab (in normal DOM order, from the close button onward) is the
+     * doctor's way in instead — still a safe default, just not a signposted
+     * one.
+     */
+    onEnterContent?: () => void;
 }
 
-export function ChartSurface({ title, expanded, onClose, children }: Props) {
+export function ChartSurface({ title, expanded, onClose, children, onEnterContent }: Props) {
     // Escape closes, matching every other overlay in this app.
     useEffect(() => {
         if (!expanded) return;
@@ -53,7 +71,21 @@ export function ChartSurface({ title, expanded, onClose, children }: Props) {
     return createPortal(
         <div className="cs-chartmodal" role="dialog" aria-modal="true" aria-label={title}>
             <div className="cs-chartmodal-scrim" onClick={onClose} />
-            <div className="cs-chartmodal-panel cx-kbd-surface" ref={panelRef} tabIndex={-1}>
+            <div
+                className="cs-chartmodal-panel cx-kbd-surface"
+                ref={panelRef}
+                tabIndex={-1}
+                onKeyDown={(e) => {
+                    // Only while the PANEL itself is what's focused — once the
+                    // doctor has moved to an actual field, ArrowDown belongs to
+                    // whatever that field does with it (MeasureCell's own
+                    // fields don't use it, but a future chart's might).
+                    if (e.key === "ArrowDown" && e.target === panelRef.current && onEnterContent) {
+                        e.preventDefault();
+                        onEnterContent();
+                    }
+                }}
+            >
                 <div className="cs-chartmodal-head">
                     <span className="cs-chartmodal-title">{title}</span>
                     <button type="button" className="cs-chartmodal-close" onClick={onClose} aria-label="Close">

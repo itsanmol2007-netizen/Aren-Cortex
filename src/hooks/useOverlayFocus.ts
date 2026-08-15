@@ -24,9 +24,34 @@
 // stylesheets. Suppressing the ring on the ground that "it's a landing pad,
 // not a control" was the mistake; the landing pad is precisely the thing that
 // needs to be visible.
+//
+// ── `data-cx-kbd-owner`, added 2026-08-16 ───────────────────────────────────
+// Found live: `MeasurementsCard`'s "More" sheet and its "Add Measurement"
+// popup are both LOCAL state (`showAll`, `pickerOpen`) that App.tsx's
+// `isAnyModalOpen` had never heard of — nobody had remembered to add them to
+// that list, and nothing would have caught it if a future overlay made the
+// same omission. The actual damage: `useConsultKeyboard`'s global handler
+// treats a bare Tab as "move to the next workspace stop" whenever
+// `isAnyModalOpen` is false, so pressing Tab while that modal was open — and
+// focused, correctly, by this very hook — silently yanked focus OUT of the
+// still-open modal and onto the Assessment search box behind it.
+//
+// `isAnyModalOpen` stays as the explicit, first-line list — it is what
+// blocks a keystroke in the one frame between a modal's `open` state
+// flipping true and this hook's `requestAnimationFrame` actually landing
+// focus. This attribute is the backstop for everything after that frame,
+// and it needs no per-component bookkeeping to stay correct: every overlay
+// that calls this hook is marked the moment it actually holds the keyboard
+// and unmarked the moment it gives it back, so `useConsultKeyboard.ts` can
+// ask the DOM directly ("is focus currently inside ANY overlay?") instead of
+// trusting a hand-maintained list that a new local `useState` can silently
+// fall outside of.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef } from "react";
+
+/** Set on whatever this hook has focused, for exactly as long as it holds it. */
+export const KBD_OWNER_ATTR = "data-cx-kbd-owner";
 
 /**
  * @param ref     the element to focus. `tabIndex={-1}` on it if it is not
@@ -67,9 +92,17 @@ export function useOverlayFocus(
         // listeners would read as "the anchor moved" and close on the spot.
         // `preventScroll` stops the browser from ever taking that step, so
         // taking focus can no longer trigger an overlay closing itself.
-        const frame = window.requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }));
+        let owned: HTMLElement | null = null;
+        const frame = window.requestAnimationFrame(() => {
+            const el = ref.current;
+            if (!el) return;
+            el.focus({ preventScroll: true });
+            el.setAttribute(KBD_OWNER_ATTR, "true");
+            owned = el;
+        });
         return () => {
             window.cancelAnimationFrame(frame);
+            owned?.removeAttribute(KBD_OWNER_ATTR);
             const back = returnTo.current;
             returnTo.current = null;
             // Guard the node still being in the document: a patient switch, or

@@ -3679,3 +3679,99 @@ Not independently harnessed: `SoapInputs.tsx`'s wiring of the same
 `measurementsRef` (a two-line mirror of `GeneralOpdInputs.tsx`'s, not new
 logic). Not verified against the live app, same reason as every entry in
 this run of sessions.
+
+---
+
+## 14.22e Session 2026-08-16 — Tab escaping the Measurements modal, and a dedicated way in
+
+Anmol's follow-up, immediately after §14.22d landed, was blunt: *"You didn't
+wired any control for the measurement screen model which will appear on the
+top... there is no any dedicated control for that."* Two separate things
+were wrong, both in `MeasurementsCard`'s "More" modal specifically.
+
+**The bigger one: Tab silently escaped an open, correctly-focused modal.**
+`showAll` and `pickerOpen` — the local `useState` behind "More" and "Add
+Measurement" — were never added to `App.tsx`'s `isAnyModalOpen`. Nothing
+enforced that they should be; it is a hand-maintained boolean expression, and
+these two flags are exactly the kind of thing a plain omission leaves out.
+The result: `useConsultKeyboard`'s global handler treats a bare Tab as "move
+to the next workspace stop" whenever `isAnyModalOpen` is false, so pressing
+Tab while "More" was open — genuinely open, genuinely focused via
+`useOverlayFocus` — reached straight through the modal to the Assessment
+search box behind it. The modal stayed open on screen; the keyboard had
+already left it.
+
+The fix is structural rather than "add two more flags to the list," on
+purpose — Anmol's explicit ask the message before this one was to make the
+Measurements work scale to new specialties, and a hand-maintained list is
+precisely the thing a future specialty's own local modal state would be one
+honest omission away from falling outside of, same as this one did:
+
+- `useOverlayFocus.ts` now exports `KBD_OWNER_ATTR` (`data-cx-kbd-owner`) and
+  sets it on whatever element it focuses, for exactly as long as that
+  element holds the keyboard — set in the same `requestAnimationFrame` that
+  lands focus, removed in the same cleanup that returns it.
+- `useConsultKeyboard.ts` now asks the DOM directly, right after the
+  existing `isAnyModalOpen` check: `document.activeElement?.closest(
+  '[data-cx-kbd-owner]')`. `isAnyModalOpen` stays as the first-line check —
+  it is the only signal available in the one frame between a modal's `open`
+  state flipping true and `useOverlayFocus`'s `requestAnimationFrame`
+  actually landing focus a tick later — but the attribute check is what is
+  now correct BY CONSTRUCTION for everything after that frame: every current
+  and future overlay built on `useOverlayFocus` is covered with zero
+  per-component bookkeeping, because the marking happens inside the shared
+  hook itself, not in a list some other file has to remember to extend.
+
+  Confirmed via `App.tsx`'s actual `isAnyModalOpen` expression that every
+  OTHER `useOverlayFocus` consumer (`ReviewModal`, `BrowseSheet`,
+  `ChartSurface`'s odontogram/body-map/growth-chart uses, `MedicineAddSheet`,
+  `BrandSheet`, `Sidebar`, `ActiveConsultGuard`) was already listed there —
+  `MeasurementsCard`'s two local flags were the only gap. That makes the new
+  DOM check a pure no-op for all of them (the first check already returns
+  true), so this change carries zero behavioural risk for anything already
+  wired correctly — it only changes outcomes for the thing that was broken.
+
+**The smaller one: once inside the modal, there was no signposted way IN.**
+`useOverlayFocus` correctly focuses the modal's own panel — a safe landing
+pad — but a panel is not a destination, and nothing told a doctor which key
+walks from "the modal has focus" to "the first reading has focus." Fixed at
+the shared `ChartSurface` layer, not in `MeasurementsCard` alone, so every
+consumer of the shell benefits the same way `useOverlayFocus` itself did in
+§14.22d: a new optional `onEnterContent?: () => void` prop, fired on
+`ArrowDown` but ONLY while the panel itself (not a descendant field) has
+focus — `e.target === panelRef.current` is the guard, so a field that has
+its own use for ArrowDown later is never shadowed by this. `MeasurementsCard`
+wires it to `shown[0]` — the full field list the modal actually renders, not
+just the card's own `inline` cap — landing on the first reading a doctor
+sees on screen. The odontogram, body map and growth chart, which have no
+one obvious "first thing," leave the prop unset; Tab in ordinary DOM order
+from the close button is still their way in, same as before.
+
+A new binding, `measModalEnter` (↓, scope `measurements`), documents this in
+`keymap.ts` so `ShortcutsSheet` prints it rather than leaving it a keystroke
+nobody could discover except by trying it. It shares its chord with
+`measMenuMove` (↓ ↑ inside Add Measurement) in the same scope — added to the
+collision test's `INTENTIONAL_PAIRS` allowlist on the same grounds as every
+other pair there: two local popups, gated in code by which one is actually
+open, never racing for the same keystroke.
+
+### Verification
+
+237 matcher assertions (four more than §14.22d's 233 — the new binding plus
+the intentional-pair entry). A fresh 14-assertion Chromium harness against
+the real `MeasurementsCard` wired to the real `useConsultKeyboard`, mounted
+standalone: Alt+M to the card head, opening "More" and confirming the panel
+both takes focus AND carries `data-cx-kbd-owner`, Tab while the modal is
+open provably NOT reaching the Assessment stop (and provably still inside
+the modal), ArrowDown on the fresh panel landing on a real input (the first
+reading), a second ArrowDown from inside a field correctly NOT re-firing,
+Escape still closing the modal and returning focus to the "More" button,
+Tab AFTER the modal closes correctly reaching the next stop (unaffected),
+and the Add Measurement popup independently confirmed to hold
+`data-cx-kbd-owner` and block Tab the same way. `tsc -b` and `vite build`
+both clean. Full regression on every other `useOverlayFocus` consumer was
+done by reading `App.tsx`'s `isAnyModalOpen` expression rather than
+re-running every earlier harness — the change is provably a no-op for
+anything already listed there, see above; not re-verified live for that
+reason. Not verified against the live app, same reason as every entry in
+this run of sessions.
