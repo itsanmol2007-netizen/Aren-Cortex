@@ -27,7 +27,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
     Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
-    ShieldAlert, Sparkles,
+    ShieldAlert, Sparkles, Waves,
 } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
@@ -74,6 +74,10 @@ const CATALOGUE: Section[] = [
     { type: "referral", label: "Referral", verb: "Refer", icon: <ArrowUpRight size={14} /> },
     { type: "advice", label: "Advice", verb: "Advise", icon: <Lightbulb size={14} /> },
     { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
+    // Delivered in the clinic, during this session — see IntentType in
+    // engine.ts for why this is not filed under Exercise. "Perform" rather
+    // than "Add" because that is what the physiotherapist is agreeing to do.
+    { type: "modality", label: "Therapy", verb: "Perform", icon: <Waves size={14} /> },
 ];
 
 const VERB_OF: Record<string, string> = Object.fromEntries(

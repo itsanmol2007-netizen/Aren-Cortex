@@ -299,6 +299,7 @@ export function useConsultLifecycle({
         findingsText: [...plan.diagnoses, ...chart.selectedFindings].join(", "),
         followUpDays: plan.followUpDays,
         adviceNotes: plan.reviewAdvice,
+        therapyNotes: plan.therapyNotes || null,
       });
 
       // The visit is now a completed session of whatever course it belongs to.

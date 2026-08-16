@@ -33,6 +33,8 @@ export interface PrescriptionDocumentProps {
     tests?: string[];
     followUpDays?: number | null;
     adviceNotes?: string;
+    /** delivered in the clinic today — printed as its own section */
+    therapyNotes?: string;
     doctor?: DoctorShape | null;
     hospital?: DBHospital | null;
     vitals?: Vitals;
@@ -81,6 +83,7 @@ function StandardDocument({
     tests = [],
     followUpDays,
     adviceNotes,
+    therapyNotes,
     doctor,
     hospital,
     vitals,
@@ -421,6 +424,20 @@ function StandardDocument({
                     )}
                 </div>
 
+                {/* What the clinic did today, above what the patient takes
+                    home. A physiotherapy session largely consists of these and
+                    printing them under "Instructions" would misfile them. */}
+                {therapyNotes && (
+                    <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                            Therapy Performed
+                        </div>
+                        {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
+                            <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>› {line}</div>
+                        ))}
+                    </div>
+                )}
+
                 {/* Instructions */}
                 <div>
                     <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
@@ -462,6 +479,7 @@ function ThermalDocument({
     tests = [],
     followUpDays,
     adviceNotes,
+    therapyNotes,
     doctor,
     hospital,
     date,
@@ -568,6 +586,16 @@ function ThermalDocument({
                 <>
                     <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>Investigations</div>
                     {tests.map((t) => <div key={t} style={th}>- {t}</div>)}
+                    {divider}
+                </>
+            )}
+
+            {/* Therapy, then follow-up + advice. Thermal format. */}
+            {therapyNotes && (
+                <>
+                    {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
+                        <div key={i} style={th}>+ {line}</div>
+                    ))}
                     {divider}
                 </>
             )}

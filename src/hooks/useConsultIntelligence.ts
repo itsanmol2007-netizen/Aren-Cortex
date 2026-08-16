@@ -95,7 +95,7 @@ export interface ConsultIntelligence {
 }
 
 const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
-    medicine: [], test: [], exercise: [], referral: [], finding: [], advice: [],
+    medicine: [], test: [], exercise: [], modality: [], referral: [], finding: [], advice: [],
 });
 
 export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIntelligence {

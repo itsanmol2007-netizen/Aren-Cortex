@@ -5812,3 +5812,84 @@ body.cs-locked-shell {
 .cs-meas-vslast.is-improving b { color: var(--cs-teal); }
 .cs-meas-vslast.is-worsening b { color: var(--cs-amber); }
 .cs-meas-vslast.is-neutral b { color: var(--cs-muted); }
+
+/* The primary-diagnosis mark in the plan rail (2026-08-16).
+   Only printed when there is more than one confirmed condition — on a single
+   diagnosis the word "Primary" answers a question nobody asked. */
+.cs-dx-primary {
+    margin-left: 6px;
+    border-radius: 999px;
+    background: var(--cs-blue-soft);
+    padding: 1px 6px;
+    color: var(--cs-blue);
+    font-size: 9.5px;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* ── The Assessment's specialty column (2026-08-16) ───────────────────────
+   The instrument that replaced the confirmed-conditions list. The column is
+   as tall as the ranked list beside it — grid decides that, not this card —
+   so without these rules the launcher sits at the top and leaves the same
+   void it was brought in to fill, just a smaller one.
+
+   Doctrine §8a: where a void cannot be removed, FILL it rather than float
+   something small in the middle of it. So the card stretches, and its tools
+   stretch inside it. With one tool that gives a single generous target; with
+   two (a future profile carrying both a chart and a map) they share the
+   height evenly, which is still better than two small rows and a gap. */
+.cs-cond-side > .cs-exam {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.cs-cond-side .cs-exam-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+}
+
+/* Centred and stacked, not a stretched row. A row control pulled to 200px
+   tall reads as a layout accident; the same control centred, with its icon
+   sized to the space, reads as the instrument panel it is. This is the
+   §8a rule taken to its end — fill the void, and make what fills it look
+   deliberate at that size. */
+.cs-cond-side .cs-exam-tool {
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cs-s3);
+    min-height: 92px;
+    text-align: center;
+}
+
+.cs-cond-side .cs-exam-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+}
+
+.cs-cond-side .cs-exam-icon svg {
+    width: 26px;
+    height: 26px;
+}
+
+.cs-cond-side .cs-exam-text {
+    align-items: center;
+    max-width: 100%;
+}
+
+.cs-cond-side .cs-exam-label { font-size: 14px; font-weight: 650; }
+
+/* The extract can breathe here — the column is wide and this is now the
+   card's subject rather than a caption on a row. */
+.cs-cond-side .cs-exam-extract {
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+}

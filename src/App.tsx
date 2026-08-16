@@ -38,6 +38,7 @@ import { GrowthChartCard } from "./features/consult/GrowthChartCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
+import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
 import { relevantFields } from "./features/consult/measures";
 import { buildTrendSummary } from "./features/consult/trend";
@@ -291,12 +292,13 @@ function App() {
     followUpDays, setFollowUpDays,
     acceptedIntents, acceptedIntentIdSet, chosenBrands, deliberateBrands,
     searchedAccepts, acknowledgedIntents,
-    adviceLines, reviewAdvice, justAdded, unreadPrescribedWarnings,
+    adviceLines, therapyLines, therapyNotes, reviewAdvice, justAdded, unreadPrescribedWarnings,
     selectedMedicineId, setSelectedMedicineId, stagedMedicine, setStagedMedicine,
     pendingMedicine, setPendingMedicine, inspectorMedicine,
     confirmPendingMedicine, confirmStagedMedicine,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis, removeAdviceLine,
+    removeTherapyLine,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -474,7 +476,13 @@ function App() {
    * can never remove a module some other profile requires, and removing
    * modules is the whole task.
    */
-  const isGeneralOpd = specialty.id === "general_opd";
+  /**
+   * Which input surface this facility renders. Was `specialty.id ===
+   * "general_opd"`; became configuration on 2026-08-16 when physiotherapy
+   * moved onto the same surface — see `SpecialtyProfile.inputLayout` for why
+   * that is a shared file rather than a second copy of it.
+   */
+  const usesCaseSheet = specialty.inputLayout === "case-sheet";
 
   /**
    * The specialty charts, as launchers inside the Measurements row.
@@ -827,7 +835,7 @@ function App() {
                   their headers for why the split stops exactly here and does
                   not reach into Possible Conditions or the plan row below,
                   which stay shared and unchanged. */}
-              {isGeneralOpd ? (
+              {usesCaseSheet ? (
                 <GeneralOpdInputs
                   observables={observables}
                   onChartSet={onChartSet}
@@ -886,7 +894,7 @@ function App() {
                   The band label is hidden for General OPD because the card
                   directly beneath it is also titled ASSESSMENT. The same word
                   twice, 40px apart, is not a hierarchy. */}
-              {!isGeneralOpd && <div className="cs-phase">Assessment</div>}
+              {!usesCaseSheet && <div className="cs-phase">Assessment</div>}
 
               {/* ALWAYS RENDERED. Hiding these on an empty chart was a real
                   regression, made 2026-08-12 and reverted the same evening:
@@ -912,6 +920,34 @@ function App() {
                 onRemoveDiagnosis={removeDiagnosis}
                 disabled={!patient}
                 searchRef={assessmentSearchRef}
+                /* ── The Assessment's second column ────────────────────────
+                   A facility with its own instrument puts it here, beside the
+                   assessment it informs, instead of the confirmed-conditions
+                   list that the Consultation Plan rail already carries. See
+                   ConditionsCard's `sideSlot`.
+
+                   `SpecialtyExamCard` is reused verbatim — it was already the
+                   launcher-plus-extract shape this needs, already opening the
+                   real chart through `ChartSurface`, and already fed by
+                   `useChartSummaries`. Nothing new was built for this; it
+                   moved. A profile with no charts passes nothing and keeps the
+                   column it always had. */
+                sideSlot={
+                  /* Gated on the Case Sheet layout, NOT merely on having a
+                     chart: `SoapInputs` renders its own `SpecialtyExamCard` in
+                     the Objective row, so a profile still on that surface
+                     (dentistry, dermatology, paediatrics today) would show the
+                     same launcher twice. Each profile picks this up when its
+                     turn comes and it moves off `soap`. */
+                  usesCaseSheet && chartTools.length > 0 ? (
+                    <SpecialtyExamCard
+                      tools={chartTools}
+                      onOpen={(key) => setOpenChart(key as ChartKind)}
+                      summaries={chartSummaries}
+                      disabled={!patient}
+                    />
+                  ) : undefined
+                }
               />
 
               {/* ── PLAN ────────────────────────────────────────────────────
@@ -928,7 +964,7 @@ function App() {
               {/* The band label goes for General OPD, not the panels. "Plan"
                   was always the wrong word here anyway: the plan is the rail
                   on the right, and these two are where the doctor picks FROM. */}
-              {!isGeneralOpd && <div className="cs-phase">Plan</div>}
+              {!usesCaseSheet && <div className="cs-phase">Plan</div>}
 
               <div className="cs-row cs-row-plan" ref={planRowRef}>
                 {planSlots.primaryIsMedicine ? (
@@ -1018,7 +1054,9 @@ function App() {
                 tests={selectedTests}
                 onRemoveTest={removeTest}
                 adviceLines={adviceLines}
+                therapyLines={therapyLines}
                 onRemoveAdviceLine={removeAdviceLine}
+                onRemoveTherapyLine={removeTherapyLine}
                 followUpDays={followUpDays}
                 onFollowUpChange={setFollowUpDays}
                 notes={visitNotes}
@@ -1237,6 +1275,7 @@ function App() {
             onClose={() => setIsReviewOpen(false)}
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}
+            therapyNotes={therapyNotes}
             visitId={visitId ?? undefined}
           />
         )

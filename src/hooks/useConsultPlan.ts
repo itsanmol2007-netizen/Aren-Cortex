@@ -150,6 +150,9 @@ export interface ConsultPlan {
   // ── Derived, for the surfaces that read it ────────────────────────────
   /** Advice notes are one string; the Plan column edits them as lines. */
   adviceLines: string[];
+  /** what was delivered in the clinic today — see `therapyNotes` in the body */
+  therapyLines: string[];
+  therapyNotes: string;
   /** What actually prints as Advice: accepted lines, then freehand. */
   reviewAdvice: string;
   /** Which plan lines just arrived, so the rail is not a box that silently grows. */
@@ -179,6 +182,7 @@ export interface ConsultPlan {
   removeTest: (label: string) => void;
   removeDiagnosis: (label: string) => void;
   removeAdviceLine: (line: string) => void;
+  removeTherapyLine: (line: string) => void;
 
   // ── Companions ────────────────────────────────────────────────────────
   companionsFor: (intentId: number) => CompanionSuggestion[];
@@ -244,8 +248,34 @@ export function useConsultPlan({
   const [visitNotes, setVisitNotes] = useState("");
   const [pendingMedicine, setPendingMedicine] = useState<PendingMedicine | null>(null);
 
+  /**
+   * What was DELIVERED in the clinic today — ultrasound, IFT, manual therapy.
+   *
+   * Its own collection rather than more lines in `adviceNotes`, which is where
+   * referrals, advice and exercises all land. That merge is fine for those
+   * three: they are all instructions the patient leaves with. A modality is
+   * not an instruction, it is a record of something that was done to them, and
+   * a physiotherapy session largely CONSISTS of these. Collapsing them into
+   * advice would print "Ultrasound 7 min" under the heading "Advice" on a
+   * prescription, and would make "what did we do in session 4" unanswerable
+   * without a human reading prose.
+   *
+   * Stored as one newline-joined string for exactly the same reason
+   * `adviceNotes` is: it is one text field on the prescription, and the Plan
+   * column edits it as lines.
+   */
+  const [therapyNotes, setTherapyNotes] = useState<string>("");
+
   const appendAdvice = useCallback((line: string) => {
     setAdviceNotes((curr) => {
+      const existing = curr.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (existing.includes(line)) return curr;
+      return [...existing, line].join("\n");
+    });
+  }, []);
+
+  const appendTherapy = useCallback((line: string) => {
+    setTherapyNotes((curr) => {
       const existing = curr.split("\n").map((l) => l.trim()).filter(Boolean);
       if (existing.includes(line)) return curr;
       return [...existing, line].join("\n");
@@ -381,6 +411,11 @@ export function useConsultPlan({
       case "advice":
       case "exercise":
         appendAdvice(payload.label);
+        break;
+      // Delivered here, today. See `therapyNotes` above and IntentType in
+      // engine.ts for why this does not join the three above.
+      case "modality":
+        appendTherapy(payload.label);
         break;
       case "finding": {
         // The engine's reading of the chart, taken as the working diagnosis.
@@ -667,6 +702,18 @@ export function useConsultPlan({
     }
   }, [acceptedIntents, releaseIntent]);
 
+  const removeTherapyLine = useCallback((line: string) => {
+    setTherapyNotes((curr) =>
+      curr.split("\n").map((l) => l.trim()).filter((l) => l && l !== line).join("\n")
+    );
+    // Releasing the intent matters as much here as it does for advice: a
+    // therapy taken off the plan must stop counting as accepted, or the
+    // decision log learns that the doctor wanted something they removed.
+    for (const [intentId, p] of acceptedIntents) {
+      if (p.type === "modality" && p.label === line) releaseIntent(intentId);
+    }
+  }, [acceptedIntents, releaseIntent]);
+
   const handleAcknowledge = useCallback((intentId: number, ack: boolean) => {
     setAcknowledgedIntents((curr) => {
       const next = new Set(curr);
@@ -697,6 +744,12 @@ export function useConsultPlan({
   const adviceLines = useMemo(
     () => adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean),
     [adviceNotes]
+  );
+
+  /** Same shape, for what was delivered in the clinic. */
+  const therapyLines = useMemo(
+    () => therapyNotes.split("\n").map((l) => l.trim()).filter(Boolean),
+    [therapyNotes]
   );
 
   const selectedMedicine = useMemo(
@@ -812,6 +865,7 @@ export function useConsultPlan({
     setDiagnoses([]);
     setFollowUpDays(null);
     setAdviceNotes("");
+    setTherapyNotes("");
     setVisitNotes("");
     resetLedger();
   }, [resetLedger]);
@@ -827,6 +881,7 @@ export function useConsultPlan({
     selectedTests,
     diagnoses,
     adviceNotes,
+    therapyNotes,
     visitNotes,
     setVisitNotes,
     followUpDays,
@@ -840,6 +895,7 @@ export function useConsultPlan({
     acknowledgedIntents,
 
     adviceLines,
+    therapyLines,
     reviewAdvice,
     justAdded,
     unreadPrescribedWarnings,
@@ -863,6 +919,7 @@ export function useConsultPlan({
     removeTest,
     removeDiagnosis,
     removeAdviceLine,
+    removeTherapyLine,
 
     companionsFor,
     handleAddCompanion,

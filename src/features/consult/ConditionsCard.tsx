@@ -83,12 +83,40 @@ interface Props {
     disabled?: boolean;
     /** the Assessment Tab stop — see STOPS in useConsultKeyboard.ts */
     searchRef?: React.RefObject<HTMLInputElement>;
+    /**
+     * What occupies this card's SECOND column, when a specialty has something
+     * better to put there than the confirmed list.
+     *
+     * ── Why the confirmed column was worth giving up (2026-08-16)
+     *
+     * Anmol, looking at the real screen: "that's essentially a useless thing,
+     * because it is already visible which you have selected." He is right, and
+     * this file already admitted as much — the comment on that column records
+     * that its blank state left roughly 230px of white space and calls it the
+     * largest single void on a WORKING screen. Everything it showed is also in
+     * the Consultation Plan rail, three inches to the right, permanently.
+     *
+     * So a profile with an instrument — a dentist's odontogram, a
+     * dermatologist's or physiotherapist's body map — puts it here instead:
+     * beside the assessment it informs, at the moment the doctor is forming
+     * one. The instrument itself still opens in `ChartSurface`; this column
+     * holds the launcher and its one-line extract, which is the shape
+     * `SpecialtyExamCard` already had.
+     *
+     * The one thing that had to survive the swap is WHICH DIAGNOSIS IS
+     * PRIMARY — a convention this card used to carry and the engine is
+     * forbidden from deciding. `PlanCard` marks it now.
+     *
+     * Absent means the confirmed column renders exactly as before, so General
+     * OPD and every profile with no chart is untouched.
+     */
+    sideSlot?: React.ReactNode;
 }
 
 export function ConditionsCard({
     intents, topScore, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, hasChart,
-    diagnoses, onRemoveDiagnosis, disabled = false, searchRef,
+    diagnoses, onRemoveDiagnosis, disabled = false, searchRef, sideSlot,
 }: Props) {
     const [expanded, setExpanded] = useState(false);
     const reduce = useReducedMotion();
@@ -359,6 +387,12 @@ export function ConditionsCard({
                         </motion.div>
                     </div>
 
+                    {/* right: the specialty's own instrument, when it has one —
+                        otherwise what has been taken. See `sideSlot`. */}
+                    {sideSlot ? (
+                        <div className="cs-cond-side flex min-w-0 flex-col">{sideSlot}</div>
+                    ) : (
+                    <>
                     {/* right: what has been taken */}
                     {/* A flex column so the blank state can take the space the
                         ranked list decides. This column is as tall as its
@@ -413,6 +447,8 @@ export function ConditionsCard({
                             </div>
                         )}
                     </div>
+                    </>
+                    )}
                 </div>
             )}
         </section>

@@ -55,6 +55,14 @@ export async function saveConsult(opts: {
     findingsText: string;
     followUpDays?: number | null;
     adviceNotes?: string | null;
+    /**
+     * What the clinic delivered during this visit — ultrasound, IFT, manual
+     * therapy. Its own column rather than more lines in `advice_notes`,
+     * because "what was done to the patient" and "what the patient should do"
+     * are different questions and the longitudinal record has to be able to
+     * answer the first one per visit. See IntentType in engine.ts.
+     */
+    therapyNotes?: string | null;
 }): Promise<{ prescriptionId: string }> {
     // 1. Save vitals + mark visit completed
     const { error: visitErr } = await supabase
@@ -78,6 +86,7 @@ export async function saveConsult(opts: {
             findings_text: opts.findingsText,
             follow_up_days: opts.followUpDays ?? null,
             advice_notes: opts.adviceNotes ?? null,
+            therapy_notes: opts.therapyNotes ?? null,
         })
         .select("id")
         .single();

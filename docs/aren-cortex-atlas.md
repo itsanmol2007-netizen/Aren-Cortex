@@ -4012,3 +4012,186 @@ keyboard dead. Both done.
   own thing: unfinished treatment per tooth, and prior photos per body site.
 - The band takes ~200px out of a locked-height shell. On a short laptop that is
   real pressure on the Assessment, and it has only been seen at 1440×900.
+
+---
+
+## 14.24 Session 2026-08-16b — physiotherapy: the seventh intent type, and the Assessment's dead column
+
+Same day as §14.23, driven by Anmol reading the real screen and asking three
+questions that turned out to have one answer each.
+
+### "Which template are the other specialties using?" — none of it
+
+The honest answer, checked rather than assumed: **only General OPD had the
+rebuilt input surface.** One line in `App.tsx` (`isGeneralOpd ? … : …`) sent
+the other seven profiles to `SoapInputs` — the three-picker SOAP layout the
+doctrine opens by calling a structural problem. Nobody had ever migrated one.
+
+§14.23's work was unaffected by that (the band sits above the branch and
+`pastVisits` was threaded into both files), but the layout gap was real.
+
+**Physiotherapy now renders the Case Sheet surface, and it does NOT have its
+own copy of the file.** The standing rule says copy `GeneralOpdInputs.tsx` the
+day a profile earns its own layout; physiotherapy was measured against that
+rule and does not — its input half is the same one search bar, Case Sheet,
+Measurements and Attachments. Everything that differs is elsewhere: which
+measurements show, what leads the suggestions, what is trended, and the body
+map now in the Assessment. So the branch became configuration
+(`SpecialtyProfile.inputLayout`) instead of an id comparison, and the copy
+waits for the day the inputs genuinely diverge — at which point it will be a
+copy that differs, which is the only kind worth having. Anmol's own reason for
+the copy-paste plan was *"we are not making twice"*, and a byte-identical
+second file is exactly that.
+
+### The seventh intent type
+
+Cortex had **33 exercise intents and zero modalities**. Every one of the 33 is
+a home exercise. Nothing represented in-clinic machine and manual therapy —
+ultrasound, IFT, TENS, traction, wax, dry needling — which, as Anmol put it
+after watching real clinics, *is* what a physiotherapy visit consists of. A
+physio using Cortex could prescribe homework and had no way to record what
+they actually did to the patient for forty minutes.
+
+`modality` is the first type added since the engine was written. Filing these
+under `exercise` was considered and rejected: a modality is performed on a
+date, by a clinician, in the building; an exercise is a prescription the
+patient carries out in between. They land in different places on the plan,
+print as different sections, and only one of them is progressed between
+visits. One list holding "Ultrasound 7 min" beside "3 sets of 12 at home"
+makes the doctor do that separation in their head on every read.
+
+The type union is the seam that made this safe: `tsc` immediately failed on
+the two `Record<IntentType, …>` literals that enumerate every type, which is
+the whole point of a union over a string.
+
+**It gets its own plan collection, not more lines in `adviceNotes`.** Advice,
+referrals and exercises share that field legitimately — they are all
+instructions the patient leaves with. A modality is a record of something
+done, so it is `therapyNotes`, its own group in the plan rail ("Therapy — this
+session", above Advice, in the order the session ran), its own section on both
+print surfaces, and its own `prescriptions.therapy_notes` column. Without the
+column, "what did we do in session 4" is unanswerable without a human reading
+prose — which is exactly what the longitudinal band's Last Session card needs.
+
+### Content: 23 therapies, 79 rules, 7 guards
+
+Full record in `docs/Cortex Specialties/physiotherapy-modalities.sql`, applied
+with Anmol's authorisation as four migrations.
+
+Every signal was **read off the live database rather than invented** — the 18
+the existing exercise intents already use, plus the musculoskeletal vocabulary
+that was already authored and had nothing physiotherapy-shaped hanging off it
+(`MUSCLE_SPASM`, `ROM_RESTRICTED`, `RADICULOPATHY_CERVICAL`/`_LUMBAR`,
+`JOINT_INSTABILITY`, `MUSCLE_ATROPHY`, `STIFFNESS_MORNING`). §14.21's lesson:
+an intent with no rule behind it displays and ranks nothing.
+
+Verified against Postgres after applying, not against the screen: 23
+modalities, 79 rules, **0 modalities with no rule**, **0 rules naming a signal
+that does not exist**, and the column present. Then end to end through the real
+`search_intents` function, which is what proves a modality is REACHABLE and not
+merely rankable — `search_intents('knee', 24, '{modality,exercise}')` returns
+IFT, therapeutic ultrasound and kinesio taping matched via the "Knee pain"
+observable, ranked above the home exercises.
+
+**Two bugs the database caught that review had not.** The guards table is
+`intent_guards`, not `guards`; and `intent_guards_one_target` permits exactly
+one of `target_type` / `target_class_id` / `target_intent_id`, so a per-intent
+guard must not also set the type. Both were mistakes in the draft, both failed
+loudly at apply time. The type-level constraint was widened to know about
+`modality` anyway, so the first type-level guard someone writes years from now
+does not fail then.
+
+⚠ **The guard list is what CAN be expressed, not the list of risks.** Pacemaker
+with electrotherapy, metal implants with SWD, malignancy over the field, DVT,
+acute fracture with traction, impaired sensation with heat — none has an
+observable in the catalogue, so none can be guarded. Stated in the SQL file and
+in Open below rather than left for someone to infer from a short list.
+
+### The Assessment's second column
+
+Anmol: *"beside assessment there is a blank portion where all the selected
+assessment go. Essentially that's a useless thing, because it is already
+visible which you have selected."*
+
+He is right, and **the code already admitted it**: the comment on that column
+records that its blank state left ~230px of white and calls it "the largest
+single void left on a WORKING screen." Everything it showed is also in the
+Consultation Plan rail, permanently.
+
+So `ConditionsCard` gained an optional `sideSlot`, and a profile with an
+instrument puts it there. **Nothing new was built for this** — `SpecialtyExamCard`
+was already the launcher-plus-one-line-extract shape, already opening the real
+chart through `ChartSurface`, already fed by `useChartSummaries`. It moved.
+Physiotherapy gained `charts: ["body"]`: the body map answers *where*, which
+for a physio is which joint is being treated.
+
+Gated on `inputLayout === "case-sheet"`, NOT merely on having a chart —
+`SoapInputs` renders its own `SpecialtyExamCard`, so dentistry and dermatology
+would otherwise show the same launcher twice. Each picks this up when its turn
+comes.
+
+**What had to survive the swap: which diagnosis is PRIMARY.** That convention
+lived only in the column being replaced, and the engine is forbidden from
+deciding it. `PlanCard` marks it now, and only when there is more than one
+confirmed condition — on a single diagnosis the word answers a question nobody
+asked.
+
+### Two defects found by looking, again
+
+Both in the specialty column, neither visible in an assertion:
+
+1. The launcher sat at the top of a column sized by the ranked list beside it,
+   leaving ~140px of white — the same void, smaller. Doctrine §8a says fill it.
+2. Filling it by stretching the row control made a 200px-tall empty box, which
+   is §8a's *other* warning. Fixed by centring and stacking it with a
+   space-appropriate icon, so it reads as an instrument panel rather than a
+   layout accident.
+
+### Verification
+
+- **20 assertions in Chromium** against the real `ConditionsCard`,
+  `SpecialtyExamCard`, `SuggestionsCard` and `PlanCard`: the instrument in the
+  Assessment's second column with its extract, the confirmed column gone,
+  clicking through to open the real chart, Therapy ranking above Investigation
+  in the suggestions panel with the verb "Perform", Exercise Plans still
+  holding the elevated slot, the rail separating "Therapy — this session" from
+  "Advice" in that order, removing a therapy line taking exactly one line and
+  leaving advice alone, and the Primary mark appearing only on the second
+  confirmed diagnosis.
+- Worth recording: the first run of that harness reported 5 failures and **all
+  five were the harness**, not the code — assertions compared against
+  CSS-uppercased text, and esbuild had bundled the CSS without Tailwind so
+  every Tailwind-styled card rendered unstyled. Rebuilt through Vite with the
+  project's own plugins. A component harness that does not run the real build
+  pipeline can only check structure, never layout.
+- `tsc -b`, `vite build`, `check:trend` (148), `check:measures` (32 fields),
+  `check:dental`, `check:obstetric`, `check:growth` all clean.
+- **Not verified against the live app** — same reason as every entry in this
+  run of sessions.
+
+### Open
+
+- **The exercise plan with progression is not built.** Progressed / held /
+  added between sessions, the treatment modules column, "impairments" instead
+  of "conditions" — the bottom half of Anmol's mockup. He deferred it
+  explicitly; it is the next physiotherapy piece and the largest.
+- **The contraindication signals above do not exist.** Until they do, those
+  risks are the physiotherapist's alone.
+- **Modality dosage is prose.** "Ultrasound 1 MHz, 7 min" is one label, so a
+  physio wanting 5 minutes edits a string. Same shape `exercise` already uses;
+  a real dosage model is its own work.
+- **Laterality is not captured on a modality.** "Ultrasound to the right knee"
+  is not expressible.
+- **The body map does not yet surface the joint's measurements.** Marking the
+  right knee could raise knee flexion R / extension lag R / girth R in
+  Measurements — the machinery that does this for signals exists
+  (`RELEVANT_FIELDS`), but body sites emit no signals, so it needs a mapping
+  that does not exist yet. This is the piece that would make the map genuinely
+  physiotherapy's own rather than dermatology's, reused.
+- **Six profiles are still on `SoapInputs`** — diagnostics, cardiology,
+  paediatrics, gynaecology, dentistry, dermatology. One `inputLayout` line
+  each, when their turn comes, plus whatever their own review turns up.
+- Physiotherapy's labels are still General OPD's. Anmol's mockup says "Ranked
+  impairments / functional problems" and "Reported by patient"; the screen says
+  "Ranked conditions" and "Reported". Configuration, not structure — left for
+  his review pass.

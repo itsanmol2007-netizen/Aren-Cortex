@@ -156,6 +156,34 @@ export interface SpecialtyProfile {
      * profiles.
      */
     trend: TrendEntry[];
+    /**
+     * Which input surface this profile renders — the ONE branch in the render
+     * tree that §14.19 sanctions, expressed as configuration instead of as an
+     * `id === "general_opd"` comparison in App.tsx.
+     *
+     * ── Why physiotherapy shares General OPD's file rather than copying it
+     *
+     * The standing rule is: the day a profile earns its own input layout, copy
+     * `GeneralOpdInputs.tsx`, rename it, change what it renders, add one
+     * branch. Physiotherapy was checked against that rule on 2026-08-16 and
+     * the honest answer is that its input half is not different — one search
+     * bar, the Case Sheet, Measurements, Attachments, in that arrangement. The
+     * things that ARE different for a physiotherapist are all elsewhere: which
+     * measurements show (`measurements`, already configured), what leads the
+     * suggestions (`sections`), what is trended (`trend`), and the body map
+     * that now occupies the Assessment's second column.
+     *
+     * Copying a file that would be byte-identical is the "seven near-identical
+     * copies" the doctrine warns against, and it is one bug fixed in two
+     * places from the day it lands. So physiotherapy points at the same
+     * surface, and the copy happens the day its inputs genuinely diverge —
+     * at which point it will be a copy that differs, which is the only kind
+     * worth having.
+     *
+     * `"soap"` is the older three-picker fallback (History / Symptoms /
+     * Findings). Every profile that has not had its turn is still on it.
+     */
+    inputLayout: "case-sheet" | "soap";
 }
 
 /**
@@ -210,6 +238,7 @@ export const GENERAL_OPD: SpecialtyProfile = {
         { key: "hba1c" },
         { key: "glucoseFasting" },
     ],
+    inputLayout: "case-sheet",
 };
 
 /**
@@ -226,6 +255,18 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     primary: "exercise",
     primaryLabel: "Exercise Plans",
     sections: [
+        // Therapy leads, and this one line is the whole of "make in-clinic
+        // treatment the first thing a physiotherapist sees". Nothing below is
+        // hidden — investigations, referrals and medicines are exactly where
+        // they were, one position lower, with their own search boxes intact.
+        // Doctrine: ranking decides what is OFFERED, never what is REACHABLE.
+        //
+        // It sits BESIDE the elevated Exercise Plans slot rather than taking
+        // it, because the exercise programme is the thing that gets progressed
+        // between sessions and the modalities are relatively stable for a
+        // given condition. If that turns out to be backwards in real use, the
+        // fix is to swap `primary` — one word, no layout change.
+        { type: "modality", label: "Therapy" },
         { type: "finding", label: "Possible Finding" },
         { type: "test", label: "Investigation" },
         { type: "referral", label: "Referral" },
@@ -237,7 +278,13 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     // input here, not a general vital (SEVERE_HIGH_BP guards the whole
     // `exercise` type).
     measurements: ["painVas", "romPct", "bp", "pulse", "weight"],
-    charts: [],
+    // The body map, added 2026-08-16. It is the same instrument dermatology
+    // uses and it answers the same question — WHERE — which for a
+    // physiotherapist is which joint or region is being treated. It renders in
+    // the Assessment's second column (see ConditionsCard's `sideSlot`) rather
+    // than in the Objective row, because for this profile marking the site IS
+    // part of forming the assessment.
+    charts: ["body"],
     // The profile the band was built for. A physiotherapy course is two or
     // three sessions a week for weeks, and the spec is blunt about what that
     // means: the trend across sessions IS the record. Pain and overall
@@ -252,6 +299,9 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         // using the degree fields should never see this one reached.
         { key: "romPct" },
     ],
+    // Moved off `SoapInputs` on 2026-08-16 — the first profile other than
+    // General OPD to get the rebuilt input surface. See `inputLayout`.
+    inputLayout: "case-sheet",
 };
 
 /** Investigation-led practice — diagnostics, pre-op workup. */
@@ -280,6 +330,8 @@ export const DIAGNOSTICS: SpecialtyProfile = {
         { key: "bp" },
         { key: "weight" },
     ],
+    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
+    inputLayout: "soap",
 };
 
 /**
@@ -321,6 +373,8 @@ export const CARDIOLOGY: SpecialtyProfile = {
         { key: "pulse" },
         { key: "spo2" },
     ],
+    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
+    inputLayout: "soap",
 };
 
 /**
@@ -371,6 +425,8 @@ export const PEDIATRICS: SpecialtyProfile = {
     // two it IS read by the engine — weight-for-age becomes WAZ, which
     // raises GROWTH_FALTERING. See GrowthChartCard.
     charts: ["growth"],
+    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
+    inputLayout: "soap",
 };
 
 /**
@@ -411,6 +467,8 @@ export const GYNAECOLOGY: SpecialtyProfile = {
         { key: "weight", betterWhen: "higher" },
         { key: "pulse" },
     ],
+    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
+    inputLayout: "soap",
 };
 
 /**
@@ -451,6 +509,8 @@ export const DENTISTRY: SpecialtyProfile = {
     // built on the dental chart's own state. That is real work and it is not
     // this pass.
     trend: [],
+    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
+    inputLayout: "soap",
 };
 
 /**
@@ -483,6 +543,8 @@ export const DERMATOLOGY: SpecialtyProfile = {
     // because it answers anything. The body map indexing prior photos is the
     // real version of this and it is its own pass.
     trend: [],
+    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
+    inputLayout: "soap",
 };
 
 export const PROFILES: Record<string, SpecialtyProfile> = {

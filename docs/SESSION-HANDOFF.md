@@ -7,7 +7,7 @@ everything the previous version said is either folded into
 Rewrite or delete this file the same way when the next session ends.
 
 **Read order for a cold start:** this file, then `aren-cortex-ui-doctrine.md`,
-then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.19 through §14.23
+then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.19 through §14.24
 are this run of sessions'). Then
 `docs/Cortex Specialties/cortex-longitudinal-spec.md`, which is the live spec
 for the current phase. Don't re-survey the repo; the docs are current.
@@ -19,8 +19,9 @@ for the current phase. Don't re-survey the repo; the docs are current.
 `master`. Everything below is committed and built clean (`tsc -b` +
 `vite build`). No work in flight.
 
-The specialty phase has started. §14.23 (2026-08-16) built the first of the
-longitudinal spec's three pieces.
+The specialty phase has started. §14.23 built the first of the longitudinal
+spec's three pieces; §14.24, the same day, made physiotherapy the first
+profile other than General OPD to get the rebuilt screen.
 
 ### 0.1 The longitudinal band (atlas §14.23)
 
@@ -57,7 +58,30 @@ because it carries the live `ROM_PCT` rules, not because it is the right shape.
 Adding fields costs **no database work**: measurements are a JSON blob on the
 visit, so a new key persists the moment it is in `measures.ts` and `Vitals`.
 
-### 0.3 A light care plan (spec §3.3)
+### 0.3 Physiotherapy is live (atlas §14.24)
+
+Three things landed:
+
+1. **It renders the Case Sheet surface**, not the old three-picker SOAP
+   layout. It does NOT have its own copy of `GeneralOpdInputs.tsx` — its input
+   half is genuinely identical, so the branch became configuration
+   (`SpecialtyProfile.inputLayout`). Copy the file the day the inputs actually
+   diverge; a byte-identical copy is the duplication the doctrine forbids.
+2. **`modality` is the seventh intent type** — what the clinic DELIVERS during
+   the session, as opposed to `exercise`, which is what the patient does at
+   home. 23 therapies, 79 rules, 7 guards, all live. It has its own plan
+   group, its own print section and its own `prescriptions.therapy_notes`
+   column; it is deliberately not filed under advice.
+3. **The Assessment's second column is the specialty's instrument.** The
+   confirmed-conditions list that used to sit there was ~230px of white space
+   duplicating the plan rail. `SpecialtyExamCard` moved into it — nothing new
+   was built. Physiotherapy gets the body map.
+
+Only General OPD and physiotherapy are on the new surface. **Six profiles are
+still on `SoapInputs`** and each is one `inputLayout` line away, when its turn
+comes.
+
+### 0.4 A light care plan (spec §3.3)
 
 `care_plans` already existed in the live DB, correctly shaped and completely
 unused — left by the abandoned prescription-flow branch. Adopted. It shows
@@ -87,14 +111,23 @@ has seen it for real. Creating a test patient with three or four visits is the
 fastest way to close this — **ask before writing to the DB**, and delete the
 test data afterwards per §4.
 
-### 1.3 The physiotherapy screen itself
+### 1.3 The exercise plan with progression
 
-The bottom half of Anmol's mockup: exercise recommendations with
-progressed/held/added badges, treatment modules, "impairments" instead of
-"conditions". None of that data is recorded today, which is also why the band's
-Last Session card is thinner than the mockup. §14.19's rule governs it: copy
-`GeneralOpdInputs.tsx`, rename it, add one branch in `App.tsx`. Do NOT pre-split
-`SoapInputs.tsx`.
+The largest remaining physiotherapy piece and the bottom half of Anmol's
+mockup: exercise recommendations carrying progressed / held / added between
+sessions, the treatment modules column, "impairments" instead of "conditions".
+He deferred it explicitly on 2026-08-16 — build it next.
+
+None of that data is recorded today, which is also why the band's Last Session
+card is thinner than the mockup. Now that `modality` exists, comparing this
+session's plan against last session's is finally possible.
+
+### 1.4 One specialty at a time — Anmol's standing instruction
+
+*"I will strongly recommend you to not do all at the same time... we will
+manually wire them as the way I'm saying because we are not making twice."*
+He reviews and tweaks each profile himself. Do not batch them, and do not
+start the next one until he says which.
 
 ---
 
@@ -133,6 +166,16 @@ Carried forward, plus this session's. None of these is visible on screen.
     never selected `vitals`, which made every measurement write-only from the
     consult screen's point of view. If a feature needs something historical,
     check that function actually fetches it.
+12. **The guards table is `intent_guards`, not `guards`**, and
+    `intent_guards_one_target` allows exactly ONE of target_type /
+    target_class_id / target_intent_id. Both were found by the database
+    rejecting a migration, not by review.
+13. **A component harness that does not run the real build pipeline can check
+    structure and nothing else.** An esbuild bundle has no Tailwind, so every
+    Tailwind-styled card renders unstyled and any layout judgement from it is
+    worthless. Build harnesses with Vite and the project's own config — see
+    §14.24's verification note, where 5 of 5 reported failures were the
+    harness.
 
 ---
 
@@ -151,6 +194,21 @@ Carried forward, plus this session's. None of these is visible on screen.
 - **Dentistry and dermatology draw no numbers by design** and want their own
   longitudinal view: unfinished treatment per tooth, prior photos per body
   site.
+- **Physiotherapy's contraindication signals do not exist** — pacemaker, metal
+  implant, malignancy, DVT, acute fracture, impaired sensation. Until they do,
+  those risks are the physiotherapist's alone; the 7 guards that exist cover
+  pregnancy and heat-in-the-acute-phase only.
+- **Modality dosage is prose and laterality is not captured.** "Ultrasound to
+  the right knee at 5 minutes" needs a dosage model and a side; today the label
+  is one string.
+- **The body map does not surface the joint's measurements.** Marking the right
+  knee could raise knee flexion R / extension lag R / girth R — the machinery
+  exists for signals (`RELEVANT_FIELDS`) but body sites emit none, so it needs
+  a mapping that does not exist. This is what would make the map physio's own
+  rather than dermatology's, reused.
+- **Physiotherapy's labels are still General OPD's** — "Ranked conditions"
+  where the mockup says "Ranked impairments / functional problems".
+  Configuration, left for Anmol's review pass.
 - **`stagedMedicine` / `pendingMedicine` are not cleared by `plan.reset()`** —
   an add sheet left open across a patient switch can commit onto a blank
   consult. Documented in `useConsultPlan.ts`'s reset header.
@@ -176,7 +234,12 @@ Carried forward, plus this session's. None of these is visible on screen.
 - **No `supabase/migrations/` directory.** Schema changes are applied live via
   the Supabase MCP tools; `apply_migration` records them in Supabase's own log,
   and the atlas prose is the only other record. **Write it down or it is gone.**
-  One migration this session: `care_plans_hospital_isolation_policy`.
+  Five migrations this session, all authorised first:
+  `care_plans_hospital_isolation_policy`,
+  `modality_intent_type_and_therapy_notes`,
+  `physiotherapy_modality_catalogue`, `physiotherapy_modality_rules`,
+  `physiotherapy_modality_guards`. The last four are also written out in full,
+  with their reasoning, in `docs/Cortex Specialties/physiotherapy-modalities.sql`.
 - **Don't write to the live DB without asking.** Every write this week was
   authorised first.
 - Supabase project `ieimvjprtltancxapuzg` (org `arenod`, `ap-south-1`).

@@ -12,8 +12,26 @@
 // TYPES
 // ============================================================
 
+/**
+ * `modality` was added 2026-08-16, and it is the only type added since the
+ * engine was written. It is what the CLINIC DELIVERS during the session —
+ * ultrasound, IFT, TENS, traction, manual therapy, dry needling — as opposed
+ * to `exercise`, which is what the patient takes home and does themselves.
+ *
+ * Filing the two together was considered and rejected. They are different
+ * clinical objects: a modality is performed on a date, by a clinician, in the
+ * building, and it is what a physiotherapy session actually consists of; an
+ * exercise is a prescription the patient carries out for the days in between.
+ * They land in different places on the plan, print as different sections, and
+ * only one of them is progressed between visits. A single list holding
+ * "Ultrasound 7 min" beside "3 sets of 12 at home" would force the doctor to
+ * do that separation in their head on every read.
+ *
+ * The engine itself treats all seven as equal peers and always has — nothing
+ * here changes a score, a rank or the shape of a result.
+ */
 export type IntentType =
-    | 'medicine' | 'test' | 'exercise' | 'referral' | 'finding' | 'advice';
+    | 'medicine' | 'test' | 'exercise' | 'modality' | 'referral' | 'finding' | 'advice';
 
 export interface Signal {
     id: string;
@@ -377,7 +395,7 @@ export function runEngine(rs: Ruleset, input: EngineInput): EngineResult {
 /** Convenience: split the ranked list by type for the renderers. */
 export function groupByType(intents: ScoredIntent[]): Record<IntentType, ScoredIntent[]> {
     const out = {
-        medicine: [], test: [], exercise: [], referral: [], finding: [], advice: [],
+        medicine: [], test: [], exercise: [], modality: [], referral: [], finding: [], advice: [],
     } as Record<IntentType, ScoredIntent[]>;
     for (const i of intents) out[i.type].push(i);
     return out;

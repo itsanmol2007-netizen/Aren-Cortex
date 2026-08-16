@@ -63,6 +63,8 @@ interface ReviewModalProps {
   tests?: string[];
   followUpDays?: number | null;
   adviceNotes?: string;
+  /** what was delivered in the clinic today — see IntentType in engine.ts */
+  therapyNotes?: string;
   doctor?: DoctorShape | null;
   hospital?: DBHospital | null;
   vitals?: Vitals;
@@ -168,7 +170,7 @@ export default function ReviewModal({
   patient, visitId, prescriptionRef,
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
-  followUpDays, adviceNotes,
+  followUpDays, adviceNotes, therapyNotes,
   doctor, hospital, vitals, isSaving,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
@@ -358,6 +360,7 @@ export default function ReviewModal({
             tests={tests}
             followUpDays={followUpDays}
             adviceNotes={adviceNotes}
+            therapyNotes={therapyNotes}
             doctor={doctor}
             hospital={hospital}
             vitals={vitals}
@@ -756,6 +759,25 @@ export default function ReviewModal({
                     </div>
                   )}
                 </div>
+
+                {/* Delivered in the clinic today. Its own block, above the
+                    instructions the patient leaves with, because it is a
+                    record of what was DONE rather than something to do — see
+                    IntentType in engine.ts. Teal, the "examined" colour. */}
+                {therapyNotes && (
+                  <div className="mb-4">
+                    <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-2.5">
+                      Therapy Performed
+                    </p>
+                    <div className="space-y-1.5">
+                      {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
+                        <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
+                          <ChevronRight className="w-3 h-3 text-teal-400 mt-0.5 shrink-0" />{line}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Instructions */}
                 <div>

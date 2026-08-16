@@ -16,7 +16,7 @@
 import { useRef, useState } from "react";
 import {
     CalendarClock, ClipboardList, FileText, FlaskConical, NotebookPen, Pill,
-    Printer, Stethoscope,
+    Printer, Stethoscope, Waves,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
@@ -154,7 +154,9 @@ interface Props {
     tests: string[];
     onRemoveTest: (label: string) => void;
     adviceLines: string[];
+    therapyLines: string[];
     onRemoveAdviceLine: (line: string) => void;
+    onRemoveTherapyLine: (line: string) => void;
     followUpDays: number | null;
     onFollowUpChange: (days: number | null) => void;
     notes: string;
@@ -183,6 +185,7 @@ export function PlanCard({
     prescription, onSelectMedicine, onUpdateMedicine, onRemoveMedicine,
     tests, onRemoveTest,
     adviceLines, onRemoveAdviceLine,
+    therapyLines, onRemoveTherapyLine,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
     companionsFor, onAddCompanion, onDismissCompanion,
@@ -285,10 +288,30 @@ export function PlanCard({
                     <>
                         {diagnoses.length > 0 && (
                             <Group icon={<Stethoscope size={12} />} tone="rose" title="Diagnosis" count={diagnoses.length}>
-                                {diagnoses.map((dx) => (
+                                {/* The FIRST confirmed condition is the primary
+                                    diagnosis and the rest are secondary. That
+                                    convention used to be carried by the
+                                    Assessment card's confirmed column, which a
+                                    specialty may now replace with its own
+                                    instrument (see ConditionsCard's `sideSlot`),
+                                    so it is marked here instead — the rail is
+                                    the one surface that shows the diagnosis for
+                                    every profile, always.
+
+                                    It is a convention and never a derivation:
+                                    the engine does not decide which diagnosis is
+                                    primary, because that is the one judgement in
+                                    this workspace that is entirely the
+                                    doctor's. */}
+                                {diagnoses.map((dx, i) => (
                                     <div key={dx} className={`cs-line${justAdded.has(dx) ? " is-new" : ""}`}>
                                         <div className="cs-line-main">
-                                            <div className="cs-line-name"><span>{dx}</span></div>
+                                            <div className="cs-line-name">
+                                                <span>{dx}</span>
+                                                {i === 0 && diagnoses.length > 1 && (
+                                                    <em className="cs-dx-primary">Primary</em>
+                                                )}
+                                            </div>
                                         </div>
                                         <button
                                             type="button"
@@ -403,6 +426,36 @@ export function PlanCard({
                                 </div>
                             ))}
                         </Group>
+
+                        {/* Delivered in the clinic today, ABOVE advice, because
+                            it happened before the patient was given anything to
+                            take home — the plan reads in the order the session
+                            ran. Teal is the "examined" colour from the doctrine's
+                            palette, which is the closest existing meaning: this
+                            is something the clinician did with their hands, not
+                            an instruction issued. */}
+                        {therapyLines.length > 0 && (
+                            <Group
+                                icon={<Waves size={12} />}
+                                tone="teal"
+                                title="Therapy — this session"
+                                count={therapyLines.length}
+                            >
+                                {therapyLines.map((line) => (
+                                    <div key={line} className={`cs-line${justAdded.has(line) ? " is-new" : ""}`}>
+                                        <div className="cs-line-main">
+                                            <div className="cs-line-name"><span>{line}</span></div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="cs-x"
+                                            aria-label={`Remove ${line}`}
+                                            onClick={() => onRemoveTherapyLine(line)}
+                                        >×</button>
+                                    </div>
+                                ))}
+                            </Group>
+                        )}
 
                         {adviceLines.length > 0 && (
                             <Group
