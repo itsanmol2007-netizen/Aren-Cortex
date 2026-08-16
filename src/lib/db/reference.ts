@@ -1,10 +1,40 @@
 import { supabase } from "../supabase";
 
-// ── CONSTANTS ──────────────────────────────────────────────────────────────────
-export const DOCTOR_ID = "5cd330d2-5a48-4098-b865-ed3393e08698";
-export const DOCTOR_NAME = "SK Pandey";
-export const DOCTOR_SPECIALIZATION = "general";
-export const HOSPITAL_ID = "38bd8da3-0dd2-43a5-ad09-2d3194c95ba9";
+// ── CURRENT SESSION ──────────────────────────────────────────────────────────────
+// Every db/*.ts function below reads these directly (`.eq("assigned_doctor_id",
+// DOCTOR_ID)` etc.) rather than taking a doctorId/hospitalId parameter — that
+// was fine when this app hardcoded a single test doctor. Now that real
+// Supabase Auth resolves a real identity per session, `setCurrentSession` is
+// called once (in App.tsx, right after login resolves and before the
+// authenticated app mounts) to populate these. `let` + live ES-module
+// bindings means every existing `DOCTOR_ID` reference across the codebase
+// picks up the real value without those functions needing to change —
+// deliberately the smaller, more contained fix over threading a doctorId
+// param through every one of them today. Empty string before login; nothing
+// should call these until App has gated on an authenticated session.
+export let DOCTOR_ID = "";
+export let DOCTOR_NAME = "";
+export let DOCTOR_SPECIALIZATION = "";
+export let HOSPITAL_ID = "";
+
+export function setCurrentSession(session: {
+    doctorId: string;
+    doctorName: string;
+    doctorSpecialization: string;
+    hospitalId: string;
+}) {
+    DOCTOR_ID = session.doctorId;
+    DOCTOR_NAME = session.doctorName;
+    DOCTOR_SPECIALIZATION = session.doctorSpecialization;
+    HOSPITAL_ID = session.hospitalId;
+}
+
+export function clearCurrentSession() {
+    DOCTOR_ID = "";
+    DOCTOR_NAME = "";
+    DOCTOR_SPECIALIZATION = "";
+    HOSPITAL_ID = "";
+}
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBSymptom = { id: number; name: string };

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { X } from "lucide-react";
+import { LogOut, X } from "lucide-react";
 import logo from "../../assets/aren-logo.png";
 import { SidebarNav, type SidebarPage } from "./SidebarNav";
 import type { Doctor } from "../../types";
@@ -12,6 +12,7 @@ type SidebarProps = {
     onConsult: () => void;
     doctor: Doctor;
     logoRef: React.RefObject<HTMLDivElement>;
+    onSignOut?: () => void;
 };
 
 export function Sidebar({
@@ -22,6 +23,7 @@ export function Sidebar({
     onConsult,
     doctor,
     logoRef,
+    onSignOut,
 }: SidebarProps) {
     const panelRef = useRef<HTMLElement>(null);
     const sidebarLogoRef = useRef<HTMLDivElement>(null);
@@ -193,6 +195,11 @@ export function Sidebar({
                             <span className="sidebar-doctor-name">{doctor.name}</span>
                             <span className="sidebar-doctor-spec">{doctor.specialty || "General"}</span>
                         </div>
+                        {onSignOut && (
+                            <button type="button" className="sidebar-signout-btn" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+                                <LogOut size={14} />
+                            </button>
+                        )}
                     </div>
                 </div>
             </aside>

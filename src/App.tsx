@@ -19,11 +19,14 @@ import type { SelectedSymptom, Medicine, Patient, PrescriptionMedicine, Vitals }
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
+import { useAuth } from "./hooks/useAuth";
+import { LoginPage } from "./components/LoginPage";
+import { signOut } from "./lib/auth";
 import PastVisitRxViewer from "./features/prescription/PastVisitRxViewer";
 import { CarePlanModal } from "./components/CarePlanModal";
 import { toFindingNames, toPrescriptionMedicines } from "./features/prescription/visitAdapter";
 import {
-  DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
+  DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION, HOSPITAL_ID,
   fetchSymptoms, fetchFindings,
   createPatient, findPatientByPhone, createVisit,
   replaceVisitSymptoms, replaceVisitFindings,
@@ -43,7 +46,6 @@ import {
   type CarePlanWithProgress,
 } from "./lib/db";
 
-const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
 const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
 
 // Title + subtitle for every coming-soon feature page
@@ -96,7 +98,18 @@ function hasActiveConsult(
   );
 }
 
-function App() {
+/**
+ * The consult workspace. Only ever mounted once useAuth() has resolved a
+ * real doctor/hospital identity and called setCurrentSession — everything
+ * below that reads DOCTOR_ID/HOSPITAL_ID (directly, or via the DOCTOR object
+ * built on first render) depends on that having already happened.
+ */
+function ConsultApp({ onSignOut }: { onSignOut: () => void }) {
+  // Built at render time (not module scope) so it reads the live
+  // DOCTOR_ID/DOCTOR_NAME/DOCTOR_SPECIALIZATION bindings *after*
+  // setCurrentSession has run, not whatever they were at import time.
+  const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
+
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const symptomsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const findingsSearchRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
@@ -190,7 +203,7 @@ function App() {
       fetchDoctorFavourites(DOCTOR_ID),
       fetchFavouriteMedicines(DOCTOR_ID),
       fetchDoctor(DOCTOR_ID),
-      fetchHospital("38bd8da3-0dd2-43a5-ad09-2d3194c95ba9"),
+      fetchHospital(HOSPITAL_ID),
       fetchSnapshotSuggestions("fever"),
     ])
       .then(([symptoms, findings, favs, favPicks, doctor, hospital, snapshots]) => {
@@ -746,6 +759,7 @@ function App() {
         onConsult={handleSidebarConsult}
         doctor={DOCTOR}
         logoRef={logoRef}
+        onSignOut={onSignOut}
       />
 
       {/* Invisible, always-reachable click target that mirrors wherever the
@@ -1006,6 +1020,68 @@ function App() {
       }
     </div >
   );
+}
+
+/**
+ * Auth gate. Nothing in ConsultApp can safely mount until useAuth() has
+ * resolved a real doctor/hospital identity and populated the DOCTOR_ID/
+ * HOSPITAL_ID live bindings that every db/*.ts function reads — so this is
+ * the only place that decides whether ConsultApp exists at all.
+ */
+function App() {
+  const auth = useAuth();
+
+  if (auth.status === "loading") {
+    return (
+      <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <div style={{ textAlign: "center", color: "var(--muted)" }}>
+          <div style={{ fontSize: 28, marginBottom: 12 }}>⚕</div>
+          <p style={{ fontSize: 14 }}>Checking session…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (auth.status === "signed-out") {
+    return <LoginPage />;
+  }
+
+  if (auth.status === "unsupported-role") {
+    return (
+      <div className="login-shell">
+        <div className="pm-card login-card" style={{ padding: "24px 20px" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
+            This workspace is for doctors
+          </p>
+          <p style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
+            Your account is registered as <strong>{auth.role}</strong>. There isn't a view built
+            for that role here yet — this session covers the doctor consult workspace only.
+          </p>
+          <button type="button" className="pm-btn-ghost" onClick={() => signOut()}>Sign out</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (auth.status === "no-profile") {
+    return (
+      <div className="login-shell">
+        <div className="pm-card login-card" style={{ padding: "24px 20px" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
+            Account not fully set up
+          </p>
+          <p style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
+            Signed in, but there's no hospital/role profile linked to this account yet.
+          </p>
+          <button type="button" className="pm-btn-ghost" onClick={() => signOut()}>Sign out</button>
+        </div>
+      </div>
+    );
+  }
+
+  // key={context.userId}: a different account signing in after a sign-out
+  // should never inherit ConsultApp's in-memory state from the previous one.
+  return <ConsultApp key={auth.context.userId} onSignOut={() => signOut()} />;
 }
 
 export default App;

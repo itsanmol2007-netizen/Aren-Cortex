@@ -477,6 +477,28 @@
     min-width: 0;
 }
 
+.sidebar-signout-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.45);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+}
+
+.sidebar-signout-btn:hover {
+    background: rgba(244, 63, 94, 0.14);
+    color: #fb7185;
+}
+
 .sidebar-doctor-name {
     font-size: 12px;
     font-weight: 600;
