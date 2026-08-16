@@ -4288,11 +4288,14 @@ accepting "walk 30 minutes daily" now gets a structured line with no numbers
 on it, which prints exactly as it always did. A second, text-only path for
 exercises would have been two code paths for one clinical object.
 
-### ⚠ The table was declined, and the code is safe without it
+### The table, and a save-ordering fix it prompted
 
-`prescription_exercises` was offered and **declined at the permission prompt**.
-It has not been created. The SQL is in
-`docs/Cortex Specialties/prescription-exercises.sql`, unapplied.
+`prescription_exercises` was declined at the permission prompt, then created
+on Anmol's correction a few minutes later (*"i mistakenly declined it"*).
+Verified after applying: table present, RLS on, **one policy** — the
+`care_plans` check from §14.23 applied to a table of our own — and three check
+constraints. The SQL is kept in
+`docs/Cortex Specialties/prescription-exercises.sql`.
 
 That prompted a fix worth having regardless. The exercise write was originally
 `await`ed and allowed to throw, on the reasoning that a silent failure is
@@ -4303,10 +4306,8 @@ consultation did save — who would then reasonably save again and produce a
 second prescription for one visit. It now catches, finishes the save, and puts
 the specific failure in a toast.
 
-So until the table exists: the card works, the rail and both print surfaces
-render, the printed sheet is correct, and the programme is not in the record.
-Next session's badges therefore have no baseline and read "Added" every time.
-A persistence gap, not a broken screen.
+That fix stands whether or not the table exists, and is the more valuable half
+of the episode.
 
 ### Verification
 
@@ -4326,10 +4327,37 @@ A persistence gap, not a broken screen.
 - **Not verified against the live app**, same reason as every entry in this
   run — and here it also cannot be, since the table does not exist.
 
+### "It's looking cluttered" — the row, second pass
+
+Anmol on the first version, and he was right. A resting row carried twelve
+controls over three lines — four dose boxes, a reps/hold switch, three side
+buttons, two badges, a tick and a remove — and eight of them are touched on a
+minority of rows.
+
+Nothing was removed. Three changes, all of which keep every control reachable:
+
+- **Last session moved inline.** It had its own line under the row and spent a
+  third of the card's height saying six characters. It now reads
+  `3 × 12 reps · was 3 × 12` — one sentence.
+- **The reps/hold switch and the side buttons go quiet at rest**, revealing on
+  `:hover` OR `:focus-within`. Not `display: none`: the space stays reserved
+  so nothing jumps, and a control absent from the layout is one a doctor
+  cannot find — doctrine allows hiding what the SYSTEM has nothing to say
+  about, never what the doctor might want to say.
+- **"1× daily" is not printed** when it is the default, and stays visible
+  permanently the moment it is anything else. Same rule for the side buttons:
+  a row with a side chosen keeps them, because at that point they are data
+  rather than a control.
+
+`:focus-within` beside `:hover` is the load-bearing half — a control behind
+hover alone is unreachable without a mouse, in an app whose whole keyboard
+story (§14.22) says otherwise. Asserted directly: reveal with no mouse
+involved, and a control still visible while the caret is inside it.
+
+Rows went from three lines to two, and under 62px.
+
 ### Open
 
-- **`prescription_exercises` is not created.** Everything above about
-  persistence waits on it.
 - **Treatment modules** — the third column of Anmol's mockup (ROM tracker,
   strength assessment, progress photos, functional tests) is not built. Some
   of it now has a home: the body map is in the Assessment column and the ROM

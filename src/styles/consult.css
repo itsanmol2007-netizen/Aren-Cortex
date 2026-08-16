@@ -5940,7 +5940,7 @@ body.cs-locked-shell {
     gap: var(--cs-s2);
     border: 1px solid transparent;
     border-radius: 10px;
-    padding: 7px 8px;
+    padding: 6px 8px;
 }
 
 .cs-ex-row.is-on {
@@ -6101,14 +6101,67 @@ body.cs-locked-shell {
     color: #fff;
 }
 
-/* Last session's dose, under today's. The comparison the badge summarises,
-   printed in full so the doctor never has to take the word for it. */
-.cs-ex-prev {
-    margin: 3px 0 0;
+/* Last session's dose, INLINE with today's. It was its own line and cost a
+   third of the card's height to say six characters. The comparison the badge
+   summarises, printed in full so the doctor never has to take the word for
+   it. */
+.cs-ex-was {
     color: var(--cs-faint);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 550;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ── Quiet until asked (2026-08-16, after "it's looking cluttered") ────────
+   The reps/hold switch and the side buttons are touched on a minority of
+   rows, and at full strength on every row they competed with the two numbers
+   that ARE the prescription. They fade rather than disappear: the space stays
+   reserved so nothing jumps, and `:focus-within` sits beside `:hover` so the
+   keyboard reveals exactly what the mouse does.
+
+   Not `display: none` — a control that is not in the layout is a control a
+   doctor cannot find, and doctrine is explicit that the system may hide what
+   it has nothing to say about but never what the doctor might want to say. */
+.cs-ex-quiet {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+.cs-ex-row:hover .cs-ex-quiet,
+.cs-ex-row:focus-within .cs-ex-quiet {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Once daily is the default and saying so on every row is noise. Any other
+   frequency is real information and stays visible always. */
+.cs-ex-perday {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+.cs-ex-perday.is-set,
+.cs-ex-row:hover .cs-ex-perday,
+.cs-ex-row:focus-within .cs-ex-perday {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* A row that has a side already SET keeps its buttons visible — at that point
+   they are data rather than a control, and hiding the answer to "which side"
+   behind a hover would be the actual mistake. */
+.cs-ex-row.has-side .cs-ex-quiet {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .cs-ex-remove {

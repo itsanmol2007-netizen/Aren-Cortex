@@ -128,17 +128,18 @@ has seen it for real. Creating a test patient with three or four visits is the
 fastest way to close this — **ask before writing to the DB**, and delete the
 test data afterwards per §4.
 
-### 1.3 ⚠ Create `prescription_exercises` — the one thing left half-finished
+### 1.3 Drive a physiotherapy consult for real
 
-The exercise plan (§14.25) is built, verified and committed, but **its table
-was declined at the permission prompt and does not exist.** The SQL is ready
-and unapplied in `docs/Cortex Specialties/prescription-exercises.sql`.
+Physiotherapy is complete end to end now — inputs, measurements, body map,
+therapy, exercise plan with progression, care plan, longitudinal band — and
+**none of it has been driven through the real app**, because Chromium here has
+no outbound network. Everything is proven by component harnesses.
 
-The code is safe without it — the save catches the failure, finishes, and
-shows the doctor exactly what did not save — but until it exists the programme
-is not in the record, so next session's Progressed / Same / Eased badges have
-no baseline and every exercise reads "Added" forever. **Ask Anmol, then apply
-it.** This is the highest-priority item in this file.
+The highest-value thing a session with a working browser can do: set the
+clinic to Physiotherapy in Settings, run two consults for one patient a week
+apart with pain and knee ROM recorded and an exercise programme prescribed,
+and check that the second one shows the band, the session count and the
+progression badges. **Ask before creating the test data, and delete it after.**
 
 ### 1.4 One specialty at a time — Anmol's standing instruction
 

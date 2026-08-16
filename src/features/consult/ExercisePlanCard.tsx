@@ -128,7 +128,7 @@ function PrescribedRow({
     const isHold = line.holdSeconds != null && line.reps == null;
 
     return (
-        <div className={`cs-ex-row is-on${disabled ? " is-disabled" : ""}`}>
+        <div className={`cs-ex-row is-on${line.side ? " has-side" : ""}${disabled ? " is-disabled" : ""}`}>
             <span className="cs-ex-tick" aria-hidden="true"><Check size={13} /></span>
 
             <div className="cs-ex-main">
@@ -138,6 +138,24 @@ function PrescribedRow({
                     {showBadges && <Badge verdict={verdict} />}
                 </div>
 
+                {/* ── The dose ──────────────────────────────────────────
+                    At rest this reads as a sentence: "3 × 10 reps · was 3 ×
+                    12". The numbers are live inputs that only look like
+                    inputs once the caret is in them, and everything ELSE —
+                    the reps/hold switch, the times-per-day box when it is
+                    the usual once, and the side buttons when no side is set
+                    — is held quiet until the row is hovered or focused.
+
+                    Anmol, seeing the first version: "the exercise plan
+                    section is looking cluttered." It was: twelve controls per
+                    row over three lines, eight of which a physiotherapist
+                    touches on a minority of rows. The controls did not go
+                    away — a hidden control is worse than a busy one — they
+                    stopped competing with the two numbers that matter.
+
+                    `:focus-within` sits beside `:hover` in the CSS so the
+                    keyboard reveals exactly what the mouse does, and the
+                    space is reserved either way so nothing jumps. */}
                 <div className="cs-ex-dose">
                     <DoseBox
                         value={line.sets}
@@ -162,52 +180,63 @@ function PrescribedRow({
                             label={`Reps of ${line.label}`}
                         />
                     )}
-                    <button
-                        type="button"
-                        className="cs-ex-unit"
-                        disabled={disabled}
-                        title={isHold ? "Switch to repetitions" : "Switch to a timed hold"}
-                        onClick={() =>
-                            isHold
-                                ? onUpdate({ holdSeconds: null, reps: 10 })
-                                : onUpdate({ reps: null, holdSeconds: 10 })
-                        }
-                    >
-                        {isHold ? "→ reps" : "→ hold"}
-                    </button>
 
-                    <span className="cs-ex-sep" aria-hidden="true">·</span>
-                    <DoseBox
-                        value={line.perDay}
-                        onChange={(v) => onUpdate({ perDay: v })}
-                        suffix="× daily"
-                        label={`Times per day for ${line.label}`}
-                    />
+                    {/* Last session, inline. It was its own line under the
+                        row and cost a third of the card's height to say six
+                        characters. */}
+                    {previous && (
+                        <span className="cs-ex-was">
+                            · was {formatDose(previous) || "no dose recorded"}
+                        </span>
+                    )}
 
-                    {/* Side is a separate prescription, not a note — see
-                        `identityOf`. Both sides of one exercise are two lines
-                        that progress independently. */}
-                    <span className="cs-ex-sides">
-                        {(["left", "right", "both"] as ExerciseSide[]).map((s) => (
-                            <button
-                                key={s}
-                                type="button"
-                                className={line.side === s ? "is-on" : ""}
-                                disabled={disabled}
-                                title={line.side === s ? "" : `Prescribe for the ${s} side`}
-                                onClick={() => (line.side === s ? onUpdate({ side: null }) : onSide(s))}
-                            >
-                                {s === "both" ? "B" : s === "left" ? "L" : "R"}
-                            </button>
-                        ))}
+                    {/* Once a day is the overwhelming default and saying so
+                        on every row is noise. Anything else is real
+                        information and stays. */}
+                    <span className={`cs-ex-perday${line.perDay != null && line.perDay !== 1 ? " is-set" : ""}`}>
+                        <span className="cs-ex-sep" aria-hidden="true">·</span>
+                        <DoseBox
+                            value={line.perDay}
+                            onChange={(v) => onUpdate({ perDay: v })}
+                            suffix="× daily"
+                            label={`Times per day for ${line.label}`}
+                        />
+                    </span>
+
+                    <span className="cs-ex-quiet">
+                        <button
+                            type="button"
+                            className="cs-ex-unit"
+                            disabled={disabled}
+                            title={isHold ? "Switch to repetitions" : "Switch to a timed hold"}
+                            onClick={() =>
+                                isHold
+                                    ? onUpdate({ holdSeconds: null, reps: 10 })
+                                    : onUpdate({ reps: null, holdSeconds: 10 })
+                            }
+                        >
+                            {isHold ? "→ reps" : "→ hold"}
+                        </button>
+
+                        {/* Side is a separate prescription, not a note — see
+                            `identityOf`. Both sides of one exercise are two
+                            lines that progress independently. */}
+                        <span className="cs-ex-sides">
+                            {(["left", "right", "both"] as ExerciseSide[]).map((s) => (
+                                <button
+                                    key={s}
+                                    type="button"
+                                    className={line.side === s ? "is-on" : ""}
+                                    disabled={disabled}
+                                    title={line.side === s ? "" : `Prescribe for the ${s} side`}
+                                    onClick={() => (line.side === s ? onUpdate({ side: null }) : onSide(s))}
+                                >
+                                    {s === "both" ? "B" : s === "left" ? "L" : "R"}
+                                </button>
+                            ))}
+                        </span>
                     </span>
                 </div>
-
-                {previous && (
-                    <p className="cs-ex-prev">
-                        Last session: {formatDose(previous) || "no dose recorded"}
-                    </p>
-                )}
             </div>
 
             <button
