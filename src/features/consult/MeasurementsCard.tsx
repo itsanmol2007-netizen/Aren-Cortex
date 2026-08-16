@@ -34,8 +34,13 @@ import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 import { useRovingList } from "../../hooks/useRovingList";
 import type { Vitals } from "../../types";
 import {
-    FIELD_BY_KEY, MEASURE_FIELDS, type MeasureField, type MeasureFieldKey,
+    FIELD_BY_KEY, MEASURE_FIELDS, groupFields,
+    type MeasureField, type MeasureFieldKey,
 } from "./measures";
+import {
+    formatDelta, formatValue, lastReadingOf, readValue, verdictFor,
+    type TrendVisit,
+} from "./trend";
 
 /**
  * A specialty chart offered from this card — the odontogram, the body map,
@@ -93,11 +98,25 @@ interface Props {
      * one to exist).
      */
     containerRef?: React.RefObject<HTMLElement | null>;
+    /**
+     * The patient's completed visits, for the "vs last" line under each
+     * reading. Added 2026-08-16 with the longitudinal band.
+     *
+     * This answers a DIFFERENT question from the band above it, which is why
+     * both exist: the band says "pain 7 → 4 across the course", this says "5
+     * last Tuesday". A physiotherapist progressing an exercise needs both, and
+     * they frequently disagree.
+     *
+     * Optional, and absent means the line simply does not render — the card is
+     * mounted from two input surfaces and neither should have to care.
+     */
+    pastVisits?: TrendVisit[];
 }
 
 export function MeasurementsCard({
     vitals, onChange, defaultKeys, relevantKeys, relevantBecause,
     charts = [], onOpenChart, disabled = false, maxInline, containerRef,
+    pastVisits,
 }: Props) {
     /** the full field set, opened over the page rather than expanded in place */
     const [showAll, setShowAll] = useState(false);
@@ -112,6 +131,22 @@ export function MeasurementsCard({
     const menuRef = useRef<HTMLDivElement>(null);
 
     useDismiss(pickerOpen, () => setPickerOpen(false), [headRef, menuRef]);
+
+    /**
+     * The most recent previous reading of every field, computed once rather
+     * than per cell. `lastReadingOf` walks the visit list, and doing that
+     * inside thirty cells on every keystroke would be thirty walks per
+     * character typed.
+     */
+    const lastReadings = useMemo(() => {
+        const m = new Map<MeasureFieldKey, number>();
+        if (!pastVisits?.length) return m;
+        for (const f of MEASURE_FIELDS) {
+            const r = lastReadingOf(f.key, pastVisits);
+            if (r) m.set(f.key, r.value);
+        }
+        return m;
+    }, [pastVisits]);
 
     const shown = useMemo(() => {
         const keys = new Set<MeasureFieldKey>(defaultKeys);
@@ -194,6 +229,7 @@ export function MeasurementsCard({
                         relevantKeys.has(field.key) && !valueOf(vitals, field.key).trim()
                     }
                     because={relevantBecause.get(field.key) ?? null}
+                    lastValue={lastReadings.get(field.key) ?? null}
                     disabled={disabled}
                 />
             ))}
@@ -267,6 +303,7 @@ export function MeasurementsCard({
                             !valueOf(vitals, field.key).trim()
                         }
                         because={relevantBecause.get(field.key) ?? null}
+                        lastValue={lastReadings.get(field.key) ?? null}
                         disabled={disabled}
                     />
                 ))}
@@ -396,10 +433,21 @@ function MeasurementPicker({
             tabIndex={-1}
             onKeyDown={onKeyDown}
         >
-            {fields.map((f) => (
-                <button key={f.key} type="button" role="menuitem" onClick={() => onPick(f.key)}>
-                    {f.label}
-                </button>
+            {/* Sectioned since 2026-08-16: the catalogue passed thirty fields
+                when per-joint range landed, and a flat list that long buries
+                blood pressure under fourteen joint angles for every facility
+                that is not a physiotherapy one. The headings are not
+                menuitems, so the roving list walks exactly the same buttons it
+                did before — keyboard behaviour is unchanged. */}
+            {groupFields(fields).map((section) => (
+                <div key={section.group} className="cs-meas-menu-group">
+                    <p className="cs-meas-menu-head">{section.label}</p>
+                    {section.fields.map((f) => (
+                        <button key={f.key} type="button" role="menuitem" onClick={() => onPick(f.key)}>
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
             ))}
         </div>
     );
@@ -409,8 +457,49 @@ function MeasurementPicker({
  * One measurement. Three input kinds, one cell — blood pressure is two boxes
  * around a slash, blood group is a list, everything else is a number.
  */
+/**
+ * "vs last 5" — the one line that turns a box into a comparison.
+ *
+ * Rendered only for fields a series can actually be built from (numbers and
+ * blood pressure), which is why it appears in exactly two of `MeasureCell`'s
+ * branches: a blood group or a G-P-L-A has no previous-versus-current.
+ *
+ * Three states, and the middle one is the reason this is worth having:
+ *
+ *   · nothing typed yet  → "last 5", which is the number the doctor is about
+ *     to compare against and would otherwise have to go and look up;
+ *   · typed and moved    → the delta, coloured by the same verdict logic the
+ *     band uses, so the two can never disagree on the same screen;
+ *   · typed and unmoved  → "same as last", said plainly rather than as "0".
+ */
+function VsLast({ field, value, lastValue }: {
+    field: MeasureField;
+    value: string;
+    lastValue: number | null;
+}) {
+    if (lastValue === null) return null;
+
+    const current = readValue(field, { [field.key]: value });
+    if (current === null) {
+        return <span className="cs-meas-vslast">last {formatValue(lastValue)}</span>;
+    }
+
+    const verdict = verdictFor(field, field.betterWhen, lastValue, current);
+    if (verdict === "steady") {
+        return <span className="cs-meas-vslast">same as last</span>;
+    }
+
+    return (
+        <span className={`cs-meas-vslast is-${verdict}`}>
+            vs {formatValue(lastValue)}
+            <b>{formatDelta(current - lastValue)}</b>
+        </span>
+    );
+}
+
 function MeasureCell({
     field, value, onChange, onEnter, registerRef, suggested, because, disabled,
+    lastValue = null,
 }: {
     field: MeasureField;
     value: string;
@@ -420,6 +509,8 @@ function MeasureCell({
     suggested: boolean;
     because: string | null;
     disabled: boolean;
+    /** the most recent previous reading of this field, if there is one */
+    lastValue?: number | null;
 }) {
     const diaRef = useRef<HTMLInputElement>(null);
     const filled = value.trim().length > 0;
@@ -487,6 +578,7 @@ function MeasureCell({
                         aria-label="Diastolic blood pressure in mmHg"
                     />
                 </div>
+                <VsLast field={field} value={value} lastValue={lastValue} />
             </div>
         );
     }
@@ -602,6 +694,7 @@ function MeasureCell({
                     aria-label={field.label}
                 />
             </div>
+            <VsLast field={field} value={value} lastValue={lastValue} />
         </div>
     );
 }

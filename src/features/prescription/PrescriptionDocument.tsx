@@ -4,6 +4,7 @@ import { RxWatermark, RxMonogram } from "../../components/RxMarks";
 import { freqLabelToSlot, freqSlotToLabel } from "../../lib/db";
 import type { DBDoctor, DBHospital } from "../../lib/db";
 import type { PrescriptionMedicine, Vitals } from "../../types";
+import { MEASURE_FIELDS } from "../consult/measures";
 import type { PrintFormat } from "./usePrintFormat";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -259,25 +260,18 @@ function StandardDocument({
             {/* ── Vitals ── */}
             {vitals && Object.values(vitals).some(Boolean) && (
                 <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
-                    {vitals.bp && <VitalItem label="BP" value={vitals.bp} unit="mmHg" />}
-                    {vitals.pulse && <VitalItem label="Pulse" value={vitals.pulse} unit="bpm" />}
-                    {vitals.respRate && <VitalItem label="RR" value={vitals.respRate} unit="/min" />}
-                    {vitals.temp && <VitalItem label="Temp" value={vitals.temp} unit="°F" />}
-                    {vitals.spo2 && <VitalItem label="SpO₂" value={vitals.spo2} unit="%" />}
-                    {vitals.weight && <VitalItem label="Wt" value={vitals.weight} unit="kg" />}
-                    {vitals.height && <VitalItem label="Ht" value={vitals.height} unit="cm" />}
-                    {vitals.bloodGroup && <VitalItem label="Blood Grp" value={vitals.bloodGroup} unit="" />}
-                    {/* FBS / RBS are what an Indian prescription says, and what
-                        the test catalogue itself calls them. */}
-                    {vitals.glucoseFasting && <VitalItem label="FBS" value={vitals.glucoseFasting} unit="mg/dL" />}
-                    {vitals.glucoseRandom && <VitalItem label="RBS" value={vitals.glucoseRandom} unit="mg/dL" />}
-                    {vitals.hba1c && <VitalItem label="HbA1c" value={vitals.hba1c} unit="%" />}
-                    {vitals.painVas && <VitalItem label="Pain" value={vitals.painVas} unit="/10" />}
-                    {vitals.romPct && <VitalItem label="ROM" value={vitals.romPct} unit="%" />}
-                    {/* See the note in ReviewModal — these two were recorded but
-                        printed nowhere until 2026-08-11. */}
-                    {vitals.lmp && <VitalItem label="LMP" value={vitals.lmp} unit="" />}
-                    {vitals.gpla && <VitalItem label="G-P-L-A" value={vitals.gpla} unit="" />}
+                    {/* Read from the catalogue — see the note on the twin
+                        block in ReviewModal for why these two lists stopped
+                        being hand-maintained on 2026-08-16. `rxLabel` rather
+                        than `printLabel` is what keeps this surface's shorter
+                        vocabulary: FBS and RBS are what an Indian prescription
+                        says, and what the test catalogue itself calls them. */}
+                    {MEASURE_FIELDS.map((f) => {
+                        const value = vitals[f.key];
+                        return value ? (
+                            <VitalItem key={f.key} label={f.rxLabel} value={value} unit={f.unit} />
+                        ) : null;
+                    })}
                 </div>
             )}
 

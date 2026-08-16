@@ -3775,3 +3775,240 @@ re-running every earlier harness — the change is provably a no-op for
 anything already listed there, see above; not re-verified live for that
 reason. Not verified against the live app, same reason as every entry in
 this run of sessions.
+
+---
+
+## 14.23 Session 2026-08-16 — the longitudinal band, and physiotherapy's first real fields
+
+`docs/Cortex Specialties/cortex-longitudinal-spec.md` §3.1, the highest-priority
+item of the next phase: a returning patient's screen should answer **"is this
+working?"** before the doctor types anything. The past-visit strip answered
+"how many times have they been here", which is a different and much less useful
+question.
+
+Anmol's direction shaped two decisions before any code was written. First, the
+trend is a **band below the dark header**, not a line inside it — his mockup put
+it there, and he was right for a reason that only appears once you try the
+alternative: the topbar already carries brand, patient, chips and four buttons,
+and four numbers with sparklines are not a strip. Second, and more important:
+*"there are multiple specialty profiles which will be developed individually...
+longitudinal records is more important there and not in gen opd."* So the band
+was built generic and configured for **physiotherapy first**, which is the
+profile the spec is actually about.
+
+### The blocker nobody had noticed: history was write-only
+
+`fetchPatientVisits` is the only loader of a patient's history, and it **had
+never selected `visits.vitals`**. Every measurement the product has ever
+recorded was invisible to the consult screen the moment the visit ended. No
+error, no empty state — the column simply was not in the `select`. One line,
+and it is the line the whole feature was waiting on.
+
+Second finding, from the database rather than the code: of 135 visits, 8 carry
+a vitals blob and 7 of those 8 hold nothing but empty strings. `saveConsult`
+writes `{"bp":"","temp":"100",...}` — every field on screen, blank or not — so
+"absent" and "recorded as blank" are the same thing in storage and `trend.ts`
+has to treat them identically.
+
+### `trend.ts` — the arithmetic, kept pure on purpose
+
+The spec demands "generated algorithmically from stored signals — no AI, no API
+round-trip", and every failure mode this code has produces a **confident wrong
+answer** rather than a crash: an arrow pointing the wrong way, a movement
+invented from a rounding wobble, a year-old reading presented as if it were
+last week's. A screenshot of a wrong trend looks exactly like a screenshot of a
+right one.
+
+So the maths is a pure module with no React and no fetch, and
+`scripts/longitudinal-trend.mjs` (`npm run check:trend`) is **148 assertions**
+over the real module, the real catalogue and the real profiles. Confirmed
+non-vacuous twice, by the repo's usual method: flipping `kneeExtLag`'s direction
+to `higher` fails "knee extension lag 12 → 5 is improving", and removing the
+same-day collapse fails "two visits in one day collapse to one point".
+
+What it handles, each one a spec §6 edge case:
+
+- **Direction.** Lower pain, higher range of motion, and `kneeExtLag` — the
+  trap inside physiotherapy, a range field whose goal is ZERO, which must not
+  inherit "more degrees is better".
+- **Band fields** compute their verdict as distance from normal, and read the
+  thresholds by bisecting the field's own `warn()` rather than restating them.
+  That is the §14.22 rule again: the amber cell and the trend arrow cannot
+  disagree because there is one definition and one reads the other. It also
+  gets the case that a naive implementation gets wrong — pulse 72 → 68, both
+  normal, is **steady**, not "improving because it went down".
+- **Noise.** Every field declares `trendNoise`; 70.0 → 70.2 kg is steady.
+- **Gaps.** Nothing is interpolated. Five visits with two pain readings is a
+  two-point series that says two, not five.
+- **Same-day repeats** collapse to one point, keeping the later reading, on
+  LOCAL day boundaries (an evening consult in IST is already tomorrow in UTC).
+- **Today's unsaved reading** is the newest point the moment it is typed.
+- **Long absence** is reported in years or months, never in days.
+- **Units.** Temperature is the one field where a doctor can enter two units,
+  so `readValue` applies the same magnitude heuristic `consultInput.ts`
+  already uses — a 38 beside a 98.6 must not fake a 60-degree drop.
+
+### The specialty config is a PRIORITY LIST, not three fixed fields
+
+This is the design decision worth carrying forward. The spec asks for "the 2–3
+measurements that matter for that specialty". For cardiology that is answerable
+in advance. For physiotherapy it is not: a post-ACL knee and a frozen shoulder
+share only the pain score, and no facility-level setting knows which patient is
+in the room.
+
+So `SpecialtyProfile.trend` is an ordered list the band reads DOWN, keeping the
+first four entries this patient has two or more readings of. Physiotherapy
+lists pain, LEFS and then all sixteen joint fields; a knee patient's band shows
+the knee, the shoulder patient in the next slot shows the shoulder, and nobody
+configures anything per patient. Proven in the harness with both patients
+against one unchanged configuration.
+
+**`TrendEntry.betterWhen` exists for exactly one problem**: body weight rising
+is growth in a child and fluid overload in heart failure. The FIELD declares
+`"none"` and refuses to judge; `PEDIATRICS` overrides it to `higher`,
+`CARDIOLOGY` to `lower`, `GYNAECOLOGY` to `higher`. Three specialties, one
+number, three readings of it. `"none"` is also the honest default for knee
+girth — falling is swelling settling, rising is muscle returning — and a
+`"none"` series still prints its numbers and its delta, it just draws no
+verdict. That is doctrine §5 ("ranking is a safety property, never a verdict")
+applied to a trend arrow.
+
+**Dentistry and dermatology have deliberately EMPTY trend lists.** Not gaps:
+the spec says a dental record is the odontogram and what is unfinished on it,
+and dermatological progress is a photo against a photo. Trending abscess vitals
+would answer a question nobody asked. Their bands render the care plan and the
+visit timeline and no numbers.
+
+### Seventeen physiotherapy fields, and the two checks that fought back
+
+Of the five measurements in Anmol's mockup, only pain existed. `romPct` is a
+single generic percentage — the check script's own `KNOWN_UNFED` note already
+called that shape a mistake ("MMT is graded per muscle group, so a single box
+would be the same mistake as ROM_PCT"). Added: LEFS, and per-joint range in
+degrees for cervical rotation, shoulder flexion and abduction, hip flexion,
+knee flexion, knee extension lag, ankle dorsiflexion and knee girth, **left and
+right as separate fields** (Anmol confirmed) — a knee flexion of 108° means
+nothing without a side.
+
+`romPct` STAYS. It carries the live `ROM_PCT` measurement rules and it is the
+only ROM field a non-physiotherapy facility wants; deleting it would leave
+those rules unfed, which is the exact failure `check:measures` exists to catch.
+
+Almost none of the new fields warn. **A below-normal range is the reason the
+patient is in the room**, and amber on every reading of every session is noise
+— doctrine §8 says amber means "the value you entered is out of range", not
+"this patient is unwell". They warn only on the anatomically impossible, i.e. a
+typo.
+
+Two existing checks then forced two structural improvements, which is the
+system working:
+
+1. **`check:measures` requires every field to emit a measure key.** The new
+   fields have no rules and are not expected to, but a field that emits nothing
+   is a number the RECORD never sees either — so they emit, and the engine
+   ignores them.
+2. **`check:measures` requires every field to reach both print surfaces**, and
+   `ReviewModal` and `PrescriptionDocument` each held a **hand-written list of
+   fifteen `vitals.x` lines**. Seventeen new fields meant thirty-four more
+   lines to keep in step by discipline — in two files that had already fallen
+   behind twice (§10.6, then LMP/G-P-L-A in 2026-08-11). Both now render
+   `MEASURE_FIELDS.map(...)` with `printLabel` / `rxLabel` / `unit` declared
+   once in the catalogue. **The check changed shape and got stronger**: it now
+   asserts each field carries print labels, that both files still render from
+   the catalogue, and that neither hand-writes a `vitals.<key>` literal — the
+   old assertion could no longer fail no matter how broken the catalogue got.
+
+The Add Measurement menu is **sectioned** now (Vitals / Body / Metabolic /
+Movement & function / Obstetric). Thirty-two fields in a flat list buries blood
+pressure under fourteen joint angles for every facility that is not a
+physiotherapy one. Headings are not `role="menuitem"`, so the roving list walks
+exactly the same buttons — keyboard behaviour is untouched.
+
+### `care_plans` already existed, and was completely inert
+
+Found in the live database, correctly shaped (goal, target_visit_count,
+target_date, status, closed_at) with `visits.care_plan_id` beside it, zero
+rows, and **not one reference anywhere in `master`**. Almost certainly left by
+the abandoned `claude/aren-cortex-prescription-flow-adsyky` branch. Adopted
+rather than replaced.
+
+⚠ **It shipped with RLS enabled and ZERO policies**, which denies every read
+and write — and a denied read returns an empty set rather than an error, so the
+symptom would have been "the doctor's care plan never appears", silently. This
+is the same class as §14.21's CHECK-constraint outage and it was found the same
+way: by querying Postgres rather than by looking at a screen. Fixed with
+Anmol's authorisation, one policy mirroring `patient_conditions` exactly —
+isolation through `patients`, NOT through `care_plans.hospital_id`, because
+that column is nullable and a null there would fail the WITH CHECK on insert
+(§14.13's prescriptions bug, in reverse).
+
+Session numbering **reads the visits** (`visits.care_plan_id`) rather than
+keeping a counter on the plan row: a counter is a second copy of a fact the
+visits already hold and it goes wrong the first time a visit is deleted. A
+visit joins the course when the consult is **saved**, not when it opens — a
+physiotherapy patient who comes in mid-course with a fever has had a visit, not
+a session, and only a finished consult is evidence of which. That is
+`onVisitSaved`, a new optional callback on `useConsultLifecycle`, awaited rather
+than fired and forgotten (atlas trap 1).
+
+### One detail view, two ways in
+
+The spec says: "click to expand into the existing per-visit detail view we
+already have. **Do not build a second detail view.**" The band's timeline needed
+one, and the only one that existed was local state and local JSX inside
+`PatientHeader`. So `PastVisitCard.tsx` is that view, extracted unchanged, with
+its state lifted to `App.tsx`; the header's chips and the band's timeline open
+the same component.
+
+Extracting it surfaced a latent §14.22e: as local state it had never been in
+`isAnyModalOpen`, so Tab reached through it to the workspace behind. It is in
+the list now, which meant it also had to take focus (`useOverlayFocus`) and
+answer Escape — otherwise standing the global handler down would leave the
+keyboard dead. Both done.
+
+### Verification
+
+- **148 assertions** in `npm run check:trend`, non-vacuity confirmed twice.
+- **45 assertions in Chromium** against the real `LongitudinalBand`, the real
+  `MeasurementsCard`, the real `PastVisitCard` and the real profiles: the four
+  physio cards in priority order, pain reading 7 → the 4 typed on screen,
+  falling extension lag AND rising knee flexion both drawn as improving, the
+  sparkline plotting five real points, "Session 5 of 12" with a 42% bar, the
+  timeline opening the shared card which takes focus and closes on Escape, the
+  vs-last line, the SAME configuration trending a shoulder for a shoulder
+  patient, **nothing at all rendered for a first visit**, the no-trend case
+  explaining itself, the long-absence flag, and dentistry drawing a care plan
+  and no numbers.
+- Two real defects found by looking at the screenshots rather than the
+  assertions: cards read "Across 5 visits" beside a header saying "4 previous
+  visits" (the fifth is today's unsaved reading — now "5 readings · 4 weeks",
+  which also gives cardiology the span its spec note asks for), and
+  "First visit in 1.2 year".
+- `tsc -b`, `vite build`, `check:measures`, `check:dental`, `check:obstetric`,
+  `check:growth` all clean.
+- **Not verified against the live app**, same reason as every entry in this run
+  of sessions. Worth one pass, and this one has a specific ask: no patient in
+  the database currently has two visits carrying the same measurement, so
+  nobody has seen the band with real data.
+
+### Open
+
+- **Nothing sends the WhatsApp reminder.** Spec §3.2, untouched this session,
+  and blocked on Anmol choosing a provider. The interval is captured
+  (`prescriptions.follow_up_days`); there is no reminder table, no scheduler,
+  no sender.
+- **No patient has trendable data.** The band is provably correct against
+  fabricated visits and has never rendered against a real one.
+- **Psychiatry has no profile at all**, and nothing to trend if it had one —
+  the spec devotes a section to it and the catalogue holds no mood or symptom
+  rating. Needs a profile AND a field.
+- **Cardiology's lipid values do not exist** as measurement fields. The spec
+  names them.
+- **The Last Session card is honest but thin.** The mockup's "Exercise
+  progressed: Yes", "Focus", "Next step" are not recorded anywhere — an
+  exercise is prescribed per visit and nothing stores whether it was
+  progressed, held or added. That belongs to the physiotherapy screen rebuild.
+- **Dentistry and dermatology bands show no numbers by design** and want their
+  own thing: unfinished treatment per tooth, and prior photos per body site.
+- The band takes ~200px out of a locked-height shell. On a short laptop that is
+  real pressure on the Assessment, and it has only been seen at 1440×900.

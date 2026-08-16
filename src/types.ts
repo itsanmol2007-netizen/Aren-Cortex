@@ -50,6 +50,37 @@ export type Vitals = {
   painVas?: string;
   /** range of motion achieved ÷ expected, % (ROM_PCT) */
   romPct?: string;
+  // ── Physiotherapy, added 2026-08-16 ──────────────────────────────────
+  // Function and per-joint range, left and right kept apart. See the block
+  // comment above these fields in features/consult/measures.ts for why they
+  // are separate fields rather than one ROM box with a side attached, and
+  // why they carry no measurement rules.
+  /** lower extremity functional scale, 0–80 (LEFS) */
+  lefs?: string;
+  /** cervical rotation, degrees */
+  cervicalRotL?: string;
+  cervicalRotR?: string;
+  /** shoulder flexion, degrees */
+  shoulderFlexL?: string;
+  shoulderFlexR?: string;
+  /** shoulder abduction, degrees */
+  shoulderAbdL?: string;
+  shoulderAbdR?: string;
+  /** hip flexion, degrees */
+  hipFlexL?: string;
+  hipFlexR?: string;
+  /** knee flexion, degrees */
+  kneeFlexL?: string;
+  kneeFlexR?: string;
+  /** knee extension lag — shortfall from straight, degrees. Zero is the goal. */
+  kneeExtLagL?: string;
+  kneeExtLagR?: string;
+  /** ankle dorsiflexion, degrees */
+  ankleDorsiL?: string;
+  ankleDorsiR?: string;
+  /** knee girth, cm */
+  kneeGirthL?: string;
+  kneeGirthR?: string;
   /** last menstrual period, ISO yyyy-mm-dd. Emitted as LMP_DAYS, not as a date. */
   lmp?: string;
   /** obstetric history as "G/P/L/A" — one control, four measurements, like bp */

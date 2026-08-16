@@ -58,6 +58,19 @@ export interface ConsultLifecycleArgs {
    * seeding carried-forward chips into it would race the replace.
    */
   carryForwardFor: (patientId: string) => Promise<void>;
+  /**
+   * Called once, after a consult has actually been saved, with the visit that
+   * was saved. Today this attaches the visit to the running care plan so it
+   * counts as a session.
+   *
+   * It happens HERE and not when the consult opens, on purpose: a
+   * physiotherapy patient who comes in mid-course with a fever has had a
+   * visit, not a session, and only a finished consult is evidence of which
+   * one it was. Awaited rather than fired and forgotten — a session that
+   * silently failed to count makes "session 4 of 12" wrong for the rest of
+   * the course, with nothing on screen to show for it.
+   */
+  onVisitSaved?: (visitId: string) => Promise<void>;
   showToast: (msg: string) => void;
   /** put the cursor where a consult actually begins — the chart search box */
   focusChartSearch: () => void;
@@ -89,6 +102,7 @@ export function useConsultLifecycle({
   plan,
   intelligence,
   carryForwardFor,
+  onVisitSaved,
   showToast,
   focusChartSearch,
   setActivePage,
@@ -287,6 +301,11 @@ export function useConsultLifecycle({
         adviceNotes: plan.reviewAdvice,
       });
 
+      // The visit is now a completed session of whatever course it belongs to.
+      // Before the learning write, because this one is allowed to surface a
+      // failure and that one is not.
+      if (onVisitSaved) await onVisitSaved(visitId);
+
       // ★ The learning write. One insert, at the close of a consultation the
       // doctor actually finished — nothing is logged while they are still
       // working, because an abandoned draft is not evidence of anything.
@@ -337,7 +356,7 @@ export function useConsultLifecycle({
       session.setIsSaving(false);
     }
   }, [session, plan, chart, ledger, intelligence.result, identity,
-      resetConsultState, showToast]);
+      resetConsultState, showToast, onVisitSaved]);
 
   const openReview = useCallback(() => {
     const blocking = plan.unreadPrescribedWarnings[0];

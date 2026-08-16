@@ -475,12 +475,26 @@ export type RealVisit = {
     symptoms: string[];
     findings: { name: string; is_abnormal: boolean }[];
     medicines: RealVisitMedicine[];
+    /**
+     * What was measured at that visit — the `visits.vitals` blob as written by
+     * `saveConsultation`, keys matching `MeasureFieldKey`.
+     *
+     * Added 2026-08-16 and it is the reason the longitudinal band can exist at
+     * all: this function was the only loader of a patient's history and it had
+     * never selected the column, so every measurement the product has ever
+     * recorded was write-only from the consult screen's point of view. Typed
+     * loosely rather than as `Vitals` on purpose — these are rows written by
+     * older builds of the app, so a key that is no longer in the catalogue, or
+     * a value that is not a string, is a real possibility. `trend.ts` is the
+     * one place that reads it and it treats every value as untrusted.
+     */
+    vitals: Record<string, unknown> | null;
 };
 
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
     const { data: visits, error: visitErr } = await supabase
         .from("visits")
-        .select("id, created_at, assigned_doctor_id, status")
+        .select("id, created_at, assigned_doctor_id, status, vitals")
         .eq("patient_id", patientId)
         .eq("status", "completed")
         .order("created_at", { ascending: false })
@@ -587,6 +601,7 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
                 .map((r: any) => findingById.get(Number(r.finding_id)))
                 .filter(Boolean) as { name: string; is_abnormal: boolean }[],
             medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
+            vitals: (v as { vitals?: Record<string, unknown> | null }).vitals ?? null,
         };
     });
 }

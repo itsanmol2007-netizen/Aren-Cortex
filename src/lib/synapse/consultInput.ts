@@ -111,6 +111,43 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
     const rom = num(vitals.romPct);
     if (rom !== null) out.push({ measureKey: "ROM_PCT", value: rom, unit: "%" });
 
+    // ── Physiotherapy: function and per-joint range (2026-08-16) ─────────
+    // None of these has a measurement_rule behind it today and none is
+    // expected to soon — a knee flexion of 108° is not a finding, it is a
+    // position on a course. They are emitted anyway, and that is the point:
+    // `MeasurementRow` is what carries a number into `visit_measurements`, so
+    // a field that emits nothing is a number the RECORD never sees either,
+    // which is precisely the hole `check:measures` was written to catch. The
+    // engine ignoring a key costs nothing; the record dropping one costs the
+    // trend these fields exist for.
+    //
+    // Left and right stay separate keys for the same reason they are separate
+    // fields — see measures.ts. Averaging them, or emitting one KNEE_FLEX,
+    // would make the operated knee's recovery invisible behind the good one.
+    const PHYSIO_KEYS: [keyof Vitals, string, string][] = [
+        ["lefs", "LEFS", "/80"],
+        ["cervicalRotL", "CERVICAL_ROT_L", "deg"],
+        ["cervicalRotR", "CERVICAL_ROT_R", "deg"],
+        ["shoulderFlexL", "SHOULDER_FLEX_L", "deg"],
+        ["shoulderFlexR", "SHOULDER_FLEX_R", "deg"],
+        ["shoulderAbdL", "SHOULDER_ABD_L", "deg"],
+        ["shoulderAbdR", "SHOULDER_ABD_R", "deg"],
+        ["hipFlexL", "HIP_FLEX_L", "deg"],
+        ["hipFlexR", "HIP_FLEX_R", "deg"],
+        ["kneeFlexL", "KNEE_FLEX_L", "deg"],
+        ["kneeFlexR", "KNEE_FLEX_R", "deg"],
+        ["kneeExtLagL", "KNEE_EXT_LAG_L", "deg"],
+        ["kneeExtLagR", "KNEE_EXT_LAG_R", "deg"],
+        ["ankleDorsiL", "ANKLE_DORSI_L", "deg"],
+        ["ankleDorsiR", "ANKLE_DORSI_R", "deg"],
+        ["kneeGirthL", "KNEE_GIRTH_L", "cm"],
+        ["kneeGirthR", "KNEE_GIRTH_R", "cm"],
+    ];
+    for (const [vitalKey, measureKey, unit] of PHYSIO_KEYS) {
+        const v = num(vitals[vitalKey]);
+        if (v !== null) out.push({ measureKey, value: v, unit });
+    }
+
     // ── Glycaemic panel ──────────────────────────────────────────────────
     // These three keys had LIVE measurement_rules and no field emitting them
     // until 2026-08-11, so HIGH_BLOOD_GLUCOSE and LOW_BLOOD_GLUCOSE — which

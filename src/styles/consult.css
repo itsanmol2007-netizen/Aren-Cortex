@@ -1223,6 +1223,30 @@ body.cs-locked-shell {
     box-shadow: 0 12px 28px rgba(16, 28, 46, 0.13);
 }
 
+/* Sections, added 2026-08-16 with the per-joint range fields. The popup can
+   now offer thirty-odd measurements, so it caps its height and scrolls rather
+   than running off the bottom of the viewport. */
+.cs-meas-menu:not(.is-inline) {
+    max-height: min(60vh, 460px);
+    overflow-y: auto;
+}
+
+.cs-meas-menu-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.cs-meas-menu-head {
+    margin: 6px 10px 2px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.cs-meas-menu-group:first-child .cs-meas-menu-head { margin-top: 2px; }
+
 .cs-meas-menu button {
     border: 0;
     border-radius: 7px;
@@ -5163,3 +5187,628 @@ body.cs-locked-shell {
         0 0 0 3px var(--cs-blue-soft), 0 0 0 1px var(--cs-blue),
         0 32px 64px -28px rgba(11, 23, 51, 0.5);
 }
+
+/* ════════════════════════════════════════════════════════════
+   THE LONGITUDINAL BAND  (2026-08-16)
+
+   `cortex-longitudinal-spec.md` §3.1's trend header. Sits between the dark
+   topbar and `.cs-page`, inside the locked shell, so it is the first thing
+   read on a returning patient and it never scrolls away with the work.
+
+   ── Two constraints shaped every number in here
+
+   1. IT COMES OUT OF THE WORKSPACE'S HEIGHT. `.cs-shell` is a hard ceiling
+      (see its own note above) and `.cs-page` flexes into what is left, so
+      every pixel this band takes is a pixel the Assessment does not get. That
+      is why the cards are 26px sparklines and 11px labels rather than the
+      generous treatment the rest of the screen uses: this is a glance, and a
+      glance that pushes the ranked list below the fold has cost more than it
+      gave. It is also why the band is absent — not collapsed, absent — for a
+      first visit, where it would be pure overhead.
+
+   2. COLOUR IS THE VERDICT, so it obeys the doctrine's palette rather than
+      the obvious traffic light. Teal for improving, amber for worse, grey for
+      steady. Green is NOT used: on this screen green already means "added to
+      the plan" (§5), and a second meaning for it here would blur an action
+      into an opinion. Amber for "worse" is the same soft-guard amber the
+      out-of-range cell uses, which is exactly the right weight — a reading to
+      look at, never an alarm.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-lt {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s2);
+    border-bottom: 1px solid var(--cs-line);
+    background: var(--cs-card);
+    padding: var(--cs-s3) var(--cs-s5) var(--cs-s2);
+}
+
+.cs-lt-head {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s3);
+}
+
+.cs-lt-head-spacer { flex: 1; }
+
+.cs-lt-title {
+    margin: 0;
+    color: var(--cs-ink);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.cs-lt-sub {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 500;
+}
+
+/* The long-absence flag. Amber because it is a caution about how to READ the
+   numbers beside it, not a finding of its own. */
+.cs-lt-gap {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    background: var(--cs-amber-soft);
+    padding: 3px 9px;
+    color: var(--cs-amber);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.cs-lt-plan-start {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 4px 11px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 700;
+}
+
+.cs-lt-plan-start:hover {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+}
+
+/* Cards sit in a row that WRAPS rather than scrolls. A horizontally scrolling
+   row of numbers is a row whose last card nobody reads, and `trend.ts` caps
+   the series at four precisely so this never needs to be a carousel. */
+.cs-lt-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--cs-s2);
+}
+
+.cs-lt-card {
+    display: flex;
+    flex: 1 1 150px;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 150px;
+    max-width: 230px;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-page);
+    padding: 8px 10px 7px;
+}
+
+.cs-lt-card-label {
+    margin: 0;
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.cs-lt-card-unit {
+    color: var(--cs-faint);
+    font-weight: 600;
+}
+
+/* The two numbers ARE the answer, so they carry the weight on this card and
+   everything else on it is annotation. */
+.cs-lt-card-values {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin: 1px 0 0;
+    color: var(--cs-ink);
+    font-size: 19px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.cs-lt-from {
+    color: var(--cs-faint);
+    font-size: 15px;
+    font-weight: 650;
+}
+
+.cs-lt-to-arrow {
+    flex: 0 0 auto;
+    align-self: center;
+    color: var(--cs-faint);
+}
+
+.cs-lt-card-delta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-lt-verdict {
+    color: var(--cs-faint);
+    font-weight: 600;
+}
+
+.cs-lt-spark {
+    display: block;
+    margin: 3px 0 1px;
+    width: 100%;
+    height: 26px;
+    overflow: visible;
+}
+
+.cs-lt-card-foot {
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 550;
+}
+
+/* ── The verdict colours ──────────────────────────────────────────────── */
+.cs-lt-card.is-improving .cs-lt-card-delta { color: var(--cs-teal); }
+.cs-lt-card.is-improving .cs-lt-spark path { stroke: var(--cs-teal); }
+.cs-lt-card.is-improving .cs-lt-spark circle { fill: var(--cs-teal); }
+
+.cs-lt-card.is-worsening .cs-lt-card-delta { color: var(--cs-amber); }
+.cs-lt-card.is-worsening .cs-lt-spark path { stroke: var(--cs-amber); }
+.cs-lt-card.is-worsening .cs-lt-spark circle { fill: var(--cs-amber); }
+
+/* Steady and neutral share a treatment on purpose: neither is a verdict, and
+   giving "no opinion" its own colour would make it look like one. */
+.cs-lt-card.is-steady .cs-lt-card-delta,
+.cs-lt-card.is-neutral .cs-lt-card-delta { color: var(--cs-muted); }
+.cs-lt-card.is-steady .cs-lt-spark path,
+.cs-lt-card.is-neutral .cs-lt-spark path { stroke: var(--cs-muted); }
+.cs-lt-card.is-steady .cs-lt-spark circle,
+.cs-lt-card.is-neutral .cs-lt-spark circle { fill: var(--cs-muted); }
+
+/* ── Care plan ────────────────────────────────────────────────────────── */
+/* Violet, the plan colour everywhere else on this screen — a care plan is the
+   consultation plan's long form, and reading as the same family is the point. */
+.cs-lt-card.is-plan {
+    flex: 1 1 210px;
+    max-width: 280px;
+    border-color: color-mix(in srgb, var(--cs-violet) 22%, var(--cs-line));
+    background: var(--cs-violet-soft);
+}
+
+.cs-lt-plan-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cs-s2);
+}
+
+.cs-lt-plan-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-violet);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.cs-lt-plan-edit:hover { text-decoration: underline; }
+
+.cs-lt-plan-goal {
+    margin: 1px 0 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.cs-lt-plan-dx {
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 550;
+}
+
+.cs-lt-plan-pos {
+    margin: 4px 0 0;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.cs-lt-plan-pos strong {
+    color: var(--cs-violet);
+    font-weight: 800;
+}
+
+.cs-lt-plan-open { color: var(--cs-faint); font-weight: 550; }
+
+.cs-lt-plan-bar {
+    margin-top: 5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cs-violet) 16%, #fff);
+    height: 5px;
+    overflow: hidden;
+}
+
+.cs-lt-plan-bar span {
+    display: block;
+    border-radius: 999px;
+    background: var(--cs-violet);
+    height: 100%;
+}
+
+/* ── Last visit ───────────────────────────────────────────────────────── */
+.cs-lt-card.is-last {
+    flex: 1 1 200px;
+    max-width: 260px;
+}
+
+.cs-lt-last-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 3px 0 0;
+}
+
+.cs-lt-last-list > div {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.cs-lt-last-list dt {
+    flex: 0 0 62px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 600;
+}
+
+.cs-lt-last-list dd {
+    margin: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-lt-last-open {
+    margin-top: auto;
+    border: 0;
+    background: none;
+    padding: 4px 0 0;
+    color: var(--cs-blue);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: left;
+}
+
+.cs-lt-last-open:hover { text-decoration: underline; }
+
+.cs-lt-none {
+    align-self: center;
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 550;
+}
+
+/* ── The expand ───────────────────────────────────────────────────────── */
+.cs-lt-expand {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    background: none;
+    padding: 2px 8px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.cs-lt-expand:hover { color: var(--cs-blue); }
+.cs-lt-expand svg { transition: transform 140ms ease; }
+.cs-lt-expand svg.is-open { transform: rotate(180deg); }
+
+/* The timeline caps its own height and scrolls INSIDE the band. Letting it
+   grow would push the workspace down by however many visits a patient
+   happens to have had, which for the physiotherapy courses this is built for
+   is exactly the patients where it would be worst. */
+.cs-lt-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
+    border-top: 1px solid var(--cs-line);
+    padding: var(--cs-s2) 0 0;
+    max-height: 168px;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.cs-lt-timeline button {
+    display: flex;
+    align-items: baseline;
+    gap: var(--cs-s3);
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 5px 8px;
+    width: 100%;
+    text-align: left;
+}
+
+.cs-lt-timeline button:hover { background: var(--cs-blue-soft); }
+
+.cs-lt-tl-date {
+    flex: 0 0 78px;
+    color: var(--cs-ink);
+    font-size: 11.5px;
+    font-weight: 700;
+}
+
+.cs-lt-tl-session {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cs-violet) 12%, #fff);
+    padding: 1px 7px;
+    color: var(--cs-violet);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.cs-lt-tl-what {
+    flex: 1;
+    overflow: hidden;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-lt-tl-doc {
+    flex: 0 0 auto;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 550;
+}
+
+/* ── Care plan sheet ──────────────────────────────────────────────────────
+   The one write surface the band has. Modal because starting or closing a
+   course is a decision about every future visit, not an inline tweak — and
+   because it takes focus, which per §14.22a is what any overlay must do. */
+
+.cs-cpsheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background: rgba(11, 23, 51, 0.34);
+    padding-top: 12vh;
+}
+
+.cs-cpsheet {
+    display: flex;
+    flex-direction: column;
+    width: min(520px, calc(100vw - 32px));
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius);
+    background: #fff;
+    box-shadow: 0 32px 64px -28px rgba(11, 23, 51, 0.5);
+}
+
+.cs-cpsheet-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--cs-s3);
+    border-bottom: 1px solid var(--cs-line);
+    padding: var(--cs-s4) var(--cs-s4) var(--cs-s3);
+}
+
+.cs-cpsheet-eyebrow {
+    margin: 0;
+    color: var(--cs-violet);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.cs-cpsheet-title {
+    margin: 2px 0 0;
+    color: var(--cs-ink);
+    font-size: 15.5px;
+    font-weight: 750;
+}
+
+.cs-cpsheet-x {
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    padding: 4px;
+    color: var(--cs-faint);
+}
+
+.cs-cpsheet-x:hover { background: var(--cs-page); color: var(--cs-ink); }
+
+.cs-cpsheet-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    padding: var(--cs-s4);
+}
+
+.cs-cpsheet-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--cs-s3);
+}
+
+.cs-cpsheet-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cs-cpsheet-field > span {
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+/* "optional" is set as ornament rather than as part of the label, so the
+   required field is the one that reads as a plain word. */
+.cs-cpsheet-field em {
+    color: var(--cs-faint);
+    font-style: normal;
+    font-weight: 550;
+}
+
+.cs-cpsheet-field input,
+.cs-cpsheet-field textarea {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 550;
+    font-family: inherit;
+    resize: vertical;
+}
+
+.cs-cpsheet-field input:focus,
+.cs-cpsheet-field textarea:focus {
+    outline: none;
+    border-color: var(--cs-blue);
+    box-shadow: 0 0 0 3px var(--cs-blue-soft);
+}
+
+.cs-cpsheet-pos {
+    margin: 0;
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-violet-soft);
+    padding: 7px 10px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cs-cpsheet-pos strong { color: var(--cs-violet); font-weight: 800; }
+
+.cs-cpsheet-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cs-s3);
+    border-top: 1px solid var(--cs-line);
+    padding: var(--cs-s3) var(--cs-s4);
+}
+
+.cs-cpsheet-actions {
+    display: flex;
+    gap: var(--cs-s2);
+}
+
+.cs-cpsheet-close {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 7px 12px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.cs-cpsheet-close:hover { border-color: var(--cs-amber); color: var(--cs-amber); }
+
+/* Armed is amber, not red: closing a plan is reversible in the sense that
+   matters (the record survives and a new plan can be started), so it is a
+   soft guard rather than a hard one. Doctrine §5's colour rule. */
+.cs-cpsheet-close.armed {
+    border-color: var(--cs-amber);
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+}
+
+.cs-cpsheet-cancel {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 7px 14px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.cs-cpsheet-save {
+    border: 0;
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-blue);
+    padding: 7px 16px;
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.cs-cpsheet-save:disabled { background: var(--cs-line-strong); color: #fff; }
+
+/* ── "vs last" under a reading (2026-08-16) ───────────────────────────────
+   The band above answers "across the course"; this answers "since last
+   time". Deliberately the quietest text on the card — it is context for the
+   number above it, never a second number competing with it. */
+.cs-meas-vslast {
+    display: block;
+    margin-top: 1px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+}
+
+.cs-meas-vslast b {
+    margin-left: 3px;
+    font-weight: 800;
+}
+
+/* Same three verdict colours as the band, from the same `verdictFor` call, so
+   a doctor never sees a card call a change good while the band calls it bad. */
+.cs-meas-vslast.is-improving b { color: var(--cs-teal); }
+.cs-meas-vslast.is-worsening b { color: var(--cs-amber); }
+.cs-meas-vslast.is-neutral b { color: var(--cs-muted); }

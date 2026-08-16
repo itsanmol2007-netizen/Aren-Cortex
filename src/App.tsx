@@ -23,6 +23,7 @@ import { useConsultChart } from "./hooks/useConsultChart";
 import { useAcceptLedger } from "./hooks/useAcceptLedger";
 import { useConsultSession } from "./hooks/useConsultSession";
 import { useLongitudinalRecord } from "./hooks/useLongitudinalRecord";
+import { useCarePlan } from "./hooks/useCarePlan";
 import { useConsultPlan } from "./hooks/useConsultPlan";
 import { useConsultLifecycle } from "./hooks/useConsultLifecycle";
 import { type PickerKind } from "./features/consult/PickerCard";
@@ -39,6 +40,10 @@ import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
 import { relevantFields } from "./features/consult/measures";
+import { buildTrendSummary } from "./features/consult/trend";
+import { LongitudinalBand } from "./features/consult/LongitudinalBand";
+import { CarePlanSheet } from "./features/consult/CarePlanSheet";
+import { PastVisitCard } from "./components/PastVisitCard";
 import { PlanCard } from "./features/consult/PlanCard";
 import { StatusBar } from "./features/consult/StatusBar";
 import { topScoreByType } from "./features/consult/parts";
@@ -51,7 +56,7 @@ import { type Observable } from "./lib/db/synapse";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchDoctor, fetchHospital,
-  type DBDoctor, type DBHospital,
+  type DBDoctor, type DBHospital, type RealVisit,
 } from "./lib/db";
 
 // Title + subtitle for every coming-soon feature page
@@ -123,6 +128,21 @@ function App() {
   const [brandSheet, setBrandSheet] = useState<
     { intentId: number; compositionId: number; label: string; rect: DOMRect } | null
   >(null);
+  /**
+   * The shared past-visit detail, and which point on screen it points at.
+   *
+   * This lived inside `PatientHeader` until 2026-08-16. It moved up here
+   * because the longitudinal band's visit timeline is a second way into the
+   * SAME view, and cortex-longitudinal-spec §3.1 says in as many words: do not
+   * build a second detail view. See PastVisitCard.tsx.
+   *
+   * Being here rather than in the header also puts it in `isAnyModalOpen`
+   * below for the first time — it was outside that list for as long as it was
+   * local state, which is exactly the §14.22e defect (Tab reaching through an
+   * open overlay to the workspace behind it).
+   */
+  const [activeVisit, setActiveVisit] = useState<{ visit: RealVisit; x: number } | null>(null);
+  const [carePlanSheetOpen, setCarePlanSheetOpen] = useState(false);
 
   /**
    * Which ranked item the doctor asked "why is this here" about.
@@ -203,6 +223,17 @@ function App() {
     chart,
     session,
     identity,
+  });
+
+  // ★ The care plan — the course of treatment this visit is one session of.
+  // Layer 1 beside the session for the same reason as the longitudinal record:
+  // it needs the patient at render time and nothing downstream of it. See
+  // useCarePlan.ts, and note its warning about `care_plans` RLS.
+  const carePlan = useCarePlan({
+    patientId: patient?.id ?? null,
+    doctorId: identity.doctorId,
+    hospitalId: identity.hospitalId,
+    onError: showToast,
   });
 
   useEffect(() => {
@@ -332,7 +363,8 @@ function App() {
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
-      !!browse || !!brandSheet || openChart !== null || sidebarOpen,
+      !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
+      !!activeVisit || carePlanSheetOpen,
   });
 
   // The consult workspace's shell (`.cs-shell`, consult.css) locks its own
@@ -367,6 +399,7 @@ function App() {
     plan,
     intelligence,
     carryForwardFor,
+    onVisitSaved: carePlan.attachCurrentVisit,
     showToast,
     focusChartSearch,
     setActivePage,
@@ -409,6 +442,25 @@ function App() {
     () => profileFor(hospitalProfile?.specialty_profile),
     [hospitalProfile?.specialty_profile]
   );
+
+  // ── The longitudinal trend ──────────────────────────────────────────────
+  // Pure arithmetic over data two other hooks already loaded, so it is a memo
+  // rather than a hook of its own: no state, no fetch, nothing to own. It
+  // re-runs when a measurement is typed, which is deliberate — the number on
+  // screen is the newest point in its own series the moment it exists, and a
+  // physio watching pain go 7 → 5 → 4 should see the 4 land.
+  //
+  // `specialty.trend` is the ENTIRE specialty input. See LongitudinalBand.tsx
+  // on why there is no per-profile branch anywhere below this line.
+  const trendSummary = useMemo(
+    () => buildTrendSummary({
+      trend: specialty.trend,
+      visits: pastVisits,
+      todayVitals: vitals as unknown as Record<string, unknown>,
+    }),
+    [specialty.trend, pastVisits, vitals]
+  );
+
 
   /**
    * ── Which consultation surface this facility gets ────────────────────────
@@ -654,8 +706,46 @@ function App() {
           isSidebarOpen={sidebarOpen}
           pastVisits={pastVisits}
           pastVisitsLoading={pastVisitsLoading}
-          onRepeatRx={handleRepeatRx}
+          onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
+          sessionLabels={carePlan.sessionLabels}
           logoRef={logoRef}
+        />
+      )}
+
+      {/* The shared past-visit detail, opened by the header's chips AND by the
+          band's timeline. One view, two ways in. */}
+      {activeVisit && (
+        <PastVisitCard
+          visit={activeVisit.visit}
+          x={activeVisit.x}
+          onClose={() => setActiveVisit(null)}
+          onRepeatRx={(v) => { setActiveVisit(null); handleRepeatRx(v); }}
+        />
+      )}
+
+      {carePlanSheetOpen && (
+        <CarePlanSheet
+          plan={carePlan.plan}
+          sessionNumber={carePlan.currentSession}
+          busy={carePlan.busy}
+          onDismiss={() => setCarePlanSheetOpen(false)}
+          onSave={async (draft) => {
+            const args = {
+              goal: draft.goal,
+              diagnosis: draft.diagnosis || null,
+              targetVisitCount: draft.targetVisitCount ? Number(draft.targetVisitCount) : null,
+              targetDate: draft.targetDate || null,
+              notes: draft.notes || null,
+            };
+            if (carePlan.plan) await carePlan.edit(args);
+            else await carePlan.start(args);
+            setCarePlanSheetOpen(false);
+          }}
+          onClosePlan={async () => {
+            await carePlan.close();
+            setCarePlanSheetOpen(false);
+            showToast("Care plan closed");
+          }}
         />
       )}
 
@@ -692,6 +782,25 @@ function App() {
            all of them. Built to docs/Aren Cortex Mock 2.png; the layout rules
            are in docs/Aren cortex visual philosophy.md. */
         <div className="cs-shell">
+          {/* ── The longitudinal band ────────────────────────────────────
+              Above everything, inside the locked shell, so a returning
+              patient's direction of travel is read before anything is typed
+              and it never scrolls away with the work.
+
+              It renders NOTHING for a patient with no history — not an empty
+              frame, not a placeholder — so a first consult is exactly the
+              screen it was before this existed. One component for every
+              profile; `specialty.trend` is the only thing that differs.
+              See LongitudinalBand.tsx. */}
+          <LongitudinalBand
+            summary={trendSummary}
+            pastVisits={pastVisits}
+            carePlan={carePlan.plan}
+            sessionNumbers={carePlan.sessionNumbers}
+            onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
+            onEditCarePlan={() => setCarePlanSheetOpen(true)}
+            onStartCarePlan={() => setCarePlanSheetOpen(true)}
+          />
           <main className="cs-page">
             {/* Context first, but not at the same visual weight as the three
                 cards below it. Most consults tick zero or one of these — equal
@@ -734,6 +843,7 @@ function App() {
                   defaultMeasureKeys={specialty.measurements}
                   relevantMeasureKeys={measureRelevance.keys}
                   relevantMeasureBecause={measureRelevance.because}
+                  pastVisits={pastVisits}
                   visitId={visitId}
                   disabled={!patient}
                   searchRef={chartSearchRef}
@@ -758,6 +868,7 @@ function App() {
                   defaultMeasureKeys={specialty.measurements}
                   relevantMeasureKeys={measureRelevance.keys}
                   relevantMeasureBecause={measureRelevance.because}
+                  pastVisits={pastVisits}
                   chartTools={chartTools}
                   onOpenChart={(key) => setOpenChart(key as ChartKind)}
                   chartSummaries={chartSummaries}

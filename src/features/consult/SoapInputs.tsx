@@ -33,6 +33,7 @@ import { SpecialtyExamCard, type ExamTool } from "./SpecialtyExamCard";
 import { AttachmentsCard } from "./AttachmentsCard";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
+import type { TrendVisit } from "./trend";
 import type { SelectedSymptom, Vitals } from "../../types";
 
 interface Props {
@@ -60,6 +61,8 @@ interface Props {
     defaultMeasureKeys: MeasureFieldKey[];
     relevantMeasureKeys: Set<MeasureFieldKey>;
     relevantMeasureBecause: Map<MeasureFieldKey, string>;
+    /** completed visits, for the "vs last" line under each reading */
+    pastVisits?: TrendVisit[];
 
     /** this facility's specialty tool launchers — empty for most profiles */
     chartTools: ExamTool[];
@@ -81,6 +84,7 @@ export function SoapInputs({
     selectedFindings, onFindingToggle, examSuggestionLabels,
     onBrowse,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
+    pastVisits,
     chartTools, onOpenChart, chartSummaries,
     visitId, disabled = false, searchRef, measurementsRef,
 }: Props) {
@@ -158,6 +162,7 @@ export function SoapInputs({
                     defaultKeys={defaultMeasureKeys}
                     relevantKeys={relevantMeasureKeys}
                     relevantBecause={relevantMeasureBecause}
+                    pastVisits={pastVisits}
                     disabled={disabled}
                     containerRef={measurementsRef}
                 />

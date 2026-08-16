@@ -31,6 +31,7 @@ import { AttachmentsCard } from "./AttachmentsCard";
 import { useRovingList } from "../../hooks/useRovingList";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
+import type { TrendVisit } from "./trend";
 import type { SelectedSymptom, Vitals } from "../../types";
 
 interface Props {
@@ -51,6 +52,8 @@ interface Props {
     defaultMeasureKeys: MeasureFieldKey[];
     relevantMeasureKeys: Set<MeasureFieldKey>;
     relevantMeasureBecause: Map<MeasureFieldKey, string>;
+    /** completed visits, for the "vs last" line under each reading */
+    pastVisits?: TrendVisit[];
     visitId: string | null;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
@@ -62,6 +65,7 @@ export function GeneralOpdInputs({
     observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
+    pastVisits,
     visitId, disabled = false, searchRef, measurementsRef,
 }: Props) {
     /**
@@ -131,6 +135,7 @@ export function GeneralOpdInputs({
                         defaultKeys={defaultMeasureKeys}
                         relevantKeys={relevantMeasureKeys}
                         relevantBecause={relevantMeasureBecause}
+                        pastVisits={pastVisits}
                         disabled={disabled}
                         maxInline={6}
                         containerRef={measurementsRef}

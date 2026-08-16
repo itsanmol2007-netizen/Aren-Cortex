@@ -9,6 +9,7 @@ import {
 import { freqLabelToSlot, freqSlotToLabel } from "../lib/db";
 import type { DBHospital, DBFinding } from "../lib/db";
 import type { PrescriptionMedicine, Vitals } from "../types";
+import { MEASURE_FIELDS } from "../features/consult/measures";
 import PrescriptionDocument from "../features/prescription/PrescriptionDocument";
 import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
 import { usePrintFormat } from "../features/prescription/usePrintFormat";
@@ -541,27 +542,27 @@ export default function ReviewModal({
               {/* ══ Vitals ══ */}
               {vitals && Object.values(vitals).some(Boolean) && (
                 <div className="px-8 py-3 border-b border-blue-100/60 bg-blue-50/40 flex flex-wrap gap-6">
-                  {vitals.bp && <VitalChip label="BP" value={vitals.bp} unit="mmHg" />}
-                  {vitals.pulse && <VitalChip label="Pulse" value={vitals.pulse} unit="bpm" />}
-                  {vitals.respRate && <VitalChip label="Resp Rate" value={vitals.respRate} unit="/min" />}
-                  {vitals.temp && <VitalChip label="Temp" value={vitals.temp} unit="°F" />}
-                  {vitals.spo2 && <VitalChip label="SpO₂" value={vitals.spo2} unit="%" />}
-                  {vitals.weight && <VitalChip label="Weight" value={vitals.weight} unit="kg" />}
-                  {vitals.height && <VitalChip label="Height" value={vitals.height} unit="cm" />}
-                  {vitals.bloodGroup && <VitalChip label="Blood Group" value={vitals.bloodGroup} unit="" />}
-                  {vitals.glucoseFasting && <VitalChip label="Fasting Glucose" value={vitals.glucoseFasting} unit="mg/dL" />}
-                  {vitals.glucoseRandom && <VitalChip label="Random Glucose" value={vitals.glucoseRandom} unit="mg/dL" />}
-                  {vitals.hba1c && <VitalChip label="HbA1c" value={vitals.hba1c} unit="%" />}
-                  {vitals.painVas && <VitalChip label="Pain" value={vitals.painVas} unit="/10" />}
-                  {vitals.romPct && <VitalChip label="ROM" value={vitals.romPct} unit="%" />}
-                  {/* Added 2026-08-11. These two shipped with §14.8 the day
-                      before and never reached either print surface — the same
-                      defect §10.6 had already found and fixed once for
-                      height / blood group / pain / ROM. Every field added to
-                      MEASURE_FIELDS has to be added here and in
-                      PrescriptionDocument, or it is recorded and invisible. */}
-                  {vitals.lmp && <VitalChip label="LMP" value={vitals.lmp} unit="" />}
-                  {vitals.gpla && <VitalChip label="G-P-L-A" value={vitals.gpla} unit="" />}
+                  {/* Read from the catalogue rather than hand-listed, since
+                      2026-08-16. This was fifteen literal lines, and its twin
+                      in PrescriptionDocument was fifteen more — a pair of
+                      hand-maintained lists that BOTH had to be extended for
+                      every new field, and had both silently fallen behind
+                      twice already (§10.6 for height/blood group/pain/ROM,
+                      2026-08-11 for LMP and G-P-L-A). §14.22's rule applies:
+                      when two things must agree, make one of them read the
+                      other. The seventeen physiotherapy fields added the same
+                      day would have been thirty-four more lines to keep in
+                      step by discipline alone.
+
+                      Catalogue order is print order, which is what it already
+                      was. `check:measures` now asserts this file contains no
+                      hand-written `vitals.<key>` reference at all. */}
+                  {MEASURE_FIELDS.map((f) => {
+                    const value = vitals[f.key];
+                    return value ? (
+                      <VitalChip key={f.key} label={f.printLabel} value={value} unit={f.unit} />
+                    ) : null;
+                  })}
                 </div>
               )}
 

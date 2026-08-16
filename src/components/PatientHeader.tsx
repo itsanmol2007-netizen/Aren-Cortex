@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight, Calendar, Pill, Stethoscope, Plus, X, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Stethoscope, Plus } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient } from "../types";
 import { ActionButton } from "./ActionButton";
-import { freqSlotToLabel } from "../lib/db";
+import { formatVisitDate } from "./PastVisitCard";
 import type { RealVisit } from "../lib/db";
 
 type PatientHeaderProps = {
@@ -17,7 +17,21 @@ type PatientHeaderProps = {
   logoRef: React.RefObject<HTMLDivElement>;
   pastVisits?: RealVisit[];
   pastVisitsLoading?: boolean;
-  onRepeatRx?: (visit: RealVisit) => void;
+  /**
+   * Opens the shared `PastVisitCard`, anchored at `x`.
+   *
+   * The card itself used to live in this file with its own local state. It
+   * moved to `App.tsx` on 2026-08-16 because the longitudinal band's visit
+   * timeline is a second way into the SAME view, and the spec is explicit
+   * that there must not be two of them. See PastVisitCard's header.
+   */
+  onOpenVisit?: (visit: RealVisit, x: number) => void;
+  /**
+   * Session number to print on each chip, keyed by visit id. Supplied by the
+   * care plan when one is running ("Session 4"); absent otherwise, in which
+   * case the chips print the medicine they always did.
+   */
+  sessionLabels?: Map<string, string>;
 };
 
 // The vitals strip that used to live here is gone. BP, Pulse, SpO2, Temp and
@@ -26,34 +40,16 @@ type PatientHeaderProps = {
 // of one number is how a consultation ends up with two different numbers.
 // Measurements is now the single source of truth. See MeasurementsPanel.tsx.
 
-function formatVisitDate(isoString: string): string {
-  const d = new Date(isoString);
-  const day = d.getDate();
-  const month = d.toLocaleString("en-IN", { month: "short" });
-  const year = d.getFullYear();
-  const thisYear = new Date().getFullYear();
-  return year === thisYear ? `${day} ${month}` : `${day} ${month} ${year}`;
-}
-
-function buildMedDetail(med: RealVisit["medicines"][0]): string {
-  const parts: string[] = [];
-  if (med.dosage_mg) parts.push(`${med.dosage_mg}mg`);
-  if (med.frequency) parts.push(freqSlotToLabel(med.frequency));
-  if (med.duration_days) parts.push(`${med.duration_days}d`);
-  return parts.join(" · ");
-}
-
 export function PatientHeader({
   patient, doctor,
   onOpenPatientModal, onReviewRx, onCancelConsult,
   onOpenSidebar, isSidebarOpen,
   pastVisits = [], pastVisitsLoading = false,
-  onRepeatRx,
+  onOpenVisit, sessionLabels,
   logoRef,
 }: PatientHeaderProps) {
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeVisit, setActiveVisit] = useState<{ visit: RealVisit; x: number } | null>(null);
   const [isStuck, setIsStuck] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -105,18 +101,6 @@ export function PatientHeader({
       onCancelConsult();
     }
   };
-
-  const handleRepeatClick = () => {
-    if (!activeVisit || !onRepeatRx) return;
-    onRepeatRx(activeVisit.visit);
-    setActiveVisit(null);
-  };
-
-  const hasImportable =
-    activeVisit &&
-    (activeVisit.visit.symptoms.length > 0 ||
-      activeVisit.visit.findings.length > 0 ||
-      activeVisit.visit.medicines.length > 0);
 
   return (
     <>
@@ -243,23 +227,33 @@ export function PatientHeader({
                 <ChevronLeft size={13} />
               </button>
               <div ref={scrollRef} className="tb-visits-scroll" onScroll={updateArrows}>
-                {pastVisits.map((visit, i) => (
-                  <button
-                    key={visit.id}
-                    className={`tb-visit-chip${i === 0 ? " latest" : ""}`}
-                    type="button"
-                    onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                      setActiveVisit({ visit, x: rect.left + rect.width / 2 });
-                    }}
-                    title={visit.symptoms.slice(0, 3).join(", ") || "Visit details"}
-                  >
-                    <span className="tb-visit-date">{formatVisitDate(visit.created_at)}</span>
-                    {visit.medicines.length > 0 && (
-                      <span className="tb-visit-diag">{visit.medicines[0].name}</span>
-                    )}
-                  </button>
-                ))}
+                {pastVisits.map((visit, i) => {
+                  // A running care plan renames these: "Session 3" tells a
+                  // physiotherapist where they are in a course, which the name
+                  // of a medicine does not. Falls back to what it always was
+                  // whenever no plan is running — which is every profile that
+                  // does not use one.
+                  const session = sessionLabels?.get(visit.id);
+                  return (
+                    <button
+                      key={visit.id}
+                      className={`tb-visit-chip${i === 0 ? " latest" : ""}`}
+                      type="button"
+                      onClick={(e) => {
+                        const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                        onOpenVisit?.(visit, rect.left + rect.width / 2);
+                      }}
+                      title={visit.symptoms.slice(0, 3).join(", ") || "Visit details"}
+                    >
+                      <span className="tb-visit-date">{formatVisitDate(visit.created_at)}</span>
+                      {session ? (
+                        <span className="tb-visit-diag">{session}</span>
+                      ) : visit.medicines.length > 0 ? (
+                        <span className="tb-visit-diag">{visit.medicines[0].name}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
               <button className="tb-visits-arrow" type="button" onClick={() => scrollBy("right")} disabled={!canScrollRight} aria-label="Scroll right">
                 <ChevronRight size={13} />
@@ -282,122 +276,6 @@ export function PatientHeader({
         </div>
       </header>
 
-      {/* Past visit popup */}
-      {activeVisit && (
-        <div className="pv-overlay" onClick={() => setActiveVisit(null)}>
-          <div
-            className="pv-card"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "fixed",
-              top: 90,
-              left: Math.min(Math.max(activeVisit.x - 210, 12), window.innerWidth - 432),
-            }}
-          >
-            <div className="pv-stripe" aria-hidden="true" />
-            <div className="pv-orb" aria-hidden="true" />
-
-            <div className="pv-header">
-              <div className="pv-header-left">
-                <div className="pv-icon-wrap"><Calendar size={14} /></div>
-                <div>
-                  <p className="pv-eyebrow">Past consultation</p>
-                  <h3 className="pv-title">
-                    {activeVisit.visit.medicines.length > 0
-                      ? `${activeVisit.visit.medicines.length} medicine${activeVisit.visit.medicines.length > 1 ? "s" : ""} prescribed`
-                      : activeVisit.visit.symptoms.length > 0
-                        ? activeVisit.visit.symptoms[0]
-                        : "Visit record"}
-                  </h3>
-                </div>
-              </div>
-              <button type="button" className="pv-close" onClick={() => setActiveVisit(null)} aria-label="Close">
-                <X size={14} />
-              </button>
-            </div>
-
-            <div className="pv-meta">
-              <span className="pv-date-badge">{formatVisitDate(activeVisit.visit.created_at)}</span>
-              {activeVisit.visit.doctor_name && (
-                <span className="pv-doctor">
-                  <span className="pv-doctor-dot" />
-                  Dr. {activeVisit.visit.doctor_name}
-                </span>
-              )}
-            </div>
-
-            <div className="pv-body">
-              {activeVisit.visit.symptoms.length > 0 && (
-                <div>
-                  <p className="pv-section-label">Symptoms noted</p>
-                  <div className="pv-chips">
-                    {activeVisit.visit.symptoms.map((s) => (
-                      <span key={s} className="pv-chip">{s}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeVisit.visit.findings.length > 0 && (
-                <>
-                  <hr className="pv-divider" />
-                  <div>
-                    <p className="pv-section-label">Clinical findings</p>
-                    <div className="pv-chips">
-                      {activeVisit.visit.findings.map((f) => (
-                        <span key={f.name} className={`pv-chip ${f.is_abnormal ? "abnormal" : "normal"}`}>
-                          {f.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {activeVisit.visit.medicines.length > 0 && (
-                <>
-                  <hr className="pv-divider" />
-                  <div>
-                    <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <Pill size={10} style={{ opacity: 0.5 }} />
-                      Medicines prescribed
-                    </p>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {activeVisit.visit.medicines.map((med, i) => {
-                        const detail = buildMedDetail(med);
-                        return (
-                          <div key={i} className="pv-med-row">
-                            <span className="pv-med-name">{med.name}</span>
-                            {detail && <span className="pv-med-detail">{detail}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {activeVisit.visit.symptoms.length === 0 &&
-                activeVisit.visit.findings.length === 0 &&
-                activeVisit.visit.medicines.length === 0 && (
-                  <p className="pv-empty">No detailed records found for this visit.</p>
-                )}
-            </div>
-
-            {hasImportable && onRepeatRx && (
-              <div className="pv-footer">
-                <button type="button" className="pv-repeat-btn" onClick={handleRepeatClick}>
-                  <RefreshCw size={13} />
-                  Repeat Rx
-                </button>
-                <span className="pv-repeat-hint">
-                  Pre-fills symptoms, medicines &amp; findings
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </>
   );
 }

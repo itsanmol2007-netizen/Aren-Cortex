@@ -39,7 +39,22 @@
 // ---------------------------------------------------------------------------
 
 import type { IntentType } from "../../lib/synapse/engine";
-import type { MeasureFieldKey } from "../consult/measures";
+import type { BetterWhen, MeasureFieldKey } from "../consult/measures";
+
+/**
+ * One line of a profile's trend priority list. See `SpecialtyProfile.trend`.
+ */
+export interface TrendEntry {
+    key: MeasureFieldKey;
+    /**
+     * Overrides the field's own `betterWhen` where this specialty genuinely
+     * disagrees with every other one. Only two fields need it today and both
+     * are the same argument: body weight rising is growth in a child and
+     * fluid overload in heart failure. The field itself declares `"none"` and
+     * declines to judge; the specialty that DOES know says so here.
+     */
+    betterWhen?: BetterWhen;
+}
 
 export interface SpecialtySection {
     type: IntentType;
@@ -110,7 +125,55 @@ export interface SpecialtyProfile {
      * this only changes what renders.
      */
     charts: ChartKind[];
+    /**
+     * Which measurements the longitudinal band trends for a RETURNING patient,
+     * in priority order. Added 2026-08-16 for cortex-longitudinal-spec §3.1.
+     *
+     * ── It is a PRIORITY LIST, not a fixed set of three, and that is the
+     *    whole design.
+     *
+     * The spec asks for "the 2–3 measurements that actually matter for that
+     * specialty". For cardiology that is answerable in advance — it is blood
+     * pressure and weight for every patient who walks in. For physiotherapy it
+     * is not: the numbers that matter for a post-ACL knee and for a frozen
+     * shoulder share only the pain score, and no facility-level setting can
+     * know which patient is in the room.
+     *
+     * So the band reads DOWN this list and shows the first few entries that
+     * this patient actually has two or more readings of. A knee patient's band
+     * shows knee flexion; the shoulder patient in the next slot shows shoulder
+     * abduction; nobody configures anything per patient, and a facility that
+     * never records a field simply never sees it. `trend.ts` does the picking.
+     *
+     * Listing a field here does NOT make it visible on the consult screen —
+     * that is `measurements` above, a separate axis. A field can be trended
+     * without being on by default (a physio adds the joint they are treating)
+     * and shown without being trended (blood group).
+     *
+     * An EMPTY list is a real answer, not an omission: it means this specialty
+     * has no numeric trend worth drawing, and the band does not render at all.
+     * Dentistry and dermatology are both deliberately empty — see their
+     * profiles.
+     */
+    trend: TrendEntry[];
 }
+
+/**
+ * Every per-joint range field, in catalogue order, as the tail of a
+ * physiotherapy trend list. Only the joints a patient is actually being
+ * treated for will have readings, so listing them all costs nothing and means
+ * a shoulder course and a knee course both work with no configuration.
+ */
+const PHYSIO_JOINTS: TrendEntry[] = [
+    { key: "cervicalRotL" }, { key: "cervicalRotR" },
+    { key: "shoulderFlexL" }, { key: "shoulderFlexR" },
+    { key: "shoulderAbdL" }, { key: "shoulderAbdR" },
+    { key: "hipFlexL" }, { key: "hipFlexR" },
+    { key: "kneeFlexL" }, { key: "kneeFlexR" },
+    { key: "kneeExtLagL" }, { key: "kneeExtLagR" },
+    { key: "ankleDorsiL" }, { key: "ankleDorsiR" },
+    { key: "kneeGirthL" }, { key: "kneeGirthR" },
+];
 
 /**
  * General OPD. The default for every facility that has not been configured,
@@ -134,6 +197,19 @@ export const GENERAL_OPD: SpecialtyProfile = {
     // than absent — see `measurements` above.
     measurements: ["bp", "pulse", "spo2", "temp", "weight"],
     charts: [],
+    // General OPD is the profile this matters LEAST for — the field research
+    // behind the longitudinal spec found general practices largely satisfied
+    // with paper, and an acute OPD visit is an episode rather than a course.
+    // What a returning general patient does have is a chronic thread, so the
+    // list is the chronic-disease numbers and nothing else. Most patients will
+    // have two readings of none of them and see no band at all, which is the
+    // correct outcome, not a failure.
+    trend: [
+        { key: "bp" },
+        { key: "weight" },
+        { key: "hba1c" },
+        { key: "glucoseFasting" },
+    ],
 };
 
 /**
@@ -162,6 +238,20 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     // `exercise` type).
     measurements: ["painVas", "romPct", "bp", "pulse", "weight"],
     charts: [],
+    // The profile the band was built for. A physiotherapy course is two or
+    // three sessions a week for weeks, and the spec is blunt about what that
+    // means: the trend across sessions IS the record. Pain and overall
+    // function lead because every patient has them; the joints follow and
+    // sort themselves out per patient (see `trend` on the interface).
+    trend: [
+        { key: "painVas" },
+        { key: "lefs" },
+        ...PHYSIO_JOINTS,
+        // Last resort. `romPct` is one number for "how restricted", which is
+        // what a non-physiotherapy facility records; a physio who has been
+        // using the degree fields should never see this one reached.
+        { key: "romPct" },
+    ],
 };
 
 /** Investigation-led practice — diagnostics, pre-op workup. */
@@ -182,6 +272,14 @@ export const DIAGNOSTICS: SpecialtyProfile = {
     // health-check panel rather than something the chart has to argue for.
     measurements: ["bp", "pulse", "spo2", "temp", "weight", "height", "bloodGroup", "glucoseFasting"],
     charts: [],
+    // A workup practice's returning patient is being re-tested, so the panel
+    // values lead and the vitals follow.
+    trend: [
+        { key: "glucoseFasting" },
+        { key: "hba1c" },
+        { key: "bp" },
+        { key: "weight" },
+    ],
 };
 
 /**
@@ -208,6 +306,21 @@ export const CARDIOLOGY: SpecialtyProfile = {
     // they're physiotherapy's signal, not cardiology's.
     measurements: ["bp", "pulse", "spo2", "weight", "height"],
     charts: [],
+    // Visits are weeks to months apart and the spec wants the trend to span
+    // that, not just the last few readings — `trend.ts` puts the points on a
+    // real time axis for exactly this profile's sake.
+    //
+    // The weight override is the whole reason `TrendEntry.betterWhen` exists.
+    // Trending weight UP in a heart failure patient is fluid, and catching it
+    // early is the point of weighing them at all — so here, and nowhere else,
+    // a rise is the thing to flag. The field itself declares "none" because
+    // paediatrics reads the identical number the opposite way.
+    trend: [
+        { key: "bp" },
+        { key: "weight", betterWhen: "lower" },
+        { key: "pulse" },
+        { key: "spo2" },
+    ],
 };
 
 /**
@@ -238,6 +351,21 @@ export const PEDIATRICS: SpecialtyProfile = {
     // and fast breathing is the sign that separates pneumonia from a cold.
     // An adult OPD reaches for it only when the chart asks (RELEVANT_FIELDS);
     // a paediatrician should never have to go looking.
+    // Growth is only meaningful as a curve, so weight and height lead and
+    // both are explicitly "higher is better" — the opposite override to
+    // cardiology's, on the same field, which is why the field itself refuses
+    // to have an opinion.
+    //
+    // Note this band is NOT the growth chart and does not replace it: the
+    // chart reads weight against age and sex through the WHO standards, which
+    // is the clinical instrument. This is the same two numbers in the plain
+    // "up 1.2 kg across 4 visits" form, above the fold, for the visits where
+    // nobody opens the chart.
+    trend: [
+        { key: "weight", betterWhen: "higher" },
+        { key: "height", betterWhen: "higher" },
+        { key: "temp" },
+    ],
     measurements: ["weight", "temp", "height", "pulse", "respRate", "spo2"],
     // The growth chart is the paediatric instrument, and unlike the other
     // two it IS read by the engine — weight-for-age becomes WAZ, which
@@ -274,6 +402,15 @@ export const GYNAECOLOGY: SpecialtyProfile = {
     // it is the pre-eclampsia screen.
     measurements: ["lmp", "gpla", "bp", "weight", "pulse", "temp"],
     charts: [],
+    // Antenatal follow-up is the returning case here: blood pressure across
+    // visits is the pre-eclampsia watch, and weight gain is expected rather
+    // than concerning — the third specialty to read this one field its own
+    // way.
+    trend: [
+        { key: "bp" },
+        { key: "weight", betterWhen: "higher" },
+        { key: "pulse" },
+    ],
 };
 
 /**
@@ -300,6 +437,20 @@ export const DENTISTRY: SpecialtyProfile = {
     // vitals set copied over, it's the two numbers that show systemic spread.
     measurements: ["temp", "pulse", "bp", "weight"],
     charts: ["dental"],
+    // DELIBERATELY EMPTY, and this is a decision rather than a gap.
+    //
+    // Dentistry has the strongest longitudinal record in the product and the
+    // weakest case for a numeric trend: the odontogram IS the record, a tooth
+    // accumulates state over years, and what a dentist opening a returning
+    // patient wants is "what is started and not finished", not "temperature
+    // 99 → 98". The spec says exactly this (§5, Dentistry). Trending the
+    // abscess vitals would be answering a question nobody asked, so the band
+    // does not render for this profile and the chart stays the record.
+    //
+    // What this profile actually wants is an unfinished-treatment summary
+    // built on the dental chart's own state. That is real work and it is not
+    // this pass.
+    trend: [],
 };
 
 /**
@@ -325,6 +476,13 @@ export const DERMATOLOGY: SpecialtyProfile = {
     // default rather than buried behind "Add Measurement".
     measurements: ["weight", "bp"],
     charts: ["body"],
+    // Empty for the same reason as dentistry, with a different instrument:
+    // dermatological progress is visual, and the honest comparison is last
+    // visit's photo against today's for the same body site (spec §5). A
+    // weight trend would be a number offered because it exists rather than
+    // because it answers anything. The body map indexing prior photos is the
+    // real version of this and it is its own pass.
+    trend: [],
 };
 
 export const PROFILES: Record<string, SpecialtyProfile> = {

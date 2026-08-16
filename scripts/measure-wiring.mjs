@@ -250,21 +250,70 @@ if (sigErr) {
 
 // ── 4. Every field reaches both print surfaces ──────────────────────────────
 // A measurement recorded and never shown is one the doctor cannot verify and
-// the patient never receives. Textual check on purpose: these two files are
-// hand-maintained lists, which is exactly why they fall behind.
+// the patient never receives.
+//
+// ── This check changed shape on 2026-08-16, and it got STRONGER ────────────
+// It used to assert that each surface's source text contained `vitals.<key>`
+// for every field — the right check while those two files held hand-written
+// lists, which is what they were and why they had fallen behind twice.
+//
+// Both surfaces now render `MEASURE_FIELDS.map(...)`, so every field reaches
+// both of them BY CONSTRUCTION and the old assertion could not fail no matter
+// how broken the catalogue got. The two things that CAN still go wrong are
+// what is checked now:
+//
+//   a. a field with no print label, which would render a nameless number;
+//   b. someone re-introducing a hand-written `vitals.<key>` line, which is how
+//      the lists grew last time — one field rendered twice, or (worse) a field
+//      quietly special-cased out of catalogue order.
+//
+// (b) is the reason this stays a textual check. `painVas` etc. must not
+// reappear as literals in either file.
 
 const SURFACES = [
     ["src/components/ReviewModal.tsx", "ReviewModal"],
     ["src/features/prescription/PrescriptionDocument.tsx", "PrescriptionDocument"],
 ];
+for (const f of MEASURE_FIELDS) {
+    if (!f.printLabel) errors.push(`"${f.key}" (${f.label}) has no printLabel — ReviewModal would print a nameless value`);
+    if (!f.rxLabel) errors.push(`"${f.key}" (${f.label}) has no rxLabel — the prescription would print a nameless value`);
+    if (f.unit === undefined) errors.push(`"${f.key}" (${f.label}) has no unit — declare "" if it genuinely has none`);
+}
 for (const [path, name] of SURFACES) {
     const src = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    if (!src.includes("MEASURE_FIELDS.map")) {
+        errors.push(`${name} no longer renders vitals from MEASURE_FIELDS — a hand-maintained list here is how fields went unprinted twice before`);
+    }
     for (const f of MEASURE_FIELDS) {
-        if (!src.includes(`vitals.${f.key}`)) {
-            errors.push(`"${f.key}" (${f.label}) is never rendered in ${name} — recorded, but the doctor and patient never see it`);
+        if (src.includes(`vitals.${f.key}`)) {
+            errors.push(`${name} hand-writes "vitals.${f.key}" — vitals render from the catalogue now; a literal here is either a duplicate or a field jumped out of order`);
         }
     }
 }
+
+// ── 4b. Every field declares a trend direction and a menu group ─────────────
+// `betterWhen` is what decides which way the arrow points in the longitudinal
+// band. A field that omitted it and defaulted to "improving on any increase"
+// would show an ACL patient recovering while their extension lag got worse —
+// the failure cortex-longitudinal-spec §6 calls out by name. There is no
+// default in the type; this asserts nobody adds one.
+
+const BETTER_WHEN = new Set(["lower", "higher", "band", "none"]);
+const GROUPS = new Set(["vitals", "body", "metabolic", "musculoskeletal", "obstetric"]);
+for (const f of MEASURE_FIELDS) {
+    if (!BETTER_WHEN.has(f.betterWhen)) {
+        errors.push(`"${f.key}" (${f.label}) has betterWhen="${f.betterWhen}" — must be one of ${[...BETTER_WHEN].join(", ")}`);
+    }
+    if (!GROUPS.has(f.group)) {
+        errors.push(`"${f.key}" (${f.label}) has group="${f.group}" — must be one of ${[...GROUPS].join(", ")}`);
+    }
+    // A "band" verdict is computed from `warn`, so a band field without one
+    // has no thresholds to read and would silently report every series steady.
+    if (f.betterWhen === "band" && !f.warn) {
+        errors.push(`"${f.key}" (${f.label}) is betterWhen="band" but declares no warn() — the band verdict reads its thresholds from warn, so this would never report movement`);
+    }
+}
+notes.push(`${MEASURE_FIELDS.filter((f) => f.betterWhen !== "none").length} of ${MEASURE_FIELDS.length} fields declare a trend direction`);
 
 // ── Report ──────────────────────────────────────────────────────────────────
 
