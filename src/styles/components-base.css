@@ -292,6 +292,63 @@
     flex-shrink: 0;
 }
 
+/* ── Care plan chip — sits at the end of the vitals bar ───── */
+.care-plan-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    flex-shrink: 0;
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    border-radius: 999px;
+    background: white;
+    padding: 0 10px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.care-plan-chip.is-loading {
+    color: #b6c2d4;
+    cursor: default;
+}
+
+.care-plan-chip.is-empty:hover {
+    background: rgba(99, 102, 241, 0.06);
+    border-color: rgba(99, 102, 241, 0.28);
+    color: #6366f1;
+}
+
+.care-plan-chip.is-active {
+    background: rgba(99, 102, 241, 0.07);
+    border-color: rgba(99, 102, 241, 0.24);
+    color: #4f46e5;
+    max-width: 260px;
+}
+
+.care-plan-chip.is-active:hover {
+    background: rgba(99, 102, 241, 0.13);
+}
+
+.care-plan-chip-goal {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 130px;
+}
+
+.care-plan-chip-progress {
+    font-size: 10px;
+    font-weight: 700;
+    color: #818cf8;
+    padding-left: 6px;
+    border-left: 1px solid rgba(99, 102, 241, 0.22);
+    flex-shrink: 0;
+}
+
 /* ── Action / icon buttons ──────────────────────────────── */
 
 .add-icon,

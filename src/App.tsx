@@ -20,6 +20,7 @@ import { PatientsPage } from "./features/patients/PatientsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
 import PastVisitRxViewer from "./features/prescription/PastVisitRxViewer";
+import { CarePlanModal } from "./components/CarePlanModal";
 import { toFindingNames, toPrescriptionMedicines } from "./features/prescription/visitAdapter";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
@@ -35,9 +36,11 @@ import {
   toggleFavouriteMedicine,
   fetchDoctor, fetchHospital, fetchSnapshotSuggestions,
   logVisitMeasurements,
+  fetchActiveCarePlan, linkVisitToActivePlan,
   type DBSymptom, type DBFinding, type RankedMedicine,
   type SaveConsultMedicine, type RealVisit, type FrequentPick,
   type DBDoctor, type DBHospital, type ClinicalSnapshot,
+  type CarePlanWithProgress,
 } from "./lib/db";
 
 const DOCTOR = { id: DOCTOR_ID, name: DOCTOR_NAME, specialty: DOCTOR_SPECIALIZATION };
@@ -134,6 +137,10 @@ function App() {
   // Which past visit the longitudinal Rx viewer is parked on (null = closed).
   const [viewerVisitId, setViewerVisitId] = useState<string | null>(null);
 
+  const [carePlan, setCarePlan] = useState<CarePlanWithProgress | null>(null);
+  const [carePlanLoading, setCarePlanLoading] = useState(false);
+  const [carePlanModalOpen, setCarePlanModalOpen] = useState(false);
+
   const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
   const [toast, setToast] = useState("");
   const [repeatRxBanner, setRepeatRxBanner] = useState<string | null>(null);
@@ -159,7 +166,7 @@ function App() {
     onNewPatient: () => setPatientModalOpen(true),
     onReviewRx: () => setIsReviewOpen(true),
     onUndoSnapshot: handleUndoSnapshot,
-    isAnyModalOpen: patientModalOpen || isReviewOpen || activeConsultGuardOpen || viewerVisitId !== null,
+    isAnyModalOpen: patientModalOpen || isReviewOpen || activeConsultGuardOpen || viewerVisitId !== null || carePlanModalOpen,
   });
 
   const symptomNameToId = useMemo(() => {
@@ -310,6 +317,8 @@ function App() {
     setActiveTagIds([]);
     setPastVisits([]);
     setViewerVisitId(null);
+    setCarePlan(null);
+    setCarePlanModalOpen(false);
     setRepeatRxBanner(null);
     setFollowUpDays(null);
     setAdviceNotes("");
@@ -335,6 +344,7 @@ function App() {
     setIsReviewOpen(false);
     setActiveConsultGuardOpen(false);
     setViewerVisitId(null);
+    setCarePlanModalOpen(false);
   };
 
   const handleSidebarConsult = () => {
@@ -374,6 +384,14 @@ function App() {
         .then(setPastVisits)
         .catch(() => { })
         .finally(() => setPastVisitsLoading(false));
+
+      setCarePlan(null);
+      setCarePlanLoading(true);
+      fetchActiveCarePlan(incomingPatient.id!)
+        .then(setCarePlan)
+        .catch(() => { })
+        .finally(() => setCarePlanLoading(false));
+      linkVisitToActivePlan(visit.id, incomingPatient.id!).catch((e) => console.warn("linkVisitToActivePlan (non-fatal):", e));
     } catch (err: any) {
       showToast(`Error starting consult: ${err.message}`);
     }
@@ -458,6 +476,14 @@ function App() {
         .then(setPastVisits)
         .catch(() => { })
         .finally(() => setPastVisitsLoading(false));
+
+      setCarePlan(null);
+      setCarePlanLoading(true);
+      fetchActiveCarePlan(dbPatient.id!)
+        .then(setCarePlan)
+        .catch(() => { })
+        .finally(() => setCarePlanLoading(false));
+      linkVisitToActivePlan(visit.id, dbPatient.id!).catch((e) => console.warn("linkVisitToActivePlan (non-fatal):", e));
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
@@ -755,6 +781,9 @@ function App() {
           pastVisitsLoading={pastVisitsLoading}
           onRepeatRx={handleRepeatRx}
           onViewRx={(visit) => setViewerVisitId(visit.id)}
+          carePlan={carePlan}
+          carePlanLoading={carePlanLoading}
+          onCarePlanClick={patient ? () => setCarePlanModalOpen(true) : undefined}
           logoRef={logoRef}
         />
       )}
@@ -919,6 +948,29 @@ function App() {
             hospital={hospitalProfile}
             onClose={() => setViewerVisitId(null)}
             onRepeatRx={handleRepeatRx}
+          />
+        )
+      }
+
+      {
+        !isFeaturePage && carePlanModalOpen && patient && (
+          <CarePlanModal
+            mode={carePlan ? "view" : "create"}
+            patient={{ id: patient.id!, name: patient.name }}
+            doctorId={DOCTOR_ID}
+            hospitalId={hospitalProfile?.id}
+            plan={carePlan}
+            onClose={() => setCarePlanModalOpen(false)}
+            onCreated={(plan) => {
+              setCarePlan({ ...plan, linked_visit_count: 0 });
+              setCarePlanModalOpen(false);
+              showToast("Care plan started");
+            }}
+            onPlanClosed={() => {
+              setCarePlan(null);
+              setCarePlanModalOpen(false);
+              showToast("Care plan closed");
+            }}
           />
         )
       }

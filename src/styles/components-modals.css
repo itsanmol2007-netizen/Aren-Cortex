@@ -677,6 +677,16 @@
     margin-left: 2px;
 }
 
+/* Read-only value display — care plan "view" mode reuses the pm-field/
+   pm-label shell but shows text instead of an input. */
+.pm-plain-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0;
+    line-height: 1.4;
+}
+
 .pm-input {
     height: 40px;
     border: 1px solid rgba(0, 0, 0, 0.1);

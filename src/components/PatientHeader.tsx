@@ -3,8 +3,9 @@ import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient, Vitals } from "../types";
 import { ActionButton } from "./ActionButton";
+import { CarePlanChip } from "./CarePlanChip";
 import { freqSlotToLabel } from "../lib/db";
-import type { RealVisit } from "../lib/db";
+import type { RealVisit, CarePlanWithProgress } from "../lib/db";
 
 type PatientHeaderProps = {
   patient: Patient;
@@ -21,6 +22,9 @@ type PatientHeaderProps = {
   pastVisitsLoading?: boolean;
   onRepeatRx?: (visit: RealVisit) => void;
   onViewRx?: (visit: RealVisit) => void;
+  carePlan?: CarePlanWithProgress | null;
+  carePlanLoading?: boolean;
+  onCarePlanClick?: () => void;
 };
 
 const VITAL_FIELDS: {
@@ -59,6 +63,7 @@ export function PatientHeader({
   onOpenSidebar, isSidebarOpen,
   pastVisits = [], pastVisitsLoading = false,
   onRepeatRx, onViewRx,
+  carePlan = null, carePlanLoading = false, onCarePlanClick,
   logoRef,
 }: PatientHeaderProps) {
   const [cancelArmed, setCancelArmed] = useState(false);
@@ -311,6 +316,12 @@ export function PatientHeader({
             </div>
           );
         })}
+        {onCarePlanClick && (
+          <>
+            <span className="vital-sep" />
+            <CarePlanChip plan={carePlan} loading={carePlanLoading} onClick={onCarePlanClick} />
+          </>
+        )}
       </div>
 
       {/* Past visit popup */}

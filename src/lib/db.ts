@@ -6,3 +6,4 @@ export * from "./db/reference";
 export * from "./db/patients";
 export * from "./db/intelligence";
 export * from "./db/measurements";
+export * from "./db/carePlans";
