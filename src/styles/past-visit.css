@@ -419,6 +419,28 @@
     line-height: 1.4;
 }
 
+/* Opens the full prescription document in the longitudinal viewer */
+.pv-view-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.75);
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.pv-view-btn:hover {
+    background: rgba(255, 255, 255, 0.13);
+    color: #fff;
+}
+
 /* ── Repeat Rx amber banner ───────────────────────────────── */
 .repeat-rx-banner {
     position: fixed;

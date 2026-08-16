@@ -15,6 +15,7 @@ import "./styles/components-bar.css";
 import "./styles/components-panels.css";
 import "./styles/components-modals.css";
 import "./styles/past-visit.css";
+import "./styles/rx-viewer.css";
 import "./styles/workspace-header.css";
 import "./features/sidebar/sidebar.css";
 

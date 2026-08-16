@@ -153,6 +153,14 @@ export type RealVisitMedicine = {
     frequency: string | null;
     duration_days: number | null;
     route: string | null;
+    // ── Carried so a past visit can be re-rendered as the document that was
+    //    actually issued, and re-imported without losing composition identity. ──
+    notes: string | null;
+    instructions: string | null;
+    is_sos: boolean;
+    sort_order: number | null;
+    composition_id: number | null;
+    composition_ids: number[];
 };
 
 export type RealVisit = {
@@ -163,12 +171,20 @@ export type RealVisit = {
     symptoms: string[];
     findings: { name: string; is_abnormal: boolean }[];
     medicines: RealVisitMedicine[];
+    // ── Everything below exists so the visit can be reproduced as a full
+    //    prescription document, not just summarised as chips. ──
+    prescription_id: string | null;
+    prescription_ref: string | null;
+    vitals: Record<string, string> | null;
+    tests: string[];
+    follow_up_days: number | null;
+    advice_notes: string | null;
 };
 
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
     const { data: visits, error: visitErr } = await supabase
         .from("visits")
-        .select("id, created_at, assigned_doctor_id, status")
+        .select("id, created_at, assigned_doctor_id, status, prescription_ref, vitals")
         .eq("patient_id", patientId)
         .eq("status", "completed")
         .order("created_at", { ascending: false })
@@ -213,20 +229,34 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
         (finds ?? []).forEach((f: any) => findingById.set(f.id, { name: f.name, is_abnormal: f.is_abnormal }));
     }
 
+    // `prescriptions` has no unique constraint on visit_id and saveConsult inserts
+    // (never upserts), so a visit saved twice owns two prescription rows. Order
+    // newest-first and keep the first one seen per visit, otherwise which
+    // prescription wins — and which medicines silently vanish — is row order luck.
     const { data: rxRows } = await supabase
         .from("prescriptions")
-        .select("id, visit_id")
-        .in("visit_id", visitIds);
+        .select("id, visit_id, created_at, follow_up_days, advice_notes")
+        .in("visit_id", visitIds)
+        .order("created_at", { ascending: false });
 
-    const rxByVisit = new Map<string, string>();
-    (rxRows ?? []).forEach((r: any) => rxByVisit.set(r.visit_id, r.id));
-    const rxIds = (rxRows ?? []).map((r: any) => r.id);
+    const rxByVisit = new Map<string, any>();
+    (rxRows ?? []).forEach((r: any) => {
+        if (!rxByVisit.has(r.visit_id)) rxByVisit.set(r.visit_id, r);
+    });
+    const rxIds = [...rxByVisit.values()].map((r) => r.id);
+
+    // Tests are ordered against the visit, so they survive even when a visit
+    // has no prescription row at all.
+    const { data: testRows } = await supabase
+        .from("diagnostic_orders")
+        .select("visit_id, test_name")
+        .in("visit_id", visitIds);
 
     const medsByRx = new Map<string, RealVisitMedicine[]>();
     if (rxIds.length) {
         const { data: pmRows } = await supabase
             .from("prescription_medicines")
-            .select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route")
+            .select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route, notes, instructions, is_sos, sort_order, composition_id, composition_ids")
             .in("prescription_id", rxIds);
 
         const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
@@ -246,13 +276,29 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
                 frequency: pm.frequency,
                 duration_days: pm.duration_days,
                 route: pm.route,
+                notes: pm.notes ?? null,
+                instructions: pm.instructions ?? null,
+                is_sos: pm.is_sos ?? false,
+                sort_order: pm.sort_order ?? null,
+                composition_id: pm.composition_id ?? null,
+                composition_ids: Array.isArray(pm.composition_ids)
+                    ? pm.composition_ids.map(Number)
+                    : [],
             });
             medsByRx.set(pm.prescription_id, list);
+        }
+
+        // The document renders medicines in the order they were prescribed.
+        for (const [rxId, list] of medsByRx) {
+            medsByRx.set(
+                rxId,
+                [...list].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            );
         }
     }
 
     return visits.map((v) => {
-        const rxId = rxByVisit.get(v.id);
+        const rx = rxByVisit.get(v.id);
         return {
             id: v.id,
             created_at: v.created_at,
@@ -266,7 +312,16 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
                 .filter((r: any) => r.visit_id === v.id)
                 .map((r: any) => findingById.get(Number(r.finding_id)))
                 .filter(Boolean) as { name: string; is_abnormal: boolean }[],
-            medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
+            medicines: rx ? (medsByRx.get(rx.id) ?? []) : [],
+            prescription_id: rx?.id ?? null,
+            prescription_ref: v.prescription_ref ?? null,
+            vitals: (v.vitals ?? null) as Record<string, string> | null,
+            tests: (testRows ?? [])
+                .filter((r: any) => r.visit_id === v.id)
+                .map((r: any) => r.test_name as string)
+                .filter(Boolean),
+            follow_up_days: rx?.follow_up_days ?? null,
+            advice_notes: rx?.advice_notes ?? null,
         };
     });
 }

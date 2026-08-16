@@ -24,6 +24,12 @@ export interface PrescriptionDocumentProps {
     };
     visitId?: string;
     prescriptionRef?: string;
+    /**
+     * The date this prescription was issued. Omit for a live consult (defaults
+     * to today); pass the visit's `created_at` when reproducing a past visit,
+     * otherwise a three-month-old prescription prints with today's date on it.
+     */
+    date?: string | Date;
     symptoms?: string[];
     findings?: string[];
     prescription?: PrescriptionMedicine[];
@@ -69,6 +75,7 @@ function initials(name: string): string {
 function StandardDocument({
     patient,
     prescriptionRef,
+    date,
     symptoms = [],
     findings = [],
     prescription = [],
@@ -82,7 +89,7 @@ function StandardDocument({
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const accentColor = hospital?.accent_color ?? "#1268e8";
-    const today = formatDate();
+    const today = formatDate(date ? new Date(date) : undefined);
 
     const doctorName = doctor?.name ?? "Doctor";
     const doctorQual = doctor?.qualification ?? "";
@@ -128,7 +135,7 @@ function StandardDocument({
             } catch { /* silently skip */ }
         }
         gen();
-    }, [prescriptionRef]);
+    }, [prescriptionRef, today]);
 
     return (
         <div
@@ -410,6 +417,7 @@ function StandardDocument({
 function ThermalDocument({
     patient,
     prescriptionRef,
+    date,
     symptoms = [],
     findings = [],
     prescription = [],
@@ -419,7 +427,7 @@ function ThermalDocument({
     doctor,
     hospital,
 }: PrescriptionDocumentProps) {
-    const today = formatDate();
+    const today = formatDate(date ? new Date(date) : undefined);
     const doctorName = doctor?.name ?? "Doctor";
     const doctorQual = doctor?.qualification ?? "";
     const doctorReg = doctor?.registration_number ?? "";

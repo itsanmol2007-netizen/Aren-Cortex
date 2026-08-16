@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Calendar, Pill, Stethoscope, Plus, X, Activity, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, FileText, Pill, Stethoscope, Plus, X, Activity, RefreshCw } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient, Vitals } from "../types";
@@ -20,6 +20,7 @@ type PatientHeaderProps = {
   pastVisits?: RealVisit[];
   pastVisitsLoading?: boolean;
   onRepeatRx?: (visit: RealVisit) => void;
+  onViewRx?: (visit: RealVisit) => void;
 };
 
 const VITAL_FIELDS: {
@@ -57,7 +58,7 @@ export function PatientHeader({
   onOpenPatientModal, onReviewRx, onCancelConsult,
   onOpenSidebar, isSidebarOpen,
   pastVisits = [], pastVisitsLoading = false,
-  onRepeatRx,
+  onRepeatRx, onViewRx,
   logoRef,
 }: PatientHeaderProps) {
   const [cancelArmed, setCancelArmed] = useState(false);
@@ -414,15 +415,28 @@ export function PatientHeader({
                 )}
             </div>
 
-            {hasImportable && onRepeatRx && (
+            {(onViewRx || (hasImportable && onRepeatRx)) && (
               <div className="pv-footer">
-                <button type="button" className="pv-repeat-btn" onClick={handleRepeatClick}>
-                  <RefreshCw size={13} />
-                  Repeat Rx
-                </button>
-                <span className="pv-repeat-hint">
-                  Pre-fills symptoms, medicines &amp; findings
-                </span>
+                {hasImportable && onRepeatRx && (
+                  <button type="button" className="pv-repeat-btn" onClick={handleRepeatClick}>
+                    <RefreshCw size={13} />
+                    Repeat Rx
+                  </button>
+                )}
+                {onViewRx && (
+                  <button
+                    type="button"
+                    className="pv-view-btn"
+                    onClick={() => {
+                      const v = activeVisit.visit;
+                      setActiveVisit(null);
+                      onViewRx(v);
+                    }}
+                  >
+                    <FileText size={13} />
+                    View full Rx
+                  </button>
+                )}
               </div>
             )}
           </div>

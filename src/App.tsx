@@ -19,6 +19,8 @@ import type { SelectedSymptom, Medicine, Patient, PrescriptionMedicine, Vitals }
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
+import PastVisitRxViewer from "./features/prescription/PastVisitRxViewer";
+import { toFindingNames, toPrescriptionMedicines } from "./features/prescription/visitAdapter";
 import {
   DOCTOR_ID, DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchSymptoms, fetchFindings,
@@ -128,6 +130,8 @@ function App() {
 
   const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
   const [pastVisitsLoading, setPastVisitsLoading] = useState(false);
+  // Which past visit the longitudinal Rx viewer is parked on (null = closed).
+  const [viewerVisitId, setViewerVisitId] = useState<string | null>(null);
 
   const [stagedMedicine, setStagedMedicine] = useState<PrescriptionMedicine | null>(null);
   const [toast, setToast] = useState("");
@@ -154,7 +158,7 @@ function App() {
     onNewPatient: () => setPatientModalOpen(true),
     onReviewRx: () => setIsReviewOpen(true),
     onUndoSnapshot: handleUndoSnapshot,
-    isAnyModalOpen: patientModalOpen || isReviewOpen || activeConsultGuardOpen,
+    isAnyModalOpen: patientModalOpen || isReviewOpen || activeConsultGuardOpen || viewerVisitId !== null,
   });
 
   const symptomNameToId = useMemo(() => {
@@ -304,6 +308,7 @@ function App() {
     setFrequentPicks([]);
     setActiveTagIds([]);
     setPastVisits([]);
+    setViewerVisitId(null);
     setRepeatRxBanner(null);
     setFollowUpDays(null);
     setAdviceNotes("");
@@ -328,6 +333,7 @@ function App() {
     setPatientModalOpen(false);
     setIsReviewOpen(false);
     setActiveConsultGuardOpen(false);
+    setViewerVisitId(null);
   };
 
   const handleSidebarConsult = () => {
@@ -533,31 +539,12 @@ function App() {
     const validSymptoms = visit.symptoms.filter((s) =>
       allSymptoms.some((a) => a.name === s)
     );
-    const validFindings = visit.findings
-      .map((f) => f.name)
+    const validFindings = toFindingNames(visit)
       .filter((name) => allFindings.some((a) => a.name === name));
 
-    const importedMeds: PrescriptionMedicine[] = visit.medicines.map((med, i) => ({
-      id: `repeat-${med.medicine_id}-${i}`,
-      medicine_id: med.medicine_id,
-      composition_ids: [],
-      primary_composition_id: 0,
-      name: med.name,
-      category: "",
-      use: "",
-      match: 0,
-      composition: "",
-      dosage: med.dosage_mg ? `${med.dosage_mg}mg` : "1 tab",
-      frequency: med.frequency ? freqSlotToLabel(med.frequency) : "Morning and Night",
-      duration: med.duration_days ? `${med.duration_days} days` : "5 days",
-      notes: "",
-      dosage_mg: med.dosage_mg,
-      duration_days: med.duration_days,
-      route: med.route ?? "oral",
-      instructions: "",
-      is_sos: false,
-      sort_order: i,
-    }));
+    // Same seam the past-visit viewer reads through, so an imported Rx and a
+    // rendered historical document can never drift apart.
+    const importedMeds: PrescriptionMedicine[] = toPrescriptionMedicines(visit, "repeat");
 
     setSelectedSymptoms(validSymptoms);
     setSelectedFindings(validFindings);
@@ -760,6 +747,7 @@ function App() {
           pastVisits={pastVisits}
           pastVisitsLoading={pastVisitsLoading}
           onRepeatRx={handleRepeatRx}
+          onViewRx={(visit) => setViewerVisitId(visit.id)}
           logoRef={logoRef}
         />
       )}
@@ -903,6 +891,27 @@ function App() {
           <PatientModal
             onClose={patient ? () => setPatientModalOpen(false) : () => { }}
             onConfirm={handlePatientConfirm}
+          />
+        )
+      }
+
+      {
+        !isFeaturePage && viewerVisitId && patient && (
+          <PastVisitRxViewer
+            visits={pastVisits}
+            initialVisitId={viewerVisitId}
+            patient={patient}
+            doctor={{
+              name: doctorProfile?.name ?? DOCTOR_NAME,
+              specialization: doctorProfile?.specialization ?? DOCTOR_SPECIALIZATION,
+              qualification: doctorProfile?.qualification ?? null,
+              registration_number: doctorProfile?.registration_number ?? null,
+              signature_image_url: doctorProfile?.signature_image_url ?? null,
+              avatar_url: (doctorProfile as any)?.avatar_url ?? null,
+            }}
+            hospital={hospitalProfile}
+            onClose={() => setViewerVisitId(null)}
+            onRepeatRx={handleRepeatRx}
           />
         )
       }
