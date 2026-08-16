@@ -459,9 +459,114 @@ function EmptySheetArt() {
 
 // ── the sheet ──────────────────────────────────────────────────────────────
 
+/**
+ * What removing a carried-forward condition MEANS.
+ *
+ * Added 2026-08-16 to close atlas §14.21's "most important gap". Before it,
+ * the × on a carried chip took it off today's chart and left the standing fact
+ * active, so it returned at the next visit — while the chip's own tooltip said
+ * "remove it if it no longer applies". The doctor was told they had taken
+ * something back and they had not.
+ *
+ * Three answers, because there are genuinely three, and only the first is what
+ * the × used to do:
+ *
+ *   Not today          — off this consult; the patient still has it
+ *   No longer has it   — it was true and has resolved
+ *   Recorded in error  — it was never true
+ *
+ * "Not today" is first and reads as the safe one, because it is: it changes
+ * nothing durable. The two below it are the ones that alter the patient's
+ * record, and they are worded as clinical statements rather than as database
+ * states — a doctor is saying what happened to the patient, not choosing
+ * between 'resolved' and 'refuted'.
+ *
+ * Nothing here is destructive in the delete sense. A resolved condition stays
+ * in the record as history; only its carrying-forward stops.
+ */
+function RetireMenu({ label, onPick, onDismiss }: {
+    label: string;
+    onPick: (choice: "today" | "resolved" | "refuted") => void;
+    onDismiss: () => void;
+}) {
+    const ref = useRef<HTMLDivElement>(null);
+
+    // Escape and click-away, same as every other small popup on this screen.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onDismiss(); };
+        const onDown = (e: MouseEvent) => {
+            if (!ref.current?.contains(e.target as Node)) onDismiss();
+        };
+        window.addEventListener("keydown", onKey);
+        // Deferred a frame: the click that OPENED this menu is still
+        // propagating, and without the delay it closes itself immediately.
+        const t = window.setTimeout(() => window.addEventListener("mousedown", onDown), 0);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            window.removeEventListener("mousedown", onDown);
+            window.clearTimeout(t);
+        };
+    }, [onDismiss]);
+
+    return (
+        <div
+            ref={ref}
+            className="cx-retire absolute left-0 top-[calc(100%+6px)] z-50 w-[232px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white p-1 shadow-[0_12px_28px_rgba(16,28,46,0.16)]"
+            role="menu"
+            aria-label={`Remove ${label}`}
+        >
+            <p className="px-2 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)]">
+                Remove “{label}”
+            </p>
+            <button
+                type="button"
+                role="menuitem"
+                className="cx-retire-opt block w-full rounded-[7px] px-2 py-[7px] text-left text-[12.5px] font-semibold text-[var(--cs-ink)] hover:bg-[var(--cs-blue-soft)]"
+                onClick={() => onPick("today")}
+            >
+                Not today
+                <span className="block text-[11px] font-medium text-[var(--cs-faint)]">
+                    Still has it — just not relevant now
+                </span>
+            </button>
+            <button
+                type="button"
+                role="menuitem"
+                className="cx-retire-opt block w-full rounded-[7px] px-2 py-[7px] text-left text-[12.5px] font-semibold text-[var(--cs-ink)] hover:bg-[var(--cs-blue-soft)]"
+                onClick={() => onPick("resolved")}
+            >
+                No longer has it
+                <span className="block text-[11px] font-medium text-[var(--cs-faint)]">
+                    Resolved — stops carrying forward
+                </span>
+            </button>
+            <button
+                type="button"
+                role="menuitem"
+                className="cx-retire-opt block w-full rounded-[7px] px-2 py-[7px] text-left text-[12.5px] font-semibold text-[var(--cs-ink)] hover:bg-[var(--cs-amber-soft)]"
+                onClick={() => onPick("refuted")}
+            >
+                Recorded in error
+                <span className="block text-[11px] font-medium text-[var(--cs-faint)]">
+                    Was never true — stops carrying forward
+                </span>
+            </button>
+        </div>
+    );
+}
+
 interface SheetProps {
     entries: CaseSheetEntry[];
     onRemove: (label: string) => void;
+    /**
+     * Take a carried-forward condition off the patient for good.
+     *
+     * Optional, and its absence is what the old behaviour was: without it the
+     * × on a carried chip removes it from today's chart and the standing fact
+     * survives, which is exactly the §14.21 bug. With it, the × asks what the
+     * removal means. See `RetireMenu`.
+     */
+    onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
     onToggle: (o: Observable) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
@@ -486,9 +591,12 @@ interface SheetProps {
 }
 
 export function CaseSheet({
-    entries, onRemove, onToggle, intensities, onIntensityChange,
+    entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
 }: SheetProps) {
+    /** which carried-forward chip is asking what its removal means */
+    const [retiring, setRetiring] = useState<string | null>(null);
+
     const reduce = useReducedMotion();
 
     const cycle = (label: string, current: SelectedSymptom["intensity"]) => {
@@ -613,13 +721,13 @@ export function CaseSheet({
                                             transition={{ type: "spring", stiffness: 480, damping: 32 }}
                                             title={
                                                 entry.origin === "carried"
-                                                    ? "Carried forward from a previous visit's confirmation. Remove it if it no longer applies."
+                                                    ? "Carried forward from a previous visit. Click × to say whether it still applies."
                                                     : entry.origin === "confirmed"
                                                         ? "Added by confirming a condition in this consultation."
                                                         : undefined
                                             }
                                             className={
-                                                "inline-flex items-center gap-[6px] rounded-lg border py-[4px] pl-[10px] pr-[7px] " +
+                                                "relative inline-flex items-center gap-[6px] rounded-lg border py-[4px] pl-[10px] pr-[7px] " +
                                                 "text-[13.5px] font-semibold leading-tight whitespace-nowrap " +
                                                 (entry.origin === "carried"
                                                     ? TONE_CARRIED[entry.kind]
@@ -650,12 +758,37 @@ export function CaseSheet({
                                             {entry.label}
                                             <button
                                                 type="button"
-                                                onClick={() => onRemove(entry.label)}
+                                                onClick={() => {
+                                                    // A carried-forward chip's × is ambiguous — see
+                                                    // RetireMenu. Everything else removes outright,
+                                                    // exactly as before.
+                                                    if (entry.origin === "carried" && onRetireCarried) {
+                                                        setRetiring((c) => (c === entry.label ? null : entry.label));
+                                                    } else {
+                                                        onRemove(entry.label);
+                                                    }
+                                                }}
                                                 aria-label={`Remove ${entry.label}`}
-                                                className="grid size-[14px] place-items-center rounded border-0 bg-transparent p-0 text-[14px] leading-none text-current opacity-45 transition hover:bg-black/10 hover:opacity-100"
+                                                aria-haspopup={entry.origin === "carried" && onRetireCarried ? "menu" : undefined}
+                                                aria-expanded={entry.origin === "carried" && onRetireCarried ? retiring === entry.label : undefined}
+                                                className="cx-chip-x grid size-[14px] place-items-center rounded border-0 bg-transparent p-0 text-[14px] leading-none text-current opacity-45 transition hover:bg-black/10 hover:opacity-100"
                                             >
                                                 ×
                                             </button>
+
+                                            {retiring === entry.label && onRetireCarried && (
+                                                <RetireMenu
+                                                    label={entry.label}
+                                                    onDismiss={() => setRetiring(null)}
+                                                    onPick={(choice) => {
+                                                        setRetiring(null);
+                                                        // Every choice takes it off today's chart.
+                                                        // They differ in what happens to the PATIENT.
+                                                        onRemove(entry.label);
+                                                        if (choice !== "today") onRetireCarried(entry.label, choice);
+                                                    }}
+                                                />
+                                            )}
                                         </motion.span>
                                     );
                                 })}

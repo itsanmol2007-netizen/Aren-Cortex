@@ -42,20 +42,25 @@
 // deliberately small and hand-curated, and an unmapped condition falls through
 // to exactly the old behaviour rather than guessing.
 //
-// ⚠ ── KNOWN GAP: this write is currently ONE-WAY ────────────────────────────
+// ── The write is TWO-WAY as of 2026-08-16 ──────────────────────────────────
 //
-// There is no resolve/refute control yet (step 6 of the investigation's §4,
-// atlas §14.21 "Open"). Un-ticking a carried-forward chip removes it from
-// TODAY's chart only — the `patient_conditions` row survives and carries
-// forward again at the next visit. So from the doctor's point of view a
-// mis-confirmation is permanent, which is precisely the failure this feature's
-// design is otherwise built to avoid.
+// It was one-way for a day, and that was the feature's worst property: a
+// condition confirmed in error could be un-ticked from today's chart and came
+// back at the next visit, forever, looking freshly entered. Atlas §14.21
+// called it "the most important gap" and it was right to.
 //
-// `status` ('active' | 'resolved' | 'refuted') and its check constraint already
-// exist and `loadPatientConditions` already filters on active, so the fix is a
-// UI plus one update call — no schema work. Do it before widening the map:
-// every row added to `condition_observable_map` widens the blast radius of a
-// mistake that cannot currently be taken back.
+// `retireCondition` closes it. Taking a carried-forward chip off now asks
+// what the removal MEANS, because the three answers are genuinely different
+// and only one of them is what the × used to do:
+//
+//   not today  — off this consult; the patient still has the condition
+//   resolved   — it was true and no longer is
+//   refuted    — it was never true
+//
+// The old behaviour is still there and still the default-looking option, but
+// it is no longer the ONLY thing the × can mean, which is what made it a lie:
+// the chip's own tooltip said "remove it if it no longer applies" and removing
+// it did not make it stop applying.
 // ---------------------------------------------------------------------------
 
 import { useCallback } from "react";
@@ -65,6 +70,7 @@ import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { SynapseData } from "./useSynapse";
 import {
   loadPatientConditions,
+  retirePatientCondition,
   upsertPatientCondition,
   type Observable,
 } from "../lib/db/synapse";
@@ -87,6 +93,18 @@ export interface LongitudinalRecord {
   confirmCondition: (intentId: number) => string | null;
   /** Pull this patient's standing conditions onto a freshly started consult. */
   carryForwardFor: (patientId: string) => Promise<void>;
+  /**
+   * Take a standing fact off the patient for good — see the header.
+   *
+   * Takes the chip's LABEL, because that is what every surface in the consult
+   * speaks; the observable id is looked up here, which is the same boundary
+   * `confirmCondition` sits on.
+   *
+   * Throws rather than swallowing. The doctor asked for this explicitly, and a
+   * silent failure would tell them it worked while the condition stayed active
+   * and returned at the next visit — which is the exact bug being fixed.
+   */
+  retireCondition: (label: string, status: "resolved" | "refuted") => Promise<void>;
 }
 
 export function useLongitudinalRecord({
@@ -145,6 +163,28 @@ export function useLongitudinalRecord({
      identity.isReal, identity.doctorId]
   );
 
+  const retireCondition = useCallback(
+    async (label: string, status: "resolved" | "refuted") => {
+      const patientId = session.patient?.id;
+      if (!patientId) return;
+
+      const observable = data?.observables.find((o: Observable) => o.label === label);
+      // A carried-forward chip always has an observable behind it — that is
+      // how it got here. If the catalogue has moved underneath us, removing it
+      // from today's chart is still right and is the caller's job; there is
+      // simply no durable row to retire.
+      if (!observable) return;
+
+      await retirePatientCondition({
+        patientId,
+        observableId: observable.id,
+        status,
+        visitId: session.visitId,
+      });
+    },
+    [data, session.patient?.id, session.visitId]
+  );
+
   const carryForwardFor = useCallback(
     async (patientId: string) => {
       try {
@@ -162,5 +202,5 @@ export function useLongitudinalRecord({
     [labelOf, carryForward]
   );
 
-  return { confirmCondition, carryForwardFor };
+  return { confirmCondition, carryForwardFor, retireCondition };
 }

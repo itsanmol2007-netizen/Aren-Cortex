@@ -41,6 +41,8 @@ interface Props {
     onObservableToggle: (o: Observable) => void;
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
+    /** take a carried-forward condition off the patient — see CaseSheet's RetireMenu */
+    onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     /** findings that co-occur with what is already charted — see examSuggestions.ts */
@@ -63,7 +65,7 @@ interface Props {
 
 export function GeneralOpdInputs({
     observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
-    intensities, onIntensityChange, relatedFindings, onBrowseFinding,
+    intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, disabled = false, searchRef, measurementsRef,
@@ -117,6 +119,7 @@ export function GeneralOpdInputs({
                     entries={caseSheetEntries}
                     onToggle={onObservableToggle}
                     onRemove={onCaseSheetRemove}
+                    onRetireCarried={onRetireCarried}
                     intensities={intensities}
                     onIntensityChange={onIntensityChange}
                     related={relatedFindings}

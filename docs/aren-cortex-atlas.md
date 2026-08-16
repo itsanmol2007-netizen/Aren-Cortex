@@ -4368,3 +4368,107 @@ Rows went from three lines to two, and under 62px.
   thumbnail per row. Content, not code.
 - **Physiotherapy's labels are still General OPD's** — carried forward from
   §14.24, still awaiting Anmol's review pass.
+
+---
+
+## 14.26 Session 2026-08-16d — resolve / refute: the × stops lying
+
+The oldest open item in this file, and §14.21 was right to call it "the most
+important gap": a condition confirmed in error was **permanent from the
+doctor's point of view**. They could un-tick the carried-forward chip, it left
+today's chart, and it came back at the next visit — forever, looking freshly
+entered — because `patient_conditions` was only ever written to with
+`status = 'active'`.
+
+The chip's own tooltip read *"Remove it if it no longer applies."* Removing it
+did not make it stop applying. That sentence is the bug in one line.
+
+### No schema work, exactly as predicted
+
+`status` ('active' | 'resolved' | 'refuted') and its check constraint were
+already there, and `loadPatientConditions` already filtered on active. §14.21
+said the fix was "a UI plus one update call" and that held.
+
+`retirePatientCondition` is the update. Two things about it are deliberate:
+
+- **It is not a delete.** A resolved condition is a fact about the patient's
+  history; destroying the row would destroy the evidence that anyone ever
+  thought it. Only the carrying-forward stops.
+- **It throws, where `upsertPatientCondition` beside it swallows.** That is not
+  an inconsistency. The upsert is a background consequence of confirming
+  something, and a consultation must never fail because of one. This is the
+  doctor explicitly asking to take something back — a silent failure would
+  tell them it worked while the fact stayed active and returned next visit,
+  which is precisely the bug being fixed.
+- It updates `.eq("status", "active")` only, so re-retiring something already
+  resolved cannot overwrite the date it was resolved on.
+
+### Three answers, because there are three
+
+The × on a carried-forward chip now opens a small menu rather than removing:
+
+| | what it means | what it writes |
+|---|---|---|
+| **Not today** | still has it, not relevant now | nothing durable |
+| **No longer has it** | was true, has resolved | `resolved` |
+| **Recorded in error** | was never true | `refuted` |
+
+"Not today" is first and is exactly the old behaviour, unchanged — the point
+was never that removal-for-today was wrong, it was that it was the ONLY thing
+the × could mean while presenting itself as more.
+
+Resolved and refuted are kept apart because they are different clinical
+claims, and both are worded as statements about the patient rather than as
+database states: a doctor says "no longer has it", not "set status to
+resolved". Both stop it carrying forward, so someone in a hurry gets the same
+immediate outcome either way and the record still knows the difference.
+
+An **ordinary chip is untouched**, and so is one confirmed in THIS visit —
+that one has no standing row to retire yet, it is being established right now.
+Only `origin === "carried"` gets the menu.
+
+### ⚠ It reaches two profiles, not eight
+
+`CaseSheet` renders carried-forward chips distinctly and now carries the menu.
+`PickerCard` — what the six profiles still on `SoapInputs` render — has no
+origin awareness at all, checked rather than assumed. On those profiles a
+carried-forward condition has always appeared as an ordinary context chip,
+indistinguishable, and removing it has always been today-only and silent.
+
+So the §14.21 bug is fixed on the Case Sheet surface (General OPD,
+physiotherapy) and still live on the other six. That is not a regression this
+pass introduced and it closes for each profile as it moves over — one
+`inputLayout` line — but it should not be read as "resolve/refute is done".
+
+### Verification
+
+- **28 assertions in Chromium** against the real `CaseSheet`: an ordinary chip
+  still removing outright with no menu and nothing written, a chip confirmed
+  this visit doing the same, a carried chip opening the menu INSTEAD of
+  removing and staying on the chart until a choice is made, the three options
+  in order with the safe one first, each writing the right status (or none),
+  every path also clearing today's chart, Escape and click-away leaving both
+  the chip and the record untouched, the menu reopening after Escape, and only
+  one menu open at a time.
+- Two of those assertions failed on the first run and **both were the
+  harness**: chips group by KIND in the DOM, so array order is not render
+  order and the index-based selectors were clicking the wrong chips. Rewritten
+  to select by `aria-label`. Third session running in which a first-run
+  failure was the test rather than the code — worth the pattern being obvious
+  by now.
+- `tsc -b`, `vite build`, and every `check:*` clean.
+- **Not verified against the live app**, same reason as every entry in this
+  run. Specifically unproven: that a retired condition actually stops arriving
+  on the next visit. The read filters on `status = 'active'` and has since it
+  was written, so the mechanism is not new — but nobody has watched it happen.
+
+### Open
+
+- **Six profiles cannot retire a condition** — see the box above.
+- **Nothing shows a patient's retired conditions.** A resolved condition is
+  kept precisely because it is history, and there is currently no surface that
+  displays that history. It is in the record and invisible.
+- **Widening `condition_observable_map` is now unblocked.** §14.21 said to
+  build this before adding rows, because every row widened the blast radius of
+  a mistake nobody could take back. That reason is gone; the ~12 remaining
+  chronic conditions now need only clinical content.

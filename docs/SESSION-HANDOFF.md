@@ -7,7 +7,7 @@ everything the previous version said is either folded into
 Rewrite or delete this file the same way when the next session ends.
 
 **Read order for a cold start:** this file, then `aren-cortex-ui-doctrine.md`,
-then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.19 through §14.25
+then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.19 through §14.26
 are this run of sessions'). Then
 `docs/Cortex Specialties/cortex-longitudinal-spec.md`, which is the live spec
 for the current phase. Don't re-survey the repo; the docs are current.
@@ -233,7 +233,9 @@ Carried forward, plus this session's. None of these is visible on screen.
   consult. Documented in `useConsultPlan.ts`'s reset header.
 - **~12 more chronic conditions need signal content, not schema** — CAD,
   atrial fibrillation, treated TB, osteoarthritis, gout, iron deficiency
-  anaemia. Clinical curation.
+  anaemia. Clinical curation. **Now unblocked**: §14.21 said to build
+  resolve/refute first because every added row widened the blast radius of a
+  mistake nobody could take back. That reason is gone.
 - **Hypoglycaemia → Known diabetic was deliberately not seeded**, and **ACS has
   no correct mapping target** until a "Known coronary artery disease"
   observable exists. Both want a clinical decision.

@@ -332,12 +332,63 @@ export async function loadPatientConditions(patientId: string): Promise<PatientC
  * Non-fatal by rule, like the decision log: a consultation must never fail
  * because the longitudinal write did. The caller logs and carries on.
  *
- * ⚠ There is no counterpart to this function yet. Nothing sets `status` to
- * 'resolved' or 'refuted', so a condition confirmed in error cannot be taken
- * back — see the KNOWN GAP block in `hooks/useLongitudinalRecord.ts` and atlas
- * §14.21. If you are here to add that, it is one update call plus a UI; the
- * column and its check constraint are already in place.
+ * Its counterpart is `retirePatientCondition` below, added 2026-08-16.
  */
+/**
+ * Take a standing fact off a patient — the counterpart to the upsert above,
+ * and the close of the gap atlas §14.21 opened on 2026-08-15 and called "the
+ * most important" one: until this existed, a condition confirmed in error was
+ * permanent from the doctor's point of view. They could un-tick the chip and
+ * it came back at the next visit, forever, looking freshly entered.
+ *
+ * ── Two statuses, because they are two different clinical claims
+ *
+ *   'resolved' — it WAS true and no longer is. The asthma was outgrown, the
+ *                TB was treated. The history is real and worth keeping.
+ *   'refuted'  — it was NEVER true. Recorded in error, or on the wrong
+ *                patient.
+ *
+ * Both stop it carrying forward, so a doctor in a hurry gets the same
+ * immediate outcome either way and the record still distinguishes them. That
+ * distinction is the whole reason this is not a delete: a resolved condition
+ * is a fact about the patient's history, and destroying the row would destroy
+ * the evidence that anyone ever thought it.
+ *
+ * ── Why this one is NOT non-fatal
+ *
+ * `upsertPatientCondition` swallows its errors on the rule that a consultation
+ * must never fail because a background write did. This is the opposite case:
+ * the doctor has explicitly asked to take something back, and a silent failure
+ * would tell them they had while the fact stayed active and returned at the
+ * next visit. It throws; the caller surfaces it.
+ */
+export async function retirePatientCondition(opts: {
+    patientId: string;
+    observableId: number;
+    status: "resolved" | "refuted";
+    /** the visit it was retired at, for the audit line in `note` */
+    visitId: string | null;
+}): Promise<void> {
+    const { error } = await supabase
+        .from("patient_conditions")
+        .update({
+            status: opts.status,
+            updated_at: new Date().toISOString(),
+            // There is no `retired_at` / `retired_by` column and this does not
+            // justify adding two. `note` is unused by anything else, so it
+            // carries the one line a human would want when asking "why is this
+            // not on the chart any more".
+            note: `${opts.status} on ${new Date().toISOString().slice(0, 10)}` +
+                (opts.visitId ? ` at visit ${opts.visitId}` : ""),
+        })
+        .eq("patient_id", opts.patientId)
+        .eq("observable_id", opts.observableId)
+        // Only an ACTIVE row is retired. Without this, re-retiring something
+        // already resolved would overwrite the date it was resolved on.
+        .eq("status", "active");
+    if (error) throw new Error(`patient_conditions retire: ${error.message}`);
+}
+
 export async function upsertPatientCondition(opts: {
     patientId: string;
     observableId: number;

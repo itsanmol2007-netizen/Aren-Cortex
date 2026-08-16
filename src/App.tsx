@@ -222,7 +222,7 @@ function App() {
   // and, when it is chronic, a fact that survives the visit. Sits between the
   // session and the plan because it needs the patient at render time and the
   // plan needs it at render time. See useLongitudinalRecord.ts.
-  const { confirmCondition, carryForwardFor } = useLongitudinalRecord({
+  const { confirmCondition, carryForwardFor, retireCondition } = useLongitudinalRecord({
     data: synapse.data,
     chart,
     session,
@@ -250,6 +250,27 @@ function App() {
       .catch(() => { if (!cancelled) setPreviousExercises({ lines: [], at: null }); });
     return () => { cancelled = true; };
   }, [patient?.id]);
+
+  /**
+   * The doctor saying a carried-forward condition should stop coming back.
+   *
+   * Surfaced rather than swallowed, unlike the confirm write beside it: this
+   * one was asked for explicitly, and a silent failure would tell the doctor
+   * they had taken something back while it stayed active and returned at the
+   * next visit — which is the §14.21 bug this closes.
+   */
+  const handleRetireCarried = useCallback(
+    (label: string, status: "resolved" | "refuted") => {
+      retireCondition(label, status)
+        .then(() => showToast(
+          status === "resolved"
+            ? `${label} marked resolved — it will not carry forward`
+            : `${label} removed from the record — it will not carry forward`
+        ))
+        .catch((e) => showToast(`Could not update ${label}: ${e?.message ?? e}`));
+    },
+    [retireCondition, showToast]
+  );
 
   const carePlan = useCarePlan({
     patientId: patient?.id ?? null,
@@ -863,6 +884,7 @@ function App() {
                   onObservableToggle={handleObservableToggle}
                   caseSheetEntries={caseSheetEntries}
                   onCaseSheetRemove={handleCaseSheetRemove}
+                  onRetireCarried={handleRetireCarried}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}
                   relatedFindings={relatedFindings}
