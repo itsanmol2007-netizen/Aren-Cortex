@@ -42,6 +42,8 @@ import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
 import { relevantFields } from "./features/consult/measures";
 import { buildTrendSummary } from "./features/consult/trend";
+import { formatLine, type ExerciseLine } from "./features/consult/exercisePlan";
+import { ExercisePlanCard } from "./features/consult/ExercisePlanCard";
 import { LongitudinalBand } from "./features/consult/LongitudinalBand";
 import { CarePlanSheet } from "./features/consult/CarePlanSheet";
 import { PastVisitCard } from "./components/PastVisitCard";
@@ -59,6 +61,7 @@ import {
   fetchDoctor, fetchHospital,
   type DBDoctor, type DBHospital, type RealVisit,
 } from "./lib/db";
+import { fetchLastExercisePlan } from "./lib/db/exercises";
 
 // Title + subtitle for every coming-soon feature page
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
@@ -230,6 +233,24 @@ function App() {
   // Layer 1 beside the session for the same reason as the longitudinal record:
   // it needs the patient at render time and nothing downstream of it. See
   // useCarePlan.ts, and note its warning about `care_plans` RLS.
+  /**
+   * The programme this patient was last actually given, for the exercise
+   * card's progression badges. A plain effect rather than a hook of its own:
+   * it is one read keyed on the patient, with no transitions on it.
+   */
+  const [previousExercises, setPreviousExercises] = useState<{ lines: ExerciseLine[]; at: string | null }>(
+    { lines: [], at: null }
+  );
+  useEffect(() => {
+    const pid = patient?.id;
+    if (!pid) { setPreviousExercises({ lines: [], at: null }); return; }
+    let cancelled = false;
+    fetchLastExercisePlan(pid)
+      .then((r) => { if (!cancelled) setPreviousExercises(r); })
+      .catch(() => { if (!cancelled) setPreviousExercises({ lines: [], at: null }); });
+    return () => { cancelled = true; };
+  }, [patient?.id]);
+
   const carePlan = useCarePlan({
     patientId: patient?.id ?? null,
     doctorId: identity.doctorId,
@@ -292,13 +313,13 @@ function App() {
     followUpDays, setFollowUpDays,
     acceptedIntents, acceptedIntentIdSet, chosenBrands, deliberateBrands,
     searchedAccepts, acknowledgedIntents,
-    adviceLines, therapyLines, therapyNotes, reviewAdvice, justAdded, unreadPrescribedWarnings,
+    adviceLines, therapyLines, therapyNotes, exercisePlan, reviewAdvice, justAdded, unreadPrescribedWarnings,
     selectedMedicineId, setSelectedMedicineId, stagedMedicine, setStagedMedicine,
     pendingMedicine, setPendingMedicine, inspectorMedicine,
     confirmPendingMedicine, confirmStagedMedicine,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis, removeAdviceLine,
-    removeTherapyLine,
+    removeTherapyLine, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -992,6 +1013,29 @@ function App() {
                     hasChart={intelligence.hasInput}
                     searchRef={synapseSearchRef}
                   />
+                ) : specialty.primary === "exercise" ? (
+                  /* An exercise HAS a dose, and the dose is the clinical
+                     content — see ExercisePlanCard's header. This is the one
+                     elevated type besides medicines that earns its own card
+                     rather than a plain ranked list. */
+                  <ExercisePlanCard
+                    title={specialty.primaryLabel}
+                    intents={intelligence.byType.exercise}
+                    topScore={topOfType.get("exercise") ?? 0}
+                    thinkingKey={intelligence.thinkingKey}
+                    plan={exercisePlan}
+                    previousPlan={previousExercises.lines}
+                    previousAt={previousExercises.at}
+                    ruleset={synapse.data?.ruleset ?? null}
+                    activeSignals={intelligence.result?.activeSignals ?? []}
+                    hasChart={intelligence.hasInput}
+                    disabled={!patient}
+                    onAccept={handleAcceptIntent}
+                    onUpdate={updateExercise}
+                    onRemove={removeExercise}
+                    onDuplicateForSide={duplicateExerciseForSide}
+                    searchRef={synapseSearchRef}
+                  />
                 ) : (
                   /* This facility does not lead with medicines. The primary
                      type gets a plain ranked list — no brand picker, no dose
@@ -1055,6 +1099,8 @@ function App() {
                 onRemoveTest={removeTest}
                 adviceLines={adviceLines}
                 therapyLines={therapyLines}
+                exerciseLines={exercisePlan.map((l) => ({ id: l.id, text: formatLine(l) }))}
+                onRemoveExercise={removeExercise}
                 onRemoveAdviceLine={removeAdviceLine}
                 onRemoveTherapyLine={removeTherapyLine}
                 followUpDays={followUpDays}
@@ -1276,6 +1322,7 @@ function App() {
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}
             therapyNotes={therapyNotes}
+            exerciseLines={exercisePlan.map(formatLine)}
             visitId={visitId ?? undefined}
           />
         )

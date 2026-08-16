@@ -15,8 +15,8 @@
 
 import { useRef, useState } from "react";
 import {
-    CalendarClock, ClipboardList, FileText, FlaskConical, NotebookPen, Pill,
-    Printer, Stethoscope, Waves,
+    Activity, CalendarClock, ClipboardList, FileText, FlaskConical, NotebookPen,
+    Pill, Printer, Stethoscope, Waves,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
@@ -155,6 +155,9 @@ interface Props {
     onRemoveTest: (label: string) => void;
     adviceLines: string[];
     therapyLines: string[];
+    /** the home programme, already formatted — see exercisePlan.formatLine */
+    exerciseLines: { id: string; text: string }[];
+    onRemoveExercise: (id: string) => void;
     onRemoveAdviceLine: (line: string) => void;
     onRemoveTherapyLine: (line: string) => void;
     followUpDays: number | null;
@@ -186,6 +189,7 @@ export function PlanCard({
     tests, onRemoveTest,
     adviceLines, onRemoveAdviceLine,
     therapyLines, onRemoveTherapyLine,
+    exerciseLines, onRemoveExercise,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
     companionsFor, onAddCompanion, onDismissCompanion,
@@ -434,6 +438,34 @@ export function PlanCard({
                             palette, which is the closest existing meaning: this
                             is something the clinician did with their hands, not
                             an instruction issued. */}
+                        {/* The home programme, between what was done in the
+                            clinic and the general advice — the order the
+                            session ran and the order the patient experiences
+                            it. Blue: this is the thing they leave with and act
+                            on, which is the action colour's job. */}
+                        {exerciseLines.length > 0 && (
+                            <Group
+                                icon={<Activity size={12} />}
+                                tone="blue"
+                                title="Home programme"
+                                count={exerciseLines.length}
+                            >
+                                {exerciseLines.map(({ id, text }) => (
+                                    <div key={id} className={`cs-line${justAdded.has(text) ? " is-new" : ""}`}>
+                                        <div className="cs-line-main">
+                                            <div className="cs-line-name"><span>{text}</span></div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="cs-x"
+                                            aria-label={`Remove ${text}`}
+                                            onClick={() => onRemoveExercise(id)}
+                                        >×</button>
+                                    </div>
+                                ))}
+                            </Group>
+                        )}
+
                         {therapyLines.length > 0 && (
                             <Group
                                 icon={<Waves size={12} />}

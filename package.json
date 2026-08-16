@@ -14,7 +14,8 @@
     "check:measures": "node scripts/measure-wiring.mjs",
     "check:growth": "node scripts/growth-standards.mjs",
     "check:combos": "node scripts/multi-composition.mjs",
-    "check:trend": "node scripts/longitudinal-trend.mjs"
+    "check:trend": "node scripts/longitudinal-trend.mjs",
+    "check:exercise": "node scripts/exercise-progression.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

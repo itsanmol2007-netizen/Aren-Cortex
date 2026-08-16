@@ -39,6 +39,7 @@ import type { MedicineDraft } from "../features/consult/MedicineAddSheet";
 import { useJustAdded } from "../features/consult/useJustAdded";
 import type { Medicine as SynapseBrand } from "../lib/synapse/brands";
 import type { CompanionSuggestion } from "../lib/synapse/companions";
+import { doseFor, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
 import { guardIntent } from "../lib/synapse/engine";
 import { resolveProductByName } from "../lib/db/medicines";
@@ -153,6 +154,8 @@ export interface ConsultPlan {
   /** what was delivered in the clinic today — see `therapyNotes` in the body */
   therapyLines: string[];
   therapyNotes: string;
+  /** the home programme, with its dose in fields rather than in prose */
+  exercisePlan: ExerciseLine[];
   /** What actually prints as Advice: accepted lines, then freehand. */
   reviewAdvice: string;
   /** Which plan lines just arrived, so the rail is not a box that silently grows. */
@@ -183,6 +186,9 @@ export interface ConsultPlan {
   removeDiagnosis: (label: string) => void;
   removeAdviceLine: (line: string) => void;
   removeTherapyLine: (line: string) => void;
+  updateExercise: (id: string, patch: Partial<ExerciseLine>) => void;
+  removeExercise: (id: string) => void;
+  duplicateExerciseForSide: (id: string, side: ExerciseSide) => void;
 
   // ── Companions ────────────────────────────────────────────────────────
   companionsFor: (intentId: number) => CompanionSuggestion[];
@@ -265,6 +271,22 @@ export function useConsultPlan({
    * column edits it as lines.
    */
   const [therapyNotes, setTherapyNotes] = useState<string>("");
+
+  /**
+   * The home programme — what the patient takes away and performs themselves.
+   *
+   * Structured lines rather than text, unlike advice and referrals, and this
+   * is the change that makes a physiotherapy course legible: a dose held in
+   * columns can be compared with last session's, and a dose held in a sentence
+   * cannot. See features/consult/exercisePlan.ts.
+   *
+   * This applies to EVERY profile, not only physiotherapy. A general OPD
+   * accepting "walk 30 minutes daily" gets a line with no numbers on it, which
+   * prints exactly as it always did — the structure costs nothing where it is
+   * not used, and inventing a second, text-only path for exercises would be
+   * two code paths for one clinical object.
+   */
+  const [exercisePlan, setExercisePlan] = useState<ExerciseLine[]>([]);
 
   const appendAdvice = useCallback((line: string) => {
     setAdviceNotes((curr) => {
@@ -409,8 +431,26 @@ export function useConsultPlan({
         appendAdvice(`Refer to ${payload.label}`);
         break;
       case "advice":
-      case "exercise":
         appendAdvice(payload.label);
+        break;
+      // The home programme. Was `appendAdvice(payload.label)` until
+      // 2026-08-16, which flattened the dose into prose — see `exercisePlan`
+      // above. A newly accepted exercise starts on a sensible dose that the
+      // physiotherapist edits on the row; `doseFor` picks reps or a hold from
+      // the exercise's own name.
+      case "exercise":
+        setExercisePlan((curr) => {
+          if (curr.some((l) => l.intentId === payload.intentId && l.side === null)) return curr;
+          return [...curr, {
+            id: `ex-${payload.intentId}-${Date.now()}`,
+            intentId: payload.intentId,
+            label: payload.label,
+            side: null,
+            notes: "",
+            sortOrder: curr.length,
+            ...doseFor(payload.label),
+          }];
+        });
         break;
       // Delivered here, today. See `therapyNotes` above and IntentType in
       // engine.ts for why this does not join the three above.
@@ -702,6 +742,41 @@ export function useConsultPlan({
     }
   }, [acceptedIntents, releaseIntent]);
 
+  const updateExercise = useCallback((id: string, patch: Partial<ExerciseLine>) => {
+    setExercisePlan((curr) => curr.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }, []);
+
+  const removeExercise = useCallback((id: string) => {
+    let intentId: number | null = null;
+    setExercisePlan((curr) => {
+      const found = curr.find((l) => l.id === id);
+      intentId = found?.intentId ?? null;
+      return curr.filter((l) => l.id !== id);
+    });
+    // Releasing the intent matters for the same reason it does everywhere
+    // else: an exercise taken off the plan must stop counting as accepted, or
+    // the decision log learns a preference the doctor withdrew.
+    if (intentId != null) {
+      for (const [iid, p] of acceptedIntents) {
+        if (p.type === "exercise" && iid === intentId) releaseIntent(iid);
+      }
+    }
+  }, [acceptedIntents, releaseIntent]);
+
+  /**
+   * The same exercise, for the other side. A physiotherapist treating both
+   * knees prescribes two lines and progresses them independently — see
+   * `identityOf` in exercisePlan.ts.
+   */
+  const duplicateExerciseForSide = useCallback((id: string, side: ExerciseSide) => {
+    setExercisePlan((curr) => {
+      const src = curr.find((l) => l.id === id);
+      if (!src) return curr;
+      if (curr.some((l) => l.intentId === src.intentId && l.side === side)) return curr;
+      return [...curr, { ...src, id: `ex-${src.intentId}-${side}-${Date.now()}`, side, sortOrder: curr.length }];
+    });
+  }, []);
+
   const removeTherapyLine = useCallback((line: string) => {
     setTherapyNotes((curr) =>
       curr.split("\n").map((l) => l.trim()).filter((l) => l && l !== line).join("\n")
@@ -866,6 +941,7 @@ export function useConsultPlan({
     setFollowUpDays(null);
     setAdviceNotes("");
     setTherapyNotes("");
+    setExercisePlan([]);
     setVisitNotes("");
     resetLedger();
   }, [resetLedger]);
@@ -896,6 +972,7 @@ export function useConsultPlan({
 
     adviceLines,
     therapyLines,
+    exercisePlan,
     reviewAdvice,
     justAdded,
     unreadPrescribedWarnings,
@@ -920,6 +997,9 @@ export function useConsultPlan({
     removeDiagnosis,
     removeAdviceLine,
     removeTherapyLine,
+    updateExercise,
+    removeExercise,
+    duplicateExerciseForSide,
 
     companionsFor,
     handleAddCompanion,

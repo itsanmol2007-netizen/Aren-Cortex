@@ -34,6 +34,7 @@ import {
   freqSlotToLabel, freqLabelToSlot,
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
+import { saveExercisePlan } from "../lib/db/exercises";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -288,7 +289,7 @@ export function useConsultLifecycle({
         sort_order: i,
       }));
 
-      await saveConsult({
+      const saved = await saveConsult({
         visitId,
         doctorId: identity.doctorId,
         hospitalId: identity.hospitalId,
@@ -301,6 +302,30 @@ export function useConsultLifecycle({
         adviceNotes: plan.reviewAdvice,
         therapyNotes: plan.therapyNotes || null,
       });
+
+      // The home programme, as rows rather than prose.
+      //
+      // ── Why this one is caught rather than thrown, unlike the writes above
+      //
+      // By this line the visit is already marked completed and the
+      // prescription, its medicines and its orders are already committed.
+      // Throwing here would put "Save failed" in front of a doctor whose
+      // consultation DID save — they would then reasonably try again and
+      // produce a second prescription for one visit.
+      //
+      // So the failure is surfaced LOUDLY and the save is allowed to finish.
+      // Not fire-and-forget: the toast says exactly what is missing and the
+      // error reaches the console, because a programme absent from the record
+      // is also a wrong baseline for next session's progression badges, and a
+      // physiotherapist needs to know that before they rely on one.
+      if (plan.exercisePlan.length > 0) {
+        try {
+          await saveExercisePlan(saved.prescriptionId, plan.exercisePlan);
+        } catch (e: any) {
+          console.error("saveExercisePlan:", e);
+          showToast(`Prescription saved, but the exercise programme did not: ${e?.message ?? e}`);
+        }
+      }
 
       // The visit is now a completed session of whatever course it belongs to.
       // Before the learning write, because this one is allowed to surface a

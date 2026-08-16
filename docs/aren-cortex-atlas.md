@@ -4195,3 +4195,148 @@ Both in the specialty column, neither visible in an assertion:
   impairments / functional problems" and "Reported by patient"; the screen says
   "Ranked conditions" and "Reported". Configuration, not structure — left for
   his review pass.
+
+---
+
+## 14.25 Session 2026-08-16c — the exercise plan, and a badge that had to stop guessing
+
+The last piece of the physiotherapy screen and the one Anmol deferred while
+§14.24 landed: exercise recommendations carrying **Progressed / Same / Eased /
+Added** against last session, which the longitudinal spec calls the point of
+the whole profile — *"a physio opening session 9 needs what was prescribed last
+session so they can progress it rather than repeat it."*
+
+### An exercise had no structure, and that was the blocker
+
+An accepted exercise became a LINE OF TEXT in `adviceNotes`, beside referrals
+and general advice. "Straight leg raise — 3 sets x 12" was one string, so the
+dose was a fact about the sentence rather than about the prescription, and
+nothing could compare two visits — comparing means comparing numbers and there
+were none.
+
+`exercisePlan.ts` is the model: sets, reps OR hold seconds, times per day,
+side, notes. One comparable volume per line — `sets × (reps or hold) × per
+day`. Deliberately crude, and the file says so: it is not a training-load
+model, it answers "did this get harder?" and nothing else, and the numbers are
+always on screen beside the word so the physiotherapist can disagree at a
+glance.
+
+**Identity is `intentId` + SIDE, never the label.** A left knee and a right
+knee doing the same exercise are two prescriptions that progress
+independently; collapsing them would show one confusing badge for a physio
+who is loading the operated side and holding the other.
+
+### The browser found two bugs the 48-assertion check had not
+
+This is the entry's most useful line. `check:exercise` passed 48 assertions,
+including several specifically about reps versus holds. Then the Chromium
+harness pressed the card's own "→ hold" button — switching a line from 3 × 12
+reps to 3 × 10 sec — and the badge read **Eased**.
+
+Volumes of 36 and 30. Both perfectly valid numbers. The module's header
+promises reps and holds are never added together, and they were not; this was
+the same mistake one level up, ACROSS visits rather than within a line, and
+`volumeOf` alone can never catch it because neither number is wrong.
+
+Fixing it surfaced the second instance immediately: "3 sets" last session
+against "3 × 12" today was reading as a progression from 3 to 36, when in
+truth last session's repetitions were simply never written down. So the rule
+is now any DISAGREEMENT about the unit — including one side having none —
+returns `unknown`, which renders as no badge at all. Both are now assertions,
+and the check is 54.
+
+`unknown` rendering as silence rather than as a word is the design point:
+every other outcome is a claim, and there was no honest claim to make.
+
+### The card
+
+`ExercisePlanCard` replaces the plain ranked list the `exercise` type was
+getting. It is the only ranked panel in the workspace where **the plan and the
+suggestions are one list**, on purpose: a physiotherapist is editing last
+week's programme, not choosing from a menu, so prescribed lines sit at the top
+with their dose editable in place and the ranked exercises follow as things to
+add.
+
+- Dose boxes are borderless until focused. Four bordered inputs across eight
+  rows is a form; this has to stay a list the doctor scans.
+- Last session's dose prints under today's, so the badge is never the only
+  evidence.
+- **Badges are suppressed entirely on a first programme.** "Added" on every
+  row is noise, which is why `comparePlans` reports `hasPrevious` separately
+  from "this line is new".
+- Exercises dropped since last session are counted and named in one line —
+  today's list cannot show a row that is not on it, and dropping an exercise
+  is a decision as real as progressing one.
+- The search box is not a convenience: physiotherapy's `sections` list has no
+  `exercise` row (it is the elevated type), so this card is the only way to
+  one. Doctrine's reachability rule depends on it.
+
+A second browser defect, fixed: `IntentSearchResults` renders its own "nothing
+matches" empty state, so on an idle card it printed a clipped sentence under
+the search box answering a question nobody had asked. Gated on
+`search.isSearching`, which is what `SuggestionsCard` already did.
+
+### Where it goes
+
+Its own group in the plan rail — **Home programme**, between Therapy (what the
+clinic did) and Advice, the order the session ran. Its own section on both
+print surfaces. For a physiotherapy patient this IS the prescription, so it
+prints as a numbered programme rather than as instructions.
+
+Routing applies to EVERY profile, not just physiotherapy: a general OPD
+accepting "walk 30 minutes daily" now gets a structured line with no numbers
+on it, which prints exactly as it always did. A second, text-only path for
+exercises would have been two code paths for one clinical object.
+
+### ⚠ The table was declined, and the code is safe without it
+
+`prescription_exercises` was offered and **declined at the permission prompt**.
+It has not been created. The SQL is in
+`docs/Cortex Specialties/prescription-exercises.sql`, unapplied.
+
+That prompted a fix worth having regardless. The exercise write was originally
+`await`ed and allowed to throw, on the reasoning that a silent failure is
+worse. That reasoning was wrong for its POSITION in the sequence: by that line
+the visit is already completed and the prescription, medicines and orders are
+already committed, so throwing puts "Save failed" in front of a doctor whose
+consultation did save — who would then reasonably save again and produce a
+second prescription for one visit. It now catches, finishes the save, and puts
+the specific failure in a toast.
+
+So until the table exists: the card works, the rail and both print surfaces
+render, the printed sheet is correct, and the programme is not in the record.
+Next session's badges therefore have no baseline and read "Added" every time.
+A persistence gap, not a broken screen.
+
+### Verification
+
+- **54 assertions** in `npm run check:exercise`, non-vacuity confirmed twice
+  (comparing a missing dose as zero, and collapsing left/right into one
+  identity — both caught, both restored).
+- **29 assertions in Chromium** against the real `ExercisePlanCard` and the
+  real `PlanCard`, built through Vite with the project's own Tailwind config
+  (§14.24's lesson): the three badges, editing a dose flipping the verdict
+  live, letters refused by the dose box, the reps/hold switch, marking a side
+  editing in place versus adding the other side creating a second line, the
+  rail mirroring it formatted with dose and side, adding from the ranked list
+  removing it from the suggestions, a first programme printing no badges at
+  all, and removal taking exactly one line.
+- `tsc -b`, `vite build`, `check:trend`, `check:measures`, `check:dental`,
+  `check:obstetric`, `check:growth` clean.
+- **Not verified against the live app**, same reason as every entry in this
+  run — and here it also cannot be, since the table does not exist.
+
+### Open
+
+- **`prescription_exercises` is not created.** Everything above about
+  persistence waits on it.
+- **Treatment modules** — the third column of Anmol's mockup (ROM tracker,
+  strength assessment, progress photos, functional tests) is not built. Some
+  of it now has a home: the body map is in the Assessment column and the ROM
+  fields exist.
+- **Reordering exercises is not implemented.** The mockup shows drag handles;
+  `sort_order` is stored and respected, but nothing moves a row yet.
+- **No exercise has a demonstration image or video.** The mockup shows a
+  thumbnail per row. Content, not code.
+- **Physiotherapy's labels are still General OPD's** — carried forward from
+  §14.24, still awaiting Anmol's review pass.

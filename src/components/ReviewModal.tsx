@@ -65,6 +65,8 @@ interface ReviewModalProps {
   adviceNotes?: string;
   /** what was delivered in the clinic today — see IntentType in engine.ts */
   therapyNotes?: string;
+  /** the home programme, one formatted line each */
+  exerciseLines?: string[];
   doctor?: DoctorShape | null;
   hospital?: DBHospital | null;
   vitals?: Vitals;
@@ -170,7 +172,7 @@ export default function ReviewModal({
   patient, visitId, prescriptionRef,
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
-  followUpDays, adviceNotes, therapyNotes,
+  followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
   doctor, hospital, vitals, isSaving,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
@@ -361,6 +363,7 @@ export default function ReviewModal({
             followUpDays={followUpDays}
             adviceNotes={adviceNotes}
             therapyNotes={therapyNotes}
+            exerciseLines={exerciseLines}
             doctor={doctor}
             hospital={hospital}
             vitals={vitals}
@@ -773,6 +776,24 @@ export default function ReviewModal({
                       {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
                         <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
                           <ChevronRight className="w-3 h-3 text-teal-400 mt-0.5 shrink-0" />{line}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* The home programme, between what the clinic did and the
+                    general instructions. A physiotherapy patient's
+                    prescription is mostly this. */}
+                {exerciseLines.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2.5">
+                      Home Exercise Programme
+                    </p>
+                    <div className="space-y-1.5">
+                      {exerciseLines.map((line, i) => (
+                        <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
+                          <ChevronRight className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />{line}
                         </p>
                       ))}
                     </div>

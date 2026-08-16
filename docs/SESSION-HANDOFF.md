@@ -7,7 +7,7 @@ everything the previous version said is either folded into
 Rewrite or delete this file the same way when the next session ends.
 
 **Read order for a cold start:** this file, then `aren-cortex-ui-doctrine.md`,
-then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.19 through §14.24
+then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.19 through §14.25
 are this run of sessions'). Then
 `docs/Cortex Specialties/cortex-longitudinal-spec.md`, which is the live spec
 for the current phase. Don't re-survey the repo; the docs are current.
@@ -81,7 +81,24 @@ Only General OPD and physiotherapy are on the new surface. **Six profiles are
 still on `SoapInputs`** and each is one `inputLayout` line away, when its turn
 comes.
 
-### 0.4 A light care plan (spec §3.3)
+### 0.4 The exercise plan with progression (atlas §14.25)
+
+An exercise is a structured line now — sets, reps or hold, times per day,
+side — not a sentence in the advice field. `ExercisePlanCard` is the elevated
+slot for physiotherapy: prescribed lines at the top with editable doses and a
+Progressed / Same / Eased / Added badge against last session, ranked
+suggestions underneath.
+
+Two rules in `exercisePlan.ts` are load-bearing and were both learned the hard
+way in the browser:
+
+- **Never compare across units.** 3 × 12 reps against 3 × 10 sec produced
+  volumes of 36 and 30 and the badge read "Eased". Any disagreement about the
+  unit — including one side having none at all — returns `unknown`, which
+  renders as NO badge. Silence is the honest output.
+- **Identity is intent + side.** Left and right progress independently.
+
+### 0.5 A light care plan (spec §3.3)
 
 `care_plans` already existed in the live DB, correctly shaped and completely
 unused — left by the abandoned prescription-flow branch. Adopted. It shows
@@ -111,16 +128,17 @@ has seen it for real. Creating a test patient with three or four visits is the
 fastest way to close this — **ask before writing to the DB**, and delete the
 test data afterwards per §4.
 
-### 1.3 The exercise plan with progression
+### 1.3 ⚠ Create `prescription_exercises` — the one thing left half-finished
 
-The largest remaining physiotherapy piece and the bottom half of Anmol's
-mockup: exercise recommendations carrying progressed / held / added between
-sessions, the treatment modules column, "impairments" instead of "conditions".
-He deferred it explicitly on 2026-08-16 — build it next.
+The exercise plan (§14.25) is built, verified and committed, but **its table
+was declined at the permission prompt and does not exist.** The SQL is ready
+and unapplied in `docs/Cortex Specialties/prescription-exercises.sql`.
 
-None of that data is recorded today, which is also why the band's Last Session
-card is thinner than the mockup. Now that `modality` exists, comparing this
-session's plan against last session's is finally possible.
+The code is safe without it — the save catches the failure, finishes, and
+shows the doctor exactly what did not save — but until it exists the programme
+is not in the record, so next session's Progressed / Same / Eased badges have
+no baseline and every exercise reads "Added" forever. **Ask Anmol, then apply
+it.** This is the highest-priority item in this file.
 
 ### 1.4 One specialty at a time — Anmol's standing instruction
 

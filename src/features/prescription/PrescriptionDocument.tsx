@@ -35,6 +35,8 @@ export interface PrescriptionDocumentProps {
     adviceNotes?: string;
     /** delivered in the clinic today — printed as its own section */
     therapyNotes?: string;
+    /** the home programme, one formatted line each */
+    exerciseLines?: string[];
     doctor?: DoctorShape | null;
     hospital?: DBHospital | null;
     vitals?: Vitals;
@@ -84,6 +86,7 @@ function StandardDocument({
     followUpDays,
     adviceNotes,
     therapyNotes,
+    exerciseLines = [],
     doctor,
     hospital,
     vitals,
@@ -438,6 +441,20 @@ function StandardDocument({
                     </div>
                 )}
 
+                {/* The home programme. This IS the prescription for a
+                    physiotherapy patient, so it prints as its own section
+                    rather than as instructions. */}
+                {exerciseLines.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                            Home Exercise Programme
+                        </div>
+                        {exerciseLines.map((line, i) => (
+                            <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>{i + 1}. {line}</div>
+                        ))}
+                    </div>
+                )}
+
                 {/* Instructions */}
                 <div>
                     <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
@@ -480,6 +497,7 @@ function ThermalDocument({
     followUpDays,
     adviceNotes,
     therapyNotes,
+    exerciseLines = [],
     doctor,
     hospital,
     date,
@@ -586,6 +604,16 @@ function ThermalDocument({
                 <>
                     <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>Investigations</div>
                     {tests.map((t) => <div key={t} style={th}>- {t}</div>)}
+                    {divider}
+                </>
+            )}
+
+            {/* Home programme, thermal format. */}
+            {exerciseLines.length > 0 && (
+                <>
+                    {exerciseLines.map((line, i) => (
+                        <div key={i} style={th}>{i + 1}. {line}</div>
+                    ))}
                     {divider}
                 </>
             )}
