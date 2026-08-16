@@ -34,6 +34,7 @@ import {
   fetchFavouriteMedicines,
   toggleFavouriteMedicine,
   fetchDoctor, fetchHospital, fetchSnapshotSuggestions,
+  logVisitMeasurements,
   type DBSymptom, type DBFinding, type RankedMedicine,
   type SaveConsultMedicine, type RealVisit, type FrequentPick,
   type DBDoctor, type DBHospital, type ClinicalSnapshot,
@@ -620,6 +621,12 @@ function App() {
         tagSignature,
         compositionIds: [...new Set(prescriptionCompositionIds)],
       }).catch((e) => console.warn("logCoprescriptionObservations (non-fatal):", e));
+
+      // Same vitals already saved above as free text on the visit row — this
+      // parses them into numeric rows so a future trend view has something to
+      // query. Best-effort: a doctor who skipped vitals just logs nothing.
+      logVisitMeasurements(visitId, vitals)
+        .catch((e) => console.warn("logVisitMeasurements (non-fatal):", e));
 
       setIsReviewOpen(false);
       resetConsultState();

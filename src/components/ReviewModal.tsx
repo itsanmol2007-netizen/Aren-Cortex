@@ -396,13 +396,23 @@ export default function ReviewModal({
               </div>
 
               {/* ══ Vitals ══ */}
-              {vitals && Object.values(vitals).some(Boolean) && (
+              {vitals && Object.values(vitals).some(Boolean) ? (
                 <div className="px-8 py-3 border-b border-blue-100/60 bg-blue-50/40 flex flex-wrap gap-6">
                   {vitals.bp && <VitalChip label="BP" value={vitals.bp} unit="mmHg" />}
                   {vitals.pulse && <VitalChip label="Pulse" value={vitals.pulse} unit="bpm" />}
                   {vitals.temp && <VitalChip label="Temp" value={vitals.temp} unit="°F" />}
                   {vitals.spo2 && <VitalChip label="SpO₂" value={vitals.spo2} unit="%" />}
                   {vitals.weight && <VitalChip label="Weight" value={vitals.weight} unit="kg" />}
+                </div>
+              ) : (
+                // Soft nudge only — vitals stay optional and this never blocks Save.
+                // Shown here (last screen before saving) rather than nagging on the
+                // topbar through the whole consult.
+                <div className="px-8 py-2.5 border-b border-amber-100/70 bg-amber-50/50 flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <p className="text-[11px] font-medium text-amber-700">
+                    No vitals recorded — optional, but this is what powers trends across visits.
+                  </p>
                 </div>
               )}
 
