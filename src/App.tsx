@@ -832,25 +832,6 @@ function App() {
            all of them. Built to docs/Aren Cortex Mock 2.png; the layout rules
            are in docs/Aren cortex visual philosophy.md. */
         <div className="cs-shell">
-          {/* ── The longitudinal band ────────────────────────────────────
-              Above everything, inside the locked shell, so a returning
-              patient's direction of travel is read before anything is typed
-              and it never scrolls away with the work.
-
-              It renders NOTHING for a patient with no history — not an empty
-              frame, not a placeholder — so a first consult is exactly the
-              screen it was before this existed. One component for every
-              profile; `specialty.trend` is the only thing that differs.
-              See LongitudinalBand.tsx. */}
-          <LongitudinalBand
-            summary={trendSummary}
-            pastVisits={pastVisits}
-            carePlan={carePlan.plan}
-            sessionNumbers={carePlan.sessionNumbers}
-            onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
-            onEditCarePlan={() => setCarePlanSheetOpen(true)}
-            onStartCarePlan={() => setCarePlanSheetOpen(true)}
-          />
           <main className="cs-page">
             {/* Context first, but not at the same visual weight as the three
                 cards below it. Most consults tick zero or one of these — equal
@@ -872,6 +853,31 @@ function App() {
                 earn a full-width card just by existing, and every module here
                 sizes to its content. */}
             <div className="cs-work">
+              {/* ── The longitudinal band ──────────────────────────────────
+                  First thing in the scrolling column, 2026-08-17 — moved
+                  out from above `.cs-page`, where it permanently ate into
+                  `.cs-shell`'s locked height (atlas §14.23's own Open note:
+                  "~200px out of a locked-height shell... real pressure on
+                  the Assessment on a short laptop"). It is still the first
+                  thing on screen before any scrolling happens, so the spec's
+                  "read before anything is typed" still holds; it just no
+                  longer costs that space for the rest of the consult too.
+                  It also collapses to one line — see LongitudinalBand.tsx.
+
+                  It renders NOTHING for a patient with no history — not an
+                  empty frame, not a placeholder — so a first consult is
+                  exactly the screen it was before this existed. One
+                  component for every profile; `specialty.trend` is the only
+                  thing that differs. */}
+              <LongitudinalBand
+                summary={trendSummary}
+                pastVisits={pastVisits}
+                carePlan={carePlan.plan}
+                sessionNumbers={carePlan.sessionNumbers}
+                onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
+                onEditCarePlan={() => setCarePlanSheetOpen(true)}
+                onStartCarePlan={() => setCarePlanSheetOpen(true)}
+              />
               {/* The input half of the screen — the one part that genuinely
                   differs by profile. GeneralOpdInputs / SoapInputs.tsx: see
                   their headers for why the split stops exactly here and does

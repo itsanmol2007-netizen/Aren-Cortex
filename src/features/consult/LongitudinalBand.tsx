@@ -32,6 +32,20 @@
 // readable at a glance without interaction, and "View full visit timeline"
 // is the expand.
 //
+// ── It scrolls with the work now, and it can collapse to one line (2026-08-17)
+//
+// Originally pinned above `.cs-page`, permanently out of the locked shell's
+// height budget — the doctrine's own §14.23 Open note already named the cost:
+// "~200px out of a locked-height shell... real pressure on the Assessment on
+// a short laptop." Anmol hit exactly that on a 14" screen and asked for both
+// fixes at once: let it scroll past like everything else in `.cs-work`
+// (App.tsx now mounts it as `.cs-work`'s first child, not above `.cs-page`),
+// and let the doctor collapse the row of cards down to the title line, open
+// by default so the "before typing anything" promise in the spec still
+// holds on first paint. `collapsed` below is that second half; it never
+// hides the header itself (title, visit count, long-absence flag, the "Care
+// plan" starter), only the cards row and the timeline expand beneath it.
+//
 // ── It does not exist for a new patient
 //
 // Not empty, not a placeholder frame — absent. `pastVisits.length === 0`
@@ -307,6 +321,10 @@ export function LongitudinalBand({
     onStartCarePlan: () => void;
 }) {
     const [timelineOpen, setTimelineOpen] = useState(false);
+    // Open by default — the spec's "before typing anything" promise means the
+    // doctor must see this on first paint — but collapsible, so it costs
+    // nothing once read. See the file header for why this exists.
+    const [collapsed, setCollapsed] = useState(false);
 
     // The whole component, gone, for a patient with no history. See the header.
     if (pastVisits.length === 0) return null;
@@ -330,9 +348,22 @@ export function LongitudinalBand({
     }
 
     return (
-        <section className="cs-lt" aria-label="Longitudinal summary">
+        <section className={`cs-lt${collapsed ? " is-collapsed" : ""}`} aria-label="Longitudinal summary">
             <header className="cs-lt-head">
-                <h2 className="cs-lt-title">Longitudinal summary</h2>
+                {/* The whole collapse control. A button wrapping the title
+                    rather than a separate icon: the title IS what you click,
+                    same convention as `.cs-lt-expand` below it. */}
+                <button
+                    type="button"
+                    className="cs-lt-collapse"
+                    onClick={() => setCollapsed((v) => !v)}
+                    aria-expanded={!collapsed}
+                    title={collapsed ? "Show the longitudinal summary" : "Hide the longitudinal summary"}
+                >
+                    <ChevronDown size={13} className={collapsed ? "" : "is-open"} aria-hidden="true" />
+                    <h2 className="cs-lt-title">Longitudinal summary</h2>
+                </button>
+
                 <span className="cs-lt-sub">
                     {summary.visitCount} previous visit{summary.visitCount === 1 ? "" : "s"}
                 </span>
@@ -358,67 +389,76 @@ export function LongitudinalBand({
                 )}
             </header>
 
-            <div className="cs-lt-row">
-                {summary.series.map((s) => <TrendCard key={s.key} series={s} />)}
+            {/* Everything below the header is what collapses. The header
+                itself — title, visit count, long-absence flag, the care-plan
+                starter — stays put either way, so "collapsed" still answers
+                "has this patient been here before, and is anything overdue?"
+                at a glance. */}
+            {!collapsed && (
+                <>
+                    <div className="cs-lt-row">
+                        {summary.series.map((s) => <TrendCard key={s.key} series={s} />)}
 
-                {carePlan && (
-                    <CarePlanCard plan={carePlan} sessionNumber={currentSession} onEdit={onEditCarePlan} />
-                )}
+                        {carePlan && (
+                            <CarePlanCard plan={carePlan} sessionNumber={currentSession} onEdit={onEditCarePlan} />
+                        )}
 
-                <LastVisitCard visit={lastVisit} onOpen={(x) => onOpenVisit(lastVisit, x)} />
+                        <LastVisitCard visit={lastVisit} onOpen={(x) => onOpenVisit(lastVisit, x)} />
 
-                {/* A returning patient with nothing trendable yet. Says so
-                    rather than leaving a row of cards that does not explain
-                    its own emptiness — and says the useful half of why, which
-                    is that one reading is not a trend. */}
-                {summary.series.length === 0 && (
-                    <p className="cs-lt-none">
-                        No measurement has been recorded twice yet — a trend needs two visits with
-                        the same reading.
-                    </p>
-                )}
-            </div>
+                        {/* A returning patient with nothing trendable yet. Says so
+                            rather than leaving a row of cards that does not explain
+                            its own emptiness — and says the useful half of why, which
+                            is that one reading is not a trend. */}
+                        {summary.series.length === 0 && (
+                            <p className="cs-lt-none">
+                                No measurement has been recorded twice yet — a trend needs two visits with
+                                the same reading.
+                            </p>
+                        )}
+                    </div>
 
-            <button
-                type="button"
-                className="cs-lt-expand"
-                onClick={() => setTimelineOpen((v) => !v)}
-                aria-expanded={timelineOpen}
-            >
-                {timelineOpen ? "Hide" : "View full"} visit timeline
-                <ChevronDown size={13} className={timelineOpen ? "is-open" : ""} aria-hidden="true" />
-            </button>
+                    <button
+                        type="button"
+                        className="cs-lt-expand"
+                        onClick={() => setTimelineOpen((v) => !v)}
+                        aria-expanded={timelineOpen}
+                    >
+                        {timelineOpen ? "Hide" : "View full"} visit timeline
+                        <ChevronDown size={13} className={timelineOpen ? "is-open" : ""} aria-hidden="true" />
+                    </button>
 
-            {/* The expand. Every visit, newest first, each one opening the
-                SAME `PastVisitCard` the header's chips open — the spec's "do
-                not build a second detail view" is why this is a list of rows
-                and not a second detail panel. */}
-            {timelineOpen && (
-                <ol className="cs-lt-timeline">
-                    {pastVisits.map((v) => {
-                        const n = sessionNumbers.get(v.id);
-                        return (
-                            <li key={v.id}>
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                        onOpenVisit(v, r.left + r.width / 2);
-                                    }}
-                                >
-                                    <span className="cs-lt-tl-date">{formatVisitDate(v.created_at)}</span>
-                                    {n !== undefined && <span className="cs-lt-tl-session">Session {n}</span>}
-                                    <span className="cs-lt-tl-what">
-                                        {v.medicines.length > 0
-                                            ? v.medicines.map((m) => m.name).slice(0, 2).join(", ")
-                                            : v.symptoms.slice(0, 2).join(", ") || "No detail recorded"}
-                                    </span>
-                                    {v.doctor_name && <span className="cs-lt-tl-doc">Dr. {v.doctor_name}</span>}
-                                </button>
-                            </li>
-                        );
-                    })}
-                </ol>
+                    {/* The expand. Every visit, newest first, each one opening the
+                        SAME `PastVisitCard` the header's chips open — the spec's "do
+                        not build a second detail view" is why this is a list of rows
+                        and not a second detail panel. */}
+                    {timelineOpen && (
+                        <ol className="cs-lt-timeline">
+                            {pastVisits.map((v) => {
+                                const n = sessionNumbers.get(v.id);
+                                return (
+                                    <li key={v.id}>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                                onOpenVisit(v, r.left + r.width / 2);
+                                            }}
+                                        >
+                                            <span className="cs-lt-tl-date">{formatVisitDate(v.created_at)}</span>
+                                            {n !== undefined && <span className="cs-lt-tl-session">Session {n}</span>}
+                                            <span className="cs-lt-tl-what">
+                                                {v.medicines.length > 0
+                                                    ? v.medicines.map((m) => m.name).slice(0, 2).join(", ")
+                                                    : v.symptoms.slice(0, 2).join(", ") || "No detail recorded"}
+                                            </span>
+                                            {v.doctor_name && <span className="cs-lt-tl-doc">Dr. {v.doctor_name}</span>}
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                    )}
+                </>
             )}
         </section>
     );

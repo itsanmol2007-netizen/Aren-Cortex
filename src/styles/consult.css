@@ -3710,7 +3710,18 @@ body.cs-locked-shell {
 /* Given the room, the chart takes it — this is the whole reason the modal
    exists, so a tooth surface is a comfortable target instead of a 5px sliver. */
 .cs-chartmodal-body .cs-odo-svg { max-width: 100%; }
-.cs-chartmodal-body .cs-body-svg { max-width: 300px; }
+
+/* Sized down 2026-08-17. `FIGURE_VIEWBOX` (anatomy.ts) is 200:424 — at the
+   old 300px max-width the figure alone rendered ~636px tall, and once the
+   modal's own chrome (head, aspect toggle, orientation line, the marked-site
+   panel below it) is added that pushed a 14" laptop's viewport into
+   `.cs-chartmodal-body`'s own scroll, which is exactly the "you shouldn't
+   have to scroll even for the body chart" complaint. 210px keeps the joint
+   zones a comfortable tap target — each is still well clear of the touch
+   minimum — while landing the whole modal inside one view on a short
+   screen. A dermatologist zooming further is still one browser Ctrl+scroll
+   away; this is about the DEFAULT fitting, not a hard ceiling. */
+.cs-chartmodal-body .cs-body-svg { max-width: 210px; }
 
 /* LMP — a native date control, sized to sit in the measurement row without
    breaking rank with the numeric fields beside it. */
@@ -5189,22 +5200,29 @@ body.cs-locked-shell {
 }
 
 /* ════════════════════════════════════════════════════════════
-   THE LONGITUDINAL BAND  (2026-08-16)
+   THE LONGITUDINAL BAND  (2026-08-16; moved into the scroll + made
+   collapsible 2026-08-17)
 
-   `cortex-longitudinal-spec.md` §3.1's trend header. Sits between the dark
-   topbar and `.cs-page`, inside the locked shell, so it is the first thing
-   read on a returning patient and it never scrolls away with the work.
+   `cortex-longitudinal-spec.md` §3.1's trend header. Lives inside `.cs-work`
+   now, as its first child — the first thing a returning patient sees, but no
+   longer pinned above `.cs-page`, where it used to eat a fixed slice out of
+   the locked shell's height on every single screen, scrolled or not. See
+   `LongitudinalBand.tsx`'s file header for the full reasoning; this file
+   just needs to know the section is ordinary flowing content now, sized to
+   itself, not a flex-locked band with a hard bottom border pretending to be
+   chrome.
 
-   ── Two constraints shaped every number in here
+   ── Two constraints still shape every number in here
 
-   1. IT COMES OUT OF THE WORKSPACE'S HEIGHT. `.cs-shell` is a hard ceiling
-      (see its own note above) and `.cs-page` flexes into what is left, so
-      every pixel this band takes is a pixel the Assessment does not get. That
-      is why the cards are 26px sparklines and 11px labels rather than the
-      generous treatment the rest of the screen uses: this is a glance, and a
-      glance that pushes the ranked list below the fold has cost more than it
-      gave. It is also why the band is absent — not collapsed, absent — for a
-      first visit, where it would be pure overhead.
+   1. IT IS STILL A GLANCE, not a report. Before the scroll fix, every pixel
+      here came directly out of the Assessment's headroom; now it only costs
+      headroom before the doctor scrolls, which is a smaller stake but the
+      same instinct — 26px sparklines and 11px labels, not the generous
+      treatment the rest of the screen uses. It is also why the band is
+      absent — not collapsed, absent — for a first visit, where it would be
+      pure overhead, and why `.cs-lt.is-collapsed` exists at all: reading it
+      once and then reclaiming the space is a normal thing to want on a short
+      screen.
 
    2. COLOUR IS THE VERDICT, so it obeys the doctrine's palette rather than
       the obvious traffic light. Teal for improving, amber for worse, grey for
@@ -5216,13 +5234,22 @@ body.cs-locked-shell {
    ════════════════════════════════════════════════════════════ */
 
 .cs-lt {
-    flex: 0 0 auto;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: var(--cs-s2);
-    border-bottom: 1px solid var(--cs-line);
+    margin-bottom: var(--cs-s4);
+    border: 1px solid var(--cs-line);
+    border-radius: 14px;
     background: var(--cs-card);
-    padding: var(--cs-s3) var(--cs-s5) var(--cs-s2);
+    padding: var(--cs-s3) var(--cs-s4) var(--cs-s2);
+}
+
+/* Collapsed: the header's own padding is the whole footprint. No separate
+   "collapsed" layout to keep in sync with the open one — the header simply
+   stops having anything rendered beneath it (see the component). */
+.cs-lt.is-collapsed {
+    padding-bottom: var(--cs-s3);
 }
 
 .cs-lt-head {
@@ -5232,6 +5259,29 @@ body.cs-locked-shell {
 }
 
 .cs-lt-head-spacer { flex: 1; }
+
+/* The collapse control. Looks like the plain title it replaces — no border,
+   no fill — so collapsing this band reads as a light toggle, not a button
+   competing with "Care plan" for attention on the same row. */
+.cs-lt-collapse {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: none;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+}
+
+.cs-lt-collapse svg {
+    color: var(--cs-faint);
+    transition: transform 140ms ease;
+}
+
+.cs-lt-collapse svg.is-open { transform: rotate(180deg); }
+
+.cs-lt-collapse:hover .cs-lt-title { color: var(--cs-blue); }
 
 .cs-lt-title {
     margin: 0;

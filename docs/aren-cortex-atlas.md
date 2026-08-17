@@ -4472,3 +4472,84 @@ pass introduced and it closes for each profile as it moves over — one
   build this before adding rows, because every row widened the blast radius of
   a mistake nobody could take back. That reason is gone; the ~12 remaining
   chronic conditions now need only clinical content.
+
+---
+
+## 14.27 Session 2026-08-17 — the band stops eating the shell's height
+
+Anmol drove the app on a 14" laptop and reported exactly the thing §14.23's
+own Open note had already named and left unfixed: *"the top bar, trend
+chart... that's sticky and for a small laptop... taking a lot of vertical
+space. That should be scrollable... you could even hide it completely."* One
+session found the cost and wrote it down; this one paid it off.
+
+### Two independent fixes, both in `LongitudinalBand.tsx` / `App.tsx`
+
+1. **It scrolls with the work now.** It used to mount as a sibling ABOVE
+   `<main className="cs-page">`, inside `.cs-shell`'s locked, fixed-height
+   flex column — so its rendered height came directly out of what `.cs-page`
+   (and therefore the Assessment) got, on every screen, scrolled past or not.
+   It is now the first child of `.cs-work`, the column that already scrolls.
+   It is still the first thing on screen before any scrolling happens — the
+   spec's "read before anything is typed" still holds — it just no longer
+   holds that space hostage for the rest of the consult.
+2. **It collapses to one line.** A new `collapsed` state, toggled by clicking
+   the title (chevron rotates, `aria-expanded`), hides everything below the
+   header — the trend cards, care plan card, last-visit card, the visit
+   timeline expand — while leaving the header itself (title, visit count,
+   long-absence flag, the "Care plan" starter) always visible. Open by
+   default, per Anmol: *"by default it will be open, but anybody could simply
+   close it to prevent the stretch."*
+
+Neither fix touches `trend.ts` or `SpecialtyProfile.trend` — this was
+presentation only, same boundary the file's own header has always drawn
+between the pure trend maths and where the band happens to sit on screen.
+
+### The body map modal, sized to fit one view
+
+Same complaint, different component: *"make the body chart slightly small so
+that everything fits into one view. You don't have to scroll even for the
+body chart."* `FIGURE_VIEWBOX` (`lib/body/anatomy.ts`) is 200:424, and the
+modal was rendering it at `max-width: 300px` — ~636px of figure alone, before
+the modal's own head, aspect toggle, orientation line and the marked-site
+panel beneath it. Dropped to `210px`. The joint/region zones stay well clear
+of a comfortable tap target at that size; this is the default fitting one
+view, not a hard ceiling on how large a doctor could make it.
+
+### What was NOT touched, and why it matters more than what was
+
+Driving the app surfaced that the physiotherapy body map on screen is still
+`BodyMapCard.tsx` — the dermatology site-marking tool, reused, exactly the
+gap §14.24's Open section already named: *"The body map does not surface the
+joint's measurements... this is what would make the map physio's own rather
+than dermatology's, reused."* Anmol's separate complaint — select a joint,
+then nothing but a free-text note, no chips, nothing Synapse can rank — is
+that same gap, described from the doctor's side rather than the code's. It is
+real and it is NOT a CSS fix: it needs a joint vocabulary (not skin regions),
+a side/finding-type chip set that behaves like the rest of the observable
+system doctrine already governs (manual text is the last resort, not the only
+step), and a decision about how a marked joint feeds `RELEVANT_FIELDS` to
+raise its own ROM measurements. Scoped as its own piece rather than folded
+into this session's CSS-and-layout pass, consistent with Anmol's standing
+"one specialty piece at a time, I review each" instruction (§1.4 of the
+previous handoff).
+
+### Verification
+
+`tsc -b` and `vite build` both clean. **Not verified in a live browser** —
+same network gap as every entry in this run of sessions, and this session
+did not build a dedicated Chromium harness for it either (unlike §14.23-26,
+which each did). The reasoning is arithmetic and checkable by inspection
+(the flex-column reparenting, the SVG's own viewBox ratio), but nobody has
+looked at the rendered page. Worth a real pass before treating this as done,
+same as the rest of the specialty work.
+
+### Open
+
+- **The physiotherapy body map is still dermatology's, reused.** See above —
+  this is the next real piece, not a follow-on tweak.
+- **Not screenshot-verified**, per Verification above.
+- The "consultation plan strip" repositioning Anmol mentioned in the same
+  message was not acted on — the ask was ambiguous (the plan rail already
+  runs beside the work per doctrine §2.3; "could be on top" wasn't clear on
+  top of *what*) and needs one clarifying round before touching it.
