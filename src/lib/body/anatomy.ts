@@ -25,11 +25,28 @@
 export type BodyAspect = "front" | "back";
 export type BodySide = "left" | "right";
 
+/**
+ * `elbow`, `wrist`, `hip` and `ankle` were added 2026-08-17 for the
+ * physiotherapy joint map (`JointMapCard.tsx`), which needs every major
+ * peripheral joint to be its own target — mapping a click on "forearm" to
+ * "Elbow pain" would put a joint on screen the doctor did not aim at.
+ *
+ * They are carved out of the four segments that already covered them
+ * (upper_arm/forearm, forearm/hand, pelvis/thigh, lower_leg/foot) rather
+ * than added beside them, so the silhouette is unchanged in outline and only
+ * the internal divisions moved. DERMATOLOGY GETS THEM TOO, deliberately:
+ * these four are real skin sites with their own clinical meaning (the
+ * antecubital flexure is where atopic eczema lives, the wrist is where
+ * scabies and lichen planus are looked for, the ankle is where venous
+ * eczema sits), so this is a finer index for `BodyMapCard` rather than a
+ * physiotherapy concept leaking into it. Existing `visit_body_sites` rows
+ * naming the old regions stay valid — nothing was removed or renamed.
+ */
 export type BodyRegion =
     | "head_top" | "head_bottom" | "neck"
     | "torso_upper" | "torso_lower" | "pelvis"
-    | "shoulder" | "upper_arm" | "forearm" | "hand"
-    | "thigh" | "knee" | "lower_leg" | "foot";
+    | "shoulder" | "upper_arm" | "elbow" | "forearm" | "wrist" | "hand"
+    | "hip" | "thigh" | "knee" | "lower_leg" | "ankle" | "foot";
 
 export const FIGURE_VIEWBOX = "0 0 200 424";
 /** the midline, in figure coordinates — mirroring reflects across it */
@@ -65,14 +82,23 @@ const SEGMENTS: SegmentDef[] = [
     // Arm, held clear of the trunk — zones that touch are zones a doctor
     // mis-taps.
     { region: "shoulder", path: "M74,83 L60,87 L52,103 L64,102 L68,101 Z", paired: true },
-    { region: "upper_arm", path: "M52,103 L64,102 L58,152 L44,150 Z", paired: true },
-    { region: "forearm", path: "M44,150 L58,152 L54,203 L40,200 Z", paired: true },
+    // The arm, top to bottom. Elbow and wrist are narrow bands on purpose —
+    // a joint is a narrow thing, and widening them to be easier to hit would
+    // steal area from the limb segments either side, which are what a
+    // dermatologist aims at. Both are ~14px tall in a 424px figure, which is
+    // a comfortable target once the map is open in its modal.
+    { region: "upper_arm", path: "M52,103 L64,102 L59.2,142 L45.4,142 Z", paired: true },
+    { region: "elbow", path: "M45.4,142 L59.2,142 L57.5,158 L43.4,158 Z", paired: true },
+    { region: "forearm", path: "M43.4,158 L57.5,158 L55.0,190 L41.0,188 Z", paired: true },
+    { region: "wrist", path: "M41.0,188 L55.0,190 L54,203 L40,200 Z", paired: true },
     { region: "hand", path: "M40,200 L54,203 L52,231 L38,228 Z", paired: true },
 
     // Leg
-    { region: "thigh", path: "M74,217 L99,225 L97,303 L72,303 Z", paired: true },
+    { region: "hip", path: "M74,217 L99,225 L98.5,243 L73.4,241 Z", paired: true },
+    { region: "thigh", path: "M73.4,241 L98.5,243 L97,303 L72,303 Z", paired: true },
     { region: "knee", path: "M72,303 L97,303 L97,321 L72,321 Z", paired: true },
-    { region: "lower_leg", path: "M72,321 L97,321 L94,391 L75,391 Z", paired: true },
+    { region: "lower_leg", path: "M72,321 L97,321 L94.6,378 L74.4,378 Z", paired: true },
+    { region: "ankle", path: "M74.4,378 L94.6,378 L94,391 L75,391 Z", paired: true },
     { region: "foot", path: "M75,391 L94,391 L97,413 L70,413 Z", paired: true },
 ];
 
@@ -128,11 +154,17 @@ const FRONT_LABEL: Record<BodyRegion, string> = {
     pelvis: "Groin",
     shoulder: "Shoulder",
     upper_arm: "Upper arm",
+    // The front of the elbow is the antecubital flexure — the name a
+    // dermatologist uses, and the site that actually matters there.
+    elbow: "Elbow crease",
     forearm: "Forearm",
+    wrist: "Wrist",
     hand: "Palm",
+    hip: "Hip",
     thigh: "Thigh",
     knee: "Knee",
     lower_leg: "Shin",
+    ankle: "Ankle",
     foot: "Foot",
 };
 
@@ -145,11 +177,18 @@ const BACK_LABEL: Record<BodyRegion, string> = {
     pelvis: "Buttock",
     shoulder: "Shoulder blade",
     upper_arm: "Upper arm",
-    forearm: "Elbow / forearm",
+    // Was "Elbow / forearm" while the forearm segment had to cover both.
+    // Now that the elbow is its own region, each says only what it is —
+    // a small correctness win the split paid for by itself.
+    elbow: "Elbow point",
+    forearm: "Forearm",
+    wrist: "Back of wrist",
     hand: "Back of hand",
+    hip: "Hip",
     thigh: "Back of thigh",
     knee: "Back of knee",
     lower_leg: "Calf",
+    ankle: "Heel",
     foot: "Sole",
 };
 

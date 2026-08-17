@@ -4698,9 +4698,123 @@ screen) — same network gap as every entry in this run.
 
 ### Open
 
-- **Elbow, wrist, hip and ankle have no zone yet** — see above. The DB
-  already allows the regions; the figure does not yet draw them.
-- **No joint→measurement-field relevance mapping** — see above.
 - **Not driven against the live `App.tsx`**, only a standalone harness.
 - **Physiotherapy's labels are still General OPD's** in places — carried
   forward from §14.24/§14.25, still awaiting Anmol's review pass.
+
+*(The first two items originally recorded here — the four missing joint
+zones and the joint→measurement mapping — were closed the same day in
+§14.29 below.)*
+
+---
+
+## 14.29 Session 2026-08-17c — the four missing joints, and closing the loop to Measurements
+
+§14.28 shipped with two named gaps and Anmol asked for both, immediately:
+*"what about the concern you were saying that only five joints have a
+specific pain chip and others have not, and marking a joint doesn't yet
+surface its own measurement fields."* Both closed here.
+
+### The four missing zones
+
+`lib/body/anatomy.ts` had fourteen regions, authored for dermatology, and
+four of the nine joint-pain observables had nowhere to be clicked. Elbow,
+wrist, hip and ankle are now real zones — **carved out of the segments that
+already covered them** (upper_arm/forearm, forearm/hand, pelvis/thigh,
+lower_leg/foot) rather than added beside them, so the silhouette's outline
+is byte-identical and only the internal divisions moved.
+
+**Dermatology gets them too, deliberately, and that is the right answer
+rather than a side effect**: the antecubital flexure is where atopic eczema
+lives, the wrist is where scabies and lichen planus are looked for, the
+ankle is where venous eczema sits. These are four sites a dermatologist
+genuinely wants to be able to name, so this is a finer index for
+`BodyMapCard` rather than a physiotherapy concept leaking into it. Existing
+`visit_body_sites` rows naming the old regions stay valid — nothing was
+removed or renamed, and the region CHECK constraint had already been
+widened in §14.28.
+
+Splitting the elbow out also fixed a small pre-existing wart: the back view
+labelled the forearm region *"Elbow / forearm"* because one region had to
+cover both. Each now says only what it is.
+
+### ⚠ A real bug in §14.28, found by extending it
+
+The first cut keyed the pain chip on REGION ALONE. `torso_upper` is
+"Chest" from the front and "Upper back" from behind; `torso_lower` is
+"Abdomen" and "Lower back". So clicking a patient's **chest** offered
+**"Upper back pain"** — a confident wrong answer of exactly the kind
+`trend.ts`'s header warns about, one layer up. `jointPainChip()` takes the
+aspect now, and the two torso regions answer only on the back view; the
+front falls through to the generic chips. Every limb region means the same
+thing from either side and ignores the argument. Asserted directly in the
+browser, both ways round.
+
+### Closing the loop to Measurements — through the chip, not the site
+
+§14.24 framed this as needing "a mapping that does not exist" from body
+sites to signals. **That framing was obsolete the moment §14.28 landed.**
+The joint map no longer records only a site — it toggles a real observable,
+and observables already emit signals: every joint-pain observable in the
+catalogue carries a per-joint signal (`KNEE_PAIN`, `SHOULDER_PAIN`,
+`HIP_PAIN`, `ANKLE_FOOT_PAIN`, `NECK_PAIN`, `LOW_BACK_PAIN`, read off
+`observable_signals`, not assumed). `RELEVANT_FIELDS` is keyed by signal.
+So the loop closes through machinery that already existed, with no
+site→signal mapping written at all: mark the right knee → "Knee pain"
+toggles → KNEE_PAIN fires → knee flexion and extension lag surface in
+Measurements.
+
+**`JOINT_RANGE_FIELDS` is a SECOND map, not more rows in the first, and
+that is the whole design decision.** `RELEVANT_FIELDS` is global — every
+profile reads it, correctly, because temperature-on-fever is relevant to
+whoever is in the room. Knee flexion in degrees is not: folding these rows
+into it would put four goniometry boxes in front of a general physician the
+instant they ticked "Knee pain", pushing blood pressure down the card to
+make room for a measurement they will never take. So `relevantFields()`
+takes an optional second map and `App.tsx` passes it only when the profile
+carries the joint map — which is the same statement as "this clinic
+measures joint angles". Configuration, not inference; the same law as
+`primary` and `measurements`.
+
+Both sides of every joint surface, always. A chip carries no laterality
+anywhere in this product (Anmol's §14.28 decision), so KNEE_PAIN cannot
+know which knee — and the uninvolved side is the reference a range
+measurement is read against anyway. Knee girth hangs off `JOINT_SWELLING`
+rather than `KNEE_PAIN`, because girth measures a swelling, not a painful
+joint.
+
+### The check got extended rather than trusted
+
+`check:measures` validated `RELEVANT_FIELDS` in two ways — every field is
+real, every key is a real signal — and knew nothing about the new map. A
+second map that fires through the identical lookup can fail in the
+identical two ways, so the script now iterates BOTH maps rather than naming
+one. That is trap 8 in the handoff ("when two things must agree, make one
+read the other") applied to the check itself. **Confirmed non-vacuous**:
+mistyping `kneeFlexL` inside `JOINT_RANGE_FIELDS` fails the check, and it
+passes again when restored.
+
+### Verification
+
+- **18 zones confirmed present in the DOM** (was 14), and all four new
+  joints confirmed to offer their specific pain chip: elbow → "Elbow
+  pain", hip → "Hip pain", ankle → "Ankle / foot pain", wrist → "Wrist /
+  hand pain", each followed by the four generic chips.
+- **The aspect fix asserted both ways**: front chest offers NO "Upper back
+  pain"; the same region on the back view does.
+- Screenshotted at 1366×900 — the figure's outline is unchanged and the
+  four new bands read as joints rather than as stray lines.
+- `tsc -b`, `vite build`, `check:trend` (148), `check:measures` all clean;
+  the seven new signal ids were checked against `signals` in Postgres
+  directly, since the script's DB half skips without credentials.
+- **Not driven against the live app**, same network gap as every entry in
+  this run. Anmol has said he will do that pass himself.
+
+### Open
+
+- **Elbow, wrist and the spine have no degree field** in the catalogue, so
+  they keep `romPct` and appear in `JOINT_RANGE_FIELDS` not at all. Content,
+  not code — the fields would be elbow flexion/extension and wrist
+  flexion/extension, per side.
+- **Physiotherapy's labels are still General OPD's** — carried forward
+  again, still awaiting the review pass.

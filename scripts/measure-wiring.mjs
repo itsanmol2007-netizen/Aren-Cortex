@@ -111,7 +111,7 @@ async function load(rel, tmpName) {
     return mod;
 }
 
-const { MEASURE_FIELDS, RELEVANT_FIELDS } = await load("../src/features/consult/measures.ts", "measures");
+const { MEASURE_FIELDS, RELEVANT_FIELDS, JOINT_RANGE_FIELDS } = await load("../src/features/consult/measures.ts", "measures");
 const { vitalsToMeasurements } = await load("../src/lib/synapse/consultInput.ts", "cinput");
 
 const errors = [];
@@ -217,16 +217,27 @@ if (rulesErr) {
     }
 }
 
-// ── 3. Every RELEVANT_FIELDS key is a real signal ───────────────────────────
+// ── 3. Every relevance key is a real signal ────────────────────────────────
 // A misspelt signal id is not a crash, it is a row that never fires.
+//
+// Both maps are checked identically. `JOINT_RANGE_FIELDS` (2026-08-17b) is
+// the per-facility second map `relevantFields` takes as its `extra` argument;
+// it fires through exactly the same signal lookup, so it can go wrong in
+// exactly the same two ways and is covered here rather than by remembering to.
+const RELEVANCE_MAPS = [
+    ["RELEVANT_FIELDS", RELEVANT_FIELDS],
+    ["JOINT_RANGE_FIELDS", JOINT_RANGE_FIELDS],
+];
 
 // The field half of this needs no database and always runs; only the
 // "is this a real signal id" half depends on a session.
 const fieldKeys = new Set(MEASURE_FIELDS.map((f) => f.key));
-for (const [signalId, fields] of Object.entries(RELEVANT_FIELDS)) {
-    for (const f of fields) {
-        if (!fieldKeys.has(f)) {
-            errors.push(`RELEVANT_FIELDS["${signalId}"] surfaces "${f}", which is not a field in MEASURE_FIELDS`);
+for (const [mapName, map] of RELEVANCE_MAPS) {
+    for (const [signalId, fields] of Object.entries(map)) {
+        for (const f of fields) {
+            if (!fieldKeys.has(f)) {
+                errors.push(`${mapName}["${signalId}"] surfaces "${f}", which is not a field in MEASURE_FIELDS`);
+            }
         }
     }
 }
@@ -237,15 +248,19 @@ const { data: signals, error: sigErr } = dbReadable
 if (sigErr) {
     errors.push(`could not read signals: ${sigErr.message}`);
 } else if (!dbReadable) {
-    skipped.push("signal-id validity — every RELEVANT_FIELDS key names a real signal");
+    skipped.push("signal-id validity — every relevance key names a real signal");
 } else {
     const known = new Set((signals ?? []).map((s) => s.id));
-    for (const signalId of Object.keys(RELEVANT_FIELDS)) {
-        if (!known.has(signalId)) {
-            errors.push(`RELEVANT_FIELDS key "${signalId}" is not a signal — this row has never fired and never will`);
+    let rows = 0;
+    for (const [mapName, map] of RELEVANCE_MAPS) {
+        for (const signalId of Object.keys(map)) {
+            rows++;
+            if (!known.has(signalId)) {
+                errors.push(`${mapName} key "${signalId}" is not a signal — this row has never fired and never will`);
+            }
         }
     }
-    notes.push(`${Object.keys(RELEVANT_FIELDS).length} relevance rows checked against ${known.size} signals`);
+    notes.push(`${rows} relevance rows checked against ${known.size} signals`);
 }
 
 // ── 4. Every field reaches both print surfaces ──────────────────────────────

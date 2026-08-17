@@ -35,20 +35,20 @@
 // the record/rank boundary this file draws: chips rank, the site row
 // records.
 //
-// ── Geometry: five joints today, not the whole vocabulary
+// ── Geometry: every major peripheral joint, as of 2026-08-17b
 //
 // `lib/body/anatomy.ts`'s figure was authored for dermatology's fourteen
-// skin regions. Five of them line up with an existing joint-pain observable
-// exactly — neck (cervical), shoulder, knee, and the two spine regions
-// (upper back, low back) — and this file maps only those five to a specific
-// pain chip. Elbow, wrist, hip and ankle have no zone of their own yet: the
-// DB now allows those regions (`visit_body_sites_region_check`, widened
-// 2026-08-17), but the silhouette has no shape drawn for them, and
-// reusing a neighbouring zone (forearm for elbow, say) would put the wrong
-// joint on screen with false confidence. Left for the next pass — see the
-// Open item this session's atlas entry records. Every zone still gets the
-// GENERIC finding chips (restricted ROM, swelling, stiffness, instability)
-// regardless, since those are not joint-specific.
+// skin regions, and the first cut of this card could therefore only offer a
+// specific pain chip for the five that happened to line up — neck,
+// shoulder, knee, and the two spine regions. Elbow, wrist, hip and ankle
+// are now real zones in that figure (carved out of the segments that
+// already covered them, outline unchanged), so all nine joint-pain
+// observables in the catalogue are reachable by pointing at them.
+//
+// Every zone still offers the GENERIC finding chips — restricted ROM,
+// swelling, stiffness, instability — regardless of whether it has a
+// specific pain chip, because those four are not joint-specific and a zone
+// with no chips at all would read as broken.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
@@ -61,14 +61,42 @@ import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 import type { Observable } from "../../lib/db/synapse";
 import type { CaseSheetEntry } from "./CaseSheet";
 
-/** The five zones with an exact joint-pain observable today. See file header. */
-const JOINT_PAIN_LABEL: Partial<Record<BodyRegion, string>> = {
-    neck: "Neck pain",
-    torso_upper: "Upper back pain",
-    torso_lower: "Low back pain",
-    shoulder: "Shoulder pain",
-    knee: "Knee pain",
-};
+/**
+ * Which specific pain chip a zone offers — `null` where the catalogue has no
+ * observable that means exactly that.
+ *
+ * ── It takes the ASPECT, and that is not decoration
+ *
+ * The first cut of this file keyed on region alone and was WRONG on two of
+ * them: `torso_upper` is "Chest" from the front and "Upper back" from
+ * behind, `torso_lower` is "Abdomen" and "Lower back". Offering "Upper back
+ * pain" to a doctor who clicked a patient's chest is exactly the confident
+ * wrong answer the trend module's header warns about, one layer up — so the
+ * two torso regions answer only on the back view, and the front view falls
+ * through to the generic chips. Every limb region means the same thing from
+ * either side and ignores the argument.
+ *
+ * `hand` and `foot` deliberately share their neighbouring joint's chip:
+ * the catalogue's observables are "Wrist / hand pain" and "Ankle / foot
+ * pain", one each, so the wrist and the hand genuinely are one chip.
+ */
+function jointPainChip(region: BodyRegion, aspect: BodyAspect): string | null {
+    switch (region) {
+        case "neck": return "Neck pain";
+        case "shoulder": return "Shoulder pain";
+        case "elbow": return "Elbow pain";
+        case "wrist":
+        case "hand": return "Wrist / hand pain";
+        case "hip": return "Hip pain";
+        case "knee": return "Knee pain";
+        case "ankle":
+        case "foot": return "Ankle / foot pain";
+        // Back only — see above.
+        case "torso_upper": return aspect === "back" ? "Upper back pain" : null;
+        case "torso_lower": return aspect === "back" ? "Low back pain" : null;
+        default: return null;
+    }
+}
 
 /** Not joint-specific — offered for every zone. */
 const GENERIC_FINDING_LABELS = [
@@ -132,8 +160,9 @@ export function JointMapCard({
 
     /** The chips for the currently selected zone — specific first, generic after. */
     const chipsFor = (region: BodyRegion): Observable[] => {
+        const specific = jointPainChip(region, aspect);
         const labels = [
-            ...(JOINT_PAIN_LABEL[region] ? [JOINT_PAIN_LABEL[region] as string] : []),
+            ...(specific ? [specific] : []),
             ...GENERIC_FINDING_LABELS,
         ];
         // `byLabel.get` returns undefined for a label not in the catalogue —

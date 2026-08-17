@@ -41,7 +41,7 @@ import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
 import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
-import { relevantFields } from "./features/consult/measures";
+import { relevantFields, JOINT_RANGE_FIELDS } from "./features/consult/measures";
 import { buildTrendSummary } from "./features/consult/trend";
 import { formatLine, type ExerciseLine } from "./features/consult/exercisePlan";
 import { ExercisePlanCard } from "./features/consult/ExercisePlanCard";
@@ -652,10 +652,22 @@ function App() {
    * labels, so "Fever", "Fever with rash" and the Hindi alias all surface
    * Temperature through the one signal they share. Static mapping, no
    * inference — see `measures.ts`.
+   *
+   * The second argument (2026-08-17b) is what closes the loop the joint map
+   * opens: marking the right knee toggles "Knee pain", which raises
+   * KNEE_PAIN, which now also surfaces knee flexion and extension lag in
+   * degrees — but ONLY for a facility carrying the joint map, since a
+   * general physician who ticks "Knee pain" wants nothing to do with a
+   * goniometer. `JOINT_RANGE_FIELDS`'s own comment has the full argument
+   * for why this is a per-profile map rather than more global rows.
    */
   const measureRelevance = useMemo(
-    () => relevantFields(intelligence.signals),
-    [intelligence.signals]
+    () =>
+      relevantFields(
+        intelligence.signals,
+        specialty.charts.includes("joints") ? JOINT_RANGE_FIELDS : undefined
+      ),
+    [intelligence.signals, specialty.charts]
   );
 
   const handleOpenBrandSheet = useCallback(

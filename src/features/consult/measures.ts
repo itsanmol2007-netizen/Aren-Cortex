@@ -623,6 +623,53 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     STIFFNESS_MORNING: ["romPct"],
 };
 
+/**
+ * The per-joint DEGREE fields, surfaced by the same signals as above — but
+ * only for a facility that has opted into goniometry. Added 2026-08-17b.
+ *
+ * ── Why this is a second map rather than more entries in the first
+ *
+ * `RELEVANT_FIELDS` is global: every profile reads it, which is exactly
+ * right for temperature-on-fever and SpO₂-on-breathlessness, because those
+ * are relevant to whoever is in the room. Knee flexion in degrees is not.
+ * Folding these rows into the map above would put four goniometry boxes in
+ * front of a general physician the moment they ticked "Knee pain" — a
+ * measurement they will not take, pushing blood pressure down the card to
+ * make room. That is the "auto-surfaced fields are visually distinct"
+ * promise being spent on noise.
+ *
+ * So the split is by FACILITY, using the mechanism the codebase already
+ * uses for exactly this question — `SpecialtyProfile`. `App.tsx` passes
+ * this map to `relevantFields` only when the profile carries the joint map
+ * (`charts: ["joints"]`), which is the same statement as "this clinic
+ * measures joint angles". Configuration, not inference, same law as
+ * `primary` and `measurements`.
+ *
+ * ── Both sides, every time, and that is deliberate
+ *
+ * A chip carries no laterality anywhere in this product (see
+ * `JointMapCard.tsx`'s header), so KNEE_PAIN cannot know which knee. It
+ * surfaces both and the physiotherapist fills the one they are treating —
+ * which is also the honest clinical answer, since the uninvolved side is
+ * the reference a range measurement is read against.
+ *
+ * Knee girth hangs off JOINT_SWELLING rather than KNEE_PAIN because girth
+ * is the measurement of a swelling, not of a painful joint. Elbow, wrist
+ * and the spine have no degree field in the catalogue yet; they keep
+ * `romPct` from the map above and appear here not at all.
+ */
+export const JOINT_RANGE_FIELDS: Record<string, MeasureFieldKey[]> = {
+    NECK_PAIN: ["cervicalRotL", "cervicalRotR"],
+    SHOULDER_PAIN: ["shoulderFlexL", "shoulderFlexR", "shoulderAbdL", "shoulderAbdR"],
+    HIP_PAIN: ["hipFlexL", "hipFlexR"],
+    KNEE_PAIN: ["kneeFlexL", "kneeFlexR", "kneeExtLagL", "kneeExtLagR"],
+    ANKLE_FOOT_PAIN: ["ankleDorsiL", "ankleDorsiR"],
+    JOINT_SWELLING: ["kneeGirthL", "kneeGirthR"],
+    // The function score is what a course is judged on, so any lower-limb
+    // complaint is a reason to have it on screen.
+    LOW_BACK_PAIN: ["lefs"],
+};
+
 export interface FieldRelevance {
     /** fields the chart has made worth filling in */
     keys: Set<MeasureFieldKey>;
@@ -635,14 +682,23 @@ export interface FieldRelevance {
  *
  * `signals` comes straight from the engine run, strongest first, so `because`
  * naturally names the strongest reason rather than the last one seen.
+ *
+ * `extra` is an optional SECOND map consulted alongside the global one, for
+ * fields a particular kind of facility wants and the rest would find noise —
+ * `JOINT_RANGE_FIELDS` is the only one today. See its own comment for why
+ * this is a parameter rather than more rows above.
  */
 export function relevantFields(
-    signals: { id: string; label: string }[]
+    signals: { id: string; label: string }[],
+    extra?: Record<string, MeasureFieldKey[]>
 ): FieldRelevance {
     const keys = new Set<MeasureFieldKey>();
     const because = new Map<MeasureFieldKey, string>();
     for (const s of signals) {
-        for (const key of RELEVANT_FIELDS[s.id] ?? []) {
+        const asked = extra
+            ? [...(RELEVANT_FIELDS[s.id] ?? []), ...(extra[s.id] ?? [])]
+            : RELEVANT_FIELDS[s.id] ?? [];
+        for (const key of asked) {
             keys.add(key);
             if (!because.has(key)) because.set(key, s.label);
         }
