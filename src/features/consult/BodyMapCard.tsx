@@ -223,8 +223,12 @@ export function BodyMapCard({
 
     if (presentation === "modal") {
         if (!open) return null;
+        // No eyebrow: this same card is reused for physiotherapy (§14.24's
+        // known gap — see the file header), and "Dermatology" would be
+        // actively wrong on that screen rather than merely generic. The
+        // icon still carries the premium treatment.
         return (
-            <ChartSurface title="Body map" expanded onClose={onClose ?? (() => {})}>
+            <ChartSurface title="Body map" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})}>
                 {body}
             </ChartSurface>
         );
@@ -249,7 +253,7 @@ export function BodyMapCard({
                 </button>
             </div>
 
-            <ChartSurface title="Body map" expanded={expanded} onClose={() => setExpanded(false)}>
+            <ChartSurface title="Body map" icon={<PersonStanding size={15} />} expanded={expanded} onClose={() => setExpanded(false)}>
                 {body}
             </ChartSurface>
         </section>

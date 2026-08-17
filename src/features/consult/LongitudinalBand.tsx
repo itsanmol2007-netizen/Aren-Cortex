@@ -121,6 +121,21 @@ function Sparkline({ series }: { series: TrendSeries }) {
     );
 }
 
+/**
+ * Which visit to open for a TrendCard's click — the newest point that was
+ * actually SAVED, walking back from the end so today's in-progress reading
+ * (`visitId: null`) never blocks a click from reaching the last real visit
+ * behind it. `null` only when nothing in the series was ever saved, which the
+ * caller reads as "not clickable".
+ */
+function visitForLastReading(series: TrendSeries, pastVisits: RealVisit[]): RealVisit | null {
+    for (let i = series.points.length - 1; i >= 0; i--) {
+        const id = series.points[i].visitId;
+        if (id) return pastVisits.find((v) => v.id === id) ?? null;
+    }
+    return null;
+}
+
 /** How long a series covers, in the unit a doctor would say it in. */
 function formatSpan(days: number): string {
     if (days < 1) return "today";
@@ -144,8 +159,25 @@ function VerdictArrow({ verdict, rising }: { verdict: TrendVerdict; rising: bool
  * the word. Doctrine §5: ranking is a safety property, never a verdict, and
  * the standing principle at the top of the spec is blunter still — nothing the
  * software surfaces should read as an instruction.
+ *
+ * Clickable since 2026-08-17 — Anmol: "it should open when you click on that
+ * box." The spec's own line is what shapes WHAT opens: "click to expand into
+ * the existing per-visit detail view we already have. Do not build a second
+ * detail view." So a click opens `PastVisitCard` (via `onOpen`) for the visit
+ * that produced the card's newest REAL reading — not today's in-progress one,
+ * which has no saved visit to open yet — same component `LastVisitCard` and
+ * the timeline already open. `visitForLastReading` picks it; `onOpen` is
+ * omitted (and the card renders as a plain div) when no saved visit carries
+ * this reading, which only happens if every point is today's.
  */
-function TrendCard({ series }: { series: TrendSeries }) {
+function TrendCard({
+    series, visit, onOpen,
+}: {
+    series: TrendSeries;
+    /** the visit that produced the newest SAVED point in this series, if any */
+    visit: RealVisit | null;
+    onOpen: (visit: RealVisit, x: number) => void;
+}) {
     const rising = series.delta > 0;
     const label: Record<TrendVerdict, string> = {
         improving: "Improving",
@@ -156,8 +188,8 @@ function TrendCard({ series }: { series: TrendSeries }) {
         neutral: rising ? "Up" : series.delta < 0 ? "Down" : "Steady",
     };
 
-    return (
-        <div className={`cs-lt-card is-${series.verdict}`}>
+    const body = (
+        <>
             <p className="cs-lt-card-label">
                 {series.label}
                 {series.unit && <span className="cs-lt-card-unit"> {series.unit}</span>}
@@ -191,7 +223,24 @@ function TrendCard({ series }: { series: TrendSeries }) {
             <p className="cs-lt-card-foot">
                 {series.sessions} readings · {formatSpan(series.spanDays)}
             </p>
-        </div>
+        </>
+    );
+
+    if (!visit) {
+        return <div className={`cs-lt-card is-${series.verdict}`}>{body}</div>;
+    }
+
+    return (
+        <button
+            type="button"
+            className={`cs-lt-card is-${series.verdict} cs-lt-card-open`}
+            onClick={(e) => {
+                const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                onOpen(visit, r.left + r.width / 2);
+            }}
+        >
+            {body}
+        </button>
     );
 }
 
@@ -397,7 +446,14 @@ export function LongitudinalBand({
             {!collapsed && (
                 <>
                     <div className="cs-lt-row">
-                        {summary.series.map((s) => <TrendCard key={s.key} series={s} />)}
+                        {summary.series.map((s) => (
+                            <TrendCard
+                                key={s.key}
+                                series={s}
+                                visit={visitForLastReading(s, pastVisits)}
+                                onOpen={onOpenVisit}
+                            />
+                        ))}
 
                         {carePlan && (
                             <CarePlanCard plan={carePlan} sessionNumber={currentSession} onEdit={onEditCarePlan} />

@@ -227,7 +227,7 @@ export function GrowthChartCard({
     if (presentation === "modal") {
         if (!open) return null;
         return (
-            <ChartSurface title="Growth" expanded onClose={onClose ?? (() => {})}>
+            <ChartSurface title="Growth" eyebrow="Paediatrics" icon={<TrendingUp size={15} />} expanded onClose={onClose ?? (() => {})}>
                 <div className="cs-growth-modal">
                     {metricToggle}
                     {renderBody(true)}
@@ -256,7 +256,7 @@ export function GrowthChartCard({
 
             {renderBody(false)}
 
-            <ChartSurface title="Growth" expanded={expanded} onClose={() => setExpanded(false)}>
+            <ChartSurface title="Growth" eyebrow="Paediatrics" icon={<TrendingUp size={15} />} expanded={expanded} onClose={() => setExpanded(false)}>
                 <div className="cs-growth-plot is-large">{chart}</div>
             </ChartSurface>
         </section>

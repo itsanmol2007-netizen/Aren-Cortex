@@ -372,7 +372,7 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                 {error && <p className="cs-attach-error">{error}</p>}
 
                 {showAll && (
-                    <ChartSurface title="Attachments" expanded onClose={() => setShowAll(false)}>
+                    <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)}>
                         <div className="cs-attach-body">{items.map(renderItem)}</div>
                     </ChartSurface>
                 )}
@@ -485,7 +485,7 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                 attachments and the odontogram cannot look like they were
                 built by different people. */}
             {showAll && (
-                <ChartSurface title="Attachments" expanded onClose={() => setShowAll(false)}>
+                <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)}>
                     <div className="cs-attach-body">{items.map(renderItem)}</div>
                 </ChartSurface>
             )}

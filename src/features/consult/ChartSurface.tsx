@@ -12,6 +12,23 @@
 // children are identical in both, so there is no second copy of the chart to
 // keep in sync, and no state to hand across: the card owns the state either
 // way, this only decides where the DOM lands.
+//
+// ── The header, matched to `PatientModal`'s Apple-style treatment (2026-08-17)
+//
+// Anmol, on the body map specifically, but the fix belongs here rather than
+// in one caller: "it doesn't have that purple [stripe] which most of the
+// components of this thing have... take inspiration from that patient
+// intake model." `PatientModal.tsx` (`.pm-*`) is that reference — a 4px
+// pink→purple→indigo gradient stripe across the top of the card, and an
+// icon badge + small purple "eyebrow" label sitting above the title instead
+// of a bare uppercase heading alone.
+//
+// `icon` and `eyebrow` are both optional so this stays backward compatible,
+// but every current caller now passes them (see each card's own header for
+// which icon and words) — fixed ONCE here, same reasoning as
+// `onEnterContent` two sessions ago: every chart built on this shell,
+// present and future, gets the same premium treatment for free instead of
+// each one reinventing its own header.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef } from "react";
@@ -21,6 +38,10 @@ import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 interface Props {
     title: string;
+    /** small uppercase label above the title — "Dermatology", "Odontogram"... */
+    eyebrow?: string;
+    /** shown in the small gradient badge beside the eyebrow + title */
+    icon?: React.ReactNode;
     expanded: boolean;
     onClose: () => void;
     children: React.ReactNode;
@@ -44,7 +65,7 @@ interface Props {
     onEnterContent?: () => void;
 }
 
-export function ChartSurface({ title, expanded, onClose, children, onEnterContent }: Props) {
+export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children, onEnterContent }: Props) {
     // Escape closes, matching every other overlay in this app.
     useEffect(() => {
         if (!expanded) return;
@@ -86,8 +107,15 @@ export function ChartSurface({ title, expanded, onClose, children, onEnterConten
                     }
                 }}
             >
+                <div className="cs-chartmodal-stripe" aria-hidden="true" />
                 <div className="cs-chartmodal-head">
-                    <span className="cs-chartmodal-title">{title}</span>
+                    <div className="cs-chartmodal-head-left">
+                        {icon && <span className="cs-chartmodal-icon">{icon}</span>}
+                        <div>
+                            {eyebrow && <p className="cs-chartmodal-eyebrow">{eyebrow}</p>}
+                            <span className="cs-chartmodal-title">{title}</span>
+                        </div>
+                    </div>
                     <button type="button" className="cs-chartmodal-close" onClick={onClose} aria-label="Close">
                         <X size={15} />
                     </button>

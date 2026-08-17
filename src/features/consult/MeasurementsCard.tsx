@@ -351,6 +351,8 @@ export function MeasurementsCard({
             {showAll && (
                 <ChartSurface
                     title="Measurements"
+                    eyebrow="Vitals & readings"
+                    icon={<Activity size={15} />}
                     expanded
                     onClose={() => setShowAll(false)}
                     // The dedicated way in, per ChartSurface's own doc

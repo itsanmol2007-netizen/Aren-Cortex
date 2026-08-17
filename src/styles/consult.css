@@ -3554,10 +3554,19 @@ body.cs-locked-shell {
     height: auto;
 }
 
+/* Stroke darkened 2026-08-17 — found by actually rendering it, not by
+   reading the CSS. `--cs-line-strong` (#dfe3ea) against a white fill on a
+   near-white modal panel is ~1.2:1 contrast, which is not a subtle outline,
+   it is an almost-invisible one: screenshotted at the size the modal
+   actually renders, the whole figure reads as a faint smudge with no
+   visible body. The odontogram gets away with the same faint-line
+   convention because each tooth has its own bold outer shape carrying the
+   silhouette; the body map has no equivalent outer shape; these zones ARE
+   the silhouette, so they cannot be the faintest line on the panel. */
 .cs-body-zone {
     fill: #fff;
-    stroke: var(--cs-line-strong);
-    stroke-width: 1;
+    stroke: var(--cs-faint);
+    stroke-width: 1.1;
     cursor: pointer;
     transition: fill 0.12s ease;
 }
@@ -3668,20 +3677,69 @@ body.cs-locked-shell {
         0 40px 80px -32px rgba(11, 23, 51, 0.55);
 }
 
+/* The gradient stripe, matching `.pm-top-stripe` (`PatientModal`'s
+   Apple-style redesign) exactly — same three stops, same 4px weight, same
+   corner radius as the panel it sits on. This is the "premium" mark Anmol
+   pointed at: every card built on `ChartSurface` carries it now, not just
+   the one he was looking at when he said so. */
+.cs-chartmodal-stripe {
+    flex: none;
+    height: 4px;
+    border-radius: 22px 22px 0 0;
+    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+}
+
 .cs-chartmodal-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     flex: none;
     padding: 16px 18px 10px;
 }
 
-.cs-chartmodal-title {
-    color: var(--cs-ink);
-    font-size: 13.5px;
-    font-weight: 700;
-    letter-spacing: 0.055em;
+.cs-chartmodal-head-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+/* Same badge shape as `.pm-header-icon` — pink-to-violet tint behind a
+   violet glyph, never the flat grey icon wells used elsewhere on this
+   screen. This treatment is reserved for a chart's own modal header, on
+   purpose: spend it here and it still reads as an occasion. */
+.cs-chartmodal-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #fce7f3 0%, #ede9fe 100%);
+    color: #a855f7;
+}
+
+.cs-chartmodal-eyebrow {
+    margin: 0 0 1px;
+    color: #a855f7;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+/* Dark, not the faint/muted greys the rest of this stylesheet reaches for on
+   secondary text — a modal header's title is the thing being announced, so
+   it gets the same near-black ink `.pm-title` uses rather than a quieter
+   rung of the type ramp. */
+.cs-chartmodal-title {
+    display: block;
+    color: var(--cs-ink);
+    font-size: 15px;
+    font-weight: 750;
+    line-height: 1.2;
 }
 
 .cs-chartmodal-close {
@@ -5351,6 +5409,31 @@ body.cs-locked-shell {
     border-radius: var(--cs-radius-sm);
     background: var(--cs-page);
     padding: 8px 10px 7px;
+}
+
+/* Clickable, 2026-08-17 — this is a <button> now, not a <div>, when a saved
+   visit exists behind it (`TrendCard`'s `visit` prop). Reset the button
+   defaults back to matching its non-clickable sibling exactly, then add just
+   enough affordance that "this opens something" reads without shouting over
+   the numbers, which are still the point of the card. */
+.cs-lt-card-open {
+    align-items: stretch;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+
+.cs-lt-card-open:hover {
+    border-color: var(--cs-blue);
+    box-shadow: 0 0 0 1px var(--cs-blue-soft);
+}
+
+.cs-lt-card-open:focus-visible {
+    outline: none;
+    border-color: var(--cs-blue);
+    box-shadow: 0 0 0 3px var(--cs-blue-soft);
 }
 
 .cs-lt-card-label {

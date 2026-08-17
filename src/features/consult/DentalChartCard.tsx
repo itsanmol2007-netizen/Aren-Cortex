@@ -344,7 +344,7 @@ export function DentalChartCard({
     if (presentation === "modal") {
         if (!open) return null;
         return (
-            <ChartSurface title="Dental chart" expanded onClose={onClose ?? (() => {})}>
+            <ChartSurface title="Dental chart" eyebrow="Odontogram" icon={<Smile size={15} />} expanded onClose={onClose ?? (() => {})}>
                 {body}
             </ChartSurface>
         );
@@ -373,7 +373,7 @@ export function DentalChartCard({
                 </button>
             </div>
 
-            <ChartSurface title="Dental chart" expanded={expanded} onClose={() => setExpanded(false)}>
+            <ChartSurface title="Dental chart" eyebrow="Odontogram" icon={<Smile size={15} />} expanded={expanded} onClose={() => setExpanded(false)}>
                 {body}
             </ChartSurface>
         </section>

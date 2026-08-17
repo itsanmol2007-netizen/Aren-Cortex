@@ -4534,22 +4534,67 @@ into this session's CSS-and-layout pass, consistent with Anmol's standing
 "one specialty piece at a time, I review each" instruction (§1.4 of the
 previous handoff).
 
-### Verification
+### Two more pieces, after Anmol clarified the reference
 
-`tsc -b` and `vite build` both clean. **Not verified in a live browser** —
-same network gap as every entry in this run of sessions, and this session
-did not build a dedicated Chromium harness for it either (unlike §14.23-26,
-which each did). The reasoning is arithmetic and checkable by inspection
-(the flex-column reparenting, the SVG's own viewBox ratio), but nobody has
-looked at the rendered page. Worth a real pass before treating this as done,
-same as the rest of the specialty work.
+His "purple hand" turned out to be a mishearing of "purple **band**" — the
+4px pink→purple→indigo gradient stripe across the top of `PatientModal.tsx`
+(`.pm-*`, headed literally `/* Patient modal — Apple-style redesign */` in
+its own CSS), which Anmol confirmed IS the reference once asked directly.
+Two follow-ons, both landed the same pass:
+
+1. **`ChartSurface` — the shared modal shell for the body map, odontogram,
+   growth chart and Measurements' "More" — now carries the same treatment**:
+   the gradient stripe, an icon badge (pink-to-violet tint behind a violet
+   glyph, matching `.pm-header-icon` exactly), a small purple "eyebrow"
+   label, and a dark 15px title instead of the bare uppercase label it had.
+   Fixed once at the shared layer, same reasoning as `onEnterContent` in
+   §14.22e — every chart built on this shell gets it, not just the one
+   Anmol was looking at. `BodyMapCard` deliberately gets NO eyebrow: it is
+   reused for physiotherapy (see Open below), and labelling it
+   "Dermatology" would be actively wrong on that screen rather than merely
+   generic.
+2. **Trend cards in the longitudinal band are clickable now.** "It should
+   open when you click on that box" — a `TrendCard` opens the same
+   `PastVisitCard` the header chips and the timeline already open, for the
+   visit that produced the card's newest SAVED reading (`visitForLastReading`
+   walks the series backward past today's unsaved point, which carries no
+   visit to open). Reuses the existing detail view rather than building a
+   second one, per the spec's own explicit constraint.
+
+### Verification — and a real defect the browser found, not the code review
+
+`tsc -b`, `vite build` and `check:trend` (148, unchanged — none of this
+touched `trend.ts`'s arithmetic) all clean. Unlike the first half of this
+entry, **this half WAS driven through a real Chromium harness** — a
+throwaway Vite entry mounting `LongitudinalBand` (with `buildTrendSummary`
+run for real against fabricated physiotherapy visits) and `BodyMapCard` in
+its modal, screenshotted at 1366×768, deleted afterward.
+
+That screenshot caught something code review had not: **`.cs-body-zone`'s
+stroke was `--cs-line-strong` (#dfe3ea) on a white fill on a near-white
+panel — roughly 1.2:1 contrast — which rendered the entire body figure as a
+barely-visible smudge.** Not new, and not caused by this session's resize;
+just never looked at. The odontogram gets away with an equally faint
+internal line (`--cs-line`) because each tooth has its own bold outer shape
+carrying the silhouette — the body map has no equivalent outer shape, these
+zones ARE the silhouette, so the faintest line on the panel was exactly the
+wrong place to put them. Darkened to `--cs-faint` at `stroke-width: 1.1`;
+confirmed by a second screenshot that the figure reads clearly at the new
+210px size with no scroll. Also confirmed in the harness: the whole-band
+collapse (open → one line → open again), and the trend-card click firing
+`onOpenVisit` with no console error.
 
 ### Open
 
-- **The physiotherapy body map is still dermatology's, reused.** See above —
-  this is the next real piece, not a follow-on tweak.
-- **Not screenshot-verified**, per Verification above.
+- **The physiotherapy body map is still dermatology's, reused.** See the
+  Open item above §14.27's Verification — this is the next real piece, not
+  a follow-on tweak.
+- **`PastVisitCard`, what a trend-card click actually opens, was not itself
+  screenshotted this pass** — only that the click reaches `onOpenVisit`
+  cleanly. It already has its own dedicated `.pv-*` styling (stripe, orb,
+  eyebrow) from an earlier, undocumented session, so it was assumed
+  adequate rather than re-verified; worth a look if it turns out not to be.
 - The "consultation plan strip" repositioning Anmol mentioned in the same
-  message was not acted on — the ask was ambiguous (the plan rail already
-  runs beside the work per doctrine §2.3; "could be on top" wasn't clear on
-  top of *what*) and needs one clarifying round before touching it.
+  original message was not acted on — the ask was ambiguous (the plan rail
+  already runs beside the work per doctrine §2.3; "could be on top" wasn't
+  clear on top of *what*) and needs one clarifying round before touching it.
