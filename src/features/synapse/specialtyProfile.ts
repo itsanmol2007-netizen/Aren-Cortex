@@ -74,8 +74,16 @@ export interface SpecialtySection {
  * the correct split: a general physician seeing a malnourished child still
  * gets the failure-to-thrive workup ranked, they just aren't shown a growth
  * curve on every adult.
+ *
+ * `joints` (2026-08-17) is `JointMapCard.tsx` — physiotherapy's own tool,
+ * NOT the dermatology body map with a relabel. It shares `body_sites`'
+ * storage and `lib/body/anatomy.ts`'s figure with `body`, but its panel is
+ * chip-first (wired to the same `onObservableToggle` the Case Sheet uses)
+ * rather than free-text-first — see that file's header for why the two
+ * screens needed to diverge rather than share one component with a branch
+ * in it.
  */
-export type ChartKind = "dental" | "body" | "growth";
+export type ChartKind = "dental" | "body" | "growth" | "joints";
 
 export interface SpecialtyProfile {
     id: string;
@@ -278,13 +286,14 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     // input here, not a general vital (SEVERE_HIGH_BP guards the whole
     // `exercise` type).
     measurements: ["painVas", "romPct", "bp", "pulse", "weight"],
-    // The body map, added 2026-08-16. It is the same instrument dermatology
-    // uses and it answers the same question — WHERE — which for a
-    // physiotherapist is which joint or region is being treated. It renders in
-    // the Assessment's second column (see ConditionsCard's `sideSlot`) rather
-    // than in the Objective row, because for this profile marking the site IS
-    // part of forming the assessment.
-    charts: ["body"],
+    // `JointMapCard`, added 2026-08-17 — replaces dermatology's `BodyMapCard`,
+    // which physiotherapy borrowed at first (§14.24) and which Anmol correctly
+    // called out: clicking a joint opened a free-text box with no chip Synapse
+    // could rank. Same WHERE question, chip-first answer. Renders in the
+    // Assessment's second column (see ConditionsCard's `sideSlot`), same slot
+    // `body` used, because for this profile marking the site IS part of
+    // forming the assessment.
+    charts: ["joints"],
     // The profile the band was built for. A physiotherapy course is two or
     // three sessions a week for weeks, and the spec is blunt about what that
     // means: the trend across sessions IS the record. Pain and overall

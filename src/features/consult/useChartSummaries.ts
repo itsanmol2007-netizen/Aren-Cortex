@@ -7,6 +7,10 @@
 // describe a tooth differently from the odontogram beside it:
 //   dental -> TOOTH_LABEL + surfaceLabel + DENTAL_CONDITION_LABEL
 //   body   -> siteLabel (region + aspect + side, as one phrase)
+//   joints -> the same `listBodySites` / `siteLabel` as `body` (2026-08-17) —
+//             `JointMapCard` writes to the same `visit_body_sites` table
+//             `BodyMapCard` does, just a different chart key so a facility
+//             on `body` and one on `joints` never show the wrong launcher.
 // It is the existing conversion logic read back as a sentence.
 //
 // The fetch lives here rather than in the chart cards because the launcher
@@ -40,9 +44,10 @@ export function useChartSummaries(
     const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
     const wantDental = keys.includes("dental");
     const wantBody = keys.includes("body");
+    const wantJoints = keys.includes("joints");
 
     useEffect(() => {
-        if (!visitId || (!wantDental && !wantBody)) {
+        if (!visitId || (!wantDental && !wantBody && !wantJoints)) {
             setSummaries(new Map());
             return;
         }
@@ -68,13 +73,18 @@ export function useChartSummaries(
                 }
             }
 
-            if (wantBody) {
+            if (wantBody || wantJoints) {
                 try {
                     const items = await listBodySites(visitId);
-                    // `siteLabel` is what the body map itself renders with —
-                    // it already folds region, aspect and side into one phrase.
+                    // `siteLabel` is what the body/joint map itself renders
+                    // with — it already folds region, aspect and side into
+                    // one phrase. Both charts read the same rows; only the
+                    // launcher key differs, and a facility only ever has one
+                    // of the two in `specialty.charts` at a time.
                     const parts = items.map((s) => siteLabel(s.region, s.aspect, s.side));
-                    next.set("body", joinWithRest(parts));
+                    const summary = joinWithRest(parts);
+                    if (wantBody) next.set("body", summary);
+                    if (wantJoints) next.set("joints", summary);
                 } catch {
                     /* as above */
                 }
@@ -84,7 +94,7 @@ export function useChartSummaries(
         })();
 
         return () => { cancelled = true; };
-    }, [visitId, wantDental, wantBody, refreshKey]);
+    }, [visitId, wantDental, wantBody, wantJoints, refreshKey]);
 
     return summaries;
 }

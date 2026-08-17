@@ -34,6 +34,7 @@ import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
 import { SoapInputs } from "./features/consult/SoapInputs";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { BodyMapCard } from "./features/consult/BodyMapCard";
+import { JointMapCard } from "./features/consult/JointMapCard";
 import { GrowthChartCard } from "./features/consult/GrowthChartCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
@@ -540,6 +541,7 @@ function App() {
       ([
         { key: "dental", label: "Dental Chart", icon: <Smile size={20} /> },
         { key: "body", label: "Body Map", icon: <PersonStanding size={20} /> },
+        { key: "joints", label: "Joint Map", icon: <PersonStanding size={20} /> },
         { key: "growth", label: "Growth", icon: <TrendingUp size={20} /> },
       ] as const)
         .filter((t) => specialty.charts.includes(t.key))
@@ -1192,6 +1194,25 @@ function App() {
               onClose={() => setOpenChart(null)}
               visitId={visitId}
               doctorId={identity.isReal ? identity.doctorId : null}
+              disabled={!patient}
+            />
+          )}
+
+          {/* Physiotherapy's own tool, not the derm body map relabelled — see
+              `JointMapCard.tsx`. `observables` / `caseSheetEntries` /
+              `handleObservableToggle` are the exact same three the Case Sheet
+              itself is built on, so a chip lit from the joint map is lit
+              there too. */}
+          {specialty.charts.includes("joints") && (
+            <JointMapCard
+              presentation="modal"
+              open={openChart === "joints"}
+              onClose={() => setOpenChart(null)}
+              visitId={visitId}
+              doctorId={identity.isReal ? identity.doctorId : null}
+              observables={observables}
+              caseSheetEntries={caseSheetEntries}
+              onObservableToggle={handleObservableToggle}
               disabled={!patient}
             />
           )}

@@ -4598,3 +4598,109 @@ collapse (open → one line → open again), and the trend-card click firing
   original message was not acted on — the ask was ambiguous (the plan rail
   already runs beside the work per doctrine §2.3; "could be on top" wasn't
   clear on top of *what*) and needs one clarifying round before touching it.
+
+---
+
+## 14.28 Session 2026-08-17b — physiotherapy gets its own body map, chips first
+
+Anmol's original complaint, restated precisely: *"if you will add manual
+comment, then how will Synapse know what to do with it and what to rank?
+There is no any chips and all for that."* True, and worth being exact about
+WHY: what physiotherapy had was `BodyMapCard` — dermatology's tool, reused,
+free text as the only next step after clicking a joint. That was correct
+FOR DERMATOLOGY (a lesion's appearance is not in the chip catalogue) and
+wrong for physiotherapy (a joint's problem almost always is). §14.24 had
+already named this exact gap and left it; this session closed it, on two
+explicit confirmations rather than guesses:
+
+1. **Laterality stays record-only**, same as every other chip in the
+   product — no observable anywhere distinguishes "Right knee pain" from
+   "Left knee pain" today, and inventing that axis for one specialty alone
+   would be new architecture, not configuration.
+2. **`visit_body_sites.region`'s CHECK constraint widened** (migration
+   `widen_body_sites_region_for_physio_joints`) to add `hip`, `ankle`,
+   `elbow`, `wrist`, `lumbar_spine` — additive, existing dermatology values
+   untouched, authorised before applying.
+
+### What the catalogue already had, checked in Postgres before designing anything
+
+`Knee pain`, `Shoulder pain`, `Hip pain`, `Elbow pain`, `Wrist / hand pain`,
+`Ankle / foot pain`, `Neck pain`, `Upper back pain`, `Low back pain` all
+exist as symptom observables already wired to Synapse. So do the
+finding-type ones: `Restricted range of motion`, `Joint swelling /
+effusion`, `Joint stiffness`, `Joint gives way`. Nothing new needed writing
+to the observable catalogue — the gap was never content, it was that the
+body map had no way to REACH any of it except by typing past it into a note.
+
+### `JointMapCard.tsx` — copied, not branched
+
+Doctrine's own rule for `GeneralOpdInputs.tsx` applied here at a smaller
+scale: copy the file the day the screen genuinely diverges, don't grow a
+specialty conditional inside a shared one. `BodyMapCard`'s whole shape is
+"pick a site, describe it in your own words" and that is correct for derm.
+`JointMapCard` shares its geometry (`lib/body/anatomy.ts`, unchanged) and
+its storage (`visit_body_sites`, via the same `lib/db/bodySites.ts`) but its
+panel is chip-first: click a joint, and the panel shows a specific pain chip
+(where one exists) plus the four generic finding chips, each one wired to
+the *exact* `onObservableToggle` the Case Sheet itself uses — a chip lit
+here is lit there, and vice versa, because it is not a second system, it is
+the same one reached from a different entry point. Free text is still
+there, still saved to the site row, framed as "Anything a chip doesn't
+capture" — last resort, not the only option, which is doctrine's own
+standing rule finally applied to this screen.
+
+`PHYSIOTHERAPY.charts` changed `["body"]` → `["joints"]`. `ChartKind`
+gained a fourth member. Wired at the same layer as every other chart —
+`chartTools`, the Measurements-row launcher, `useChartSummaries` (which now
+reads the SAME rows for `body` and `joints`, since both write to
+`visit_body_sites` and only the launcher key differs), and `SettingsPage`'s
+`CHART_LABEL` map, which `tsc` caught immediately as an exhaustiveness
+error the moment `ChartKind` grew a member — exactly the seam a union type
+is for.
+
+### What this session deliberately did NOT build
+
+**Only five joints have a specific pain chip: neck, shoulder, knee, upper
+back, low back.** Those are the ones where an existing observable lines up
+1:1 with an existing zone in `lib/body/anatomy.ts`'s figure. Elbow, wrist,
+hip and ankle have no zone of their own — the DB now allows those regions,
+but the silhouette has no shape drawn for them, and mapping a click on the
+existing "forearm" zone to "Elbow pain" would put a joint on screen the
+doctor didn't actually click. Every zone still offers the four GENERIC
+finding chips regardless, so the card is never useless on an unmapped
+region — it just doesn't yet offer that joint's specific pain chip. This is
+real, scoped, honest debt, not silently dropped: drawing four new zones
+(elbow, wrist, hip, ankle) into the shared figure without touching derm's
+existing ones is the next piece.
+
+**The joint→measurement-fields mapping is also not built.** Marking the
+right knee could raise `kneeFlexR` / `kneeExtLagR` / `kneeGirthR` in
+Measurements the same way a symptom chip raises a relevant field today —
+the machinery (`RELEVANT_FIELDS`) exists, body/joint sites still emit
+nothing into it. Documented as open in §14.24 already; still open.
+
+### Verification
+
+`tsc -b`, `vite build`, `check:measures` (32 fields, unaffected) all clean.
+**Driven through a real Chromium harness** — a throwaway Vite entry
+mounting `JointMapCard` standalone with five fabricated observables and a
+local `caseSheetEntries` state (no App.tsx, no Supabase writes — `visitId`
+was a fake UUID so `listBodySites` fails harmlessly into the card's own
+error state, same as it would for a visit the doctor hasn't saved yet):
+clicking the right knee zone selects it and labels the panel "Right knee",
+the five chips render in the right order (Knee pain first, generic four
+after), clicking a chip flips its state and the SAME chip re-renders
+highlighted, matching what `onChart.has(label)` would show on the real Case
+Sheet. Not driven against the live app or the real `App.tsx` wiring
+(`observables` / `caseSheetEntries` / `handleObservableToggle` threaded
+through correctly by inspection and by `tsc`, not by clicking the real
+screen) — same network gap as every entry in this run.
+
+### Open
+
+- **Elbow, wrist, hip and ankle have no zone yet** — see above. The DB
+  already allows the regions; the figure does not yet draw them.
+- **No joint→measurement-field relevance mapping** — see above.
+- **Not driven against the live `App.tsx`**, only a standalone harness.
+- **Physiotherapy's labels are still General OPD's** in places — carried
+  forward from §14.24/§14.25, still awaiting Anmol's review pass.

@@ -46,6 +46,7 @@ const PROFILE_LIST = Object.values(PROFILES);
 const CHART_LABEL: Record<ChartKind, string> = {
     dental: "Dental chart",
     body: "Body map",
+    joints: "Joint map",
     growth: "Growth chart",
 };
 
