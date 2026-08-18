@@ -1,6 +1,7 @@
 # Physiotherapy Phase 2 — the measurement foundation (for review)
 
-**Status:** proposed, not built. Nothing applied. 2026-08-18.
+**Status:** step 1 applied; steps 2-4 CANCELLED as designed — see §6,
+which is the finding that cancelled them. 2026-08-18.
 
 **This plan opens by correcting `physiotherapy-implementation-decision.md`
 §3, which was written from a row count and a grep rather than from the
@@ -148,3 +149,62 @@ correct before the reader moves onto it.
 3. The backfill in step 3 writes to 9 existing visits' measurement rows.
    Nothing is deleted and `vitals` is untouched, but it is a write to real
    patient data and needs a yes.
+
+
+---
+
+## 6. Revision 2 — step 4 is cancelled, and the reason is a unit conversion
+
+Before switching the loader to prefer measurement rows, I checked whether
+rows and `vitals` actually agree on the five visits that carry both. **They
+do not**, and the disagreement is the silent-wrong-answer kind:
+
+| visit | `vitals.temp` | `visit_measurements.TEMP` |
+|---|---|---|
+| `a39795bc…` | `"100"` (°F, as typed) | `37.8` (°C, converted) |
+
+`visit_measurements` is **not a copy of what the doctor entered.** It is the
+ENGINE's normalized view of it, and `vitalsToMeasurements` is the
+normalizer: temperature is converted °F→°C for the rules, `bp` becomes two
+rows, `lmp` becomes `LMP_DAYS`, and `AGE` / `WAZ` are derived from things
+the doctor never typed at all.
+
+Reading it back as "what was recorded" would have shown a patient's
+temperature falling from 100 to 37.8 between two visits, drawn a confident
+downward arrow, and been wrong. That is precisely the class of failure
+`trend.ts`'s own header says it exists to prevent, introduced by the
+loader beneath it.
+
+**So the decision note's original framing was wrong in BOTH directions**,
+and this is the honest final statement of it:
+
+> `visits.vitals` is the DOCTOR's record — what was typed, in the units it
+> was typed in. `visit_measurements` is the ENGINE's record — the same
+> readings normalized for rules. They are not two homes for one fact and
+> they are not interchangeable. Neither should be promoted over the other.
+
+### What that leaves Phase 2 as
+
+Almost nothing, and that is the correct outcome rather than a shortfall:
+
+- **Step 1 (columns) — DONE.** `side` / `method` / `context` / `qualifier`
+  on `visit_measurements`, plus a `(visit_id, context)` index. Additive,
+  `context` defaults to `'baseline'`, no call site touched, no behaviour
+  changed. This is the whole prerequisite Phase 3 and Phase 5 needed.
+- **Step 2 (one mapping) — deferred to Phase 3**, where the code that
+  actually needs the reverse direction gets written. Building it now would
+  be an unused abstraction.
+- **Step 3 (backfill) — CANCELLED, and no longer needed at all.** It only
+  existed to make rows a complete superset so the loader could switch. The
+  loader is not switching. **No write to real patient data is required.**
+- **Step 4 (loader reads rows) — CANCELLED.** See above.
+
+### The rule this leaves behind
+
+**Physio's qualified measurements (AROM/PROM/MMT, baseline/post) are
+faithful in rows** — every physiotherapy field is a plain 1:1 numeric push
+in `vitalsToMeasurements`, with no conversion, unlike temp/bp/lmp/gpla.
+So Phase 3 can read and write them through `visit_measurements` safely,
+**as long as it stays inside that faithful subset and never generalises the
+loader to the converted fields.** `trend.ts` and `fetchPatientVisits` stay
+exactly as they are.
