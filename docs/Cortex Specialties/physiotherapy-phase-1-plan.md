@@ -1,311 +1,348 @@
-# Physiotherapy Phase 1 — implementation plan (for review)
+# Physiotherapy Phase 1 — implementation plan (for review, revision 2)
 
-**Status:** proposed, not built. Nothing in here has been written to the
-database or the codebase. 2026-08-17.
+**Status:** proposed, not built. Nothing applied to the database, no code
+written. 2026-08-17.
 
-Follows `physiotherapy-implementation-decision.md`, which set the six-phase
-order and put **the Story section first** — ahead of the record spine —
-because it answers questions 1–6 of the gap report's twenty-question test on
-its own, is immediately visible, and has no dependency on the measurement
-work.
+**Revision 2** folds in Anmol's final implementation direction: patient goals
+move into Phase 1, progressive disclosure becomes a core requirement rather
+than a nicety, and every field must now pass a stated test. Running that test
+against revision 1's own field list cut two controls and demoted two more —
+see §3.
+
+---
+
+## 0. The governing law, from here on
+
+> **Cortex should know a lot, but show little.**
+
+And the test every new clinical field must pass:
+
+> **Does this change clinical reasoning, treatment/dosing, or meaningful
+> progress/outcome?**
+> If not, it does not occupy the default consultation surface.
+
+This is not advice about Phase 1. It governs Phases 1–6, and it belongs in
+the doctrine (§8) so the next specialty inherits it as a law rather than as
+a preference.
+
+The objective is **not to collect more physiotherapy data.** It is to make
+the consultation able to represent physiotherapy reasoning without becoming
+an assessment form.
 
 ---
 
 ## 1. What Phase 1 delivers
 
-A physiotherapist opens a consult and the Subjective half of the screen is
-**theirs**, not a General OPD case sheet. It records how the symptom
-behaves, not just that it exists.
+The Subjective half becomes physiotherapy's: how the symptom behaves, how
+hard the patient can be pushed today, and **what they are trying to get back
+to.**
 
-Against the gap report's §27 test, Phase 1 moves these from "cannot answer"
-to "answerable from the record":
+Against the gap report's §27 test:
 
-| # | Question | How |
+| # | Question | Answered by |
 |---|---|---|
-| 1 | Why did the patient come? | onset + mechanism |
-| 3 | How do the symptoms behave? | 24-hour pattern + constancy |
-| 4 | What activities provoke them? | aggravating factors (chips) |
+| 1 | Why did the patient come? | onset + duration |
+| 3 | How do the symptoms behave? | 24-hour pattern |
+| 4 | What activities provoke them? | aggravating chips |
 | 5 | What activities are limited? | activity tolerance |
+| **6** | **What does the patient want to get back to?** | **goals — moved here from Phase 4** |
 | — | How hard can I push today? | **irritability** |
 
-Question 2 (where) is already answered by `JointMapCard`. Questions 6
-(patient goals) and 7–20 belong to later phases.
-
-**The clinically important one is irritability**, because it is the only
-field here that changes what the therapist *does* in the session rather than
-what they know. It is the physiotherapy dosing gate.
-
----
-
-## 2. The two open decisions, answered
-
-I said these needed agreement before code. Here are the positions I am
-taking — **override either in review and I will rebuild the plan, not
-argue.**
-
-### 2.1 Chips, not free text — and this is a reversal of my own earlier note
-
-My decision note leaned "aggravating/easing as free text with chip
-suggestions, because the vocabulary is unbounded." **That was wrong, and it
-repeats the exact criticism you made of the body map.** Free text is
-invisible to Synapse forever; "manual comments should be the last option"
-applies here identically.
-
-So: **aggravating and easing factors are a curated chip vocabulary** (~28
-seeded items), with a free-text field remaining as the last resort for what
-no chip covers — the same shape `JointMapCard` now uses.
-
-The vocabulary is genuinely bounded in practice for MSK: stairs, walking,
-prolonged sitting, standing, driving, bending, lifting, squatting, overhead
-reach, lying on the affected side, rising from a chair, running, twisting,
-coughing/sneezing; and for easing: rest, gentle movement, heat, ice,
-analgesia, position change, support/brace, stretching.
-
-### 2.2 Enums where it will become a signal, text where it will not
-
-- **Enums** (small, closed, will eventually be rankable): irritability,
-  24-hour pattern, constancy, onset mode.
-- **Chips** (curated vocabulary, rankable via a reserved `signal_id`):
-  aggravating, easing.
-- **Free text** (honest, engine-invisible, always optional): mechanism
-  ("twisted playing cricket"), activity tolerance ("10 min walking →
-  6/10"), and one fallback note per factor list.
+**Why goals moved earlier** (Anmol's direction, and it is right): the goal
+changes what matters during examination. A patient whose goal is "climb
+stairs at work" makes loaded knee flexion the thing worth measuring; a
+patient whose goal is "sleep through the night" makes night pain the
+outcome. Collecting the goal *after* the examination means the examination
+was never shaped by it.
 
 ---
 
-## 3. Schema — exactly what I would apply
+## 2. Progressive disclosure — the mechanism, not the intention
 
-Three tables. **Not applied yet — needs authorisation per the standing
-rule.** RLS posture copies `patient_conditions` / `care_plans`: isolation
-through `visits`, never through a nullable `hospital_id` (§14.13's bug, in
-reverse), and **policies created in the same migration as the table**, since
-RLS-on-with-zero-policies is a silent empty set (trap 2).
+"Show little" fails if it is left to per-field judgement. It needs to be a
+declared property with one implementation.
+
+Cortex already has this pattern and it is proven: `RELEVANT_FIELDS` maps a
+signal to measurement keys, and `MeasurementsCard` renders an inline set
+plus a "More" surface holding everything else. Phase 1 uses the identical
+shape for story fields, so there is one idea in the codebase, not two.
+
+Each story field declares:
+
+```ts
+interface StoryField {
+    key: string;
+    label: string;
+    /** on the default surface, always */
+    core: boolean;
+    /** revealed when the consultation makes it relevant */
+    revealWhen?: (s: Story, signals: Set<string>) => boolean;
+    // everything not core and not revealed is still reachable under "More"
+}
+```
+
+Three tiers, and **nothing is ever unreachable**:
+
+| Tier | Rule | Example |
+|---|---|---|
+| **Core** | passes the hard rule for essentially every physiotherapy patient | irritability, aggravating, goal |
+| **Revealed** | passes the rule only in a context, and the context is detectable | mechanism — only when onset is traumatic or post-surgical |
+| **Discoverable** | passes the rule rarely; never hidden, never default | free-text note |
+
+This is the doctrine's existing distinction between what is **offered** and
+what is **reachable**, applied to the Subjective half.
+
+**Across time, too:** on a follow-up visit the Story block renders collapsed
+to a one-line summary of last visit's story, with the goal scores as the
+only live controls. The story is usually already known; what changed is not.
+
+---
+
+## 3. The hard rule applied to revision 1 — what it cut
+
+Running Anmol's test honestly against my own previous field list:
+
+| Field | Verdict |
+|---|---|
+| Irritability | **Core.** Changes dosing directly. The single most load-bearing field in Phase 1. |
+| Aggravating factors | **Core.** Changes reasoning and what to avoid. |
+| Patient goal | **Core.** Defines what "better" means and directs examination. |
+| 24-hour pattern | **Core.** Morning stiffness >30 min and night pain both change reasoning. |
+| Activity tolerance | **Core.** Dosing baseline, and it is itself a progress measure. |
+| Onset | **Core, reshaped.** See below. |
+| Easing factors | **Core**, but paired into one control with aggravating rather than given its own row. |
+| ~~Constancy~~ | **CUT as its own control.** "Constant" folds into the 24-hour pattern chips. It was a separate control asking a question the pattern set already answers. |
+| ~~Mechanism~~ | **Demoted to Revealed** — appears only when onset is traumatic or post-surgical. Otherwise it is a free-text box that changes nothing. |
+| ~~Onset date~~ | **Replaced by duration chips** (<2wk / 2–6wk / 6wk–3mo / >3mo). What changes management is acute-vs-subacute-vs-chronic, not the calendar date. Faster to fill and encodes the clinically meaningful thing directly. |
+| Settling time | **New, but Revealed** — appears only when irritability is moderate or high, which is exactly when dosing precision matters. |
+| Free-text note | **Discoverable.** Always last, never default. |
+
+Net effect: the default surface is **six controls**, not eleven. That is the
+rule doing real work rather than being quoted.
+
+---
+
+## 4. Schema — three tables, and the vocabulary is code
+
+Revision 1 proposed a `story_factors` table plus a link table. **Dropped
+both**, in favour of the pattern this codebase already uses for exactly this
+problem: `MEASURE_FIELDS` is a TypeScript catalogue, and the atlas records
+as a virtue that adding a measurement field "costs no database work."
+
+The factor vocabulary therefore lives in `src/features/consult/story.ts`
+beside `measures.ts`, and the visit stores the picked keys. Adding a factor
+becomes a reviewed code change, not a migration.
 
 ```sql
--- 1. The vocabulary. Facility-independent reference data.
-create table story_factors (
-    id          bigserial primary key,
-    label       text not null,
-    direction   text not null check (direction in ('aggravating','easing')),
-    -- reserved seam: when clinical content justifies it, a factor can feed
-    -- the engine exactly the way observable_signals does. Null until then.
-    signal_id   text references signals(id),
-    sort_order  int  not null default 0,
-    active      boolean not null default true,
-    created_at  timestamptz not null default now(),
-    unique (label, direction)
-);
-
--- 2. One row per visit. Everything that is not a repeatable pick.
+-- 1. One row per visit.
 create table visit_story (
-    visit_id      uuid primary key references visits(id) on delete cascade,
-    onset_date    date,
-    onset_mode    text check (onset_mode in
-                    ('sudden','gradual','post_surgical','post_traumatic','unknown')),
-    mechanism     text,
-    irritability  text check (irritability in ('low','moderate','high')),
-    constancy     text check (constancy in ('constant','intermittent','variable')),
-    -- multi-select; small closed set, so an array beats a fourth table
-    pattern       text[] not null default '{}',
-    tolerance     text,
-    note          text,
+    visit_id     uuid primary key references visits(id) on delete cascade,
+    duration     text check (duration in ('under_2wk','2_6wk','6wk_3mo','over_3mo')),
+    onset_mode   text check (onset_mode in
+                   ('sudden','gradual','post_surgical','post_traumatic','unknown')),
+    mechanism    text,
+    irritability text check (irritability in ('low','moderate','high')),
+    settling     text check (settling in ('immediate','under_5min','5_30min','over_30min','hours')),
+    -- catalogue keys from story.ts; closed sets, never joined on
+    aggravating  text[] not null default '{}',
+    easing       text[] not null default '{}',
+    pattern      text[] not null default '{}',
+    tolerance    text,
+    note         text,
     created_by_doctor_id uuid references doctors(id) on delete set null,
-    created_at    timestamptz not null default now(),
-    updated_at    timestamptz not null default now()
+    created_at   timestamptz not null default now(),
+    updated_at   timestamptz not null default now()
 );
 
--- 3. The picks.
-create table visit_story_factors (
+-- 2. A goal belongs to the PATIENT and outlives the visit that created it.
+--    Same shape as patient_conditions, deliberately.
+create table patient_goals (
+    id            bigserial primary key,
+    patient_id    uuid not null references patients(id) on delete cascade,
+    /** the patient's own words — this is patient-authored content */
+    activity      text not null,
+    baseline_score int check (baseline_score between 0 and 10),
+    status        text not null default 'active'
+                    check (status in ('active','achieved','abandoned')),
+    created_visit_id uuid references visits(id) on delete set null,
+    created_at    timestamptz not null default now(),
+    closed_at     timestamptz
+);
+
+-- 3. Re-scored each visit. This is what makes a goal a TREND.
+create table visit_goal_scores (
     visit_id   uuid   not null references visits(id) on delete cascade,
-    factor_id  bigint not null references story_factors(id),
+    goal_id    bigint not null references patient_goals(id) on delete cascade,
+    score      int    not null check (score between 0 and 10),
     created_at timestamptz not null default now(),
-    primary key (visit_id, factor_id)
+    primary key (visit_id, goal_id)
 );
 ```
 
-`pattern` values: `morning_stiffness_under_30`, `morning_stiffness_over_30`,
-`night_pain`, `worse_end_of_day`, `worse_with_rest`, `worse_with_activity`.
+RLS on all three: isolation through `patients` / `visits`, **never** through
+a nullable `hospital_id` (§14.13's bug in reverse), and **policies created
+in the same migration as the tables**, because RLS-on-with-zero-policies is
+a silent empty set that returns no error (trap 2, and how `care_plans`
+shipped inert).
 
-**Why `pattern` is an array and factors are a table:** the pattern set is
-closed, tiny, and will never be searched across visits; the factor
-vocabulary is open-ended, needs a stable id to hang a `signal_id` off later,
-and will be queried ("how many knee patients are aggravated by stairs").
-
-### Seed
-
-~28 `story_factors` rows, all `signal_id = null` initially. Full list goes
-in `docs/Cortex Specialties/story-factors.sql` alongside the modality and
-exercise SQL, so the content is reviewable and re-appliable.
+**The `signal_id` seam moves into code**: each catalogue entry in `story.ts`
+carries an optional `signalId`, null for now. Chips record; they do not yet
+rank. Filling those in blind would repeat the "rules against signals nothing
+feeds" mistake — it waits for real usage.
 
 ---
 
-## 4. Files
+## 5. Files
 
-**New:**
+**New**
 
 | File | Purpose |
 |---|---|
-| `src/features/consult/PhysioInputs.tsx` | The physiotherapy input surface. Copy of `GeneralOpdInputs.tsx` with `StoryCard` inserted above the Case Sheet. |
-| `src/features/consult/StoryCard.tsx` | The Story block itself. |
-| `src/hooks/useVisitStory.ts` | Load / edit / persist, in the layer-1 "facts" slot per the hook table. |
-| `src/lib/db/story.ts` | Supabase boundary. Same shape as `lib/db/bodySites.ts`. |
-| `scripts/story-vocabulary.mjs` | `npm run check:story` — vocabulary + enum integrity. |
-| `docs/Cortex Specialties/story-factors.sql` | The seed, with reasoning. |
+| `src/features/consult/story.ts` | The catalogue: factors, patterns, enums, `core`/`revealWhen` per field. Pure data + predicates, no React — testable from node like `trend.ts`. |
+| `src/features/consult/StoryCard.tsx` | The block. Renders core, evaluates `revealWhen`, holds "More". |
+| `src/features/consult/GoalsCard.tsx` | Goals: add in the patient's words, score 0–10, re-score on later visits. |
+| `src/features/consult/PhysioInputs.tsx` | The physiotherapy input surface. |
+| `src/hooks/useVisitStory.ts` | Story + goals state, layer-1 "facts" slot per the hook table. |
+| `src/lib/db/story.ts` | Supabase boundary. |
+| `scripts/story-catalogue.mjs` | `npm run check:story`. |
 
-**Changed:**
+**Changed**
 
 | File | Change |
 |---|---|
-| `specialtyProfile.ts` | `inputLayout` gains `"physio"`; `PHYSIOTHERAPY` uses it. `tsc` will find every exhaustive switch. |
-| `App.tsx` | One branch: `inputLayout === "physio" ? <PhysioInputs/> : usesCaseSheet ? <GeneralOpdInputs/> : <SoapInputs/>`. |
-| `useConsultLifecycle.ts` | Persist the story on save, in the same awaited sequence as the exercise write — **and with §14.25's lesson applied: it must not throw after the visit is already committed.** Catch, finish the save, toast the specific failure. |
-| `ReviewModal.tsx` | Story appears in the doctor's own review. **Not** on the patient prescription. |
-| `aren-cortex-ui-doctrine.md` | Amend the no-per-specialty-branch law — see §7. |
+| `specialtyProfile.ts` | `inputLayout` gains `"physio"`. `tsc` finds every exhaustive switch. |
+| `App.tsx` | One branch. |
+| `useConsultLifecycle.ts` | Persist story + goal scores on save — **catching, not throwing**, after the visit is committed (§14.25's ordering fix). |
+| `ReviewModal.tsx` | Story + goals in the doctor's own review. Not on the patient prescription. |
+| `aren-cortex-ui-doctrine.md` | Two amendments — §8. |
 
 ---
 
-## 5. The screen
+## 6. The screen
 
-`StoryCard` sits at the top of the Subjective column, above the Case Sheet,
-because it is what the patient said before anything is interpreted.
+First visit, default state — six controls:
 
 ```
-┌─ STORY ──────────────────────────────────────────────┐
-│  Onset   [ 12 Jul ]  (sudden)(gradual)(post-op)(injury)│
-│          twisted it playing cricket…                  │
+┌─ STORY ───────────────────────────────────────────────┐
+│  How long   (<2wk)(2-6wk)(6wk-3mo)(>3mo)              │
+│  Onset      (sudden)(gradual)(post-op)(injury)        │
 │                                                       │
-│  Worse with   [stairs ×] [squatting ×]  + add         │
-│  Better with  [rest ×]                  + add         │
+│  Worse with  [stairs ×][squatting ×]        + add     │
+│  Better with [rest ×]                       + add     │
+│  Pattern     (morning >30min)(night pain)(constant)   │
 │                                                       │
-│  Pattern  (morning >30min)(night pain)(worse evening) │
-│  Constant / Intermittent / Variable                   │
-│                                                       │
-│  Irritability   ( Low )( Moderate )( High )    ⓘ      │
-│  Tolerance      10 min walking → 6/10                 │
+│  Irritability  ( Low )( Moderate )( High )       ⓘ    │
+│  Tolerance     10 min walking → 6/10                  │
+│                                              More ⌄   │
+└───────────────────────────────────────────────────────┘
+┌─ GOALS ───────────────────────────────────────────────┐
+│  "Climb two flights at work"          3/10  [ ─── ]   │
+│  + add what they want to get back to                  │
 └───────────────────────────────────────────────────────┘
 ```
 
-Rules it follows:
-- **Every field optional.** An empty Story block collapses to one line, so a
-  20-minute follow-up session is not made longer than it is today. This is
-  the doctrine's "does an empty consultation get shorter?" test.
-- **Collapsible**, defaulting open on a first visit and **collapsed on a
-  follow-up**, where the story is usually already known.
-- The `ⓘ` on irritability states the criterion in one line rather than
-  assuming SINSS is common vocabulary.
-- Factor chips reuse the existing chip styling exactly — no new visual
-  language.
+Pick "injury" and a mechanism field appears. Set irritability to High and
+settling time appears. Neither is there otherwise.
+
+Follow-up visit, default state:
+
+```
+┌─ STORY  6wk-3mo · injury · worse on stairs · high irritability   ⌄ ┐
+└────────────────────────────────────────────────────────────────────┘
+┌─ GOALS ───────────────────────────────────────────────┐
+│  "Climb two flights at work"    3 → 6/10  [ ─── ]  ↑  │
+└───────────────────────────────────────────────────────┘
+```
+
+The story collapses to one line; the goal score is the live control, because
+re-scoring it is the point of a follow-up.
+
+**An empty Story block is one collapsed line.** Doctrine's own test — does
+an empty consultation get shorter — is satisfied by construction.
 
 ---
 
-## 6. Load / save
+## 7. Verification
 
-Mirrors how `useLongitudinalRecord` and `useConsultChart` already work.
-
-- **Load:** on visit open, `fetchVisitStory(visitId)` + the vocabulary
-  (cached once per session, it is reference data).
-- **Edit:** local state in `useVisitStory`, no write per keystroke.
-- **Save:** one upsert into `visit_story` + a delete/insert of
-  `visit_story_factors`, inside the existing save sequence, **after** the
-  visit is completed, catching rather than throwing.
-- **Reset:** `useVisitStory.reset()` wired into the same
-  patient-switch/cancel path as `plan.reset()` — and unlike `stagedMedicine`
-  (still an open bug), it will be wired from the start.
-
----
-
-## 7. The doctrine amendment
-
-`PhysioInputs.tsx` knowingly breaks *"there is no per-specialty branch
-anywhere in the render tree."* Rather than violate it silently I would add
-to the doctrine:
-
-> The law holds where a specialty needs a different **instrument** inside
-> the same consultation shape — dentistry, dermatology, paediatrics. It does
-> **not** hold where the specialty's clinical reasoning is itself a
-> different shape. Physiotherapy is the first such case. The test is not
-> "does the input half look different?" but "does this clinician reason in a
-> different order?" A profile that answers yes earns its own input file; a
-> profile that answers no must keep sharing one.
-
-Without this, the next specialty inherits an assumption instead of making a
-decision.
-
----
-
-## 8. Verification
-
-1. `npm run check:story` — every factor has a valid direction, every enum
-   value used in code is in the CHECK constraint, no orphan `signal_id`.
-   **Proven non-vacuous** by breaking one row and watching it fail, per the
-   standing practice.
-2. **Chromium harness** against the real `StoryCard`: chips toggle, enums
-   are single-select, everything empty renders one collapsed line, the
-   `ⓘ` opens, and the whole block round-trips through `useVisitStory`.
-3. **Database verification, not screenshot** (trap 1): after a save, query
-   `visit_story` and `visit_story_factors` directly to confirm rows landed —
-   the CHECK-constraint outage in §14.21 looked perfect on screen.
-4. `tsc -b`, `vite build`, and every existing `check:*` — Phase 1 must be a
+1. `npm run check:story` — every catalogue key valid against the CHECK
+   constraints, every `revealWhen` predicate reachable (a field that can
+   never appear is a bug), no orphan `signalId`. **Proven non-vacuous** by
+   breaking a row, per standing practice.
+2. **Chromium harness** on the real components: six controls by default;
+   mechanism appears on traumatic onset **and not otherwise**; settling
+   appears on high irritability; "More" reaches every non-core field;
+   collapsed follow-up renders the summary line; a goal re-scores and the
+   delta shows.
+3. **Verified in Postgres, not on screen** (trap 1) — query `visit_story`,
+   `patient_goals` and `visit_goal_scores` after a real save.
+4. `tsc -b`, `vite build`, every existing `check:*`. Phase 1 must be a
    provable no-op for General OPD and the six `SoapInputs` profiles.
-5. RLS proven by reading `pg_policy`, not by the app appearing to work.
+5. RLS proven by reading `pg_policy`.
 
 ---
 
-## 9. What Phase 1 deliberately does NOT do
+## 8. Doctrine amendments
 
-Stated so review can catch a wrong omission:
+Two, both stated rather than quietly assumed:
 
-- **No signals from story factors.** `signal_id` is reserved and null. Chips
-  record; they do not yet rank. Promoting them needs clinical content and
-  real usage evidence, and doing it blind would repeat the "37 rules for 8
-  signals" mistake.
-- **No carry-forward.** Each visit records its own story. "Same as last
-  visit" prefill is obvious and cheap but belongs after we know the block
-  gets filled at all.
-- **No patient goals / PSFS** — Phase 4.
-- **No examination changes** — Phase 3. ROM/MMT/special tests untouched.
-- **Nothing touches `visit_measurements`, `trend.ts` or the engine.**
+**(a) On per-specialty branches.** The law holds where a specialty needs a
+different *instrument* inside the same consultation shape — dentistry,
+dermatology, paediatrics. It does not hold where the clinical reasoning is
+itself a different shape. The test is not "does the input half look
+different?" but **"does this clinician reason in a different order?"**
 
----
-
-## 10. Phases 2–6, unchanged from the decision note
-
-Sketched only; each gets its own plan document before it is built.
-
-2. **Record spine** — `visit_measurements` gains `side` / `method` /
-   `context` / `qualifier`, becomes the read path, `trend.ts` trends
-   `baseline` only.
-3. **Examination** — AROM/PROM, MMT, special tests with result semantics.
-4. **Impression** — functional limitations, patient goals, `impairment` as a
-   ranked intent type.
-5. **Response** — within-session re-test, treatment response, adherence,
-   dose rationale.
-6. **Outcomes** — two instruments, not seven, plus MCID in `trend.ts`.
+**(b) On surface, new standing law.** *Cortex should know a lot and show
+little.* Every clinical field must pass: does it change reasoning, dosing,
+or meaningful outcome? If not, it is reachable but never default. A field
+that is merely true does not earn space.
 
 ---
 
-## 11. Risk and rollback
+## 9. Phases 2–6 — direction confirmed
 
-- **Rollback is clean.** Phase 1 adds three tables and one input file; the
-  branch in `App.tsx` is one line. Reverting `inputLayout` to
-  `"case-sheet"` restores today's behaviour exactly, and the tables become
-  inert rather than broken.
-- **The real risk is clinical, not technical**: that a busy clinic never
-  fills this in. Phase 1 is the cheapest possible test of that, which is why
-  it is first. **If it goes unfilled in real use, Phases 3–6 should be
-  re-scoped before they are built.**
-- **The `useConsultLifecycle` change is the only edit to a working save
-  path.** §14.25's ordering lesson applies directly and is already accounted
-  for above.
+Order unchanged: **Story → Measurement foundation → Examination → Impression
+→ Response → Outcomes.**
+
+- **2 — Measurement foundation.** `visit_measurements` gains `side` /
+  `method` / `context` / `qualifier`, becomes the read path, `trend.ts`
+  trends `baseline` only.
+- **3 — Examination.** AROM/PROM, MMT, special tests. Progressive disclosure
+  is load-bearing here: the full set is deep, the default must be shaped by
+  the story and the goal.
+- **4 — Impression.** Impairments and functional limitations ranked **by the
+  existing engine, unchanged** — Synapse already scores combinations of
+  active signals and ranks intents by relevance, so this is content plus at
+  most one type value, not architecture.
+- **5 — Response. The differentiator.** Preserve the loop —
+  **baseline → intervention → immediate re-test → response** — rather than
+  storing every measurement as an isolated value. This is the phase that
+  makes Cortex a physiotherapy record rather than a form, and Phase 2's
+  `context` column exists to make it possible.
+- **6 — Outcomes. Deliberately small.** Instruments that are routine in
+  ordinary physiotherapy practice, not niche ones that merely exist or are
+  well-known. More instruments only on evidence of real use.
 
 ---
 
-## 12. What I need from review
+## 10. Risk
 
-1. Is the Story block's **field list** right — too much, too little, wrong
-   emphasis? This is the part only a clinician can answer.
-2. Chips-over-free-text for aggravating/easing: agreed?
-3. Is the ~28-item vocabulary the right starting set? It will go in
-   `story-factors.sql` for line-by-line review before it is applied.
-4. Doctrine amendment (§7): agreed as written?
-5. Authorisation to apply the three-table migration when you are satisfied.
+- **Rollback is clean.** Three tables, one input file, one branch. Reverting
+  `inputLayout` restores today's behaviour exactly; the tables go inert.
+- **The real risk stays clinical**: that a clinic doing thirty sessions a
+  day fills none of this in. Six core controls is the cheapest honest test.
+  **If it goes unfilled, Phases 3–6 get re-scoped before they are built.**
+- **One edit to a working save path** (`useConsultLifecycle`), with §14.25's
+  ordering lesson already applied.
+
+---
+
+## 11. What I need from review
+
+1. **The six core controls** — right set? This is the part only a clinician
+   settles.
+2. **Goals as PSFS-shaped** (patient's words + 0–10, re-scored per visit):
+   agreed?
+3. **The `story.ts` vocabulary** goes up for line-by-line review before
+   anything is applied.
+4. **Doctrine amendments (a) and (b)**: agreed as worded?
+5. **Authorisation** for the three-table migration.
