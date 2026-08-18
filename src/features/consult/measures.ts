@@ -108,6 +108,29 @@ export interface MeasureField {
      * counts.
      */
     trendNoise?: number;
+    /**
+     * MINIMAL CLINICALLY IMPORTANT DIFFERENCE — the change below which a
+     * real movement is not a movement that MATTERS. Phase 6.
+     *
+     * Deliberately a sibling of `trendNoise` rather than a replacement for
+     * it, because they answer different questions and a field can need
+     * both:
+     *
+     *   trendNoise  "is this change real, or measurement jitter?"
+     *   mcid        "the change is real — is it big enough to mean anything?"
+     *
+     * `verdictFor` requires a change to clear BOTH bars before it draws an
+     * arrow. Without this, a validated instrument moving 4 points reads as
+     * "improving" identically to one moving 20, which is precisely the
+     * confident-wrong-answer `trend.ts`'s header exists to prevent — the
+     * number moved, and the patient did not get better.
+     *
+     * Values are the widely-cited published MCIDs for each instrument. They
+     * vary by population and by how the study anchored them, so they are
+     * deliberately set at the conservative (larger) end of the reported
+     * range: over-calling improvement is the failure that matters here.
+     */
+    mcid?: number;
     warn?: (v: string) => boolean;
     warnText?: string;
 }
@@ -267,7 +290,7 @@ export const MEASURE_FIELDS: MeasureField[] = [
         // facility is a gynaecology one.
         key: "painVas", label: "Pain (0–10)", shortLabel: "Pain scale",
         unit: "/10", printLabel: "Pain", rxLabel: "Pain",
-        group: "musculoskeletal", betterWhen: "lower", trendNoise: 1,
+        group: "musculoskeletal", betterWhen: "lower", trendNoise: 1, mcid: 2,
         placeholder: "0", kind: "number",
         warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 7; },
         warnText: "Severe pain",
@@ -312,9 +335,32 @@ export const MEASURE_FIELDS: MeasureField[] = [
     {
         key: "lefs", label: "LEFS (/80)", shortLabel: "Lower extremity function",
         unit: "/80", printLabel: "LEFS", rxLabel: "LEFS",
-        group: "musculoskeletal", betterWhen: "higher", trendNoise: 3,
+        // MCID 9 points, the commonly cited value for the LEFS.
+        group: "musculoskeletal", betterWhen: "higher", trendNoise: 3, mcid: 9,
         placeholder: "—", kind: "number",
         warn: implausible(80), warnText: "The LEFS runs 0–80",
+    },
+    {
+        // Oswestry Disability Index — the routine low-back outcome measure.
+        // Scored 0-100%, and LOWER is better: it measures disability, not
+        // function, which is the opposite direction to LEFS beside it. That
+        // inversion is exactly the kind of thing `betterWhen` exists to stop
+        // anyone having to remember.
+        key: "odi", label: "ODI (%)", shortLabel: "Oswestry disability index",
+        unit: "%", printLabel: "ODI", rxLabel: "ODI",
+        group: "musculoskeletal", betterWhen: "lower", trendNoise: 4, mcid: 10,
+        placeholder: "—", kind: "number",
+        warn: implausible(100), warnText: "The ODI runs 0–100%",
+    },
+    {
+        // QuickDASH — upper limb, the short (11-item) form of the DASH.
+        // Also a DISABILITY score, so lower is better. MCID ~15.9 is the
+        // JOSPT-reported value for the shortened version.
+        key: "quickdash", label: "QuickDASH (%)", shortLabel: "Upper limb disability",
+        unit: "%", printLabel: "QuickDASH", rxLabel: "QuickDASH",
+        group: "musculoskeletal", betterWhen: "lower", trendNoise: 5, mcid: 16,
+        placeholder: "—", kind: "number",
+        warn: implausible(100), warnText: "The QuickDASH runs 0–100%",
     },
     {
         key: "cervicalRotL", label: "Cervical Rotation L (°)", shortLabel: "Cervical rotation (L)",

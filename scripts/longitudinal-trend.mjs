@@ -36,7 +36,7 @@ async function load(rel, tmpName) {
 }
 
 const trend = await load("../src/features/consult/trend.ts", "trend");
-const { buildTrendSummary, buildSeries, readValue, lastReadingOf, LONG_ABSENCE_DAYS, MAX_SERIES } = trend;
+const { buildTrendSummary, buildSeries, readValue, lastReadingOf, verdictFor, LONG_ABSENCE_DAYS, MAX_SERIES } = trend;
 const { FIELD_BY_KEY } = await load("../src/features/consult/measures.ts", "measures2");
 const { PROFILES, profileFor } = await load("../src/features/synapse/specialtyProfile.ts", "profiles");
 
@@ -400,6 +400,61 @@ const visit = (id, days, vitals) => ({ id, created_at: daysAgo(days), vitals });
     const last = lastReadingOf("painVas", visits);
     eq("vs-last skips visits that did not record the field", last.value, 6);
     eq("no prior reading returns null", lastReadingOf("hba1c", visits), null);
+}
+
+// ── MCID: a real change that is not a MEANINGFUL change (Phase 6) ──────────
+// The failure this guards is specific and silent: an instrument moving four
+// points and one moving twenty both drawing the same confident arrow. The
+// number moved; the patient did not get better.
+{
+    const odi = FIELD_BY_KEY.get("odi");
+    const qd = FIELD_BY_KEY.get("quickdash");
+    const lefs = FIELD_BY_KEY.get("lefs");
+    const pain = FIELD_BY_KEY.get("painVas");
+
+    ok("ODI declares an MCID", odi && odi.mcid === 10);
+    ok("QuickDASH declares an MCID", qd && qd.mcid === 16);
+
+    // ODI is a DISABILITY score, so lower is better — the opposite of LEFS.
+    eq("ODI 48 -> 44 is below MCID, so steady",
+        verdictFor(odi, "lower", 48, 44), "steady");
+    eq("ODI 48 -> 30 clears MCID, so improving",
+        verdictFor(odi, "lower", 48, 30), "improving");
+    eq("ODI 30 -> 48 clears MCID the wrong way, so worsening",
+        verdictFor(odi, "lower", 30, 48), "worsening");
+
+    // THE BOUNDARY, stated deliberately because it is easy to get backwards
+    // and this assertion caught me getting it backwards first: the MCID is
+    // the smallest change that DOES matter, so a change of exactly the MCID
+    // clears the bar rather than falling short of it. That matches
+    // `trendNoise`'s existing `< threshold` semantics exactly, which is why
+    // one comparison serves both.
+    eq("ODI moving exactly its MCID counts",
+        verdictFor(odi, "lower", 40, 30), "improving");
+    eq("ODI moving one short of its MCID does not",
+        verdictFor(odi, "lower", 40, 30.5), "steady");
+
+    eq("QuickDASH 60 -> 50 is real but below its MCID of 16",
+        verdictFor(qd, "lower", 60, 50), "steady");
+    eq("QuickDASH 60 -> 40 clears it",
+        verdictFor(qd, "lower", 60, 40), "improving");
+
+    // LEFS is a FUNCTION score — higher is better, opposite direction.
+    eq("LEFS 40 -> 45 is below its MCID of 9",
+        verdictFor(lefs, "higher", 40, 45), "steady");
+    eq("LEFS 40 -> 55 clears it",
+        verdictFor(lefs, "higher", 40, 55), "improving");
+
+    // Pain: 1 point is noise-and-not-meaningful, 3 clears the 2-point MCID.
+    eq("pain 7 -> 6 is not a meaningful change", verdictFor(pain, "lower", 7, 6), "steady");
+    eq("pain 7 -> 4 is", verdictFor(pain, "lower", 7, 4), "improving");
+
+    // A field with NO mcid must behave exactly as it did before Phase 6 —
+    // this is the backward-compatibility assertion.
+    const knee = FIELD_BY_KEY.get("kneeFlexR");
+    ok("knee flexion declares no MCID", knee && knee.mcid === undefined);
+    eq("a field without an MCID still moves on trendNoise alone",
+        verdictFor(knee, "higher", 90, 100), "improving");
 }
 
 // ── Report ──────────────────────────────────────────────────────────────────

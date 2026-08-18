@@ -126,6 +126,11 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
     // would make the operated knee's recovery invisible behind the good one.
     const PHYSIO_KEYS: [keyof Vitals, string, string][] = [
         ["lefs", "LEFS", "/80"],
+        // Phase 6 outcome instruments. No rule reads either today; they are
+        // emitted for the same reason every physio field is — a field that
+        // emits nothing is a number the RECORD never sees.
+        ["odi", "ODI", "%"],
+        ["quickdash", "QUICKDASH", "%"],
         ["cervicalRotL", "CERVICAL_ROT_L", "deg"],
         ["cervicalRotR", "CERVICAL_ROT_R", "deg"],
         ["shoulderFlexL", "SHOULDER_FLEX_L", "deg"],

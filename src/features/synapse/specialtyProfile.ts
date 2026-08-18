@@ -300,7 +300,16 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     // sort themselves out per patient (see `trend` on the interface).
     trend: [
         { key: "painVas" },
+        // The three validated outcome instruments, one per body region —
+        // LEFS (lower limb), ODI (low back), QuickDASH (upper limb). All
+        // three declare an MCID, so the band's verdict on them is
+        // clinically meaningful change rather than any movement at all
+        // (Phase 6). A patient only ever has readings of the one their
+        // physiotherapist actually uses, and `trend.ts` picks whichever
+        // that is — the same per-patient selection the joints below rely on.
         { key: "lefs" },
+        { key: "odi" },
+        { key: "quickdash" },
         ...PHYSIO_JOINTS,
         // Last resort. `romPct` is one number for "how restricted", which is
         // what a non-physiotherapy facility records; a physio who has been

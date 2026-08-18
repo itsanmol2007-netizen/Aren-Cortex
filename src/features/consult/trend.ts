@@ -276,7 +276,14 @@ export function verdictFor(
 ): TrendVerdict {
     if (direction === "none") return "neutral";
 
-    const noise = field.trendNoise ?? 0;
+    // A change has to clear BOTH bars: bigger than measurement jitter
+    // (`trendNoise`) AND bigger than what is clinically meaningful for this
+    // instrument (`mcid`, Phase 6). Most fields declare only the first, and
+    // for them this is exactly the old behaviour. The validated outcome
+    // instruments declare both, and there the MCID is what stops a 4-point
+    // ODI move being drawn with the same confident arrow as a 20-point one.
+    // See `MeasureField.mcid` for why they are two properties and not one.
+    const noise = Math.max(field.trendNoise ?? 0, field.mcid ?? 0);
 
     if (direction === "band") {
         // Distance from the normal range is the thing that improved or did

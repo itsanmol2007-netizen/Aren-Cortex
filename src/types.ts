@@ -57,6 +57,8 @@ export type Vitals = {
   // why they carry no measurement rules.
   /** lower extremity functional scale, 0–80 (LEFS) */
   lefs?: string;
+  odi?: string;
+  quickdash?: string;
   /** cervical rotation, degrees */
   cervicalRotL?: string;
   cervicalRotR?: string;
