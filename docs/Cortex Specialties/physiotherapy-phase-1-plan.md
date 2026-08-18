@@ -411,3 +411,56 @@ just because a seam exists. The two "reserved for a guard" fields
 (irritability, settling) get a distinct marker (`guardCandidate: true`)
 rather than a `signalId`, so they are never accidentally wired as a ranking
 input by a later session skimming the file.
+
+---
+
+## 13. Revision 4 — Guard evaluated as a first-class concept, and rejected for now
+
+Anmol asked directly: does Guard deserve to be first-class, alongside Rank
+and Record, or does it belong inside the existing `intent_guards`
+mechanism? Checked against the real code and the real data rather than
+argued from the name.
+
+### What `intent_guards` actually does — checked, not assumed
+
+`SEVERE_HIGH_BP`'s row: `action = 'warn'`, `target_type = 'exercise'`,
+a text reason. `Guard`'s own type only has two actions, `warn` /
+`warn_hard`, and the engine's comment is explicit: *"there is deliberately
+no hiding action... guards never hide, they attach a reason... everything
+scored is ranked and returned; what a guard changes is the status and the
+reasons riding on it, never whether."*
+
+**Correction to §12.2 above:** it described irritability as needing to
+"de-rank or suppress aggressive modalities... the same shape
+`SEVERE_HIGH_BP` already uses." That is not what `SEVERE_HIGH_BP` does. It
+never de-ranks or suppresses anything — an exercise it fires on stays
+exactly where it was ranked, with a caution label the doctor can act on or
+override. The existing mechanism is FLAG, not MODIFY.
+
+### Why "modify dosing" cannot be built yet, regardless of where it lives
+
+Modifying a dose needs a number to modify. Modality dosage is still prose
+(*"Ultrasound 1 MHz, 7 min" is one string* — §14.24's own recorded gap, not
+new). `exercisePlan.ts` has real numeric sets/reps/hold, but nothing
+computes or suggests them automatically today — the physio types every
+number. **A first-class Guard that adjusts dosing has no target to act on
+yet.** Building that mechanism now would be a lever wired to nothing —
+the same class of mistake as writing rules for signals nothing fed.
+
+### Decision
+
+**Guard is not first-class. It folds into `intent_guards`, used exactly as
+it exists** — `warn` / `warn_hard`, a reason, a target. High irritability
+and long settling time fire guards on aggressive modality/exercise intents,
+the same mechanism pregnancy and severe BP already use. Cheap, proven,
+consistent with doctrine's own rule that the system suggests and the doctor
+decides.
+
+**Revisit whether Guard needs a third, MODIFYING action specifically when
+dosage becomes a structured number** — the natural moment is Phase 5's
+dose-rationale work, not before. That is the actual prerequisite, not a
+schedule guess.
+
+Content for these guard rows is still Phase 5, not Phase 1 — needs real
+irritability data to calibrate against, per §12.2, unchanged by this
+correction.
