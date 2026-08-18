@@ -590,6 +590,24 @@ function App() {
    */
   const usesCaseSheet = specialty.inputLayout === "case-sheet";
   const usesPhysioInputs = specialty.inputLayout === "physio";
+  /**
+   * "Not the old three-picker SOAP fallback" — which is a DIFFERENT question
+   * from "is General OPD", and conflating the two was a real bug.
+   *
+   * Three guards below (the Assessment phase label, the Plan phase label,
+   * and the chart in ConditionsCard's `sideSlot`) were written as
+   * `usesCaseSheet` back when "case-sheet" and "not soap" were the same
+   * thing. Adding `"physio"` as a third layout on 2026-08-17 silently made
+   * them false for physiotherapy: it lost the joint map out of the
+   * Assessment column and gained two phase labels the rebuilt surface is
+   * specifically designed not to show. `tsc` cannot catch this — every
+   * value is still a valid boolean.
+   *
+   * So the predicate says what it actually means. A fourth layout added
+   * later inherits the right behaviour by default instead of repeating
+   * this.
+   */
+  const usesRebuiltSurface = specialty.inputLayout !== "soap";
 
   /**
    * The specialty charts, as launchers inside the Measurements row.
@@ -1052,7 +1070,7 @@ function App() {
                   The band label is hidden for General OPD because the card
                   directly beneath it is also titled ASSESSMENT. The same word
                   twice, 40px apart, is not a hierarchy. */}
-              {!usesCaseSheet && <div className="cs-phase">Assessment</div>}
+              {!usesRebuiltSurface && <div className="cs-phase">Assessment</div>}
 
               {/* ALWAYS RENDERED. Hiding these on an empty chart was a real
                   regression, made 2026-08-12 and reverted the same evening:
@@ -1097,7 +1115,7 @@ function App() {
                      (dentistry, dermatology, paediatrics today) would show the
                      same launcher twice. Each profile picks this up when its
                      turn comes and it moves off `soap`. */
-                  usesCaseSheet && chartTools.length > 0 ? (
+                  usesRebuiltSurface && chartTools.length > 0 ? (
                     <SpecialtyExamCard
                       tools={chartTools}
                       onOpen={(key) => setOpenChart(key as ChartKind)}
@@ -1122,7 +1140,7 @@ function App() {
               {/* The band label goes for General OPD, not the panels. "Plan"
                   was always the wrong word here anyway: the plan is the rail
                   on the right, and these two are where the doctor picks FROM. */}
-              {!usesCaseSheet && <div className="cs-phase">Plan</div>}
+              {!usesRebuiltSurface && <div className="cs-phase">Plan</div>}
 
               <div className="cs-row cs-row-plan" ref={planRowRef}>
                 {planSlots.primaryIsMedicine ? (
