@@ -4977,3 +4977,170 @@ is still the right behaviour for the cards that have one.
 - **Onset mode and the specific aggravating factors have no signal content
   at all** — the largest concrete content gap this phase surfaced. Writing
   it is real clinical work, not a wiring task.
+
+---
+
+## 14.31 Session 2026-08-18 — Phases 1–6 of the physiotherapy rebuild, built
+
+Anmol: *"go with whatever feels good to you... build with the knowledge
+you have... I need the result."* Explicit authorization to stop asking
+per-phase and finish the six-phase plan
+(`docs/Cortex Specialties/physiotherapy-phase-1-plan.md` and
+`-phase-2-plan.md`) in one pass. This entry covers all six; each phase's
+full reasoning lives in its own commit message and, for Phases 1–2, the
+plan documents. Read those for the "why"; this is the "what landed."
+
+### Phase 1 — Story + Goals
+
+Physiotherapy's Subjective half stopped being General OPD's chip search
+and became its own thing: `StoryCard` (duration, onset, worse-with,
+better-with, 24-hour pattern, tolerance, irritability) and `GoalsCard`
+(patient's own words, 0–10, re-scored per visit — first patient-authored
+content anywhere in the schema). `PhysioInputs.tsx` is a real copy of
+`GeneralOpdInputs.tsx`, per that file's own instruction.
+
+Three tables (`visit_story`, `patient_goals`, `visit_goal_scores`),
+verified by inserting every enum literal `story.ts` can emit against the
+live CHECK constraints on a real visit, reading it back, deleting it.
+`story.ts`'s `signalId` population was checked against real
+`signals`/`signal_intent_rules` — most of the "should rank" list turned
+out to have no signal content at all; only four items
+(`PAIN_ACUTE`/`PAIN_CHRONIC`/`STIFFNESS_MORNING`/`NIGHT_PAIN`) are
+actually wired, and the file says so.
+
+Two doctrine amendments landed in §5 of `aren-cortex-ui-doctrine.md`: the
+per-specialty-branch law now states its real boundary ("does this
+clinician reason in a different order?"), and "Cortex should know a lot,
+but show little" is now standing law with the field test spelled out.
+
+A Chromium harness caught a real layout bug before ship — 16 aggravating
+chips overflowed the card because `.cs-attach-tagrow` doesn't wrap by
+default.
+
+### Phase 2 — corrected before it was built
+
+The decision note (`physiotherapy-implementation-decision.md`) had called
+`visit_measurements` "two homes for one fact, write-only" and proposed
+adopting it as the trend read path. Checking the actual data before
+building found that framing wrong: `visits.vitals` is the DOCTOR's record
+(what was typed, in the units typed); `visit_measurements` is the
+ENGINE's record (normalised for rules). One visit's `vitals.temp` was
+literally `"100"` (°F) against a `TEMP` row of `37.8` (°C) — switching the
+loader would have shown a patient's temperature falling 100→37.8 and
+drawn a confident arrow at it.
+
+So Phase 2 shipped only its safe quarter: four additive columns on
+`visit_measurements` (`side`, `method`, `context`, `qualifier`) plus an
+index. `context` defaults to `'baseline'`; no call site touched. The
+loader switch and the backfill it would have needed were both cancelled —
+**the permission asked for (a write to nine real patient visits) was
+withdrawn, not used.** `trend.ts`'s 148 assertions were not touched, on
+purpose: changing the module's fixture shape would have made the
+assertions prove the new thing instead of guarding it.
+
+### The regression Phase 1 caused, found while answering an unrelated question
+
+Adding `"physio"` as a third `inputLayout` value silently broke three
+guards that used `usesCaseSheet` as a proxy for "not the old SOAP
+fallback" — true only while `case-sheet` was the sole rebuilt surface.
+Physiotherapy lost the joint map out of `ConditionsCard`'s `sideSlot`
+(back to the ~230px void §14.24 removed) and gained duplicate
+"Assessment"/"Plan" phase labels. `tsc` could not catch it — every value
+involved was still a valid boolean. Fixed by naming the predicate for
+what it means: `usesRebuiltSurface = inputLayout !== "soap"`.
+
+### Phase 3 — Examination, and Phase 5 — the within-session re-test
+
+`examination.ts`: 8 regions, 32 movements, 21 muscle groups, 30 special
+tests — the standard taught goniometry ranges and orthopaedic tests. The
+card shows ONE region, chosen from what the joint map marked (progressive
+disclosure applied to the deepest catalogue in the product). Three
+control types kept genuinely separate — active/passive range (with the
+GAP computed, since the gap between them is the finding), MMT as a 0–5
+segmented pick (an ordinal, never a text box), special tests as
+three-state (blank ≠ negative ≠ positive).
+
+Phase 5 landed on the same row rather than a second screen: a "Re-test"
+button appears once a baseline exists, reveals one more box, stores
+`context = 'post_intervention'`, shows the delta immediately. That
+`context` split is why those readings can never contaminate a trend — a
+knee mobilised mid-session and re-tested 15° better is not this session's
+*progress*, it's evidence the technique worked.
+
+`check:examination` confirmed non-vacuous twice: a duplicated movement
+key across two regions (the key IS the storage address — a collision
+silently overwrites a reading), and the knee-extension zero-normal case
+(every other movement flags "below normal"; extension's normal is 0 and
+any positive value is a lag — backwards, it flags every healthy knee and
+no stiff one).
+
+Browser-caught bug: with two joints marked, the region switcher said
+"Knee" without saying which knee. Side is in the option text now.
+
+### Phase 6 — MCID
+
+Not a new subsystem. `mcid` is a sibling of `trendNoise` on `MeasureField`
+— same question shape ("is this change worth drawing an arrow at?"), so
+the entire existing trend machinery, longitudinal band included, picked
+it up with zero new plumbing. `verdictFor` now requires a change to clear
+both `trendNoise` (real vs. jitter) and `mcid` (real vs. meaningful).
+
+Two instruments added — ODI (low back) and QuickDASH (upper limb) —
+completing what LEFS (lower limb) already covered. Both are DISABILITY
+scores, so `betterWhen: "lower"`, opposite direction to LEFS beside them.
+Pain VAS got an MCID of 2. Values are published, set at the conservative
+(larger) end of the reported range.
+
+One of the 19 new assertions caught the author getting the boundary
+backwards on the first pass: a change of exactly the MCID was asserted as
+"still steady," and the code was right, the assertion was wrong — the
+MCID is the smallest change that DOES matter, so matching it clears the
+bar (same `< threshold` semantics `trendNoise` already used). Fixed the
+test, wrote down why, kept the code.
+
+### Phase 4 — impairments
+
+`impairment` is the eighth intent type, `modality`'s precedent exactly
+(§14.24): a union member, content, zero engine changes. `tsc` found both
+exhaustive maps (`engine.ts groupByType`, `useConsultIntelligence`'s
+`EMPTY_BY_TYPE`) the same way it found `modality`'s two. 12 impairments,
+28 rules, checked against 20 confirmed-live signals before writing a
+single row — zero orphaned impairments, zero rules naming a signal that
+doesn't exist. Physiotherapy's Assessment ranks impairments ahead of
+findings now: what limits the patient over what pathology is named,
+matching the clinical-impression framing the gap report asked for.
+Nothing hidden — findings sit one position lower with their own search
+intact.
+
+### Verification, across all six phases
+
+`tsc -b`, `vite build`, and all 8 check suites (`trend` 167, `measures`,
+`examination` new, `story`, `exercise`, `growth`, `dental`, `obstetric`)
+clean after every phase, not just at the end. Every new check confirmed
+non-vacuous by breaking something specific and watching it fail. Two
+real database writes were verified directly in Postgres rather than
+trusted from migration text (Phase 1's enum round-trip, Phase 2's
+unit-mismatch discovery) — trap 1, still paying rent.
+
+**Not driven against the live app.** Same gap as every entry in this
+project's history — Chromium here has no outbound network. This is now
+the single largest piece of unverified surface area in the product.
+
+### Open
+
+- **No physiotherapist has used any of this.** Six phases were built on
+  reasoned assumptions about clinical workflow, not on observed use. If
+  the Story block (Phase 1, the cheapest test of this) turns out to go
+  unfilled in real practice, Phases 3–6 need re-scoping — that risk was
+  accepted explicitly, not overlooked.
+- **6 of 8 specialty profiles are still on the `soap` fallback** —
+  diagnostics, cardiology, paediatrics, gynaecology, dentistry,
+  dermatology. Physiotherapy is now the fully-built reference case for
+  what moving one off `soap` costs.
+- **The `.mcid.tmp.mjs` build-script naming pattern, the `usesRebuiltSurface`
+  class of bug** (a boolean guard whose meaning silently narrows when a
+  new enum value is added) is worth a grep across the rest of `App.tsx`
+  before the next `inputLayout` value ships.
+- **Impairment content is MSK-general**, not joint-specific and not
+  specific to any one physiotherapy sub-population (post-op, neuro,
+  paediatric). Widening it is clinical curation, not architecture.
