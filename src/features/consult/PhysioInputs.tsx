@@ -29,6 +29,7 @@ import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
 import { StoryCard } from "./StoryCard";
 import { GoalsCard } from "./GoalsCard";
+import { ExaminationCard } from "./ExaminationCard";
 import { useRovingList } from "../../hooks/useRovingList";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
@@ -36,6 +37,8 @@ import type { TrendVisit } from "./trend";
 import type { SelectedSymptom, Vitals } from "../../types";
 import type { Story } from "./story";
 import type { PatientGoal, GoalStatus } from "../../lib/db/story";
+import type { ExaminationHook } from "../../hooks/useExamination";
+import type { MeasureSide } from "../../lib/db/examination";
 
 interface Props {
     observables: Observable[];
@@ -68,6 +71,11 @@ interface Props {
     onGoalScoreChange: (goalId: number, score: number) => void;
     onAddGoal: (activity: string, baselineScore: number | null) => void;
     onRetireGoal: (goalId: number, status: Exclude<GoalStatus, "active">) => void;
+
+    /** Phase 3 — what was tested. Renders nothing until a joint is marked. */
+    examination: ExaminationHook;
+    markedRegions: string[];
+    markedSides: Map<string, MeasureSide | null>;
 }
 
 export function PhysioInputs({
@@ -78,6 +86,7 @@ export function PhysioInputs({
     visitId, disabled = false, searchRef, measurementsRef,
     story, onStoryChange, goals, lastGoalScores, todayGoalScores,
     onGoalScoreChange, onAddGoal, onRetireGoal,
+    examination, markedRegions, markedSides,
 }: Props) {
     // Identical to GeneralOpdInputs — see that file's own comment for why
     // this lives here rather than inside CaseSheet or ClinicalCommandBar.
@@ -144,6 +153,17 @@ export function PhysioInputs({
                     <AttachmentsCard visitId={visitId} disabled={disabled} maxInline={3} strip />
                 </div>
             </div>
+
+            {/* What was actually tested. Sits after the Objective row because
+                it IS the objective examination — and renders nothing at all
+                until the joint map has marked a region, so an untouched
+                consult is not made longer by it. */}
+            <ExaminationCard
+                exam={examination}
+                markedRegions={markedRegions}
+                markedSides={markedSides}
+                disabled={disabled}
+            />
         </>
     );
 }

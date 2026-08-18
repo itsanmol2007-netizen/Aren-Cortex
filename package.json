@@ -16,7 +16,8 @@
     "check:combos": "node scripts/multi-composition.mjs",
     "check:trend": "node scripts/longitudinal-trend.mjs",
     "check:exercise": "node scripts/exercise-progression.mjs",
-    "check:story": "node scripts/story-catalogue.mjs"
+    "check:story": "node scripts/story-catalogue.mjs",
+    "check:examination": "node scripts/examination-catalogue.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

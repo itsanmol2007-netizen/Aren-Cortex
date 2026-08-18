@@ -27,6 +27,9 @@ import { useCarePlan } from "./hooks/useCarePlan";
 import { useConsultPlan } from "./hooks/useConsultPlan";
 import { useConsultLifecycle } from "./hooks/useConsultLifecycle";
 import { useVisitStory } from "./hooks/useVisitStory";
+import { useExamination } from "./hooks/useExamination";
+import { REGION_BY_KEY } from "./features/consult/examination";
+import { listBodySites } from "./lib/db/bodySites";
 import {
   DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
   AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS,
@@ -460,7 +463,7 @@ function App() {
     carryForwardFor,
     onVisitSaved: carePlan.attachCurrentVisit,
     onSaveStory: visitStory.save,
-    resetStory: visitStory.reset,
+    resetStory: () => { visitStory.reset(); examination.reset(); },
     showToast,
     focusChartSearch,
     setActivePage,
@@ -703,6 +706,47 @@ function App() {
     chartTools.map((t) => t.key),
     openChart
   );
+
+  /**
+   * Which joints the joint map has marked — the input that decides what the
+   * Examination card offers (Phase 3). Same `openChart` refresh key as
+   * `chartSummaries` above, for the same reason: the real flow is mark the
+   * joints, close the map, examine them, so closing the chart is exactly
+   * when this needs to be current.
+   *
+   * `visit_body_sites.region` and `EXAM_REGIONS[].key` share a vocabulary on
+   * purpose (`knee`, `shoulder`, `neck`, `torso_lower`…) so this is a filter
+   * rather than a second mapping table to keep in step.
+   */
+  const [markedExam, setMarkedExam] = useState<{ regions: string[]; sides: Map<string, "left" | "right" | null> }>(
+    { regions: [], sides: new Map() }
+  );
+  useEffect(() => {
+    if (!visitId || !specialty.charts.includes("joints")) {
+      setMarkedExam({ regions: [], sides: new Map() });
+      return;
+    }
+    let cancelled = false;
+    listBodySites(visitId)
+      .then((sites) => {
+        if (cancelled) return;
+        const regions: string[] = [];
+        const sides = new Map<string, "left" | "right" | null>();
+        for (const s of sites) {
+          if (!REGION_BY_KEY.has(s.region)) continue;
+          if (!regions.includes(s.region)) regions.push(s.region);
+          // First marking wins for the side — re-marking the other side is
+          // a second site, and the card's own switcher is how you reach it.
+          if (!sides.has(s.region)) sides.set(s.region, s.side);
+        }
+        setMarkedExam({ regions, sides });
+      })
+      .catch(() => { if (!cancelled) setMarkedExam({ regions: [], sides: new Map() }); });
+    return () => { cancelled = true; };
+  }, [visitId, openChart, specialty.charts]);
+
+  /** Phase 3 examination state — layer 1, beside the story. */
+  const examination = useExamination(visitId);
 
   /**
    * The doctor's pins — the heart on a recommendation row.
@@ -1009,6 +1053,9 @@ function App() {
                   onGoalScoreChange={visitStory.setTodayScore}
                   onAddGoal={visitStory.addGoal}
                   onRetireGoal={visitStory.retireGoal}
+                  examination={examination}
+                  markedRegions={markedExam.regions}
+                  markedSides={markedExam.sides}
                 />
               ) : usesCaseSheet ? (
                 <GeneralOpdInputs

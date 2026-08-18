@@ -6584,3 +6584,263 @@ body.cs-locked-shell {
     border-color: var(--cs-blue);
     color: var(--cs-blue);
 }
+
+/* ════════════════════════════════════════════════════════════
+   EXAMINATION — Phase 3, plus Phase 5's within-session re-test.
+   See ExaminationCard.tsx. Reuses the chip language everywhere it
+   can; the only genuinely new control is the 0-5 strength segment,
+   which is an ordinal grade and therefore picked, never typed.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-exam-card .cs-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cs-exam-region {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cs-exam-region select {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 8px;
+    background: #fff;
+    padding: 3px 22px 3px 8px;
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 600;
+    appearance: none;
+}
+
+.cs-exam-region svg {
+    position: absolute;
+    right: 7px;
+    color: var(--cs-faint);
+    pointer-events: none;
+}
+
+.cs-exam-region-static {
+    margin-left: auto;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cs-exam-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: var(--cs-s2) var(--cs-s4) var(--cs-s4);
+}
+
+/* Active | Passive | Gap on one row — the gap is the finding, so it is
+   computed and printed rather than left as mental arithmetic. */
+.cs-exam-grid {
+    display: grid;
+    grid-template-columns: minmax(96px, 1.2fr) 62px 62px 44px auto;
+    align-items: center;
+    gap: 5px 8px;
+}
+
+.cs-exam-col-head {
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.cs-exam-col-head:first-child { text-align: left; }
+
+.cs-exam-label {
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+}
+
+.cs-exam-num {
+    width: 100%;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    padding: 4px 6px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.cs-exam-num:focus {
+    border-color: var(--cs-blue);
+    outline: none;
+}
+
+/* Outside the published normal. A HINT, never amber: a restricted range is
+   the reason the patient is here, and warning on it every session is the
+   noise measures.ts already argues against for the physio fields. */
+.cs-exam-num.is-outside {
+    border-color: rgba(18, 104, 232, 0.32);
+    background: #f6faff;
+}
+
+.cs-exam-gap {
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+/* The re-test (Phase 5). Deliberately on the same row as its baseline —
+   it is a comparison, and a comparison split across two places is one the
+   reader has to reassemble. */
+.cs-exam-retest-btn {
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: 999px;
+    background: none;
+    padding: 2px 9px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.cs-exam-retest-btn:hover {
+    border-color: var(--cs-teal);
+    color: var(--cs-teal);
+}
+
+.cs-exam-retest {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.cs-exam-retest .cs-exam-num {
+    width: 56px;
+    border-color: var(--cs-teal);
+}
+
+.cs-exam-arrow {
+    color: var(--cs-faint);
+    font-size: 12px;
+}
+
+/* Teal for a gain, amber for a loss — the same verdict palette the
+   longitudinal band uses, so an improvement reads identically in both
+   places. Green stays reserved for "added to the plan" (doctrine §12.1). */
+.cs-exam-retest b {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-exam-retest b.is-up { color: var(--cs-teal); }
+.cs-exam-retest b.is-down { color: var(--cs-amber); }
+
+.cs-exam-retest-undo {
+    display: inline-flex;
+    border: none;
+    background: none;
+    padding: 2px;
+    color: var(--cs-faint);
+}
+
+.cs-exam-retest-undo:hover { color: var(--cs-red); }
+
+.cs-exam-sub {
+    margin: 10px 0 2px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* ── Strength: an ordinal, so it is a segmented pick ─────────────────── */
+
+.cs-exam-mmt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cs-exam-mmt .cs-exam-label { flex: 1; min-width: 0; }
+
+.cs-exam-grades {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cs-exam-grade {
+    border: none;
+    border-right: 1px solid var(--cs-line);
+    background: #fff;
+    padding: 3px 9px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-exam-grade:last-child { border-right: none; }
+.cs-exam-grade:hover { background: var(--cs-page); }
+
+.cs-exam-grade.is-on {
+    background: var(--cs-blue);
+    color: #fff;
+}
+
+/* ── Special tests: three states, because blank and negative are two
+      different clinical facts and a toggle would conflate them ───────── */
+
+.cs-exam-tests {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cs-exam-test {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: none;
+    padding: 3px 10px;
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 560;
+}
+
+.cs-exam-test-mark {
+    font-style: normal;
+    font-weight: 800;
+}
+
+.cs-exam-test.is-not_done .cs-exam-test-mark { color: var(--cs-line-strong); }
+
+.cs-exam-test.is-negative {
+    border-color: var(--cs-teal);
+    color: var(--cs-teal);
+}
+
+/* A positive test is EVIDENCE, not a diagnosis — amber (soft guard), never
+   red. Red is the hard guard everywhere else on this screen and a positive
+   Lachman is a finding to weigh, not a stop. */
+.cs-exam-test.is-positive {
+    border-color: var(--cs-amber);
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+    font-weight: 700;
+}
