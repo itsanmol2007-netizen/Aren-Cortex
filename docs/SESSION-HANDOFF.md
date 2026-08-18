@@ -6,10 +6,11 @@ everything the previous version said is folded into `aren-cortex-atlas.md`
 §14.31 or obsolete. Rewrite or delete this file the same way when the next
 session ends.
 
-**Read order for a cold start:** this file, then `aren-cortex-ui-doctrine.md`,
-then `aren-cortex-atlas.md` §14 (newest at the bottom — §14.31 is this
-session). Then `docs/Cortex Specialties/physiotherapy-phase-1-plan.md` and
-`-phase-2-plan.md` if touching physiotherapy further.
+**Read order for a cold start:** this file, then
+`docs/context/README.md` — it routes to ONE scoped pocket file for
+whatever the task actually is, instead of the full doctrine + atlas.
+Reading the whole atlas is no longer the default; do it only if a pocket
+says to, or the task doesn't fit any pocket.
 
 ---
 
