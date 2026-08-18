@@ -26,11 +26,17 @@ import { useLongitudinalRecord } from "./hooks/useLongitudinalRecord";
 import { useCarePlan } from "./hooks/useCarePlan";
 import { useConsultPlan } from "./hooks/useConsultPlan";
 import { useConsultLifecycle } from "./hooks/useConsultLifecycle";
+import { useVisitStory } from "./hooks/useVisitStory";
+import {
+  DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
+  AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS,
+} from "./features/consult/story";
 import { type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MedicineAddSheet } from "./features/consult/MedicineAddSheet";
 import { useChartSummaries } from "./features/consult/useChartSummaries";
 import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
+import { PhysioInputs } from "./features/consult/PhysioInputs";
 import { SoapInputs } from "./features/consult/SoapInputs";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
 import { BodyMapCard } from "./features/consult/BodyMapCard";
@@ -280,6 +286,14 @@ function App() {
     onError: showToast,
   });
 
+  // The Story + Goals half — layer 1 beside the session, same reasoning as
+  // the longitudinal record and the care plan above it: needs the patient
+  // and the visit at render time, nothing downstream of it. Only rendered
+  // for a profile with inputLayout === "physio" (see PhysioInputs below),
+  // but the hook itself is unconditional, matching every other layer-1
+  // hook in this file — a hook cannot be called behind a branch.
+  const visitStory = useVisitStory(visitId, patient?.id ?? null);
+
   useEffect(() => {
     if (!identity.ready) return;
     setBootError(null);
@@ -445,11 +459,59 @@ function App() {
     intelligence,
     carryForwardFor,
     onVisitSaved: carePlan.attachCurrentVisit,
+    onSaveStory: visitStory.save,
+    resetStory: visitStory.reset,
     showToast,
     focusChartSearch,
     setActivePage,
     setSidebarOpen,
   });
+
+  /**
+   * Story + Goals, pre-formatted for ReviewModal — doctor-facing review
+   * only, never the printable Rx (plan §5). Kept as a small derived array
+   * here rather than passing the raw `Story` object into ReviewModal,
+   * matching how every other field on that component already arrives
+   * (adviceNotes, therapyNotes, exerciseLines are all pre-formatted
+   * strings) — ReviewModal stays a pure render surface, not a second place
+   * that knows story.ts's label maps.
+   */
+  const storySummaryLines = useMemo(() => {
+    const s = visitStory.story;
+    const lines: string[] = [];
+    if (s.duration) lines.push(`Duration: ${DURATION_LABEL[s.duration]}`);
+    if (s.onsetMode) lines.push(`Onset: ${ONSET_LABEL[s.onsetMode]}`);
+    if (s.mechanism.trim()) lines.push(s.mechanism.trim());
+    if (s.aggravating.length > 0) {
+      const labels = s.aggravating.map((k) => AGGRAVATING_FACTORS.find((f) => f.key === k)?.label ?? k);
+      lines.push(`Worse with: ${labels.join(", ")}`);
+    }
+    if (s.easing.length > 0) {
+      const labels = s.easing.map((k) => EASING_FACTORS.find((f) => f.key === k)?.label ?? k);
+      lines.push(`Better with: ${labels.join(", ")}`);
+    }
+    if (s.pattern.length > 0) {
+      const labels = s.pattern.map((k) => STORY_PATTERNS.find((p) => p.key === k)?.label ?? k);
+      lines.push(`Pattern: ${labels.join(", ")}`);
+    }
+    if (s.tolerance.trim()) lines.push(`Tolerance: ${s.tolerance.trim()}`);
+    if (s.irritability) lines.push(`Irritability: ${IRRITABILITY_LABEL[s.irritability]}`);
+    if (s.settling) lines.push(`Settles: ${SETTLING_LABEL[s.settling]}`);
+    if (s.note.trim()) lines.push(s.note.trim());
+    return lines;
+  }, [visitStory.story]);
+
+  const goalSummaryLines = useMemo(() =>
+    visitStory.goals.map((g) => {
+      const before = visitStory.lastScores.get(g.id) ?? g.baselineScore;
+      const today = visitStory.todayScores.get(g.id);
+      const score = today !== undefined
+        ? (before !== null && before !== undefined ? `${before} → ${today}` : `${today}`)
+        : (before !== null && before !== undefined ? `${before}` : "not yet scored");
+      return `${g.activity}: ${score}/10`;
+    }),
+    [visitStory.goals, visitStory.lastScores, visitStory.todayScores]
+  );
 
   const handleOpenSidebar = () => {
     if (hasActiveConsult) {
@@ -522,10 +584,12 @@ function App() {
   /**
    * Which input surface this facility renders. Was `specialty.id ===
    * "general_opd"`; became configuration on 2026-08-16 when physiotherapy
-   * moved onto the same surface — see `SpecialtyProfile.inputLayout` for why
-   * that is a shared file rather than a second copy of it.
+   * moved onto the same surface, then split again on 2026-08-17 when
+   * physiotherapy earned its own — see `SpecialtyProfile.inputLayout` for
+   * the full history of that decision.
    */
   const usesCaseSheet = specialty.inputLayout === "case-sheet";
+  const usesPhysioInputs = specialty.inputLayout === "physio";
 
   /**
    * The specialty charts, as launchers inside the Measurements row.
@@ -893,11 +957,42 @@ function App() {
                 onStartCarePlan={() => setCarePlanSheetOpen(true)}
               />
               {/* The input half of the screen — the one part that genuinely
-                  differs by profile. GeneralOpdInputs / SoapInputs.tsx: see
-                  their headers for why the split stops exactly here and does
-                  not reach into Possible Conditions or the plan row below,
-                  which stay shared and unchanged. */}
-              {usesCaseSheet ? (
+                  differs by profile. GeneralOpdInputs / PhysioInputs /
+                  SoapInputs.tsx: see their headers for why the split stops
+                  exactly here and does not reach into Possible Conditions or
+                  the plan row below, which stay shared and unchanged. */}
+              {usesPhysioInputs ? (
+                <PhysioInputs
+                  observables={observables}
+                  onChartSet={onChartSet}
+                  onObservableToggle={handleObservableToggle}
+                  caseSheetEntries={caseSheetEntries}
+                  onCaseSheetRemove={handleCaseSheetRemove}
+                  onRetireCarried={handleRetireCarried}
+                  intensities={selectedSymptomsWithIntensity}
+                  onIntensityChange={handleIntensityChange}
+                  relatedFindings={relatedFindings}
+                  onBrowseFinding={() => setBrowse("finding")}
+                  vitals={vitals}
+                  onVitalsChange={setVitals}
+                  defaultMeasureKeys={specialty.measurements}
+                  relevantMeasureKeys={measureRelevance.keys}
+                  relevantMeasureBecause={measureRelevance.because}
+                  pastVisits={pastVisits}
+                  visitId={visitId}
+                  disabled={!patient}
+                  searchRef={chartSearchRef}
+                  measurementsRef={measurementsRef}
+                  story={visitStory.story}
+                  onStoryChange={visitStory.setStory}
+                  goals={visitStory.goals}
+                  lastGoalScores={visitStory.lastScores}
+                  todayGoalScores={visitStory.todayScores}
+                  onGoalScoreChange={visitStory.setTodayScore}
+                  onAddGoal={visitStory.addGoal}
+                  onRetireGoal={visitStory.retireGoal}
+                />
+              ) : usesCaseSheet ? (
                 <GeneralOpdInputs
                   observables={observables}
                   onChartSet={onChartSet}
@@ -1384,6 +1479,8 @@ function App() {
             adviceNotes={reviewAdvice}
             therapyNotes={therapyNotes}
             exerciseLines={exercisePlan.map(formatLine)}
+            storySummary={storySummaryLines}
+            goalSummary={goalSummaryLines}
             visitId={visitId ?? undefined}
           />
         )

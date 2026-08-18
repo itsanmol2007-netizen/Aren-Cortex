@@ -67,6 +67,11 @@ interface ReviewModalProps {
   therapyNotes?: string;
   /** the home programme, one formatted line each */
   exerciseLines?: string[];
+  /** how the symptom behaves — pre-formatted lines, physiotherapy Phase 1.
+   *  Doctor-facing review only, per plan §5 — never printed on the Rx. */
+  storySummary?: string[];
+  /** "activity: before -> today", one per active goal. Doctor-facing only. */
+  goalSummary?: string[];
   doctor?: DoctorShape | null;
   hospital?: DBHospital | null;
   vitals?: Vitals;
@@ -173,6 +178,7 @@ export default function ReviewModal({
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
   followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
+  storySummary = [], goalSummary = [],
   doctor, hospital, vitals, isSaving,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
@@ -573,7 +579,7 @@ export default function ReviewModal({
               )}
 
               {/* ══ Clinical Summary ══ */}
-              {(symptoms.length > 0 || findings.length > 0) && (
+              {(symptoms.length > 0 || findings.length > 0 || storySummary.length > 0 || goalSummary.length > 0) && (
                 <div className="px-8 py-5 border-b border-gray-100">
                   <SectionTitle icon={FileText} title="Clinical Summary" />
                   <div className="mt-3 grid grid-cols-2 gap-4">
@@ -604,6 +610,39 @@ export default function ReviewModal({
                             </span>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Physiotherapy Phase 1 — how the symptom behaves and
+                        what the patient wants back. Doctor-facing review
+                        only: rendered here, in Clinical Summary, and NOT in
+                        the printable Rx sections below (plan §5). */}
+                    {storySummary.length > 0 && (
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                        <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-3">
+                          Story
+                        </p>
+                        <ul className="space-y-2">
+                          {storySummary.map((line, i) => (
+                            <li key={i} className="flex items-center gap-2 text-[12px] text-gray-700 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />{line}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {goalSummary.length > 0 && (
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                        <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-3">
+                          Goals
+                        </p>
+                        <ul className="space-y-2">
+                          {goalSummary.map((line, i) => (
+                            <li key={i} className="flex items-center gap-2 text-[12px] text-gray-700 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />{line}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>

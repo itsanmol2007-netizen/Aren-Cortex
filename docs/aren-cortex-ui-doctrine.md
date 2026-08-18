@@ -238,6 +238,44 @@ If the answer is no, it is polish, and polish has already been tried.
 - **Module height is content-driven.** No floors, no reserved space. This has
   been violated twice by two *different* `min-height` rules; check for both.
 
+- **A per-specialty branch in the render tree is forbidden — UNLESS the
+  clinical reasoning itself is a different shape, not merely the fields.**
+  (Amended 2026-08-17, `physiotherapy-phase-1-plan.md` §8.) The original law
+  — "a specialty never introduces a new layout... there is no per-specialty
+  branch anywhere in the render tree" — holds where a specialty needs a
+  different INSTRUMENT inside the same consultation shape: dentistry's
+  odontogram, dermatology's body map, paediatrics' growth curve. A dentist
+  still takes a history, forms a differential, and prescribes — same shape,
+  different tool. It does **not** hold where the clinician reasons in a
+  genuinely different ORDER. Physiotherapy was the first case: a
+  physiotherapist starts with how the symptom behaves and what the patient
+  wants back, before the chip-based intake every other profile opens with —
+  that is not an extra field General OPD's screen could grow, it is a
+  different first step. The test before copying `GeneralOpdInputs.tsx` for
+  a new profile is not "does the input half look different?" — every
+  specialty's fields differ a little — it is **"does this clinician reason
+  in a different order?"** A profile that answers yes earns its own input
+  file (`PhysioInputs.tsx` is the precedent). A profile that answers no
+  keeps sharing one, and the shared file changing under it changes every
+  profile at once, which is the entire point of not forking it.
+
+- **Cortex should know a lot, but show little.** (Added 2026-08-17, same
+  plan, §8.) Depth is not the same permission as visibility. Every clinical
+  field proposed for the DEFAULT consultation surface must pass one test:
+  **does it change clinical reasoning, treatment/dosing, or meaningful
+  progress/outcome — for essentially every patient who has it, not just
+  plausibly?** If not, it is reachable (a search, a "More", a chip a doctor
+  can still add) but never on by default. A field that is merely TRUE about
+  the patient does not earn space; "true and load-bearing" does. Applied
+  literally in `story.ts`: running this test against an eleven-field first
+  draft cut it to six, and running it against §12.2's own "this should
+  rank" list found that most of those items have no signal to rank with yet
+  — clinically real is not the same claim as ready to ship (see that plan's
+  §14 for the full audit). This is progressive disclosure as a LAW, not as a
+  nicety left to per-field judgement — the same discipline
+  `RELEVANT_FIELDS` already applies to measurements, generalised to every
+  future specialty's own deep catalogue.
+
 ---
 
 ## 6. Keep the medicine confirm sheet

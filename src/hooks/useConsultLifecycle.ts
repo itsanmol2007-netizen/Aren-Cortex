@@ -72,6 +72,26 @@ export interface ConsultLifecycleArgs {
    * the course, with nothing on screen to show for it.
    */
   onVisitSaved?: (visitId: string) => Promise<void>;
+  /**
+   * The Story + Goals write, added 2026-08-17 for physiotherapy's Phase 1.
+   * Same caught-not-thrown posture as `saveExercisePlan` just above it in
+   * the save sequence, and the same reason: by this point the visit is
+   * already committed, so a throw here would tell a doctor whose
+   * consultation DID save that it failed. A no-op for every profile that
+   * never touches the Story block — `saveVisitStory` skips the write
+   * entirely when the story is empty (`lib/db/story.ts`).
+   */
+  onSaveStory?: (visitId: string, doctorId: string | null) => Promise<void>;
+  /**
+   * Clears Story + Goals state on every path that starts or ends a
+   * consultation — wired into `clearWorkspace` alongside `chart.reset()`
+   * and `plan.reset()` from the start, unlike `stagedMedicine` /
+   * `pendingMedicine`, which `useConsultPlan.ts`'s own header still
+   * records as NOT cleared by `plan.reset()`. Optional only so a caller
+   * that has not wired `useVisitStory` yet does not break; `App.tsx`
+   * always passes it.
+   */
+  resetStory?: () => void;
   showToast: (msg: string) => void;
   /** put the cursor where a consult actually begins — the chart search box */
   focusChartSearch: () => void;
@@ -104,6 +124,8 @@ export function useConsultLifecycle({
   intelligence,
   carryForwardFor,
   onVisitSaved,
+  onSaveStory,
+  resetStory,
   showToast,
   focusChartSearch,
   setActivePage,
@@ -120,7 +142,8 @@ export function useConsultLifecycle({
   const clearWorkspace = useCallback(() => {
     chart.reset();
     plan.reset();
-  }, [chart, plan]);
+    resetStory?.();
+  }, [chart, plan, resetStory]);
 
   const resetConsultState = useCallback(() => {
     clearWorkspace();
@@ -327,6 +350,18 @@ export function useConsultLifecycle({
         }
       }
 
+      // The Story + Goals write. Same caught-not-thrown posture as the
+      // exercise programme above it, for the same reason — see `onSaveStory`'s
+      // own doc comment on the Args interface.
+      if (onSaveStory) {
+        try {
+          await onSaveStory(visitId, identity.isReal ? identity.doctorId : null);
+        } catch (e: any) {
+          console.error("onSaveStory:", e);
+          showToast(`Prescription saved, but the story/goals did not: ${e?.message ?? e}`);
+        }
+      }
+
       // The visit is now a completed session of whatever course it belongs to.
       // Before the learning write, because this one is allowed to surface a
       // failure and that one is not.
@@ -382,7 +417,7 @@ export function useConsultLifecycle({
       session.setIsSaving(false);
     }
   }, [session, plan, chart, ledger, intelligence.result, identity,
-      resetConsultState, showToast, onVisitSaved]);
+      resetConsultState, showToast, onVisitSaved, onSaveStory]);
 
   const openReview = useCallback(() => {
     const blocking = plan.unreadPrescribedWarnings[0];

@@ -169,29 +169,28 @@ export interface SpecialtyProfile {
      * tree that §14.19 sanctions, expressed as configuration instead of as an
      * `id === "general_opd"` comparison in App.tsx.
      *
-     * ── Why physiotherapy shares General OPD's file rather than copying it
+     * ── Physiotherapy copied out, 2026-08-17
      *
-     * The standing rule is: the day a profile earns its own input layout, copy
-     * `GeneralOpdInputs.tsx`, rename it, change what it renders, add one
-     * branch. Physiotherapy was checked against that rule on 2026-08-16 and
-     * the honest answer is that its input half is not different — one search
-     * bar, the Case Sheet, Measurements, Attachments, in that arrangement. The
-     * things that ARE different for a physiotherapist are all elsewhere: which
-     * measurements show (`measurements`, already configured), what leads the
-     * suggestions (`sections`), what is trended (`trend`), and the body map
-     * that now occupies the Assessment's second column.
-     *
-     * Copying a file that would be byte-identical is the "seven near-identical
-     * copies" the doctrine warns against, and it is one bug fixed in two
-     * places from the day it lands. So physiotherapy points at the same
-     * surface, and the copy happens the day its inputs genuinely diverge —
-     * at which point it will be a copy that differs, which is the only kind
-     * worth having.
+     * Checked on 2026-08-16 and found not to need its own file — General
+     * OPD's input half genuinely matched. Checked again on 2026-08-17 against
+     * `docs/Cortex Specialties/physiotherapy-phase-1-plan.md`, and the answer
+     * changed: a physiotherapy consultation asks how the symptom BEHAVES and
+     * what the patient wants back, BEFORE the chip-based intake General OPD
+     * opens with. That is not an extra field, it is a different order of
+     * reasoning — the doctrine amendment this plan proposed states the test
+     * precisely: the no-per-specialty-branch law holds where a specialty
+     * needs a different INSTRUMENT inside the same shape (dentistry,
+     * dermatology, paediatrics); it does not hold where the clinical
+     * reasoning is itself a different shape. `"physio"` is the first
+     * profile that answers the second way. `PhysioInputs.tsx` is
+     * `GeneralOpdInputs.tsx`, copied, with `StoryCard` / `GoalsCard` ahead
+     * of the command bar — the shared half below them stays literally the
+     * same code, not a fork of it.
      *
      * `"soap"` is the older three-picker fallback (History / Symptoms /
      * Findings). Every profile that has not had its turn is still on it.
      */
-    inputLayout: "case-sheet" | "soap";
+    inputLayout: "case-sheet" | "physio" | "soap";
 }
 
 /**
@@ -308,9 +307,9 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         // using the degree fields should never see this one reached.
         { key: "romPct" },
     ],
-    // Moved off `SoapInputs` on 2026-08-16 — the first profile other than
-    // General OPD to get the rebuilt input surface. See `inputLayout`.
-    inputLayout: "case-sheet",
+    // `"physio"` since 2026-08-17 — its own copy of the input surface,
+    // Story and Goals ahead of the command bar. See `inputLayout`.
+    inputLayout: "physio",
 };
 
 /** Investigation-led practice — diagnostics, pre-op workup. */

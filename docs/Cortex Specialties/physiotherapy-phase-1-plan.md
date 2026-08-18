@@ -464,3 +464,34 @@ schedule guess.
 Content for these guard rows is still Phase 5, not Phase 1 — needs real
 irritability data to calibrate against, per §12.2, unchanged by this
 correction.
+
+---
+
+## 14. Revision 5 — checked §12.2's "Yes" rows against real signals; most have no content yet
+
+Before writing `story.ts`, queried `signals` and `signal_intent_rules` for
+every item §12.2 marked rankable. **Most do not exist as signals today.**
+§12.2 classified correctly in principle — these ARE clinically real
+discriminators — but classifying "should this rank" and confirming "is
+there a signal to rank it with" are different questions, and only the
+second one decides what `story.ts` can honestly do at Phase 1.
+
+| §12.2 said Rank | Real signal found? | Wired |
+|---|---|---|
+| Onset mode (sudden/gradual/...) | **No.** Searched for SUDDEN/GRADUAL — nothing generic exists; `ACUTE_MONOARTHRITIS` is a specific joint-swelling presentation, not a general onset concept. | `signalId: null` |
+| Duration | **Partial.** `PAIN_ACUTE` (2 rules) and `PAIN_CHRONIC` (9 rules) exist and are live. `under_2wk` → `PAIN_ACUTE`; `over_3mo` → `PAIN_CHRONIC` (the textbook >3-month chronic-pain threshold, an exact match). `2_6wk` / `6wk_3mo` (subacute) have no matching signal — there is no `PAIN_SUBACUTE`. | `under_2wk`, `over_3mo` only |
+| Aggravating: stairs, overhead reach, sitting, bending, twisting | **No.** No movement-specific aggravation signal exists at all. | all `signalId: null` |
+| Pattern: morning stiffness >30min | **Yes.** `STIFFNESS_MORNING`, live, 5 rules. | wired |
+| Pattern: night pain | **Yes.** `NIGHT_PAIN`, live, 1 rule. | wired |
+| Pattern: everything else | **No.** | `signalId: null` |
+
+So the honest Phase 1 catalogue wires **four items to real signals** —
+`PAIN_ACUTE`, `PAIN_CHRONIC`, `STIFFNESS_MORNING`, `NIGHT_PAIN` — all
+confirmed live and already feeding rules, not created for this. Everything
+else in §12.2's "Yes" column records correctly and ranks nothing, until
+someone writes the signal and rule content for it. That is a clinical
+content task, not a Phase 1 blocker, and it is explicitly NOT done here —
+writing `signalId` values against signals that do not exist would be
+exactly the class of bug `check:measures` was built to catch one layer
+over (RELEVANT_FIELDS naming a signal that isn't real), just introduced by
+hand instead of by a typo.

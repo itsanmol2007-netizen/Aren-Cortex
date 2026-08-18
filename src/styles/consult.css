@@ -6342,3 +6342,245 @@ body.cs-locked-shell {
     font-weight: 550;
     text-align: center;
 }
+
+/* ════════════════════════════════════════════════════════════
+   STORY — physiotherapy's Subjective half, chip-first (2026-08-17).
+   See `StoryCard.tsx` and `docs/Cortex Specialties/
+   physiotherapy-phase-1-plan.md` for the reasoning. Reuses
+   `.cs-attach-chip` / `.cs-attach-tagrow` / `.cs-attach-region-input`
+   exactly — the same chip language `JointMapCard` and `AttachmentsCard`
+   already use, not a new visual vocabulary for one more card.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-story .cs-card-head.is-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+}
+
+.cs-story-summary {
+    flex: 1;
+    overflow: hidden;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-story-chevron {
+    flex: none;
+    margin-left: auto;
+    color: var(--cs-faint);
+    transition: transform 140ms ease;
+}
+
+.cs-story-chevron.is-open { transform: rotate(180deg); }
+
+.cs-story-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    padding: var(--cs-s3) var(--cs-s4) var(--cs-s4);
+}
+
+.cs-story-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+/* `.cs-attach-tagrow` itself does not wrap (AttachmentsCard/JointMapCard
+   never have enough tags to need it) — the aggravating-factor list has 16.
+   Scoped here rather than changed globally: an unwrapped tag row is the
+   right behaviour for a short, single-line list, wrong for a long one, and
+   this is the one card with a long one. Found by screenshotting it, not by
+   reading the CSS — the chips ran off the card's right edge into the page. */
+.cs-story-row .cs-attach-tagrow {
+    flex-wrap: wrap;
+}
+
+.cs-story-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    min-width: 88px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.cs-story-info {
+    display: inline-flex;
+    color: var(--cs-faint);
+    cursor: help;
+}
+
+.cs-story-tolerance {
+    flex-basis: 220px;
+}
+
+/* A suggested-but-unconfirmed value — irritability's pre-pick. Same "add,
+   never dim" rule as `.cs-meas.is-suggested`: a soft blue ring around the
+   chip, never a filled one, so it stays visually distinct from a value the
+   doctor actually chose (`.is-on`, filled solid). Clears the instant the
+   doctor answers, same as every other suggestion mark on this screen. */
+.cs-attach-chip.is-suggested {
+    border-color: rgba(18, 104, 232, 0.35);
+    background: linear-gradient(180deg, #f6faff 0%, #e9f1ff 100%);
+    color: var(--cs-blue);
+}
+
+.cs-story-because {
+    flex-basis: 100%;
+    margin: -2px 0 0 96px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 550;
+}
+
+/* ════════════════════════════════════════════════════════════
+   GOALS — patient-authored, re-scored per visit.
+   ════════════════════════════════════════════════════════════ */
+
+.cs-goals-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: var(--cs-s2) var(--cs-s4) var(--cs-s4);
+}
+
+.cs-goal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-page);
+    padding: 8px 10px;
+}
+
+.cs-goal-activity {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-goal-score {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    color: var(--cs-muted);
+    font-size: 12px;
+}
+
+.cs-goal-score input[type="range"] {
+    width: 90px;
+}
+
+.cs-goal-before {
+    color: var(--cs-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-goal-now {
+    min-width: 30px;
+    color: var(--cs-ink);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-goal-menu-wrap { position: relative; flex: none; }
+
+.cs-goal-retire {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+}
+
+.cs-goal-retire:hover {
+    background: var(--cs-line);
+    color: var(--cs-muted);
+}
+
+.cs-goal-menu {
+    position: absolute;
+    top: 26px;
+    right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 160px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 12px 28px -8px rgba(11, 23, 51, 0.28);
+}
+
+.cs-goal-menu button {
+    border: none;
+    border-radius: 7px;
+    background: none;
+    padding: 7px 9px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+    text-align: left;
+}
+
+.cs-goal-menu button:hover { background: var(--cs-page); }
+
+.cs-goal-add-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cs-goal-baseline-input {
+    flex: none;
+    width: 46px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 8px;
+    padding: 6px 6px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.cs-goal-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: 999px;
+    background: none;
+    padding: 6px 12px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.cs-goal-add-btn:hover {
+    border-color: var(--cs-blue);
+    color: var(--cs-blue);
+}

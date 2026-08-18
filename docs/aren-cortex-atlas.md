@@ -4818,3 +4818,162 @@ passes again when restored.
   flexion/extension, per side.
 - **Physiotherapy's labels are still General OPD's** — carried forward
   again, still awaiting the review pass.
+
+---
+
+## 14.30 Session 2026-08-17d — Phase 1 of the physiotherapy rebuild: Story + Goals, built
+
+Anmol called the physiotherapy build "rigged" mid-session — General OPD's
+layout with a chart bolted on — and was right (§14.28/§14.29 had already
+fixed the body map, but the SUBJECTIVE half was still, verbatim, General
+OPD's). He wrote a clinical gap report, this session answered it with an
+architecture decision (`physiotherapy-implementation-decision.md`: don't
+touch the engine, the record is thin, not the ranker), then a five-revision
+reviewed plan (`physiotherapy-phase-1-plan.md`), then — "I agree, let's
+move forward" — this session built it.
+
+Full design reasoning lives in the plan document, revision by revision,
+each one triggered by a real correction (my own classification of what
+should rank was wrong twice, checked against real signals and the real
+`intent_guards` code rather than argued from clinical plausibility). This
+entry is what actually landed, not why.
+
+### What shipped
+
+**Three tables**, migration `physiotherapy_story_and_goals`, RLS policies
+in the same migration as the tables (trap 2), verified against real
+enum-literal writes on an existing visit before any code was written —
+not assumed from the migration text:
+
+- `visit_story` — one row per visit, isolation through `visits.hospital_id`
+  directly (not nullable, same pattern as `visit_body_sites`).
+- `patient_goals` — outlives the visit that created it, same shape as
+  `patient_conditions`, isolation through `patients` (its `hospital_id` IS
+  nullable).
+- `visit_goal_scores` — re-scored per visit, what turns a goal into a trend.
+
+**`story.ts`** — the vocabulary, same convention as `measures.ts`: pure
+data and predicates, no React, checkable from a node script. 24 factors
+(16 aggravating, 8 easing), 6 pattern items. Checked every "should rank"
+item from the plan against `signals` / `signal_intent_rules` in Postgres
+before writing a single `signalId` — **most of them had no real signal**.
+Onset mode and every specific aggravating factor (stairs, overhead reach,
+sitting, bending, twisting) are clinically real discriminators with zero
+signal content today; wiring a `signalId` against a signal that does not
+exist would be the exact class of bug `check:measures` was built to catch,
+introduced by hand instead of by typo. Only four items wired to real,
+live signals: `PAIN_ACUTE` / `PAIN_CHRONIC` (duration) and
+`STIFFNESS_MORNING` / `NIGHT_PAIN` (pattern) — all four confirmed feeding
+real rules, none invented for this file.
+
+**`StoryCard.tsx`** — guided, not a wizard. Every field visible at once
+(a doctor is listening to a patient talk, not stepping through a form);
+single-select fields (duration, onset) auto-advance via the exact
+`focusNext` shape `MeasurementsCard` already has; multi-select chip
+groups reached by ordinary tab order, a scope decision stated in the file
+rather than a half-built generic chain. Order is clinical, not code
+order: how long/how it started → worse with/tolerance → better with →
+24-hour pattern → goal → **irritability last, because it is judged, not
+asked** — pre-selected using `MeasureCell`'s own `is-suggested`/`because`
+convention, never overriding an answer already given (asserted directly
+in `check:story`).
+
+**`GoalsCard.tsx`** — first patient-authored content anywhere in the
+schema. Activity in the patient's words, 0–10, re-scored each visit;
+"achieved"/"no longer a goal" retires rather than deletes, same
+not-a-delete reasoning as `retirePatientCondition` (§14.26).
+
+**`PhysioInputs.tsx`** — a real copy of `GeneralOpdInputs.tsx`, per that
+file's own instruction, with `StoryCard`/`GoalsCard` ahead of the command
+bar. Everything below is unchanged shared code, not a fork. `ChartKind`
+gained `"physio"` as an `inputLayout` value (was `"case-sheet" | "soap"`);
+`tsc` found the `SettingsPage` exhaustiveness gap the same way it found
+`ChartKind`'s in §14.28.
+
+**Two doctrine amendments**, written into §5's "do not relitigate"
+standing rules rather than left implicit: the per-specialty-branch law now
+states its own boundary ("does this clinician reason in a different
+order?", not "does the input half look different?"), and "Cortex should
+know a lot, but show little" is now a standing law with the field test
+stated, not a preference for one phase.
+
+### The save path, and the two lessons applied rather than re-learned
+
+`useConsultLifecycle` gained `onSaveStory` / `resetStory`. Both follow
+precedent already paid for this project, on purpose:
+
+- **Caught, not thrown**, same posture as `saveExercisePlan` beside it —
+  by that point the visit is already committed, so a throw would tell a
+  doctor whose consultation DID save that it failed (§14.25's lesson).
+- **`resetStory` wired into `clearWorkspace` from the start** — the exact
+  gap `useConsultPlan.ts`'s own header still records for `stagedMedicine`
+  (never cleared by `plan.reset()`) was not repeated here.
+
+`ReviewModal` gained `storySummary` / `goalSummary` — doctor-facing
+review only, in the existing "Clinical Summary" panel beside symptoms and
+findings, explicitly NOT in the printable Rx sections. Pre-formatted
+string arrays, matching how every other field on that component already
+arrives, so ReviewModal stays a pure render surface rather than a second
+place that knows `story.ts`'s label maps.
+
+### A real layout bug the harness caught, not the code review
+
+Screenshotted `StoryCard` at 700px and the "Worse with" row — 16 chips —
+ran off the card's right edge into the page background. `.cs-attach-tagrow`
+does not wrap (`AttachmentsCard` / `JointMapCard` never have enough tags to
+need it); scoped a wrap rule to `.cs-story-row .cs-attach-tagrow` rather
+than changing the shared class globally, since an unwrapped short tag row
+is still the right behaviour for the cards that have one.
+
+### Verification
+
+- **`check:story`**, new — catalogue duplicate keys, the `emptyStory` /
+  `isStoryEmpty` round-trip, both reveal predicates (`showMechanism`,
+  `showSettling`) confirmed reachable BOTH ways (a predicate that is
+  always true or always false is a bug the same way dead code is),
+  `suggestIrritability` confirmed to never override an existing answer,
+  every `signalId` checked against real signals when credentials are
+  available. **Confirmed non-vacuous** by breaking `showMechanism` to
+  always return true, watching it fail ("core-in-disguise"), restoring it.
+- **A real database write**, not a screenshot (trap 1) — inserted a
+  `visit_story` row exercising every enum literal `story.ts` can emit
+  (every duration, onset mode, five aggravating factors, three easing
+  factors, both signal-wired pattern items, irritability, settling) plus a
+  `patient_goals` row and a `visit_goal_scores` row, on a real existing
+  visit. All three inserts succeeded against the live CHECK constraints;
+  read back and confirmed the row shape matches `fromRow()` /
+  `goalFromRow()` in `lib/db/story.ts` exactly; test data deleted after,
+  confirmed empty.
+- **Chromium harness**, real components, real Vite/Tailwind build (§14.24's
+  lesson, not esbuild-only): mechanism reveals on traumatic onset and only
+  then; the irritability suggestion appears with its stated reason and
+  clears the instant the doctor answers; settling reveals at High
+  irritability; a goal's slider updates its own display; the layout bug
+  above, found and fixed in the same pass.
+- `tsc -b`, `vite build`, and every existing `check:*` — trend (148),
+  measures, exercise (54), dental, obstetric, growth, search, brands — all
+  clean, all a provable no-op for General OPD and the six `SoapInputs`
+  profiles that never touch `inputLayout === "physio"`.
+- **Not driven against the live app** — same network gap as every entry
+  in this run. Anmol has said he intends to drive this pass himself.
+
+### Open
+
+- **Phases 2–6 are designed, not built** — measurement foundation
+  (`visit_measurements` gains side/method/context/qualifier), examination
+  (AROM/PROM, MMT, special tests), impression (impairments as a ranked
+  intent, unchanged engine), response (the baseline → intervention →
+  re-test loop — the plan's own "differentiator"), outcomes (two
+  instruments, not seven). Full phase-by-phase reasoning in the plan
+  document; each gets its own reviewed plan before it is built, per
+  Anmol's standing "one piece at a time" instruction.
+- **26 of 30 catalogue items are deliberately unranked** — real clinical
+  distinctions with no signal content. Listed exactly in the plan's §14;
+  a clinical-content task, not a Phase 1 blocker.
+- **Guard stays inside `intent_guards`, evaluated as first-class and
+  rejected** (plan §13) — a modifying guard action has no dosage number to
+  modify yet; revisit specifically when Phase 5 gives modality/exercise
+  dosing a real structured shape.
+- **Onset mode and the specific aggravating factors have no signal content
+  at all** — the largest concrete content gap this phase surfaced. Writing
+  it is real clinical work, not a wiring task.
