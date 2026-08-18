@@ -27,8 +27,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
     Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
-    ShieldAlert, Sparkles, Waves,
-} from "lucide-react";
+    ShieldAlert, Sparkles, Waves, ActivitySquare } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
@@ -78,6 +77,11 @@ const CATALOGUE: Section[] = [
     // engine.ts for why this is not filed under Exercise. "Perform" rather
     // than "Add" because that is what the physiotherapist is agreeing to do.
     { type: "modality", label: "Therapy", verb: "Perform", icon: <Waves size={14} /> },
+    // Phase 4. "Note" rather than "Add" because an impairment is something
+    // the physiotherapist RECOGNISES about the patient, not something they
+    // hand over — the verb is the difference between a finding and a
+    // prescription, and every other row here is a prescription.
+    { type: "impairment", label: "Impairment", verb: "Note", icon: <ActivitySquare size={14} /> },
 ];
 
 const VERB_OF: Record<string, string> = Object.fromEntries(

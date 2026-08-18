@@ -274,6 +274,15 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         // given condition. If that turns out to be backwards in real use, the
         // fix is to swap `primary` — one word, no layout change.
         { type: "modality", label: "Therapy" },
+        // Impairments lead the findings, 2026-08-18 (Phase 4). A
+        // physiotherapist's impression is "what is limiting this person" —
+        // reduced range, weakness, guarding — and the pathology behind it
+        // is frequently already known, or not theirs to name. So the thing
+        // they treat is ranked above the thing they may never diagnose.
+        // Nothing is hidden: "Possible Finding" is exactly where it was,
+        // one position lower, with its own search intact. Doctrine's rule
+        // that ranking decides what is OFFERED, never what is REACHABLE.
+        { type: "impairment", label: "Impairment" },
         { type: "finding", label: "Possible Finding" },
         { type: "test", label: "Investigation" },
         { type: "referral", label: "Referral" },

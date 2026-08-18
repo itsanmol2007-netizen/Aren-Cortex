@@ -31,7 +31,17 @@
  * here changes a score, a rank or the shape of a result.
  */
 export type IntentType =
-    | 'medicine' | 'test' | 'exercise' | 'modality' | 'referral' | 'finding' | 'advice';
+    | 'medicine' | 'test' | 'exercise' | 'modality' | 'referral' | 'finding' | 'advice'
+    // Added 2026-08-18 (Phase 4), following `modality`'s precedent exactly:
+    // a union member and content rows, with nothing in the ranker changed.
+    //
+    // An impairment and a pathology answer different questions. "Meniscal
+    // tear" is what is wrong with the tissue; "reduced knee flexion" is what
+    // the patient cannot do about it. A physiotherapist treats the second
+    // whether or not the first is ever named, so filing impairments under
+    // `finding` would make the doctor separate the two in their head on
+    // every read — the same argument that kept `modality` out of `advice`.
+    | 'impairment';
 
 export interface Signal {
     id: string;
@@ -396,6 +406,7 @@ export function runEngine(rs: Ruleset, input: EngineInput): EngineResult {
 export function groupByType(intents: ScoredIntent[]): Record<IntentType, ScoredIntent[]> {
     const out = {
         medicine: [], test: [], exercise: [], modality: [], referral: [], finding: [], advice: [],
+        impairment: [],
     } as Record<IntentType, ScoredIntent[]>;
     for (const i of intents) out[i.type].push(i);
     return out;
