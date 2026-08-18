@@ -346,3 +346,68 @@ Order unchanged: **Story → Measurement foundation → Examination → Impressi
    anything is applied.
 4. **Doctrine amendments (a) and (b)**: agreed as worded?
 5. **Authorisation** for the three-table migration.
+
+---
+
+## 12. Revision 3 — guided entry, and per-item rank/record classification
+
+Two decisions from Anmol's direction, both now settled and both change §3/§4.
+
+### 12.1 Guided sequence, reusing `focusNext` — not a new mechanism
+
+`MeasurementsCard.tsx` already has exactly the shape needed: `focusNext(fields, key)`
+walks an ordered array of field keys on Enter, falling through to a
+designated end control when the list runs out. `StoryCard` reuses it
+directly rather than inventing a wizard component.
+
+**Every field stays visible at once** — no hide-until-reached, no blocking
+modal, because a doctor is watching the patient talk, not reading a screen
+step by step. Auto-advance is the fast path; clicking any field directly,
+out of order, is always available, because patients do not narrate in the
+app's order. Leaving a field blank and moving on IS skipping — no separate
+control.
+
+**The order is clinical, not code order** — matches how a patient actually
+talks, not how the table is columned:
+
+1. Duration + onset — one exchange ("how long, how did it start")
+2. Aggravating + tolerance — paired ("what brings it on, how much before it does")
+3. Easing ("what helps")
+4. 24-hour pattern ("how's it through the day and night")
+5. Goal ("what do you want to get back to")
+6. Irritability — **last, and not asked at all — judged.**
+
+**Irritability is pre-selected**, using the exact `suggested` / `because`
+visual convention `MeasureCell` already carries (a soft ring + a one-line
+reason): night pain or >30min morning stiffness or very low tolerance
+pre-picks High, with the reason stated. One click confirms or overrides.
+Doctrine's "ranking is a safety property, never a verdict" rule, applied to
+a UI default instead of an engine score.
+
+### 12.2 Rank vs record — decided PER ITEM, not per field category
+
+Running "does this change reasoning, dosing or outcome — for essentially
+every patient who has it, not just plausibly" against each item, not each
+field, because two fields (`aggravating`, `pattern`) contain both rankable
+and non-rankable members:
+
+| Item | Rank? | Reasoning |
+|---|---|---|
+| Onset mode | **Yes — strong** | sudden/gradual/post-surgical/post-traumatic is a primary MSK discriminator |
+| Duration | **Yes — weak** | acute/subacute/chronic staging; small closed set |
+| Aggravating: downstairs, overhead reach, prolonged sitting, bending forward, twisting | **Yes** | each maps to a named clinical pattern (patellofemoral, impingement, discogenic, facet/meniscal) |
+| Aggravating: general activity/movement | **No** | true of nearly every MSK complaint; discriminates nothing |
+| Easing factors, as a category | **No, with one reserved exception** | "rest/heat helps" is near-universal; directional preference (eases in flexion vs extension) is real for spinal pain but its content does not exist yet and should not be guessed at |
+| Pattern: morning stiffness >30min, night pain | **Yes — high value** | standard inflammatory-vs-mechanical screen; night pain is a genuine red-flag candidate, possibly a GUARD rather than a rank nudge |
+| Pattern: worse end of day, worse with rest | **No** | generic mechanical noise alone |
+| Activity tolerance | **No, structurally** | free text ("10 min walking → 6/10"); no honest parse into a discrete signal |
+| Patient goal | **No, by design** | fully patient-authored, unbounded vocabulary — the case the rule exists to protect |
+| Irritability, settling time | **Neither ranked nor discarded — reserved for a GUARD** | these answer "how hard can I push today", not "which condition is this" — the same shape `SEVERE_HIGH_BP` already uses to guard the `exercise` intent type. High irritability should be able to de-rank aggressive modalities. Needs real data to calibrate before content is written — Phase 5, not Phase 1. |
+
+**`story.ts`'s `signalId` field is therefore populated for the "Yes" rows
+above and left null for the rest at Phase 1 build time** — not left
+uniformly null pending a future decision, and not filled in for everything
+just because a seam exists. The two "reserved for a guard" fields
+(irritability, settling) get a distinct marker (`guardCandidate: true`)
+rather than a `signalId`, so they are never accidentally wired as a ranking
+input by a later session skimming the file.
