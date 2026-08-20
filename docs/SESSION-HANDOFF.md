@@ -1,8 +1,6 @@
-# Session handoff — 2026-08-20
+# Session handoff — 2026-08-20 (second session, same day)
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
-Previous version (2026-08-18) is obsolete — its headline claim ("nobody has
-used the physio rebuild") is now FALSE and its "next step" is superseded.
 
 **Read order for a cold start:** this file → `docs/context/README.md` (routes
 to one scoped pocket) → `docs/aren-cortex-context.md` only if the task needs
@@ -10,11 +8,35 @@ the full picture.
 
 ---
 
-## 0. Status: nothing in flight, nothing implemented this session
+## 0. Status: Story, Goals and the density pass are IMPLEMENTED, UNVERIFIED
 
-Branch `master`, at `92655e1`. Working tree clean apart from this commit.
-No code was written. This session was **read + plan only** — it stopped
-deliberately so context could be carried to another machine.
+Two commits on `master`. The previous version of this file said "no code was
+written" — that is now false and this section supersedes it.
+
+- `f3014e3` Physio Story and Goals: one search field, confirmation chips
+- `86a8a5c` Density pass: fit a 14-inch panel at 100% zoom, not 75%
+
+**Nothing below has been seen rendered.** This container's Chromium has no
+outbound network and the intake modal cannot be dismissed without a patient,
+so the work was typechecked (`tsc -p tsconfig.app.json`, clean) and never
+looked at. Anmol is doing the visual pass himself. **Believe his testing over
+anything asserted here**, and expect the first round of feedback to be about
+proportions the density pass got wrong, not about the interaction model.
+
+Not attempted this session, still open: LongitudinalBand compaction, the
+body-map summary strip, moving the command bar inside the Case Sheet card,
+and every §15 question below.
+
+## 0b. What to check first when it is opened
+
+- Story: type into `Add to story…`, confirm chips land with the right
+  dimension sub-label, confirm the prompt row advances to the next
+  unanswered dimension and disappears when answered.
+- Goals: chips press open a 0-10 picker; the score is NOT gone, it moved.
+- Whole screen at 100% browser zoom on a 14-inch panel — that is the
+  measurement the density pass was built against.
+- The two lower text rungs moved darker; if "greyscale text" recurs, look for
+  a SURFACE using `--cs-faint` for structural text before touching `:root`.
 
 ## 1. The thing that changed: physio WAS tested, and it's wrong
 
@@ -47,9 +69,14 @@ RAISED on 2026-08-12 with a stated reason ("arm's length, patient sitting
 opposite"). Bringing them down reverses a considered decision — do it
 knowingly, and consider a density scale rather than an unexplained revert.
 
-## 2. Concrete gap found by reading the code
+## 2. Concrete gap found by reading the code — NOW FIXED (`f3014e3`)
 
-`src/features/consult/StoryCard.tsx` (275 lines) renders **permanent rows**
+**Historical, kept for the reasoning.** As of `f3014e3` StoryCard is one
+search field and confirmation chips, and GoalsCard matches it; the 0-10 PSFS
+score moved behind the chip rather than being deleted. What follows describes
+the state that was replaced.
+
+`src/features/consult/StoryCard.tsx` (275 lines) rendered **permanent rows**
 for How long / Onset / Worse with / Better with / Pattern / Irritability /
 Settles in — every dimension visible at once. Its own file header defends
 this ("every field renders at once — no hide-until-reached").
@@ -162,11 +189,12 @@ after capture. Don't treat the screenshot as having decided them.
 src/features/consult/
   PhysioInputs.tsx    169   composes Story→Goals→CommandBar→CaseSheet+
                             Measurements/Attachments→ExaminationCard
-  StoryCard.tsx       275   ← rewrite target (§2)
-  GoalsCard.tsx       161   ← simplify (drop per-row sliders?)
+  StoryCard.tsx       ~250  ← REWRITTEN f3014e3 (search-first)
+  GoalsCard.tsx       ~290  ← REWRITTEN f3014e3 (search-first, score in popover)
+  story.ts            ~390  ← gained STORY_SEARCH_ITEMS + search/add/remove
   CaseSheet.tsx       866
   MeasurementsCard.tsx 702  ← body-map summary strip belongs in/near here
-  LongitudinalBand.tsx 521  ← must get much more compact
+  LongitudinalBand.tsx 521  ← STILL must get much more compact (untouched)
   ConditionsCard.tsx  606
   JointMapCard.tsx    382
   ExercisePlanCard.tsx 472
@@ -220,9 +248,21 @@ copy-paste instructions, no diagrams).
 ## 8. First move next session
 
 Don't re-read the screenshots or re-scan the tree — §3 and §4 above replace
-both. Open the brief, then `StoryCard.tsx`, and start with the Story rewrite
-(§2): it is the highest-value change, it is the one the brief specifies most
-concretely, and every card below it inherits the same search-first pattern
-once it exists. Do the density/contrast pass (§1b) as a token-level change
-across `consult.css`, separately from the Story rewrite, so a regression in
-one is not tangled in the other.
+both.
+
+**Wait for Anmol's visual pass before writing anything.** Two commits landed
+unverified (§0); the next useful move is his feedback on them, not more
+surface area. Fixing a proportion he flags is worth more than the next card.
+
+When there is room beyond that, in order:
+
+1. `LongitudinalBand.tsx` (521 lines) — brief §10 and §14 both say the top
+   strip must not eat two rows. Untouched so far and the largest remaining
+   vertical cost on the screen.
+2. The body-map/examination **summary strip** (brief §7) — a compact
+   "Right knee · 2 ROM · 1 strength · 2 tests" widget in/near
+   `MeasurementsCard`, opening the full interface. Nothing exists yet.
+3. The Case Sheet's command bar currently sits as its own band above the
+   card; the reference puts that search INSIDE card 3. Worth doing, but it
+   touches a component General OPD shares — and it is one of §15's open
+   questions, so it should follow his verdict rather than precede it.
