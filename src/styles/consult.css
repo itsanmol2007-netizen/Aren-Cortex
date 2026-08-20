@@ -6344,246 +6344,482 @@ body.cs-locked-shell {
 }
 
 /* ════════════════════════════════════════════════════════════
-   STORY — physiotherapy's Subjective half, chip-first (2026-08-17).
-   See `StoryCard.tsx` and `docs/Cortex Specialties/
-   physiotherapy-phase-1-plan.md` for the reasoning. Reuses
-   `.cs-attach-chip` / `.cs-attach-tagrow` / `.cs-attach-region-input`
-   exactly — the same chip language `JointMapCard` and `AttachmentsCard`
-   already use, not a new visual vocabulary for one more card.
+   STORY — physiotherapy's Subjective half, SEARCH-first
+   (rewritten 2026-08-20). See `StoryCard.tsx` for why the
+   seven permanent chip rows this block used to style are gone,
+   and `docs/Cortex Specialties/AREN Cortex Physiotherapy
+   Consultation UX Workflow Brief.md` §3 for the interaction
+   it now serves: one input, confirmation chips, a quiet prompt
+   for the next unanswered dimension.
+
+   Contrast note: nothing structural here uses `--cs-faint`.
+   The complaint the rewrite answers was "greyscale text looks
+   terrible" — and the old block put the row LABELS, which are
+   the page's skeleton, on the quietest rung in the ramp. Chip
+   text is `--cs-ink`, sub-labels are `--cs-label`, and
+   `--cs-faint` is left to genuine ornament (the search glyph,
+   a placeholder).
    ════════════════════════════════════════════════════════════ */
 
-.cs-story .cs-card-head.is-trigger {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    cursor: pointer;
-    text-align: left;
-}
-
-.cs-story-summary {
-    flex: 1;
-    overflow: hidden;
-    color: var(--cs-muted);
-    font-size: 12.5px;
-    font-weight: 550;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cs-story-chevron {
+/* The numbered badge beside a card title — "1 STORY", "2 GOALS".
+   The consultation reads as a sequence, and a number is the cheapest
+   possible way to say so: no rail, no stepper, no extra chrome. */
+.cs-card-num {
+    display: grid;
+    place-items: center;
     flex: none;
-    margin-left: auto;
-    color: var(--cs-faint);
-    transition: transform 140ms ease;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: var(--cs-page);
+    border: 1px solid var(--cs-line-strong);
+    color: var(--cs-label);
+    font-size: 10.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
 }
-
-.cs-story-chevron.is-open { transform: rotate(180deg); }
 
 .cs-story-body {
     display: flex;
     flex-direction: column;
-    gap: var(--cs-s3);
-    padding: var(--cs-s3) var(--cs-s4) var(--cs-s4);
+    gap: var(--cs-s2);
+    padding: var(--cs-s2) var(--cs-s3) var(--cs-s3);
 }
 
-.cs-story-row {
+/* Anchors the results list to the field rather than to the page. No portal:
+   `.cs-card` does not clip, Story sits at the top of the scroller, and a
+   portalled dropdown would need the resize/scroll rect plumbing the command
+   bar carries only because it is pinned above a scrolling region. */
+.cs-story-searchwrap {
+    position: relative;
+}
+
+.cs-story-search {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-}
-
-/* `.cs-attach-tagrow` itself does not wrap (AttachmentsCard/JointMapCard
-   never have enough tags to need it) — the aggravating-factor list has 16.
-   Scoped here rather than changed globally: an unwrapped tag row is the
-   right behaviour for a short, single-line list, wrong for a long one, and
-   this is the one card with a long one. Found by screenshotting it, not by
-   reading the CSS — the chips ran off the card's right edge into the page. */
-.cs-story-row .cs-attach-tagrow {
-    flex-wrap: wrap;
-}
-
-.cs-story-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    flex: none;
-    min-width: 88px;
+    gap: var(--cs-s2);
+    height: 34px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-card);
+    padding: 0 10px;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.cs-story-search:focus-within {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+}
+
+.cs-story-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+    outline: none;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 550;
+}
+
+.cs-story-search input::placeholder {
+    color: var(--cs-faint);
+    font-weight: 500;
+}
+
+.cs-story-results {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-card);
+    padding: 3px;
+    box-shadow: 0 10px 26px -8px rgba(11, 23, 51, 0.26);
+}
+
+.cs-story-result {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    width: 100%;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.cs-story-result.is-active { background: var(--cs-blue-soft); }
+
+.cs-story-result-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-story-result-dim {
+    flex: none;
+    border-radius: 4px;
+    background: var(--cs-page);
+    padding: 2px 6px;
+    color: var(--cs-label);
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
 }
 
-.cs-story-info {
-    display: inline-flex;
-    color: var(--cs-faint);
-    cursor: help;
+.cs-story-noresult {
+    margin: 0;
+    padding: 8px 10px;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 550;
 }
 
-.cs-story-tolerance {
-    flex-basis: 220px;
+/* ── Confirmation chips ──────────────────────────────────────────────────
+   Deliberately NOT `.cs-attach-chip`. That chip is a TOGGLE — a thing you
+   press to turn on, which is exactly the checkbox-grid reading brief §1
+   rejects. These are settled facts: a tick, the fact, the dimension it
+   answered, and a way to take it back. Nothing here invites pressing. */
+
+.cs-story-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.cs-story-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-card);
+    padding: 5px 8px 5px 9px;
+}
+
+.cs-story-chip-tick {
+    flex: none;
+    color: var(--cs-green);
+}
+
+.cs-story-chip-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.25;
+}
+
+.cs-story-chip-text b {
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.cs-story-chip-text em {
+    color: var(--cs-label);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.cs-story-chip-x {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: var(--cs-faint);
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+/* Revealed on approach, so five settled facts do not render as five delete
+   buttons. Focus counts as approach — the keyboard must not lose the control
+   the mouse gets. */
+.cs-story-chip:hover .cs-story-chip-x,
+.cs-story-chip-x:focus-visible {
+    opacity: 1;
+}
+
+.cs-story-chip-x:hover {
+    background: var(--cs-rose-soft);
+    color: var(--cs-rose);
+}
+
+.cs-story-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: none;
+    padding: 6px 10px;
+    color: var(--cs-blue);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cs-story-more:hover { border-color: var(--cs-blue); }
+
+/* ── The next question, and only the next one ────────────────────────────
+   Progressive disclosure's visible half. One dimension at a time, quiet
+   enough to ignore — a clinician who stops here has a complete story by
+   the brief's own rule, not an unfinished form. */
+
+.cs-story-prompts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+}
+
+.cs-story-prompt-label {
+    flex: none;
+    margin-right: 2px;
+    color: var(--cs-label);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cs-story-prompt {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--cs-line);
+    border-radius: 999px;
+    background: var(--cs-page);
+    padding: 3px 10px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 550;
+    transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+}
+
+.cs-story-prompt:hover {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
 }
 
 /* A suggested-but-unconfirmed value — irritability's pre-pick. Same "add,
-   never dim" rule as `.cs-meas.is-suggested`: a soft blue ring around the
-   chip, never a filled one, so it stays visually distinct from a value the
-   doctor actually chose (`.is-on`, filled solid). Clears the instant the
-   doctor answers, same as every other suggestion mark on this screen. */
-.cs-attach-chip.is-suggested {
+   never dim" rule as `.cs-meas.is-suggested`: a soft blue ring, never a
+   filled one, so it stays distinct from a value actually chosen. Clears the
+   instant the clinician answers, same as every other suggestion mark here. */
+.cs-story-prompt.is-suggested {
     border-color: rgba(18, 104, 232, 0.35);
     background: linear-gradient(180deg, #f6faff 0%, #e9f1ff 100%);
     color: var(--cs-blue);
 }
 
 .cs-story-because {
-    flex-basis: 100%;
-    margin: -2px 0 0 96px;
+    margin: -2px 0 0;
     color: var(--cs-blue);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 550;
 }
 
+/* ── Free text, kept to where a chip genuinely cannot carry the fact ───── */
+
+.cs-story-freerow {
+    display: flex;
+    gap: 6px;
+}
+
+.cs-story-free {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--cs-line);
+    border-radius: 6px;
+    background: var(--cs-card);
+    padding: 5px 8px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+}
+
+.cs-story-free::placeholder {
+    color: var(--cs-faint);
+    font-weight: 500;
+}
+
+.cs-story-notetoggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 2px 4px;
+    color: var(--cs-label);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.cs-story-notetoggle:hover { color: var(--cs-blue); }
+
 /* ════════════════════════════════════════════════════════════
    GOALS — patient-authored, re-scored per visit.
+   Rewritten 2026-08-20 alongside Story: same search field, same
+   confirmation chip, because two adjacent cards must not teach
+   two different ways to add a fact. The per-goal 0-10 slider
+   this block used to style now lives in `.cs-goal-pop`, one
+   click behind the chip — see `GoalsCard.tsx` for why the score
+   moved rather than went away.
    ════════════════════════════════════════════════════════════ */
 
 .cs-goals-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: var(--cs-s2) var(--cs-s4) var(--cs-s4);
+    gap: var(--cs-s2);
+    padding: var(--cs-s2) var(--cs-s3) var(--cs-s3);
 }
 
-.cs-goal-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid var(--cs-line);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-page);
-    padding: 8px 10px;
-}
-
-.cs-goal-activity {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--cs-ink);
-    font-size: 13px;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cs-goal-score {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: none;
-    color: var(--cs-muted);
-    font-size: 12px;
-}
-
-.cs-goal-score input[type="range"] {
-    width: 90px;
-}
-
-.cs-goal-before {
-    color: var(--cs-faint);
-    font-variant-numeric: tabular-nums;
-}
-
-.cs-goal-now {
-    min-width: 30px;
-    color: var(--cs-ink);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-}
-
-.cs-goal-menu-wrap { position: relative; flex: none; }
-
-.cs-goal-retire {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 6px;
-    background: none;
-    color: var(--cs-faint);
-}
-
-.cs-goal-retire:hover {
-    background: var(--cs-line);
-    color: var(--cs-muted);
-}
-
-.cs-goal-menu {
-    position: absolute;
-    top: 26px;
-    right: 0;
-    z-index: 20;
-    display: flex;
-    flex-direction: column;
-    min-width: 160px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: 10px;
-    background: #fff;
-    padding: 4px;
-    box-shadow: 0 12px 28px -8px rgba(11, 23, 51, 0.28);
-}
-
-.cs-goal-menu button {
-    border: none;
-    border-radius: 7px;
-    background: none;
-    padding: 7px 9px;
-    color: var(--cs-ink);
-    font-size: 12.5px;
-    font-weight: 550;
-    text-align: left;
-}
-
-.cs-goal-menu button:hover { background: var(--cs-page); }
-
-.cs-goal-add-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.cs-goal-baseline-input {
-    flex: none;
-    width: 46px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: 8px;
-    padding: 6px 6px;
-    text-align: center;
-    font-size: 13px;
-}
-
-.cs-goal-add-btn {
+/* `+ Goal` — the card's own action, pushed to the far end of the head. */
+.cs-goal-headbtn {
     display: inline-flex;
     align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    border: 0;
+    border-radius: 6px;
+    background: var(--cs-blue);
+    padding: 4px 10px;
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 650;
+}
+
+.cs-goal-headbtn:hover { background: #0f5ccd; }
+
+/* A goal chip is pressable — unlike a Story chip, which is inert — because
+   the score sits behind it. Positioned so the picker can anchor to it. */
+.cs-goal-chipwrap { position: relative; }
+
+.cs-story-chip.is-press {
+    cursor: pointer;
+    transition: border-color 0.13s ease, background 0.13s ease;
+}
+
+.cs-story-chip.is-press:hover,
+.cs-story-chip.is-press.is-open {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+}
+
+.cs-story-chip-aim {
+    flex: none;
+    color: var(--cs-label);
+}
+
+.cs-goal-pop {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    z-index: 30;
+    width: 268px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: var(--cs-card);
+    padding: var(--cs-s2);
+    box-shadow: 0 10px 26px -8px rgba(11, 23, 51, 0.26);
+}
+
+.cs-goal-pop-q {
+    display: flex;
+    align-items: baseline;
     gap: 6px;
-    align-self: flex-start;
-    border: 1px dashed var(--cs-line-strong);
-    border-radius: 999px;
-    background: none;
-    padding: 6px 12px;
-    color: var(--cs-faint);
-    font-size: 12.5px;
+    margin: 0 0 6px;
+    color: var(--cs-ink);
+    font-size: 11.5px;
     font-weight: 600;
 }
 
-.cs-goal-add-btn:hover {
-    border-color: var(--cs-blue);
-    color: var(--cs-blue);
+.cs-goal-pop-was {
+    margin-left: auto;
+    color: var(--cs-label);
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
 }
+
+/* Eleven ticks, equal width, no gaps between them — one continuous scale
+   rather than eleven separate buttons, which is what an ordinal grade is. */
+.cs-goal-scale {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 6px;
+}
+
+.cs-goal-tick {
+    border: 0;
+    border-right: 1px solid var(--cs-line);
+    background: var(--cs-card);
+    padding: 5px 0;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: background 0.1s ease, color 0.1s ease;
+}
+
+.cs-goal-tick:last-child { border-right: 0; }
+.cs-goal-tick:hover { background: var(--cs-blue-soft); color: var(--cs-blue); }
+
+.cs-goal-tick.is-on {
+    background: var(--cs-blue);
+    color: #fff;
+}
+
+.cs-goal-pop-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    margin-top: 6px;
+    color: var(--cs-label);
+    font-size: 10.5px;
+    font-weight: 550;
+}
+
+.cs-goal-pop-actions {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.cs-goal-pop-actions button {
+    border: 0;
+    border-radius: 5px;
+    background: var(--cs-page);
+    padding: 3px 7px;
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 650;
+}
+
+.cs-goal-pop-actions button:hover { background: var(--cs-line); color: var(--cs-ink); }
 
 /* ════════════════════════════════════════════════════════════
    EXAMINATION — Phase 3, plus Phase 5's within-session re-test.

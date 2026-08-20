@@ -206,3 +206,192 @@ export function suggestIrritability(s: Story): { value: StoryIrritability; becau
     }
     return null;
 }
+
+// ── One searchable vocabulary (2026-08-20) ──────────────────────────────────
+//
+// The UX brief §3 rejects the fixed questionnaire this file's vocabularies
+// were first rendered as — seven permanent rows, every dimension on screen
+// at once. It asks for ONE input instead:
+//
+//     Add to story…  →  Knee pain · 3 weeks · Gradual onset · Worse
+//                       downstairs · Better with rest
+//
+// So the dimensions stop being SECTIONS and become what they always were
+// clinically: labelled facts, reached by search. Nothing below invents new
+// vocabulary — every item is derived from the six lists already above, which
+// is why `check:story` still validates the same `signalId` wiring it always
+// did. The card renders this flat list; the `Story` shape it writes back to
+// is byte-identical to what the row-based card wrote, so saved visits,
+// `visit_story`'s columns and the Phase 5 guard work are all untouched.
+//
+// `single: true` marks a dimension that holds one value (duration, onset,
+// irritability, settling). Picking a second REPLACES the first rather than
+// adding to it — which is the behaviour the old single-select rows had, kept
+// exactly, just without a row to hold it.
+
+/** The dimension a story item belongs to. Doubles as the chip's sub-label. */
+export type StoryDimension =
+    | "Duration" | "Onset" | "Aggravating" | "Easing" | "Pattern"
+    | "Irritability" | "Settles in";
+
+export interface StorySearchItem {
+    /** unique within the list — `${dimension}:${key}` */
+    id: string;
+    /** the value written into `Story`, e.g. "under_2wk" or "stairs_down" */
+    key: string;
+    label: string;
+    dimension: StoryDimension;
+    /** one value only: picking again replaces rather than appends */
+    single: boolean;
+    /** extra words the search should match on, beyond the label itself */
+    synonyms: string[];
+}
+
+function item(
+    key: string, label: string, dimension: StoryDimension,
+    single: boolean, synonyms: string[] = [],
+): StorySearchItem {
+    return { id: `${dimension}:${key}`, key, label, dimension, single, synonyms };
+}
+
+/**
+ * Everything a clinician can add to the story, in ONE list.
+ *
+ * Order matters only as a tiebreak inside an equal search rank, and it runs
+ * in the sequence a patient actually narrates — how long, how it started,
+ * what brings it on, what helps, how it behaves, then irritability, which is
+ * judged after hearing all of the above rather than asked.
+ */
+export const STORY_SEARCH_ITEMS: StorySearchItem[] = [
+    ...(Object.keys(DURATION_LABEL) as StoryDuration[]).map((d) =>
+        item(d, DURATION_LABEL[d], "Duration", true, ["how long", "duration", "since"])),
+
+    ...(Object.keys(ONSET_LABEL) as StoryOnsetMode[]).map((o) =>
+        item(o, `${ONSET_LABEL[o]} onset`, "Onset", true, ["started", "began", "onset"])),
+
+    ...AGGRAVATING_FACTORS.map((f) =>
+        item(f.key, f.label, "Aggravating", false, ["worse", "aggravated by", "brings it on"])),
+
+    ...EASING_FACTORS.map((f) =>
+        item(f.key, f.label, "Easing", false, ["better", "eases", "relieved by", "helps"])),
+
+    ...STORY_PATTERNS.map((p) =>
+        item(p.key, p.label, "Pattern", false, ["pattern", "through the day", "24 hour"])),
+
+    ...(Object.keys(IRRITABILITY_LABEL) as StoryIrritability[]).map((level) =>
+        item(level, `${IRRITABILITY_LABEL[level]} irritability`, "Irritability", true,
+            ["irritability", "provoked", "how hard to push"])),
+
+    ...(Object.keys(SETTLING_LABEL) as StorySettling[]).map((s) =>
+        item(s, `Settles ${SETTLING_LABEL[s].toLowerCase()}`, "Settles in", true,
+            ["settles", "settling", "calms down", "how long to settle"])),
+];
+
+/** Where each dimension's value lives on `Story`. */
+const FIELD_OF: Record<StoryDimension, keyof Story> = {
+    Duration: "duration", Onset: "onsetMode", Aggravating: "aggravating",
+    Easing: "easing", Pattern: "pattern", Irritability: "irritability",
+    "Settles in": "settling",
+};
+
+/** Is this item already part of the story? */
+export function storyHas(s: Story, it: StorySearchItem): boolean {
+    const field = FIELD_OF[it.dimension];
+    const value = s[field];
+    return Array.isArray(value) ? value.includes(it.key) : value === it.key;
+}
+
+/**
+ * Add an item to the story. Multi-select dimensions append; single-select
+ * dimensions replace, which is what the old one-row-per-dimension card did
+ * implicitly by only ever rendering one `is-on` chip.
+ */
+export function addToStory(s: Story, it: StorySearchItem): Story {
+    const field = FIELD_OF[it.dimension];
+    const value = s[field];
+    if (Array.isArray(value)) {
+        if (value.includes(it.key)) return s;
+        return { ...s, [field]: [...value, it.key] };
+    }
+    return { ...s, [field]: it.key };
+}
+
+/** Remove an item. Clearing irritability also clears settling, which only
+ *  exists as a follow-up to it (`showSettling`) and would otherwise be
+ *  stranded in the record with nothing to qualify. */
+export function removeFromStory(s: Story, it: StorySearchItem): Story {
+    const field = FIELD_OF[it.dimension];
+    const value = s[field];
+    const next: Story = Array.isArray(value)
+        ? { ...s, [field]: value.filter((k) => k !== it.key) }
+        : { ...s, [field]: null };
+    if (it.dimension === "Irritability") next.settling = null;
+    return next;
+}
+
+/**
+ * The story as it currently stands, in narration order — this is what the
+ * card renders as confirmation chips and what `storyLine` joins into the
+ * one-line summary the brief asks for.
+ */
+export function selectedStoryItems(s: Story): StorySearchItem[] {
+    return STORY_SEARCH_ITEMS.filter((it) => storyHas(s, it));
+}
+
+/** "3 weeks · Gradual onset · Worse downstairs · Better with rest" */
+export function storyLine(s: Story): string {
+    return selectedStoryItems(s).map((it) => it.label).join(" · ");
+}
+
+/**
+ * Rank items against a typed query. Same shape as the Case Sheet's own
+ * catalogue search — prefix beats word-start beats substring — so the two
+ * search surfaces on this screen behave identically under the hand rather
+ * than each having its own idea of a good match.
+ */
+export function searchStory(query: string, s: Story, limit = 8): StorySearchItem[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const ranked: { it: StorySearchItem; r: number }[] = [];
+    for (const it of STORY_SEARCH_ITEMS) {
+        if (storyHas(s, it)) continue; // already said — never offer it twice
+        const label = it.label.toLowerCase();
+        let r = 99;
+        if (label.startsWith(q)) r = 0;
+        else if (label.includes(` ${q}`)) r = 1;
+        else if (label.includes(q)) r = 2;
+        else if (it.dimension.toLowerCase().startsWith(q)) r = 3;
+        else if (it.synonyms.some((w) => w.includes(q))) r = 4;
+        if (r < 99) ranked.push({ it, r });
+    }
+    return ranked.sort((a, b) => a.r - b.r).slice(0, limit).map((x) => x.it);
+}
+
+/**
+ * What to offer when the field is empty — the "guided" half of guided
+ * autocomplete. Progressive disclosure lives HERE now rather than in reveal
+ * predicates on permanent rows: the card asks what is missing, in narration
+ * order, and stops asking the moment the clinician stops answering.
+ *
+ * `showMechanism` / `showSettling` above still hold; they simply gate a
+ * prompt instead of a row, so an unanswered dimension costs one line of
+ * suggestion rather than a permanent section of screen.
+ */
+export function nextStoryPrompts(s: Story, limit = 6): StorySearchItem[] {
+    const wanted: StoryDimension[] = [];
+    if (!s.duration) wanted.push("Duration");
+    if (!s.onsetMode) wanted.push("Onset");
+    if (s.aggravating.length === 0) wanted.push("Aggravating");
+    if (s.easing.length === 0) wanted.push("Easing");
+    if (s.pattern.length === 0) wanted.push("Pattern");
+    if (!s.irritability) wanted.push("Irritability");
+    if (showSettling(s) && !s.settling) wanted.push("Settles in");
+
+    // One representative dimension at a time — the FIRST unanswered one —
+    // so the empty state is a next question, not a menu of every question.
+    const dimension = wanted[0];
+    if (!dimension) return [];
+    return STORY_SEARCH_ITEMS
+        .filter((it) => it.dimension === dimension && !storyHas(s, it))
+        .slice(0, limit);
+}

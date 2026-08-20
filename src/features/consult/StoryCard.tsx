@@ -1,41 +1,60 @@
 // ---------------------------------------------------------------------------
-// STORY CARD — physiotherapy's Subjective half, chip-first.
+// STORY CARD — physiotherapy's Subjective half, SEARCH-first.
 //
-// See `docs/Cortex Specialties/physiotherapy-phase-1-plan.md` for the full
-// reasoning; every design choice here traces to a numbered section there.
+// Rewritten 2026-08-20 against `docs/Cortex Specialties/AREN Cortex
+// Physiotherapy Consultation UX Workflow Brief.md` §3, after the row-based
+// version was tested live and failed the brief's own headline test: it was
+// "a prettier paper form".
 //
-// ── Guided, not a wizard (plan §12.1)
+// ── What changed, and why the previous reasoning does not survive
 //
-// Every field renders at once — no hide-until-reached, because a doctor is
-// listening to a patient talk, not stepping through a form. The ORDER on the
-// page matches how a patient actually narrates (how long / how it started ->
-// what brings it on -> what helps -> how it behaves through the day ->
-// irritability last, because irritability is not asked, it is judged after
-// hearing everything above).
+// The old card rendered seven permanent rows — How long / Onset / Worse with
+// / Better with / Pattern / Irritability / Settles in — and its header
+// defended that: "every field renders at once — no hide-until-reached,
+// because a doctor is listening to a patient talk, not stepping through a
+// form."
 //
-// Auto-advance is honest about its own scope: `duration` and `onset` are
-// single-select, so picking one has an unambiguous "next field" and reuses
-// `MeasurementsCard`'s own `focusNext` shape. The chip GROUPS (aggravating,
-// easing, pattern) are multi-select — auto-advancing after the first click
-// would make picking a second chip require clicking back, which is worse
-// than not advancing at all — so those are reached by ordinary tab order
-// instead of a bespoke chain. This is a scope decision, not an oversight.
+// The premise was right and the conclusion was wrong. A clinician listening
+// to a patient talk does not want SEVEN ROWS OF CHIPS either; showing every
+// dimension at once is the same interrogation as a wizard, merely delivered
+// all in one breath instead of one screen at a time. What that clinician
+// wants is to type the two words the patient just said and have the system
+// know which dimension they belong to. Brief §3:
 //
-// ── Irritability is suggested, never assumed (plan §12.1, §13)
+//     Add to story…
+//       → Knee pain          → Knee pain
+//       → 3 weeks            → Knee pain · 3 weeks
+//       → Gradual onset      → Knee pain · 3 weeks · Gradual onset
 //
-// `suggestIrritability` is a UI default with a stated reason, the same
-// `is-suggested` + "why" convention `MeasureCell` already uses for a
-// chart-relevant measurement. It never overrides an answer already given —
-// checked directly in `story-catalogue.mjs`.
+// So there is now ONE input. The dimensions did not go away — they became
+// the SUB-LABEL on each confirmation chip, which is where a dimension
+// belongs once its value is known. `story.ts` holds the flat searchable
+// vocabulary; the `Story` shape written back is unchanged, so saved visits
+// and `visit_story`'s columns are untouched by this.
+//
+// ── Progressive disclosure moved from rows to prompts
+//
+// `showMechanism` / `showSettling` still hold, but they now gate a PROMPT
+// rather than a permanent row (see `nextStoryPrompts`). An unanswered
+// dimension costs one line of quiet suggestion instead of a section of
+// screen, and the clinician may stop at any point — brief §3's last line,
+// and §12 rule 7.
+//
+// ── Irritability is still suggested, never assumed
+//
+// `suggestIrritability` survives intact. It surfaces as a one-click
+// suggestion above the prompts with its reason stated, the same
+// `is-suggested` + "why" convention `MeasureCell` uses. It never overrides
+// an answer already given — still checked in `story-catalogue.mjs`.
 // ---------------------------------------------------------------------------
 
-import { useRef, useState } from "react";
-import { ChevronDown, Info } from "lucide-react";
-import type { Story, StoryDuration, StoryOnsetMode, StoryIrritability } from "./story";
+import { useEffect, useRef, useState } from "react";
+import { Check, Plus, Search, Sparkles, X } from "lucide-react";
+import type { Story, StorySearchItem } from "./story";
 import {
-    DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
-    AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS,
-    showMechanism, showSettling, suggestIrritability, isStoryEmpty,
+    addToStory, removeFromStory, searchStory, selectedStoryItems,
+    nextStoryPrompts, showMechanism, suggestIrritability, isStoryEmpty,
+    STORY_SEARCH_ITEMS,
 } from "./story";
 
 interface Props {
@@ -44,230 +63,221 @@ interface Props {
     disabled?: boolean;
 }
 
-function toggleIn(list: string[], key: string): string[] {
-    return list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
-}
-
 export function StoryCard({ story, onChange, disabled = false }: Props) {
-    // Open by default on every visit — an empty Story is one collapsed
-    // line either way (doctrine's "does an empty consultation get
-    // shorter?" test), so there is no clinical cost to defaulting open,
-    // and no last-visit summary is fetched to render a collapsed
-    // preview (carry-forward is explicitly not built — plan §9).
-    const [expanded, setExpanded] = useState(true);
-    const onsetRef = useRef<HTMLDivElement>(null);
-    const aggravatingRef = useRef<HTMLDivElement>(null);
+    const [query, setQuery] = useState("");
+    const [active, setActive] = useState(0);
+    const [noteOpen, setNoteOpen] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
 
-    const set = <K extends keyof Story>(key: K, value: Story[K]) => onChange({ ...story, [key]: value });
-
+    const results = searchStory(query, story);
+    const open = query.trim().length > 0;
+    const chips = selectedStoryItems(story);
+    const prompts = nextStoryPrompts(story);
     const suggestion = suggestIrritability(story);
 
-    const summary = [
-        story.duration && DURATION_LABEL[story.duration],
-        story.onsetMode && ONSET_LABEL[story.onsetMode],
-        story.irritability && `${IRRITABILITY_LABEL[story.irritability]} irritability`,
-    ].filter(Boolean).join(" · ") || "Nothing recorded yet";
+    useEffect(() => { setActive(0); }, [query]);
+
+    const take = (it: StorySearchItem) => {
+        onChange(addToStory(story, it));
+        setQuery("");
+        inputRef.current?.focus();
+    };
+
+    const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (!open) return;
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActive((i) => Math.min(i + 1, results.length - 1));
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActive((i) => Math.max(i - 1, 0));
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            const pick = results[active];
+            if (pick) take(pick);
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            setQuery("");
+        }
+    };
+
+    // The suggested irritability, as the real item it would add — so
+    // confirming it goes through exactly the same path as typing it.
+    const suggestedItem = suggestion
+        ? STORY_SEARCH_ITEMS.find((it) => it.dimension === "Irritability" && it.key === suggestion.value)
+        : undefined;
 
     return (
-        <section className={`cs-card cs-story${expanded ? "" : " is-collapsed"}`} aria-label="Story">
-            <button
-                type="button"
-                className="cs-card-head is-trigger"
-                aria-expanded={expanded}
-                onClick={() => setExpanded((v) => !v)}
-            >
+        <section className="cs-card cs-story" aria-label="Story">
+            <div className="cs-card-head">
+                <span className="cs-card-num" aria-hidden="true">1</span>
                 <span className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Info size={14} /></span>
                     Story
+                    <em>What happened?</em>
                 </span>
-                {!expanded && <span className="cs-story-summary">{summary}</span>}
-                <ChevronDown size={14} className={`cs-story-chevron${expanded ? " is-open" : ""}`} aria-hidden="true" />
-            </button>
+            </div>
 
-            {expanded && (
-                <div className="cs-story-body">
-                    {/* Duration + onset — one exchange: "how long, how did it start" */}
-                    <div className="cs-story-row">
-                        <span className="cs-story-label">How long</span>
-                        <div className="cs-attach-tagrow">
-                            {(Object.keys(DURATION_LABEL) as StoryDuration[]).map((d) => (
-                                <button
-                                    key={d}
-                                    type="button"
-                                    disabled={disabled}
-                                    className={`cs-attach-chip${story.duration === d ? " is-on" : ""}`}
-                                    onClick={() => {
-                                        set("duration", d);
-                                        onsetRef.current?.focus();
-                                    }}
-                                >
-                                    {DURATION_LABEL[d]}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="cs-story-row" ref={onsetRef} tabIndex={-1}>
-                        <span className="cs-story-label">Onset</span>
-                        <div className="cs-attach-tagrow">
-                            {(Object.keys(ONSET_LABEL) as StoryOnsetMode[]).map((o) => (
-                                <button
-                                    key={o}
-                                    type="button"
-                                    disabled={disabled}
-                                    className={`cs-attach-chip${story.onsetMode === o ? " is-on" : ""}`}
-                                    onClick={() => {
-                                        set("onsetMode", o);
-                                        aggravatingRef.current?.focus();
-                                    }}
-                                >
-                                    {ONSET_LABEL[o]}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Revealed only on traumatic/post-surgical onset (story.ts's showMechanism) */}
-                    {showMechanism(story) && (
-                        <div className="cs-story-row">
-                            <span className="cs-story-label">What happened</span>
-                            <input
-                                className="cs-attach-region-input"
-                                placeholder="twisted it playing cricket…"
-                                value={story.mechanism}
-                                disabled={disabled}
-                                onChange={(e) => set("mechanism", e.target.value)}
-                            />
-                        </div>
-                    )}
-
-                    {/* Aggravating + tolerance — paired: "what brings it on, how much before it does" */}
-                    <div className="cs-story-row" ref={aggravatingRef} tabIndex={-1}>
-                        <span className="cs-story-label">Worse with</span>
-                        <div className="cs-attach-tagrow">
-                            {AGGRAVATING_FACTORS.map((f) => (
-                                <button
-                                    key={f.key}
-                                    type="button"
-                                    disabled={disabled}
-                                    className={`cs-attach-chip${story.aggravating.includes(f.key) ? " is-on" : ""}`}
-                                    onClick={() => set("aggravating", toggleIn(story.aggravating, f.key))}
-                                >
-                                    {f.label}
-                                </button>
-                            ))}
-                        </div>
+            <div className="cs-story-body">
+                <div className="cs-story-searchwrap">
+                    <div className="cs-story-search">
+                        <Search size={15} aria-hidden="true" />
                         <input
-                            className="cs-attach-region-input cs-story-tolerance"
-                            placeholder="e.g. 10 min walking → 6/10"
-                            value={story.tolerance}
+                            ref={inputRef}
+                            value={query}
                             disabled={disabled}
-                            onChange={(e) => set("tolerance", e.target.value)}
+                            onChange={(e) => setQuery(e.target.value)}
+                            onKeyDown={onKey}
+                            placeholder="Add to story…"
+                            aria-label="Add to story"
+                            role="combobox"
+                            aria-expanded={open}
+                            aria-controls="cs-story-results"
                         />
                     </div>
 
-                    {/* Easing — "what helps" */}
-                    <div className="cs-story-row">
-                        <span className="cs-story-label">Better with</span>
-                        <div className="cs-attach-tagrow">
-                            {EASING_FACTORS.map((f) => (
-                                <button
-                                    key={f.key}
-                                    type="button"
-                                    disabled={disabled}
-                                    className={`cs-attach-chip${story.easing.includes(f.key) ? " is-on" : ""}`}
-                                    onClick={() => set("easing", toggleIn(story.easing, f.key))}
-                                >
-                                    {f.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* 24-hour pattern — "how's it through the day and night" */}
-                    <div className="cs-story-row">
-                        <span className="cs-story-label">Pattern</span>
-                        <div className="cs-attach-tagrow">
-                            {STORY_PATTERNS.map((p) => (
-                                <button
-                                    key={p.key}
-                                    type="button"
-                                    disabled={disabled}
-                                    className={`cs-attach-chip${story.pattern.includes(p.key) ? " is-on" : ""}`}
-                                    onClick={() => set("pattern", toggleIn(story.pattern, p.key))}
-                                >
-                                    {p.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Irritability — last, and judged rather than asked. See file header. */}
-                    <div className="cs-story-row">
-                        <span className="cs-story-label">
-                            Irritability
-                            <span className="cs-story-info" title="How easily this is provoked, and how long it takes to settle — how hard you can push today.">
-                                <Info size={11} aria-hidden="true" />
-                            </span>
-                        </span>
-                        <div className="cs-attach-tagrow">
-                            {(Object.keys(IRRITABILITY_LABEL) as StoryIrritability[]).map((level) => {
-                                const isSuggested = !story.irritability && suggestion?.value === level;
-                                return (
+                    {open && (
+                        <div className="cs-story-results" id="cs-story-results" role="listbox">
+                            {results.length === 0 ? (
+                                <p className="cs-story-noresult">Nothing matches “{query.trim()}”</p>
+                            ) : (
+                                results.map((it, i) => (
                                     <button
-                                        key={level}
+                                        key={it.id}
                                         type="button"
-                                        disabled={disabled}
-                                        className={
-                                            `cs-attach-chip${story.irritability === level ? " is-on" : ""}` +
-                                            (isSuggested ? " is-suggested" : "")
-                                        }
-                                        title={isSuggested ? `Suggested — ${suggestion!.because}` : undefined}
-                                        onClick={() => set("irritability", level)}
+                                        role="option"
+                                        aria-selected={i === active}
+                                        className={`cs-story-result${i === active ? " is-active" : ""}`}
+                                        onMouseEnter={() => setActive(i)}
+                                        onClick={() => take(it)}
                                     >
-                                        {IRRITABILITY_LABEL[level]}
-                                        {isSuggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
+                                        <span className="cs-story-result-label">{it.label}</span>
+                                        {/* The dimension, stated BEFORE it is committed, so
+                                            the clinician sees the system's reading while
+                                            disagreeing with it is still cheap. */}
+                                        <span className="cs-story-result-dim">{it.dimension}</span>
                                     </button>
-                                );
-                            })}
-                        </div>
-                        {suggestion && !story.irritability && (
-                            <p className="cs-story-because">Suggested: {suggestion.because}</p>
-                        )}
-                    </div>
-
-                    {/* Revealed only at moderate/high irritability (story.ts's showSettling) */}
-                    {showSettling(story) && (
-                        <div className="cs-story-row">
-                            <span className="cs-story-label">Settles in</span>
-                            <div className="cs-attach-tagrow">
-                                {(Object.keys(SETTLING_LABEL) as (keyof typeof SETTLING_LABEL)[]).map((s) => (
-                                    <button
-                                        key={s}
-                                        type="button"
-                                        disabled={disabled}
-                                        className={`cs-attach-chip${story.settling === s ? " is-on" : ""}`}
-                                        onClick={() => set("settling", s)}
-                                    >
-                                        {SETTLING_LABEL[s]}
-                                    </button>
-                                ))}
-                            </div>
+                                ))
+                            )}
                         </div>
                     )}
+                </div>
 
-                    {/* Last resort. Always here, never default. */}
-                    <div className="cs-story-row">
+                {/* Confirmation display, not a checkbox grid — brief §1. Each
+                    chip is a fact the clinician already committed; the
+                    dimension rides along as its sub-label. */}
+                {chips.length > 0 && (
+                    <div className="cs-story-chips">
+                        {chips.map((it) => (
+                            <span key={it.id} className="cs-story-chip">
+                                <Check size={13} className="cs-story-chip-tick" aria-hidden="true" />
+                                <span className="cs-story-chip-text">
+                                    <b>{it.label}</b>
+                                    <em>{it.dimension}</em>
+                                </span>
+                                <button
+                                    type="button"
+                                    className="cs-story-chip-x"
+                                    disabled={disabled}
+                                    aria-label={`Remove ${it.label}`}
+                                    onClick={() => onChange(removeFromStory(story, it))}
+                                >
+                                    <X size={12} aria-hidden="true" />
+                                </button>
+                            </span>
+                        ))}
+                        <button
+                            type="button"
+                            className="cs-story-more"
+                            disabled={disabled}
+                            onClick={() => inputRef.current?.focus()}
+                        >
+                            <Plus size={13} aria-hidden="true" />
+                            Add more
+                        </button>
+                    </div>
+                )}
+
+                {/* Guided, not mandatory: the NEXT unanswered dimension only,
+                    never all of them. Disappears entirely once answered, and
+                    the clinician may ignore it and move on. */}
+                {!open && prompts.length > 0 && (
+                    <div className="cs-story-prompts">
+                        <span className="cs-story-prompt-label">
+                            {isStoryEmpty(story) ? "Start with" : prompts[0].dimension}
+                        </span>
+                        {prompts.map((it) => (
+                            <button
+                                key={it.id}
+                                type="button"
+                                className={
+                                    "cs-story-prompt" +
+                                    (suggestedItem && it.id === suggestedItem.id ? " is-suggested" : "")
+                                }
+                                disabled={disabled}
+                                title={
+                                    suggestedItem && it.id === suggestedItem.id
+                                        ? `Suggested — ${suggestion!.because}`
+                                        : undefined
+                                }
+                                onClick={() => take(it)}
+                            >
+                                {suggestedItem && it.id === suggestedItem.id && (
+                                    <Sparkles size={11} aria-hidden="true" />
+                                )}
+                                {it.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {suggestion && prompts.some((p) => p.dimension === "Irritability") && (
+                    <p className="cs-story-because">Suggested: {suggestion.because}</p>
+                )}
+
+                {/* Free text, and only where a chip genuinely cannot carry the
+                    fact. Mechanism appears only on a traumatic/post-surgical
+                    onset — the one dimension with no closed vocabulary worth
+                    having. Tolerance and the catch-all note stay one click
+                    away rather than occupying the card forever. */}
+                {showMechanism(story) && (
+                    <input
+                        className="cs-story-free"
+                        placeholder="What happened — twisted it playing cricket…"
+                        value={story.mechanism}
+                        disabled={disabled}
+                        onChange={(e) => onChange({ ...story, mechanism: e.target.value })}
+                    />
+                )}
+
+                {noteOpen || story.tolerance || story.note ? (
+                    <div className="cs-story-freerow">
                         <input
-                            className="cs-attach-region-input"
+                            className="cs-story-free"
+                            placeholder="Tolerance — e.g. 10 min walking → 6/10"
+                            value={story.tolerance}
+                            disabled={disabled}
+                            onChange={(e) => onChange({ ...story, tolerance: e.target.value })}
+                        />
+                        <input
+                            className="cs-story-free"
                             placeholder="Anything a chip doesn't capture"
                             value={story.note}
                             disabled={disabled}
-                            onChange={(e) => set("note", e.target.value)}
+                            onChange={(e) => onChange({ ...story, note: e.target.value })}
                         />
                     </div>
-                </div>
-            )}
+                ) : (
+                    <button
+                        type="button"
+                        className="cs-story-notetoggle"
+                        disabled={disabled}
+                        onClick={() => setNoteOpen(true)}
+                    >
+                        <Plus size={12} aria-hidden="true" />
+                        Tolerance or a note
+                    </button>
+                )}
+            </div>
         </section>
     );
 }
