@@ -429,6 +429,60 @@ export function storyLine(s: Story): string {
 }
 
 /**
+ * The word that joins a dimension to the complaint it belongs to.
+ *
+ * These exist because the chips were wrong about what they were. A story is
+ * not seven facts that happen to share a patient — it is ONE statement:
+ * "knee pain for 3 weeks, gradual onset, worse going upstairs, better with
+ * rest". Rendering that as a chip grid throws the relationships away and
+ * leaves the reader to reassemble the sentence in their head, every time.
+ *
+ * Empty string where the label already reads as a clause on its own
+ * ("Gradual onset", "Low irritability", "Morning stiffness > 30 min") —
+ * bolting a connective onto those produces "with gradual onset", which is
+ * worse than nothing.
+ */
+const STORY_CONNECTIVE: Record<StoryDimension, string> = {
+    Duration: "for",
+    Onset: "",
+    Aggravating: "worse with",
+    Easing: "better with",
+    Pattern: "",
+    Irritability: "",
+    "Settles in": "",
+};
+
+export interface StoryClause {
+    item: StorySearchItem;
+    /** the connective, or "" when the label stands alone */
+    lead: string;
+    /** the label as it reads mid-sentence */
+    text: string;
+}
+
+/**
+ * The story as clauses, in narration order — what the sheet renders as a
+ * running sentence rather than as a row of tiles.
+ *
+ * Lower-cased mid-sentence unless the label is doing something typographic
+ * that would break (a ">" threshold, a unit), because "Knee pain for 3 weeks,
+ * Gradual onset, Worse With Going Upstairs" reads like a form and not like a
+ * clinician's note.
+ */
+export function storyClauses(s: Story): StoryClause[] {
+    return selectedStoryItems(s).map((item) => {
+        const lead = STORY_CONNECTIVE[item.dimension];
+        // Leave a label alone if it opens with anything but a plain capital —
+        // a symbol, a digit, an abbreviation — where lower-casing either does
+        // nothing or damages it.
+        const text = /^[A-Z][a-z]/.test(item.label)
+            ? item.label.charAt(0).toLowerCase() + item.label.slice(1)
+            : item.label;
+        return { item, lead, text };
+    });
+}
+
+/**
  * Rank items against a typed query. Same shape as the Case Sheet's own
  * catalogue search — prefix beats word-start beats substring — so the two
  * search surfaces on this screen behave identically under the hand rather

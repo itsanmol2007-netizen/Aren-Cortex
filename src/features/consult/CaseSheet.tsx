@@ -50,7 +50,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ClipboardList, Plus, Search, X } from "lucide-react";
 import type { Observable } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
-import { searchStory, nextStoryPrompts } from "./story";
+import { searchStory, nextStoryPrompts, storyClauses } from "./story";
 import type { Story, StorySearchItem } from "./story";
 
 /** Every character of `q`, in order, somewhere in `text`. Cheap typo tolerance. */
@@ -692,13 +692,15 @@ interface SheetProps {
      * Defaults to empty, so every non-physiotherapy profile is untouched.
      */
     storyChips?: StorySearchItem[];
+    /** the story itself, for the sentence — see the Story row */
+    story?: Story;
     onStoryRemove?: (it: StorySearchItem) => void;
 }
 
 export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
-    storyChips = [], onStoryRemove,
+    storyChips = [], story: storyOf, onStoryRemove,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
@@ -725,14 +727,37 @@ export function CaseSheet({
     const shown = related.slice(0, RELATED_VISIBLE);
     const overflow = related.length - shown.length;
 
-    /** One spring, reused, so nothing on this card moves at a different rate. */
+    /**
+     * The sentence's subject. The first REPORTED entry — what the patient came
+     * in with — so the story reads "Knee pain, for 3 weeks, ..." rather than
+     * opening on a duration attached to nothing. Undefined until a complaint
+     * lands, and the sentence simply starts at its first clause until then.
+     */
+    const leadComplaint = entries.find((e) => e.kind === "symptom")?.label;
+    const storyClauseList = useMemo(() => (storyOf ? storyClauses(storyOf) : []), [storyOf]);
+
+    /**
+     * One transition, reused, so nothing on this card moves at a different
+     * rate.
+     *
+     * This was a SPRING with a scale — chips landed by bouncing up from 0.92
+     * and overshooting. Anmol's verdict, and he is right: on a clinical
+     * workstation that reads as unserious. A spring is a physical metaphor,
+     * and a recorded fact does not have momentum; it is simply now on the
+     * chart.
+     *
+     * What replaces it is a 120ms linear-ish fade with a 2px settle. Fast
+     * enough to be felt rather than watched, no overshoot, no scale — the
+     * chip appears where it belongs instead of arriving there.
+     */
     const pop = reduce
         ? { initial: false as const, animate: {}, exit: {} }
         : {
-            initial: { opacity: 0, scale: 0.92, y: -2 },
-            animate: { opacity: 1, scale: 1, y: 0 },
-            exit: { opacity: 0, scale: 0.92, transition: { duration: 0.1 } },
+            initial: { opacity: 0, y: -2 },
+            animate: { opacity: 1, y: 0 },
+            exit: { opacity: 0, transition: { duration: 0.09 } },
         };
+    const popEase = { duration: 0.12, ease: [0.2, 0, 0.2, 1] as const };
 
     return (
         <section
@@ -757,7 +782,7 @@ export function CaseSheet({
                             key={entries.length + storyChips.length}
                             initial={reduce ? false : { opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            transition={{ type: "spring", stiffness: 520, damping: 30 }}
+                            transition={popEase}
                             className="ml-auto flex-none rounded-[7px] bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[12.5px] font-semibold text-[var(--cs-blue)]"
                         >
                             {entries.length + storyChips.length} recorded
@@ -802,45 +827,51 @@ export function CaseSheet({
                 own sub-label, which is where it belongs once its value is
                 known — "3 weeks" needs the word "duration" attached to it far
                 less than an empty duration field needs a prompt. */}
+            {/* ── The story, as ONE sentence ────────────────────────────
+                Not a row of tiles. A story is a single clinical statement —
+                "knee pain for 3 weeks, gradual onset, worse going upstairs,
+                better with rest" — and chipping it into seven separate boxes
+                throws away every relationship in it and leaves the reader to
+                rebuild the sentence in their head on each read.
+
+                So it renders as running text, led by the complaint itself
+                (the first reported entry on the sheet, so the sentence has a
+                subject rather than starting mid-clause). Each clause is still
+                individually removable — hover reveals its ×, and the clause
+                greys under the cursor so it is obvious what is about to go —
+                but removal is the secondary act here. Reading is the point. */}
             {storyChips.length > 0 && (
-                <div className="mt-1.5 flex items-start gap-2.5 px-4 py-[3px]">
-                    <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
+                <div className="mt-2 flex items-start gap-2.5 px-4 py-[3px]">
+                    <span className="w-[9.5em] flex-none whitespace-nowrap pt-[3px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
                         Story
                     </span>
-                    <div className="flex flex-1 flex-wrap content-start gap-[6px]">
-                        <AnimatePresence mode="popLayout" initial={false}>
-                            {storyChips.map((it) => (
-                                <motion.span
-                                    key={it.id}
-                                    layout={!reduce}
-                                    {...pop}
-                                    transition={{ type: "spring", stiffness: 480, damping: 32 }}
-                                    className={
-                                        "relative inline-flex items-center gap-[7px] rounded-lg border py-[3px] pl-[10px] pr-[7px] " +
-                                        "text-[13.5px] font-semibold leading-tight whitespace-nowrap " +
-                                        "border-[#cfdcf2] bg-[linear-gradient(180deg,#fbfcff_0%,#eef3fc_100%)] text-[#23406e] " +
-                                        "shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_1px_1.5px_rgba(35,64,110,0.08)]"
-                                    }
+                    <p className="m-0 flex-1 text-[13.5px] font-medium leading-[1.65] text-[var(--cs-ink)]">
+                        {leadComplaint && (
+                            <span className="font-bold">{leadComplaint}</span>
+                        )}
+                        {storyClauseList.map((c, i) => (
+                            <span key={c.item.id} className="group/clause whitespace-nowrap">
+                                <span className="text-[var(--cs-faint)]">
+                                    {i === 0 && !leadComplaint ? "" : ", "}
+                                </span>
+                                {c.lead && (
+                                    <span className="font-normal text-[var(--cs-muted)]">{c.lead} </span>
+                                )}
+                                <span className="rounded-[4px] px-[2px] transition-colors group-hover/clause:bg-[var(--cs-rose-soft)] group-hover/clause:text-[var(--cs-rose)]">
+                                    {c.text}
+                                </span>
+                                <button
+                                    type="button"
+                                    aria-label={`Remove ${c.item.label}`}
+                                    disabled={disabled}
+                                    onClick={() => onStoryRemove?.(c.item)}
+                                    className="ml-[3px] align-middle text-[var(--cs-faint)] opacity-0 transition-opacity hover:text-[var(--cs-rose)] focus-visible:opacity-100 group-hover/clause:opacity-100"
                                 >
-                                    <span className="flex flex-col leading-none">
-                                        {it.label}
-                                        <i className="mt-[2px] text-[10px] font-semibold not-italic tracking-[0.03em] text-[#5b7099]">
-                                            {it.dimension}
-                                        </i>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        aria-label={`Remove ${it.label}`}
-                                        disabled={disabled}
-                                        onClick={() => onStoryRemove?.(it)}
-                                        className="grid size-[17px] flex-none place-items-center rounded-md text-[#7288ad] hover:bg-[rgba(35,64,110,0.1)] hover:text-[#23406e]"
-                                    >
-                                        <X size={11} />
-                                    </button>
-                                </motion.span>
-                            ))}
-                        </AnimatePresence>
-                    </div>
+                                    <X size={11} className="inline" />
+                                </button>
+                            </span>
+                        ))}
+                    </p>
                 </div>
             )}
 
@@ -879,7 +910,7 @@ export function CaseSheet({
                                             key={entry.label}
                                             layout={!reduce}
                                             {...pop}
-                                            transition={{ type: "spring", stiffness: 480, damping: 32 }}
+                                            transition={popEase}
                                             title={
                                                 entry.origin === "carried"
                                                     ? "Carried forward from a previous visit. Click × to say whether it still applies."
@@ -982,14 +1013,17 @@ export function CaseSheet({
                                     <motion.button
                                         key={o.id}
                                         layout={!reduce}
-                                        initial={reduce ? false : { opacity: 0, y: -3, scale: 0.95 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.1 } }}
+                                        initial={reduce ? false : { opacity: 0, y: -3 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, transition: { duration: 0.09 } }}
                                         transition={{
-                                            type: "spring", stiffness: 460, damping: 30,
+                                            ...popEase,
                                             // The cascade. Capped so a full row never
-                                            // takes longer than a glance.
-                                            delay: reduce ? 0 : Math.min(i * 0.035, 0.2),
+                                            // takes longer than a glance. Shorter steps
+                                            // than before, because a fade reads as one
+                                            // group arriving where a bounce read as
+                                            // several things landing separately.
+                                            delay: reduce ? 0 : Math.min(i * 0.025, 0.14),
                                         }}
                                         type="button"
                                         disabled={disabled}

@@ -1177,7 +1177,13 @@ function App() {
                      (dentistry, dermatology, paediatrics today) would show the
                      same launcher twice. Each profile picks this up when its
                      turn comes and it moves off `soap`. */
-                  usesRebuiltSurface && chartTools.length > 0 ? (
+                  /* Physiotherapy opens the body map from `ExamSummaryStrip`
+                     in the input half — one entry point, beside the readings it
+                     summarises. Without this exclusion the same modal has two
+                     launchers on one screen, which is what Anmol hit: a strip
+                     above the Assessment and a card beside it, both opening the
+                     identical surface. */
+                  usesRebuiltSurface && !usesPhysioInputs && chartTools.length > 0 ? (
                     <SpecialtyExamCard
                       tools={chartTools}
                       onOpen={(key) => setOpenChart(key as ChartKind)}

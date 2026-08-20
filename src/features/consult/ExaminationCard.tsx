@@ -122,30 +122,48 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
     const pain = exam.getNumber(painKey, side, null);
 
     return (
-        <div className="cs-exam-block">
+        <div className="mt-2.5 border-t border-[var(--cs-line)] pt-2.5">
             <div className="cs-exam-body">
                 {/* ── Pain, for THIS site ───────────────────────────────────
                     First, because it is the reading a physiotherapist takes
                     first and the one the patient volunteers. Picked, not
                     typed: an 0-10 is an ordinal a patient says out loud, and
                     eleven buttons is faster than a field plus a keyboard. */}
-                <div className="cs-exam-pain">
-                    <span className="cs-exam-label">Pain</span>
-                    <span className="cs-exam-pain-scale">
-                        {Array.from({ length: 11 }, (_, n) => (
-                            <button
-                                key={n}
-                                type="button"
-                                disabled={disabled}
-                                className={`cs-exam-pip${pain === n ? " is-on" : ""}${n >= 7 ? " is-high" : ""}`}
-                                aria-label={`Pain ${n} out of 10`}
-                                onClick={() => exam.setNumber(painKey, side, null, pain === n ? null : n, "baseline", "/10")}
-                            >
-                                {n}
-                            </button>
-                        ))}
+                <div className="mb-2.5 flex items-center gap-2.5">
+                    <span className="w-[92px] flex-none text-[12px] font-semibold text-[var(--cs-muted)]">
+                        Pain
                     </span>
-                    <span className="cs-exam-pain-read">{pain === null ? "—" : `${pain}/10`}</span>
+                    <span className="flex gap-[3px]">
+                        {Array.from({ length: 11 }, (_, n) => {
+                            const on = pain === n;
+                            return (
+                                <button
+                                    key={n}
+                                    type="button"
+                                    disabled={disabled}
+                                    aria-label={`Pain ${n} out of 10`}
+                                    aria-pressed={on}
+                                    onClick={() => exam.setNumber(painKey, side, null, on ? null : n, "baseline", "/10")}
+                                    className={
+                                        "grid size-[22px] place-items-center rounded-md border text-[11px] font-semibold tabular-nums transition-colors " +
+                                        (on
+                                            // Severity colours the SELECTED pip only. Tinting 0-10
+                                            // in advance would be the scale grading the patient
+                                            // before they had answered.
+                                            ? (n >= 7
+                                                ? "border-[var(--cs-amber)] bg-[var(--cs-amber)] text-white"
+                                                : "border-[var(--cs-teal)] bg-[var(--cs-teal)] text-white")
+                                            : "border-[var(--cs-line-strong)] bg-white text-[var(--cs-muted)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]")
+                                    }
+                                >
+                                    {n}
+                                </button>
+                            );
+                        })}
+                    </span>
+                    <span className="min-w-[46px] text-[12.5px] font-bold tabular-nums text-[var(--cs-ink)]">
+                        {pain === null ? "—" : `${pain}/10`}
+                    </span>
                 </div>
 
                 {/* ── Range ─────────────────────────────────────────────── */}
@@ -194,18 +212,24 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                                             <Undo2 size={11} />
                                         </button>
                                     </span>
-                                ) : (
+                                ) : a !== null ? (
                                     // Only offered once there is a baseline to compare against.
-                                    a !== null && (
-                                        <button
-                                            type="button"
-                                            className="cs-exam-retest-btn"
-                                            disabled={disabled}
-                                            onClick={() => setRetesting((s) => new Set(s).add(key))}
-                                        >
-                                            Re-test
-                                        </button>
-                                    )
+                                    <button
+                                        type="button"
+                                        className="cs-exam-retest-btn"
+                                        disabled={disabled}
+                                        onClick={() => setRetesting((s) => new Set(s).add(key))}
+                                    >
+                                        Re-test
+                                    </button>
+                                ) : (
+                                    // MUST render an element, not `false`. These rows are
+                                    // `display: contents` inside a five-column grid, so a
+                                    // branch that renders nothing does not leave an empty
+                                    // cell — it leaves NO cell, and every row after it
+                                    // shifts one column left. That is why the Extension
+                                    // label was sitting under the Gap heading.
+                                    <span aria-hidden="true" />
                                 )}
                             </div>
                         );

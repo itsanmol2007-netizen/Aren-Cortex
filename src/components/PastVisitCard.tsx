@@ -26,6 +26,7 @@ import { Calendar, Pill, X, RefreshCw } from "lucide-react";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import type { RealVisit } from "../lib/db";
 import { freqSlotToLabel } from "../lib/db";
+import { doctorName } from "../lib/format";
 
 export function formatVisitDate(isoString: string): string {
     const d = new Date(isoString);
@@ -115,7 +116,7 @@ export function PastVisitCard({
                     {visit.doctor_name && (
                         <span className="pv-doctor">
                             <span className="pv-doctor-dot" />
-                            Dr. {visit.doctor_name}
+                            {doctorName(visit.doctor_name)}
                         </span>
                     )}
                 </div>

@@ -58,6 +58,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowRight, ArrowUp, CalendarClock, ChevronDown, Pencil, Plus } from "lucide-react";
 import type { RealVisit, CarePlan } from "../../lib/db";
 import { formatVisitDate } from "../../components/PastVisitCard";
+import { doctorName } from "../../lib/format";
 import { formatDelta, formatValue, type TrendSeries, type TrendSummary, type TrendVerdict } from "./trend";
 
 /**
@@ -336,7 +337,7 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
                 {visit.doctor_name && (
                     <div>
                         <dt>Seen by</dt>
-                        <dd>Dr. {visit.doctor_name}</dd>
+                        <dd>{doctorName(visit.doctor_name)}</dd>
                     </div>
                 )}
             </dl>
@@ -519,7 +520,7 @@ export function LongitudinalBand({
                                                     ? v.medicines.map((m) => m.name).slice(0, 2).join(", ")
                                                     : v.symptoms.slice(0, 2).join(", ") || "No detail recorded"}
                                             </span>
-                                            {v.doctor_name && <span className="cs-lt-tl-doc">Dr. {v.doctor_name}</span>}
+                                            {v.doctor_name && <span className="cs-lt-tl-doc">{doctorName(v.doctor_name)}</span>}
                                         </button>
                                     </li>
                                 );

@@ -31,6 +31,12 @@
    sixteenth of that panel on a name and a row of visit pills — the one band
    on screen where height buys the least. It is the first thing that should
    pay for the fit, before anything carrying clinical content does. */
+/* ── Sized to fit, 2026-08-20b ────────────────────────────────────────────
+   The density pass took this bar 72px -> 60px and did NOT take its contents
+   down with it, so a 42px avatar plus a three-line identity block plus the
+   bar's own padding added up to more than 60px and `overflow: hidden` simply
+   cut the difference off. That clipping is what Anmol saw. The children below
+   are now sized against 60px rather than against the bar this used to be. */
 .topbar-unified {
     position: relative;
     display: flex;
@@ -219,16 +225,16 @@
 /* ── Avatar ───────────────────────────────────────────────── */
 .tb-avatar {
     position: relative;
-    width: 42px;
-    height: 42px;
+    width: 34px;
+    height: 34px;
     flex-shrink: 0;
     z-index: 2;
 }
 
 .tb-avatar-inner {
     display: grid;
-    width: 42px;
-    height: 42px;
+    width: 34px;
+    height: 34px;
     place-items: center;
     border-radius: 10px;
     background: linear-gradient(145deg,
@@ -294,7 +300,8 @@
 }
 
 .tb-active-label {
-    font-size: 9px;
+    font-size: 8.5px;
+    line-height: 1;
     font-weight: 800;
     color: #4ade80;
     text-transform: uppercase;
@@ -303,7 +310,8 @@
 
 .tb-patient-name {
     display: block;
-    font-size: 15px;
+    font-size: 14.5px;
+    line-height: 1.15;
     font-weight: 750;
     color: #f0f4ff;
     letter-spacing: -0.3px;
@@ -312,7 +320,8 @@
 
 .tb-patient-meta {
     display: block;
-    font-size: 12px;
+    font-size: 11.5px;
+    line-height: 1.15;
     font-weight: 600;
     color: #7a9ab8;
     white-space: nowrap;
@@ -359,7 +368,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
-    padding: 5px 11px;
+    padding: 4px 10px;
     border-radius: 8px;
     border: 1px solid rgba(168, 85, 247, 0.18);
     background: rgba(168, 85, 247, 0.055);

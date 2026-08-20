@@ -151,6 +151,7 @@ export function PhysioInputs({
                     disabled={disabled}
                     relatedRef={relatedRef}
                     storyChips={storyChips}
+                    story={story}
                     onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
                 />
 

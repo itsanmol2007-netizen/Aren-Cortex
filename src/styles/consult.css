@@ -1602,6 +1602,11 @@ body.cs-locked-shell {
 .cs-body {
     position: relative;
     margin-bottom: 10px;
+    /* Folded up from a second `.cs-body` block that sat 2000 lines below this
+       one (2026-08-20b). Two rules for one class is exactly what this file's
+       own header forbids: whichever loaded last silently won, and neither
+       author could see the other. `.cs-odo` keeps its own flow — only the body
+       figure centres its child. */
     padding: 12px 10px 10px;
     border: 1px solid rgba(255, 255, 255, 0.75);
     border-radius: 18px;
@@ -3596,6 +3601,18 @@ body.cs-locked-shell {
     flex-direction: column;
     align-items: center;
     gap: 4px;
+}
+
+/* Roomier inside the body-map modal than inside a card. 190px is right for a
+   figure sharing a column with three other panels; in a surface this size it
+   left the map a thumbnail with a screen of white around it, which is what
+   made the modal read as unfinished. */
+.cs-chartmodal-body .cs-body-svg {
+    max-width: 260px;
+}
+
+.cs-chartmodal-body .cs-body {
+    width: 100%;
 }
 
 .cs-body.is-disabled {
@@ -6806,7 +6823,12 @@ body.cs-locked-shell {
    computed and printed rather than left as mental arithmetic. */
 .cs-exam-grid {
     display: grid;
-    grid-template-columns: minmax(96px, 1.2fr) 62px 62px 44px auto;
+    /* The label column is capped, not proportional. This grid was authored
+       for a card ~420px wide and now also renders inside the body-map modal
+       at ~1000px, where a `1.2fr` label column stretched "Flexion" halfway
+       across the screen and left the inputs stranded at the far right. */
+    grid-template-columns: minmax(96px, 220px) 62px 62px 44px minmax(64px, auto);
+    justify-content: start;
     align-items: center;
     gap: 5px 8px;
 }
