@@ -1,10 +1,23 @@
 // ---------------------------------------------------------------------------
 // EXAMINATION — Phase 3, plus Phase 5's within-session re-test.
 //
-// One region at a time, chosen from what the joint map marked. The
-// catalogue in `examination.ts` knows every joint; this shows one, which is
-// the "know a lot, show little" law applied to the deepest catalogue in the
-// product.
+// One region at a time. The catalogue in `examination.ts` knows every joint;
+// this shows one, which is the "know a lot, show little" law applied to the
+// deepest catalogue in the product.
+//
+// ── It is no longer a card on the consultation (2026-08-20)
+//
+// This used to render as a permanent section below Measurements, which put
+// the deepest surface in the product on screen whether or not anyone had
+// examined anything, and put it a long way from the body map that chose its
+// region. Both halves of that were wrong in the same way: an examination is
+// something you do TO A SITE, so the site is the context and the readings
+// belong inside it.
+//
+// So the component below is now a plain region block with no card around it,
+// mounted inside the body-map surface once a joint is selected. The
+// consultation itself carries only `ExamSummaryStrip` — one line per examined
+// site — and that strip is what opens the map. See `JointMapCard.tsx`.
 //
 // ── Active and passive share a row, and the GAP is computed
 //
@@ -27,10 +40,10 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
-import { Stethoscope, ChevronDown, Undo2 } from "lucide-react";
+import { Undo2 } from "lucide-react";
 import {
     EXAM_REGIONS, REGION_BY_KEY, MMT_LABEL,
-    rangeMeasureKey, mmtMeasureKey, testMeasureKey,
+    rangeMeasureKey, mmtMeasureKey, testMeasureKey, regionPainKey,
     activePassiveGap, outsideExpected,
 } from "./examination";
 import type { MmtGrade, TestResult } from "./examination";
@@ -39,35 +52,56 @@ import type { MeasureSide } from "../../lib/db/examination";
 
 interface Props {
     exam: ExaminationHook;
-    /** regions the joint map has marked, in the order they were marked */
-    markedRegions: string[];
-    /** which side each marked region was on, when it was paired */
-    markedSides: Map<string, MeasureSide | null>;
+    /** the region being examined — already chosen, by pointing at the body */
+    regionKey: string;
+    /** which side, for a paired joint */
+    side: MeasureSide | null;
     disabled?: boolean;
 }
 
 const RESULT_CYCLE: TestResult[] = ["not_done", "negative", "positive"];
 
-export function ExaminationCard({ exam, markedRegions, markedSides, disabled = false }: Props) {
-    // Default to the first marked region. A physiotherapist marking a knee
-    // then opening Examination should be looking at the knee, not choosing
-    // it again.
-    const available = markedRegions.filter((r) => REGION_BY_KEY.has(r));
-    const [active, setActive] = useState<string | null>(null);
-    const regionKey = active ?? available[0] ?? null;
-    const region = regionKey ? REGION_BY_KEY.get(regionKey) ?? null : null;
+/**
+ * What has been recorded at one site, as counts — the compact summary the
+ * consultation shows in place of this whole surface.
+ *
+ * Counts readings, not fields: a movement with only an active value counts
+ * once, the same as one with both, because the question the strip answers is
+ * "has this been looked at" rather than "is it complete". Nothing here is
+ * ever mandatory, so a completeness ratio would be measuring against a
+ * denominator that does not exist.
+ */
+export function examCounts(
+    exam: ExaminationHook, regionKey: string, side: MeasureSide | null
+): { rom: number; strength: number; tests: number; pain: number | null } {
+    const region = REGION_BY_KEY.get(regionKey);
+    if (!region) return { rom: 0, strength: 0, tests: 0, pain: null };
 
+    let rom = 0;
+    for (const m of region.movements) {
+        const key = rangeMeasureKey(m.key);
+        if (exam.getNumber(key, side, "active") !== null || exam.getNumber(key, side, "passive") !== null) rom++;
+    }
+    let strength = 0;
+    for (const mu of region.muscles) {
+        if (exam.getNumber(mmtMeasureKey(mu.key), side, "mmt") !== null) strength++;
+    }
+    let tests = 0;
+    for (const t of region.tests) {
+        if (exam.getText(testMeasureKey(t.key), side)) tests++;
+    }
+    return { rom, strength, tests, pain: exam.getNumber(regionPainKey(regionKey), side, null) };
+}
+
+export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
     // Rows the doctor has opened a re-test on. Local, not persisted: whether
     // the box is SHOWING is a UI state, whether it has a VALUE is the record.
     const [retesting, setRetesting] = useState<Set<string>>(new Set());
 
-    // Nothing marked, nothing to examine. The card does not render at all
-    // rather than rendering an empty frame asking to be filled.
+    const region = REGION_BY_KEY.get(regionKey) ?? null;
+    // A body zone with no examination catalogue behind it — a hand, a foot,
+    // the chest. The map still marks it; there is simply nothing to measure.
     if (!region) return null;
-
-    const side: MeasureSide | null = region.paired
-        ? (markedSides.get(region.key) ?? "right")
-        : null;
 
     const numInput = (
         key: string, method: string | null, context: "baseline" | "post_intervention", hint: boolean
@@ -84,49 +118,36 @@ export function ExaminationCard({ exam, markedRegions, markedSides, disabled = f
         />
     );
 
+    const painKey = regionPainKey(region.key);
+    const pain = exam.getNumber(painKey, side, null);
+
     return (
-        <section className="cs-card cs-exam-card" aria-label="Examination">
-            <div className="cs-card-head">
-                <span className="cs-card-title">
-                    <span className="cs-glyph is-slate"><Stethoscope size={14} /></span>
-                    Examination
-                </span>
-
-                {/* Region switcher — only when more than one joint is marked.
-                    A single-option dropdown is a control that answers nothing. */}
-                {available.length > 1 ? (
-                    <label className="cs-exam-region">
-                        <select
-                            value={region.key}
-                            disabled={disabled}
-                            onChange={(e) => setActive(e.target.value)}
-                        >
-                            {/* The side is IN the option, not beside the
-                                dropdown — with two joints marked, "Knee"
-                                alone does not say which knee, and in
-                                physiotherapy that is the whole question. */}
-                            {available.map((r) => {
-                                const reg = REGION_BY_KEY.get(r)!;
-                                const sd = markedSides.get(r) ?? null;
-                                return (
-                                    <option key={r} value={r}>
-                                        {reg.paired && sd
-                                            ? `${sd === "left" ? "Left" : "Right"} ${reg.label.toLowerCase()}`
-                                            : reg.label}
-                                    </option>
-                                );
-                            })}
-                        </select>
-                        <ChevronDown size={12} aria-hidden="true" />
-                    </label>
-                ) : (
-                    <span className="cs-exam-region-static">
-                        {side ? `${side === "left" ? "Left" : "Right"} ` : ""}{region.label.toLowerCase()}
-                    </span>
-                )}
-            </div>
-
+        <div className="cs-exam-block">
             <div className="cs-exam-body">
+                {/* ── Pain, for THIS site ───────────────────────────────────
+                    First, because it is the reading a physiotherapist takes
+                    first and the one the patient volunteers. Picked, not
+                    typed: an 0-10 is an ordinal a patient says out loud, and
+                    eleven buttons is faster than a field plus a keyboard. */}
+                <div className="cs-exam-pain">
+                    <span className="cs-exam-label">Pain</span>
+                    <span className="cs-exam-pain-scale">
+                        {Array.from({ length: 11 }, (_, n) => (
+                            <button
+                                key={n}
+                                type="button"
+                                disabled={disabled}
+                                className={`cs-exam-pip${pain === n ? " is-on" : ""}${n >= 7 ? " is-high" : ""}`}
+                                aria-label={`Pain ${n} out of 10`}
+                                onClick={() => exam.setNumber(painKey, side, null, pain === n ? null : n, "baseline", "/10")}
+                            >
+                                {n}
+                            </button>
+                        ))}
+                    </span>
+                    <span className="cs-exam-pain-read">{pain === null ? "—" : `${pain}/10`}</span>
+                </div>
+
                 {/* ── Range ─────────────────────────────────────────────── */}
                 <div className="cs-exam-grid">
                     <span className="cs-exam-col-head" />
@@ -248,7 +269,7 @@ export function ExaminationCard({ exam, markedRegions, markedSides, disabled = f
 
                 {exam.error && <p className="cs-attach-error">{exam.error}</p>}
             </div>
-        </section>
+        </div>
     );
 }
 

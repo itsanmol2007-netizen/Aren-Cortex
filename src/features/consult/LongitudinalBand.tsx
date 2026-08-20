@@ -442,9 +442,16 @@ export function LongitudinalBand({
                 itself — title, visit count, long-absence flag, the care-plan
                 starter — stays put either way, so "collapsed" still answers
                 "has this patient been here before, and is anything overdue?"
-                at a glance. */}
-            {!collapsed && (
-                <>
+                at a glance.
+
+                Wrapped in `.cs-lt-fold` (a 0fr/1fr grid, see consult.css) so
+                the space is animated back to the consultation rather than
+                vanishing in one frame. The contents stay MOUNTED while
+                collapsed — `overflow: hidden` on the inner div is what hides
+                them — because unmounting mid-transition collapses the row to
+                nothing instantly and there is no animation left to see. */}
+            <div className="cs-lt-fold" aria-hidden={collapsed}>
+                <div>
                     <div className="cs-lt-row">
                         {summary.series.map((s) => (
                             <TrendCard
@@ -478,6 +485,11 @@ export function LongitudinalBand({
                         className="cs-lt-expand"
                         onClick={() => setTimelineOpen((v) => !v)}
                         aria-expanded={timelineOpen}
+                        // Not reachable by keyboard while the band is folded
+                        // shut: it is still in the DOM (see above), and a tab
+                        // stop inside a zero-height region is a focus trap
+                        // the user cannot see.
+                        tabIndex={collapsed ? -1 : undefined}
                     >
                         {timelineOpen ? "Hide" : "View full"} visit timeline
                         <ChevronDown size={13} className={timelineOpen ? "is-open" : ""} aria-hidden="true" />
@@ -514,8 +526,8 @@ export function LongitudinalBand({
                             })}
                         </ol>
                     )}
-                </>
-            )}
+                </div>
+            </div>
         </section>
     );
 }

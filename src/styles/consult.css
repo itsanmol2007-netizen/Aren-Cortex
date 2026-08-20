@@ -5352,29 +5352,69 @@ body.cs-locked-shell {
       look at, never an alarm.
    ════════════════════════════════════════════════════════════ */
 
+/* ── The band, 2026-08-20: full width, one row, and it gives the space back
+   ───────────────────────────────────────────────────────────────────────
+   A direct child of `.cs-shell` now rather than of `.cs-work`, so it spans
+   the workspace AND the plan rail. Two things follow from that and both are
+   the point:
+
+     · one row of tiles instead of two, because it has twice the width to
+       lay them out in. Brief §14 asked for exactly this — "the large
+       longitudinal summary at the top should not permanently consume two
+       full rows of consultation space".
+     · collapsing it genuinely returns the space. `.cs-shell` is a flex
+       column with a hard height, `.cs-page` below is `flex: 1`, so every
+       pixel this element stops occupying is immediately `.cs-page`'s —
+       which is what makes the plan rail rise back to the top rather than
+       leaving a gap where the band used to be.
+
+   No bottom margin: the gap belongs to `.cs-page`'s own padding, so a
+   collapsed band leaves nothing behind at all. */
 .cs-lt {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--cs-s2);
-    margin-bottom: var(--cs-s4);
-    border: 1px solid var(--cs-line);
-    border-radius: 14px;
+    border-bottom: 1px solid var(--cs-line);
     background: var(--cs-card);
-    padding: var(--cs-s3) var(--cs-s4) var(--cs-s2);
+    padding: var(--cs-s2) var(--cs-s5) 0;
 }
 
-/* Collapsed: the header's own padding is the whole footprint. No separate
-   "collapsed" layout to keep in sync with the open one — the header simply
-   stops having anything rendered beneath it (see the component). */
+/* Collapsed: the header line and nothing else. The component stops rendering
+   the row beneath it, so there is no second layout here to keep in sync —
+   only the bottom padding closes up. */
 .cs-lt.is-collapsed {
-    padding-bottom: var(--cs-s3);
+    padding-bottom: 0;
+}
+
+/* The collapse, animated. Grid-rows 0fr -> 1fr is the one technique that
+   transitions to CONTENT height without hard-coding a max-height that would
+   be wrong for a patient with three trends and wrong differently for one
+   with six. The inner element needs `min-height: 0` or it refuses to
+   compress below its content. */
+.cs-lt-fold {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 180ms ease;
+}
+
+.cs-lt.is-collapsed .cs-lt-fold {
+    grid-template-rows: 0fr;
+}
+
+.cs-lt-fold > div {
+    min-height: 0;
+    overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-lt-fold { transition: none; }
 }
 
 .cs-lt-head {
     display: flex;
     align-items: center;
     gap: var(--cs-s3);
+    padding-bottom: var(--cs-s2);
 }
 
 .cs-lt-head-spacer { flex: 1; }
@@ -5452,24 +5492,32 @@ body.cs-locked-shell {
 /* Cards sit in a row that WRAPS rather than scrolls. A horizontally scrolling
    row of numbers is a row whose last card nobody reads, and `trend.ts` caps
    the series at four precisely so this never needs to be a carousel. */
+/* One row, never two. `nowrap` plus an overflow scroll rather than
+   `flex-wrap`: a patient with seven trended measurements should scroll the
+   strip sideways, not silently grow it into the second row this whole pass
+   exists to remove. The tiles stay evenly sized because they all share one
+   flex basis. */
 .cs-lt-row {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: var(--cs-s2);
+    padding-bottom: var(--cs-s2);
+    overflow-x: auto;
+    scrollbar-width: thin;
 }
 
 .cs-lt-card {
     display: flex;
-    flex: 1 1 150px;
+    flex: 1 1 0;
     flex-direction: column;
-    gap: 2px;
-    min-width: 150px;
-    max-width: 230px;
+    gap: 1px;
+    min-width: 132px;
+    max-width: 220px;
     border: 1px solid var(--cs-line);
     border-radius: var(--cs-radius-sm);
     background: var(--cs-page);
-    padding: 8px 10px 7px;
+    padding: 6px 9px 5px;
 }
 
 /* Clickable, 2026-08-17 — this is a <button> now, not a <div>, when a saved
@@ -5516,9 +5564,9 @@ body.cs-locked-shell {
     display: flex;
     align-items: baseline;
     gap: 5px;
-    margin: 1px 0 0;
+    margin: 0;
     color: var(--cs-ink);
-    font-size: 17.5px;
+    font-size: 15.5px;
     font-weight: 750;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
@@ -5526,7 +5574,7 @@ body.cs-locked-shell {
 
 .cs-lt-from {
     color: var(--cs-faint);
-    font-size: 14px;
+    font-size: 12.5px;
     font-weight: 650;
 }
 
@@ -5553,9 +5601,9 @@ body.cs-locked-shell {
 
 .cs-lt-spark {
     display: block;
-    margin: 3px 0 1px;
+    margin: 2px 0 0;
     width: 100%;
-    height: 26px;
+    height: 18px;
     overflow: visible;
 }
 
@@ -6405,342 +6453,6 @@ body.cs-locked-shell {
 }
 
 /* ════════════════════════════════════════════════════════════
-   STORY — physiotherapy's Subjective half, SEARCH-first
-   (rewritten 2026-08-20). See `StoryCard.tsx` for why the
-   seven permanent chip rows this block used to style are gone,
-   and `docs/Cortex Specialties/AREN Cortex Physiotherapy
-   Consultation UX Workflow Brief.md` §3 for the interaction
-   it now serves: one input, confirmation chips, a quiet prompt
-   for the next unanswered dimension.
-
-   Contrast note: nothing structural here uses `--cs-faint`.
-   The complaint the rewrite answers was "greyscale text looks
-   terrible" — and the old block put the row LABELS, which are
-   the page's skeleton, on the quietest rung in the ramp. Chip
-   text is `--cs-ink`, sub-labels are `--cs-label`, and
-   `--cs-faint` is left to genuine ornament (the search glyph,
-   a placeholder).
-   ════════════════════════════════════════════════════════════ */
-
-/* The numbered badge beside a card title — "1 STORY", "2 GOALS".
-   The consultation reads as a sequence, and a number is the cheapest
-   possible way to say so: no rail, no stepper, no extra chrome. */
-.cs-card-num {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    background: var(--cs-page);
-    border: 1px solid var(--cs-line-strong);
-    color: var(--cs-label);
-    font-size: 10.5px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-}
-
-.cs-story-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--cs-s2);
-    padding: var(--cs-s2) var(--cs-s3) var(--cs-s3);
-}
-
-/* Anchors the results list to the field rather than to the page. No portal:
-   `.cs-card` does not clip, Story sits at the top of the scroller, and a
-   portalled dropdown would need the resize/scroll rect plumbing the command
-   bar carries only because it is pinned above a scrolling region. */
-.cs-story-searchwrap {
-    position: relative;
-}
-
-.cs-story-search {
-    display: flex;
-    align-items: center;
-    gap: var(--cs-s2);
-    height: 34px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-card);
-    padding: 0 10px;
-    color: var(--cs-faint);
-    transition: border-color 0.14s ease, box-shadow 0.14s ease;
-}
-
-.cs-story-search:focus-within {
-    border-color: rgba(18, 104, 232, 0.5);
-    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
-}
-
-.cs-story-search input {
-    flex: 1;
-    min-width: 0;
-    border: 0;
-    background: none;
-    padding: 0;
-    outline: none;
-    color: var(--cs-ink);
-    font-size: 12px;
-    font-weight: 550;
-}
-
-.cs-story-search input::placeholder {
-    color: var(--cs-faint);
-    font-weight: 500;
-}
-
-.cs-story-results {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 30;
-    max-height: 250px;
-    overflow-y: auto;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-card);
-    padding: 3px;
-    box-shadow: 0 10px 26px -8px rgba(11, 23, 51, 0.26);
-}
-
-.cs-story-result {
-    display: flex;
-    align-items: center;
-    gap: var(--cs-s2);
-    width: 100%;
-    border: 0;
-    border-radius: 6px;
-    background: none;
-    padding: 6px 8px;
-    text-align: left;
-}
-
-.cs-story-result.is-active { background: var(--cs-blue-soft); }
-
-.cs-story-result-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--cs-ink);
-    font-size: 11.5px;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cs-story-result-dim {
-    flex: none;
-    border-radius: 4px;
-    background: var(--cs-page);
-    padding: 2px 6px;
-    color: var(--cs-label);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-}
-
-.cs-story-noresult {
-    margin: 0;
-    padding: 8px 10px;
-    color: var(--cs-label);
-    font-size: 11.5px;
-    font-weight: 550;
-}
-
-/* ── Confirmation chips ──────────────────────────────────────────────────
-   Deliberately NOT `.cs-attach-chip`. That chip is a TOGGLE — a thing you
-   press to turn on, which is exactly the checkbox-grid reading brief §1
-   rejects. These are settled facts: a tick, the fact, the dimension it
-   answered, and a way to take it back. Nothing here invites pressing. */
-
-.cs-story-chips {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-}
-
-.cs-story-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-card);
-    padding: 5px 8px 5px 9px;
-}
-
-.cs-story-chip-tick {
-    flex: none;
-    color: var(--cs-green);
-}
-
-.cs-story-chip-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    line-height: 1.25;
-}
-
-.cs-story-chip-text b {
-    color: var(--cs-ink);
-    font-size: 11.5px;
-    font-weight: 650;
-}
-
-.cs-story-chip-text em {
-    color: var(--cs-label);
-    font-size: 10px;
-    font-style: normal;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-}
-
-.cs-story-chip-x {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 18px;
-    height: 18px;
-    border: 0;
-    border-radius: 5px;
-    background: none;
-    color: var(--cs-faint);
-    opacity: 0;
-    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
-}
-
-/* Revealed on approach, so five settled facts do not render as five delete
-   buttons. Focus counts as approach — the keyboard must not lose the control
-   the mouse gets. */
-.cs-story-chip:hover .cs-story-chip-x,
-.cs-story-chip-x:focus-visible {
-    opacity: 1;
-}
-
-.cs-story-chip-x:hover {
-    background: var(--cs-rose-soft);
-    color: var(--cs-rose);
-}
-
-.cs-story-more {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    border: 1px dashed var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: none;
-    padding: 6px 10px;
-    color: var(--cs-blue);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.cs-story-more:hover { border-color: var(--cs-blue); }
-
-/* ── The next question, and only the next one ────────────────────────────
-   Progressive disclosure's visible half. One dimension at a time, quiet
-   enough to ignore — a clinician who stops here has a complete story by
-   the brief's own rule, not an unfinished form. */
-
-.cs-story-prompts {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-}
-
-.cs-story-prompt-label {
-    flex: none;
-    margin-right: 2px;
-    color: var(--cs-label);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.cs-story-prompt {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    border: 1px solid var(--cs-line);
-    border-radius: 999px;
-    background: var(--cs-page);
-    padding: 3px 10px;
-    color: var(--cs-muted);
-    font-size: 11px;
-    font-weight: 550;
-    transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
-}
-
-.cs-story-prompt:hover {
-    border-color: var(--cs-blue);
-    background: var(--cs-blue-soft);
-    color: var(--cs-blue);
-}
-
-/* A suggested-but-unconfirmed value — irritability's pre-pick. Same "add,
-   never dim" rule as `.cs-meas.is-suggested`: a soft blue ring, never a
-   filled one, so it stays distinct from a value actually chosen. Clears the
-   instant the clinician answers, same as every other suggestion mark here. */
-.cs-story-prompt.is-suggested {
-    border-color: rgba(18, 104, 232, 0.35);
-    background: linear-gradient(180deg, #f6faff 0%, #e9f1ff 100%);
-    color: var(--cs-blue);
-}
-
-.cs-story-because {
-    margin: -2px 0 0;
-    color: var(--cs-blue);
-    font-size: 11px;
-    font-weight: 550;
-}
-
-/* ── Free text, kept to where a chip genuinely cannot carry the fact ───── */
-
-.cs-story-freerow {
-    display: flex;
-    gap: 6px;
-}
-
-.cs-story-free {
-    flex: 1;
-    min-width: 0;
-    border: 1px solid var(--cs-line);
-    border-radius: 6px;
-    background: var(--cs-card);
-    padding: 5px 8px;
-    color: var(--cs-ink);
-    font-size: 11.5px;
-    font-weight: 550;
-}
-
-.cs-story-free::placeholder {
-    color: var(--cs-faint);
-    font-weight: 500;
-}
-
-.cs-story-notetoggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    align-self: flex-start;
-    border: 0;
-    border-radius: 6px;
-    background: none;
-    padding: 2px 4px;
-    color: var(--cs-label);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.cs-story-notetoggle:hover { color: var(--cs-blue); }
-
-/* ════════════════════════════════════════════════════════════
    GOALS — patient-authored, re-scored per visit.
    Rewritten 2026-08-20 alongside Story: same search field, same
    confirmation chip, because two adjacent cards must not teach
@@ -6774,22 +6486,174 @@ body.cs-locked-shell {
 
 .cs-goal-headbtn:hover { background: #0f5ccd; }
 
-/* A goal chip is pressable — unlike a Story chip, which is inert — because
-   the score sits behind it. Positioned so the picker can anchor to it. */
+/* ── Goals' own search + chip vocabulary ───────────────────────────────
+   These rules were `.cs-story-*` until 2026-08-20 — Goals was built beside
+   the Story card and borrowed its classes wholesale. The Story card is now
+   gone (it became a second vocabulary inside the one command bar), which
+   left Goals styling itself from a block named after a component that no
+   longer exists. Renamed rather than left dangling: a class whose name
+   points at deleted code is how a file starts lying about itself. */
+
+.cs-goalx-searchwrap { position: relative; }
+
+.cs-goalx-search {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    height: 32px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 0 10px;
+    color: var(--cs-faint);
+    transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+
+.cs-goalx-search:focus-within {
+    border-color: rgba(18, 104, 232, 0.5);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+}
+
+.cs-goalx-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 550;
+    outline: none;
+}
+
+.cs-goalx-search input::placeholder {
+    color: var(--cs-faint);
+    font-weight: 450;
+}
+
+.cs-goalx-results {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    max-height: 15rem;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 3px;
+    box-shadow: 0 12px 30px rgba(16, 28, 46, 0.16);
+}
+
+.cs-goalx-result {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    width: 100%;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 6px 8px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cs-goalx-result.is-active { background: var(--cs-blue-soft); }
+
+.cs-goalx-result-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-goalx-result-dim {
+    flex: none;
+    border-radius: 5px;
+    background: var(--cs-blue-soft);
+    padding: 2px 7px;
+    color: var(--cs-blue);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.cs-goalx-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cs-goalx-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: #fff;
+    padding: 5px 10px;
+}
+
+.cs-goalx-chip-tick {
+    flex: none;
+    color: var(--cs-green);
+}
+
+.cs-goalx-chip-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+}
+
+.cs-goalx-chip-text b {
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.cs-goalx-chip-text em {
+    color: var(--cs-label);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 600;
+}
+
+.cs-goalx-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: var(--cs-radius-sm);
+    background: none;
+    padding: 5px 10px;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cs-goalx-more:hover { border-color: var(--cs-blue); color: var(--cs-blue); }
+
+/* A goal chip is pressable — the score sits behind it. Positioned so the
+   picker can anchor to it. */
 .cs-goal-chipwrap { position: relative; }
 
-.cs-story-chip.is-press {
+.cs-goalx-chip.is-press {
     cursor: pointer;
     transition: border-color 0.13s ease, background 0.13s ease;
 }
 
-.cs-story-chip.is-press:hover,
-.cs-story-chip.is-press.is-open {
+.cs-goalx-chip.is-press:hover,
+.cs-goalx-chip.is-press.is-open {
     border-color: var(--cs-blue);
     background: var(--cs-blue-soft);
 }
 
-.cs-story-chip-aim {
+.cs-goalx-chip-aim {
     flex: none;
     color: var(--cs-label);
 }

@@ -591,6 +591,12 @@ function App() {
    * physiotherapy earned its own — see `SpecialtyProfile.inputLayout` for
    * the full history of that decision.
    */
+  /** Stable identity, so MeasurementsCard's memos do not re-run every render. */
+  const anatomicalMeasureKeys = useMemo(
+    () => new Set(specialty.anatomical ?? []),
+    [specialty.anatomical]
+  );
+
   const usesCaseSheet = specialty.inputLayout === "case-sheet";
   const usesPhysioInputs = specialty.inputLayout === "physio";
   /**
@@ -972,6 +978,38 @@ function App() {
            all of them. Built to docs/Aren Cortex Mock 2.png; the layout rules
            are in docs/Aren cortex visual philosophy.md. */
         <div className="cs-shell">
+          {/* ── The longitudinal band ──────────────────────────────────────
+              Full width, above the two-column split, 2026-08-20.
+
+              It has now been in all three possible places, and each move was
+              a real answer to a real complaint:
+
+                above `.cs-page`   original. Permanently ate ~200px out of a
+                                   locked-height shell, on every consult, read
+                                   or not.
+                inside `.cs-work`  2026-08-17. Fixed that, and broke the shape:
+                                   as the first child of the LEFT column it was
+                                   two rows of cards in a 1fr gap, with the plan
+                                   rail sitting alongside doing nothing.
+                here               full width, one row, and — the part that
+                                   makes it affordable — `.cs-shell` is a flex
+                                   column, so when the band collapses to its
+                                   header line the space is genuinely returned
+                                   to `.cs-page` beneath it rather than left as
+                                   a hole. The rail comes back up with it.
+
+              Brief §10 and §14: longitudinal context without a dashboard. It
+              still renders NOTHING for a patient with no history — not an
+              empty frame — so a first consult is the screen it always was. */}
+          <LongitudinalBand
+            summary={trendSummary}
+            pastVisits={pastVisits}
+            carePlan={carePlan.plan}
+            sessionNumbers={carePlan.sessionNumbers}
+            onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
+            onEditCarePlan={() => setCarePlanSheetOpen(true)}
+            onStartCarePlan={() => setCarePlanSheetOpen(true)}
+          />
           <main className="cs-page">
             {/* Context first, but not at the same visual weight as the three
                 cards below it. Most consults tick zero or one of these — equal
@@ -993,31 +1031,6 @@ function App() {
                 earn a full-width card just by existing, and every module here
                 sizes to its content. */}
             <div className="cs-work">
-              {/* ── The longitudinal band ──────────────────────────────────
-                  First thing in the scrolling column, 2026-08-17 — moved
-                  out from above `.cs-page`, where it permanently ate into
-                  `.cs-shell`'s locked height (atlas §14.23's own Open note:
-                  "~200px out of a locked-height shell... real pressure on
-                  the Assessment on a short laptop"). It is still the first
-                  thing on screen before any scrolling happens, so the spec's
-                  "read before anything is typed" still holds; it just no
-                  longer costs that space for the rest of the consult too.
-                  It also collapses to one line — see LongitudinalBand.tsx.
-
-                  It renders NOTHING for a patient with no history — not an
-                  empty frame, not a placeholder — so a first consult is
-                  exactly the screen it was before this existed. One
-                  component for every profile; `specialty.trend` is the only
-                  thing that differs. */}
-              <LongitudinalBand
-                summary={trendSummary}
-                pastVisits={pastVisits}
-                carePlan={carePlan.plan}
-                sessionNumbers={carePlan.sessionNumbers}
-                onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
-                onEditCarePlan={() => setCarePlanSheetOpen(true)}
-                onStartCarePlan={() => setCarePlanSheetOpen(true)}
-              />
               {/* The input half of the screen — the one part that genuinely
                   differs by profile. GeneralOpdInputs / PhysioInputs /
                   SoapInputs.tsx: see their headers for why the split stops
@@ -1040,6 +1053,7 @@ function App() {
                   defaultMeasureKeys={specialty.measurements}
                   relevantMeasureKeys={measureRelevance.keys}
                   relevantMeasureBecause={measureRelevance.because}
+                  anatomicalMeasureKeys={anatomicalMeasureKeys}
                   pastVisits={pastVisits}
                   visitId={visitId}
                   disabled={!patient}
@@ -1056,6 +1070,7 @@ function App() {
                   examination={examination}
                   markedRegions={markedExam.regions}
                   markedSides={markedExam.sides}
+                  onOpenBodyMap={() => setOpenChart("joints")}
                 />
               ) : usesCaseSheet ? (
                 <GeneralOpdInputs
@@ -1385,6 +1400,7 @@ function App() {
               observables={observables}
               caseSheetEntries={caseSheetEntries}
               onObservableToggle={handleObservableToggle}
+              examination={examination}
               disabled={!patient}
             />
           )}

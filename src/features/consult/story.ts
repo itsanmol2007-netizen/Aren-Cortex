@@ -39,6 +39,22 @@ export type StorySettling = "immediate" | "under_5min" | "5_30min" | "over_30min
 /** In-memory shape the UI edits. Mirrors `visit_story`'s columns exactly. */
 export interface Story {
     duration: StoryDuration | null;
+    /**
+     * Exactly what was selected — "3 weeks" — where `duration` above is the
+     * BUCKET that selection falls into ("2_6wk").
+     *
+     * Two fields because they answer to two different masters and always did.
+     * `duration` is the ranked value: `DURATION_SIGNAL` maps it to PAIN_ACUTE
+     * / PAIN_CHRONIC, and a bucket is the honest granularity for that, because
+     * no rule anywhere distinguishes three weeks from four. `durationText` is
+     * the RECORDED value, and there a bucket is a lie by rounding: the
+     * clinician heard "three weeks", and a chart that reads back "2-6 weeks"
+     * has quietly discarded what the patient said.
+     *
+     * Nullable, and null on every row written before 2026-08-20 — the chip
+     * falls back to the bucket's own label when it is missing.
+     */
+    durationText: string | null;
     onsetMode: StoryOnsetMode | null;
     /** free text — revealed only on traumatic/post-surgical onset, see `showMechanism` */
     mechanism: string;
@@ -59,7 +75,7 @@ export interface Story {
 
 export function emptyStory(): Story {
     return {
-        duration: null, onsetMode: null, mechanism: "",
+        duration: null, durationText: null, onsetMode: null, mechanism: "",
         irritability: null, settling: null,
         aggravating: [], easing: [], pattern: [],
         tolerance: "", note: "",
@@ -262,9 +278,54 @@ function item(
  * what brings it on, what helps, how it behaves, then irritability, which is
  * judged after hearing all of the above rather than asked.
  */
+/**
+ * How long, as a clinician actually says it.
+ *
+ * The four `DURATION_LABEL` buckets are what gets STORED and ranked; these are
+ * what gets typed and shown. A physiotherapist hearing "about three weeks"
+ * types `3` and expects `3 days / 3 weeks / 3 months` back — not a menu of
+ * ranges to mentally bin the answer into, which is the form-filling the whole
+ * brief is written against.
+ *
+ * Several items therefore share one `key`: "3 weeks" and "4 weeks" are both
+ * `2_6wk`. That is why `storyHas` compares Duration on `durationText` rather
+ * than on the key — otherwise picking "3 weeks" would light "4 weeks" too.
+ *
+ * Boundaries follow the bucket labels literally: `under_2wk` is "< 2 weeks",
+ * so two weeks itself is the first `2_6wk` entry.
+ */
+const DURATION_TERMS: { label: string; bucket: StoryDuration }[] = [
+    { label: "2 days", bucket: "under_2wk" },
+    { label: "3 days", bucket: "under_2wk" },
+    { label: "5 days", bucket: "under_2wk" },
+    { label: "1 week", bucket: "under_2wk" },
+    { label: "10 days", bucket: "under_2wk" },
+    { label: "2 weeks", bucket: "2_6wk" },
+    { label: "3 weeks", bucket: "2_6wk" },
+    { label: "4 weeks", bucket: "2_6wk" },
+    { label: "5 weeks", bucket: "2_6wk" },
+    { label: "6 weeks", bucket: "6wk_3mo" },
+    { label: "2 months", bucket: "6wk_3mo" },
+    { label: "3 months", bucket: "6wk_3mo" },
+    { label: "4 months", bucket: "over_3mo" },
+    { label: "6 months", bucket: "over_3mo" },
+    { label: "9 months", bucket: "over_3mo" },
+    { label: "1 year", bucket: "over_3mo" },
+    { label: "2 years", bucket: "over_3mo" },
+    { label: "Several years", bucket: "over_3mo" },
+];
+
 export const STORY_SEARCH_ITEMS: StorySearchItem[] = [
-    ...(Object.keys(DURATION_LABEL) as StoryDuration[]).map((d) =>
-        item(d, DURATION_LABEL[d], "Duration", true, ["how long", "duration", "since"])),
+    ...DURATION_TERMS.map(({ label, bucket }) => ({
+        // `id` carries the label, not the bucket — four items would otherwise
+        // collide on `Duration:2_6wk` and React would render duplicate keys.
+        id: `Duration:${label}`,
+        key: bucket,
+        label,
+        dimension: "Duration" as const,
+        single: true,
+        synonyms: ["how long", "duration", "since", "for"],
+    })),
 
     ...(Object.keys(ONSET_LABEL) as StoryOnsetMode[]).map((o) =>
         item(o, `${ONSET_LABEL[o]} onset`, "Onset", true, ["started", "began", "onset"])),
@@ -296,6 +357,10 @@ const FIELD_OF: Record<StoryDimension, keyof Story> = {
 
 /** Is this item already part of the story? */
 export function storyHas(s: Story, it: StorySearchItem): boolean {
+    // Duration is the one dimension where several items share a key (see
+    // DURATION_TERMS), so the key cannot answer this — "3 weeks" and
+    // "4 weeks" are both `2_6wk`, and comparing keys would light both.
+    if (it.dimension === "Duration") return s.durationText === it.label;
     const field = FIELD_OF[it.dimension];
     const value = s[field];
     return Array.isArray(value) ? value.includes(it.key) : value === it.key;
@@ -307,6 +372,12 @@ export function storyHas(s: Story, it: StorySearchItem): boolean {
  * implicitly by only ever rendering one `is-on` chip.
  */
 export function addToStory(s: Story, it: StorySearchItem): Story {
+    // Duration writes BOTH halves at once — the bucket that ranks and the
+    // words that were actually said. They must never disagree, which is why
+    // nothing else in this file ever sets one without the other.
+    if (it.dimension === "Duration") {
+        return { ...s, duration: it.key as StoryDuration, durationText: it.label };
+    }
     const field = FIELD_OF[it.dimension];
     const value = s[field];
     if (Array.isArray(value)) {
@@ -320,6 +391,7 @@ export function addToStory(s: Story, it: StorySearchItem): Story {
  *  exists as a follow-up to it (`showSettling`) and would otherwise be
  *  stranded in the record with nothing to qualify. */
 export function removeFromStory(s: Story, it: StorySearchItem): Story {
+    if (it.dimension === "Duration") return { ...s, duration: null, durationText: null };
     const field = FIELD_OF[it.dimension];
     const value = s[field];
     const next: Story = Array.isArray(value)
@@ -335,7 +407,20 @@ export function removeFromStory(s: Story, it: StorySearchItem): Story {
  * one-line summary the brief asks for.
  */
 export function selectedStoryItems(s: Story): StorySearchItem[] {
-    return STORY_SEARCH_ITEMS.filter((it) => storyHas(s, it));
+    const picked = STORY_SEARCH_ITEMS.filter((it) => storyHas(s, it));
+    // A story saved before `duration_text` existed has a bucket and no words.
+    // Synthesise the chip from the bucket's own label rather than dropping the
+    // duration off the chart entirely — the fact was recorded, only its
+    // precision was lost, and `removeFromStory` still clears it correctly
+    // because it keys off the dimension.
+    if (s.duration && !s.durationText) {
+        picked.unshift({
+            id: `Duration:${s.duration}`, key: s.duration,
+            label: DURATION_LABEL[s.duration], dimension: "Duration",
+            single: true, synonyms: [],
+        });
+    }
+    return picked;
 }
 
 /** "3 weeks · Gradual onset · Worse downstairs · Better with rest" */

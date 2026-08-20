@@ -198,8 +198,8 @@ export function GoalsCard({
             </div>
 
             <div className="cs-goals-body">
-                <div className="cs-story-searchwrap">
-                    <div className="cs-story-search">
+                <div className="cs-goalx-searchwrap">
+                    <div className="cs-goalx-search">
                         <Search size={15} aria-hidden="true" />
                         <input
                             ref={inputRef}
@@ -215,20 +215,20 @@ export function GoalsCard({
                     </div>
 
                     {open && (
-                        <div className="cs-story-results" role="listbox">
+                        <div className="cs-goalx-results" role="listbox">
                             {options.map((label, i) => (
                                 <button
                                     key={label}
                                     type="button"
                                     role="option"
                                     aria-selected={i === active}
-                                    className={`cs-story-result${i === active ? " is-active" : ""}`}
+                                    className={`cs-goalx-result${i === active ? " is-active" : ""}`}
                                     onMouseEnter={() => setActive(i)}
                                     onClick={() => take(label)}
                                 >
-                                    <span className="cs-story-result-label">{label}</span>
+                                    <span className="cs-goalx-result-label">{label}</span>
                                     {!matches.includes(label) && (
-                                        <span className="cs-story-result-dim">New goal</span>
+                                        <span className="cs-goalx-result-dim">New goal</span>
                                     )}
                                 </button>
                             ))}
@@ -237,7 +237,7 @@ export function GoalsCard({
                 </div>
 
                 {goals.length > 0 && (
-                    <div className="cs-story-chips">
+                    <div className="cs-goalx-chips">
                         {goals.map((g, i) => {
                             // First visit for this goal: nothing to compare against
                             // yet, so the baseline itself is the "before".
@@ -248,16 +248,16 @@ export function GoalsCard({
                                 <span key={g.id} className="cs-goal-chipwrap">
                                     <button
                                         type="button"
-                                        className={`cs-story-chip is-press${openGoal === g.id ? " is-open" : ""}`}
+                                        className={`cs-goalx-chip is-press${openGoal === g.id ? " is-open" : ""}`}
                                         disabled={disabled}
                                         aria-haspopup="dialog"
                                         aria-expanded={openGoal === g.id}
                                         onClick={() => setOpenGoal((cur) => (cur === g.id ? null : g.id))}
                                     >
                                         {today !== undefined
-                                            ? <Check size={13} className="cs-story-chip-tick" aria-hidden="true" />
-                                            : <Target size={13} className="cs-story-chip-aim" aria-hidden="true" />}
-                                        <span className="cs-story-chip-text">
+                                            ? <Check size={13} className="cs-goalx-chip-tick" aria-hidden="true" />
+                                            : <Target size={13} className="cs-goalx-chip-aim" aria-hidden="true" />}
+                                        <span className="cs-goalx-chip-text">
                                             <b>{g.activity}</b>
                                             <em>
                                                 {scored !== undefined
@@ -282,7 +282,7 @@ export function GoalsCard({
                         })}
                         <button
                             type="button"
-                            className="cs-story-more"
+                            className="cs-goalx-more"
                             disabled={disabled}
                             onClick={() => inputRef.current?.focus()}
                         >

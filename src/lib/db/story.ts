@@ -24,6 +24,7 @@ import { emptyStory } from "../../features/consult/story";
 interface VisitStoryRow {
     visit_id: string;
     duration: string | null;
+    duration_text: string | null;
     onset_mode: string | null;
     mechanism: string | null;
     irritability: string | null;
@@ -38,6 +39,9 @@ interface VisitStoryRow {
 function fromRow(r: VisitStoryRow): Story {
     return {
         duration: r.duration as StoryDuration | null,
+        // `?? null` rather than `?? ""`: absent means "this row predates the
+        // column", and the UI distinguishes that from an empty string.
+        durationText: r.duration_text ?? null,
         onsetMode: r.onset_mode as StoryOnsetMode | null,
         mechanism: r.mechanism ?? "",
         irritability: r.irritability as StoryIrritability | null,
@@ -74,6 +78,7 @@ export async function saveVisitStory(
     const { error } = await supabase.from("visit_story").upsert({
         visit_id: visitId,
         duration: story.duration,
+        duration_text: story.durationText,
         onset_mode: story.onsetMode,
         mechanism: story.mechanism.trim() || null,
         irritability: story.irritability,

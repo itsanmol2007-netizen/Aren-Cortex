@@ -71,6 +71,20 @@ interface Props {
     defaultKeys: MeasureFieldKey[];
     /** fields the chart has just made worth filling in */
     relevantKeys: Set<MeasureFieldKey>;
+    /**
+     * Fields this profile records against a BODY SITE instead of here
+     * (`SpecialtyProfile.anatomical`). Suppressed from the automatic surfaces
+     * — the profile default, the relevance union, and the Add menu — because
+     * for these profiles a value in this card cannot say which joint it
+     * belongs to, and "ROM 100%" with no site is a number nobody can read
+     * later. Physiotherapy passes pain and ROM; every other profile passes
+     * nothing and this is inert.
+     *
+     * A field holding a VALUE is still shown regardless (see `shown` below):
+     * suppressing a recorded measurement would leave it in the save and out
+     * of the doctor's sight, which is the one outcome worse than showing it.
+     */
+    anatomicalKeys?: Set<MeasureFieldKey>;
     /** field -> the signal label that asked for it, for the tooltip */
     relevantBecause: Map<MeasureFieldKey, string>;
     /** specialty charts offered as launchers in this grid — see ChartTool */
@@ -114,7 +128,7 @@ interface Props {
 }
 
 export function MeasurementsCard({
-    vitals, onChange, defaultKeys, relevantKeys, relevantBecause,
+    vitals, onChange, defaultKeys, relevantKeys, relevantBecause, anatomicalKeys,
     charts = [], onOpenChart, disabled = false, maxInline, containerRef,
     pastVisits,
 }: Props) {
@@ -152,18 +166,26 @@ export function MeasurementsCard({
         const keys = new Set<MeasureFieldKey>(defaultKeys);
         for (const k of relevantKeys) keys.add(k);
         for (const k of added) keys.add(k);
+        // Anatomical fields never arrive here by SUGGESTION. Without this,
+        // putting "Knee pain" on the sheet lights RELEVANT_FIELDS' painVas +
+        // romPct and both reappear beside blood pressure — the exact thing
+        // moving them to the body site was meant to end.
+        if (anatomicalKeys) for (const k of anatomicalKeys) keys.delete(k);
         // A field holding a value is always visible, whatever anything else
-        // says. Hiding a recorded measurement would leave it in the save and
-        // out of the doctor's sight, which is the worst of both.
+        // says — including the suppression above. Hiding a recorded
+        // measurement would leave it in the save and out of the doctor's
+        // sight, which is the worst of both.
         for (const f of MEASURE_FIELDS) if (valueOf(vitals, f.key).trim()) keys.add(f.key);
         // Catalogue order, always — the layout does not move between
         // facilities or between consultations.
         return MEASURE_FIELDS.filter((f) => keys.has(f.key));
-    }, [defaultKeys, relevantKeys, added, vitals]);
+    }, [defaultKeys, relevantKeys, added, vitals, anatomicalKeys]);
 
     const hidden = useMemo(
-        () => MEASURE_FIELDS.filter((f) => !shown.some((s) => s.key === f.key)),
-        [shown]
+        () => MEASURE_FIELDS.filter(
+            (f) => !shown.some((s) => s.key === f.key) && !anatomicalKeys?.has(f.key)
+        ),
+        [shown, anatomicalKeys]
     );
 
     const set = (key: MeasureFieldKey, value: string) =>

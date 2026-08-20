@@ -119,6 +119,22 @@ export interface SpecialtyProfile {
      */
     measurements: MeasureFieldKey[];
     /**
+     * Measurements this profile records against a BODY SITE rather than in
+     * General Measurements — physiotherapy's pain and range of motion.
+     *
+     * A separate axis from `measurements`, and not simply "the fields left
+     * out of it": leaving a field out only stops it being a DEFAULT, and
+     * `RELEVANT_FIELDS` puts it straight back the moment a matching chip
+     * lands (KNEE_PAIN lights painVas and romPct). This says something
+     * stronger — for this profile the field has no meaning without a site, so
+     * no amount of clinical relevance should surface it in a card that cannot
+     * carry one.
+     *
+     * Optional. Absent means "nothing about this profile is anatomical", which
+     * is true of every profile but physiotherapy today.
+     */
+    anatomical?: MeasureFieldKey[];
+    /**
      * Which of the two specialty charts (§14.7 — dental odontogram, body map)
      * this facility's consult screen shows. Empty for every profile that
      * doesn't need either.
@@ -289,11 +305,33 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         { type: "medicine", label: "Medicine" },
         { type: "advice", label: "Advice" },
     ],
-    // Pain and range of motion lead, because they are what a physiotherapy
-    // consultation is measured in. BP stays visible: it is an exercise-safety
-    // input here, not a general vital (SEVERE_HIGH_BP guards the whole
-    // `exercise` type).
-    measurements: ["painVas", "romPct", "bp", "pulse", "weight"],
+    // ── General measurements are GENERAL measurements (2026-08-20)
+    //
+    // This list read `["painVas", "romPct", "bp", "pulse", "weight"]` until
+    // Anmol's second review, on the reasoning that pain and range are what a
+    // physiotherapy consultation is measured in. True, and beside the point:
+    // both of those are properties of a SITE, and this card has nowhere to put
+    // one. "ROM 100%" beside a blood pressure cannot say which joint, and a
+    // patient with a left shoulder and a right knee — the ordinary case, not
+    // the edge one — has two ranges and one field to put them in.
+    //
+    // So they moved to where a site exists: `regionPainKey` and the range grid
+    // inside the body-map examination, both of which carry `side` in their own
+    // column. Neither field is deleted from the catalogue — `romPct` still
+    // holds ROM_PCT's live `measurement_rules`, and both stay reachable through
+    // Add Measurement for a facility that genuinely wants one number. Doctrine:
+    // ranking decides what is OFFERED, never what is REACHABLE.
+    //
+    // BP stays, and is the reason this list is not simply General OPD's: it is
+    // an exercise-safety input here rather than a routine vital, because
+    // SEVERE_HIGH_BP guards the whole `exercise` type.
+    measurements: ["bp", "pulse", "spo2", "temp", "weight"],
+    // The two that moved out, named so they cannot drift back in through
+    // `RELEVANT_FIELDS`. Both still exist in the catalogue and both are still
+    // recorded — `regionPainKey` and the range grid, inside the body-map
+    // examination, where each reading carries the joint and the side it was
+    // taken on.
+    anatomical: ["painVas", "romPct"],
     // `JointMapCard`, added 2026-08-17 — replaces dermatology's `BodyMapCard`,
     // which physiotherapy borrowed at first (§14.24) and which Anmol correctly
     // called out: clicking a joint opened a free-text box with no chip Synapse

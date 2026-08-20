@@ -47,9 +47,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ClipboardList, Plus, Search } from "lucide-react";
+import { ClipboardList, Plus, Search, X } from "lucide-react";
 import type { Observable } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
+import { searchStory, nextStoryPrompts } from "./story";
+import type { Story, StorySearchItem } from "./story";
 
 /** Every character of `q`, in order, somewhere in `text`. Cheap typo tolerance. */
 function isSubsequence(q: string, text: string): boolean {
@@ -230,12 +232,44 @@ function useCatalogueSearch(observables: Observable[], query: string) {
 }
 
 // ── the command bar ────────────────────────────────────────────────────────
+//
+// ── ONE surface for clinical information (2026-08-20)
+//
+// The bar used to search the observable catalogue only, and physiotherapy's
+// Story sat in a card of its own below it with a second search inside. That
+// asked the clinician a question the software should never ask: "is this
+// Story or is this Case Sheet?" — a distinction that exists in the schema
+// (`visit_story`'s columns vs `consultInput`'s observation set) and nowhere in
+// a physiotherapist's head. Knee pain and "three weeks" arrive in the same
+// sentence from the same patient.
+//
+// So the bar searches BOTH vocabularies at once and routes the answer itself.
+// `Knee pain` is an observable and lands on the Case Sheet; `3 weeks` is a
+// story dimension and lands on the Story. The clinician types and picks; the
+// classification is Cortex's problem, which is the whole point.
+//
+// Order is not imposed, because a consultation does not have one. Every item
+// in both vocabularies is reachable from the first keystroke — duration before
+// the complaint, easing factor before onset, whatever the patient said first.
+// `nextStoryPrompts` offers a next question only when the field is EMPTY and
+// focused, so guidance costs nothing and never becomes a wall of chips.
+
+type BarResult =
+    | { t: "obs"; key: string; o: Observable }
+    | { t: "story"; key: string; it: StorySearchItem };
 
 interface BarProps {
     observables: Observable[];
     /** labels already on the sheet, so a result shows a tick */
     onSheet: Set<string>;
     onToggle: (o: Observable) => void;
+    /**
+     * The story half of the same box. Both optional: General OPD passes
+     * neither and gets exactly the catalogue-only bar it always had, so this
+     * absorbs physiotherapy's Story without forking the component.
+     */
+    story?: Story;
+    onStoryAdd?: (it: StorySearchItem) => void;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
     /**
@@ -256,20 +290,49 @@ interface BarProps {
  * because it belongs to the consultation and not to any single module.
  */
 export function ClinicalCommandBar({
-    observables, onSheet, onToggle, disabled = false, searchRef,
+    observables, onSheet, onToggle, story, onStoryAdd, disabled = false, searchRef,
     onEmptyDown, onEmptyUp, onEmptyEnter,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
     const [rect, setRect] = useState<DOMRect | null>(null);
+    const [focused, setFocused] = useState(false);
     const reduce = useReducedMotion();
 
     const internalRef = useRef<HTMLInputElement>(null);
     const inputRef = (searchRef ?? internalRef) as React.RefObject<HTMLInputElement>;
     const boxRef = useRef<HTMLDivElement>(null);
 
-    const results = useCatalogueSearch(observables, query);
-    const open = query.trim().length > 0;
+    const obsResults = useCatalogueSearch(observables, query);
+    const storyOn = !!(story && onStoryAdd);
+
+    /**
+     * The two vocabularies, merged.
+     *
+     * Story items are appended rather than interleaved by rank. Two ranking
+     * scales computed by different functions are not comparable — sorting on
+     * them together would let a rank-2 story item outrank a rank-3 observable
+     * for reasons neither function intended. Observables lead because they are
+     * what is typed most of the time; both are always present, and the story
+     * block is at most a few rows, so nothing is pushed out of reach.
+     */
+    const results = useMemo<BarResult[]>(() => {
+        const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
+        if (!storyOn) return obs;
+        const st: BarResult[] = searchStory(query, story!, 6)
+            .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
+        return [...obs, ...st];
+    }, [obsResults, storyOn, query, story]);
+
+    /** Empty + focused: the next clinical question, never a permanent row. */
+    const prompts = useMemo<BarResult[]>(() => {
+        if (!storyOn || query.trim()) return [];
+        return nextStoryPrompts(story!, 5).map((it) => ({ t: "story", key: `p:${it.id}`, it }));
+    }, [storyOn, query, story]);
+
+    const showPrompts = focused && !query.trim() && prompts.length > 0;
+    const shown = query.trim() ? results : prompts;
+    const open = query.trim().length > 0 || showPrompts;
 
     useEffect(() => { setActive(0); }, [query]);
 
@@ -288,17 +351,18 @@ export function ClinicalCommandBar({
         };
     }, [open, updateRect]);
 
-    const take = (o: Observable) => {
-        onToggle(o);
+    /** One entry point for both vocabularies — the routing IS the feature. */
+    const take = (r: BarResult) => {
+        if (r.t === "obs") onToggle(r.o);
+        else onStoryAdd?.(r.it);
         setQuery("");
         inputRef.current?.focus();
     };
 
     const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        // With nothing typed, the catalogue dropdown is not open and these
-        // three keys have nothing of THIS bar's to act on — handed to
-        // Related instead, if the parent wired anything there. Genuinely a
-        // no-op if it did not: `open` stays false either way.
+        // With nothing typed AND nothing being offered, these three keys have
+        // nothing of THIS bar's to act on — handed to Related instead, if the
+        // parent wired anything there. Genuinely a no-op if it did not.
         if (!open) {
             if (e.key === "ArrowDown" && onEmptyDown) { e.preventDefault(); onEmptyDown(); }
             else if (e.key === "ArrowUp" && onEmptyUp) { e.preventDefault(); onEmptyUp(); }
@@ -307,17 +371,19 @@ export function ClinicalCommandBar({
         }
         if (e.key === "ArrowDown") {
             e.preventDefault();
-            setActive((i) => Math.min(i + 1, results.length - 1));
+            setActive((i) => Math.min(i + 1, shown.length - 1));
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActive((i) => Math.max(i - 1, 0));
         } else if (e.key === "Enter") {
             e.preventDefault();
-            const pick = results[active];
+            const pick = shown[active];
             if (pick) take(pick);
         } else if (e.key === "Escape") {
             e.preventDefault();
-            setQuery("");
+            // Escape on an empty box closes the prompt list rather than doing
+            // nothing; on a typed one it clears back to empty first.
+            if (query.trim()) setQuery(""); else inputRef.current?.blur();
         }
     };
 
@@ -331,21 +397,37 @@ export function ClinicalCommandBar({
                 style={{ top: rect.bottom + 6, left: rect.left, width: rect.width }}
                 role="listbox"
             >
-                {results.length === 0 ? (
+                {/* The prompt list says WHY it is offering these, because
+                    otherwise a list that appears on focus reads as a search
+                    result for a query nobody typed. */}
+                {showPrompts && (
+                    <p className="px-3 pb-1 pt-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--cs-label)]">
+                        Not recorded yet — {prompts[0].t === "story" ? prompts[0].it.dimension.toLowerCase() : ""}
+                    </p>
+                )}
+
+                {shown.length === 0 ? (
                     <p className="px-3.5 py-2.5 text-[13px] text-[var(--cs-faint)]">
                         Nothing matches “{query.trim()}”
                     </p>
                 ) : (
-                    results.map((o, i) => {
-                        const on = onSheet.has(o.label);
+                    shown.map((r, i) => {
+                        // A story item is never "already on the sheet" — the
+                        // search filters those out at source (`searchStory`),
+                        // so only observables can come back ticked.
+                        const on = r.t === "obs" && onSheet.has(r.o.label);
+                        const label = r.t === "obs" ? r.o.label : r.it.label;
                         return (
                             <button
-                                key={o.id}
+                                key={r.key}
                                 type="button"
                                 role="option"
                                 aria-selected={i === active}
                                 onMouseEnter={() => setActive(i)}
-                                onClick={() => take(o)}
+                                // `onMouseDown` rather than `onClick`: the input's
+                                // blur fires first on a click and would close the
+                                // prompt list out from under the pointer.
+                                onMouseDown={(e) => { e.preventDefault(); take(r); }}
                                 className={
                                     "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] " +
                                     "font-medium text-[var(--cs-ink)] " +
@@ -355,18 +437,24 @@ export function ClinicalCommandBar({
                             >
                                 <span className="min-w-0 flex-1 truncate">
                                     {on && <span aria-hidden="true">✓ </span>}
-                                    {o.label}
+                                    {label}
                                 </span>
-                                {/* The kind, stated BEFORE it is committed, so the
-                                    doctor sees the system's reading while
-                                    disagreeing with it is still cheap. */}
+                                {/* What Cortex is about to call this, stated
+                                    BEFORE it is committed, so the doctor sees
+                                    the system's reading while disagreeing with
+                                    it is still cheap. For a story item that is
+                                    its clinical dimension — which is also the
+                                    only place the word "duration" or "onset"
+                                    ever appears, now that the form is gone. */}
                                 <span
                                     className={
                                         "flex-none rounded-[5px] px-[7px] py-[2px] text-[11px] font-semibold " +
-                                        TONE[o.kind].badge
+                                        (r.t === "obs"
+                                            ? TONE[r.o.kind].badge
+                                            : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
-                                    {KIND_BADGE[o.kind]}
+                                    {r.t === "obs" ? KIND_BADGE[r.o.kind] : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );
@@ -396,7 +484,11 @@ export function ClinicalCommandBar({
                     disabled={disabled}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={onKey}
-                    placeholder="Add clinical information (symptoms, findings, history…)"
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    placeholder={storyOn
+                        ? "Add clinical information…"
+                        : "Add clinical information (symptoms, findings, history…)"}
                     aria-label="Add clinical information"
                     className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
                 />
@@ -594,11 +686,19 @@ interface SheetProps {
      * `GeneralOpdInputs.tsx`, which owns the roving list this ref feeds).
      */
     relatedRef?: React.RefObject<HTMLDivElement | null>;
+    /**
+     * The story, as it currently stands. Rendered as the sheet's first chip
+     * row rather than as its own card — see the row itself for why.
+     * Defaults to empty, so every non-physiotherapy profile is untouched.
+     */
+    storyChips?: StorySearchItem[];
+    onStoryRemove?: (it: StorySearchItem) => void;
 }
 
 export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
+    storyChips = [], onStoryRemove,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
@@ -652,15 +752,15 @@ export function CaseSheet({
                     Case Sheet
                 </h2>
                 <AnimatePresence>
-                    {entries.length > 0 && (
+                    {entries.length + storyChips.length > 0 && (
                         <motion.span
-                            key={entries.length}
+                            key={entries.length + storyChips.length}
                             initial={reduce ? false : { opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ type: "spring", stiffness: 520, damping: 30 }}
                             className="ml-auto flex-none rounded-[7px] bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[12.5px] font-semibold text-[var(--cs-blue)]"
                         >
-                            {entries.length} recorded
+                            {entries.length + storyChips.length} recorded
                         </motion.span>
                     )}
                 </AnimatePresence>
@@ -671,7 +771,7 @@ export function CaseSheet({
                 the card "showed its shape", which only produced three rows of
                 grey saying nothing. Nothing has been recorded, so the card
                 should look like nothing has been recorded. */}
-            {entries.length === 0 && (
+            {entries.length === 0 && storyChips.length === 0 && (
                 <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-4 text-center">
                     <EmptySheetArt />
                     {/* A heading in ink, then the line. The card previously
@@ -686,6 +786,61 @@ export function CaseSheet({
                         Search above for symptoms, findings or history. Cortex files
                         each entry in the right place.
                     </p>
+                </div>
+            )}
+
+            {/* ── The story, as confirmation ────────────────────────────────
+                First row, because it is what the patient said and the rest of
+                the sheet is what was found. Same table as the groups below it
+                — one label column, chips beside — because it IS one of them
+                now; it just happens to be stored in `visit_story` rather than
+                in the observation set. That storage split is invisible here on
+                purpose: the brief's "Story is a behavior, not a separate form"
+                only means anything if the two read as one record.
+
+                A chip, not a row per dimension. The dimension is the chip's
+                own sub-label, which is where it belongs once its value is
+                known — "3 weeks" needs the word "duration" attached to it far
+                less than an empty duration field needs a prompt. */}
+            {storyChips.length > 0 && (
+                <div className="mt-1.5 flex items-start gap-2.5 px-4 py-[3px]">
+                    <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
+                        Story
+                    </span>
+                    <div className="flex flex-1 flex-wrap content-start gap-[6px]">
+                        <AnimatePresence mode="popLayout" initial={false}>
+                            {storyChips.map((it) => (
+                                <motion.span
+                                    key={it.id}
+                                    layout={!reduce}
+                                    {...pop}
+                                    transition={{ type: "spring", stiffness: 480, damping: 32 }}
+                                    className={
+                                        "relative inline-flex items-center gap-[7px] rounded-lg border py-[3px] pl-[10px] pr-[7px] " +
+                                        "text-[13.5px] font-semibold leading-tight whitespace-nowrap " +
+                                        "border-[#cfdcf2] bg-[linear-gradient(180deg,#fbfcff_0%,#eef3fc_100%)] text-[#23406e] " +
+                                        "shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_1px_1.5px_rgba(35,64,110,0.08)]"
+                                    }
+                                >
+                                    <span className="flex flex-col leading-none">
+                                        {it.label}
+                                        <i className="mt-[2px] text-[10px] font-semibold not-italic tracking-[0.03em] text-[#5b7099]">
+                                            {it.dimension}
+                                        </i>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        aria-label={`Remove ${it.label}`}
+                                        disabled={disabled}
+                                        onClick={() => onStoryRemove?.(it)}
+                                        className="grid size-[17px] flex-none place-items-center rounded-md text-[#7288ad] hover:bg-[rgba(35,64,110,0.1)] hover:text-[#23406e]"
+                                    >
+                                        <X size={11} />
+                                    </button>
+                                </motion.span>
+                            ))}
+                        </AnimatePresence>
+                    </div>
                 </div>
             )}
 

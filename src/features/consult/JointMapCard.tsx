@@ -51,7 +51,7 @@
 // with no chips at all would read as broken.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
 import { listBodySites, addBodySite, deleteBodySite } from "../../lib/db/bodySites";
@@ -60,6 +60,9 @@ import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/bo
 import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 import type { Observable } from "../../lib/db/synapse";
 import type { CaseSheetEntry } from "./CaseSheet";
+import { RegionExam, examCounts } from "./ExaminationCard";
+import { REGION_BY_KEY } from "./examination";
+import type { ExaminationHook } from "../../hooks/useExamination";
 
 /**
  * Which specific pain chip a zone offers — `null` where the catalogue has no
@@ -115,6 +118,17 @@ interface Props {
     presentation?: "card" | "modal";
     open?: boolean;
     onClose?: () => void;
+    /**
+     * The examination, recorded HERE (2026-08-20).
+     *
+     * Optional, so dermatology-style callers get the map alone. When it is
+     * passed and the selected zone has an entry in `EXAM_REGIONS`, the whole
+     * range / strength / special-test surface renders inside the panel for
+     * that joint — which is the point of brief §5 and §6: an examination is
+     * something done to a site, so the site is the context, and a knee flexion
+     * of 95 degrees can never again be recorded without saying which knee.
+     */
+    examination?: ExaminationHook;
     disabled?: boolean;
 }
 
@@ -125,7 +139,7 @@ interface Selection {
 
 export function JointMapCard({
     visitId, doctorId, observables, caseSheetEntries, onObservableToggle,
-    presentation = "card", open = false, onClose, disabled = false,
+    presentation = "card", open = false, onClose, examination, disabled = false,
 }: Props) {
     const [items, setItems] = useState<BodySiteFinding[]>([]);
     const [aspect, setAspect] = useState<BodyAspect>("front");
@@ -134,6 +148,8 @@ export function JointMapCard({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
+    /** sites whose auto-mark insert is in flight or done — see the effect below */
+    const autoMarking = useRef<Set<string>>(new Set());
 
     useEffect(() => {
         if (!visitId) { setItems([]); setSel(null); return; }
@@ -202,6 +218,47 @@ export function JointMapCard({
             setSaving(false);
         }
     };
+
+    /**
+     * Recording an examination at a joint IS marking that joint.
+     *
+     * Without this, the flow the brief describes — open the map, click the
+     * right knee, enter flexion and strength, close — leaves `visit_body_sites`
+     * empty, so the consultation's summary strip reports nothing examined
+     * while three readings sit in the database against a site nobody declared.
+     * "Mark site" stays for the case it was built for (a site worth naming
+     * with a note and no measurements), but it is no longer the only way in,
+     * because making the doctor press it after they have already typed the
+     * numbers is asking them to tell the software something it just watched
+     * them do.
+     */
+    useEffect(() => {
+        if (!examination || !sel || !visitId || disabled) return;
+        if (!REGION_BY_KEY.has(sel.region)) return;
+        const already = items.some(
+            (f) => f.region === sel.region && f.side === sel.side && f.aspect === aspect
+        );
+        if (already) return;
+        const c = examCounts(examination, sel.region, sel.side);
+        if (c.rom === 0 && c.strength === 0 && c.tests === 0 && c.pain === null) return;
+
+        // `items` only updates once the insert RESOLVES, so two readings typed
+        // in quick succession would both see an unmarked site and both insert
+        // one. The ref is checked and set synchronously, which the state cannot
+        // be — this is the same reason `saving` above is not enough here.
+        const slot = `${sel.region}|${sel.side ?? "-"}|${aspect}`;
+        if (autoMarking.current.has(slot)) return;
+        autoMarking.current.add(slot);
+
+        addBodySite({ visitId, region: sel.region, aspect, side: sel.side, doctorId })
+            .then((site) => setItems((curr) => [site, ...curr]))
+            // Left in the set on success (the site is marked, nothing more to
+            // do) and cleared on failure, so a transient network error does not
+            // permanently stop this joint from ever being marked.
+            .catch(() => { autoMarking.current.delete(slot); });
+        // `examination.numbers` / `.texts` are the identities that change when a
+        // reading lands — the hook itself is stable across those writes.
+    }, [examination?.numbers, examination?.texts, sel, visitId, aspect, items, disabled, doctorId, examination]);
 
     const onDelete = async (f: BodySiteFinding) => {
         setItems((curr) => curr.filter((i) => i.id !== f.id));
@@ -294,6 +351,24 @@ export function JointMapCard({
                             ))}
                         </div>
 
+                        {/* ── The examination for THIS joint ────────────────
+                            Pain, range, strength and special tests, scoped to
+                            the zone that was just clicked and to the side it
+                            was clicked on. This is the whole of brief §4's
+                            "generic ROM card is ambiguous" complaint answered:
+                            there is no way to reach these fields except
+                            through a site, so they cannot be recorded without
+                            one. Renders nothing for a zone the catalogue has
+                            no movements for (a hand, the chest). */}
+                        {examination && REGION_BY_KEY.has(sel.region) && (
+                            <RegionExam
+                                exam={examination}
+                                regionKey={sel.region}
+                                side={sel.side}
+                                disabled={disabled}
+                            />
+                        )}
+
                         {/* Last resort, not the only option — doctrine's own
                             rule, applied here instead of a note field. */}
                         <div className="cs-attach-tagrow">
@@ -349,7 +424,7 @@ export function JointMapCard({
     if (presentation === "modal") {
         if (!open) return null;
         return (
-            <ChartSurface title="Joint map" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})}>
+            <ChartSurface title="Body map & examination" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})}>
                 {body}
             </ChartSurface>
         );

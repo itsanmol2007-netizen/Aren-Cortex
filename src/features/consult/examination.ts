@@ -253,6 +253,22 @@ export const rangeMeasureKey = (movementKey: string) => `EXAM_${movementKey.toUp
 export const mmtMeasureKey = (muscleKey: string) => `MMT_${muscleKey.toUpperCase()}`;
 export const testMeasureKey = (testKey: string) => `TEST_${testKey.toUpperCase()}`;
 
+/**
+ * Pain, 0-10, for ONE joint on ONE side.
+ *
+ * Not `painVas` from `measures.ts`, and the difference is the whole reason
+ * this exists. That field is a single number on the Vitals blob with nowhere
+ * to put a site, so a patient with a right knee at 7 and a left shoulder at 5
+ * has to be recorded as one of those, or as an average of two facts that were
+ * never the same fact. It sat in General Measurements beside blood pressure
+ * until 2026-08-20 for that reason and no better one.
+ *
+ * Here pain is a reading like any other: keyed by region, carrying `side` in
+ * its own column, and living with the range and strength readings taken at the
+ * same joint in the same minute.
+ */
+export const regionPainKey = (regionKey: string) => `PAIN_${regionKey.toUpperCase()}`;
+
 /** 0-5, with the words. A grade is an ordinal, so it is picked, never typed. */
 export const MMT_LABEL: Record<MmtGrade, string> = {
     0: "No contraction",
