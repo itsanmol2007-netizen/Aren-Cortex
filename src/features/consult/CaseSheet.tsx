@@ -327,7 +327,7 @@ export function ClinicalCommandBar({
                 initial={reduce ? false : { opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.13, ease: "easeOut" }}
-                className="fixed z-50 max-h-[19rem] overflow-y-auto rounded-[10px] border border-[var(--cs-line-strong)] bg-white py-1 shadow-[0_12px_32px_rgba(16,28,46,0.16)]"
+                className="fixed z-50 max-h-[16rem] overflow-y-auto rounded-[10px] border border-[var(--cs-line-strong)] bg-white py-1 shadow-[0_12px_32px_rgba(16,28,46,0.16)]"
                 style={{ top: rect.bottom + 6, left: rect.left, width: rect.width }}
                 role="listbox"
             >
@@ -347,7 +347,7 @@ export function ClinicalCommandBar({
                                 onMouseEnter={() => setActive(i)}
                                 onClick={() => take(o)}
                                 className={
-                                    "flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[14px] " +
+                                    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] " +
                                     "font-medium text-[var(--cs-ink)] " +
                                     (i === active ? "bg-[var(--cs-blue-soft)] " : "") +
                                     (on ? "opacity-55 " : "")
@@ -379,11 +379,17 @@ export function ClinicalCommandBar({
 
     return (
         <div className="mb-1">
+            {/* 52px tall with 16px type until the 2026-08-20 density pass. It
+                was the single tallest element on the input half of the screen
+                and it holds one line of text — a field styled as a hero. At
+                38px it still reads as the page's primary input (nothing else
+                here is a full-width bordered field) without spending a
+                fortieth of a 14-inch panel saying so. */}
             <div
                 ref={boxRef}
-                className="flex h-[52px] items-center gap-3 rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-4 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]"
+                className="flex h-[38px] items-center gap-2.5 rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]"
             >
-                <Search size={19} className="flex-none text-[var(--cs-faint)]" />
+                <Search size={15} className="flex-none text-[var(--cs-faint)]" />
                 <input
                     ref={inputRef}
                     value={query}
@@ -392,7 +398,7 @@ export function ClinicalCommandBar({
                     onKeyDown={onKey}
                     placeholder="Add clinical information (symptoms, findings, history…)"
                     aria-label="Add clinical information"
-                    className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[16px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
                 />
                 <kbd className="flex-none rounded-md border border-[var(--cs-line-strong)] bg-[#f7f8fa] px-2 py-1 text-[11px] font-semibold text-[var(--cs-faint)]">
                     Ctrl K

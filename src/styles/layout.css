@@ -10,15 +10,15 @@
 }
 
 .app-shell>.topbar-unified {
-    margin: 0 18px;
+    margin: 0 12px;
 }
 
 .app-shell>.topbar-unified {
-    margin-top: 14px;
+    margin-top: 10px;
 }
 
 .workflow {
-    margin: 0 18px;
+    margin: 0 12px;
 }
 
 
@@ -26,11 +26,16 @@
    TOPBAR
    ════════════════════════════════════════════════════════════ */
 
+/* 72px until the 2026-08-20 density pass. The topbar is chrome above a
+   consultation that has to fit a 14-inch panel, and it was spending a
+   sixteenth of that panel on a name and a row of visit pills — the one band
+   on screen where height buys the least. It is the first thing that should
+   pay for the fit, before anything carrying clinical content does. */
 .topbar-unified {
     position: relative;
     display: flex;
     align-items: stretch;
-    height: 72px;
+    height: 60px;
     overflow: hidden;
     border-radius: 12px 12px 0 0;
 

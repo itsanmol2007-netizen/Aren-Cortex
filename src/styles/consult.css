@@ -95,9 +95,29 @@
        Ratios on white: muted 12.1:1, label 8.9:1, faint 6.8:1. The floor
        moved up, so even the quietest rung now clears AA for 11px text with
        room to spare on a bad panel. */
+    /* ── Fourth pass, 2026-08-20 ─────────────────────────────────────────
+       Anmol again, on the physiotherapy screen: "don't use grayscale text,
+       they look very terrible". The third pass above was right that nothing
+       here is actually grey — and it was still the wrong place to look. The
+       recurrence was mostly SURFACES PICKING THE WRONG RUNG: `StoryCard`'s
+       row labels and `GoalsCard`'s add button put structural text on
+       `--cs-faint`, the rung reserved for ornament, so the words giving the
+       page its skeleton rendered at the weight of an apology in an empty
+       state. Those surfaces are fixed where they live, not here.
+
+       What DOES belong here is the bottom of the ramp. `--cs-faint` at
+       6.8:1 was set as an ornament rung, but half the screen reaches for it
+       when it wants "secondary", and secondary content is content. Both
+       lower rungs move one step darker; `--cs-muted` is already near-black
+       and stays. Blue still leads red by ≈40 on every rung, so the text
+       stays in the same cool family as the paper — a true neutral grey on a
+       faintly cool ground is what reads as washed out even at passing
+       contrast, which is the trap the 2026-08-12 note describes.
+
+       Ratios on white: muted 12.1:1, label 9.9:1, faint 8.3:1. */
     --cs-muted: #29364e;
-    --cs-label: #3c4a63;
-    --cs-faint: #4d5c76;
+    --cs-label: #33415c;
+    --cs-faint: #41506b;
     --cs-blue: #1268e8;
     --cs-blue-soft: #eef4ff;
     --cs-teal: #0f766e;
@@ -114,9 +134,12 @@
     --cs-orange-soft: #fff7ed;
     --cs-green: #16a34a;
     /* Moderate radius. Enough to read as a considered surface, not enough to
-       become "bubble UI" — a clinical workstation, not a consumer app. */
-    --cs-radius: 12px;
-    --cs-radius-sm: 8px;
+       become "bubble UI" — a clinical workstation, not a consumer app.
+       Down a notch 2026-08-20 with the density pass: a radius that read as
+       restrained on a 16px-padded card reads as a bubble on a 12px one,
+       because the corner is judged against the box it turns, not in px. */
+    --cs-radius: 10px;
+    --cs-radius-sm: 7px;
     /* Restrained to the point of near-absence: one hairline of lift, no
        spread. Shadows here separate a card from the page, they do not float
        it above the page. */
@@ -136,30 +159,62 @@
        Density note: the steps are tight on purpose. The philosophy doc asks
        for high information density and low VISUAL density, and a doctor on a
        1366×768 clinic screen needs the whole consult without scrolling. Air
-       is not the goal; consistency is. */
-    --cs-s1: 4px;
-    --cs-s2: 8px;
-    --cs-s3: 12px;
-    --cs-s4: 16px;
-    --cs-s5: 20px;
+       is not the goal; consistency is.
+
+       ── Density pass, 2026-08-20 ─────────────────────────────────────────
+       Anmol tested the consult on a 14-inch laptop — the common case, not an
+       edge one — and had to run the BROWSER at 75-80% to fit it. That is the
+       measurement this pass answers, and it decides the shape of the fix.
+
+       Browser zoom scales everything by the same factor, text included: at
+       75%, an 11px label renders at 8.25px. So the screen he was actually
+       reading was already far below this file's own stated 11px floor, and
+       "make it smaller" and "the text is hard to read" were never in
+       conflict — they were the same complaint arriving twice.
+
+       Therefore STRUCTURE shrinks and TYPE very nearly does not. This scale
+       drops 25%; icons and hit targets drop ~13%; font sizes were rescaled
+       ~8% with a hard floor at 11px. Net effect at 100% zoom: the consult
+       occupies roughly what it used to at 78%, while every piece of text
+       renders LARGER than what he has been reading. Padding, gaps and
+       chrome pay for the fit; the words do not. */
+    --cs-s1: 3px;
+    --cs-s2: 6px;
+    --cs-s3: 9px;
+    --cs-s4: 12px;
+    --cs-s5: 15px;
 
     /* Icon sizes, named so a card cannot quietly pick its own. Everything on
        this screen used to sit at 12–14px, which is below what is comfortable
        to hit or read at arm's length across a desk.
 
-       Raised again 2026-08-12: 14/16 was still too small at arm's length,
-       which is the actual posture — the doctor is not leaning into the
-       monitor, the patient is sitting opposite. */
-    --cs-icon-sm: 16px;
-    --cs-icon-md: 18px;
-    --cs-icon-lg: 20px;
+       Raised 2026-08-12: 14/16 was still too small at arm's length, which is
+       the actual posture — the doctor is not leaning into the monitor, the
+       patient is sitting opposite.
+
+       Lowered one step 2026-08-20, knowingly rather than as a silent revert.
+       The 08-12 reasoning holds and is not being discarded: at arm's length
+       these are still larger than the 12–14px they were raised from. What
+       changed is the measured evidence — the whole screen was being viewed
+       through a 75-80% browser zoom, which took those "arm's length" 18px
+       icons to 13.5px anyway. Setting them here at 15px and removing the
+       zoom lands them at 15px, which is the 08-12 decision better served
+       than leaving the token alone was. */
+    --cs-icon-sm: 14px;
+    --cs-icon-md: 15px;
+    --cs-icon-lg: 17px;
     /* Square hit target for an icon-only button. 24px was under the 24px
        minimum for a pointer target with no padding around it; 30px still
-       made the attachment and chart buttons feel like afterthoughts. */
-    --cs-hit: 36px;
+       made the attachment and chart buttons feel like afterthoughts. 30px is
+       back, and comfortably above the 24px minimum, because the surrounding
+       padding came down with it — the button is smaller, not tighter. */
+    --cs-hit: 30px;
 
-    /* The shared height of the two ranked columns — see `.cs-engine`. */
-    --cs-engine-h: 540px;
+    /* The shared height of the two ranked columns — see `.cs-engine`. Sized
+       with the density pass: the rows inside it are shorter now, so the same
+       540px would have shown the same list with a band of empty card under
+       it. */
+    --cs-engine-h: 430px;
 }
 
 /* The consult surface sits BELOW the existing topbar, inside `.app-shell`.
@@ -182,10 +237,16 @@
 .cs-shell {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 110px);
-    margin: 12px 18px 0;
+    /* Tracks the chrome above: topbar 60 + its 10px top margin + this 8px,
+       against 72 + 14 + 12 before the density pass, so the old 110 becomes
+       92. Deliberately a couple of px conservative rather than exact — a
+       shell slightly too SHORT only adds a little scroll to `.cs-work`,
+       while one slightly too tall pushes its bottom edge past the viewport,
+       and only one of those two errors is invisible. */
+    height: calc(100vh - 92px);
+    margin: 8px 12px 0;
     border: 1px solid var(--cs-line);
-    border-radius: 16px;
+    border-radius: 13px;
     background: var(--cs-page);
     /* `clip`, NOT `hidden`. Both clip to the radius, but `hidden` creates a
        scroll container, and nothing below should ever look to `.cs-shell`
@@ -537,7 +598,7 @@ body.cs-locked-shell {
 
 .cs-exam-label {
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 600;
 }
 
@@ -545,7 +606,7 @@ body.cs-locked-shell {
    launcher that grows to three lines has become the chart it replaced. */
 .cs-exam-extract {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -603,7 +664,7 @@ body.cs-locked-shell {
     gap: 9px;
     margin: 0;
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.045em;
     line-height: 1.2;
@@ -659,7 +720,7 @@ body.cs-locked-shell {
     background: var(--cs-blue-soft);
     padding: 3px 9px;
     color: var(--cs-blue);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 650;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -731,7 +792,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 14.5px;
+    font-size: 13.5px;
     font-weight: 500;
     letter-spacing: -0.005em;
     outline: none;
@@ -785,7 +846,7 @@ body.cs-locked-shell {
     border: 1px solid transparent;
     border-radius: 8px;
     padding: 5px 9px 5px 11px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: -0.008em;
     line-height: 1.25;
@@ -821,7 +882,7 @@ body.cs-locked-shell {
     padding: 0;
     color: currentColor;
     opacity: 0.5;
-    font-size: 14.5px;
+    font-size: 13.5px;
     line-height: 1;
     transition: opacity 0.13s ease, background 0.13s ease;
 }
@@ -865,7 +926,7 @@ body.cs-locked-shell {
     background: none;
     padding: 8px 16px 12px;
     color: var(--cs-faint);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 550;
     letter-spacing: -0.005em;
     transition: color 0.13s ease;
@@ -882,7 +943,7 @@ body.cs-locked-shell {
     padding: 6px 16px 0;
     margin: 0;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 450;
     line-height: 1.45;
 }
@@ -912,7 +973,7 @@ body.cs-locked-shell {
     background: none;
     padding: 8px 10px;
     color: var(--cs-ink);
-    font-size: 14.5px;
+    font-size: 13.5px;
     font-weight: 550;
     letter-spacing: -0.008em;
     text-align: left;
@@ -930,7 +991,7 @@ body.cs-locked-shell {
 .cs-drop-zone {
     flex: none;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -940,7 +1001,7 @@ body.cs-locked-shell {
     padding: 14px 12px;
     margin: 0;
     color: var(--cs-faint);
-    font-size: 14px;
+    font-size: 13px;
     text-align: center;
 }
 
@@ -1019,7 +1080,7 @@ body.cs-locked-shell {
 
 .cs-meas-label {
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 550;
     letter-spacing: 0.01em;
     white-space: nowrap;
@@ -1046,7 +1107,7 @@ body.cs-locked-shell {
     color: var(--cs-ink);
     /* Large enough to be the thing you read, small enough not to become a
        dashboard KPI. Tabular figures so a column of numbers aligns. */
-    font-size: 18px;
+    font-size: 16.5px;
     font-weight: 640;
     letter-spacing: -0.02em;
     line-height: 1.2;
@@ -1081,7 +1142,7 @@ body.cs-locked-shell {
 .cs-meas-slash {
     flex: none;
     color: #cbd5e1;
-    font-size: 16px;
+    font-size: 14.5px;
     font-weight: 300;
 }
 
@@ -1118,7 +1179,7 @@ body.cs-locked-shell {
     background: none;
     padding: var(--cs-s2) 8px;
     color: inherit;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 560;
     transition: color 0.13s ease, background 0.13s ease;
 }
@@ -1191,7 +1252,7 @@ body.cs-locked-shell {
 
 .cs-meas-tool-label {
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 570;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -1253,7 +1314,7 @@ body.cs-locked-shell {
     background: none;
     padding: 8px 10px;
     color: var(--cs-ink);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 520;
     text-align: left;
 }
@@ -1338,7 +1399,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 0 var(--cs-s3);
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 560;
     transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease;
 }
@@ -1367,7 +1428,7 @@ body.cs-locked-shell {
     margin: 0;
     padding: var(--cs-s1) 2px var(--cs-s2);
     color: var(--cs-muted);
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.5;
 }
 
@@ -1383,7 +1444,7 @@ body.cs-locked-shell {
 
 .cs-attach-row.is-busy {
     color: var(--cs-faint);
-    font-size: 13.5px;
+    font-size: 12.5px;
 }
 
 .cs-attach-icon {
@@ -1408,7 +1469,7 @@ body.cs-locked-shell {
 .cs-attach-label {
     overflow: hidden;
     color: var(--cs-ink);
-    font-size: 14.5px;
+    font-size: 13.5px;
     font-weight: 560;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1417,7 +1478,7 @@ body.cs-locked-shell {
 .cs-attach-size {
     flex: none;
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
 }
 
 .cs-attach-action {
@@ -1466,7 +1527,7 @@ body.cs-locked-shell {
     border-radius: 5px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-style: normal;
     font-weight: 600;
 }
@@ -1494,7 +1555,7 @@ body.cs-locked-shell {
     background: none;
     padding: 4px 11px;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 560;
     transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
 }
@@ -1514,7 +1575,7 @@ body.cs-locked-shell {
     border: 1px solid var(--cs-line-strong);
     border-radius: 8px;
     padding: 6px 9px;
-    font-size: 13.5px;
+    font-size: 12.5px;
 }
 
 .cs-attach-tagsave {
@@ -1524,7 +1585,7 @@ body.cs-locked-shell {
     background: var(--cs-blue);
     padding: 6px 12px;
     color: #fff;
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 600;
 }
 
@@ -1691,7 +1752,7 @@ body.cs-locked-shell {
     border-radius: 5px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-style: normal;
     font-weight: 600;
 }
@@ -1702,7 +1763,7 @@ body.cs-locked-shell {
 .cs-odo-scope {
     margin: 0;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     line-height: 1.45;
 }
 
@@ -1711,7 +1772,7 @@ body.cs-locked-shell {
     flex-wrap: wrap;
     gap: 4px 12px;
     margin: 0 0 4px;
-    font-size: 12.5px;
+    font-size: 11.5px;
     color: var(--cs-muted);
 }
 
@@ -1761,7 +1822,7 @@ body.cs-locked-shell {
 }
 
 .cs-dchart-panel-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--cs-ink);
 }
@@ -1783,7 +1844,7 @@ body.cs-locked-shell {
 .cs-attach-error {
     margin: 2px 0 0;
     color: #b23a2c;
-    font-size: 13.5px;
+    font-size: 12.5px;
 }
 
 .cs-spin {
@@ -1804,7 +1865,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 20px;
+    font-size: 18.5px;
     font-weight: 660;
     letter-spacing: -0.02em;
     line-height: 1.15;
@@ -1852,7 +1913,7 @@ body.cs-locked-shell {
 .cs-meas-mark {
     margin-left: 4px;
     color: var(--cs-blue);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-style: normal;
     font-weight: 700;
 }
@@ -1886,7 +1947,7 @@ body.cs-locked-shell {
     height: 38px;
     max-width: 118px;
     color: var(--cs-muted);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 580;
 }
 
@@ -1970,7 +2031,7 @@ body.cs-locked-shell {
     border-radius: 50%;
     background: var(--cs-teal);
     color: #fff;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
@@ -2010,7 +2071,7 @@ body.cs-locked-shell {
     gap: 6px;
     min-width: 0;
     color: var(--cs-ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 660;
     letter-spacing: -0.014em;
     line-height: 1.25;
@@ -2029,7 +2090,7 @@ body.cs-locked-shell {
 
 .cs-ident-comp {
     color: var(--cs-muted);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 500;
     letter-spacing: -0.004em;
     line-height: 1.3;
@@ -2160,7 +2221,7 @@ body.cs-locked-shell {
     background: none;
     padding: 13px;
     color: var(--cs-blue);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 620;
     letter-spacing: -0.005em;
     transition: background 0.13s ease;
@@ -2183,7 +2244,7 @@ body.cs-locked-shell {
 
 .cs-brands-or {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
 }
 
@@ -2196,7 +2257,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 3px 9px;
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -2222,7 +2283,7 @@ body.cs-locked-shell {
 
 .cs-brand-star {
     color: #d97706;
-    font-size: 12.5px;
+    font-size: 11.5px;
 }
 
 .cs-brand.is-skeleton {
@@ -2266,7 +2327,7 @@ body.cs-locked-shell {
     grid-column: 2 / -1;
     margin-top: 5px;
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     line-height: 1.5;
 }
@@ -2277,7 +2338,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 620;
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -2289,7 +2350,7 @@ body.cs-locked-shell {
     margin-top: 8px;
     border-left: 2px solid currentColor;
     padding: 1px 0 1px 10px;
-    font-size: 13.5px;
+    font-size: 12.5px;
     line-height: 1.5;
 }
 
@@ -2298,7 +2359,7 @@ body.cs-locked-shell {
 
 .cs-reason strong {
     display: block;
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: -0.005em;
 }
@@ -2316,7 +2377,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 5px 11px;
     color: inherit;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 650;
     letter-spacing: -0.005em;
     transition: background 0.13s ease, color 0.13s ease;
@@ -2346,7 +2407,7 @@ body.cs-locked-shell {
     flex: none;
     border-radius: 999px;
     padding: 2px 8px;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 650;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -2388,7 +2449,7 @@ body.cs-locked-shell {
     position: relative;
     padding-bottom: 11px;
     color: var(--cs-violet);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.045em;
     text-transform: uppercase;
@@ -2411,7 +2472,7 @@ body.cs-locked-shell {
     gap: 7px;
     padding-bottom: 9px;
     color: var(--cs-faint);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 500;
 }
 
@@ -2471,7 +2532,7 @@ body.cs-locked-shell {
 
 .cs-sug-kind {
     display: block;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
     letter-spacing: 0.07em;
     line-height: 1.3;
@@ -2490,7 +2551,7 @@ body.cs-locked-shell {
     gap: 8px;
     margin-top: 2px;
     color: var(--cs-ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 640;
     letter-spacing: -0.014em;
     line-height: 1.3;
@@ -2500,7 +2561,7 @@ body.cs-locked-shell {
     display: block;
     margin-top: 2px;
     color: var(--cs-faint);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
 }
 
@@ -2512,7 +2573,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 6px 13px;
     color: var(--cs-muted);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 620;
     letter-spacing: -0.005em;
     white-space: nowrap;
@@ -2572,7 +2633,7 @@ body.cs-locked-shell {
 
 .cs-group-title {
     color: var(--cs-ink);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -2587,7 +2648,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 620;
     letter-spacing: -0.005em;
 }
@@ -2661,7 +2722,7 @@ body.cs-locked-shell {
     align-items: baseline;
     gap: 7px;
     color: var(--cs-ink);
-    font-size: 14.5px;
+    font-size: 13.5px;
     font-weight: 620;
     letter-spacing: -0.012em;
     line-height: 1.3;
@@ -2670,7 +2731,7 @@ body.cs-locked-shell {
 .cs-line-sub {
     margin-top: 1px;
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: -0.004em;
 }
@@ -2687,7 +2748,7 @@ body.cs-locked-shell {
     border-radius: 6px;
     background: none;
     color: var(--cs-faint);
-    font-size: 16px;
+    font-size: 14.5px;
     line-height: 1;
     transition: background 0.13s ease, color 0.13s ease;
 }
@@ -2702,7 +2763,7 @@ body.cs-locked-shell {
     background: #f1f5f9;
     padding: 1px 6px;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -2728,13 +2789,13 @@ body.cs-locked-shell {
 
 .cs-plan-empty strong {
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
 }
 
 .cs-plan-empty span {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 450;
     line-height: 1.5;
 }
@@ -2780,7 +2841,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 620;
     letter-spacing: -0.005em;
     text-align: left;
@@ -2814,7 +2875,7 @@ body.cs-locked-shell {
 .cs-comp-why,
 .cs-comp-guard {
     margin-top: 1px;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 500;
     line-height: 1.4;
 }
@@ -2866,7 +2927,7 @@ body.cs-locked-shell {
 
 .cs-dose-field > span {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 650;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -2880,7 +2941,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 5px 9px;
     color: var(--cs-ink);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 550;
     outline: none;
 }
@@ -2909,7 +2970,7 @@ body.cs-locked-shell {
     border-radius: 5px;
     background: none;
     color: var(--cs-muted);
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1;
 }
 
@@ -2918,7 +2979,7 @@ body.cs-locked-shell {
 .cs-stepper b {
     min-width: 22px;
     color: var(--cs-ink);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 650;
     text-align: center;
     font-variant-numeric: tabular-nums;
@@ -2936,7 +2997,7 @@ body.cs-locked-shell {
     border-radius: 6px;
     background: #fff;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 660;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
 }
@@ -2961,7 +3022,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-blue);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 620;
 }
 
@@ -2982,7 +3043,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 4px 10px;
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: -0.005em;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
@@ -3010,7 +3071,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 10px 12px;
     color: var(--cs-ink);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     line-height: 1.5;
     resize: vertical;
@@ -3075,7 +3136,7 @@ body.cs-locked-shell {
     background: #0e7c66;
     padding: 13px;
     color: #fff;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 660;
     letter-spacing: -0.008em;
     transition: background 0.14s ease;
@@ -3104,7 +3165,7 @@ body.cs-locked-shell {
     border-top: 1px solid var(--cs-line);
     padding: 11px 22px;
     color: var(--cs-faint);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: -0.003em;
 }
@@ -3183,7 +3244,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 13px 0 7px;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -3194,7 +3255,7 @@ body.cs-locked-shell {
     background: #f1f5f9;
     padding: 0 6px;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     letter-spacing: 0;
     font-variant-numeric: tabular-nums;
 }
@@ -3211,7 +3272,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 5px 10px;
     color: var(--cs-muted);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 550;
     letter-spacing: -0.006em;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
@@ -3234,7 +3295,7 @@ body.cs-locked-shell {
     border-top: 1px solid var(--cs-line);
     padding: 11px 16px;
     color: var(--cs-faint);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 450;
 }
 
@@ -3244,7 +3305,7 @@ body.cs-locked-shell {
     background: #f8fafc;
     padding: 1px 5px;
     font-family: inherit;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 620;
 }
 
@@ -3266,13 +3327,13 @@ body.cs-locked-shell {
 
 .cs-empty strong {
     color: var(--cs-ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 620;
 }
 
 .cs-empty span {
     color: var(--cs-muted);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 450;
     line-height: 1.55;
     max-width: 260px;
@@ -3299,7 +3360,7 @@ body.cs-locked-shell {
     flex: none;
     margin: 9px 16px 0;
     color: var(--cs-faint);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 450;
     line-height: 1.5;
 }
@@ -3370,7 +3431,7 @@ body.cs-locked-shell {
 
 .cs-why-title {
     color: var(--cs-ink);
-    font-size: 14.5px;
+    font-size: 13.5px;
     font-weight: 660;
     letter-spacing: -0.01em;
 }
@@ -3398,7 +3459,7 @@ body.cs-locked-shell {
 .cs-why-sub {
     margin-top: 3px;
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 480;
 }
 
@@ -3419,7 +3480,7 @@ body.cs-locked-shell {
 
 .cs-why-name {
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 550;
     letter-spacing: -0.005em;
 }
@@ -3450,14 +3511,14 @@ body.cs-locked-shell {
 
 .cs-why-against {
     color: var(--cs-amber);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     letter-spacing: 0.01em;
 }
 
 .cs-why-rest {
     color: var(--cs-faint);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 480;
 }
 
@@ -3466,7 +3527,7 @@ body.cs-locked-shell {
     background: #fafbfd;
     padding: 10px 14px 11px;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 450;
     line-height: 1.5;
 }
@@ -3592,7 +3653,7 @@ body.cs-locked-shell {
    the reader to guess. */
 .cs-body-orient {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
 }
 
 /* The chart modal — where the odontogram and the body map go when the doctor
@@ -3737,7 +3798,7 @@ body.cs-locked-shell {
 .cs-chartmodal-title {
     display: block;
     color: var(--cs-ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 750;
     line-height: 1.2;
 }
@@ -3790,7 +3851,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
 }
 
@@ -3811,7 +3872,7 @@ body.cs-locked-shell {
 
 .cs-meas-gpla-letter {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-style: normal;
     font-weight: 700;
 }
@@ -3823,7 +3884,7 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-ink);
-    font-size: 20px;
+    font-size: 18.5px;
     font-weight: 660;
 }
 
@@ -3856,7 +3917,7 @@ body.cs-locked-shell {
     background: transparent;
     border-radius: 6px;
     padding: 3px 9px;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--cs-muted);
     cursor: pointer;
@@ -3919,20 +3980,20 @@ body.cs-locked-shell {
 }
 
 .cs-growth-z {
-    font-size: 17px;
+    font-size: 15.5px;
     font-weight: 700;
     color: var(--cs-ink);
     font-variant-numeric: tabular-nums;
 }
 
 .cs-growth-pct {
-    font-size: 13.5px;
+    font-size: 12.5px;
     color: var(--cs-muted);
     font-variant-numeric: tabular-nums;
 }
 
 .cs-growth-class {
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--cs-ink);
     margin-left: auto;
@@ -3945,7 +4006,7 @@ body.cs-locked-shell {
 .is-severely-stunted .cs-growth-class { color: var(--cs-red); }
 
 .cs-growth-tail {
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--cs-faint);
     border: 1px solid var(--cs-line-strong);
@@ -3960,7 +4021,7 @@ body.cs-locked-shell {
     align-items: flex-start;
     gap: 6px;
     margin: 6px 0 0;
-    font-size: 13.5px;
+    font-size: 12.5px;
     line-height: 1.5;
     color: var(--cs-muted);
 }
@@ -3973,7 +4034,7 @@ body.cs-locked-shell {
 
 .cs-growth-foot {
     margin: 8px 0 0;
-    font-size: 12.5px;
+    font-size: 11.5px;
     color: var(--cs-faint);
     line-height: 1.45;
 }
@@ -4051,7 +4112,7 @@ body.cs-locked-shell {
 
 .cs-assess-slot-empty {
     color: var(--cs-faint);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 450;
 }
 
@@ -4095,7 +4156,7 @@ body.cs-locked-shell {
 
 .cs-dx-label {
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 560;
     letter-spacing: -0.005em;
     overflow: hidden;
@@ -4220,13 +4281,13 @@ body.cs-locked-shell {
 }
 .cs-addmed-title strong {
     color: var(--cs-ink);
-    font-size: 16px;
+    font-size: 14.5px;
     font-weight: 660;
     letter-spacing: -0.015em;
 }
 .cs-addmed-title span {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 500;
 }
 .cs-addmed-x {
@@ -4272,7 +4333,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 9px 11px;
     color: var(--cs-ink);
-    font-size: 14.5px;
+    font-size: 13.5px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
@@ -4312,7 +4373,7 @@ body.cs-locked-shell {
 }
 .cs-addmed-brand-name {
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 600;
 }
 .cs-addmed-tag {
@@ -4368,7 +4429,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 6px 12px;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 560;
     cursor: pointer;
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
@@ -4394,7 +4455,7 @@ body.cs-locked-shell {
     background: none;
     padding: 9px 14px;
     color: var(--cs-muted);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 570;
     cursor: pointer;
 }
@@ -4413,7 +4474,7 @@ body.cs-locked-shell {
     background: var(--cs-blue);
     padding: 9px 16px;
     color: #fff;
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 640;
     cursor: pointer;
 }
@@ -4437,7 +4498,7 @@ body.cs-locked-shell {
     margin: 2px 0 0;
     padding: 7px 11px;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 550;
     cursor: pointer;
     transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease;
@@ -4521,7 +4582,7 @@ body.cs-locked-shell {
 
 .cs-card-foot-count {
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 550;
     font-variant-numeric: tabular-nums;
 }
@@ -4535,7 +4596,7 @@ body.cs-locked-shell {
     background: none;
     padding: 2px 5px;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
 }
@@ -4609,7 +4670,7 @@ body.cs-locked-shell {
 
 .cs-attach-tile-name {
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     line-height: 1.2;
     white-space: nowrap;
@@ -4629,7 +4690,7 @@ body.cs-locked-shell {
     padding: 0 var(--cs-s4);
     max-width: 46ch;
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.45;
 }
 
@@ -4695,7 +4756,7 @@ body.cs-locked-shell {
 
 .cs-rowone-right .cs-attach-blank .cs-attach-hint {
     margin: 0;
-    font-size: 11.5px;
+    font-size: 11px;
     line-height: 1.4;
 }
 
@@ -4741,7 +4802,7 @@ body.cs-locked-shell {
 
 .cs-head-count {
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 550;
     white-space: nowrap;
@@ -4790,7 +4851,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 5px 11px;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 620;
     white-space: nowrap;
     cursor: pointer;
@@ -4810,7 +4871,7 @@ body.cs-locked-shell {
     background: none;
     padding: 5px 10px;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 550;
     white-space: nowrap;
     cursor: pointer;
@@ -4922,7 +4983,7 @@ body.cs-locked-shell {
    rung rather than on ink, and a smaller glyph tile. Reads as apparatus. */
 .cs-card-head.is-utility .cs-card-title {
     color: var(--cs-label);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 650;
     letter-spacing: 0.06em;
 }
@@ -4997,7 +5058,7 @@ body.cs-locked-shell {
 }
 
 .cs-empty strong {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 660;
     letter-spacing: -0.005em;
 }
@@ -5005,7 +5066,7 @@ body.cs-locked-shell {
 .cs-empty span {
     max-width: 34ch;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 460;
     line-height: 1.45;
 }
@@ -5030,14 +5091,14 @@ body.cs-locked-shell {
 
 .cs-plan-empty strong {
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 660;
 }
 
 .cs-plan-empty span {
     max-width: 30ch;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 460;
     line-height: 1.45;
 }
@@ -5050,7 +5111,7 @@ body.cs-locked-shell {
 
 .cs-rowone-right .cs-attach-blank .cs-attach-hint {
     max-width: none;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 /* ── 4d. MEASUREMENTS, TIGHTER IN THE LOCKED ROW ─────────────────────────── */
@@ -5081,7 +5142,7 @@ body.cs-locked-shell {
     gap: 9px;
     padding-bottom: 0;
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.045em;
 }
@@ -5093,7 +5154,7 @@ body.cs-locked-shell {
 .cs-sort {
     padding-bottom: 0;
     color: var(--cs-label);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 520;
 }
 
@@ -5352,7 +5413,7 @@ body.cs-locked-shell {
 
 .cs-lt-sub {
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 500;
 }
 
@@ -5379,7 +5440,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 4px 11px;
     color: var(--cs-blue);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
 }
 
@@ -5457,7 +5518,7 @@ body.cs-locked-shell {
     gap: 5px;
     margin: 1px 0 0;
     color: var(--cs-ink);
-    font-size: 19px;
+    font-size: 17.5px;
     font-weight: 750;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
@@ -5465,7 +5526,7 @@ body.cs-locked-shell {
 
 .cs-lt-from {
     color: var(--cs-faint);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 650;
 }
 
@@ -5480,7 +5541,7 @@ body.cs-locked-shell {
     align-items: center;
     gap: 4px;
     margin: 0;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
@@ -5557,7 +5618,7 @@ body.cs-locked-shell {
 .cs-lt-plan-goal {
     margin: 1px 0 0;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1.25;
 }
@@ -5572,7 +5633,7 @@ body.cs-locked-shell {
 .cs-lt-plan-pos {
     margin: 4px 0 0;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -5628,7 +5689,7 @@ body.cs-locked-shell {
     margin: 0;
     overflow: hidden;
     color: var(--cs-ink);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -5651,7 +5712,7 @@ body.cs-locked-shell {
     align-self: center;
     margin: 0;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 550;
 }
 
@@ -5706,7 +5767,7 @@ body.cs-locked-shell {
 .cs-lt-tl-date {
     flex: 0 0 78px;
     color: var(--cs-ink);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
 }
 
@@ -5724,7 +5785,7 @@ body.cs-locked-shell {
     flex: 1;
     overflow: hidden;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 550;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -5784,7 +5845,7 @@ body.cs-locked-shell {
 .cs-cpsheet-title {
     margin: 2px 0 0;
     color: var(--cs-ink);
-    font-size: 15.5px;
+    font-size: 14px;
     font-weight: 750;
 }
 
@@ -5839,7 +5900,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 8px 10px;
     color: var(--cs-ink);
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 550;
     font-family: inherit;
     resize: vertical;
@@ -5858,7 +5919,7 @@ body.cs-locked-shell {
     background: var(--cs-violet-soft);
     padding: 7px 10px;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -5884,7 +5945,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 7px 12px;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 650;
 }
 
@@ -5905,7 +5966,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 7px 14px;
     color: var(--cs-muted);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 650;
 }
 
@@ -5915,7 +5976,7 @@ body.cs-locked-shell {
     background: var(--cs-blue);
     padding: 7px 16px;
     color: #fff;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
 }
 
@@ -6017,7 +6078,7 @@ body.cs-locked-shell {
     max-width: 100%;
 }
 
-.cs-cond-side .cs-exam-label { font-size: 14px; font-weight: 650; }
+.cs-cond-side .cs-exam-label { font-size: 13px; font-weight: 650; }
 
 /* The extract can breathe here — the column is wide and this is now the
    card's subject rather than a caption on a row. */
@@ -6112,7 +6173,7 @@ body.cs-locked-shell {
 
 .cs-ex-label {
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 650;
 }
 
@@ -6173,7 +6234,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 1px 4px;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -6318,7 +6379,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 4px 10px;
     color: var(--cs-blue);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
 }
 
@@ -6338,7 +6399,7 @@ body.cs-locked-shell {
 .cs-ex-empty {
     margin: var(--cs-s3) 0;
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 550;
     text-align: center;
 }
@@ -6420,7 +6481,7 @@ body.cs-locked-shell {
     padding: 0;
     outline: none;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 550;
 }
 
@@ -6463,7 +6524,7 @@ body.cs-locked-shell {
     min-width: 0;
     overflow: hidden;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -6485,7 +6546,7 @@ body.cs-locked-shell {
     margin: 0;
     padding: 8px 10px;
     color: var(--cs-label);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 550;
 }
 
@@ -6526,7 +6587,7 @@ body.cs-locked-shell {
 
 .cs-story-chip-text b {
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 650;
 }
 
@@ -6574,7 +6635,7 @@ body.cs-locked-shell {
     background: none;
     padding: 6px 10px;
     color: var(--cs-blue);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -6611,7 +6672,7 @@ body.cs-locked-shell {
     background: var(--cs-page);
     padding: 3px 10px;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 550;
     transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
 }
@@ -6654,7 +6715,7 @@ body.cs-locked-shell {
     background: var(--cs-card);
     padding: 5px 8px;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 550;
 }
 
@@ -6673,7 +6734,7 @@ body.cs-locked-shell {
     background: none;
     padding: 2px 4px;
     color: var(--cs-label);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -6707,7 +6768,7 @@ body.cs-locked-shell {
     background: var(--cs-blue);
     padding: 4px 10px;
     color: #fff;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 650;
 }
 
@@ -6752,7 +6813,7 @@ body.cs-locked-shell {
     gap: 6px;
     margin: 0 0 6px;
     color: var(--cs-ink);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -6779,7 +6840,7 @@ body.cs-locked-shell {
     background: var(--cs-card);
     padding: 5px 0;
     color: var(--cs-muted);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     transition: background 0.1s ease, color 0.1s ease;
@@ -6841,7 +6902,7 @@ body.cs-locked-shell {
     gap: 4px;
     margin-left: auto;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -6851,7 +6912,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 3px 22px 3px 8px;
     color: var(--cs-ink);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     appearance: none;
 }
@@ -6866,7 +6927,7 @@ body.cs-locked-shell {
 .cs-exam-region-static {
     margin-left: auto;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -6899,7 +6960,7 @@ body.cs-locked-shell {
 
 .cs-exam-label {
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 550;
 }
 
@@ -6909,7 +6970,7 @@ body.cs-locked-shell {
     border-radius: 7px;
     padding: 4px 6px;
     color: var(--cs-ink);
-    font-size: 13px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     text-align: center;
 }
@@ -6929,7 +6990,7 @@ body.cs-locked-shell {
 
 .cs-exam-gap {
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -6967,14 +7028,14 @@ body.cs-locked-shell {
 
 .cs-exam-arrow {
     color: var(--cs-faint);
-    font-size: 12px;
+    font-size: 11px;
 }
 
 /* Teal for a gain, amber for a loss — the same verdict palette the
    longitudinal band uses, so an improvement reads identically in both
    places. Green stays reserved for "added to the plan" (doctrine §12.1). */
 .cs-exam-retest b {
-    font-size: 12px;
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
 }
 
@@ -7024,7 +7085,7 @@ body.cs-locked-shell {
     background: #fff;
     padding: 3px 9px;
     color: var(--cs-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 650;
     font-variant-numeric: tabular-nums;
 }
@@ -7055,7 +7116,7 @@ body.cs-locked-shell {
     background: none;
     padding: 3px 10px;
     color: var(--cs-ink);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 560;
 }
 
