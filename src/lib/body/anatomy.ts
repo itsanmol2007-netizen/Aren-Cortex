@@ -61,45 +61,69 @@ interface SegmentDef {
 }
 
 /**
- * The figure. Deliberately a plain schematic rather than an illustration: it
- * has to read at 200px tall in a card, and a doctor is aiming at a region,
- * not admiring a drawing.
+ * The figure.
+ *
+ * ── Curves, 2026-08-20b
+ *
+ * Every paired segment was a straight-edged polygon, which is what made the
+ * map read as a folded paper cut-out rather than a person — Anmol's word was
+ * "terrible", and he was right: a human silhouette has no straight lines in
+ * it anywhere, so a figure made only of them reads as a diagram of a robot.
+ *
+ * Segments are cubic beziers now. The boundaries between regions are
+ * unchanged — the same y bands, the same hit areas, the same nine joints — so
+ * nothing about targeting or about `EXAM_REGIONS` moves. What changed is that
+ * the OUTER edges bow the way a body's do: the deltoid caps the shoulder, the
+ * trunk narrows at the waist and flares at the hip, the calf swells and tapers
+ * into the ankle.
+ *
+ * Still a schematic and still not an illustration. It has to read at 200px in
+ * a card, and a clinician is aiming at a region rather than admiring a
+ * drawing — so this is the silhouette of a body, drawn honestly, and no
+ * shading, musculature or detail beyond it.
+ *
+ * Authored for the patient's RIGHT (the viewer's left, x < 100) and mirrored.
+ * `mirror()` below now accepts C as well as M/L/Z; see its own note for why an
+ * arc still cannot be mirrored and the head therefore stays unpaired.
  */
 const SEGMENTS: SegmentDef[] = [
-    // Head — cranium above the brow, face below it. The only curved shapes in
-    // the figure, and unpaired, which is why mirror() never has to deal with
-    // an arc (see the guard there).
-    { region: "head_top", path: "M79,36 A21,26 0 0,1 121,36 Z", paired: false },
-    { region: "head_bottom", path: "M79,36 A21,26 0 0,0 121,36 Z", paired: false },
-    { region: "neck", path: "M92,61 L108,61 L110,78 L90,78 Z", paired: false },
+    // Head — cranium above the brow, face below it. Unpaired, which is what
+    // lets these two keep their arcs (see `mirror`).
+    { region: "head_top", path: "M78,37 C78,19 88,9 100,9 C112,9 122,19 122,37 Z", paired: false },
+    { region: "head_bottom", path: "M78,37 C78,53 88,63 100,63 C112,63 122,53 122,37 Z", paired: false },
+    // Neck, narrowing from jaw to the sternal notch, with the trapezius
+    // beginning to flare at the bottom.
+    { region: "neck", path: "M91,60 C91,68 90,74 87,79 L113,79 C110,74 109,68 109,60 Z", paired: false },
 
-    // Trunk, split at the midline so "left chest" is sayable, and tapered at
-    // the waist so the figure reads as a body rather than a box.
-    { region: "torso_upper", path: "M100,78 L90,78 L74,83 L68,101 L69,141 L100,141 Z", paired: true },
-    { region: "torso_lower", path: "M100,141 L69,141 L70,187 L100,187 Z", paired: true },
-    { region: "pelvis", path: "M100,187 L70,187 L74,217 L100,227 Z", paired: true },
+    // Trunk. Split at the midline so "left chest" is sayable; the outer edge
+    // carries the whole shape of a torso — out across the ribs, in at the
+    // waist, out again over the iliac crest.
+    { region: "torso_upper", path: "M100,79 C93,79 86,81 79,85 C71,90 67,99 67,111 C67,125 68,134 69,141 L100,141 Z", paired: true },
+    { region: "torso_lower", path: "M100,141 L69,141 C68,154 69,167 72,178 C73,183 73,185 74,188 L100,188 Z", paired: true },
+    { region: "pelvis", path: "M100,188 L74,188 C75,199 77,209 81,217 C87,222 94,226 100,228 Z", paired: true },
 
     // Arm, held clear of the trunk — zones that touch are zones a doctor
-    // mis-taps.
-    { region: "shoulder", path: "M74,83 L60,87 L52,103 L64,102 L68,101 Z", paired: true },
-    // The arm, top to bottom. Elbow and wrist are narrow bands on purpose —
-    // a joint is a narrow thing, and widening them to be easier to hit would
-    // steal area from the limb segments either side, which are what a
-    // dermatologist aims at. Both are ~14px tall in a 424px figure, which is
-    // a comfortable target once the map is open in its modal.
-    { region: "upper_arm", path: "M52,103 L64,102 L59.2,142 L45.4,142 Z", paired: true },
-    { region: "elbow", path: "M45.4,142 L59.2,142 L57.5,158 L43.4,158 Z", paired: true },
-    { region: "forearm", path: "M43.4,158 L57.5,158 L55.0,190 L41.0,188 Z", paired: true },
-    { region: "wrist", path: "M41.0,188 L55.0,190 L54,203 L40,200 Z", paired: true },
-    { region: "hand", path: "M40,200 L54,203 L52,231 L38,228 Z", paired: true },
+    // mis-taps. The shoulder is a deltoid cap rather than a wedge, which is
+    // both anatomically right and a much easier target.
+    { region: "shoulder", path: "M79,85 C70,88 62,94 58,103 C57,105 57,107 57,109 C61,111 66,111 70,109 C71,100 74,90 79,85 Z", paired: true },
+    // Elbow and wrist stay narrow bands on purpose — a joint IS a narrow
+    // thing, and widening them would steal area from the limb segments either
+    // side. Both are ~15px in a 424px figure: comfortable once the map is open
+    // in its modal.
+    { region: "upper_arm", path: "M57,109 C61,111 66,111 70,109 C68,120 65,131 62,142 C58,143 53,143 49,142 C52,131 55,120 57,109 Z", paired: true },
+    { region: "elbow", path: "M49,142 C53,143 58,143 62,142 C61,148 61,153 60,158 C56,159 52,159 48,158 C48,153 48,147 49,142 Z", paired: true },
+    { region: "forearm", path: "M48,158 C52,159 56,159 60,158 C59,169 58,180 57,190 C53,191 49,191 45,190 C46,180 47,169 48,158 Z", paired: true },
+    { region: "wrist", path: "M45,190 C49,191 53,191 57,190 C57,195 56,199 56,203 C52,204 48,204 44,203 C44,199 45,194 45,190 Z", paired: true },
+    { region: "hand", path: "M44,203 C48,204 52,204 56,203 C56,213 55,223 53,231 C50,234 46,234 43,231 C42,222 42,212 44,203 Z", paired: true },
 
-    // Leg
-    { region: "hip", path: "M74,217 L99,225 L98.5,243 L73.4,241 Z", paired: true },
-    { region: "thigh", path: "M73.4,241 L98.5,243 L97,303 L72,303 Z", paired: true },
-    { region: "knee", path: "M72,303 L97,303 L97,321 L72,321 Z", paired: true },
-    { region: "lower_leg", path: "M72,321 L97,321 L94.6,378 L74.4,378 Z", paired: true },
-    { region: "ankle", path: "M74.4,378 L94.6,378 L94,391 L75,391 Z", paired: true },
-    { region: "foot", path: "M75,391 L94,391 L97,413 L70,413 Z", paired: true },
+    // Leg. The thigh tapers to the knee, the calf swells below it and draws
+    // into the ankle — the two curves that most say "leg" rather than "post".
+    { region: "hip", path: "M74,217 C79,220 89,223 99,225 C99,231 99,237 98,243 C90,243 81,242 73,241 C73,233 73,225 74,217 Z", paired: true },
+    { region: "thigh", path: "M73,241 C81,242 90,243 98,243 C98,263 97,283 96,303 C88,304 80,304 72,303 C72,283 72,262 73,241 Z", paired: true },
+    { region: "knee", path: "M72,303 C80,304 88,304 96,303 C96,309 96,315 96,321 C88,322 80,322 72,321 C72,315 72,309 72,303 Z", paired: true },
+    { region: "lower_leg", path: "M72,321 C80,322 88,322 96,321 C97,340 96,361 94,378 C87,379 81,379 75,378 C74,361 73,340 72,321 Z", paired: true },
+    { region: "ankle", path: "M75,378 C81,379 87,379 94,378 C94,383 94,388 94,392 C87,393 81,393 75,392 C75,388 75,383 75,378 Z", paired: true },
+    { region: "foot", path: "M75,392 C81,393 87,393 94,392 C95,399 96,406 97,411 C97,414 94,416 89,416 C82,416 74,415 70,413 C69,408 71,400 75,392 Z", paired: true },
 ];
 
 export interface BodyZone {
@@ -120,8 +144,19 @@ export interface BodyZone {
  * trap for whoever next reshapes the figure.
  */
 function mirror(path: string): string {
-    if (/[AaCcSsQqTt]/.test(path)) {
-        throw new Error(`body/anatomy: paired segment "${path}" must be a polygon (M/L/Z only)`);
+    // C is fine and A is not, and the difference is not arbitrary. In
+    // `C x1,y1 x2,y2 x,y` all three are absolute COORDINATE PAIRS, so negating
+    // every x about the midline reflects the curve exactly (the winding
+    // direction flips, which no filled path cares about). An arc's `rx,ry` are
+    // radii rather than points, and its sweep flag would also have to invert —
+    // so an arc silently mirrors WRONG rather than failing, which is precisely
+    // why this guard exists. S/Q/T carry implied control points and are barred
+    // for the same reason: their reflection is not a coordinate negation.
+    if (/[AaSsQqTt]/.test(path)) {
+        throw new Error(
+            `body/anatomy: paired segment "${path}" may use M/L/C/Z only — ` +
+            `arcs and smooth/quadratic curves cannot be mirrored by negating x`
+        );
     }
     return path.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, x: string, y: string) =>
         `${(2 * MIDLINE_X - parseFloat(x)).toFixed(1)},${y}`

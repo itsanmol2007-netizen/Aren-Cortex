@@ -131,6 +131,7 @@ export function PhysioInputs({
                 onToggle={onObservableToggle}
                 story={story}
                 onStoryAdd={(it) => onStoryChange(addToStory(story, it))}
+                onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
                 disabled={disabled}
                 searchRef={searchRef}
                 onEmptyDown={() => relatedRoving.move(1)}

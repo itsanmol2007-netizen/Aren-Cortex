@@ -517,6 +517,22 @@ export function searchStory(query: string, s: Story, limit = 8): StorySearchItem
  * suggestion rather than a permanent section of screen.
  */
 export function nextStoryPrompts(s: Story, limit = 6): StorySearchItem[] {
+    const dimension = openStoryDimensions(s)[0];
+    if (!dimension) return [];
+    return itemsForDimension(s, dimension, limit);
+}
+
+/**
+ * The dimensions this story has not answered yet, in narration order.
+ *
+ * The composer walks this list, and the clinician walks it too — forwards on
+ * skip, and never forced. It is a list of what is MISSING, not a sequence that
+ * has to be completed: a physiotherapist who wants to record severity before
+ * duration types "severe" and the search finds it regardless of which slot is
+ * currently offered. The slot decides what is SUGGESTED into an empty box and
+ * nothing else.
+ */
+export function openStoryDimensions(s: Story): StoryDimension[] {
     const wanted: StoryDimension[] = [];
     if (!s.duration) wanted.push("Duration");
     if (!s.onsetMode) wanted.push("Onset");
@@ -525,12 +541,31 @@ export function nextStoryPrompts(s: Story, limit = 6): StorySearchItem[] {
     if (s.pattern.length === 0) wanted.push("Pattern");
     if (!s.irritability) wanted.push("Irritability");
     if (showSettling(s) && !s.settling) wanted.push("Settles in");
+    return wanted;
+}
 
-    // One representative dimension at a time — the FIRST unanswered one —
-    // so the empty state is a next question, not a menu of every question.
-    const dimension = wanted[0];
-    if (!dimension) return [];
+/** The unpicked items of one dimension — what a slot offers when it is current. */
+export function itemsForDimension(
+    s: Story, dimension: StoryDimension, limit = 6
+): StorySearchItem[] {
     return STORY_SEARCH_ITEMS
         .filter((it) => it.dimension === dimension && !storyHas(s, it))
         .slice(0, limit);
 }
+
+/**
+ * What the composer calls a slot while the clinician is standing in it.
+ *
+ * The dimension NAME is the wrong prompt on its own — "Aggravating" is a
+ * database word, and a physiotherapist does not think "I am now entering the
+ * aggravating dimension". The question is what they are actually being asked.
+ */
+export const DIMENSION_PROMPT: Record<StoryDimension, string> = {
+    Duration: "how long",
+    Onset: "how it started",
+    Aggravating: "what makes it worse",
+    Easing: "what makes it better",
+    Pattern: "how it behaves",
+    Irritability: "how easily provoked",
+    "Settles in": "how long it settles",
+};

@@ -3629,6 +3629,10 @@ body.cs-locked-shell {
     display: block;
     width: 100%;
     max-width: 190px;
+    /* One soft ground shadow under the whole silhouette rather than a border
+       around each piece — it is what makes the figure read as a single
+       object standing on the panel. */
+    filter: drop-shadow(0 2px 3px rgba(11, 23, 51, 0.10));
     height: auto;
 }
 
@@ -3641,16 +3645,28 @@ body.cs-locked-shell {
    convention because each tooth has its own bold outer shape carrying the
    silhouette; the body map has no equivalent outer shape; these zones ARE
    the silhouette, so they cannot be the faintest line on the panel. */
+/* ── Rendering, 2026-08-20b ────────────────────────────────────────────
+   The geometry gained real curves (see lib/body/anatomy.ts); this stops
+   fighting them. A hard 1.1px mid-grey stroke on every segment drew each
+   region as its own outlined tile, so eighteen shapes read as eighteen
+   shapes rather than as one body divided up. The stroke is now light and
+   thin enough to read as a seam, `stroke-linejoin: round` keeps the joints
+   from spiking where two curves meet, and the fill carries a faint vertical
+   warmth so the figure has a body's weight instead of sitting on the page
+   as flat paper. */
 .cs-body-zone {
-    fill: #fff;
-    stroke: var(--cs-faint);
-    stroke-width: 1.1;
+    fill: #f4f7fc;
+    stroke: #cbd5e6;
+    stroke-width: 0.9;
+    stroke-linejoin: round;
+    stroke-linecap: round;
     cursor: pointer;
-    transition: fill 0.12s ease;
+    transition: fill 0.12s ease, stroke 0.12s ease;
 }
 
 .cs-body-zone:hover {
     fill: var(--cs-blue-soft);
+    stroke: var(--cs-blue);
 }
 
 /* A marked site is teal, matching the dot used in the list below — one

@@ -50,8 +50,11 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ClipboardList, Plus, Search, X } from "lucide-react";
 import type { Observable } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
-import { searchStory, nextStoryPrompts, storyClauses } from "./story";
-import type { Story, StorySearchItem } from "./story";
+import {
+    searchStory, storyClauses, openStoryDimensions, itemsForDimension,
+    DIMENSION_PROMPT,
+} from "./story";
+import type { Story, StorySearchItem, StoryDimension } from "./story";
 
 /** Every character of `q`, in order, somewhere in `text`. Cheap typo tolerance. */
 function isSubsequence(q: string, text: string): boolean {
@@ -270,6 +273,8 @@ interface BarProps {
      */
     story?: Story;
     onStoryAdd?: (it: StorySearchItem) => void;
+    /** removing a token from inside the box — same handler the sheet uses */
+    onStoryRemove?: (it: StorySearchItem) => void;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
     /**
@@ -290,8 +295,8 @@ interface BarProps {
  * because it belongs to the consultation and not to any single module.
  */
 export function ClinicalCommandBar({
-    observables, onSheet, onToggle, story, onStoryAdd, disabled = false, searchRef,
-    onEmptyDown, onEmptyUp, onEmptyEnter,
+    observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove,
+    disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -305,6 +310,36 @@ export function ClinicalCommandBar({
 
     const obsResults = useCatalogueSearch(observables, query);
     const storyOn = !!(story && onStoryAdd);
+
+    /**
+     * ── THE SLOT ───────────────────────────────────────────────────────────
+     *
+     * Which clinical question the box is standing in right now. It decides two
+     * things and no others: what the empty box SUGGESTS, and what the hint
+     * beside the caret says. It never restricts what can be typed — typing
+     * "severe" finds severity whatever slot is current, which is what makes
+     * this a composer and not a wizard.
+     *
+     * `skipped` is the set the clinician has stepped past this visit. A skip is
+     * not an answer and is never written to the story; it only takes that
+     * question out of the rotation so the box stops offering it. Answering a
+     * skipped dimension later still works — it is a search away, like
+     * everything else.
+     */
+    const [skipped, setSkipped] = useState<Set<StoryDimension>>(new Set());
+    const openDims = useMemo(
+        () => (storyOn ? openStoryDimensions(story!).filter((d) => !skipped.has(d)) : []),
+        [storyOn, story, skipped]
+    );
+    const slot: StoryDimension | null = openDims[0] ?? null;
+
+    /** Step past the current question without answering it. */
+    const skipSlot = useCallback(() => {
+        if (!slot) return;
+        setSkipped((prev) => new Set(prev).add(slot));
+        setActive(0);
+        inputRef.current?.focus();
+    }, [slot]);
 
     /**
      * The two vocabularies, merged.
@@ -324,15 +359,19 @@ export function ClinicalCommandBar({
         return [...obs, ...st];
     }, [obsResults, storyOn, query, story]);
 
-    /** Empty + focused: the next clinical question, never a permanent row. */
+    /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
-        if (!storyOn || query.trim()) return [];
-        return nextStoryPrompts(story!, 5).map((it) => ({ t: "story", key: `p:${it.id}`, it }));
-    }, [storyOn, query, story]);
+        if (!storyOn || query.trim() || !slot) return [];
+        return itemsForDimension(story!, slot, 6)
+            .map((it) => ({ t: "story", key: `p:${it.id}`, it }));
+    }, [storyOn, query, story, slot]);
 
     const showPrompts = focused && !query.trim() && prompts.length > 0;
     const shown = query.trim() ? results : prompts;
     const open = query.trim().length > 0 || showPrompts;
+
+    /** The sentence so far, for the tokens rendered INSIDE the box. */
+    const clauses = useMemo(() => (story ? storyClauses(story) : []), [story]);
 
     useEffect(() => { setActive(0); }, [query]);
 
@@ -360,6 +399,30 @@ export function ClinicalCommandBar({
     };
 
     const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const empty = !query.trim();
+
+        // ── Skip, on the two keys a hand is already resting on ────────────
+        // Space is free while the box is empty (it cannot begin a search term)
+        // and it is the largest key on the keyboard, which is the whole reason
+        // to spend it here rather than on a chord nobody will remember. Tab
+        // does the same thing for anyone who expects it to; both stop at the
+        // last open question rather than wrapping, so a clinician cannot skip
+        // in a circle.
+        if (empty && storyOn && slot && (e.key === " " || e.key === "Tab")) {
+            e.preventDefault();
+            skipSlot();
+            return;
+        }
+
+        // Backspace on an empty box takes back the last thing said — the
+        // convention every chip input shares, and the fastest correction
+        // available when the wrong item was picked from the list.
+        if (empty && e.key === "Backspace" && clauses.length > 0) {
+            e.preventDefault();
+            onStoryRemove?.(clauses[clauses.length - 1].item);
+            return;
+        }
+
         // With nothing typed AND nothing being offered, these three keys have
         // nothing of THIS bar's to act on — handed to Related instead, if the
         // parent wired anything there. Genuinely a no-op if it did not.
@@ -381,8 +444,6 @@ export function ClinicalCommandBar({
             if (pick) take(pick);
         } else if (e.key === "Escape") {
             e.preventDefault();
-            // Escape on an empty box closes the prompt list rather than doing
-            // nothing; on a typed one it clears back to empty first.
             if (query.trim()) setQuery(""); else inputRef.current?.blur();
         }
     };
@@ -400,9 +461,18 @@ export function ClinicalCommandBar({
                 {/* The prompt list says WHY it is offering these, because
                     otherwise a list that appears on focus reads as a search
                     result for a query nobody typed. */}
-                {showPrompts && (
-                    <p className="px-3 pb-1 pt-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--cs-label)]">
-                        Not recorded yet — {prompts[0].t === "story" ? prompts[0].it.dimension.toLowerCase() : ""}
+                {showPrompts && slot && (
+                    <p className="flex items-center justify-between gap-2 border-b border-[var(--cs-line)] px-3 pb-1.5 pt-2">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--cs-label)]">
+                            {DIMENSION_PROMPT[slot]}
+                        </span>
+                        {/* The skip is stated where the clinician is looking —
+                            a key that is only discoverable by being told is a
+                            key nobody uses. */}
+                        <span className="text-[10.5px] font-medium text-[var(--cs-faint)]">
+                            <kbd className="rounded border border-[var(--cs-line-strong)] bg-[#f7f8fa] px-1.5 py-[1px] font-semibold">Space</kbd>
+                            {" "}to skip
+                        </span>
                     </p>
                 )}
 
@@ -466,45 +536,99 @@ export function ClinicalCommandBar({
     ) : null;
 
     return (
-        <div className="mb-1">
-            {/* 52px tall with 16px type until the 2026-08-20 density pass. It
-                was the single tallest element on the input half of the screen
-                and it holds one line of text — a field styled as a hero. At
-                38px it still reads as the page's primary input (nothing else
-                here is a full-width bordered field) without spending a
-                fortieth of a 14-inch panel saying so. */}
+        <div className="mb-1.5">
+            {/* ── THE COMPOSER ──────────────────────────────────────────────
+                The sentence is built INSIDE this box, not underneath it.
+
+                That is the whole point of the rewrite. Previously the story
+                assembled itself in the Case Sheet 200px below, which the
+                suggestion dropdown sat directly on top of — so the clinician
+                could not see the sentence they were composing without first
+                dismissing the list they were composing it from. The tokens
+                live in the box now, the dropdown opens below the box, and the
+                two can never occlude each other.
+
+                It scrolls sideways rather than wrapping: the box keeps one
+                height, and the end of the sentence — where the caret is, and
+                the only part being edited — stays in view. */}
             <div
                 ref={boxRef}
-                className="flex h-[38px] items-center gap-2.5 rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]"
+                onClick={() => inputRef.current?.focus()}
+                className="flex min-h-[38px] cursor-text items-center gap-2 overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]"
             >
                 <Search size={15} className="flex-none text-[var(--cs-faint)]" />
-                <input
-                    ref={inputRef}
-                    value={query}
-                    disabled={disabled}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={onKey}
-                    onFocus={() => setFocused(true)}
-                    onBlur={() => setFocused(false)}
-                    placeholder={storyOn
-                        ? "Add clinical information…"
-                        : "Add clinical information (symptoms, findings, history…)"}
-                    aria-label="Add clinical information"
-                    className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
-                />
-                <kbd className="flex-none rounded-md border border-[var(--cs-line-strong)] bg-[#f7f8fa] px-2 py-1 text-[11px] font-semibold text-[var(--cs-faint)]">
+
+                <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1.5">
+                    {/* Everything already said, as one running line. Each token
+                        is removable, but they read as a sentence rather than as
+                        a row of boxes — a story is one statement about one
+                        person, and chipping it apart loses every relationship
+                        in it. */}
+                    {clauses.map((c) => (
+                        <span
+                            key={c.item.id}
+                            className="group/tok inline-flex flex-none items-center gap-1 rounded-md border border-[#dbe4f2] bg-[#f2f6fd] py-[2px] pl-2 pr-1 text-[12.5px] font-semibold text-[#23406e]"
+                            title={c.item.dimension}
+                        >
+                            {c.lead && <span className="font-normal text-[#6a80a6]">{c.lead}</span>}
+                            {c.text}
+                            <button
+                                type="button"
+                                aria-label={`Remove ${c.item.label}`}
+                                disabled={disabled}
+                                onMouseDown={(e) => { e.preventDefault(); onStoryRemove?.(c.item); }}
+                                className="grid size-[14px] place-items-center rounded text-[#8296b7] hover:bg-[rgba(35,64,110,0.12)] hover:text-[#23406e]"
+                            >
+                                <X size={10} />
+                            </button>
+                        </span>
+                    ))}
+
+                    <input
+                        ref={inputRef}
+                        value={query}
+                        disabled={disabled}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={onKey}
+                        onFocus={() => setFocused(true)}
+                        onBlur={() => setFocused(false)}
+                        placeholder={
+                            clauses.length > 0 ? "" :
+                            storyOn ? "Add clinical information…"
+                                : "Add clinical information (symptoms, findings, history…)"
+                        }
+                        aria-label="Add clinical information"
+                        className="min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
+                    />
+                </div>
+
+                {/* ── The slot, named and skippable ─────────────────────────
+                    Says which question the box is on, in the words a clinician
+                    would use rather than the schema's ("how long", not
+                    "Duration"). Skippable by mouse here and by Space or Tab on
+                    an empty box — Space because it is the largest key on the
+                    keyboard and it does nothing else while the box is empty. */}
+                {storyOn && slot && (
+                    <span className="flex flex-none items-center gap-1.5 pl-1">
+                        <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
+                            {DIMENSION_PROMPT[slot]}
+                        </span>
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onMouseDown={(e) => { e.preventDefault(); skipSlot(); }}
+                            title="Skip this question — Space"
+                            className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                        >
+                            Skip
+                        </button>
+                    </span>
+                )}
+
+                <kbd className="hidden flex-none rounded-md border border-[var(--cs-line-strong)] bg-[#f7f8fa] px-2 py-1 text-[11px] font-semibold text-[var(--cs-faint)] md:block">
                     Ctrl K
                 </kbd>
             </div>
-            {/* The helper line that used to sit here — "Type or search
-                anything. Cortex will place it in the right context." — is
-                gone. It was 19px of grey plus its margin saying, at the top of
-                the page, exactly what the empty Case Sheet says 200px below
-                it, and it said it on every consult forever rather than only
-                while the doctor needs telling. The Case Sheet's own blank
-                state is the right place for it: it is attached to the thing
-                being explained, and it disappears the moment the first chip
-                lands. */}
             {dropdown}
         </div>
     );
@@ -845,12 +969,17 @@ export function CaseSheet({
                     <span className="w-[9.5em] flex-none whitespace-nowrap pt-[3px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
                         Story
                     </span>
-                    <p className="m-0 flex-1 text-[13.5px] font-medium leading-[1.65] text-[var(--cs-ink)]">
+                    {/* `min-w-0` is load-bearing: a flex child defaults to
+                        `min-width: auto`, which refuses to shrink below its
+                        content, so the sentence pushed straight out of the card
+                        instead of wrapping. `break-words` covers the one case
+                        min-w-0 cannot — a single clause longer than the column. */}
+                    <p className="m-0 min-w-0 flex-1 break-words text-[13.5px] font-medium leading-[1.7] text-[var(--cs-ink)]">
                         {leadComplaint && (
                             <span className="font-bold">{leadComplaint}</span>
                         )}
                         {storyClauseList.map((c, i) => (
-                            <span key={c.item.id} className="group/clause whitespace-nowrap">
+                            <span key={c.item.id} className="group/clause">
                                 <span className="text-[var(--cs-faint)]">
                                     {i === 0 && !leadComplaint ? "" : ", "}
                                 </span>

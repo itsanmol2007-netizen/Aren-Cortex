@@ -108,7 +108,13 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
     ) => (
         <input
             type="number"
-            className={`cs-exam-num${hint ? " is-outside" : ""}`}
+            // `is-outside` is a HINT that a reading sits outside the published
+            // normal, never a warning: a restricted range is the reason the
+            // patient is in the room.
+            className={
+                "h-[26px] w-full rounded-md border bg-white px-1.5 text-center text-[12.5px] font-semibold tabular-nums text-[var(--cs-ink)] outline-none transition-colors focus:border-[var(--cs-blue)] focus:shadow-[0_0_0_2px_rgba(18,104,232,0.12)] " +
+                (hint ? "border-[#e3c9a0] bg-[#fffdf6]" : "border-[var(--cs-line-strong)]")
+            }
             value={exam.getNumber(key, side, method, context) ?? ""}
             disabled={disabled}
             onChange={(e) => {
@@ -122,57 +128,83 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
     const pain = exam.getNumber(painKey, side, null);
 
     return (
-        <div className="mt-2.5 border-t border-[var(--cs-line)] pt-2.5">
-            <div className="cs-exam-body">
-                {/* ── Pain, for THIS site ───────────────────────────────────
-                    First, because it is the reading a physiotherapist takes
-                    first and the one the patient volunteers. Picked, not
-                    typed: an 0-10 is an ordinal a patient says out loud, and
-                    eleven buttons is faster than a field plus a keyboard. */}
-                <div className="mb-2.5 flex items-center gap-2.5">
-                    <span className="w-[92px] flex-none text-[12px] font-semibold text-[var(--cs-muted)]">
-                        Pain
-                    </span>
-                    <span className="flex gap-[3px]">
-                        {Array.from({ length: 11 }, (_, n) => {
-                            const on = pain === n;
-                            return (
-                                <button
-                                    key={n}
-                                    type="button"
-                                    disabled={disabled}
-                                    aria-label={`Pain ${n} out of 10`}
-                                    aria-pressed={on}
-                                    onClick={() => exam.setNumber(painKey, side, null, on ? null : n, "baseline", "/10")}
-                                    className={
-                                        "grid size-[22px] place-items-center rounded-md border text-[11px] font-semibold tabular-nums transition-colors " +
-                                        (on
-                                            // Severity colours the SELECTED pip only. Tinting 0-10
-                                            // in advance would be the scale grading the patient
-                                            // before they had answered.
-                                            ? (n >= 7
-                                                ? "border-[var(--cs-amber)] bg-[var(--cs-amber)] text-white"
-                                                : "border-[var(--cs-teal)] bg-[var(--cs-teal)] text-white")
-                                            : "border-[var(--cs-line-strong)] bg-white text-[var(--cs-muted)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]")
-                                    }
-                                >
-                                    {n}
-                                </button>
-                            );
-                        })}
-                    </span>
-                    <span className="min-w-[46px] text-[12.5px] font-bold tabular-nums text-[var(--cs-ink)]">
-                        {pain === null ? "—" : `${pain}/10`}
-                    </span>
-                </div>
+        <div className="mt-3 space-y-4 border-t border-[var(--cs-line)] pt-3.5">
+            {/* ── Pain, for THIS site ───────────────────────────────────────
+                First, because it is the reading a physiotherapist takes first
+                and the one the patient volunteers. Picked, not typed: 0-10 is
+                an ordinal a patient says out loud, and eleven targets is faster
+                than a field plus a keyboard.
 
-                {/* ── Range ─────────────────────────────────────────────── */}
-                <div className="cs-exam-grid">
-                    <span className="cs-exam-col-head" />
-                    <span className="cs-exam-col-head">Active</span>
-                    <span className="cs-exam-col-head">Passive</span>
-                    <span className="cs-exam-col-head">Gap</span>
-                    <span className="cs-exam-col-head" />
+                Drawn as one continuous track rather than eleven loose buttons.
+                A pain score is a POSITION on a scale, and a row of separate
+                boxes says "eleven unrelated choices" — the segmented track says
+                "somewhere between none and worst", which is the actual
+                question. The anchors underneath name both ends, so nobody has
+                to remember which direction is bad. */}
+            <section>
+                <header className="mb-1.5 flex items-baseline justify-between">
+                    <h4 className="m-0 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
+                        Pain
+                    </h4>
+                    <span className="text-[12.5px] font-bold tabular-nums text-[var(--cs-ink)]">
+                        {pain === null ? <span className="font-medium text-[var(--cs-faint)]">Not recorded</span> : `${pain} / 10`}
+                    </span>
+                </header>
+
+                <div className="flex overflow-hidden rounded-lg border border-[var(--cs-line-strong)]">
+                    {Array.from({ length: 11 }, (_, n) => {
+                        const on = pain === n;
+                        return (
+                            <button
+                                key={n}
+                                type="button"
+                                disabled={disabled}
+                                aria-label={`Pain ${n} out of 10`}
+                                aria-pressed={on}
+                                onClick={() => exam.setNumber(painKey, side, null, on ? null : n, "baseline", "/10")}
+                                className={
+                                    "h-[26px] flex-1 border-r border-[var(--cs-line)] text-[11.5px] font-semibold tabular-nums transition-colors last:border-r-0 " +
+                                    (on
+                                        // Severity colours the SELECTED segment only. Tinting
+                                        // 0-10 in advance would be the scale grading the
+                                        // patient before they had answered.
+                                        ? (n >= 7
+                                            ? "bg-[var(--cs-amber)] text-white"
+                                            : n >= 4
+                                                ? "bg-[#b8860b] text-white"
+                                                : "bg-[var(--cs-teal)] text-white")
+                                        : "bg-white text-[var(--cs-muted)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)]")
+                                }
+                            >
+                                {n}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="mt-1 flex justify-between text-[10.5px] font-medium text-[var(--cs-faint)]">
+                    <span>No pain</span>
+                    <span>Worst imaginable</span>
+                </div>
+            </section>
+
+            {/* ── Range ─────────────────────────────────────────────────────
+                Active and passive on one row because the GAP between them is
+                the finding, not either number — a large gap points at weakness
+                or neurological involvement, a small one at a mechanical block.
+                Two fields far apart would make the physiotherapist do that
+                subtraction on every row. */}
+            <section>
+                <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
+                    Range of motion
+                </h4>
+                <div className="overflow-hidden rounded-lg border border-[var(--cs-line)]">
+                    <div className="grid grid-cols-[minmax(96px,1fr)_64px_64px_52px_auto] items-center gap-x-2 border-b border-[var(--cs-line)] bg-[var(--cs-page)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+                        <span>Movement</span>
+                        <span className="text-center">Active</span>
+                        <span className="text-center">Passive</span>
+                        <span className="text-center">Gap</span>
+                        <span />
+                    </div>
 
                     {region.movements.map((m) => {
                         const key = rangeMeasureKey(m.key);
@@ -184,29 +216,44 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                         const delta = post !== null && a !== null ? post - a : null;
 
                         return (
-                            <div key={m.key} className="cs-exam-row" style={{ display: "contents" }}>
-                                <span className="cs-exam-label">{m.label}</span>
+                            <div
+                                key={m.key}
+                                className="grid grid-cols-[minmax(96px,1fr)_64px_64px_52px_auto] items-center gap-x-2 border-b border-[var(--cs-line)] px-2.5 py-1.5 last:border-b-0"
+                            >
+                                <span className="text-[12.5px] font-semibold text-[var(--cs-ink)]">
+                                    {m.label}
+                                    {/* The published normal, stated quietly. A
+                                        physiotherapist knows these; a locum
+                                        covering a shoulder clinic may not. */}
+                                    <i className="ml-1.5 text-[10.5px] font-medium not-italic text-[var(--cs-faint)]">
+                                        {m.normal}°
+                                    </i>
+                                </span>
                                 {numInput(key, "active", "baseline", outsideExpected(m, a))}
                                 {numInput(key, "passive", "baseline", outsideExpected(m, p))}
-                                <span className="cs-exam-gap">{gap === null ? "—" : `${gap}°`}</span>
+                                <span className="text-center text-[12px] font-bold tabular-nums text-[var(--cs-muted)]">
+                                    {gap === null ? <span className="font-normal text-[var(--cs-faint)]">—</span> : `${gap}°`}
+                                </span>
 
-                                {/* Phase 5 — the re-test, on the row it belongs to. */}
                                 {isRetesting ? (
-                                    <span className="cs-exam-retest">
-                                        <span className="cs-exam-arrow">→</span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className="text-[var(--cs-faint)]">→</span>
                                         {numInput(key, "active", "post_intervention", false)}
                                         {delta !== null && (
-                                            <b className={delta > 0 ? "is-up" : delta < 0 ? "is-down" : ""}>
+                                            <b className={
+                                                "text-[11.5px] font-bold tabular-nums " +
+                                                (delta > 0 ? "text-[var(--cs-teal)]" : delta < 0 ? "text-[var(--cs-amber)]" : "text-[var(--cs-faint)]")
+                                            }>
                                                 {delta > 0 ? "+" : ""}{delta}°
                                             </b>
                                         )}
                                         <button
                                             type="button"
-                                            className="cs-exam-retest-undo"
                                             aria-label="Cancel re-test"
+                                            className="grid size-[20px] place-items-center rounded text-[var(--cs-faint)] hover:bg-[var(--cs-line)] hover:text-[var(--cs-muted)]"
                                             onClick={() => {
                                                 exam.setNumber(key, side, "active", null, "post_intervention");
-                                                setRetesting((s) => { const n = new Set(s); n.delete(key); return n; });
+                                                setRetesting((st) => { const n = new Set(st); n.delete(key); return n; });
                                             }}
                                         >
                                             <Undo2 size={11} />
@@ -216,55 +263,85 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                                     // Only offered once there is a baseline to compare against.
                                     <button
                                         type="button"
-                                        className="cs-exam-retest-btn"
                                         disabled={disabled}
-                                        onClick={() => setRetesting((s) => new Set(s).add(key))}
+                                        onClick={() => setRetesting((st) => new Set(st).add(key))}
+                                        className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[10.5px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
                                     >
                                         Re-test
                                     </button>
                                 ) : (
-                                    // MUST render an element, not `false`. These rows are
-                                    // `display: contents` inside a five-column grid, so a
-                                    // branch that renders nothing does not leave an empty
-                                    // cell — it leaves NO cell, and every row after it
-                                    // shifts one column left. That is why the Extension
-                                    // label was sitting under the Gap heading.
+                                    // MUST render an element, not `false` — an empty
+                                    // grid cell still has to BE a cell, or every row
+                                    // below shifts one column left.
                                     <span aria-hidden="true" />
                                 )}
                             </div>
                         );
                     })}
                 </div>
+            </section>
 
-                {/* ── Strength ──────────────────────────────────────────── */}
-                <p className="cs-exam-sub">Strength</p>
-                {region.muscles.map((mu) => {
-                    const key = mmtMeasureKey(mu.key);
-                    const grade = exam.getNumber(key, side, "mmt");
-                    return (
-                        <div key={mu.key} className="cs-exam-mmt">
-                            <span className="cs-exam-label">{mu.label}</span>
-                            <span className="cs-exam-grades">
-                                {([0, 1, 2, 3, 4, 5] as MmtGrade[]).map((g) => (
-                                    <button
-                                        key={g}
-                                        type="button"
-                                        disabled={disabled}
-                                        title={MMT_LABEL[g]}
-                                        className={`cs-exam-grade${grade === g ? " is-on" : ""}`}
-                                        onClick={() => exam.setNumber(key, side, "mmt", grade === g ? null : g, "baseline", "/5")}
-                                    >
-                                        {g}
-                                    </button>
-                                ))}
-                            </span>
-                        </div>
-                    );
-                })}
+            {/* ── Strength ──────────────────────────────────────────────────
+                Oxford/MRC 0-5. An ordinal with no arithmetic, so it is picked
+                from a segmented control and never typed, and each grade carries
+                its meaning on hover — "4" is not self-explanatory to anyone who
+                does not use the scale daily. */}
+            <section>
+                <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
+                    Strength <span className="font-semibold normal-case tracking-normal text-[var(--cs-faint)]">(MMT)</span>
+                </h4>
+                <div className="space-y-1">
+                    {region.muscles.map((mu) => {
+                        const key = mmtMeasureKey(mu.key);
+                        const grade = exam.getNumber(key, side, "mmt");
+                        return (
+                            <div key={mu.key} className="flex items-center gap-3">
+                                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-[var(--cs-ink)]">
+                                    {mu.label}
+                                </span>
+                                <span className="flex flex-none overflow-hidden rounded-lg border border-[var(--cs-line-strong)]">
+                                    {([0, 1, 2, 3, 4, 5] as MmtGrade[]).map((g) => {
+                                        const on = grade === g;
+                                        return (
+                                            <button
+                                                key={g}
+                                                type="button"
+                                                disabled={disabled}
+                                                title={MMT_LABEL[g]}
+                                                aria-pressed={on}
+                                                onClick={() => exam.setNumber(key, side, "mmt", on ? null : g, "baseline", "/5")}
+                                                className={
+                                                    "h-[24px] w-[30px] border-r border-[var(--cs-line)] text-[11.5px] font-semibold tabular-nums transition-colors last:border-r-0 " +
+                                                    (on
+                                                        ? "bg-[var(--cs-blue)] text-white"
+                                                        : "bg-white text-[var(--cs-muted)] hover:bg-[var(--cs-blue-soft)] hover:text-[var(--cs-blue)]")
+                                                }
+                                            >
+                                                {g}
+                                            </button>
+                                        );
+                                    })}
+                                </span>
+                                <span className="hidden w-[132px] flex-none text-[10.5px] font-medium text-[var(--cs-faint)] lg:block">
+                                    {grade === null ? "" : MMT_LABEL[grade as MmtGrade]}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </section>
 
-                {/* ── Special tests ─────────────────────────────────────── */}
-                <p className="cs-exam-sub">Tests</p>
-                <div className="cs-exam-tests">
+            {/* ── Special tests ─────────────────────────────────────────────
+                Three states on one control, cycled by clicking: not done →
+                negative → positive. The mark carries the state so the row is
+                readable without colour alone. What a positive SUGGESTS is on
+                hover and never on screen as a verdict — a positive Lachman is
+                evidence, not a diagnosis. */}
+            <section>
+                <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
+                    Special tests
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
                     {region.tests.map((t) => {
                         const key = testMeasureKey(t.key);
                         const result = (exam.getText(key, side) as TestResult | null) ?? "not_done";
@@ -274,15 +351,25 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                                 key={t.key}
                                 type="button"
                                 disabled={disabled}
-                                // The suggestion is on hover, never on screen as a
-                                // verdict — a positive Lachman is evidence, not a
-                                // diagnosis, and doctrine §5 is explicit that
-                                // nothing is presented as the cause.
                                 title={`Positive suggests ${t.suggests}`}
-                                className={`cs-exam-test is-${result}`}
                                 onClick={() => exam.setText(key, side, next === "not_done" ? null : next)}
+                                className={
+                                    "inline-flex items-center gap-1.5 rounded-lg border py-[4px] pl-[7px] pr-[10px] text-[12.5px] font-semibold transition-colors " +
+                                    (result === "positive"
+                                        ? "border-[#f6c3cd] bg-[#fff1f3] text-[#b3103b]"
+                                        : result === "negative"
+                                            ? "border-[#a4e3d1] bg-[#f4fdfa] text-[#0b6a62]"
+                                            : "border-[var(--cs-line-strong)] bg-white text-[var(--cs-muted)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]")
+                                }
                             >
-                                <i className="cs-exam-test-mark" aria-hidden="true">
+                                <i className={
+                                    "grid size-[16px] flex-none place-items-center rounded not-italic text-[11px] font-bold " +
+                                    (result === "positive"
+                                        ? "bg-[#ffe0e6] text-[#b3103b]"
+                                        : result === "negative"
+                                            ? "bg-[#d7f3ea] text-[#0b6a62]"
+                                            : "bg-[var(--cs-page)] text-[var(--cs-faint)]")
+                                }>
                                     {result === "positive" ? "+" : result === "negative" ? "−" : "?"}
                                 </i>
                                 {t.label}
@@ -290,9 +377,13 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                         );
                     })}
                 </div>
+            </section>
 
-                {exam.error && <p className="cs-attach-error">{exam.error}</p>}
-            </div>
+            {exam.error && (
+                <p className="rounded-md bg-[var(--cs-red-soft)] px-2.5 py-1.5 text-[12px] font-semibold text-[var(--cs-red)]">
+                    {exam.error}
+                </p>
+            )}
         </div>
     );
 }
