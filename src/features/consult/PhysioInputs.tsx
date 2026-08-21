@@ -121,6 +121,16 @@ export function PhysioInputs({
 
     const storyChips = useMemo(() => selectedStoryItems(story), [story]);
 
+    /**
+     * The complaint — the first thing REPORTED. It is the subject the story
+     * qualifies, so the composer withholds every story question until it
+     * exists (see `ClinicalCommandBar`'s `slot`).
+     */
+    const leadComplaint = useMemo(
+        () => caseSheetEntries.find((e) => e.kind === "symptom")?.label,
+        [caseSheetEntries]
+    );
+
     return (
         <>
             {/* THE input. One box, both vocabularies, no decision to make
@@ -132,6 +142,7 @@ export function PhysioInputs({
                 story={story}
                 onStoryAdd={(it) => onStoryChange(addToStory(story, it))}
                 onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
+                leadComplaint={leadComplaint}
                 disabled={disabled}
                 searchRef={searchRef}
                 onEmptyDown={() => relatedRoving.move(1)}

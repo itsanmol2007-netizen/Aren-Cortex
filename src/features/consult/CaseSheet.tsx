@@ -275,6 +275,14 @@ interface BarProps {
     onStoryAdd?: (it: StorySearchItem) => void;
     /** removing a token from inside the box — same handler the sheet uses */
     onStoryRemove?: (it: StorySearchItem) => void;
+    /**
+     * The complaint, if one has been recorded — the first REPORTED entry.
+     *
+     * Load-bearing, not decoration. Until this exists there is no story to
+     * ask questions about, so the box asks what happened and offers no
+     * dimension at all. See `slot`.
+     */
+    leadComplaint?: string;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
     /**
@@ -295,7 +303,7 @@ interface BarProps {
  * because it belongs to the consultation and not to any single module.
  */
 export function ClinicalCommandBar({
-    observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove,
+    observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove, leadComplaint,
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
 }: BarProps) {
     const [query, setQuery] = useState("");
@@ -307,6 +315,7 @@ export function ClinicalCommandBar({
     const internalRef = useRef<HTMLInputElement>(null);
     const inputRef = (searchRef ?? internalRef) as React.RefObject<HTMLInputElement>;
     const boxRef = useRef<HTMLDivElement>(null);
+    const stripRef = useRef<HTMLDivElement>(null);
 
     const obsResults = useCatalogueSearch(observables, query);
     const storyOn = !!(story && onStoryAdd);
@@ -331,7 +340,23 @@ export function ClinicalCommandBar({
         () => (storyOn ? openStoryDimensions(story!).filter((d) => !skipped.has(d)) : []),
         [storyOn, story, skipped]
     );
-    const slot: StoryDimension | null = openDims[0] ?? null;
+
+    /**
+     * ── NOTHING IS ASKED UNTIL THE COMPLAINT EXISTS ────────────────────────
+     *
+     * The first cut opened on "how long", which is not a question anyone asks
+     * a patient who has not yet said what is wrong. A physiotherapist asks
+     * what happened; duration, onset and the rest are qualifiers OF that
+     * answer and are meaningless without it — "for 2 days" on its own is not
+     * a clinical statement.
+     *
+     * So the slot stays null until a complaint is on the sheet, and the box
+     * asks for the complaint instead. This is a change to what is OFFERED and
+     * not to what is reachable: a clinician who genuinely wants to record a
+     * duration first can still type "3 weeks" and pick it. The sequence is a
+     * default, and defaults are exactly where clinical order belongs.
+     */
+    const slot: StoryDimension | null = leadComplaint ? (openDims[0] ?? null) : null;
 
     /** Step past the current question without answering it. */
     const skipSlot = useCallback(() => {
@@ -372,6 +397,20 @@ export function ClinicalCommandBar({
 
     /** The sentence so far, for the tokens rendered INSIDE the box. */
     const clauses = useMemo(() => (story ? storyClauses(story) : []), [story]);
+
+    /**
+     * Keep the caret in view as the sentence grows past the box.
+     *
+     * The strip scrolls sideways rather than wrapping, so without this the
+     * newest token — and the input right after it — slide out of sight the
+     * moment the sentence is wider than the box, which would reintroduce the
+     * exact "I cannot see what I am building" problem the composer exists to
+     * fix, just on a different axis.
+     */
+    useEffect(() => {
+        const el = stripRef.current;
+        if (el) el.scrollLeft = el.scrollWidth;
+    }, [clauses.length, leadComplaint]);
 
     useEffect(() => { setActive(0); }, [query]);
 
@@ -558,7 +597,20 @@ export function ClinicalCommandBar({
             >
                 <Search size={15} className="flex-none text-[var(--cs-faint)]" />
 
-                <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1.5">
+                <div ref={stripRef} className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1.5">
+                    {/* The complaint leads, because it is what the sentence is
+                        ABOUT — everything after it qualifies it. Rose, matching
+                        the Reported chips on the sheet, so the one fact that
+                        arrived from the catalogue rather than the story
+                        vocabulary is visibly the same fact in both places. It
+                        is removed from the Case Sheet, not from here: this is
+                        the story's subject, and the × on a subject would
+                        silently take a symptom off the chart. */}
+                    {leadComplaint && (
+                        <span className="inline-flex flex-none items-center rounded-md border border-[#f6c3cd] bg-[linear-gradient(180deg,#fff8f9_0%,#ffe6ea_100%)] px-2 py-[2px] text-[12.5px] font-bold text-[#b3103b]">
+                            {leadComplaint}
+                        </span>
+                    )}
                     {/* Everything already said, as one running line. Each token
                         is removable, but they read as a sentence rather than as
                         a row of boxes — a story is one statement about one
@@ -593,8 +645,8 @@ export function ClinicalCommandBar({
                         onFocus={() => setFocused(true)}
                         onBlur={() => setFocused(false)}
                         placeholder={
-                            clauses.length > 0 ? "" :
-                            storyOn ? "Add clinical information…"
+                            clauses.length > 0 || leadComplaint ? "" :
+                            storyOn ? "What happened? Start with the complaint…"
                                 : "Add clinical information (symptoms, findings, history…)"
                         }
                         aria-label="Add clinical information"
@@ -974,7 +1026,7 @@ export function CaseSheet({
                         content, so the sentence pushed straight out of the card
                         instead of wrapping. `break-words` covers the one case
                         min-w-0 cannot — a single clause longer than the column. */}
-                    <p className="m-0 min-w-0 flex-1 break-words text-[13.5px] font-medium leading-[1.7] text-[var(--cs-ink)]">
+                    <p className="m-0 min-w-0 flex-1 break-words text-[13.5px] font-medium leading-[1.6] text-[var(--cs-ink)]">
                         {leadComplaint && (
                             <span className="font-bold">{leadComplaint}</span>
                         )}
@@ -989,12 +1041,18 @@ export function CaseSheet({
                                 <span className="rounded-[4px] px-[2px] transition-colors group-hover/clause:bg-[var(--cs-rose-soft)] group-hover/clause:text-[var(--cs-rose)]">
                                     {c.text}
                                 </span>
+                                {/* `hidden` rather than `opacity-0`: an
+                                    invisible button still occupies width, and
+                                    that phantom column is what put a space
+                                    before every comma — "for 2 days , sudden
+                                    onset ,". Taken out of layout entirely, the
+                                    sentence punctuates like a sentence. */}
                                 <button
                                     type="button"
                                     aria-label={`Remove ${c.item.label}`}
                                     disabled={disabled}
                                     onClick={() => onStoryRemove?.(c.item)}
-                                    className="ml-[3px] align-middle text-[var(--cs-faint)] opacity-0 transition-opacity hover:text-[var(--cs-rose)] focus-visible:opacity-100 group-hover/clause:opacity-100"
+                                    className="ml-[2px] hidden align-middle text-[var(--cs-faint)] hover:text-[var(--cs-rose)] focus-visible:inline group-hover/clause:inline"
                                 >
                                     <X size={11} className="inline" />
                                 </button>
