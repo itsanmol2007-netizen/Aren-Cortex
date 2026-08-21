@@ -52,7 +52,7 @@ import type { Observable } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
     searchStory, storyClauses, openStoryDimensions, itemsForDimension,
-    DIMENSION_PROMPT,
+    storyHas, DIMENSION_PROMPT,
 } from "./story";
 import type { Story, StorySearchItem, StoryDimension } from "./story";
 
@@ -336,6 +336,36 @@ export function ClinicalCommandBar({
      * everything else.
      */
     const [skipped, setSkipped] = useState<Set<StoryDimension>>(new Set());
+
+    /**
+     * ── THE WAY BACK ───────────────────────────────────────────────────────
+     *
+     * `skipped` on its own is a set with no memory of ORDER or of how it
+     * interleaved with the answers, and that turned out to be the whole bug.
+     * Skipping was reachable — Space, Tab, the Skip button — and nothing
+     * undid it, so three separate complaints all traced here:
+     *
+     *   - "no way to go back": a skipped question left the rotation for good.
+     *   - "backspace is not working": Backspace only knew about `clauses`, so
+     *     pressing it after a skip stepped over the question just skipped and
+     *     deleted the ANSWER before it — destroying good data while appearing
+     *     to do nothing about the skip.
+     *   - "once you skipped everything it becomes gen OPD": every dimension
+     *     skipped means `openDims` is empty, `slot` is null, and the pill,
+     *     the Skip button and the prompt list all unmount at once, leaving a
+     *     blank box with no route back into the physio flow.
+     *
+     * So the composer now keeps its steps in order — an answer or a skip —
+     * and `goBack` pops one. Answers are checked against the story before
+     * being undone, because the Case Sheet's own × can remove a chip behind
+     * the composer's back; a step whose item is already gone is stale and is
+     * popped straight through rather than firing a second removal.
+     */
+    type Step =
+        | { kind: "skip"; dim: StoryDimension }
+        | { kind: "answer"; item: StorySearchItem };
+    const [history, setHistory] = useState<Step[]>([]);
+
     const openDims = useMemo(
         () => (storyOn ? openStoryDimensions(story!).filter((d) => !skipped.has(d)) : []),
         [storyOn, story, skipped]
@@ -362,9 +392,70 @@ export function ClinicalCommandBar({
     const skipSlot = useCallback(() => {
         if (!slot) return;
         setSkipped((prev) => new Set(prev).add(slot));
+        setHistory((h) => [...h, { kind: "skip", dim: slot }]);
         setActive(0);
         inputRef.current?.focus();
     }, [slot]);
+
+    /** The sentence so far, for the tokens rendered INSIDE the box. */
+    const clauses = useMemo(() => (story ? storyClauses(story) : []), [story]);
+
+    /**
+     * Undo one composer step — a skip becomes un-skipped, an answer is taken
+     * off the story. This is what Backspace on an empty box does and what the
+     * Back button does, because they are the same intention typed two ways.
+     *
+     * The fallback at the end matters: history is per-mount and the story is
+     * not, so a visit reopened (or edited from the Case Sheet) can have
+     * clauses with no history behind them. Rather than refuse to go back, the
+     * composer falls back to the old behaviour and removes the last clause.
+     */
+    const canGoBack = history.length > 0 || clauses.length > 0;
+
+    const goBack = useCallback(() => {
+        const next = [...history];
+        while (next.length) {
+            const step = next.pop()!;
+            if (step.kind === "skip") {
+                setSkipped((prev) => {
+                    const s = new Set(prev);
+                    s.delete(step.dim);
+                    return s;
+                });
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
+            // An answer, but only if it is still on the story — see above.
+            if (story && storyHas(story, step.item)) {
+                onStoryRemove?.(step.item);
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
+        }
+        setHistory([]);
+        if (clauses.length > 0) onStoryRemove?.(clauses[clauses.length - 1].item);
+        setActive(0);
+        inputRef.current?.focus();
+    }, [history, story, onStoryRemove, clauses]);
+
+    /**
+     * Put every skipped question back in the rotation at once.
+     *
+     * Back walks out one step at a time, which is right for "I picked the
+     * wrong thing" but wrong for "I skipped through the lot and now I want
+     * the case sheet back". Without this the only remedy for a fully-skipped
+     * story is reloading the consult.
+     */
+    const resumeSkipped = useCallback(() => {
+        setSkipped(new Set());
+        setHistory((h) => h.filter((s) => s.kind !== "skip"));
+        setActive(0);
+        inputRef.current?.focus();
+    }, []);
 
     /**
      * The two vocabularies, merged.
@@ -379,10 +470,32 @@ export function ClinicalCommandBar({
     const results = useMemo<BarResult[]>(() => {
         const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
         if (!storyOn) return obs;
-        const st: BarResult[] = searchStory(query, story!, 6)
+        const st = searchStory(query, story!, 6);
+
+        /**
+         * Items answering the question actually on screen lead the list.
+         *
+         * Observables led unconditionally before, which read as a sensible
+         * default and was not. With "how long" open, typing "3 weeks" put the
+         * observable "Cough over 3 weeks" above the duration "3 weeks" — and
+         * because the first row is what Enter takes, the natural keystrokes
+         * for the brief's own test scenario filed a cough on a knee patient.
+         * That is not a cosmetic ranking miss: the wrong chip re-pointed
+         * RELATED at chest findings and pulled Resp Rate and SpO₂ into a
+         * physiotherapy consult's Measurements.
+         *
+         * Only the items belonging to the OPEN dimension are promoted, and
+         * only while a slot is open. Everything else keeps the old order, so
+         * this stays a tie-break for the question being asked rather than a
+         * general preference for story over observables.
+         */
+        const inSlot = (it: StorySearchItem) => !!slot && it.dimension === slot;
+        const lead: BarResult[] = st.filter(inSlot)
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
-        return [...obs, ...st];
-    }, [obsResults, storyOn, query, story]);
+        const rest: BarResult[] = st.filter((it) => !inSlot(it))
+            .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
+        return [...lead, ...obs, ...rest];
+    }, [obsResults, storyOn, query, story, slot]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
@@ -394,9 +507,6 @@ export function ClinicalCommandBar({
     const showPrompts = focused && !query.trim() && prompts.length > 0;
     const shown = query.trim() ? results : prompts;
     const open = query.trim().length > 0 || showPrompts;
-
-    /** The sentence so far, for the tokens rendered INSIDE the box. */
-    const clauses = useMemo(() => (story ? storyClauses(story) : []), [story]);
 
     /**
      * Keep the caret in view as the sentence grows past the box.
@@ -412,7 +522,23 @@ export function ClinicalCommandBar({
         if (el) el.scrollLeft = el.scrollWidth;
     }, [clauses.length, leadComplaint]);
 
-    useEffect(() => { setActive(0); }, [query]);
+    /**
+     * Put the highlight back on the first row whenever the OFFER changes.
+     *
+     * This keyed off `query` alone, which missed the case that matters: the
+     * slot advancing swaps the entire list without the query ever changing,
+     * so `active` survived from the previous dimension and Enter committed
+     * that row of the new list. Answering "how long", then pressing Enter on
+     * a "what makes it worse" list whose first row was "Going downstairs",
+     * recorded "going upstairs" — index 1 held over from the list before.
+     * `onMouseEnter` sets `active` too, so a cursor merely resting over the
+     * dropdown could do the same thing.
+     *
+     * Keying off the rendered row identities catches both, and costs one
+     * string join over a list that is at most a few rows.
+     */
+    const shownKey = shown.map((s) => s.key).join("|");
+    useEffect(() => { setActive(0); }, [shownKey]);
 
     const updateRect = useCallback(() => {
         if (boxRef.current) setRect(boxRef.current.getBoundingClientRect());
@@ -432,7 +558,14 @@ export function ClinicalCommandBar({
     /** One entry point for both vocabularies — the routing IS the feature. */
     const take = (r: BarResult) => {
         if (r.t === "obs") onToggle(r.o);
-        else onStoryAdd?.(r.it);
+        else {
+            onStoryAdd?.(r.it);
+            // Only story answers go on the step history. An observable is a
+            // Case Sheet chip with its own × sitting in plain sight; the
+            // composer has no business owning the undo for something it does
+            // not render.
+            setHistory((h) => [...h, { kind: "answer", item: r.it }]);
+        }
         setQuery("");
         inputRef.current?.focus();
     };
@@ -453,12 +586,17 @@ export function ClinicalCommandBar({
             return;
         }
 
-        // Backspace on an empty box takes back the last thing said — the
+        // Backspace on an empty box takes back the last thing DONE — the
         // convention every chip input shares, and the fastest correction
         // available when the wrong item was picked from the list.
-        if (empty && e.key === "Backspace" && clauses.length > 0) {
+        //
+        // "Last thing done", not "last token": a skip is a step too. Gating
+        // this on `clauses.length` was what made Backspace look broken after
+        // a skip — there was no token for the skipped question, so the guard
+        // fell through to the answer before it and deleted that instead.
+        if (empty && e.key === "Backspace" && canGoBack) {
             e.preventDefault();
-            onStoryRemove?.(clauses[clauses.length - 1].item);
+            goBack();
             return;
         }
 
@@ -645,9 +783,15 @@ export function ClinicalCommandBar({
                         onFocus={() => setFocused(true)}
                         onBlur={() => setFocused(false)}
                         placeholder={
-                            clauses.length > 0 || leadComplaint ? "" :
-                            storyOn ? "What happened? Start with the complaint…"
-                                : "Add clinical information (symptoms, findings, history…)"
+                            !storyOn ? "Add clinical information (symptoms, findings, history…)"
+                                : !leadComplaint ? "What happened? Start with the complaint…"
+                                    // A slot names the question in the pill beside the
+                                    // caret, so a placeholder would only repeat it.
+                                    : slot ? ""
+                                        // No slot left. This used to be "" and left a
+                                        // blank unlabelled box that read as a dead input
+                                        // — the "it just becomes gen OPD" report.
+                                        : "Add a symptom, finding or measurement…"
                         }
                         aria-label="Add clinical information"
                         className="min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
@@ -660,20 +804,57 @@ export function ClinicalCommandBar({
                     "Duration"). Skippable by mouse here and by Space or Tab on
                     an empty box — Space because it is the largest key on the
                     keyboard and it does nothing else while the box is empty. */}
-                {storyOn && slot && (
+                {/* Back sits to the LEFT of Skip and outside the `slot` guard.
+                    Both placements are the bug report: a way forward with no
+                    way back reads as a one-way door, and when every question
+                    has been skipped `slot` is null — which is exactly the
+                    moment a clinician most needs a way out, and exactly the
+                    moment the old markup rendered nothing at all. */}
+                {storyOn && leadComplaint && (
                     <span className="flex flex-none items-center gap-1.5 pl-1">
-                        <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
-                            {DIMENSION_PROMPT[slot]}
-                        </span>
-                        <button
-                            type="button"
-                            disabled={disabled}
-                            onMouseDown={(e) => { e.preventDefault(); skipSlot(); }}
-                            title="Skip this question — Space"
-                            className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
-                        >
-                            Skip
-                        </button>
+                        {slot && (
+                            <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
+                                {DIMENSION_PROMPT[slot]}
+                            </span>
+                        )}
+                        {canGoBack && (
+                            <button
+                                type="button"
+                                disabled={disabled}
+                                onMouseDown={(e) => { e.preventDefault(); goBack(); }}
+                                title="Go back one step — Backspace"
+                                className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                            >
+                                Back
+                            </button>
+                        )}
+                        {slot && (
+                            <button
+                                type="button"
+                                disabled={disabled}
+                                onMouseDown={(e) => { e.preventDefault(); skipSlot(); }}
+                                title="Skip this question — Space"
+                                className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                            >
+                                Skip
+                            </button>
+                        )}
+                        {/* Only when there is nothing left to ask AND something
+                            was skipped to get there — otherwise this is a
+                            button offering to undo a thing that did not
+                            happen. Stated as the question it restores rather
+                            than as "undo", because that is what is wanted. */}
+                        {!slot && skipped.size > 0 && (
+                            <button
+                                type="button"
+                                disabled={disabled}
+                                onMouseDown={(e) => { e.preventDefault(); resumeSkipped(); }}
+                                title="Ask the skipped questions again"
+                                className="rounded-md border border-[var(--cs-blue)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] hover:bg-[var(--cs-blue-soft)]"
+                            >
+                                {skipped.size} skipped — ask again
+                            </button>
+                        )}
                     </span>
                 )}
 

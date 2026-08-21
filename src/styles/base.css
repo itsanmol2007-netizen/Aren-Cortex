@@ -77,12 +77,16 @@ h3 {
     font-size: 15px;
 }
 
-button,
-input,
-select,
-textarea {
-    font: inherit;
-}
+/* `button, input, select, textarea { font: inherit }` used to live here and
+   was removed 2026-08-21. Tailwind's preflight already ships exactly that
+   declaration INSIDE `@layer base`, so this copy was redundant — but because
+   this file is unlayered, and unlayered CSS outranks every `@layer`
+   regardless of specificity, this copy silently beat every Tailwind utility
+   on a form control. `text-[11px]` on a <button> was in the built bundle and
+   still rendered at 16px; the composer's Skip button and the whole
+   suggestion dropdown were sized by this rule, not by their own classes.
+   Deleting it restores Tailwind's ability to size a button and changes
+   nothing else: preflight still makes form controls inherit the page font. */
 
 button {
     cursor: pointer;

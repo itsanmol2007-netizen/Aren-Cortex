@@ -21,7 +21,7 @@
 // network failure.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchExamReadings, saveExamReading } from "../lib/db/examination";
 import type { ExamReading, MeasureContext, MeasureSide } from "../lib/db/examination";
 
@@ -83,6 +83,60 @@ export function useExamination(visitId: string | null): ExaminationHook {
         texts.get(slot(key, side, null, context)) ?? null,
     [texts]) as ExaminationHook["getText"];
 
+    /**
+     * ── ONE WRITE PER VALUE, NOT ONE PER KEYSTROKE ─────────────────────────
+     *
+     * `saveExamReading` is a DELETE followed by an INSERT, and it used to be
+     * fired straight from the change handler. Typing a three-digit range
+     * therefore started three of those pairs a few milliseconds apart and let
+     * them interleave: an INSERT for "1" could land after the DELETE that was
+     * meant to clear it, so the row that survived was the first keystroke and
+     * the later ones died on the unique index. Observed live — typing 110 into
+     * knee flexion left `EXAM_KNEE_FLEX = 1` in the database while the box on
+     * screen still read 110, with only a red line at the foot of the modal to
+     * say so. A physiotherapist reading that screen has no way to know the
+     * stored number is not the measured one.
+     *
+     * So writes are debounced per slot (the last value typed is the one
+     * meant) and then run through a single promise chain, which keeps the
+     * DELETE/INSERT pairs from overlapping each other. The optimistic local
+     * update is unchanged — the number stays on screen immediately.
+     */
+    const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    const pending = useRef(new Map<string, () => Promise<void>>());
+    const chain = useRef<Promise<unknown>>(Promise.resolve());
+
+    const runNow = useCallback((slotKey: string) => {
+        const run = pending.current.get(slotKey);
+        if (!run) return;
+        pending.current.delete(slotKey);
+        chain.current = chain.current
+            .then(run)
+            .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    }, []);
+
+    const queueSave = useCallback((slotKey: string, run: () => Promise<void>) => {
+        pending.current.set(slotKey, run);
+        const prev = timers.current.get(slotKey);
+        if (prev) clearTimeout(prev);
+        timers.current.set(slotKey, setTimeout(() => {
+            timers.current.delete(slotKey);
+            runNow(slotKey);
+        }, 400));
+    }, [runNow]);
+
+    /**
+     * Closing the modal must not eat the last number typed. Anything still
+     * inside the debounce window is flushed on unmount rather than dropped.
+     */
+    useEffect(() => {
+        const t = timers.current;
+        return () => {
+            for (const [slotKey, id] of t) { clearTimeout(id); runNow(slotKey); }
+            t.clear();
+        };
+    }, [runNow]);
+
     const setNumber = useCallback((
         key: string, side: MeasureSide | null, method: string | null,
         value: number | null, context: MeasureContext = "baseline", unit = "°"
@@ -94,9 +148,10 @@ export function useExamination(visitId: string | null): ExaminationHook {
             return next;
         });
         if (!visitId) return;
-        saveExamReading({ visitId, measureKey: key, side, method, context, valueNum: value, unit })
-            .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-    }, [visitId]);
+        queueSave(s, () => saveExamReading({
+            visitId, measureKey: key, side, method, context, valueNum: value, unit,
+        }));
+    }, [visitId, queueSave]);
 
     const setText = useCallback((
         key: string, side: MeasureSide | null, value: string | null, context: MeasureContext = "baseline"
@@ -108,9 +163,10 @@ export function useExamination(visitId: string | null): ExaminationHook {
             return next;
         });
         if (!visitId) return;
-        saveExamReading({ visitId, measureKey: key, side, method: null, context, valueText: value })
-            .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-    }, [visitId]);
+        queueSave(s, () => saveExamReading({
+            visitId, measureKey: key, side, method: null, context, valueText: value,
+        }));
+    }, [visitId, queueSave]);
 
     const reset = useCallback(() => {
         setNumbers(new Map());
