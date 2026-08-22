@@ -1324,3 +1324,259 @@
     color: #1268e8;
     transform: translateX(2px);
 }
+
+/* ── NEW MARKUP — Clinical Snapshot, waiting/inactive states, Active Care,
+   Recent Activity. Appended last per the handoff note: this file has
+   layered sections above that redefine `.prec-table-*`/`.prec-today-card`/
+   `.prec-status-pill` more than once — new rules go here so they win.
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Clinical Snapshot cell ──────────────────────────────────────────────────
+   The one specialty-aware column. Chips lead (primary complaint first),
+   one supporting detail line underneath — same two-line shape as the
+   brief's own examples ("Knee pain · ROM limitation · 4 sessions" /
+   "Difficulty in squatting and stairs").
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-table-th--snapshot {
+    min-width: 220px;
+}
+
+.prec-table-cell--snapshot {
+    max-width: 300px;
+}
+
+.prec-snapshot-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.prec-snapshot-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.prec-snapshot-chip {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+}
+
+/* Primary complaint — leads, same blue as the rest of the table's chips */
+.prec-snapshot-chip--primary {
+    background: #eff5ff;
+    color: #1d4ed8;
+    border: 1px solid rgba(18, 104, 232, 0.20);
+}
+
+/* Body region / finding / impairment — supporting, neutral */
+.prec-snapshot-chip--neutral {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
+/* Session/visit count — purple, matches .prec-section-count's count language */
+.prec-snapshot-chip--count {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid rgba(109, 40, 217, 0.18);
+}
+
+.prec-snapshot-detail {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* ── Today card / status pill / table row — waiting & inactive variants ─────
+   `visitStatusKind` has 4 states; only active/done had real treatment
+   anywhere. Waiting reads as "not yet seen" (blue, same family as the
+   reference mock's "Scheduled" pill — the closest real analogue). Inactive
+   (discarded/cancelled) reads as dimmed, deliberately unemphasized.
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-today-card.is-waiting {
+    border-color: rgba(18, 104, 232, 0.22);
+}
+
+.prec-today-card.is-waiting .prec-today-card-topbar {
+    background: linear-gradient(90deg, #1268e8 0%, #3b82f6 50%, #60a5fa 100%);
+}
+
+.prec-today-card.is-inactive {
+    border-color: rgba(100, 116, 139, 0.18);
+    opacity: 0.72;
+}
+
+.prec-today-card.is-inactive .prec-today-card-topbar {
+    background: #94a3b8;
+}
+
+.prec-today-status-chip.is-waiting {
+    background: rgba(18, 104, 232, 0.10);
+    color: #1d4ed8;
+    border: 1px solid rgba(18, 104, 232, 0.22);
+}
+
+.prec-today-status-chip.is-inactive {
+    background: rgba(100, 116, 139, 0.08);
+    color: #475569;
+    border: 1px solid rgba(100, 116, 139, 0.18);
+}
+
+.prec-status-pill.is-waiting {
+    background: #eff5ff;
+    color: #1d4ed8;
+    border: 1px solid rgba(18, 104, 232, 0.20);
+}
+
+.prec-table-row.is-waiting {
+    background: #f8faff;
+}
+
+.prec-table-row.is-waiting:hover {
+    background: #eff5ff;
+}
+
+.prec-table-row.is-inactive {
+    opacity: 0.68;
+}
+
+.prec-table-row.is-inactive:hover {
+    background: #f4f7ff;
+    opacity: 0.92;
+}
+
+/* ── Active Care grid (sidebar filter lenses, physio only) ──────────────────
+   Three clickable cells, each a filter lens over the same table — never a
+   new page. `is-selected` marks the active filter; `disabled` (0 matches)
+   is dimmed and inert rather than a dead-looking clickable control.
+──────────────────────────────────────────────────────────────────────────── */
+
+.prec-activecare-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.prec-activecare-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 4px 9px;
+    background: #f7f9fc;
+    border: 1px solid #e2e8f5;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+    font-family: inherit;
+}
+
+.prec-activecare-value {
+    font-size: 18px;
+    font-weight: 800;
+    color: #1268e8;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.prec-activecare-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: #64748b;
+    text-align: center;
+    letter-spacing: 0.01em;
+    line-height: 1.25;
+}
+
+.prec-activecare-cell--warn .prec-activecare-value {
+    color: #a16207;
+}
+
+.prec-activecare-cell:hover:not(:disabled) {
+    border-color: #b8c8f0;
+    background: #eff5ff;
+}
+
+.prec-activecare-cell--warn:hover:not(:disabled) {
+    border-color: #fcd34d;
+    background: #fffbeb;
+}
+
+.prec-activecare-cell.is-selected {
+    background: #eff5ff;
+    border-color: #1268e8;
+    box-shadow: 0 0 0 1px rgba(18, 104, 232, 0.18);
+}
+
+.prec-activecare-cell--warn.is-selected {
+    background: #fffbeb;
+    border-color: #d97706;
+    box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.20);
+}
+
+.prec-activecare-cell:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+/* ── Recent Activity list (sidebar, physio only) ─────────────────────────── */
+
+.prec-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.prec-activity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.prec-activity-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.prec-activity-status {
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.prec-activity-status.is-active {
+    color: #db2777;
+}
+
+.prec-activity-status.is-waiting {
+    color: #1d4ed8;
+}
+
+.prec-activity-status.is-done {
+    color: #16a34a;
+}
+
+.prec-activity-status.is-inactive {
+    color: #94a3b8;
+}

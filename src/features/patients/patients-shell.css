@@ -433,3 +433,67 @@
     color: #94a3b8;
     flex-shrink: 0;
 }
+
+/* ── NEW MARKUP — active-filter chip in the search header, clickable
+   ranked-list rows (sidebar cards doubling as filter lenses).
+──────────────────────────────────────────────────────────────────────────── */
+
+/* Search bar + active-filter chip now share the sub-header row */
+.prec-page-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.prec-search-wrap {
+    flex: 1;
+    max-width: 480px;
+}
+
+.prec-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px 7px 12px;
+    background: #eff5ff;
+    border: 1px solid rgba(18, 104, 232, 0.25);
+    border-radius: 8px;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.12s, border-color 0.12s;
+    font-family: inherit;
+}
+
+.prec-filter-chip:hover {
+    background: #dde9ff;
+    border-color: rgba(18, 104, 232, 0.40);
+}
+
+/* Common Conditions / Common Complaints rows, when they double as filter
+   lenses (`onSelect` passed) — reset the <button>'s own defaults, keep the
+   same layout .prec-complaint-row already sets. */
+.prec-complaint-row--clickable {
+    background: none;
+    border: none;
+    padding: 3px 4px;
+    margin: -3px -4px;
+    width: calc(100% + 8px);
+    text-align: left;
+    cursor: pointer;
+    border-radius: 6px;
+    font: inherit;
+    color: inherit;
+    transition: background 0.12s;
+}
+
+.prec-complaint-row--clickable:hover {
+    background: #f4f7ff;
+}
+
+.prec-complaint-row--clickable:hover .prec-complaint-name {
+    color: #1268e8;
+}
