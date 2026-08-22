@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import {
     Activity,
     CheckCircle,
     ChevronRight,
+    Clock3,
+    HeartPulse,
     LayoutTemplate,
+    ListChecks,
     Pill,
     Plus,
     Stethoscope,
     Timer,
     Users,
+    X,
     Zap,
 } from "lucide-react";
 import {
@@ -19,10 +23,12 @@ import {
     type PatientRecordRow,
 } from "../../lib/db";
 import type { Patient } from "../../types";
+import type { SpecialtyProfile } from "../synapse/specialtyProfile";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { PatientRecord } from "./PatientRecord";
 import { PatientsList, PatientsSearchBar } from "./PatientsList";
+import { visitStatusKind } from "./visitStatus";
 import "./patients.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -33,7 +39,19 @@ interface Props {
     onStartConsult: (patient: Patient) => void;
     logoRef: RefObject<HTMLDivElement>;
     onOpenSidebar: () => void;
+    specialty: SpecialtyProfile;
 }
+
+/**
+ * A sidebar card doubles as a filter lens over the same table rather than
+ * opening a new page — the brief's own instruction ("keeps the user on
+ * Patients, filters the list"). `label` is what the active-filter chip shows.
+ */
+type PatientFilter =
+    | { kind: "reassessmentDue"; label: string }
+    | { kind: "activeCare"; label: string }
+    | { kind: "returning"; label: string }
+    | { kind: "condition"; value: string; label: string };
 
 // ── Header stats pills ────────────────────────────────────────────────────────
 
@@ -59,22 +77,25 @@ function PatientHeaderStats({ total, active, completed }: { total: number; activ
     );
 }
 
-// ── Right Operational Panel ───────────────────────────────────────────────────
+// ── Shared aggregates — real, computed from rows actually on screen ─────────
 
-const PLACEHOLDER_MEDICINES = [
-    { name: "Dolo 650", count: 6 },
-    { name: "Pantocid 40", count: 5 },
-    { name: "Azithromycin 500", count: 4 },
-    { name: "Levocet 5", count: 3 },
-    { name: "Calpol 650", count: 3 },
-];
+/** "1h 42m" from real started_at/completed_at pairs; null when none finished today. */
+function averageVisitMinutes(rows: PatientRecordRow[]): string | null {
+    const durations = rows
+        .filter((r) => r.started_at && r.completed_at)
+        .map((r) => (new Date(r.completed_at as string).getTime() - new Date(r.started_at as string).getTime()) / 60000)
+        .filter((mins) => mins > 0 && mins < 24 * 60); // guard against a bad clock producing a nonsense outlier
+    if (!durations.length) return null;
+    const avg = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
+    const h = Math.floor(avg / 60);
+    const m = avg % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
-function deriveComplaints(rows: PatientRecordRow[]): { name: string; count: number }[] {
+function deriveRanked(rows: PatientRecordRow[], pick: (r: PatientRecordRow) => string[]): { name: string; count: number }[] {
     const map = new Map<string, number>();
     for (const row of rows) {
-        for (const s of row.symptom_names) {
-            map.set(s, (map.get(s) ?? 0) + 1);
-        }
+        for (const s of pick(row)) map.set(s, (map.get(s) ?? 0) + 1);
     }
     return Array.from(map.entries())
         .sort((a, b) => b[1] - a[1])
@@ -82,61 +103,144 @@ function deriveComplaints(rows: PatientRecordRow[]): { name: string; count: numb
         .map(([name, count]) => ({ name, count }));
 }
 
+function RankedBarList({
+    items,
+    onSelect,
+}: {
+    items: { name: string; count: number }[];
+    onSelect?: (name: string) => void;
+}) {
+    if (!items.length) {
+        return <span style={{ fontSize: 12, color: "#94a3b8" }}>No data yet.</span>;
+    }
+    const max = items[0]?.count ?? 1;
+    return (
+        <div className="prec-complaint-list">
+            {items.map((c, i) => {
+                const inner = (
+                    <>
+                        <span className="prec-complaint-rank">{i + 1}</span>
+                        <span className="prec-complaint-name">{c.name}</span>
+                        <div className="prec-complaint-bar-wrap">
+                            <div className="prec-complaint-bar-fill" style={{ width: `${Math.round((c.count / max) * 100)}%` }} />
+                        </div>
+                        <span className="prec-complaint-count">{c.count}</span>
+                    </>
+                );
+                return onSelect ? (
+                    <button key={c.name} type="button" className="prec-complaint-row prec-complaint-row--clickable" onClick={() => onSelect(c.name)}>
+                        {inner}
+                    </button>
+                ) : (
+                    <div key={c.name} className="prec-complaint-row">{inner}</div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Right Operational Panel ───────────────────────────────────────────────────
+
 function RightPanel({
     todayRows,
     recentRows,
+    specialty,
+    activeFilter,
+    onSetFilter,
     onNewPatient,
     onManageTemplates,
 }: {
     todayRows: PatientRecordRow[];
     recentRows: PatientRecordRow[];
+    specialty: SpecialtyProfile;
+    activeFilter: PatientFilter | null;
+    onSetFilter: (f: PatientFilter | null) => void;
     onNewPatient: () => void;
     onManageTemplates: () => void;
 }) {
-    const totalToday = todayRows.length;
-    const activeConsults = todayRows.filter(
-        (r) => r.visit_status === "serving" || r.visit_status === "active" || r.visit_status === "in_progress"
-    ).length;
-    const completed = todayRows.filter((r) => r.visit_status === "completed").length;
-    const avgTime = "1h 42m";
+    const allRows = useMemo(() => [...todayRows, ...recentRows], [todayRows, recentRows]);
 
-    const allRows = [...todayRows, ...recentRows];
-    const complaints = deriveComplaints(allRows);
-    const maxComplaint = complaints[0]?.count ?? 1;
-    const maxMed = PLACEHOLDER_MEDICINES[0]?.count ?? 1;
+    const activeToday = todayRows.filter((r) => visitStatusKind(r.visit_status) === "active").length;
+    const completedToday = todayRows.filter((r) => visitStatusKind(r.visit_status) === "done").length;
+    const avgTime = averageVisitMinutes(todayRows.filter((r) => visitStatusKind(r.visit_status) === "done"));
+
+    const isPhysio = specialty.id === "physiotherapy";
+
+    // ── Active Care — real aggregates only. Both numbers key off
+    // care_plan_progress, which is genuinely null for nearly every visit
+    // today because nothing creates a care_plan yet (aren-cortex-context.md
+    // §7). Zero here is the correct, honest reading of that gap, not a bug —
+    // it will start moving the moment the physio consult session wires it.
+    const distinctByPatient = useCallback((rows: PatientRecordRow[]) => {
+        const seen = new Set<string>();
+        return rows.filter((r) => (seen.has(r.patient_id) ? false : (seen.add(r.patient_id), true)));
+    }, []);
+    const activeCarePatients = useMemo(
+        () => distinctByPatient(allRows.filter((r) => r.care_plan_progress != null)),
+        [allRows, distinctByPatient]
+    );
+    const reassessmentDue = useMemo(
+        () => distinctByPatient(allRows.filter((r) => r.care_plan_progress && r.care_plan_progress.sessionsCompleted >= r.care_plan_progress.targetSessions)),
+        [allRows, distinctByPatient]
+    );
+    // Real, not fabricated: a patient this list already knows has more than
+    // one visit. Stands in for the mock's "Follow-ups Overdue" — that one has
+    // no backing data anywhere in the schema (no scheduled-visit concept
+    // exists; see aren-cortex-context.md §7) and is not invented here.
+    const returningPatients = useMemo(
+        () => distinctByPatient(recentRows.filter((r) => (r.visit_count ?? 1) > 1)),
+        [recentRows, distinctByPatient]
+    );
+
+    const conditions = useMemo(
+        () => deriveRanked(allRows, (r) => (isPhysio ? (r.body_sites.length ? r.body_sites : r.symptom_names.slice(0, 1)) : r.symptom_names)),
+        [allRows, isPhysio]
+    );
+    const medicines = useMemo(() => deriveRanked(allRows, (r) => r.medicine_names.slice(0, 1)), [allRows]);
+
+    const recentActivity = useMemo(
+        () =>
+            [...allRows]
+                .filter((r) => r.started_at)
+                .sort((a, b) => new Date(b.started_at as string).getTime() - new Date(a.started_at as string).getTime())
+                .slice(0, 5),
+        [allRows]
+    );
+
+    const toggle = (f: PatientFilter) => onSetFilter(activeFilter && activeFilter.kind === f.kind && ("value" in activeFilter ? activeFilter.value : "") === ("value" in f ? f.value : "") ? null : f);
 
     return (
         <aside className="prec-right-col">
 
-            {/* Today's Summary */}
+            {/* Today's Practice */}
             <div className="prec-panel-section">
                 <div className="prec-panel-card">
                     <div className="prec-panel-card-header">
                         <Activity size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
-                        <span className="prec-panel-card-title">Today's Summary</span>
+                        <span className="prec-panel-card-title">Today's Practice</span>
                     </div>
                     <div className="prec-panel-card-body">
                         <div className="prec-summary-grid">
                             <div className="prec-summary-cell">
                                 <Users size={13} className="prec-summary-cell-icon" />
-                                <span className="prec-summary-value">{totalToday}</span>
-                                <span className="prec-summary-label">Patients Seen</span>
+                                <span className="prec-summary-value">{todayRows.length}</span>
+                                <span className="prec-summary-label">Patients Today</span>
                             </div>
                             <div className="prec-summary-cell">
                                 <Zap size={13} className="prec-summary-cell-icon" />
-                                <span className={`prec-summary-value ${activeConsults > 0 ? "prec-summary-value--green" : ""}`}>
-                                    {activeConsults}
+                                <span className={`prec-summary-value ${activeToday > 0 ? "prec-summary-value--green" : ""}`}>
+                                    {activeToday}
                                 </span>
-                                <span className="prec-summary-label">Active Consults</span>
+                                <span className="prec-summary-label">In Session</span>
                             </div>
                             <div className="prec-summary-cell">
                                 <CheckCircle size={13} className="prec-summary-cell-icon" />
-                                <span className="prec-summary-value prec-summary-value--blue">{completed}</span>
+                                <span className="prec-summary-value prec-summary-value--blue">{completedToday}</span>
                                 <span className="prec-summary-label">Completed</span>
                             </div>
                             <div className="prec-summary-cell">
                                 <Timer size={13} className="prec-summary-cell-icon" />
-                                <span className="prec-summary-value prec-summary-value--time">{avgTime}</span>
+                                <span className="prec-summary-value prec-summary-value--time">{avgTime ?? "—"}</span>
                                 <span className="prec-summary-label">Avg. Visit Time</span>
                             </div>
                         </div>
@@ -144,65 +248,132 @@ function RightPanel({
                 </div>
             </div>
 
-            {/* Common Complaints — ranked list, no chart */}
-            <div className="prec-panel-section">
-                <div className="prec-panel-card">
-                    <div className="prec-panel-card-header">
-                        <Stethoscope size={13} className="prec-panel-card-icon" />
-                        <span className="prec-panel-card-title">Common Complaints</span>
-                    </div>
-                    <div className="prec-panel-card-body">
-                        {complaints.length > 0 ? (
-                            <div className="prec-complaint-list">
-                                {complaints.map((c, i) => (
-                                    <div key={c.name} className="prec-complaint-row">
-                                        <span className="prec-complaint-rank">{i + 1}</span>
-                                        <span className="prec-complaint-name">{c.name}</span>
-                                        <div className="prec-complaint-bar-wrap">
-                                            <div
-                                                className="prec-complaint-bar-fill"
-                                                style={{ width: `${Math.round((c.count / maxComplaint) * 100)}%` }}
-                                            />
-                                        </div>
-                                        <span className="prec-complaint-count">{c.count}</span>
-                                    </div>
-                                ))}
+            {isPhysio ? (
+                <>
+                    {/* Active Care — filter lenses */}
+                    <div className="prec-panel-section">
+                        <div className="prec-panel-card">
+                            <div className="prec-panel-card-header">
+                                <HeartPulse size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
+                                <span className="prec-panel-card-title">Active Care</span>
                             </div>
-                        ) : (
-                            <span style={{ fontSize: 12, color: "#94a3b8" }}>No data yet today.</span>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Top Prescribed Medicines */}
-            <div className="prec-panel-section">
-                <div className="prec-panel-card">
-                    <div className="prec-panel-card-header">
-                        <Pill size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
-                        <span className="prec-panel-card-title">Top Prescribed Medicines</span>
-                    </div>
-                    <div className="prec-panel-card-body">
-                        <div className="prec-medicine-list">
-                            {PLACEHOLDER_MEDICINES.map((m) => (
-                                <div key={m.name} className="prec-medicine-row">
-                                    <span className="prec-medicine-name">{m.name}</span>
-                                    <div className="prec-medicine-bar-wrap">
-                                        <div
-                                            className="prec-medicine-bar-fill"
-                                            style={{ width: `${Math.round((m.count / maxMed) * 100)}%` }}
-                                        />
-                                    </div>
-                                    <span className="prec-medicine-count">{m.count}</span>
+                            <div className="prec-panel-card-body">
+                                <div className="prec-activecare-grid">
+                                    <button
+                                        type="button"
+                                        className={`prec-activecare-cell${activeFilter?.kind === "activeCare" ? " is-selected" : ""}`}
+                                        onClick={() => toggle({ kind: "activeCare", label: "Active care plan" })}
+                                        disabled={!activeCarePatients.length}
+                                    >
+                                        <span className="prec-activecare-value">{activeCarePatients.length}</span>
+                                        <span className="prec-activecare-label">Active Patients</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`prec-activecare-cell prec-activecare-cell--warn${activeFilter?.kind === "reassessmentDue" ? " is-selected" : ""}`}
+                                        onClick={() => toggle({ kind: "reassessmentDue", label: "Reassessment due" })}
+                                        disabled={!reassessmentDue.length}
+                                    >
+                                        <span className="prec-activecare-value">{reassessmentDue.length}</span>
+                                        <span className="prec-activecare-label">Reassessment Due</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`prec-activecare-cell${activeFilter?.kind === "returning" ? " is-selected" : ""}`}
+                                        onClick={() => toggle({ kind: "returning", label: "Returning patients" })}
+                                        disabled={!returningPatients.length}
+                                    >
+                                        <span className="prec-activecare-value">{returningPatients.length}</span>
+                                        <span className="prec-activecare-label">Returning</span>
+                                    </button>
                                 </div>
-                            ))}
+                                {!activeCarePatients.length && (
+                                    <p className="prec-medicine-placeholder-note">
+                                        No active care plans linked yet — starts counting once sessions are grouped into a course.
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        <p className="prec-medicine-placeholder-note">Live data in next update</p>
                     </div>
-                </div>
-            </div>
 
-            {/* Quick Actions — New Patient + Manage Templates only */}
+                    {/* Common Conditions */}
+                    <div className="prec-panel-section">
+                        <div className="prec-panel-card">
+                            <div className="prec-panel-card-header">
+                                <ListChecks size={13} className="prec-panel-card-icon" />
+                                <span className="prec-panel-card-title">Common Conditions</span>
+                            </div>
+                            <div className="prec-panel-card-body">
+                                <RankedBarList
+                                    items={conditions}
+                                    onSelect={(name) => toggle({ kind: "condition", value: name, label: name })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Recent Activity */}
+                    <div className="prec-panel-section">
+                        <div className="prec-panel-card">
+                            <div className="prec-panel-card-header">
+                                <Clock3 size={13} className="prec-panel-card-icon prec-panel-card-icon--green" />
+                                <span className="prec-panel-card-title">Recent Activity</span>
+                            </div>
+                            <div className="prec-panel-card-body">
+                                {recentActivity.length ? (
+                                    <div className="prec-activity-list">
+                                        {recentActivity.map((r) => {
+                                            const kind = visitStatusKind(r.visit_status);
+                                            const label = kind === "active" ? "Session in progress" : kind === "waiting" ? "Waiting" : kind === "inactive" ? "Inactive" : "Session completed";
+                                            return (
+                                                <div key={r.visit_id || r.patient_id} className="prec-activity-row">
+                                                    <span className="prec-activity-name">{r.patient_name}</span>
+                                                    <span className={`prec-activity-status is-${kind}`}>{label}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <span style={{ fontSize: 12, color: "#94a3b8" }}>Nothing yet today.</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <>
+                    {/* Common Complaints */}
+                    <div className="prec-panel-section">
+                        <div className="prec-panel-card">
+                            <div className="prec-panel-card-header">
+                                <Stethoscope size={13} className="prec-panel-card-icon" />
+                                <span className="prec-panel-card-title">Common Complaints</span>
+                            </div>
+                            <div className="prec-panel-card-body">
+                                <RankedBarList
+                                    items={conditions}
+                                    onSelect={(name) => toggle({ kind: "condition", value: name, label: name })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Top Prescribed Medicines */}
+                    <div className="prec-panel-section">
+                        <div className="prec-panel-card">
+                            <div className="prec-panel-card-header">
+                                <Pill size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
+                                <span className="prec-panel-card-title">Top Prescribed Medicines</span>
+                            </div>
+                            <div className="prec-panel-card-body">
+                                <RankedBarList items={medicines} />
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Quick Actions */}
             <div className="prec-panel-section">
                 <div className="prec-panel-card">
                     <div className="prec-panel-card-header">
@@ -230,7 +401,7 @@ function RightPanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) {
+export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty }: Props) {
     const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
@@ -240,6 +411,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
     const [searchResults, setSearchResults] = useState<PatientRecordRow[] | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
+    const [filter, setFilter] = useState<PatientFilter | null>(null);
 
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -294,6 +466,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
                     story_duration: null,
                     story_mechanism: null,
                     care_plan_session_label: null,
+                    care_plan_progress: null,
                 }));
                 setSearchResults(mapped);
             } catch (e) {
@@ -313,10 +486,35 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
         setSelectedRow(null);
     }, []);
 
-    const completedToday = todayRows.filter((r) => r.visit_status === "completed").length;
-    const activeToday = todayRows.filter(
-        (r) => r.visit_status === "serving" || r.visit_status === "active" || r.visit_status === "in_progress"
-    ).length;
+    const completedToday = todayRows.filter((r) => visitStatusKind(r.visit_status) === "done").length;
+    const activeToday = todayRows.filter((r) => visitStatusKind(r.visit_status) === "active").length;
+
+    // A sidebar card is a lens over the SAME table, never a new page — apply
+    // it to both sections rather than forking into a filtered-vs-unfiltered
+    // pair of components.
+    const applyFilter = useCallback(
+        (rows: PatientRecordRow[]): PatientRecordRow[] => {
+            if (!filter) return rows;
+            switch (filter.kind) {
+                case "activeCare":
+                    return rows.filter((r) => r.care_plan_progress != null);
+                case "reassessmentDue":
+                    return rows.filter((r) => r.care_plan_progress && r.care_plan_progress.sessionsCompleted >= r.care_plan_progress.targetSessions);
+                case "returning":
+                    return rows.filter((r) => (r.visit_count ?? 1) > 1);
+                case "condition":
+                    return rows.filter(
+                        (r) =>
+                            r.symptom_names.includes(filter.value) ||
+                            r.body_sites.includes(filter.value)
+                    );
+            }
+        },
+        [filter]
+    );
+
+    const filteredToday = useMemo(() => applyFilter(todayRows), [applyFilter, todayRows]);
+    const filteredRecent = useMemo(() => applyFilter(recentRows), [applyFilter, recentRows]);
 
     // ── Record view ──────────────────────────────────────────────────────────
 
@@ -341,8 +539,8 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
             <WorkspaceHeader
                 logoRef={logoRef}
                 onOpenSidebar={onOpenSidebar}
-                title="Patient Records"
-                subtitle="Clinical History & Continuity"
+                title="Patients"
+                subtitle="Clinical Overview & Patient Browser"
                 rightSlot={
                     <PatientHeaderStats
                         total={todayRows.length}
@@ -354,16 +552,23 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
 
             <div className="prec-page-header">
                 <PatientsSearchBar value={searchQuery} onChange={setSearchQuery} />
+                {filter && (
+                    <button type="button" className="prec-filter-chip" onClick={() => setFilter(null)}>
+                        {filter.label}
+                        <X size={12} />
+                    </button>
+                )}
             </div>
 
             <div className="prec-page-body">
                 <div className="prec-main-col">
                     <PatientsList
-                        todayRows={todayRows}
-                        recentRows={recentRows}
+                        todayRows={filteredToday}
+                        recentRows={filteredRecent}
                         searchResults={searchResults}
                         searchQuery={searchQuery}
                         loading={loading}
+                        specialty={specialty}
                         onSelectPatient={openRecord}
                     />
                 </div>
@@ -372,6 +577,9 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
                     <RightPanel
                         todayRows={todayRows}
                         recentRows={recentRows}
+                        specialty={specialty}
+                        activeFilter={filter}
+                        onSetFilter={setFilter}
                         onNewPatient={() => { /* wire in next session */ }}
                         onManageTemplates={() => { /* wire in next session */ }}
                     />

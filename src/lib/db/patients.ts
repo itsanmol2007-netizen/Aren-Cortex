@@ -821,7 +821,10 @@ async function buildPatientRecordRows(
     // per visit or per patient. Today that is almost always zero rows (see
     // aren-cortex-context.md §7), so this loop runs 0-1 times in practice.
     const carePlanIds = [...new Set(visits.map((v) => v.care_plan_id).filter((id): id is string => !!id))];
-    const sessionLabelByCarePlanAndPatient = new Map<string, string>(); // `${carePlanId}:${patientId}` -> label
+    // Keyed `${carePlanId}:${patientId}`, structured rather than pre-formatted
+    // — patientSnapshot.ts renders the label, the sidebar computes on the
+    // number, neither should have to parse the other's string back apart.
+    const progressByCarePlanAndPatient = new Map<string, { sessionsCompleted: number; targetSessions: number }>();
     for (const planId of carePlanIds) {
         const { data: plan } = await supabase
             .from("care_plans")
@@ -835,10 +838,10 @@ async function buildPatientRecordRows(
             .eq("care_plan_id", planId)
             .eq("status", "completed");
         if (count == null) continue;
-        sessionLabelByCarePlanAndPatient.set(
-            `${planId}:${plan.patient_id}`,
-            `Session ${count} of ${plan.target_visit_count}`
-        );
+        progressByCarePlanAndPatient.set(`${planId}:${plan.patient_id}`, {
+            sessionsCompleted: count,
+            targetSessions: plan.target_visit_count,
+        });
     }
 
     const rows: PatientRecordRow[] = [];
@@ -873,6 +876,9 @@ async function buildPatientRecordRows(
             .map((r: any) => r.test_name)
             .filter(Boolean) as string[];
         const story = storyByVisit.get(v.id);
+        const progress = v.care_plan_id
+            ? progressByCarePlanAndPatient.get(`${v.care_plan_id}:${v.patient_id}`) ?? null
+            : null;
 
         rows.push({
             patient_id: v.patient_id,
@@ -895,9 +901,10 @@ async function buildPatientRecordRows(
             impairment_names: impairmentsByVisit.get(v.id) ?? [],
             story_duration: story?.duration ?? null,
             story_mechanism: story?.mechanism ?? null,
-            care_plan_session_label: v.care_plan_id
-                ? sessionLabelByCarePlanAndPatient.get(`${v.care_plan_id}:${v.patient_id}`) ?? null
+            care_plan_session_label: progress
+                ? `Session ${progress.sessionsCompleted} of ${progress.targetSessions}`
                 : null,
+            care_plan_progress: progress,
         });
     }
 
