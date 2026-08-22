@@ -2,14 +2,15 @@ import { useState } from "react";
 import {
     ChevronRight,
     Clock,
-    FlaskConical,
     Phone,
-    Pill,
     Search,
     User,
     X,
 } from "lucide-react";
 import { type PatientRecordRow } from "../../lib/db";
+import type { SpecialtyProfile } from "../synapse/specialtyProfile";
+import { snapshotFor, visitNoun, type SnapshotChip } from "../synapse/patientSnapshot";
+import { visitStatusKind, VISIT_STATUS_LABEL } from "./visitStatus";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -117,17 +118,13 @@ function SkeletonTableRow() {
                     </div>
                 </div>
             </td>
-            <td className="prec-table-cell">
-                <SkeletonBlock width={70} height={22} style={{ borderRadius: 11 }} />
-            </td>
-            <td className="prec-table-cell">
-                <SkeletonBlock width={70} height={22} style={{ borderRadius: 11 }} />
-            </td>
-            <td className="prec-table-cell">
-                <SkeletonBlock width={80} height={14} />
-            </td>
-            <td className="prec-table-cell">
-                <SkeletonBlock width={60} height={14} />
+            <td className="prec-table-cell prec-table-cell--snapshot">
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                    <SkeletonBlock width={70} height={20} style={{ borderRadius: 10 }} />
+                    <SkeletonBlock width={60} height={20} style={{ borderRadius: 10 }} />
+                    <SkeletonBlock width={50} height={20} style={{ borderRadius: 10 }} />
+                </div>
+                <SkeletonBlock width={140} height={11} />
             </td>
             <td className="prec-table-cell prec-table-cell--visit">
                 <SkeletonBlock width={50} height={14} />
@@ -148,7 +145,7 @@ function SkeletonTableRow() {
     );
 }
 
-function PatientsSkeleton() {
+function PatientsSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
     return (
         <>
             {/* Today's Patients Skeleton */}
@@ -172,7 +169,7 @@ function PatientsSkeleton() {
                 </div>
                 <div className="prec-table-wrap">
                     <table className="prec-table">
-                        <PatientsTableHead />
+                        <PatientsTableHead specialty={specialty} />
                         <tbody>
                             {Array.from({ length: 8 }).map((_, i) => (
                                 <SkeletonTableRow key={i} />
@@ -187,25 +184,22 @@ function PatientsSkeleton() {
 
 // ── Today Card ────────────────────────────────────────────────────────────────
 
-function TodayCard({ row, onClick }: { row: PatientRecordRow; onClick: () => void }) {
-    const isActive =
-        row.visit_status === "serving" ||
-        row.visit_status === "active" ||
-        row.visit_status === "in_progress";
-    const isCompleted = row.visit_status === "completed";
+function TodayCard({ row, specialty, onClick }: { row: PatientRecordRow; specialty: SpecialtyProfile; onClick: () => void }) {
+    const kind = visitStatusKind(row.visit_status);
     const time = row.started_at ? formatTime(row.started_at) : "";
+    const chief = snapshotFor(specialty, row).chips[0]?.label;
 
     return (
         <button
             type="button"
-            className={`prec-today-card ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""}`}
+            className={`prec-today-card is-${kind}`}
             onClick={onClick}
         >
             <div className="prec-today-card-topbar" aria-hidden="true" />
 
             <div className="prec-today-card-top">
                 <AvatarCircle name={row.patient_name} size={34} />
-                {isActive && <span className="prec-active-dot prec-active-dot--card" />}
+                {kind === "active" && <span className="prec-active-dot prec-active-dot--card" />}
             </div>
             <div className="prec-today-name">{row.patient_name}</div>
             <div className="prec-today-sub">
@@ -213,18 +207,18 @@ function TodayCard({ row, onClick }: { row: PatientRecordRow; onClick: () => voi
                 {row.age > 0 && row.gender ? " · " : ""}
                 {row.gender || ""}
             </div>
-            {row.symptom_names.length > 0 ? (
-                <div className="prec-today-chief">{row.symptom_names[0]}</div>
+            {chief ? (
+                <div className="prec-today-chief">{chief}</div>
             ) : (
-                <div className="prec-today-chief prec-today-chief--empty">No symptoms logged</div>
+                <div className="prec-today-chief prec-today-chief--empty">Nothing recorded yet</div>
             )}
             <div className="prec-today-footer">
                 <div className="prec-today-time">
                     <Clock size={10} />
                     {time}
                 </div>
-                <span className={`prec-today-status-chip ${isActive ? "is-active" : "is-done"}`}>
-                    {isActive ? "In Progress" : "Done"}
+                <span className={`prec-today-status-chip is-${kind}`}>
+                    {kind === "active" ? "In Session" : kind === "waiting" ? "Waiting" : kind === "inactive" ? "Inactive" : "Done"}
                 </span>
             </div>
         </button>
@@ -234,74 +228,58 @@ function TodayCard({ row, onClick }: { row: PatientRecordRow; onClick: () => voi
 // ── Status pill ───────────────────────────────────────────────────────────────
 
 function StatusPill({ status }: { status: string }) {
-    const isActive = status === "serving" || status === "active" || status === "in_progress";
-    const isInactive = status === "inactive" || status === "cancelled";
+    const kind = visitStatusKind(status);
     return (
-        <span className={`prec-status-pill ${isActive ? "is-active" : isInactive ? "is-inactive" : "is-done"}`}>
-            {isActive ? "Active" : isInactive ? "Inactive" : "Completed"}
+        <span className={`prec-status-pill is-${kind}`}>
+            {VISIT_STATUS_LABEL[kind]}
         </span>
     );
 }
 
-// ── Cell helpers ──────────────────────────────────────────────────────────────
+// ── Clinical Snapshot cell ───────────────────────────────────────────────────
+// The one specialty-aware column, replacing the old fixed Symptoms/Findings/
+// Medicines/Tests set. `snapshotFor` decides the content; this only renders
+// it — chips first (primary complaint leads, tone controls color), then the
+// one supporting detail line underneath, same two-line shape the brief's
+// examples use ("Knee pain · ROM limitation · 4 sessions" / "Difficulty in
+// squatting and stairs").
 
-function ChipCell({ items, color }: { items: string[]; color: "blue" | "purple" | "green" }) {
-    if (!items || items.length === 0) {
-        return <span className="prec-table-nil">—</span>;
-    }
-    const first = items[0];
-    const rest = items.length - 1;
-    return (
-        <div className="prec-table-chip-cell">
-            <span className={`prec-table-chip prec-table-chip--${color}`}>{first}</span>
-            {rest > 0 && <span className="prec-table-chip-more">+{rest}</span>}
-        </div>
-    );
-}
-
-function MedCell({ items }: { items: string[] }) {
-    if (!items || items.length === 0) {
-        return <span className="prec-table-nil">—</span>;
+function SnapshotCell({ row, specialty }: { row: PatientRecordRow; specialty: SpecialtyProfile }) {
+    const snapshot = snapshotFor(specialty, row);
+    if (!snapshot.chips.length && !snapshot.detail) {
+        return <span className="prec-table-nil">Nothing recorded yet</span>;
     }
     return (
-        <div className="prec-table-med-cell">
-            <Pill size={10} className="prec-table-med-icon" />
-            <span className="prec-table-med-name">{items[0]}</span>
-            {items.length > 1 && <span className="prec-table-chip-more">+{items.length - 1}</span>}
-        </div>
-    );
-}
-
-function TestCell({ items }: { items: string[] }) {
-    if (!items || items.length === 0) {
-        return <span className="prec-table-void">VOID</span>;
-    }
-    return (
-        <div className="prec-table-chip-cell">
-            <FlaskConical size={10} className="prec-table-test-icon" />
-            <span className="prec-table-test-name">{items[0]}</span>
-            {items.length > 1 && <span className="prec-table-chip-more">+{items.length - 1}</span>}
+        <div className="prec-snapshot-cell">
+            {snapshot.chips.length > 0 && (
+                <div className="prec-snapshot-chips">
+                    {snapshot.chips.map((chip: SnapshotChip, i: number) => (
+                        <span key={i} className={`prec-snapshot-chip prec-snapshot-chip--${chip.tone}`}>
+                            {chip.label}
+                        </span>
+                    ))}
+                </div>
+            )}
+            {snapshot.detail && <div className="prec-snapshot-detail">{snapshot.detail}</div>}
         </div>
     );
 }
 
 // ── Patient table row ─────────────────────────────────────────────────────────
 
-function PatientTableRow({ row, onClick }: { row: PatientRecordRow; onClick: () => void }) {
-    const isActive =
-        row.visit_status === "serving" ||
-        row.visit_status === "active" ||
-        row.visit_status === "in_progress";
+function PatientTableRow({ row, specialty, onClick }: { row: PatientRecordRow; specialty: SpecialtyProfile; onClick: () => void }) {
+    const kind = visitStatusKind(row.visit_status);
     const lastVisit = formatLastVisit(row.last_visit_at ?? row.started_at);
+    const noun = visitNoun(specialty);
 
     return (
-        <tr className={`prec-table-row ${isActive ? "is-active" : ""}`} onClick={onClick}>
+        <tr className={`prec-table-row is-${kind}`} onClick={onClick}>
 
             <td className="prec-table-cell prec-table-cell--patient">
                 <div className="prec-table-patient-inner">
                     <div className="prec-table-avatar-wrap">
                         <AvatarCircle name={row.patient_name} size={32} />
-                        {isActive && <span className="prec-table-active-dot" />}
+                        {kind === "active" && <span className="prec-table-active-dot" />}
                     </div>
                     <div className="prec-table-patient-info">
                         <span className="prec-table-patient-name">{row.patient_name}</span>
@@ -321,20 +299,8 @@ function PatientTableRow({ row, onClick }: { row: PatientRecordRow; onClick: () 
                 </div>
             </td>
 
-            <td className="prec-table-cell">
-                <ChipCell items={row.symptom_names ?? []} color="blue" />
-            </td>
-
-            <td className="prec-table-cell">
-                <ChipCell items={row.finding_names ?? []} color="purple" />
-            </td>
-
-            <td className="prec-table-cell">
-                <MedCell items={row.medicine_names ?? []} />
-            </td>
-
-            <td className="prec-table-cell">
-                <TestCell items={row.test_names ?? []} />
+            <td className="prec-table-cell prec-table-cell--snapshot">
+                <SnapshotCell row={row} specialty={specialty} />
             </td>
 
             <td className="prec-table-cell prec-table-cell--visit">
@@ -346,7 +312,7 @@ function PatientTableRow({ row, onClick }: { row: PatientRecordRow; onClick: () 
 
             <td className="prec-table-cell prec-table-cell--count">
                 <span className="prec-table-count">{row.visit_count ?? 1}</span>
-                <span className="prec-table-count-label">visits</span>
+                <span className="prec-table-count-label">{noun}{row.visit_count === 1 ? "" : "s"}</span>
             </td>
 
             <td className="prec-table-cell prec-table-cell--status">
@@ -395,18 +361,16 @@ export function PatientsSearchBar({ value, onChange }: SearchBarProps) {
 
 // ── Table head ────────────────────────────────────────────────────────────────
 
-function PatientsTableHead() {
+function PatientsTableHead({ specialty }: { specialty: SpecialtyProfile }) {
+    const noun = visitNoun(specialty);
     return (
         <thead>
             <tr className="prec-table-head-row">
                 <th className="prec-table-th prec-table-th--patient">Patient</th>
-                <th className="prec-table-th">Symptoms</th>
-                <th className="prec-table-th">Findings</th>
-                <th className="prec-table-th">Medicines</th>
-                <th className="prec-table-th">Tests</th>
+                <th className="prec-table-th prec-table-th--snapshot">Clinical Snapshot</th>
                 <th className="prec-table-th">Last Visit</th>
-                <th className="prec-table-th prec-table-th--center">Visits</th>
-                <th className="prec-table-th">Status</th>
+                <th className="prec-table-th prec-table-th--center">{noun[0].toUpperCase()}{noun.slice(1)}s</th>
+                <th className="prec-table-th">Care Status</th>
                 <th className="prec-table-th prec-table-th--arrow" />
             </tr>
         </thead>
@@ -421,6 +385,7 @@ interface PatientsListProps {
     searchResults: PatientRecordRow[] | null;
     searchQuery: string;
     loading: boolean;
+    specialty: SpecialtyProfile;
     onSelectPatient: (row: PatientRecordRow) => void;
 }
 
@@ -430,12 +395,13 @@ export function PatientsList({
     searchResults,
     searchQuery,
     loading,
+    specialty,
     onSelectPatient,
 }: PatientsListProps) {
     const isSearching = searchQuery.trim().length > 0;
 
     if (loading) {
-        return <PatientsSkeleton />;
+        return <PatientsSkeleton specialty={specialty} />;
     }
 
     if (isSearching) {
@@ -451,12 +417,13 @@ export function PatientsList({
                 {searchResults && searchResults.length > 0 ? (
                     <div className="prec-table-wrap">
                         <table className="prec-table">
-                            <PatientsTableHead />
+                            <PatientsTableHead specialty={specialty} />
                             <tbody>
                                 {searchResults.map((row) => (
                                     <PatientTableRow
                                         key={row.patient_id}
                                         row={row}
+                                        specialty={specialty}
                                         onClick={() => onSelectPatient(row)}
                                     />
                                 ))}
@@ -486,6 +453,7 @@ export function PatientsList({
                             <TodayCard
                                 key={row.visit_id || row.patient_id}
                                 row={row}
+                                specialty={specialty}
                                 onClick={() => onSelectPatient(row)}
                             />
                         ))}
@@ -501,12 +469,13 @@ export function PatientsList({
                 {recentRows.length > 0 ? (
                     <div className="prec-table-wrap">
                         <table className="prec-table">
-                            <PatientsTableHead />
+                            <PatientsTableHead specialty={specialty} />
                             <tbody>
                                 {recentRows.map((row) => (
                                     <PatientTableRow
                                         key={row.patient_id}
                                         row={row}
+                                        specialty={specialty}
                                         onClick={() => onSelectPatient(row)}
                                     />
                                 ))}

@@ -260,6 +260,35 @@ brand-priority over label-priority).
   laterality field on a modality.
 - No demonstration image/video per exercise; drag-reordering not implemented
   (sort_order stored, nothing moves a row yet).
+- **Accepted impairments are not persisted anywhere queryable (found 2026-08-23,
+  building the Patient Overview page).** Every other intent type a doctor
+  accepts lands somewhere the record can read back — medicine →
+  `prescription_medicines`, test → `diagnostic_orders`, exercise →
+  `prescription_exercises`, finding → `visit_findings`. `impairment` (added
+  2026-08-18, ranks above findings for physio — "what is limiting this
+  person") has no `case "impairment"` in `useConsultPlan.ts`'s accept handler
+  at all: it only reaches the in-memory plan for print/PDF, never a table. A
+  physiotherapist's actual functional-limitation record ("reduced squat
+  depth", "cannot climb stairs without pain") exists nowhere after the visit
+  closes. **`visit_impairments` table now exists** (migration
+  `add_visit_impairments`, 2026-08-23) — shaped like `prescription_exercises`
+  (`visit_id`, `intent_id` → `intents.id` since impairment has no v1 legacy
+  catalogue to join through, `label` snapshot, `side`), same
+  `hospital_isolation` RLS policy as `visit_findings`/`visit_body_sites`. **Not
+  wired**: no write in `useConsultPlan.ts`'s accept handler, no read in the
+  consult screen. Schema is ready; the write/read path is real clinical work
+  for a dedicated physio-consult session, not a wiring task.
+- **`care_plans` is correctly modeled but never actually used in practice**
+  (confirmed live 2026-08-23 against Ekanki's 165 real physio visits —
+  `care_plan_id` is `null` on effectively every one, including patients with
+  5+ visits). The table and its functions (`lib/db/carePlans.ts`) have existed
+  since 2026-08-16 and work; nothing in the physio consult flow ever calls
+  `createCarePlan` or `linkVisitToCarePlan`. So "session 4 of 12" is
+  structurally supported but has never once rendered true data. Needs: prompt
+  to start a care plan when physio treatment begins, auto-link each
+  subsequent visit for that patient/doctor. Until this is wired, any UI
+  showing a session count for a physio patient must use their real visit
+  count, not a fabricated plan-session number.
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: not built at all, blocked on Anmol choosing a

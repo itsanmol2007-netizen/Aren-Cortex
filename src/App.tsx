@@ -951,6 +951,7 @@ function App() {
           onStartConsult={handleStartConsultFromRecord}
           logoRef={logoRef}
           onOpenSidebar={handleOpenSidebar}
+          specialty={specialty}
         />
       ) : activePage === "settings" ? (
         <SettingsPage

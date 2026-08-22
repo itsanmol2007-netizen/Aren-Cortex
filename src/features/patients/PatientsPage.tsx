@@ -286,6 +286,14 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar }: Props) 
                     test_names: [],
                     visit_count: 1,
                     last_visit_at: null,
+                    // Search hits a patient, not a visit — no per-visit physio
+                    // fields to show. The snapshot renders its empty state.
+                    body_sites: [],
+                    exercise_names: [],
+                    impairment_names: [],
+                    story_duration: null,
+                    story_mechanism: null,
+                    care_plan_session_label: null,
                 }));
                 setSearchResults(mapped);
             } catch (e) {

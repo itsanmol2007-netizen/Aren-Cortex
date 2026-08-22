@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import type { DBSymptom, DBFinding } from "./reference";
+import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../body/anatomy";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -623,7 +624,285 @@ export type PatientRecordRow = {
     test_names: string[];
     visit_count: number;
     last_visit_at: string | null;
+    // ── Physio-relevant, added 2026-08-23 for the specialty-aware Patient
+    // Overview (patientSnapshot.ts builds the display text from these; this
+    // file only fetches and shapes the raw values). All real reads — no
+    // field here is a fabricated stand-in. `impairment_names` will read empty
+    // for every visit today: `visit_impairments` exists but has no write path
+    // yet (see aren-cortex-context.md §7).
+    /** e.g. "Right knee" — from visit_body_sites, this visit only. */
+    body_sites: string[];
+    /** exercise labels prescribed this visit, from prescription_exercises. */
+    exercise_names: string[];
+    /** functional-limitation labels this visit, from visit_impairments (empty until wired). */
+    impairment_names: string[];
+    /** visit_story.duration_text, e.g. "3 weeks". Null if no story recorded. */
+    story_duration: string | null;
+    /** visit_story.mechanism, the patient's own words on how it started. */
+    story_mechanism: string | null;
+    /**
+     * "Session 4 of 12" — present ONLY when this visit is actually linked to
+     * an active care_plan (visits.care_plan_id) with a target_visit_count.
+     * Null for effectively every visit today (see aren-cortex-context.md §7 —
+     * care_plans exists but nothing links to it yet); callers must fall back
+     * to `visit_count` rather than treat null as zero sessions.
+     */
+    care_plan_session_label: string | null;
+    /**
+     * The same fact `care_plan_session_label` renders as text, kept structured
+     * for callers that need to compute with it (e.g. the sidebar's
+     * Reassessment Due count) rather than parse a display string back apart.
+     */
+    care_plan_progress: { sessionsCompleted: number; targetSessions: number } | null;
 };
+
+type RawVisitRow = {
+    id: string;
+    patient_id: string;
+    status: string;
+    started_at: string | null;
+    completed_at: string | null;
+    care_plan_id: string | null;
+};
+
+/**
+ * Shared row-builder for `fetchTodayPatients` and `fetchRecentPatients` — same
+ * doctor-scoped visits in, same enrichment out, only the initial `visits`
+ * query differs between the two callers. Extracted 2026-08-23 rather than
+ * copy-pasted a third time when the physio fields (body sites, exercises,
+ * story, impairments, care-plan session) were added — see rule 19 in
+ * aren-cortex-context.md (two things that must independently agree).
+ *
+ * `dedupePerPatient`: `fetchRecentPatients` wants one row per patient (most
+ * recent visit only); `fetchTodayPatients` wants every visit today.
+ */
+async function buildPatientRecordRows(
+    visits: RawVisitRow[],
+    doctorId: string,
+    dedupePerPatient: boolean
+): Promise<PatientRecordRow[]> {
+    if (!visits.length) return [];
+
+    const patientIds = [...new Set(visits.map((v) => v.patient_id))];
+    const visitIds = visits.map((v) => v.id);
+
+    const { data: patients } = await supabase
+        .from("patients")
+        .select("id, name, age, gender, phone, date_of_birth")
+        .in("id", patientIds);
+    const patMap = new Map<string, any>();
+    (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
+
+    const { data: allVisitCounts } = await supabase
+        .from("visits")
+        .select("patient_id, started_at")
+        .in("patient_id", patientIds)
+        .eq("assigned_doctor_id", doctorId)
+        .order("started_at", { ascending: false });
+    const visitCountMap = new Map<string, number>();
+    const lastVisitMap = new Map<string, string>();
+    (allVisitCounts ?? []).forEach((v: any) => {
+        visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
+        if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.started_at);
+    });
+
+    const { data: vsRows } = await supabase
+        .from("visit_symptoms")
+        .select("visit_id, symptom_id")
+        .in("visit_id", visitIds);
+    const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
+    const symptomById = new Map<number, string>();
+    if (allSymptomIds.length) {
+        const { data: symps } = await supabase
+            .from("symptoms").select("id, name").in("id", allSymptomIds);
+        (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
+    }
+
+    // The canonical intake record, which the v1 join above cannot represent in full.
+    const obsNamesByVisit = await observationNamesByVisit(visitIds);
+
+    const { data: vfRows } = await supabase
+        .from("visit_findings")
+        .select("visit_id, finding_id")
+        .in("visit_id", visitIds);
+    const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
+    const findingById = new Map<number, string>();
+    if (allFindingIds.length) {
+        const { data: finds } = await supabase
+            .from("findings").select("id, name").in("id", allFindingIds);
+        (finds ?? []).forEach((f: any) => findingById.set(f.id, f.name));
+    }
+
+    const { data: rxRows } = await supabase
+        .from("prescriptions")
+        .select("id, visit_id")
+        .in("visit_id", visitIds);
+    const rxByVisitId = new Map<string, string>();
+    (rxRows ?? []).forEach((r: any) => rxByVisitId.set(r.visit_id, r.id));
+    const rxIds = (rxRows ?? []).map((r: any) => r.id);
+
+    const pmByVisitId = new Map<string, number[]>();
+    const medById = new Map<number, string>();
+    // Exercise labels are already text on prescription_exercises — no id
+    // lookup needed, unlike medicines.
+    const exByVisitId = new Map<string, string[]>();
+    if (rxIds.length) {
+        const { data: pmRows } = await supabase
+            .from("prescription_medicines")
+            .select("prescription_id, medicine_id")
+            .in("prescription_id", rxIds);
+        const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
+        if (allMedIds.length) {
+            const { data: meds } = await supabase
+                .from("medicines").select("id, name").in("id", allMedIds);
+            (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
+        }
+        for (const pm of (pmRows ?? [])) {
+            const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
+            if (!visitId) continue;
+            const list = pmByVisitId.get(visitId) ?? [];
+            list.push(Number(pm.medicine_id));
+            pmByVisitId.set(visitId, list);
+        }
+
+        const { data: peRows } = await supabase
+            .from("prescription_exercises")
+            .select("prescription_id, label, sort_order")
+            .in("prescription_id", rxIds)
+            .order("sort_order", { ascending: true });
+        for (const pe of (peRows ?? [])) {
+            const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pe.prescription_id)?.[0];
+            if (!visitId) continue;
+            const list = exByVisitId.get(visitId) ?? [];
+            list.push(pe.label);
+            exByVisitId.set(visitId, list);
+        }
+    }
+
+    const { data: doRows } = await supabase
+        .from("diagnostic_orders")
+        .select("visit_id, test_name")
+        .in("visit_id", visitIds);
+
+    const { data: bsRows } = await supabase
+        .from("visit_body_sites")
+        .select("visit_id, region, aspect, side")
+        .in("visit_id", visitIds);
+    const bodySitesByVisit = new Map<string, string[]>();
+    for (const r of (bsRows ?? []) as { visit_id: string; region: BodyRegion; aspect: BodyAspect; side: BodySide | null }[]) {
+        const list = bodySitesByVisit.get(r.visit_id) ?? [];
+        const label = siteLabel(r.region, r.aspect, r.side);
+        if (!list.includes(label)) list.push(label);
+        bodySitesByVisit.set(r.visit_id, list);
+    }
+
+    const { data: impRows } = await supabase
+        .from("visit_impairments")
+        .select("visit_id, label")
+        .in("visit_id", visitIds);
+    const impairmentsByVisit = new Map<string, string[]>();
+    for (const r of (impRows ?? []) as { visit_id: string; label: string }[]) {
+        const list = impairmentsByVisit.get(r.visit_id) ?? [];
+        list.push(r.label);
+        impairmentsByVisit.set(r.visit_id, list);
+    }
+
+    const { data: storyRows } = await supabase
+        .from("visit_story")
+        .select("visit_id, duration_text, mechanism")
+        .in("visit_id", visitIds);
+    const storyByVisit = new Map<string, { duration: string | null; mechanism: string | null }>();
+    for (const r of (storyRows ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
+        storyByVisit.set(r.visit_id, { duration: r.duration_text, mechanism: r.mechanism });
+    }
+
+    // Care-plan session label — real ONLY when this visit is actually linked.
+    // Bounded query count: one per DISTINCT care_plan_id in this batch, not
+    // per visit or per patient. Today that is almost always zero rows (see
+    // aren-cortex-context.md §7), so this loop runs 0-1 times in practice.
+    const carePlanIds = [...new Set(visits.map((v) => v.care_plan_id).filter((id): id is string => !!id))];
+    const sessionLabelByCarePlanAndPatient = new Map<string, string>(); // `${carePlanId}:${patientId}` -> label
+    for (const planId of carePlanIds) {
+        const { data: plan } = await supabase
+            .from("care_plans")
+            .select("id, patient_id, target_visit_count, status")
+            .eq("id", planId)
+            .maybeSingle();
+        if (!plan || !plan.target_visit_count) continue;
+        const { count } = await supabase
+            .from("visits")
+            .select("id", { count: "exact", head: true })
+            .eq("care_plan_id", planId)
+            .eq("status", "completed");
+        if (count == null) continue;
+        sessionLabelByCarePlanAndPatient.set(
+            `${planId}:${plan.patient_id}`,
+            `Session ${count} of ${plan.target_visit_count}`
+        );
+    }
+
+    const rows: PatientRecordRow[] = [];
+    const seenPatients = new Set<string>();
+
+    for (const v of visits) {
+        if (dedupePerPatient) {
+            if (seenPatients.has(v.patient_id)) continue;
+            seenPatients.add(v.patient_id);
+        }
+
+        const pat = patMap.get(v.patient_id) ?? {};
+        // Canonical first: a visit written since the catalogue moved to
+        //  has a complete observation record, and only older
+        // visits fall back to the v1 join.
+        const observed = obsNamesByVisit.get(v.id);
+        const symptomNames = observed?.length
+            ? observed
+            : ((vsRows ?? [])
+                .filter((r: any) => r.visit_id === v.id)
+                .map((r: any) => symptomById.get(Number(r.symptom_id)))
+                .filter(Boolean) as string[]);
+        const findingNames = (vfRows ?? [])
+            .filter((r: any) => r.visit_id === v.id)
+            .map((r: any) => findingById.get(Number(r.finding_id)))
+            .filter(Boolean) as string[];
+        const medicineNames = (pmByVisitId.get(v.id) ?? [])
+            .map((medId) => medById.get(medId))
+            .filter(Boolean) as string[];
+        const testNames = (doRows ?? [])
+            .filter((r: any) => r.visit_id === v.id)
+            .map((r: any) => r.test_name)
+            .filter(Boolean) as string[];
+        const story = storyByVisit.get(v.id);
+
+        rows.push({
+            patient_id: v.patient_id,
+            patient_name: pat.name ?? "Unknown",
+            age: pat.age ?? 0,
+            gender: pat.gender ?? "",
+            phone: pat.phone ?? "",
+            visit_id: v.id,
+            visit_status: v.status,
+            started_at: v.started_at,
+            completed_at: v.completed_at,
+            symptom_names: symptomNames,
+            finding_names: findingNames,
+            medicine_names: medicineNames,
+            test_names: testNames,
+            visit_count: visitCountMap.get(v.patient_id) ?? 1,
+            last_visit_at: lastVisitMap.get(v.patient_id) ?? v.started_at,
+            body_sites: bodySitesByVisit.get(v.id) ?? [],
+            exercise_names: exByVisitId.get(v.id) ?? [],
+            impairment_names: impairmentsByVisit.get(v.id) ?? [],
+            story_duration: story?.duration ?? null,
+            story_mechanism: story?.mechanism ?? null,
+            care_plan_session_label: v.care_plan_id
+                ? sessionLabelByCarePlanAndPatient.get(`${v.care_plan_id}:${v.patient_id}`) ?? null
+                : null,
+        });
+    }
+
+    return rows;
+}
 
 // `doctorId` is required — it was the DOCTOR_ID constant, which meant this page
 // asked for one specific doctor's visits regardless of who was signed in. Unlike
@@ -635,141 +914,13 @@ export async function fetchTodayPatients(doctorId: string): Promise<PatientRecor
 
     const { data: visits, error } = await supabase
         .from("visits")
-        .select("id, patient_id, status, started_at, completed_at")
+        .select("id, patient_id, status, started_at, completed_at, care_plan_id")
         .eq("assigned_doctor_id", doctorId)
         .gte("started_at", todayStart.toISOString())
         .order("started_at", { ascending: false });
 
     if (error) throw new Error(`fetchTodayPatients: ${error.message}`);
-    if (!visits || visits.length === 0) return [];
-
-    const patientIds = [...new Set(visits.map((v: any) => v.patient_id))];
-    const visitIds = visits.map((v: any) => v.id);
-
-    const { data: patients } = await supabase
-        .from("patients")
-        .select("id, name, age, gender, phone, date_of_birth")
-        .in("id", patientIds);
-    const patMap = new Map<string, any>();
-    (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
-
-    const { data: allVisitCounts } = await supabase
-        .from("visits")
-        .select("patient_id, started_at")
-        .in("patient_id", patientIds)
-        .eq("assigned_doctor_id", doctorId)
-        .order("started_at", { ascending: false });
-    const visitCountMap = new Map<string, number>();
-    const lastVisitMap = new Map<string, string>();
-    (allVisitCounts ?? []).forEach((v: any) => {
-        visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
-        if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.started_at);
-    });
-
-    const { data: vsRows } = await supabase
-        .from("visit_symptoms")
-        .select("visit_id, symptom_id")
-        .in("visit_id", visitIds);
-    const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
-    const symptomById = new Map<number, string>();
-    if (allSymptomIds.length) {
-        const { data: symps } = await supabase
-            .from("symptoms").select("id, name").in("id", allSymptomIds);
-        (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
-    }
-
-    // The canonical intake record, which the v1 join above cannot represent in full.
-    const obsNamesByVisit = await observationNamesByVisit(visitIds);
-
-    const { data: vfRows } = await supabase
-        .from("visit_findings")
-        .select("visit_id, finding_id")
-        .in("visit_id", visitIds);
-    const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
-    const findingById = new Map<number, string>();
-    if (allFindingIds.length) {
-        const { data: finds } = await supabase
-            .from("findings").select("id, name").in("id", allFindingIds);
-        (finds ?? []).forEach((f: any) => findingById.set(f.id, f.name));
-    }
-
-    const { data: rxRows } = await supabase
-        .from("prescriptions")
-        .select("id, visit_id")
-        .in("visit_id", visitIds);
-    const rxByVisitId = new Map<string, string>();
-    (rxRows ?? []).forEach((r: any) => rxByVisitId.set(r.visit_id, r.id));
-    const rxIds = (rxRows ?? []).map((r: any) => r.id);
-
-    const pmByVisitId = new Map<string, number[]>();
-    const medById = new Map<number, string>();
-    if (rxIds.length) {
-        const { data: pmRows } = await supabase
-            .from("prescription_medicines")
-            .select("prescription_id, medicine_id")
-            .in("prescription_id", rxIds);
-        const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
-        if (allMedIds.length) {
-            const { data: meds } = await supabase
-                .from("medicines").select("id, name").in("id", allMedIds);
-            (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
-        }
-        for (const pm of (pmRows ?? [])) {
-            const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
-            if (!visitId) continue;
-            const list = pmByVisitId.get(visitId) ?? [];
-            list.push(Number(pm.medicine_id));
-            pmByVisitId.set(visitId, list);
-        }
-    }
-
-    const { data: doRows } = await supabase
-        .from("diagnostic_orders")
-        .select("visit_id, test_name")
-        .in("visit_id", visitIds);
-
-    return visits.map((v: any) => {
-        const pat = patMap.get(v.patient_id) ?? {};
-        // Canonical first: a visit written since the catalogue moved to
-        //  has a complete observation record, and only older
-        // visits fall back to the v1 join.
-        const observed = obsNamesByVisit.get(v.id);
-        const symptomNames = observed?.length
-            ? observed
-            : ((vsRows ?? [])
-                .filter((r: any) => r.visit_id === v.id)
-                .map((r: any) => symptomById.get(Number(r.symptom_id)))
-                .filter(Boolean) as string[]);
-        const findingNames = (vfRows ?? [])
-            .filter((r: any) => r.visit_id === v.id)
-            .map((r: any) => findingById.get(Number(r.finding_id)))
-            .filter(Boolean) as string[];
-        const medicineNames = (pmByVisitId.get(v.id) ?? [])
-            .map((medId) => medById.get(medId))
-            .filter(Boolean) as string[];
-        const testNames = (doRows ?? [])
-            .filter((r: any) => r.visit_id === v.id)
-            .map((r: any) => r.test_name)
-            .filter(Boolean) as string[];
-
-        return {
-            patient_id: v.patient_id,
-            patient_name: pat.name ?? "Unknown",
-            age: pat.age ?? 0,
-            gender: pat.gender ?? "",
-            phone: pat.phone ?? "",
-            visit_id: v.id,
-            visit_status: v.status,
-            started_at: v.started_at,
-            completed_at: v.completed_at,
-            symptom_names: symptomNames,
-            finding_names: findingNames,
-            medicine_names: medicineNames,
-            test_names: testNames,
-            visit_count: visitCountMap.get(v.patient_id) ?? 1,
-            last_visit_at: lastVisitMap.get(v.patient_id) ?? v.started_at,
-        };
-    });
+    return buildPatientRecordRows((visits ?? []) as RawVisitRow[], doctorId, false);
 }
 
 // ── PATIENT RECORDS PAGE — ALL RECENT PATIENTS ────────────────────────────────
@@ -777,150 +928,14 @@ export async function fetchTodayPatients(doctorId: string): Promise<PatientRecor
 export async function fetchRecentPatients(doctorId: string, limit = 40): Promise<PatientRecordRow[]> {
     const { data: visits, error } = await supabase
         .from("visits")
-        .select("id, patient_id, status, started_at, completed_at")
+        .select("id, patient_id, status, started_at, completed_at, care_plan_id")
         .eq("assigned_doctor_id", doctorId)
         .eq("status", "completed")
         .order("started_at", { ascending: false })
         .limit(limit);
 
     if (error) throw new Error(`fetchRecentPatients: ${error.message}`);
-    if (!visits || visits.length === 0) return [];
-
-    const patientIds = [...new Set(visits.map((v: any) => v.patient_id))];
-    const visitIds = visits.map((v: any) => v.id);
-
-    const { data: patients } = await supabase
-        .from("patients")
-        .select("id, name, age, gender, phone, date_of_birth")
-        .in("id", patientIds);
-    const patMap = new Map<string, any>();
-    (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
-
-    const { data: allVisitCounts } = await supabase
-        .from("visits")
-        .select("patient_id, started_at")
-        .in("patient_id", patientIds)
-        .eq("assigned_doctor_id", doctorId)
-        .order("started_at", { ascending: false });
-    const visitCountMap = new Map<string, number>();
-    const lastVisitMap = new Map<string, string>();
-    (allVisitCounts ?? []).forEach((v: any) => {
-        visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
-        if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.started_at);
-    });
-
-    const { data: vsRows } = await supabase
-        .from("visit_symptoms")
-        .select("visit_id, symptom_id")
-        .in("visit_id", visitIds);
-    const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
-    const symptomById = new Map<number, string>();
-    if (allSymptomIds.length) {
-        const { data: symps } = await supabase
-            .from("symptoms").select("id, name").in("id", allSymptomIds);
-        (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
-    }
-
-    // The canonical intake record, which the v1 join above cannot represent in full.
-    const obsNamesByVisit = await observationNamesByVisit(visitIds);
-
-    const { data: vfRows } = await supabase
-        .from("visit_findings")
-        .select("visit_id, finding_id")
-        .in("visit_id", visitIds);
-    const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
-    const findingById = new Map<number, string>();
-    if (allFindingIds.length) {
-        const { data: finds } = await supabase
-            .from("findings").select("id, name").in("id", allFindingIds);
-        (finds ?? []).forEach((f: any) => findingById.set(f.id, f.name));
-    }
-
-    const { data: rxRows } = await supabase
-        .from("prescriptions")
-        .select("id, visit_id")
-        .in("visit_id", visitIds);
-    const rxByVisitId = new Map<string, string>();
-    (rxRows ?? []).forEach((r: any) => rxByVisitId.set(r.visit_id, r.id));
-    const rxIds = (rxRows ?? []).map((r: any) => r.id);
-
-    const pmByVisitId = new Map<string, number[]>();
-    const medById = new Map<number, string>();
-    if (rxIds.length) {
-        const { data: pmRows } = await supabase
-            .from("prescription_medicines")
-            .select("prescription_id, medicine_id")
-            .in("prescription_id", rxIds);
-        const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
-        if (allMedIds.length) {
-            const { data: meds } = await supabase
-                .from("medicines").select("id, name").in("id", allMedIds);
-            (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
-        }
-        for (const pm of (pmRows ?? [])) {
-            const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
-            if (!visitId) continue;
-            const list = pmByVisitId.get(visitId) ?? [];
-            list.push(Number(pm.medicine_id));
-            pmByVisitId.set(visitId, list);
-        }
-    }
-
-    const { data: doRows } = await supabase
-        .from("diagnostic_orders")
-        .select("visit_id, test_name")
-        .in("visit_id", visitIds);
-
-    const seenPatients = new Set<string>();
-    const deduped: PatientRecordRow[] = [];
-
-    for (const v of visits) {
-        if (seenPatients.has(v.patient_id)) continue;
-        seenPatients.add(v.patient_id);
-
-        const pat = patMap.get(v.patient_id) ?? {};
-        // Canonical first: a visit written since the catalogue moved to
-        //  has a complete observation record, and only older
-        // visits fall back to the v1 join.
-        const observed = obsNamesByVisit.get(v.id);
-        const symptomNames = observed?.length
-            ? observed
-            : ((vsRows ?? [])
-                .filter((r: any) => r.visit_id === v.id)
-                .map((r: any) => symptomById.get(Number(r.symptom_id)))
-                .filter(Boolean) as string[]);
-        const findingNames = (vfRows ?? [])
-            .filter((r: any) => r.visit_id === v.id)
-            .map((r: any) => findingById.get(Number(r.finding_id)))
-            .filter(Boolean) as string[];
-        const medicineNames = (pmByVisitId.get(v.id) ?? [])
-            .map((medId) => medById.get(medId))
-            .filter(Boolean) as string[];
-        const testNames = (doRows ?? [])
-            .filter((r: any) => r.visit_id === v.id)
-            .map((r: any) => r.test_name)
-            .filter(Boolean) as string[];
-
-        deduped.push({
-            patient_id: v.patient_id,
-            patient_name: pat.name ?? "Unknown",
-            age: pat.age ?? 0,
-            gender: pat.gender ?? "",
-            phone: pat.phone ?? "",
-            visit_id: v.id,
-            visit_status: v.status,
-            started_at: v.started_at,
-            completed_at: v.completed_at,
-            symptom_names: symptomNames,
-            finding_names: findingNames,
-            medicine_names: medicineNames,
-            test_names: testNames,
-            visit_count: visitCountMap.get(v.patient_id) ?? 1,
-            last_visit_at: lastVisitMap.get(v.patient_id) ?? v.started_at,
-        });
-    }
-
-    return deduped;
+    return buildPatientRecordRows((visits ?? []) as RawVisitRow[], doctorId, true);
 }
 
 // ── PATIENTS PAGE — DIRECTORY ──────────────────────────────────────────────────
