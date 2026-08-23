@@ -89,14 +89,15 @@ src/
     MedicineInspector.tsx / GlobalLogoTrigger.tsx / ShortcutsSheet.tsx
   features/prescription/PrescriptionDocument.tsx  — what the patient actually receives (print/PDF/WhatsApp)
   features/settings/SettingsPage.tsx  — specialty switch (doctor self-service, temporary) + logout
-  features/patients/  — PatientsPage + PatientRecord (built). features/sidebar/ — Sidebar +
+  features/patients/  — PatientsPage + PatientRecord (built). features/practice/PracticePage.tsx
+    — pinned medicines, real (built 2026-08-23; see §7). features/sidebar/ — Sidebar +
     SidebarNav, six real destinations (Consult action, Patients, Communication, Practice,
     Clinic, Settings) + Help & Support utility, rebuilt 2026-08-23 — "Prescriptions" and
     "Investigations" are deliberately NOT pages (see SidebarNav.tsx's header for why); their
     0-byte stub folders were deleted, not left as dead placeholders. features/communication/,
-    features/practice/, features/clinic/, features/support/ are still 0-byte stubs — real
-    destinations, not yet built (each renders ComingSoonPage today, App.tsx's
-    COMING_SOON_META). See §7 for which of those is the best next build.
+    features/clinic/, features/support/ are still 0-byte stubs — real destinations, not yet
+    built (each renders ComingSoonPage today, App.tsx's COMING_SOON_META). See §7 for why
+    those two (not Practice) are the ones actually worth deferring.
   styles/
     consult.css   (cs-*)  — the consult screen. ALL new consult UI goes here.
     workspace.css (cx-*)  — legacy, mostly dead; 3 sheets + 1 selector hook still live
@@ -285,23 +286,20 @@ brand-priority over label-priority).
   wired**: no write in `useConsultPlan.ts`'s accept handler, no read in the
   consult screen. Schema is ready; the write/read path is real clinical work
   for a dedicated physio-consult session, not a wiring task.
-- **`care_plans` is correctly modeled and — UPDATE, later on 2026-08-23 — is
-  now genuinely linked for at least one real patient.** The entry above (same
-  date, earlier check) said `care_plan_id` was null on effectively every
-  visit including patients with 5+ visits, and concluded "session 4 of 12"
-  had never once rendered true data. Building the Patient Record page's Care
-  Plan card that same day, against Ekanki's live account, showed Rohan
-  Malhotra with a real `care_plan_progress` — "Session 6 of 12", a correct
-  50% bar, target 12 — not fabricated, read straight from
-  `PatientRecordRow.care_plan_progress` (which itself reads `care_plans` via
-  `buildPatientRecordRows`). Both checks were real reads of the same live
-  data hours apart; the honest reading is that **something started linking
-  visits to a plan for this patient in between**, not that the earlier
-  finding was wrong. **Left for the next physio-consult session:** re-run the
-  live check this entry originally did (how many patients now have a real
-  `care_plan_id`, is it one patient or a pattern) before trusting or
-  distrusting "session N of M" anywhere in the product — don't assume either
-  the old "never used" claim or the new one-patient sighting generalizes.
+- **`care_plans` — RESOLVED 2026-08-23 with direct live SQL (not a browser),
+  correcting two same-day entries above that got there by inference.** The
+  first said `care_plan_id` was null on effectively every visit; the second
+  found one real "Session 6 of 12" and could only say "something changed,
+  don't assume it generalizes." Queried `care_plans` directly instead of
+  guessing further: **5 real active plans exist**, one per patient (Rohan
+  Malhotra, Manoj Kumar Thakur, Deepak Prasad, Sanjay Verma, Om Prakash
+  Mishra), each with a real clinical goal and 5–7 visits actually linked
+  (`visits.care_plan_id` populated), the oldest created 2026-06-20 — well
+  before this arc even started. The original "never used" finding was
+  simply wrong (stale, or checked against the wrong account/window) — care
+  plan linking has been working correctly for these five patients for
+  weeks. "Session N of M" can be trusted wherever `care_plan_progress` is
+  non-null. No further action needed here.
 - **`fetchPatientVisits` (`lib/db/patients.ts`, used by the Patient Record
   page) has no physio fields at all — found 2026-08-23, second pass on the
   Patient Record page.** `PatientRecordRow` (the Overview table's row) got
@@ -322,24 +320,33 @@ brand-priority over label-priority).
   `buildPatientRecordRows` already knows how to compute, then give
   `VisitRow` (`PatientRecord.tsx`) a physio-aware branch on the visit-type
   badge and expanded body, same specialty-branch discipline as rule 16.
-- **`fetchPatientVisits`'s `visit_count` vs `PatientRecordRow.visit_count` can
-  disagree by a lot — found 2026-08-23, not root-caused.** Live on Rohan
-  Malhotra: the Identity card's "Total sessions" (from `row.visit_count`,
-  computed by `buildPatientRecordRows`) read **24**; the Visit Timeline right
-  below it (from `fetchPatientVisits`, `.eq("status","completed")` capped at
-  `.limit(20)`) showed **6**. Two live reads of the same account, same
-  session, genuinely 18 apart. Two candidate explanations, neither confirmed
-  against the schema this session (no live DB access — see
-  SESSION-HANDOFF.md §2): either most of Rohan's 24 visits carry a
-  `visits.status` other than `completed` (plausible — physio sessions may
-  legitimately sit in `serving`/`waiting`/`draft` more often than a
-  General-OPD visit does, and `visit_count`'s own count query may not filter
-  the same way `fetchPatientVisits` does), or the `.limit(20)` cap is
-  genuinely too low for a physio patient this far into a course and quietly
-  truncating real history. **Left for the next session with live DB access:**
-  check which status values Rohan's other 18 visits actually carry before
-  changing either query — do not just raise the limit or loosen the status
-  filter without knowing which one (or both) is the real cause.
+- **The visit-count discrepancy — RESOLVED 2026-08-23 with direct live SQL,
+  and it's test noise, not a bug.** Was a 24-vs-6 mismatch on Rohan
+  Malhotra between `row.visit_count` (counts every status) and
+  `fetchPatientVisits`'s completed-only count. Queried `visits.status`
+  directly for Dr Anmol Pandey's whole account: **86 visits are stuck in
+  `serving`, concentrated in only 5 distinct patients, every one of them
+  created between 2026-08-12 and 2026-08-23** (Rohan alone: 18, including
+  11 opened on 2026-08-21 alone — no real physio opens 11 sessions with one
+  patient in a day). Meanwhile **75 visits completed normally across 17
+  different patients from 2026-06-21 through 2026-08-22**, overlapping the
+  same window — so the save/complete path itself was NOT broken during
+  this period; completions kept happening for the rest of the patient
+  base right through it. The pattern (recent, concentrated on a handful of
+  patients, high same-day repeat counts) reads as manual testing of the
+  physio consult screen — someone repeatedly starting fresh consults on a
+  few test patients without running the save flow to completion — not a
+  production defect. **Not fixed, on purpose**: bulk-updating real
+  `visits.status` rows is exactly the kind of change that needs Anmol's
+  explicit go-ahead, not an agent's guess about which rows are test noise.
+  **Ask him**: are these 86 `serving` visits safe to mark `discarded`
+  (they're currently counted as "Active"/"In Session" by
+  `visitStatusKind()`, which inflates the Overview's active-patient
+  numbers for these 5 patients)? If yes, that's a two-line
+  `UPDATE ... WHERE status='serving' AND created_at > '2026-08-12'` a
+  future session can run after confirming the exact id list with him
+  first — never assume "looks like test data" is authorization to change
+  it.
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: still not built — the real API integration
@@ -352,25 +359,26 @@ brand-priority over label-priority).
   hunting down every place that builds a wa.me URL by hand.
 - **Sidebar rebuilt to six real destinations 2026-08-23** (Consult, Patients,
   Communication, Practice, Clinic, Settings + a Help & Support utility) —
-  full reasoning in `SidebarNav.tsx`'s header. Of the four still-stub pages
-  (Communication, Practice, Clinic, Support — each renders `ComingSoonPage`
-  today), **Practice is the best next build**: the real data already exists
-  (`doctor_pinned_intent` / `usePinnedMedicines.ts`, a doctor's pinned
-  medicines) and needs no product decision from Anmol, only wiring — but it
-  was NOT built this session because resolving a pinned `intent_id` to a
-  display name has no existing standalone query (every current caller reads
-  it out of the full ruleset the consult screen loads, which is heavy to
-  pull in for one static page) and this session had no live DB access to
-  write and verify a new one. **Concretely for that session:** write
-  `fetchPinnedMedicineDetails(doctorId)` in `lib/db/synapse.ts` alongside
-  `loadPinnedIntents`/`setPinnedIntent` (join `doctor_pinned_intent` →
-  `intents` → whatever table actually carries the display name — check
-  live, don't assume the column name), verify it against Ekanki's account,
-  then build `features/practice/PracticePage.tsx` on it. Communication and
-  Clinic are genuinely more complex (need new data models — conversation/
-  message storage, staff/hours/operational config) and are reasonable to
-  leave for later; Support's existing "Help & documentation" ComingSoon
-  copy is fine as-is, it was never meant to be a major destination.
+  full reasoning in `SidebarNav.tsx`'s header.
+- **Practice built for real the same day, hours after being documented as
+  blocked.** The blocker was "no standalone query resolves a pinned
+  `intent_id` to a display name without the full ruleset loader" — checked
+  live with Supabase MCP direct SQL access (confirmed working this session,
+  a separate path from the blocked browser — see SESSION-HANDOFF.md §3) and
+  it turned out to be one join: `intents.label` already IS the display name
+  for a medicine intent (verified: `id=390` → `label="omeprazole"`, matches
+  `compositions.name` exactly). `fetchPinnedMedicineDetails(doctorId)` in
+  `lib/db/synapse.ts`, `features/practice/PracticePage.tsx` built on it,
+  wired into `App.tsx`. `doctor_pinned_intent` has 0 rows for this account
+  today (Dr Anmol Pandey has never pinned a medicine) — the page correctly
+  shows an honest empty state, not fabricated data. Preferred Labs and
+  Prescription Templates stay explicitly "not built" within the same page
+  (no schema exists for either — checked the live table list, not assumed).
+  Communication and Clinic remain `ComingSoonPage` stubs — genuinely more
+  complex (new data models: conversation/message storage, staff/hours/
+  operational config), reasonable to leave for a session with Anmol's
+  input on scope. Support's existing "Help & documentation" copy is fine
+  as-is.
 - **Confirmed-condition resolve/refute** (status active/resolved/refuted) only
   works on the Case Sheet surface (General OPD, Physio) — the 6 SOAP-fallback
   profiles still treat removal as silent and today-only.

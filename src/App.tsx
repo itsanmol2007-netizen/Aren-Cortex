@@ -13,6 +13,7 @@ import { GlobalLogoTrigger } from "./components/GlobalLogoTrigger";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { PracticePage } from "./features/practice/PracticePage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
 import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
@@ -79,16 +80,15 @@ import { fetchLastExercisePlan } from "./lib/db/exercises";
 // were removed as standalone destinations, not renamed, so no entries here.
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
   communication: { title: "Communication", subtitle: "WhatsApp conversations, patient messages & follow-ups" },
-  practice: { title: "Practice", subtitle: "Commonly used medicines, preferred labs & prescription templates" },
   clinic: { title: "Clinic", subtitle: "Clinic profile, staff, working hours & operations" },
   support: { title: "Help & Support", subtitle: "Documentation & assistance" },
-  // "settings" deliberately has no entry here — it's a real page
-  // (features/settings/SettingsPage.tsx), not a coming-soon stub. Practice
-  // is real DATA (doctor_pinned_intent) but not a page yet — resolving a
-  // pinned intent id to a display name needs either the full ruleset
-  // loader (heavy for a standalone page) or a new, unverified query this
-  // session has no live DB access to test — see aren-cortex-context.md §7,
-  // "Practice page" entry, before building this for real.
+  // "settings" and "practice" deliberately have no entry here — both are
+  // real pages now (features/settings/SettingsPage.tsx,
+  // features/practice/PracticePage.tsx), not coming-soon stubs. Practice
+  // was blocked earlier the same day on "no standalone query exists to
+  // resolve a pinned intent id to a name" — checked live instead of
+  // assumed (see lib/db/synapse.ts's fetchPinnedMedicineDetails) and it
+  // turned out to be one join, not the full ruleset loader.
 };
 
 function App() {
@@ -971,6 +971,8 @@ function App() {
             setHospitalProfile((prev) => (prev ? { ...prev, specialty_profile: id } : prev))
           }
         />
+      ) : activePage === "practice" ? (
+        <PracticePage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : isFeaturePage && comingSoonMeta ? (
         <ComingSoonPage
           logoRef={logoRef}

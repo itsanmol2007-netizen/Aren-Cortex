@@ -881,6 +881,53 @@ export async function setPinnedIntent(opts: {
     }
 }
 
+export type PinnedMedicineDetail = {
+    intentId: number;
+    /** `intents.label` — already the display name for a medicine intent
+     *  (the composition's own name, e.g. "omeprazole"), verified live
+     *  2026-08-23 rather than assumed. Lowercase in storage throughout the
+     *  catalogue; callers title-case for display, never mutate the data. */
+    label: string;
+    pinnedAt: string;
+};
+
+/**
+ * The Practice page's read — a doctor's pinned medicines, by name, not just
+ * id. Was blocked earlier the same day on "no standalone query exists,
+ * every caller reads it out of the full ruleset load" — checked live
+ * instead of assumed: `intents.label` already carries the display name
+ * directly for a medicine intent, so this is one join, not the ruleset.
+ */
+export async function fetchPinnedMedicineDetails(doctorId: string): Promise<PinnedMedicineDetail[]> {
+    const { data: pins, error: pinErr } = await supabase
+        .from("doctor_pinned_intent")
+        .select("intent_id, created_at")
+        .eq("doctor_id", doctorId)
+        .order("created_at", { ascending: false });
+    if (pinErr) throw new Error(`fetchPinnedMedicineDetails (pins): ${pinErr.message}`);
+    if (!pins || pins.length === 0) return [];
+
+    const intentIds = pins.map((p: any) => Number(p.intent_id));
+    const { data: intents, error: intentErr } = await supabase
+        .from("intents")
+        .select("id, label")
+        .in("id", intentIds);
+    if (intentErr) throw new Error(`fetchPinnedMedicineDetails (intents): ${intentErr.message}`);
+
+    const labelById = new Map<number, string>();
+    (intents ?? []).forEach((i: any) => labelById.set(Number(i.id), i.label));
+
+    return pins
+        .map((p: any) => ({
+            intentId: Number(p.intent_id),
+            label: labelById.get(Number(p.intent_id)) ?? "",
+            pinnedAt: p.created_at,
+        }))
+        // An intent that no longer resolves (deactivated/removed from the
+        // catalogue since it was pinned) is dropped rather than shown blank.
+        .filter((p) => p.label);
+}
+
 /**
  * A test panel's member tests, by name — "Fever Workup" resolves to CBC,
  * Widal, Dengue NS1, etc. via `test_panel_map`.
