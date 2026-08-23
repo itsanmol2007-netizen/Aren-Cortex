@@ -157,13 +157,17 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                     placeholder={t("launcherPlaceholder")}
                     className="fd-bare relative flex-1 text-[14px] font-[450] placeholder:font-[450]"
                 />
-                {/* Add Patient lives INSIDE the search bar (V3): a labelled deep
-                    indigo gradient button — the launcher's one loud element. */}
+                {/* Add Patient lives INSIDE the search bar (V3): a labelled solid-
+                    blue button with a soft glow — the launcher's one loud element.
+                    Was a blue→purple gradient; flattened to one brand blue
+                    (#2f6bed, same blue as the rest of Front Desk's primary
+                    actions) with a glow instead of a hue shift — session
+                    2026-08-23, Anmol's call: the gradient "looked terrible". */}
                 <button
                     type="button"
                     title={t("launcherAddTitle")}
                     onClick={() => onCreateNew("")}
-                    className="relative flex h-9 shrink-0 items-center gap-[6px] rounded-[10px] bg-[linear-gradient(155deg,#6366f1,#3d3ac9)] px-[13px] text-[12.5px] font-bold text-white shadow-[0_3px_12px_rgba(79,70,229,0.35)] transition-[box-shadow,transform,filter] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(79,70,229,0.5)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                    className="relative flex h-9 shrink-0 items-center gap-[6px] rounded-[10px] bg-[#2f6bed] px-[13px] text-[12.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[box-shadow,transform,background-color] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(47,107,237,0.28)]"
                 >
                     <Plus size={15} strokeWidth={2.6} />
                     <span className="max-[900px]:hidden">{t("addPatient")}</span>

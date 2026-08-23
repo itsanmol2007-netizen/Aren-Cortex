@@ -119,12 +119,15 @@ export function PatientWorkspace({ patient, history, historyLoading, onNewVisit,
                             <PenLine size={14.5} />
                             {t("editDetails")}
                         </button>
-                        {/* New Visit opens a door — it wears the brand gradient
-                            like the launcher + (§7.7). */}
+                        {/* New Visit opens a door — it wears the loud brand
+                            treatment, same solid-blue-with-glow as every other
+                            front-door button (§7.7, amended 2026-08-23: was a
+                            purple→blue gradient, flattened to solid #2f6bed —
+                            Anmol's call, the gradient "looked terrible"). */}
                         <button
                             type="button"
                             onClick={() => onNewVisit(patient)}
-                            className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-[18px] text-[13px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[filter,box-shadow] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.4)]"
+                            className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-[18px] text-[13px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[background-color,box-shadow] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(47,107,237,0.35)]"
                         >
                             <Plus size={15} strokeWidth={2.6} />
                             {t("newVisit")}

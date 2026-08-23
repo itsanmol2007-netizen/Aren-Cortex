@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ExternalLink, ArrowRightLeft, CheckCircle2, XCircle, MoreVertical, Printer } from "lucide-react";
+import { ExternalLink, ArrowRightLeft, CheckCircle2, XCircle, MoreVertical, Paperclip, Printer } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { tintFor } from "../statusStyle";
 import { maskPhone, padToken, formatShortDate } from "../utils";
@@ -14,9 +14,10 @@ type Props = {
     onOpen: (visit: TodayVisit) => void;
     onComplete: (visit: TodayVisit) => void;
     onCancel: (visit: TodayVisit) => void;
+    onAttachments: (visit: TodayVisit) => void;
 };
 
-export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }: Props) {
+export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, onAttachments }: Props) {
     const t = useT();
     const navigate = useNavigate();
     const [hovered, setHovered] = useState(false);
@@ -75,6 +76,9 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
                             {t("menuPrintRx")}
                         </MenuItem>
                     )}
+                    <MenuItem icon={<Paperclip size={15} className="opacity-70" />} onClick={() => { onAttachments(visit); closeMenu(); }}>
+                        {t("menuAttachments")}
+                    </MenuItem>
                     <div className="my-1 h-px bg-[#eef0f5]" />
                     <MenuItem danger icon={<XCircle size={15} className="opacity-70" />} onClick={() => { onCancel(visit); closeMenu(); }}>
                         {t("menuCancel")}

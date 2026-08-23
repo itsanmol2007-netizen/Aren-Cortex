@@ -14,6 +14,7 @@ import { Sidebar } from "./components/Sidebar";
 import { WorkspaceShell } from "./components/WorkspaceShell";
 import { VisitDetailModal } from "./components/VisitDetailModal";
 import { CreateVisitModal } from "./components/CreateVisitModal";
+import { VisitAttachmentsModal } from "./components/VisitAttachmentsModal";
 import { I18nProvider } from "./i18n/i18n";
 
 type CreateState = { existingPatient: DBPatient | null; prefillName: string };
@@ -39,6 +40,7 @@ function FrontDeskInner() {
     const doctors = useCachedDoctors(hospitalId).data;
     const [openVisit, setOpenVisit] = useState<TodayVisit | null>(null);
     const [createState, setCreateState] = useState<CreateState | null>(null);
+    const [attachmentsVisit, setAttachmentsVisit] = useState<TodayVisit | null>(null);
     const [now, setNow] = useState(() => new Date());
 
     useEffect(() => {
@@ -68,6 +70,7 @@ function FrontDeskInner() {
                         onOpen={(v) => setOpenVisit(v)}
                         onComplete={actions.completeVisit}
                         onCancel={actions.cancelVisit}
+                        onAttachments={(v) => setAttachmentsVisit(v)}
                         selectedVisitId={openVisit?.visit_id ?? null}
                         onAddPatient={() => setCreateState({ existingPatient: null, prefillName: "" })}
                     />
@@ -96,6 +99,13 @@ function FrontDeskInner() {
                     onClose={() => setCreateState(null)}
                     onUseExisting={(p) => setCreateState({ existingPatient: p, prefillName: "" })}
                     onCreate={actions.createNewVisit}
+                />
+            )}
+
+            {attachmentsVisit && (
+                <VisitAttachmentsModal
+                    visit={attachmentsVisit}
+                    onClose={() => setAttachmentsVisit(null)}
                 />
             )}
         </WorkspaceShell>

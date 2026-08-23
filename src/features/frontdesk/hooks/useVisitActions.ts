@@ -93,7 +93,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         gender: string;
         observableIds: number[];
         doctorId: string;
-    }): Promise<{ patientName: string } | null> => {
+    }): Promise<{ patientName: string; visitId: string } | null> => {
         if (!hospitalId) {
             toast.error("Not signed in to a clinic — cannot register a visit.");
             return null;
@@ -155,7 +155,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
                 },
             });
 
-            return { patientName };
+            return { patientName, visitId: visit.id };
         } catch (err: any) {
             toast.error(`Could not create visit: ${err.message}`);
             return null;

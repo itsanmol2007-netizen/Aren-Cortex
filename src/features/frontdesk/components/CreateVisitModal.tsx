@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
 import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
 import type { IntakeChip } from "@/lib/db/synapse";
+import { uploadAttachment } from "@/lib/db/attachments";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
 import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
 import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
+import { IntakeAttachmentsField, type StagedAttachment } from "./IntakeAttachmentsField";
 import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 
 type Props = {
@@ -28,7 +31,7 @@ type Props = {
         gender: string;
         observableIds: number[];
         doctorId: string;
-    }) => Promise<{ patientName: string } | null>;
+    }) => Promise<{ patientName: string; visitId: string } | null>;
 };
 
 export function CreateVisitModal({ existingPatient, prefillName, doctors, defaultDoctorId, onClose, onUseExisting, onCreate }: Props) {
@@ -42,6 +45,10 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [gender, setGender] = useState("");
     const [selectedSymptoms, setSelectedSymptoms] = useState<IntakeChip[]>([]);
     const [doctorId, setDoctorId] = useState(defaultDoctorId);
+    // Staged only — no visit_id exists yet to attach these to. Uploaded (same
+    // pipeline as everywhere else attachments happen) right after Save
+    // actually creates the visit; see handleSave.
+    const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
 
     // The doctor <select> has no placeholder option, so a value that is not in
     // `doctors` renders as the first option while still SUBMITTING the unlisted
@@ -163,7 +170,27 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             doctorId,
         });
         setSaving(false);
-        if (result) onClose();
+        if (result) {
+            // Best-effort, non-blocking — same rule as the observation writes
+            // above: a failed attachment must never be mistaken for a failed
+            // visit. The visit is already saved and the receptionist has
+            // already moved on by the time this settles, so failures surface
+            // as a toast rather than holding the modal open.
+            if (stagedAttachments.length) {
+                const { visitId } = result;
+                (async () => {
+                    for (const staged of stagedAttachments) {
+                        try {
+                            await uploadAttachment({ visitId, file: staged.file, attachmentType: staged.attachmentType });
+                        } catch (err) {
+                            console.warn("intake attachment upload failed (non-fatal):", err);
+                            toast.error(t("attachUploadFailed"));
+                        }
+                    }
+                })();
+            }
+            onClose();
+        }
     };
 
     // Enter anywhere in the form: save when complete, otherwise walk to the
@@ -210,11 +237,16 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         {t("cancel")}
                     </button>
                     {/* Registration is a front door, not a status change — it wears
-                        the brand gradient like the header mark and the launcher +. */}
+                        the loud brand treatment like the header mark and the launcher
+                        +. Was the purple→blue brand gradient; flattened to solid
+                        brand blue (#2f6bed) with a glow instead of a hue shift —
+                        session 2026-08-23, Anmol's call: the gradient "looked
+                        terrible". Every other front-door button (New Visit, Print,
+                        Retry) carries the identical treatment — see §7.7. */}
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[filter,box-shadow] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] disabled:opacity-50 disabled:hover:brightness-100"
+                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[background-color,box-shadow] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] disabled:opacity-50 disabled:hover:bg-[#2f6bed]"
                     >
                         {saving ? t("saving") : t("save")}
                         <ArrowRight size={15} strokeWidth={2.4} />
@@ -379,6 +411,9 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         ))}
                     </select>
                 </Field>
+
+                <SectionLabel text={t("secAttachments")} className="mt-[18px]" />
+                <IntakeAttachmentsField files={stagedAttachments} onChange={setStagedAttachments} />
             </div>
         </ModalShell>
     );
