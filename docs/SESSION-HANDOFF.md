@@ -1,4 +1,4 @@
-# Session handoff — 2026-08-23 (updated same session, fifth pass)
+# Session handoff — 2026-08-23 (updated same session, sixth pass)
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
@@ -8,10 +8,25 @@ the full picture.
 
 **Where this arc actually is:** Patients Overview is done and Anmol-confirmed
 against Ekanki's live data. Patient Record (rebuilt, density-fixed,
-prescription viewer + WhatsApp + compare added), the sidebar (rebuilt to 6
+prescription viewer + WhatsApp + compare added, now also carrying real
+per-visit physio data — body site/functional limitation/patient's account/
+exercises, both in the timeline and in Compare), the sidebar (rebuilt to 6
 destinations, then icon-badged for depth), and the new real Practice page
 are all done and `tsc`-clean but **none of it has been in front of Anmol
 yet** — that's the next real checkpoint, not a blocked-network problem.
+
+**Sixth-pass note:** Anmol's last message in-session was frustration
+("wtf do you mean by clean up 86 stuck visits, you completely forgot what
+i prompted you earlier") re-pasting the ENTIRE prescription-viewer/compare/
+WhatsApp/sidebar spec verbatim. **That work was already built and pushed**
+(commits `b4a025c`, `8c1c4d5`, before his message) — he likely hadn't
+registered that, or the stuck-visits question read as a tangent. Told him
+so directly, did NOT touch the 86 stuck visits (frustration ≠ authorization
+for a data mutation), and kept shipping backlog per his own instruction
+("pages which require less founder decision... you can make it now") —
+closed the `fetchPatientVisits` physio-fields gap this pass (see §1/§2).
+If he raises the same "already built" confusion again, point him at the
+running Patient Record page / git log rather than rebuilding anything.
 
 **Important correction to earlier passes of this file: Supabase MCP direct
 SQL access WORKS in this session** (confirmed live, `mcp__Supabase__
@@ -92,9 +107,12 @@ screenshots alone:**
   patients through the same window). **Not fixed — needs Anmol's go-ahead**
   before any bulk status change on real rows. Full write-up + the exact
   question to ask him is in `aren-cortex-context.md` §7.
-- **`fetchPatientVisits` missing physio fields** — still genuinely open,
-  unaffected by the above two. Real work for a dedicated physio-consult
-  session (extend `RealVisit` the same way `PatientRecordRow` already was).
+- **`fetchPatientVisits` missing physio fields** — RESOLVED this pass (6th).
+  `RealVisit` now carries body_sites/exercise_names/impairment_names/
+  story_duration/story_mechanism, same tables `buildPatientRecordRows`
+  already used. Wired into the Visit Timeline's expanded body and into
+  Compare Visits. Verified live: 70/82 completed visits have exercise data,
+  5 have body sites, 3 have a story — real signal, was write-only before.
 
 **Practice page — built for real, same day it was documented as blocked.**
 The blocker ("no standalone query resolves a pinned intent to a name")
@@ -108,21 +126,25 @@ empty state today (Dr Anmol Pandey has never pinned a medicine — 0 rows in
 
 ## 2. What's NOT done — pick up here, in order
 
-1. **Push this pass's commit** (3 gaps resolved + docs corrected + Practice
-   page built) — check `git status` first.
+1. **Push this pass's commit** (physio fields on `fetchPatientVisits`,
+   wired into timeline + compare, docs updated) — check `git status` first.
 2. **Nothing from this whole session has been in front of Anmol.** That's
-   the real next checkpoint for: Patient Record's new features, the
-   sidebar (both passes), and the new Practice page.
+   the real next checkpoint for: Patient Record's new features (including
+   this pass's physio fields), the sidebar (both passes), and Practice.
 3. **Ask Anmol** whether the 86 stuck `serving` visits (5 patients,
    2026-08-12 onward) are safe to clean up — see the full write-up in
    `aren-cortex-context.md` §7. Don't touch the data without his answer.
+   He has NOT authorized this — his frustrated message this pass was about
+   feeling unheard, not a go-ahead on the data.
 4. **If "Ekanki" as a doctor name recurs**, ask Anmol exactly where on
    screen and get a fresh screenshot/description — the identity-resolution
    chain (`doctors`/`users`/`loadIdentity()`/`App.tsx`'s `DOCTOR` object)
    is confirmed correct end-to-end this session, so re-tracing it from
    scratch is very unlikely to find anything new.
-5. **`fetchPatientVisits` missing physio fields** (see §1) — real work,
-   not blocked on anything, just not done.
+5. **Visit-type badge on the timeline still reads generic "Consultation"**
+   for exercise-only physio visits (`hasMeds ? "Prescription" : hasFindings
+   ? "Examination" : "Consultation"` doesn't know about exercises yet) —
+   small, real, not done. Give it a physio branch.
 6. **Status filter dropdown** (Overview page) — not built, think about
    whether it's meaningful first (`fetchRecentPatients` only ever returns
    completed visits).

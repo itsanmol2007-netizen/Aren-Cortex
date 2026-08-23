@@ -157,6 +157,56 @@ export function CompareVisitsModal({
                         older={older.findings.map((f) => f.name)}
                         newer={newer.findings.map((f) => f.name)}
                     />
+                    <ChipDiffSection title="Body Site" older={older.body_sites} newer={newer.body_sites} />
+                    <ChipDiffSection
+                        title="Functional Limitation"
+                        older={older.impairment_names}
+                        newer={newer.impairment_names}
+                    />
+
+                    {(older.story_mechanism || newer.story_mechanism) && (
+                        <div className="prec-cmp-section">
+                            <div className="prec-cmp-section-label">Patient's Account</div>
+                            <div className="prec-cmp-columns">
+                                <div>
+                                    <div className="prec-cmp-col-date">{formatDate(older.created_at)}</div>
+                                    {older.story_mechanism
+                                        ? <span className="prec-cmp-story-text">{older.story_mechanism}</span>
+                                        : <span className="prec-cmp-empty">None recorded</span>}
+                                </div>
+                                <div>
+                                    <div className="prec-cmp-col-date">{formatDate(newer.created_at)}</div>
+                                    {newer.story_mechanism
+                                        ? <span className="prec-cmp-story-text">{newer.story_mechanism}</span>
+                                        : <span className="prec-cmp-empty">None recorded</span>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {(older.exercise_names.length > 0 || newer.exercise_names.length > 0) && (
+                        <div className="prec-cmp-section">
+                            <div className="prec-cmp-section-label">Exercises Prescribed</div>
+                            <div className="prec-cmp-columns">
+                                <div>
+                                    <div className="prec-cmp-col-date">{formatDate(older.created_at)}</div>
+                                    {older.exercise_names.length ? older.exercise_names.map((label) => (
+                                        <div key={label} className="prec-cmp-med-row">
+                                            <Pill size={10} />{label}
+                                        </div>
+                                    )) : <span className="prec-cmp-empty">None</span>}
+                                </div>
+                                <div>
+                                    <div className="prec-cmp-col-date">{formatDate(newer.created_at)}</div>
+                                    {newer.exercise_names.length ? newer.exercise_names.map((label) => (
+                                        <div key={label} className="prec-cmp-med-row">
+                                            <Pill size={10} />{label}
+                                        </div>
+                                    )) : <span className="prec-cmp-empty">None</span>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {(older.medicines.length > 0 || newer.medicines.length > 0) && (
                         <div className="prec-cmp-section">
@@ -185,6 +235,10 @@ export function CompareVisitsModal({
                     {measureRows.length === 0 &&
                         !older.symptoms.length && !newer.symptoms.length &&
                         !older.findings.length && !newer.findings.length &&
+                        !older.body_sites.length && !newer.body_sites.length &&
+                        !older.impairment_names.length && !newer.impairment_names.length &&
+                        !older.story_mechanism && !newer.story_mechanism &&
+                        !older.exercise_names.length && !newer.exercise_names.length &&
                         !older.medicines.length && !newer.medicines.length && (
                             <p className="prec-cmp-empty" style={{ textAlign: "center", padding: "20px 0" }}>
                                 Neither visit has enough recorded to compare.

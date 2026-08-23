@@ -230,6 +230,10 @@ function VisitRow({
     const hasMeds = visit.medicines.length > 0;
     const hasSymptoms = visit.symptoms.length > 0;
     const hasFindings = visit.findings.length > 0;
+    const hasBodySites = visit.body_sites.length > 0;
+    const hasExercises = visit.exercise_names.length > 0;
+    const hasImpairments = visit.impairment_names.length > 0;
+    const hasStory = Boolean(visit.story_duration || visit.story_mechanism);
     const abnormal = visit.findings.filter((f) => f.is_abnormal);
     const visitType = hasMeds ? "Prescription" : hasFindings ? "Examination" : "Consultation";
 
@@ -320,6 +324,39 @@ function VisitRow({
                                 )}
                             </div>
                         )}
+                        {/* Physio-specific, real per-visit data — same tables the
+                            Overview table's snapshot already reads, just newly
+                            selected here too (see RealVisit's own header). Only
+                            renders what this particular visit actually has. */}
+                        {(hasBodySites || hasImpairments) && (
+                            <div className="prec-tl-two-col">
+                                {hasBodySites && (
+                                    <div>
+                                        <div className="prec-tl-section-label">Body Site</div>
+                                        <div className="prec-snapshot-chips">
+                                            {visit.body_sites.map((s) => <span key={s} className="prec-symptom-chip">{s}</span>)}
+                                        </div>
+                                    </div>
+                                )}
+                                {hasImpairments && (
+                                    <div>
+                                        <div className="prec-tl-section-label">Functional Limitation</div>
+                                        <div className="prec-snapshot-chips">
+                                            {visit.impairment_names.map((s) => <span key={s} className="prec-symptom-chip">{s}</span>)}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {hasStory && (
+                            <div>
+                                <div className="prec-tl-section-label">Patient's Account</div>
+                                <div className="prec-tl-story">
+                                    {visit.story_duration && <span className="prec-tl-story-duration">{visit.story_duration}</span>}
+                                    {visit.story_mechanism && <span className="prec-tl-story-text">{visit.story_mechanism}</span>}
+                                </div>
+                            </div>
+                        )}
                         {hasMeds && (
                             <div>
                                 <div className="prec-tl-section-label">Prescription</div>
@@ -338,7 +375,20 @@ function VisitRow({
                                 </div>
                             </div>
                         )}
-                        {!hasSymptoms && !hasFindings && !hasMeds && (
+                        {hasExercises && (
+                            <div>
+                                <div className="prec-tl-section-label">Exercises Prescribed</div>
+                                <div className="prec-tl-med-list">
+                                    {visit.exercise_names.map((label) => (
+                                        <div key={label} className="prec-tl-med-row">
+                                            <TrendingUp size={10} className="prec-tl-med-icon" />
+                                            <span className="prec-tl-med-name">{label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {!hasSymptoms && !hasFindings && !hasMeds && !hasBodySites && !hasImpairments && !hasExercises && !hasStory && (
                             <div className="prec-tl-empty">No clinical data recorded for this visit.</div>
                         )}
                     </div>

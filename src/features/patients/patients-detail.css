@@ -502,6 +502,27 @@ button.prec-trend-card.is-clickable:hover {
     color: #94a3b8;
 }
 
+/* The patient's own words on how a complaint started (visit_story) — plain
+   text, not a chip: it's a sentence, not a discrete tag like a symptom. */
+.prec-tl-story {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.prec-tl-story-duration {
+    font-size: 11px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.prec-tl-story-text {
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.5;
+    font-style: italic;
+}
+
 .prec-tl-empty {
     font-size: 12px;
     color: #94a3b8;
@@ -869,4 +890,12 @@ button.prec-trend-card.is-clickable:hover {
     font-size: 12px;
     color: #94a3b8;
     font-style: italic;
+}
+
+.prec-cmp-story-text {
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.5;
+    font-style: italic;
+    display: block;
 }

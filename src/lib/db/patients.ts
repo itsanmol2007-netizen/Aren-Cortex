@@ -494,6 +494,26 @@ export type RealVisit = {
      *  same ReviewModal/fetchPrescriptionRenderData pipeline Print RX and
      *  Consult already use, instead of a second prescription renderer. */
     prescription_id: string | null;
+    /**
+     * Physio-relevant, added 2026-08-23 — same fields `buildPatientRecordRows`
+     * already fetched for the Overview table, closing the gap documented in
+     * aren-cortex-context.md §7: this loader is the ONLY source for the
+     * per-patient Visit Timeline and Compare Visits, and until now it simply
+     * never selected these columns, so a physio visit's body site, exercises
+     * and the patient's own story were write-only from this page's point of
+     * view even though the data was there. Real reads, same tables, same
+     * shaping as buildPatientRecordRows — not a second implementation.
+     */
+    /** e.g. "Right knee" — from visit_body_sites, this visit only. */
+    body_sites: string[];
+    /** exercise labels prescribed this visit, from prescription_exercises. */
+    exercise_names: string[];
+    /** functional-limitation labels this visit, from visit_impairments. */
+    impairment_names: string[];
+    /** visit_story.duration_text, e.g. "3 weeks". Null if no story recorded. */
+    story_duration: string | null;
+    /** visit_story.mechanism, the patient's own words on how it started. */
+    story_mechanism: string | null;
 };
 
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
@@ -557,6 +577,9 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
     const rxIds = (rxRows ?? []).map((r: any) => r.id);
 
     const medsByRx = new Map<string, RealVisitMedicine[]>();
+    // Exercise labels are already text on prescription_exercises — no id
+    // lookup needed, unlike medicines (same as buildPatientRecordRows above).
+    const exByVisitId = new Map<string, string[]>();
     if (rxIds.length) {
         const { data: pmRows } = await supabase
             .from("prescription_medicines")
@@ -583,10 +606,56 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
             });
             medsByRx.set(pm.prescription_id, list);
         }
+
+        const { data: peRows } = await supabase
+            .from("prescription_exercises")
+            .select("prescription_id, label, sort_order")
+            .in("prescription_id", rxIds)
+            .order("sort_order", { ascending: true });
+        for (const pe of (peRows ?? [])) {
+            const visitId = [...rxByVisit.entries()].find(([, rxId]) => rxId === pe.prescription_id)?.[0];
+            if (!visitId) continue;
+            const list = exByVisitId.get(visitId) ?? [];
+            list.push(pe.label);
+            exByVisitId.set(visitId, list);
+        }
+    }
+
+    const { data: bsRows } = await supabase
+        .from("visit_body_sites")
+        .select("visit_id, region, aspect, side")
+        .in("visit_id", visitIds);
+    const bodySitesByVisit = new Map<string, string[]>();
+    for (const r of (bsRows ?? []) as { visit_id: string; region: BodyRegion; aspect: BodyAspect; side: BodySide | null }[]) {
+        const list = bodySitesByVisit.get(r.visit_id) ?? [];
+        const label = siteLabel(r.region, r.aspect, r.side);
+        if (!list.includes(label)) list.push(label);
+        bodySitesByVisit.set(r.visit_id, list);
+    }
+
+    const { data: impRows } = await supabase
+        .from("visit_impairments")
+        .select("visit_id, label")
+        .in("visit_id", visitIds);
+    const impairmentsByVisit = new Map<string, string[]>();
+    for (const r of (impRows ?? []) as { visit_id: string; label: string }[]) {
+        const list = impairmentsByVisit.get(r.visit_id) ?? [];
+        list.push(r.label);
+        impairmentsByVisit.set(r.visit_id, list);
+    }
+
+    const { data: storyRows } = await supabase
+        .from("visit_story")
+        .select("visit_id, duration_text, mechanism")
+        .in("visit_id", visitIds);
+    const storyByVisit = new Map<string, { duration: string | null; mechanism: string | null }>();
+    for (const r of (storyRows ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
+        storyByVisit.set(r.visit_id, { duration: r.duration_text, mechanism: r.mechanism });
     }
 
     return visits.map((v) => {
         const rxId = rxByVisit.get(v.id);
+        const story = storyByVisit.get(v.id);
         return {
             id: v.id,
             created_at: v.created_at,
@@ -608,6 +677,11 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
             medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
             vitals: (v as { vitals?: Record<string, unknown> | null }).vitals ?? null,
             prescription_id: rxId ?? null,
+            body_sites: bodySitesByVisit.get(v.id) ?? [],
+            exercise_names: exByVisitId.get(v.id) ?? [],
+            impairment_names: impairmentsByVisit.get(v.id) ?? [],
+            story_duration: story?.duration ?? null,
+            story_mechanism: story?.mechanism ?? null,
         };
     });
 }

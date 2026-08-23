@@ -300,26 +300,26 @@ brand-priority over label-priority).
   plan linking has been working correctly for these five patients for
   weeks. "Session N of M" can be trusted wherever `care_plan_progress` is
   non-null. No further action needed here.
-- **`fetchPatientVisits` (`lib/db/patients.ts`, used by the Patient Record
-  page) has no physio fields at all — found 2026-08-23, second pass on the
-  Patient Record page.** `PatientRecordRow` (the Overview table's row) got
-  real `body_sites`/`exercise_names`/`impairment_names` in the first pass of
-  this arc; `RealVisit`/`fetchPatientVisits` (the PER-VISIT history the
-  Record page's timeline reads) never did — it still only selects
-  symptoms/findings/medicines via the v1-legacy join. Concretely, live
-  against Rohan Malhotra: every visit in his timeline reads as generic
-  "Consultation" (the badge logic is `hasMeds ? "Prescription" : hasFindings
-  ? "Examination" : "Consultation"`, and physio visits routinely have
-  neither) even though the account's own real exercise data exists — the
-  Identity card's "Last Exercise" stat only manages to show something real
-  because it reads `row.exercise_names[0]` off the Overview row instead, which
-  is only ever the MOST RECENT exercise, not per-visit. A physiotherapist
-  opening a past session in the timeline cannot see what was actually
-  prescribed that day. Needs: extend `RealVisit`/`fetchPatientVisits` with
-  the same `body_sites`/`exercise_names`/`impairment_names` fields
-  `buildPatientRecordRows` already knows how to compute, then give
-  `VisitRow` (`PatientRecord.tsx`) a physio-aware branch on the visit-type
-  badge and expanded body, same specialty-branch discipline as rule 16.
+- **`fetchPatientVisits` missing physio fields — RESOLVED 2026-08-23, same
+  day it was documented.** `RealVisit` now carries `body_sites`/
+  `exercise_names`/`impairment_names`/`story_duration`/`story_mechanism`,
+  fetched the same way `buildPatientRecordRows` already did for the
+  Overview table (`visit_body_sites`, `visit_impairments`, `visit_story`,
+  `prescription_exercises` — same queries, not a second implementation).
+  Wired into `VisitRow`'s expanded body (`PatientRecord.tsx`) as a "Body
+  Site"/"Functional Limitation" chip row, a "Patient's Account" text block,
+  and an "Exercises Prescribed" list alongside the existing medicines list
+  — each section renders only when that visit actually has the data, same
+  as the existing symptoms/findings sections. Also wired into
+  `CompareVisitsModal` (body site/impairment diff, story side-by-side,
+  exercises side-by-side) so a two-visit comparison shows the same signal.
+  Verified live against Dr Anmol Pandey's real account before wiring:
+  70 of 82 completed visits have exercise data, 5 have body sites, 3 have
+  a recorded story — this was write-only from the Record page's point of
+  view until now, not empty data. The generic "Consultation" badge on
+  exercise-only visits (`hasMeds ? "Prescription" : hasFindings ?
+  "Examination" : "Consultation"`) is still there — a visit-type badge
+  branch for physio visits is a smaller follow-up, not blocking.
 - **The visit-count discrepancy — RESOLVED 2026-08-23 with direct live SQL,
   and it's test noise, not a bug.** Was a 24-vs-6 mismatch on Rohan
   Malhotra between `row.visit_count` (counts every status) and
