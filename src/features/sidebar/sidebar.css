@@ -401,6 +401,70 @@
     color: rgba(255, 255, 255, 0.85);
 }
 
+/* ── Icon badges — depth instead of a bare flat glyph ─────────────────────
+   A monoline icon alone, 14px on a dark panel, reads thin and interchangeable
+   at a glance — closer to a flat emoji than a considered icon. Same lucide
+   icons (never swapping the library), but each sits in a small filled,
+   tinted, gently glowing chip — the same "icon gets a colored badge" move
+   already used elsewhere in this app (.prec-panel-card-icon's tone
+   variants, the doctor-initials avatar), just adapted for a dark panel:
+   a soft gradient fill, a 1px tone-colored border, and a subtle outer glow
+   plus inset highlight for real dimensionality, not a flat rectangle. ──── */
+
+.sidebar-nav-icon-badge {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: filter 140ms ease, transform 140ms ease;
+}
+
+.sidebar-nav-item:hover .sidebar-nav-icon-badge {
+    transform: translateY(-1px);
+}
+
+.sidebar-nav-icon-badge.tone-blue {
+    background: linear-gradient(155deg, rgba(59, 130, 246, 0.28), rgba(29, 78, 216, 0.14));
+    border: 1px solid rgba(96, 165, 250, 0.38);
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    color: #93c5fd;
+}
+
+.sidebar-nav-icon-badge.tone-teal {
+    background: linear-gradient(155deg, rgba(45, 212, 191, 0.26), rgba(13, 148, 136, 0.14));
+    border: 1px solid rgba(94, 234, 212, 0.36);
+    box-shadow: 0 0 10px rgba(45, 212, 191, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    color: #5eead4;
+}
+
+.sidebar-nav-icon-badge.tone-purple {
+    background: linear-gradient(155deg, rgba(168, 85, 247, 0.28), rgba(126, 34, 206, 0.14));
+    border: 1px solid rgba(192, 132, 252, 0.38);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    color: #d8b4fe;
+}
+
+.sidebar-nav-icon-badge.tone-amber {
+    background: linear-gradient(155deg, rgba(245, 158, 11, 0.26), rgba(180, 83, 9, 0.14));
+    border: 1px solid rgba(252, 211, 77, 0.34);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    color: #fcd34d;
+}
+
+.sidebar-nav-icon-badge.tone-slate {
+    background: linear-gradient(155deg, rgba(148, 163, 184, 0.22), rgba(71, 85, 105, 0.14));
+    border: 1px solid rgba(203, 213, 225, 0.28);
+    box-shadow: 0 0 8px rgba(148, 163, 184, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    color: #cbd5e1;
+}
+
+.sidebar-nav-item.is-active .sidebar-nav-icon-badge {
+    filter: brightness(1.25) saturate(1.15);
+}
+
 /* ── Help & Support — a utility, not a destination ────────────────────────
    Anmol's mockup sets it apart with a "?" and less visual weight than the
    six real jobs above it: smaller, more muted, no active-state left bar

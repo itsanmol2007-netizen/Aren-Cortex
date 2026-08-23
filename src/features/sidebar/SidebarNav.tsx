@@ -61,6 +61,10 @@ type NavItem =
         page: SidebarPage;
         /** Small, muted treatment — Help & Support only. */
         variant?: "utility";
+        /** Which color badge the icon sits in — gives it depth (a filled,
+         *  tinted chip) instead of a bare monoline glyph. Omitted for
+         *  "utility" items, which stay deliberately flat/muted. */
+        tone?: "blue" | "teal" | "purple" | "amber" | "slate";
     };
 
 type SidebarNavProps = {
@@ -82,12 +86,14 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Patients",
             icon: <Users size={14} />,
             page: "patients",
+            tone: "blue",
         },
         {
             type: "page",
             label: "Communication",
             icon: <MessageSquare size={14} />,
             page: "communication",
+            tone: "teal",
         },
         { type: "divider" },
         {
@@ -95,12 +101,14 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Practice",
             icon: <Stethoscope size={14} />,
             page: "practice",
+            tone: "purple",
         },
         {
             type: "page",
             label: "Clinic",
             icon: <Building2 size={14} />,
             page: "clinic",
+            tone: "amber",
         },
         { type: "divider" },
         {
@@ -108,6 +116,7 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Settings",
             icon: <Settings size={14} />,
             page: "settings",
+            tone: "slate",
         },
         { type: "divider" },
         {
@@ -141,14 +150,19 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
                 }
 
                 // type === "page"
+                const isUtility = item.variant === "utility";
                 return (
                     <button
                         key={`page-${idx}`}
                         type="button"
-                        className={`sidebar-nav-item${activePage === item.page ? " is-active" : ""}${item.variant === "utility" ? " variant-utility" : ""}`}
+                        className={`sidebar-nav-item${activePage === item.page ? " is-active" : ""}${isUtility ? " variant-utility" : ""}`}
                         onClick={() => onNavigate(item.page)}
                     >
-                        <span className="sidebar-nav-icon">{item.icon}</span>
+                        {isUtility ? (
+                            <span className="sidebar-nav-icon">{item.icon}</span>
+                        ) : (
+                            <span className={`sidebar-nav-icon-badge tone-${item.tone ?? "slate"}`}>{item.icon}</span>
+                        )}
                         {item.label}
                     </button>
                 );
