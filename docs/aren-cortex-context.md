@@ -317,9 +317,8 @@ brand-priority over label-priority).
   70 of 82 completed visits have exercise data, 5 have body sites, 3 have
   a recorded story — this was write-only from the Record page's point of
   view until now, not empty data. The generic "Consultation" badge on
-  exercise-only visits (`hasMeds ? "Prescription" : hasFindings ?
-  "Examination" : "Consultation"`) is still there — a visit-type badge
-  branch for physio visits is a smaller follow-up, not blocking.
+  exercise-only visits was fixed the same pass (see `visitTypeLabel()`
+  below).
 - **The visit-count discrepancy — RESOLVED 2026-08-23 with direct live SQL,
   and it's test noise, not a bug.** Was a 24-vs-6 mismatch on Rohan
   Malhotra between `row.visit_count` (counts every status) and
@@ -347,6 +346,32 @@ brand-priority over label-priority).
   future session can run after confirming the exact id list with him
   first — never assume "looks like test data" is authorization to change
   it.
+  **Follow-up, same day — this is what made Patient Record "look trash".**
+  Anmol tested the app and called Patient Record "trash... maybe because we
+  don't have actually anything there." Traced it: his OWN test patients
+  ("Anmol" x2, "Test") are exactly the ones carrying most of these 86 stuck
+  rows (one "Anmol" patient: 0 completed / 2 stuck; "Test": 2 completed / 57
+  stuck) — and `fetchPatientVisits` used to hard-filter to
+  `status="completed"` only, so opening one of those patients showed a
+  populated header (`row.visit_count` counts every status) directly above a
+  totally empty timeline/trend section. **Fixed at the data layer, not by
+  touching the rows**: `fetchPatientVisits` now fetches every status
+  `visitStatusKind()` doesn't call "inactive" (reusing that shared
+  categorisation, not a second exclusion list), and `PatientRecord.tsx`
+  surfaces the non-completed ones with an honest "N visits not yet finished
+  in Consult" notice instead of silently excluding them. This makes the
+  page correct regardless of whether the 86 stuck rows ever get cleaned up
+  — the cleanup question above is now genuinely just data hygiene, not a
+  UI-correctness blocker.
+- **Visit-type badge duplicated the same computation twice — fixed
+  2026-08-23, same pass as the fetchPatientVisits filter fix.** The
+  `hasMeds ? "Prescription" : hasFindings ? "Examination" : "Consultation"`
+  logic lived inline in `PatientRecord.tsx`'s `VisitRow` and was about to be
+  copied a second time into `CompareVisitsModal.tsx` — pulled into
+  `visitTypeLabel()` in `features/patients/visitStatus.ts` instead (rule
+  19), and given a fourth branch: exercises now count too (`"Exercise
+  Plan"`), so a physio visit with exercises prescribed but no formal
+  "finding" stops reading as generic "Consultation".
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: still not built — the real API integration

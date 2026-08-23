@@ -33,6 +33,7 @@ import {
     ArrowUp,
     Calendar,
     ChevronDown,
+    Clock,
     FileText,
     FlaskConical,
     MessageCircle,
@@ -60,6 +61,7 @@ import ReviewModal from "../../components/ReviewModal";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
 import { snapshotFor, visitNoun, type SnapshotChip } from "../synapse/patientSnapshot";
+import { visitStatusKind, visitTypeLabel } from "./visitStatus";
 import { deriveRanked, RankedBarList } from "./RankedBarList";
 import { CompareVisitsModal } from "./CompareVisitsModal";
 import { buildWhatsAppLink } from "../../lib/whatsapp";
@@ -235,7 +237,7 @@ function VisitRow({
     const hasImpairments = visit.impairment_names.length > 0;
     const hasStory = Boolean(visit.story_duration || visit.story_mechanism);
     const abnormal = visit.findings.filter((f) => f.is_abnormal);
-    const visitType = hasMeds ? "Prescription" : hasFindings ? "Examination" : "Consultation";
+    const visitType = visitTypeLabel(visit);
 
     return (
         <div className="prec-tl-row">
@@ -447,6 +449,17 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
     }, [identity.hospitalId]);
 
     const completedVisits = useMemo(() => visits.filter((v) => v.status === "completed"), [visits]);
+    // `fetchPatientVisits` now returns every non-discarded status (see its own
+    // header) rather than silently dropping anything not yet `completed` —
+    // this is what still hasn't finished in Consult. Trends/frequency counts
+    // stay on `completedVisits` only (a mid-consult vitals set isn't a
+    // trustworthy reading), but the timeline surfaces these rather than
+    // leaving `row.visit_count` (which counts every status) unexplained
+    // against an empty-looking page below it.
+    const inProgressVisits = useMemo(
+        () => visits.filter((v) => visitStatusKind(v.status) === "active" || visitStatusKind(v.status) === "waiting"),
+        [visits]
+    );
     const lastVisit = completedVisits[0];
     const isPhysio = specialty.id === "physiotherapy";
     const noun = visitNoun(specialty);
@@ -699,10 +712,25 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                     )}
                                 </div>
                                 <div className="prec-panel-card-body">
+                                    {inProgressVisits.length > 0 && (
+                                        <div className="prec-tl-inprogress-notice">
+                                            <Clock size={12} />
+                                            <span>
+                                                {inProgressVisits.length === 1
+                                                    ? "1 visit hasn't been finished in Consult yet"
+                                                    : `${inProgressVisits.length} visits haven't been finished in Consult yet`}
+                                                {" — it'll appear below once completed."}
+                                            </span>
+                                        </div>
+                                    )}
                                     {completedVisits.length === 0 ? (
                                         <div className="prec-empty-section">
                                             <FlaskConical size={22} />
-                                            <p>No completed visits on record.</p>
+                                            <p>
+                                                {inProgressVisits.length > 0
+                                                    ? "No visit has been finished for this patient yet."
+                                                    : "No completed visits on record."}
+                                            </p>
                                         </div>
                                     ) : (
                                         <>

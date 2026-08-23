@@ -30,3 +30,28 @@ export const VISIT_STATUS_LABEL: Record<VisitStatusKind, string> = {
     done: "Completed",
     inactive: "Inactive",
 };
+
+/**
+ * "Prescription" / "Exercise Plan" / "Examination" / "Consultation" — the
+ * visit-type badge shown on the Visit Timeline and in Compare Visits.
+ * Was PatientRecord.tsx's own inline `hasMeds ? "Prescription" : hasFindings
+ * ? "Examination" : "Consultation"`, duplicated a second time verbatim in
+ * CompareVisitsModal — pulled out per rule 19 rather than let the two drift.
+ * Structural type, not `RealVisit`, so this file (imported by lib/db/patients.ts)
+ * doesn't import back from it.
+ *
+ * Exercises are checked before findings/added 2026-08-23 alongside the
+ * `exercise_names` wiring itself: a physio visit with exercises prescribed
+ * but no formal "finding" recorded was reading as generic "Consultation",
+ * exactly the kind of visit the physio account has the most of.
+ */
+export function visitTypeLabel(v: {
+    medicines: unknown[];
+    exercise_names: string[];
+    findings: unknown[];
+}): string {
+    if (v.medicines.length > 0) return "Prescription";
+    if (v.exercise_names.length > 0) return "Exercise Plan";
+    if (v.findings.length > 0) return "Examination";
+    return "Consultation";
+}

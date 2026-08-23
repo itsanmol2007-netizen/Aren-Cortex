@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import type { DBSymptom, DBFinding } from "./reference";
 import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../body/anatomy";
+import { visitStatusKind } from "../../features/patients/visitStatus";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -517,20 +518,35 @@ export type RealVisit = {
 };
 
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
+    // Used to filter to status="completed" only. That silently dropped every
+    // visit still `serving`/`waiting` — for a patient whose most recent visit
+    // hasn't been finished in Consult yet, this page showed a flat empty
+    // timeline/trend graph while the Overview row (a different query) still
+    // showed a nonzero visit count, an unexplained mismatch that just reads
+    // as broken. Found 2026-08-23 after Anmol reported the page looking
+    // "trash" — traced to exactly this: his own test patients have the
+    // most visits stuck `serving` of anyone in the account (see
+    // aren-cortex-context.md §7's "86 stuck visits" entry). Now fetches
+    // every status except the ones `visitStatusKind` categorises "inactive"
+    // (discarded/cancelled) — reusing that shared categorisation (rule 19)
+    // rather than a second hardcoded exclusion list. Callers still derive
+    // `completedVisits` themselves for anything that must be finished data
+    // (trend graphs, frequency counts) — this just stops silently discarding
+    // the rest before it even reaches them.
     const { data: visits, error: visitErr } = await supabase
         .from("visits")
         .select("id, created_at, assigned_doctor_id, status, vitals")
         .eq("patient_id", patientId)
-        .eq("status", "completed")
         .order("created_at", { ascending: false })
         .limit(20);
 
     if (visitErr) throw new Error(`fetchPatientVisits: ${visitErr.message}`);
-    if (!visits || visits.length === 0) return [];
+    const liveVisits = (visits ?? []).filter((v) => visitStatusKind(v.status) !== "inactive");
+    if (liveVisits.length === 0) return [];
 
-    const visitIds = visits.map((v) => v.id);
+    const visitIds = liveVisits.map((v) => v.id);
 
-    const doctorIds = [...new Set(visits.map((v) => v.assigned_doctor_id).filter(Boolean))];
+    const doctorIds = [...new Set(liveVisits.map((v) => v.assigned_doctor_id).filter(Boolean))];
     const doctorMap = new Map<string, string>();
     if (doctorIds.length) {
         const { data: docs } = await supabase
@@ -653,7 +669,7 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
         storyByVisit.set(r.visit_id, { duration: r.duration_text, mechanism: r.mechanism });
     }
 
-    return visits.map((v) => {
+    return liveVisits.map((v) => {
         const rxId = rxByVisit.get(v.id);
         const story = storyByVisit.get(v.id);
         return {

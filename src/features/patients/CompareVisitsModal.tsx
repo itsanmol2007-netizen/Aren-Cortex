@@ -13,14 +13,33 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, Pill, X } from "lucide-react";
+import {
+    Activity,
+    AlertCircle,
+    ArrowDown,
+    ArrowRight,
+    ArrowUp,
+    Dumbbell,
+    MessageSquareQuote,
+    MapPin,
+    Pill,
+    Ruler,
+    Stethoscope,
+    User,
+    X,
+} from "lucide-react";
 import type { RealVisit } from "../../lib/db";
 import { FIELD_BY_KEY } from "../consult/measures";
 import { readValue, verdictFor, formatDelta, formatValue, type TrendVerdict } from "../consult/trend";
+import { visitTypeLabel } from "./visitStatus";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function daysBetween(a: string, b: string): number {
+    return Math.round((+new Date(b) - +new Date(a)) / 86400000);
 }
 
 /** Which side is older/newer — the diff reads "what changed since the
@@ -72,9 +91,10 @@ function VerdictIcon({ verdict, rising }: { verdict: TrendVerdict; rising: boole
 }
 
 function ChipDiffSection({
-    title, older, newer,
+    title, icon, older, newer,
 }: {
     title: string;
+    icon: React.ReactNode;
     older: string[];
     newer: string[];
 }) {
@@ -82,7 +102,7 @@ function ChipDiffSection({
     if (!shared.length && !added.length && !resolved.length) return null;
     return (
         <div className="prec-cmp-section">
-            <div className="prec-cmp-section-label">{title}</div>
+            <div className="prec-cmp-section-label">{icon}{title}</div>
             <div className="prec-cmp-chips">
                 {added.map((s) => <span key={`a-${s}`} className="prec-cmp-chip is-added">+ {s}</span>)}
                 {shared.map((s) => <span key={`s-${s}`} className="prec-cmp-chip">{s}</span>)}
@@ -104,6 +124,7 @@ export function CompareVisitsModal({
 
     const [older, newer] = useMemo(() => orderByDate(visitA, visitB), [visitA, visitB]);
     const measureRows = useMemo(() => buildMeasureRows(older, newer), [older, newer]);
+    const gapDays = daysBetween(older.created_at, newer.created_at);
 
     return (
         <div className="prec-modal-overlay" onClick={onClose}>
@@ -121,16 +142,38 @@ export function CompareVisitsModal({
                     <div>
                         <div className="prec-modal-eyebrow">Compare Visits</div>
                         <div className="prec-modal-title">{formatDate(older.created_at)} → {formatDate(newer.created_at)}</div>
+                        <div className="prec-cmp-gap">
+                            {gapDays === 0 ? "Same day" : gapDays === 1 ? "1 day apart" : `${gapDays} days apart`}
+                        </div>
                     </div>
                     <button type="button" className="prec-modal-close" onClick={onClose} aria-label="Close">
                         <X size={14} />
                     </button>
                 </div>
 
+                {/* Meta strip — visit type + attending doctor per side, so the
+                    modal opens with real substance above the fold rather than
+                    only a date range. Anmol, 2026-08-23: "saying very less
+                    information by age of now". */}
+                <div className="prec-cmp-meta-strip">
+                    <div className="prec-cmp-meta-col">
+                        <span className="prec-cmp-meta-type">{visitTypeLabel(older)}</span>
+                        {older.doctor_name && (
+                            <span className="prec-cmp-meta-doctor"><User size={10} />{older.doctor_name}</span>
+                        )}
+                    </div>
+                    <div className="prec-cmp-meta-col">
+                        <span className="prec-cmp-meta-type">{visitTypeLabel(newer)}</span>
+                        {newer.doctor_name && (
+                            <span className="prec-cmp-meta-doctor"><User size={10} />{newer.doctor_name}</span>
+                        )}
+                    </div>
+                </div>
+
                 <div className="prec-modal-body">
                     {measureRows.length > 0 && (
                         <div className="prec-cmp-section">
-                            <div className="prec-cmp-section-label">Measurements</div>
+                            <div className="prec-cmp-section-label"><Ruler size={11} />Measurements</div>
                             <div className="prec-cmp-measure-list">
                                 {measureRows.map((r) => {
                                     const rising = r.to - r.from > 0;
@@ -151,22 +194,34 @@ export function CompareVisitsModal({
                         </div>
                     )}
 
-                    <ChipDiffSection title="Complaints" older={older.symptoms} newer={newer.symptoms} />
+                    <ChipDiffSection
+                        title="Complaints"
+                        icon={<Stethoscope size={11} />}
+                        older={older.symptoms}
+                        newer={newer.symptoms}
+                    />
                     <ChipDiffSection
                         title="Findings"
+                        icon={<AlertCircle size={11} />}
                         older={older.findings.map((f) => f.name)}
                         newer={newer.findings.map((f) => f.name)}
                     />
-                    <ChipDiffSection title="Body Site" older={older.body_sites} newer={newer.body_sites} />
+                    <ChipDiffSection
+                        title="Body Site"
+                        icon={<MapPin size={11} />}
+                        older={older.body_sites}
+                        newer={newer.body_sites}
+                    />
                     <ChipDiffSection
                         title="Functional Limitation"
+                        icon={<Activity size={11} />}
                         older={older.impairment_names}
                         newer={newer.impairment_names}
                     />
 
                     {(older.story_mechanism || newer.story_mechanism) && (
                         <div className="prec-cmp-section">
-                            <div className="prec-cmp-section-label">Patient's Account</div>
+                            <div className="prec-cmp-section-label"><MessageSquareQuote size={11} />Patient's Account</div>
                             <div className="prec-cmp-columns">
                                 <div>
                                     <div className="prec-cmp-col-date">{formatDate(older.created_at)}</div>
@@ -186,7 +241,7 @@ export function CompareVisitsModal({
 
                     {(older.exercise_names.length > 0 || newer.exercise_names.length > 0) && (
                         <div className="prec-cmp-section">
-                            <div className="prec-cmp-section-label">Exercises Prescribed</div>
+                            <div className="prec-cmp-section-label"><Dumbbell size={11} />Exercises Prescribed</div>
                             <div className="prec-cmp-columns">
                                 <div>
                                     <div className="prec-cmp-col-date">{formatDate(older.created_at)}</div>
@@ -210,7 +265,7 @@ export function CompareVisitsModal({
 
                     {(older.medicines.length > 0 || newer.medicines.length > 0) && (
                         <div className="prec-cmp-section">
-                            <div className="prec-cmp-section-label">Prescription</div>
+                            <div className="prec-cmp-section-label"><Pill size={11} />Prescription</div>
                             <div className="prec-cmp-columns">
                                 <div>
                                     <div className="prec-cmp-col-date">{formatDate(older.created_at)}</div>

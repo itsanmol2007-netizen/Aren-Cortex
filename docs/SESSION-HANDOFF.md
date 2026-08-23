@@ -1,4 +1,4 @@
-# Session handoff — 2026-08-23 (updated same session, sixth pass)
+# Session handoff — 2026-08-23 (updated same session, seventh pass)
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
@@ -7,26 +7,44 @@ to one scoped pocket) → `docs/aren-cortex-context.md` only if the task needs
 the full picture.
 
 **Where this arc actually is:** Patients Overview is done and Anmol-confirmed
-against Ekanki's live data. Patient Record (rebuilt, density-fixed,
-prescription viewer + WhatsApp + compare added, now also carrying real
-per-visit physio data — body site/functional limitation/patient's account/
-exercises, both in the timeline and in Compare), the sidebar (rebuilt to 6
-destinations, then icon-badged for depth), and the new real Practice page
-are all done and `tsc`-clean but **none of it has been in front of Anmol
-yet** — that's the next real checkpoint, not a blocked-network problem.
+against Ekanki's live data. **Anmol has now actually opened the app and
+checked it — first real checkpoint of this whole arc reached.** His verdict:
+"most of the things are great" (Overview, sidebar, Practice — no changes
+requested there; explicitly asked that their design/color/layout language be
+reused for future pages too), but Patient Record read as "trash" and Compare
+Visits as too thin. Root-caused and fixed both this pass — see the
+seventh-pass note below and §1.
 
-**Sixth-pass note:** Anmol's last message in-session was frustration
-("wtf do you mean by clean up 86 stuck visits, you completely forgot what
-i prompted you earlier") re-pasting the ENTIRE prescription-viewer/compare/
-WhatsApp/sidebar spec verbatim. **That work was already built and pushed**
-(commits `b4a025c`, `8c1c4d5`, before his message) — he likely hadn't
-registered that, or the stuck-visits question read as a tangent. Told him
-so directly, did NOT touch the 86 stuck visits (frustration ≠ authorization
-for a data mutation), and kept shipping backlog per his own instruction
-("pages which require less founder decision... you can make it now") —
-closed the `fetchPatientVisits` physio-fields gap this pass (see §1/§2).
-If he raises the same "already built" confusion again, point him at the
-running Patient Record page / git log rather than rebuilding anything.
+**Seventh-pass note — Anmol's live feedback, root-caused, not guessed at:**
+"The patient report page is actually trash... maybe because we don't have
+actually anything there" (his own diagnosis, correct) — traced with SQL to
+his OWN test patients ("Anmol" x2, "Test") being exactly the ones with the
+most visits stuck `serving` (see the 86-stuck-visits entry, §1/context.md
+§7) — `fetchPatientVisits` used to hard-filter to `status="completed"`, so
+opening one of THOSE patients showed a full, populated header stat row (from
+a different query, `row.visit_count`, that counts every status) sitting
+directly above a completely empty timeline/trend section — a real,
+unexplained mismatch, not a design problem. Fixed at the data layer (now
+fetches every non-discarded status, reusing `visitStatusKind` — rule 19) and
+surfaced honestly in the UI: an amber "N visits not yet finished in Consult"
+notice instead of silence. **Still didn't touch the stuck-visit rows
+themselves — not authorized, not needed to fix the actual complaint.**
+Compare Visits enriched: a meta strip (visit type + doctor per side, above
+the fold) and a "days apart" line address "saying very less information";
+section labels now carry icons matching the rest of the app, and a fixed
+visit-type-badge gap (exercise-only visits used to read as generic
+"Consultation" — new `visitTypeLabel()` in `visitStatus.ts`, shared, not
+duplicated across the timeline and compare). All verified via the standard
+fixture-screenshot method before pushing; fixtures deleted after.
+
+Anmol's previous-pass frustration ("wtf do you mean by clean up 86 stuck
+visits, you completely forgot what i prompted you earlier", re-pasting his
+whole prescription-viewer/compare/WhatsApp/sidebar spec) turned out to be
+exactly what this pass suspected: he hadn't yet SEEN that work (commits
+`b4a025c`, `8c1c4d5`, both before his message) — once he actually opened the
+app this pass, he confirmed it was there and good. Lesson banked: don't
+re-explain "it's already built" as text again if this recurs — get him
+looking at the running page instead.
 
 **Important correction to earlier passes of this file: Supabase MCP direct
 SQL access WORKS in this session** (confirmed live, `mcp__Supabase__
@@ -61,24 +79,30 @@ turns out to be checkable with a tool you have, check it — don't leave
 `claude/patients-overview-css-testing-j4g1vq`)
 
 Commits: `f24191a`, `638d02c`, `c40c536`, `9f2a6fc`, `1274c62`, `c3fc911`,
-`b4a025c`, `8c1c4d5`, plus one more pending push for this pass (the 3 gaps
-resolved + Practice page built for real — see §2). Check `git status`.
+`b4a025c`, `8c1c4d5`, `202bfa7`, `ba87454`, plus one more pending push for
+this pass (empty/sparse-patient fix + Compare Visits enrichment — see §2).
+Check `git status`.
 
-**Patients Overview** — Anmol-confirmed against live data.
+**Patients Overview** — Anmol-confirmed against live data. **No changes
+requested — he said reuse this page's design/color/layout for future
+pages too.**
+
+**Sidebar, Practice page** — Anmol-confirmed this pass, "most of the things
+are great." No further action unless he raises something new.
 
 **Patient Record** — same visual language as Overview, dense sidebar,
 prescription viewer (reuses `ReviewModal` mode `"print"`), "Send via
 WhatsApp" (`lib/whatsapp.ts`, explicit placeholder per Anmol), Compare
 Visits (`CompareVisitsModal.tsx`, reuses `trend.ts`'s field/verdict logic).
-Not yet seen by Anmol.
-
-**Sidebar** — six real destinations (Consult/Patients/Communication —
-Practice/Clinic — Settings — Help & Support), "Prescriptions"/
-"Investigations" deliberately removed as destinations (stub folders
-deleted). First pass Anmol flagged as reading flat/emoji-like — fixed by
-giving each nav icon a small gradient-filled, tone-bordered, glowing badge
-(still 100% lucide-react icons, verified zero emoji anywhere in shipped
-code). Not yet re-checked by Anmol post-fix.
+Anmol checked this pass and called it "trash" — root-caused (see the
+seventh-pass note above) to `fetchPatientVisits` silently excluding any
+visit not yet `completed`, which made his own most-tested patients (the
+ones with the most stuck-`serving` visits) look empty below a populated
+header. Fixed: fetches every non-discarded status now, surfaces the ones
+still in progress with an honest notice instead of hiding them. Compare
+Visits enriched with a meta strip (visit type + doctor) and a days-apart
+line, addressing "saying very less information". **Not yet re-checked by
+Anmol post-fix — that's the next real checkpoint for this page.**
 
 **Doctor name investigation** — Anmol reported seeing "Ekanki" (the clinic
 name) where the doctor's name should show. Checked live: `doctors.name`,
@@ -126,29 +150,27 @@ empty state today (Dr Anmol Pandey has never pinned a medicine — 0 rows in
 
 ## 2. What's NOT done — pick up here, in order
 
-1. **Push this pass's commit** (physio fields on `fetchPatientVisits`,
-   wired into timeline + compare, docs updated) — check `git status` first.
-2. **Nothing from this whole session has been in front of Anmol.** That's
-   the real next checkpoint for: Patient Record's new features (including
-   this pass's physio fields), the sidebar (both passes), and Practice.
+1. **Push this pass's commit** (Patient Record empty/sparse-patient fix,
+   Compare Visits enrichment, `visitTypeLabel()` shared helper, docs
+   updated) — check `git status` first.
+2. **Get Anmol to re-check Patient Record and Compare Visits specifically**
+   — that's the real next checkpoint. Everything else he already confirmed
+   this pass (Overview, sidebar, Practice).
 3. **Ask Anmol** whether the 86 stuck `serving` visits (5 patients,
-   2026-08-12 onward) are safe to clean up — see the full write-up in
-   `aren-cortex-context.md` §7. Don't touch the data without his answer.
-   He has NOT authorized this — his frustrated message this pass was about
-   feeling unheard, not a go-ahead on the data.
+   2026-08-12 onward, concentrated in his own "Anmol"/"Test" accounts) are
+   safe to clean up — see the full write-up in `aren-cortex-context.md` §7.
+   Don't touch the data without his answer. Note: this pass's fix means the
+   UI no longer LOOKS broken because of these rows, so this is now purely a
+   test-data-hygiene question, not urgent — but still his call, not ours.
 4. **If "Ekanki" as a doctor name recurs**, ask Anmol exactly where on
    screen and get a fresh screenshot/description — the identity-resolution
    chain (`doctors`/`users`/`loadIdentity()`/`App.tsx`'s `DOCTOR` object)
    is confirmed correct end-to-end this session, so re-tracing it from
    scratch is very unlikely to find anything new.
-5. **Visit-type badge on the timeline still reads generic "Consultation"**
-   for exercise-only physio visits (`hasMeds ? "Prescription" : hasFindings
-   ? "Examination" : "Consultation"` doesn't know about exercises yet) —
-   small, real, not done. Give it a physio branch.
-6. **Status filter dropdown** (Overview page) — not built, think about
+5. **Status filter dropdown** (Overview page) — not built, think about
    whether it's meaningful first (`fetchRecentPatients` only ever returns
    completed visits).
-7. **Communication and Clinic pages** — genuinely complex (new data
+6. **Communication and Clinic pages** — genuinely complex (new data
    models), reasonable to leave for a session with Anmol's input on scope.
 
 ## 3. What's actually blocked in this session vs. what isn't
