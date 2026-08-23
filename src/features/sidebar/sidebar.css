@@ -23,6 +23,9 @@
 }
 
 /* ── Panel ────────────────────────────────────────────────── */
+/* Same deep-navy base the workspace header uses (#050916, see
+   workspace-header.css's own header comment) instead of this panel's own
+   separate navy gradient — one dark base across the product, not two. */
 .sidebar-panel {
     position: fixed;
     top: 0;
@@ -30,11 +33,12 @@
     z-index: 201;
     width: 272px;
     height: 100vh;
-    background: linear-gradient(168deg,
-            #0f1128 0%,
-            #0b0e1f 40%,
-            #090c1a 100%);
-    border-right: 1px solid rgba(99, 102, 241, 0.22);
+    background-color: #050916;
+    background-image:
+        radial-gradient(ellipse 200px 260px at 50% -20px,
+            rgba(4, 8, 18, 0.0) 0%,
+            rgba(4, 8, 18, 0.55) 100%);
+    border-right: 1px solid rgba(147, 51, 234, 0.22);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -52,14 +56,23 @@
     opacity: 1;
 }
 
-/* ── Atmospheric SVG background ───────────────────────────── */
-.sidebar-atmo {
+/* ── Nebula wash — same palette as aren-nebula.svg, built for this panel's
+   own tall proportions rather than a crop of the header's wide asset. See
+   Sidebar.tsx's comment on why. Bright core near the logo (echoes the
+   header's own bright point near its logo pill), two softer blooms further
+   down so the glow doesn't just sit in a band at the top and vanish. ──── */
+.sidebar-nebula-wash {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     pointer-events: none;
     z-index: 0;
+    background:
+        radial-gradient(480px 320px at 18% 0%, rgba(232, 121, 249, 0.16) 0%, rgba(168, 85, 247, 0.10) 35%, transparent 70%),
+        radial-gradient(360px 420px at 85% 8%, rgba(147, 51, 234, 0.20) 0%, rgba(124, 58, 237, 0.08) 45%, transparent 75%),
+        radial-gradient(420px 380px at 10% 55%, rgba(109, 40, 217, 0.14) 0%, transparent 70%),
+        radial-gradient(380px 340px at 90% 82%, rgba(79, 70, 229, 0.12) 0%, transparent 70%);
 }
 
 /* ── Right edge glow line ─────────────────────────────────── */
@@ -71,9 +84,9 @@
     width: 1px;
     height: 100%;
     background: linear-gradient(to bottom,
-            rgba(99, 102, 241, 0.55) 0%,
-            rgba(168, 85, 247, 0.35) 35%,
-            rgba(168, 85, 247, 0.12) 70%,
+            rgba(147, 51, 234, 0.45) 0%,
+            rgba(168, 85, 247, 0.28) 35%,
+            rgba(168, 85, 247, 0.10) 70%,
             transparent 100%);
     pointer-events: none;
     z-index: 2;
@@ -118,23 +131,27 @@
    (via translateX/Y + scale) and animates to its natural
    position (translate 0, scale 1) = the morph effect.
 */
+/* Recipe matches .ws-logo-pill (workspace-header.css) — same border color,
+   glow, backdrop-blur — so the morph lands on something that reads as the
+   SAME pill continuing, not a different one taking over. */
 .sidebar-logo-pill {
     width: 36px;
     height: 36px;
     border-radius: 10px;
-    background: linear-gradient(135deg,
-            rgba(99, 102, 241, 0.22) 0%,
-            rgba(168, 85, 247, 0.16) 100%);
-    border: 1px solid rgba(168, 85, 247, 0.40);
+    background: rgba(5, 9, 22, 0.76);
+    border: 1px solid rgba(139, 92, 246, 0.42);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     flex-shrink: 0;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     box-shadow:
-        0 0 18px rgba(168, 85, 247, 0.35),
-        0 0 5px rgba(99, 102, 241, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.09);
+        0 0 0 1px rgba(139, 92, 246, 0.10),
+        0 0 22px rgba(139, 92, 246, 0.30),
+        0 0 48px rgba(168, 85, 247, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
     /* Default: invisible so it doesn't flash before morph */
     opacity: 0;
@@ -147,7 +164,11 @@
     object-fit: contain;
 }
 
-/* When is-morphing is added by JS, animate from topbar → sidebar */
+/* When is-morphing is added by JS, animate from topbar → sidebar. A small
+   scale overshoot at 78% (1.06×, past the final 1×) before settling gives
+   the landing a soft "pop" rather than a hard stop — the one thing added
+   to an already-good effect ("make it even better"), everything else about
+   the morph (the JS measuring/delta math in Sidebar.tsx) is unchanged. */
 @keyframes logo-morph-in {
     0% {
         opacity: 0.85;
@@ -162,6 +183,14 @@
         opacity: 1;
     }
 
+    78% {
+        transform: translate(0, 0) scale(1.06);
+        box-shadow:
+            0 0 24px rgba(168, 85, 247, 0.45),
+            0 0 8px rgba(99, 102, 241, 0.32),
+            inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    }
+
     100% {
         opacity: 1;
         transform: translate(0, 0) scale(1);
@@ -174,7 +203,7 @@
 }
 
 .sidebar-logo-pill.is-morphing {
-    animation: logo-morph-in 340ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation: logo-morph-in 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 /* ── Brand text ───────────────────────────────────────────── */
@@ -355,22 +384,6 @@
     box-shadow: 0 0 8px rgba(168, 85, 247, 0.65);
 }
 
-/* ── Soon badge ──────────────────────────────────────────── */
-.sidebar-soon-badge {
-    margin-left: auto;
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    /* Was 0.65 on badge text — bumped to solid purple */
-    color: rgba(192, 132, 252, 0.90);
-    background: rgba(168, 85, 247, 0.14);
-    border: 1px solid rgba(168, 85, 247, 0.30);
-    border-radius: 4px;
-    padding: 2px 6px;
-    line-height: 1.3;
-}
-
 /* ── Nav icons ──────────────────────────────────────────── */
 .sidebar-nav-icon {
     width: 16px;
@@ -388,54 +401,30 @@
     color: rgba(255, 255, 255, 0.85);
 }
 
-/* ── Sub-items (Practice children) ──────────────────────── */
-.sidebar-nav-item.is-sub {
-    padding-left: 44px;
-    height: 36px;
-    font-size: 12.5px;
-    /* Was 0.42 — nearly invisible. Now 0.68 */
-    color: rgba(255, 255, 255, 0.68);
+/* ── Help & Support — a utility, not a destination ────────────────────────
+   Anmol's mockup sets it apart with a "?" and less visual weight than the
+   six real jobs above it: smaller, more muted, no active-state left bar
+   treatment competing with the real nav for attention. */
+.sidebar-nav-item.variant-utility {
+    height: 34px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.52);
     font-weight: 450;
 }
 
-.sidebar-nav-item.is-sub:hover {
-    color: rgba(255, 255, 255, 0.92);
+.sidebar-nav-item.variant-utility:hover {
+    color: rgba(255, 255, 255, 0.80);
     background: rgba(255, 255, 255, 0.04);
 }
 
-.sidebar-nav-item.is-sub .sidebar-nav-icon {
+.sidebar-nav-item.variant-utility .sidebar-nav-icon {
     width: 14px;
     height: 14px;
-    /* Sub icons: slightly dimmer than nav icons, but still legible */
-    color: rgba(255, 255, 255, 0.48);
-}
-
-.sidebar-nav-item.is-sub:hover .sidebar-nav-icon {
-    color: rgba(255, 255, 255, 0.72);
-}
-
-/* ── Practice parent toggle ─────────────────────────────── */
-.sidebar-parent-arrow {
-    margin-left: auto;
-    /* Was 0.25 — bumped */
     color: rgba(255, 255, 255, 0.42);
-    transition: transform 200ms ease, color 140ms ease;
-    flex-shrink: 0;
 }
 
-.sidebar-nav-item.is-open-parent .sidebar-parent-arrow {
-    transform: rotate(90deg);
-    color: rgba(168, 85, 247, 0.85);
-}
-
-.sidebar-sub-items {
-    overflow: hidden;
-    max-height: 0;
-    transition: max-height 240ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.sidebar-sub-items.is-open {
-    max-height: 220px;
+.sidebar-nav-item.variant-utility:hover .sidebar-nav-icon {
+    color: rgba(255, 255, 255, 0.65);
 }
 
 /* ── Footer ──────────────────────────────────────────────── */

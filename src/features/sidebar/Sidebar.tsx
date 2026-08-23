@@ -107,63 +107,23 @@ export function Sidebar({
                 aria-modal="true"
                 aria-label="Navigation menu"
             >
-                {/* Atmospheric SVG */}
-                <svg
-                    className="sidebar-atmo"
-                    viewBox="0 0 272 900"
-                    xmlns="http://www.w3.org/2000/svg"
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                >
-                    <defs>
-                        <radialGradient id="sb-bloom-top" cx="30%" cy="8%" r="55%">
-                            <stop offset="0%" stopColor="#a855f7" stopOpacity="0.28" />
-                            <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
-                        </radialGradient>
-                        <radialGradient id="sb-bloom-mid" cx="75%" cy="45%" r="40%">
-                            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
-                            <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                        </radialGradient>
-                        <radialGradient id="sb-bloom-bot" cx="20%" cy="88%" r="45%">
-                            <stop offset="0%" stopColor="#1268e8" stopOpacity="0.16" />
-                            <stop offset="100%" stopColor="#1268e8" stopOpacity="0" />
-                        </radialGradient>
-                        <linearGradient id="sb-arc-1" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stopColor="#a855f7" stopOpacity="0" />
-                            <stop offset="50%" stopColor="#a855f7" stopOpacity="0.35" />
-                            <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                        </linearGradient>
-                        <linearGradient id="sb-arc-2" x1="100%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stopColor="#6366f1" stopOpacity="0" />
-                            <stop offset="50%" stopColor="#1268e8" stopOpacity="0.28" />
-                            <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                        </linearGradient>
-                    </defs>
-
-                    <ellipse cx="70" cy="70" rx="130" ry="110" fill="url(#sb-bloom-top)" />
-                    <ellipse cx="210" cy="400" rx="120" ry="160" fill="url(#sb-bloom-mid)" />
-                    <ellipse cx="55" cy="800" rx="140" ry="120" fill="url(#sb-bloom-bot)" />
-
-                    <path d="M-10,120 C60,90 140,160 200,110 C240,80 270,130 290,100" fill="none" stroke="url(#sb-arc-1)" strokeWidth="1.2" />
-                    <path d="M-10,140 C50,115 120,175 190,130 C230,105 265,148 290,120" fill="none" stroke="url(#sb-arc-1)" strokeWidth="0.8" />
-                    <path d="M-10,480 C70,450 150,510 220,470 C255,450 272,480 290,460" fill="none" stroke="url(#sb-arc-2)" strokeWidth="1.0" />
-
-                    {/* Constellation dots */}
-                    <circle cx="52" cy="42" r="1.8" fill="rgba(168,85,247,0.75)" />
-                    <circle cx="88" cy="28" r="1.4" fill="rgba(168,85,247,0.55)" />
-                    <circle cx="120" cy="55" r="1.6" fill="rgba(99,102,241,0.65)" />
-                    <circle cx="74" cy="72" r="1.2" fill="rgba(244,114,182,0.55)" />
-                    <circle cx="148" cy="38" r="1.5" fill="rgba(99,102,241,0.60)" />
-                    <circle cx="105" cy="88" r="1.3" fill="rgba(168,85,247,0.50)" />
-
-                    <line x1="52" y1="42" x2="88" y2="28" stroke="rgba(168,85,247,0.28)" strokeWidth="0.9" />
-                    <line x1="88" y1="28" x2="120" y2="55" stroke="rgba(99,102,241,0.24)" strokeWidth="0.9" />
-                    <line x1="120" y1="55" x2="148" y2="38" stroke="rgba(99,102,241,0.20)" strokeWidth="0.8" />
-                    <line x1="74" y1="72" x2="105" y2="88" stroke="rgba(168,85,247,0.22)" strokeWidth="0.8" />
-                    <line x1="120" y1="55" x2="74" y2="72" stroke="rgba(168,85,247,0.18)" strokeWidth="0.7" />
-
-                    <rect x="0" y="63" width="272" height="1" fill="rgba(168,85,247,0.18)" />
-                </svg>
+                {/* Same COLORS as the workspace header's nebula asset
+                    (aren-nebula.svg's own gradient stops — #9333ea/#a855f7/
+                    #c084fc/#6d28d9/#4f46e5 blooms on a #040812→#060a18 base),
+                    not the literal file: that asset is a 1400×64 wide bar
+                    built for a short header strip, and forcing it into a
+                    272px-wide, 100vh-tall panel (by cropping or rotating)
+                    either zoomed into a meaningless sliver or needed fragile
+                    transform math for a worse result than just building the
+                    same palette at the panel's own proportions. This is a
+                    genuine "same visual language" match — same hues, same
+                    soft-bloom-on-dark-navy technique — replacing the old
+                    hand-drawn constellation (dots + connecting lines), which
+                    was a different, more literally "space/sci-fi" motif in
+                    the same color family and the more likely reason the
+                    panel read as a different design system next to the
+                    header it opens from. */}
+                <div className="sidebar-nebula-wash" aria-hidden="true" />
 
                 {/* Header */}
                 <div className="sidebar-header">

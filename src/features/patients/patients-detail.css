@@ -545,3 +545,328 @@ button.prec-trend-card.is-clickable:hover {
     color: #1e293b;
     font-weight: 700;
 }
+
+/* ── Visit actions (prescription viewer, WhatsApp) ───────────────────────── */
+
+.prec-tl-actions {
+    display: flex;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 2px;
+}
+
+.prec-tl-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    background: #f7f9fc;
+    border: 1px solid #e2e8f5;
+    border-radius: 7px;
+    color: #1268e8;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.prec-tl-action-btn:hover {
+    background: #eff5ff;
+    border-color: #b8c8f0;
+}
+
+.prec-tl-action-btn--whatsapp {
+    color: #15803d;
+}
+
+.prec-tl-action-btn--whatsapp:hover {
+    background: #f0fdf4;
+    border-color: #86efac;
+}
+
+/* ── Compare mode ──────────────────────────────────────────────────────── */
+
+.prec-tl-compare-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid #d0d8e8;
+    border-radius: 20px;
+    color: #64748b;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.prec-tl-compare-toggle:hover {
+    border-color: #b8c8f0;
+    color: #1268e8;
+}
+
+.prec-tl-compare-toggle.is-active {
+    background: #eff5ff;
+    border-color: #1268e8;
+    color: #1268e8;
+}
+
+.prec-tl-compare-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    background: #f7f9fc;
+    border: 1px solid #e2e8f5;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 600;
+}
+
+.prec-tl-compare-go {
+    padding: 6px 13px;
+    background: #1268e8;
+    border: none;
+    border-radius: 7px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, opacity 0.12s;
+}
+
+.prec-tl-compare-go:hover:not(:disabled) {
+    background: #0d54c4;
+}
+
+.prec-tl-compare-go:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.prec-tl-compare-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    background: #ffffff;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 14px;
+    transition: border-color 0.12s, background 0.12s;
+}
+
+.prec-tl-compare-check:hover {
+    border-color: #1268e8;
+}
+
+.prec-tl-compare-check.is-selected {
+    background: #1268e8;
+    border-color: #1268e8;
+    box-shadow: inset 0 0 0 2px #fff;
+}
+
+.prec-tl-card.is-compare-selected {
+    border-color: #1268e8;
+    box-shadow: 0 0 0 1px rgba(18, 104, 232, 0.20);
+}
+
+/* ── Light modal chrome — Patients-family surfaces are light, unlike the
+   consult screen's dark pv- / pm- overlays; this stays consistent with
+   that page family rather than borrowing consult's dark popover style. ──── */
+
+.prec-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.prec-modal-card {
+    background: #ffffff;
+    border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+    width: 100%;
+    max-width: 560px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.prec-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 16px 18px;
+    border-bottom: 1px solid #edf0f7;
+    flex-shrink: 0;
+}
+
+.prec-modal-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    margin-bottom: 3px;
+}
+
+.prec-modal-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.prec-modal-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: #f1f5f9;
+    border: none;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+}
+
+.prec-modal-close:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.prec-modal-body {
+    padding: 16px 18px 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── Compare Visits modal content ─────────────────────────────────────── */
+
+.prec-cmp-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.prec-cmp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.prec-cmp-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+}
+
+.prec-cmp-chip.is-added {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #15803d;
+}
+
+.prec-cmp-chip.is-resolved {
+    background: #fafafa;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+    text-decoration: line-through;
+}
+
+.prec-cmp-measure-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.prec-cmp-measure-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    background: #f7f9fc;
+    border: 1px solid #e2e8f5;
+    border-radius: 7px;
+    font-size: 12px;
+}
+
+.prec-cmp-measure-label {
+    flex: 1;
+    font-weight: 600;
+    color: #334155;
+}
+
+.prec-cmp-measure-values {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #64748b;
+    font-weight: 600;
+}
+
+.prec-cmp-measure-delta {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-weight: 700;
+    min-width: 44px;
+    justify-content: flex-end;
+}
+
+.prec-cmp-measure-row.is-improving .prec-cmp-measure-delta { color: #16a34a; }
+.prec-cmp-measure-row.is-worsening .prec-cmp-measure-delta { color: #a16207; }
+.prec-cmp-measure-row.is-steady .prec-cmp-measure-delta,
+.prec-cmp-measure-row.is-neutral .prec-cmp-measure-delta { color: #64748b; }
+
+.prec-cmp-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.prec-cmp-col-date {
+    font-size: 10px;
+    font-weight: 700;
+    color: #94a3b8;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.prec-cmp-med-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1e293b;
+    padding: 3px 0;
+}
+
+.prec-cmp-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    font-style: italic;
+}

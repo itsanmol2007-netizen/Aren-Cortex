@@ -1,4 +1,4 @@
-# Session handoff — 2026-08-23 (updated same session, third pass)
+# Session handoff — 2026-08-23 (updated same session, fourth pass)
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
@@ -6,28 +6,27 @@
 to one scoped pocket) → `docs/aren-cortex-context.md` only if the task needs
 the full picture.
 
-**Where this arc actually is:** both pages (Patients Overview and Patient
-Record) are built, styled, and Anmol has looked at the Overview page against
-Ekanki's real data himself and confirmed it's good. Patient Record was just
-rebuilt onto the same visual language and hasn't had Anmol's eyes on it yet
-— that's the next real checkpoint, not another blocked-network problem.
-This session's own Chromium still can't reach Supabase (§3), so verification
-of the newest changes was done the same way as before: a temporary static
-fixture over the real CSS, not the live app.
+**Where this arc actually is:** Patients Overview is done and Anmol-confirmed
+against Ekanki's live data. Patient Record has been rebuilt twice this
+session (visual language, then a density fix) and just gained three new
+features (prescription viewer, WhatsApp send, visit comparison) — none of
+this newest round has been in front of Anmol yet, that's the next real
+checkpoint. The sidebar was also rebuilt (six real destinations, restyled to
+match the header) per a separate, later request in the same session — also
+not yet Anmol-checked. This session's own Chromium still can't reach
+Supabase (§3); everything below was verified via temporary static fixtures
+over the real CSS, not the live app.
 
 ---
 
-## 0. What this arc is: rebuild Patients Overview + Patient Record, specialty-aware
+## 0. What this arc is
 
-Anmol's brief (paraphrased): **`docs/temp ref/Physio Patient Overview
-Page.png`** is the visual reference for the Overview page (committed).
-Rebuild `src/features/patients/` at ~95% visual similarity, with the
-"Clinical Snapshot" specialty-aware (physio: complaint/body region/session
-count; General OPD: symptoms/findings/medicine), no fabricated data. Once
-Overview was confirmed good, Anmol asked for Patient Record (the detail
-page, reached by clicking a patient) to be rebuilt onto the **same visual
-language**, in a real 2-3 column layout (not one stacked column), including
-the longitudinal trend graphs that already exist for the consult screen.
+Rebuild `src/features/patients/` (Overview + Detail) at ~95% visual
+similarity to `docs/temp ref/Physio Patient Overview Page.png`, specialty-
+aware, no fabricated data — then, once Anmol saw it working, he asked for
+more in the same thread: a prescription viewer and visit-comparison on the
+Detail page, a WhatsApp send placeholder, and a full sidebar redesign
+(fewer destinations, same visual language as the rest of the app).
 
 **Governing instruction from Anmol, said more than once, applies to
 everything in this arc:** "don't mold a doctor into our architecture, mold
@@ -39,93 +38,92 @@ for missing data.
 ## 1. What's DONE and committed (pushed to
 `claude/patients-overview-css-testing-j4g1vq`)
 
-Commits this arc: `f24191a`, `638d02c`, `c40c536`, `9f2a6fc`, `1274c62`, plus
-one more pending push for the sidebar-density pass (see §2). Tree was clean
-before that last edit.
+Commits so far: `f24191a`, `638d02c`, `c40c536`, `9f2a6fc`, `1274c62`,
+`c3fc911`, plus one more pending push for this round (prescription viewer +
+WhatsApp + compare + sidebar rebuild — see §2). Check `git status` before
+assuming what's pushed.
 
-**Patients Overview** — specialty-aware Clinical Snapshot, sidebar filter
-lenses, real aggregates throughout (`visitStatusKind()`, `snapshotFor()`,
-`PatientRecordRow`'s real physio fields, `RightPanel` rebuilt with a loading
-skeleton). Full detail in git log / `aren-cortex-context.md`. **Anmol
-confirmed this page is good against Ekanki's live data.** One open note from
-him: "New Patient"/"Manage Templates" buttons in Quick Actions are
-intentionally unwired stubs (`/* wire in next session */` in the code, not a
-bug) — he asked why, was told it's a deliberate stub, not asked to have them
-built this pass.
+**Patients Overview** — Anmol-confirmed against live data. One open note
+from him: "New Patient"/"Manage Templates" in Quick Actions are
+intentionally unwired stubs, not a bug.
 
-**Patient Record** (`PatientRecord.tsx`, rebuilt this session) — same
-`.prec-*` classes as the Overview page (`.prec-panel-card`,
-`.prec-summary-grid`, `.prec-snapshot-*`, `.prec-avatar`,
-`.prec-quick-action-*`, the `.prec-page-body` main+304px-sidebar shell)
-instead of the old, separately-themed `patients-detail-*.css` (1700 lines,
-deleted). Structure, current as of the density pass:
-- Main column: Identity card → Clinical Snapshot (specialty-aware, reuses
-  `snapshotFor()`) → Progress Trend (real sparkline graphs) → Visit
-  Timeline (expandable spine list).
-- Sidebar (304px, persistent): Quick Actions → Care Plan (only when
-  `row.care_plan_progress` is real) → Frequent Complaints → Common
-  Medicines → Visit Pattern. Skeletons while `visits` is loading, same
-  fix as the Overview sidebar got.
-- **Progress Trend reuses the consult screen's real work, not a fork**:
-  `buildTrendSummary`/`Sparkline`/`visitForLastReading`/`formatSpan` from
-  `features/consult/trend.ts` and `LongitudinalBand.tsx` (now exported for
-  this) — only the CSS is new. A trend card only renders for a measurement
-  with 2+ real readings, exactly like the consult band. Clicking one opens
-  the same `PastVisitCard` popover the consult screen uses.
-- `deriveRanked`/`RankedBarList` extracted to `RankedBarList.tsx` (now
-  generic over row type) so the Overview sidebar and this page's Frequent
-  Complaints/Common Medicines share one implementation instead of a second
-  copy.
+**Patient Record** — same visual language as Overview (`.prec-panel-card`
+family), dense sidebar (Quick Actions, Care Plan, Frequent Complaints,
+Common Medicines, Visit Pattern), main column (Identity, Clinical Snapshot,
+Progress Trend, Visit Timeline). This round added, on Anmol's explicit ask:
+- **Prescription viewer** — "View Prescription" on any visit with a real
+  prescription opens the SAME `ReviewModal` (mode `"print"`) Consult and
+  Print RX already use, via `fetchPrescriptionRenderData` — no second
+  renderer. `RealVisit`/`fetchPatientVisits` gained a `prescription_id`
+  field to make this possible (small, real, already-computed-internally
+  extension, same pattern as the earlier physio-field additions).
+- **"Send via WhatsApp"** — builds a message from the visit's real
+  medicines and opens a `wa.me` deep link (`lib/whatsapp.ts`). Explicitly a
+  placeholder per Anmol: "eventually we'll have the actual WhatsApp API...
+  for now open WhatsApp Web." Every caller goes through
+  `buildWhatsAppLink()` so the real API can replace this later without
+  hunting down call sites.
+- **Compare Visits** — a "Compare" toggle on the Visit Timeline lets a
+  doctor pick 2 visits; `CompareVisitsModal.tsx` diffs them: measurements
+  (reuses `readValue`/`verdictFor`/`FIELD_BY_KEY` from `trend.ts` — a
+  2-point version of what `buildSeries` already does for N points, not a
+  forked "which way is better" table), symptoms/findings as an added/
+  shared/resolved chip diff, medicines side by side.
 
-**First layout Anmol saw a live screenshot of read as too spread out** —
-real content (Trend+Timeline, Complaints+Medicines, Quick Actions+Visit
-Pattern) was spread thin across three regions (main / middle column /
-sidebar), leaving the two shorter columns visibly empty beneath a much
-taller main column. Fixed by folding the shorter cards into ONE dense
-sidebar (adding a real Care Plan progress-bar card using data that was
-already fetched but under-displayed) instead of three sparse regions —
-matches how the Overview page's own shell is actually shaped (one main flow
-+ one packed sidebar). **This fix is in the working tree, `tsc -b` passes,
-verified via fixture — not yet pushed. Push it before doing anything else.**
+None of this has been checked by Anmol yet — verified only via temporary
+static fixtures (same method as before, see §3).
+
+**Sidebar** — rebuilt to Anmol's exact spec: Consult (action) / Patients /
+Communication, divider, Practice / Clinic, divider, Settings, divider, Help
+& Support (small utility, not a full nav item). "Prescriptions" and
+"Investigations" are deliberately gone as destinations — their 0-byte stub
+folders were deleted, not left as dead placeholders (full reasoning in
+`SidebarNav.tsx`'s header). Visually: same deep-navy base and purple-bloom
+palette as the workspace header (`workspace-header.css`'s `aren-nebula.svg`
+recipe), but as a **CSS gradient wash using the same color stops**, not the
+literal asset — that SVG is a 1400×64 wide bar built for a short header
+strip; forcing it into a 272px-wide, 100vh-tall panel (tried both cropping
+and rotating) either zoomed into a meaningless sliver or needed fragile
+transform math for a worse result. The wash replaces the old hand-drawn
+constellation SVG (dots + connecting lines — a more literally "sci-fi"
+motif in the same colors, the more likely reason it read as "alien" next to
+the header). Logo pill restyled to match `.ws-logo-pill`'s exact recipe;
+the morph-in keyframe got a small scale overshoot (a "pop" on landing) —
+the JS measuring/delta math in `Sidebar.tsx` is untouched.
+
+**Practice/Clinic/Communication/Support remain `ComingSoonPage` stubs** —
+deliberately not built this pass. Full reasoning and the concrete next step
+for Practice (the best candidate — real data exists, just needs a query
+this session couldn't write-and-verify without live DB access) is in
+`aren-cortex-context.md` §7, Cross-cutting section, dated 2026-08-23.
 
 **`tsc -b` passes clean.**
 
 ## 2. What's NOT done — pick up here, in order
 
-1. **Push the pending density-fix commit** (see §1) — check `git status`
-   first, this may already be done if you're a different session picking up
-   later the same day.
-2. **Anmol has not yet looked at the rebuilt Patient Record page against
-   live data.** Once pushed, that's the next real checkpoint — same as
-   Overview got. Don't assume the fixture-verified CSS is the final word;
-   his eyes on real content are what actually closes this out (the
-   fixture already caught two real problems fixture verification alone
-   couldn't have: the density complaint, and — from his live screenshot,
-   not the fixture — the wiring gaps in §7 of `aren-cortex-context.md`,
-   found only because real data exposed them).
-3. **Three real wiring gaps found from Anmol's live screenshot, written up
-   with full detail in `aren-cortex-context.md` §7 (dated 2026-08-23,
-   Physiotherapy section) — read there before touching any of this:**
-   - `care_plans` linking may have started working for at least one patient
-     (contradicts an earlier same-day finding that it never had) — needs
-     re-verification against live DB, not another guess.
-   - `fetchPatientVisits`/`RealVisit` has no physio fields at all (no
-     `exercise_names`/`impairment_names`/`body_sites`), unlike
-     `PatientRecordRow` — every visit in a physio patient's timeline reads
-     as generic "Consultation" regardless of what was actually done.
-   - `PatientRecordRow.visit_count` (24) and `fetchPatientVisits`'s
-     completed-and-capped count (6) disagreed by 18 on a real patient —
-     root cause not found this session (no live DB access), two candidate
-     explanations written up, don't fix blind.
-4. **Status filter dropdown** ("All Status" select + filter icon next to
-   search, Overview page) — not built. `fetchRecentPatients` only ever
-   returns `status: "completed"` rows today; think about whether this
-   control is even meaningful before building it.
-5. **Pagination** — brief explicitly says no numbered pagination, continuous
-   scroll instead. Already scrolls, not paginated — keep it that way.
-6. Search results (`searchPatients` path) map to an all-empty
-   `PatientRecordRow` — the Clinical Snapshot correctly renders its empty
-   state, this is expected, not a bug.
+1. **Push this round's commit** (prescription viewer, WhatsApp, compare,
+   sidebar rebuild, two stub folders deleted) — check `git status` first.
+2. **None of this round has been in front of Anmol.** Once pushed, that's
+   the next real checkpoint for: the prescription viewer, WhatsApp send,
+   Compare Visits, and the whole sidebar redesign. Don't assume
+   fixture-verified is the final word — his own screenshots have caught
+   real problems (the density complaint, three wiring gaps) that fixtures
+   alone couldn't.
+3. **Practice page** — real data exists (`doctor_pinned_intent`), not built.
+   See `aren-cortex-context.md` §7 Cross-cutting for the concrete next step
+   (`fetchPinnedMedicineDetails`) and why it wasn't done this session.
+4. **Three physio wiring gaps from Anmol's live screenshot**, written up in
+   `aren-cortex-context.md` §7 (dated 2026-08-23, Physiotherapy section) —
+   care_plans linking status (contradicts an earlier same-day finding),
+   `fetchPatientVisits` missing physio fields, a 24-vs-6 visit-count
+   discrepancy. Don't fix any of these blind — read the full entries first.
+5. **Status filter dropdown** (Overview page, "All Status" + filter icon) —
+   not built; `fetchRecentPatients` only ever returns `status: "completed"`
+   rows today, think about whether the control is meaningful first.
+6. **Pagination** — brief says continuous scroll, not numbered pages.
+   Already scrolls — keep it that way.
+7. Search results map to an all-empty `PatientRecordRow` — the Clinical
+   Snapshot's empty state is expected there, not a bug.
 
 ## 3. This session's Chromium cannot reach Supabase — still true, don't re-litigate
 
@@ -134,43 +132,37 @@ to `ieimvjprtltancxapuzg.supabase.co` resets after ~12.5s, regardless of
 proxy/cert config, while `registry.npmjs.org`/`api.anthropic.com` load
 instantly from the same browser. `curl`/`npm`/Node from the shell reach
 Supabase fine. Matches a limitation already flagged in
-`aren-cortex-context.md` §7 from an earlier session. Verification in this
-session (both the Overview CSS pass and the Patient Record rebuild) was
-done via a temporary local-only static HTML fixture loading the real
-`patients.css` cascade through the dev server, screenshotted with a
-scripted Chromium over loopback only — proves the CSS renders correctly,
-does NOT replace a human (or a differently-networked session) looking at it
-with real data. **Do not re-attempt the network workaround from scratch —
-if the environment changes (real Chromium network access, or a
-`chromium-cli`/browser-preview tool appears), that's the moment to actually
-drive the app; until then it's a wall, not a puzzle.**
+`aren-cortex-context.md` §7 from an earlier session. Every verification
+pass this session (Overview CSS, Patient Record rebuild, the density fix,
+this round's four features) used the same method: a temporary local-only
+static HTML fixture loading the real CSS through the dev server,
+screenshotted with a scripted Chromium over loopback only. Proves the CSS
+renders correctly; does NOT replace a human (or a differently-networked
+session) looking at it with real data. **Do not re-attempt the network
+workaround from scratch** — if the environment changes, that's the moment
+to actually drive the app; until then it's a wall, not a puzzle.
 
 ## 4. Two real architecture gaps found earlier this arc — tracked, not faked
 
-Fully written up in `aren-cortex-context.md` §7 with dates (now updated —
-read the UPDATE note on the `care_plans` entry, don't trust the summary
-below alone):
+Fully written up in `aren-cortex-context.md` §7 with dates:
 
 - **Impairment intents never persisted anywhere queryable** —
-  `visit_impairments` table exists, nothing writes to it yet. Real work for
-  a dedicated physio-consult session.
+  `visit_impairments` table exists, nothing writes to it yet.
 - **`care_plans`** — was "never actually used"; live evidence found later
-  the same day contradicts that for at least one patient. See §2 and the
-  full context-doc entry before acting on either claim.
+  the same day contradicts that for at least one patient. See §2.4 above.
 
 ## 5. If resuming in a fresh conversation with no prior context
 
 Paste this to the new session:
 
 > Read `docs/SESSION-HANDOFF.md`, then `docs/aren-cortex-context.md` §7
-> (Physiotherapy section, the dated 2026-08-23 entries — several, read all
-> of them, one corrects an earlier one same-day). Both Patients pages
-> (Overview and Record) are built and styled onto the same visual language;
-> Anmol has confirmed Overview against his real data, Record has not been
-> checked by him yet post-rebuild — that's the next step once the pending
-> commit (see handoff §2.1) is pushed. `tsc` passes clean. This session's
-> Chromium cannot reach Supabase (handoff §3) — don't re-diagnose that from
-> scratch, check whether your environment can before assuming it can't.
+> (read the whole Physiotherapy AND Cross-cutting sections — several dated
+> 2026-08-23 entries, one corrects an earlier one same-day). Patients
+> Overview is Anmol-confirmed; Patient Record (prescription viewer,
+> WhatsApp send, Compare Visits) and the sidebar rebuild are done and
+> `tsc`-clean but have not been checked by him yet — that's the next step
+> once the pending commit (handoff §2.1) is pushed. This session's Chromium
+> cannot reach Supabase (handoff §3) — don't re-diagnose that from scratch.
 
 ## 6. Environment (unchanged from prior arcs)
 

@@ -28,11 +28,14 @@ import {
     AlertCircle,
     ArrowLeft,
     ArrowDown,
+    ArrowLeftRight,
     ArrowRight,
     ArrowUp,
     Calendar,
     ChevronDown,
+    FileText,
     FlaskConical,
+    MessageCircle,
     Phone,
     Pill,
     Plus,
@@ -41,17 +44,25 @@ import {
     User,
 } from "lucide-react";
 import {
+    fetchHospital,
     fetchPatientVisits,
+    fetchPrescriptionRenderData,
     freqSlotToLabel,
+    type DBHospital,
     type PatientRecordRow,
+    type PrescriptionRenderData,
     type RealVisit,
 } from "../../lib/db";
 import type { Patient } from "../../types";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { PastVisitCard } from "../../components/PastVisitCard";
+import ReviewModal from "../../components/ReviewModal";
+import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
 import { snapshotFor, visitNoun, type SnapshotChip } from "../synapse/patientSnapshot";
 import { deriveRanked, RankedBarList } from "./RankedBarList";
+import { CompareVisitsModal } from "./CompareVisitsModal";
+import { buildWhatsAppLink } from "../../lib/whatsapp";
 import {
     buildTrendSummary,
     formatDelta,
@@ -60,6 +71,7 @@ import {
     type TrendVerdict,
 } from "../consult/trend";
 import { Sparkline, visitForLastReading, formatSpan } from "../consult/LongitudinalBand";
+import { toast } from "sonner";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -203,7 +215,17 @@ function TrendMiniCard({ series, onOpen }: { series: TrendSeries; onOpen?: () =>
 
 // ── Visit timeline row ───────────────────────────────────────────────────────
 
-function VisitRow({ visit, isFirst }: { visit: RealVisit; isFirst: boolean }) {
+function VisitRow({
+    visit, isFirst, compareMode, compareSelected, onToggleCompare, onViewPrescription, onSendWhatsApp,
+}: {
+    visit: RealVisit;
+    isFirst: boolean;
+    compareMode: boolean;
+    compareSelected: boolean;
+    onToggleCompare: () => void;
+    onViewPrescription: (prescriptionId: string) => void;
+    onSendWhatsApp: (visit: RealVisit) => void;
+}) {
     const [expanded, setExpanded] = useState(false);
     const hasMeds = visit.medicines.length > 0;
     const hasSymptoms = visit.symptoms.length > 0;
@@ -214,11 +236,21 @@ function VisitRow({ visit, isFirst }: { visit: RealVisit; isFirst: boolean }) {
     return (
         <div className="prec-tl-row">
             <div className="prec-tl-spine">
-                <div className={`prec-tl-dot${isFirst ? " is-latest" : ""}`} />
+                {compareMode ? (
+                    <button
+                        type="button"
+                        className={`prec-tl-compare-check${compareSelected ? " is-selected" : ""}`}
+                        onClick={onToggleCompare}
+                        aria-label={compareSelected ? "Remove from comparison" : "Add to comparison"}
+                        aria-pressed={compareSelected}
+                    />
+                ) : (
+                    <div className={`prec-tl-dot${isFirst ? " is-latest" : ""}`} />
+                )}
                 <div className="prec-tl-line" />
             </div>
-            <div className={`prec-tl-card${expanded ? " is-expanded" : ""}`}>
-                <button type="button" className="prec-tl-header" onClick={() => setExpanded((e) => !e)}>
+            <div className={`prec-tl-card${expanded ? " is-expanded" : ""}${compareSelected ? " is-compare-selected" : ""}`}>
+                <button type="button" className="prec-tl-header" onClick={() => (compareMode ? onToggleCompare() : setExpanded((e) => !e))}>
                     <div className="prec-tl-date-block">
                         <span className="prec-tl-date">{formatDateShort(visit.created_at)}</span>
                         <span className="prec-tl-ago">{timeAgo(visit.created_at)}</span>
@@ -237,12 +269,32 @@ function VisitRow({ visit, isFirst }: { visit: RealVisit; isFirst: boolean }) {
                                 <b>{visit.findings.length}</b> findings
                             </span>
                         )}
-                        <ChevronDown size={13} className={`prec-tl-chevron${expanded ? " is-open" : ""}`} />
+                        {!compareMode && <ChevronDown size={13} className={`prec-tl-chevron${expanded ? " is-open" : ""}`} />}
                     </div>
                 </button>
 
-                {expanded && (
+                {expanded && !compareMode && (
                     <div className="prec-tl-body">
+                        {visit.prescription_id && (
+                            <div className="prec-tl-actions">
+                                <button
+                                    type="button"
+                                    className="prec-tl-action-btn"
+                                    onClick={() => onViewPrescription(visit.prescription_id!)}
+                                >
+                                    <FileText size={11} />
+                                    View Prescription
+                                </button>
+                                <button
+                                    type="button"
+                                    className="prec-tl-action-btn prec-tl-action-btn--whatsapp"
+                                    onClick={() => onSendWhatsApp(visit)}
+                                >
+                                    <MessageCircle size={11} />
+                                    Send via WhatsApp
+                                </button>
+                            </div>
+                        )}
                         {(hasSymptoms || hasFindings) && (
                             <div className="prec-tl-two-col">
                                 {hasSymptoms && (
@@ -310,10 +362,23 @@ interface PatientRecordProps {
 }
 
 export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef, onOpenSidebar }: PatientRecordProps) {
+    const identity = useClinicalIdentity();
     const [visits, setVisits] = useState<RealVisit[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAll, setShowAll] = useState(false);
     const [activeVisit, setActiveVisit] = useState<{ visit: RealVisit; x: number } | null>(null);
+
+    // The prescription viewer — same ReviewModal/fetchPrescriptionRenderData
+    // pipeline Print RX and Consult already use (rule 6: one prescription
+    // renderer). `rxError` surfaces a failed fetch rather than leaving the
+    // "View Prescription" click looking like it did nothing.
+    const [hospital, setHospital] = useState<DBHospital | null>(null);
+    const [rxDetail, setRxDetail] = useState<PrescriptionRenderData | null>(null);
+
+    // Compare mode — select up to 2 visits from the timeline, then diff them.
+    const [compareMode, setCompareMode] = useState(false);
+    const [compareIds, setCompareIds] = useState<string[]>([]);
+    const [comparing, setComparing] = useState<{ a: RealVisit; b: RealVisit } | null>(null);
 
     useEffect(() => {
         setLoading(true);
@@ -323,6 +388,13 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
             .catch(console.error)
             .finally(() => setLoading(false));
     }, [row.patient_id]);
+
+    // The letterhead needs the full `hospitals` row (address/phone/logo),
+    // same reason Print RX fetches it — the auth identity doesn't carry it.
+    useEffect(() => {
+        if (!identity.hospitalId) return;
+        fetchHospital(identity.hospitalId).then(setHospital).catch(() => setHospital(null));
+    }, [identity.hospitalId]);
 
     const completedVisits = useMemo(() => visits.filter((v) => v.status === "completed"), [visits]);
     const lastVisit = completedVisits[0];
@@ -362,6 +434,58 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
     };
 
     const openVisitPopover = (visit: RealVisit, x: number) => setActiveVisit({ visit, x });
+
+    const openPrescription = (prescriptionId: string) => {
+        toast.promise(fetchPrescriptionRenderData(prescriptionId), {
+            loading: "Loading prescription…",
+            success: (detail) => {
+                setRxDetail(detail);
+                return "Prescription loaded";
+            },
+            error: (e) => (e instanceof Error ? e.message : "Could not load this prescription."),
+        });
+    };
+
+    // Placeholder integration — see lib/whatsapp.ts's header. Builds the
+    // message from data already on screen (no extra fetch) and opens
+    // WhatsApp Web/the app with it pre-filled; nothing is sent automatically.
+    const sendVisitWhatsApp = (visit: RealVisit) => {
+        const lines = [`Hi ${row.patient_name}, here's your prescription from ${formatDateShort(visit.created_at)}:`];
+        for (const m of visit.medicines) {
+            const detail = [
+                m.dosage_mg ? `${m.dosage_mg}mg` : null,
+                m.frequency ? freqSlotToLabel(m.frequency) : null,
+                m.duration_days ? `${m.duration_days} days` : null,
+            ].filter(Boolean).join(", ");
+            lines.push(`• ${m.name}${detail ? ` (${detail})` : ""}`);
+        }
+        const link = buildWhatsAppLink(row.phone, lines.join("\n"));
+        if (link) window.open(link, "_blank", "noopener,noreferrer");
+        else toast.error("No usable phone number on file for this patient.");
+    };
+
+    const toggleCompareVisit = (visitId: string) => {
+        setCompareIds((prev) => {
+            if (prev.includes(visitId)) return prev.filter((id) => id !== visitId);
+            // Keeps the selection at 2 by dropping the older pick rather than
+            // refusing the click — picking a 3rd visit reads as "swap the
+            // first one out", not as an error to explain.
+            if (prev.length >= 2) return [prev[1], visitId];
+            return [...prev, visitId];
+        });
+    };
+
+    const openCompare = () => {
+        if (compareIds.length !== 2) return;
+        const a = completedVisits.find((v) => v.id === compareIds[0]);
+        const b = completedVisits.find((v) => v.id === compareIds[1]);
+        if (a && b) setComparing({ a, b });
+    };
+
+    const exitCompareMode = () => {
+        setCompareMode(false);
+        setCompareIds([]);
+    };
 
     return (
         <div className="prec-page">
@@ -513,6 +637,16 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                     <span className="prec-section-count" style={{ marginLeft: "auto" }}>
                                         {completedVisits.length}
                                     </span>
+                                    {completedVisits.length > 1 && (
+                                        <button
+                                            type="button"
+                                            className={`prec-tl-compare-toggle${compareMode ? " is-active" : ""}`}
+                                            onClick={() => (compareMode ? exitCompareMode() : setCompareMode(true))}
+                                        >
+                                            <ArrowLeftRight size={11} />
+                                            {compareMode ? "Cancel" : "Compare"}
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="prec-panel-card-body">
                                     {completedVisits.length === 0 ? (
@@ -522,9 +656,35 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                         </div>
                                     ) : (
                                         <>
+                                            {compareMode && (
+                                                <div className="prec-tl-compare-bar">
+                                                    <span>
+                                                        {compareIds.length === 0 && "Select 2 visits to compare"}
+                                                        {compareIds.length === 1 && "Select 1 more visit"}
+                                                        {compareIds.length === 2 && "2 visits selected"}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="prec-tl-compare-go"
+                                                        disabled={compareIds.length !== 2}
+                                                        onClick={openCompare}
+                                                    >
+                                                        Compare Selected
+                                                    </button>
+                                                </div>
+                                            )}
                                             <div className="prec-tl-list">
                                                 {visibleVisits.map((v, i) => (
-                                                    <VisitRow key={v.id} visit={v} isFirst={i === 0} />
+                                                    <VisitRow
+                                                        key={v.id}
+                                                        visit={v}
+                                                        isFirst={i === 0}
+                                                        compareMode={compareMode}
+                                                        compareSelected={compareIds.includes(v.id)}
+                                                        onToggleCompare={() => toggleCompareVisit(v.id)}
+                                                        onViewPrescription={openPrescription}
+                                                        onSendWhatsApp={sendVisitWhatsApp}
+                                                    />
                                                 ))}
                                             </div>
                                             {completedVisits.length > INITIAL_VISIBLE && (
@@ -668,6 +828,36 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                     visit={activeVisit.visit}
                     x={activeVisit.x}
                     onClose={() => setActiveVisit(null)}
+                />
+            )}
+
+            {/* The prescription viewer — same ReviewModal Consult and Print RX
+                use, in read-only "print" mode. One prescription renderer. */}
+            {rxDetail && (
+                <ReviewModal
+                    mode="print"
+                    patient={rxDetail.patient}
+                    visitId={rxDetail.visitId}
+                    prescriptionRef={rxDetail.prescriptionRef ?? undefined}
+                    symptoms={rxDetail.symptoms}
+                    findings={rxDetail.findings}
+                    prescription={rxDetail.medicines}
+                    tests={rxDetail.tests}
+                    followUpDays={rxDetail.followUpDays}
+                    adviceNotes={rxDetail.adviceNotes ?? undefined}
+                    doctor={rxDetail.doctor}
+                    hospital={hospital}
+                    vitals={rxDetail.vitals ?? undefined}
+                    date={new Date(rxDetail.createdAt)}
+                    onClose={() => setRxDetail(null)}
+                />
+            )}
+
+            {comparing && (
+                <CompareVisitsModal
+                    visitA={comparing.a}
+                    visitB={comparing.b}
+                    onClose={() => setComparing(null)}
                 />
             )}
         </div>

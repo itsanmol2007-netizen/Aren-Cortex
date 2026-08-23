@@ -74,15 +74,21 @@ import {
 import { fetchLastExercisePlan } from "./lib/db/exercises";
 
 // Title + subtitle for every coming-soon feature page
+// Sidebar IA rebuilt 2026-08-23 to six real destinations (SidebarNav.tsx's
+// own header has the full reasoning) — "prescriptions"/"investigations"
+// were removed as standalone destinations, not renamed, so no entries here.
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
-  prescriptions: { title: "Prescriptions", subtitle: "Rx history & templates" },
-  investigations: { title: "Investigations", subtitle: "Lab orders & results" },
-  communication: { title: "Communication", subtitle: "Patient messages & follow-ups" },
-  practice: { title: "Practice", subtitle: "Preferences & clinical tools" },
-  clinic: { title: "Clinic", subtitle: "Staff, schedule & operations" },
-  support: { title: "Support", subtitle: "Help & documentation" },
+  communication: { title: "Communication", subtitle: "WhatsApp conversations, patient messages & follow-ups" },
+  practice: { title: "Practice", subtitle: "Commonly used medicines, preferred labs & prescription templates" },
+  clinic: { title: "Clinic", subtitle: "Clinic profile, staff, working hours & operations" },
+  support: { title: "Help & Support", subtitle: "Documentation & assistance" },
   // "settings" deliberately has no entry here — it's a real page
-  // (features/settings/SettingsPage.tsx), not a coming-soon stub.
+  // (features/settings/SettingsPage.tsx), not a coming-soon stub. Practice
+  // is real DATA (doctor_pinned_intent) but not a page yet — resolving a
+  // pinned intent id to a display name needs either the full ruleset
+  // loader (heavy for a standalone page) or a new, unverified query this
+  // session has no live DB access to test — see aren-cortex-context.md §7,
+  // "Practice page" entry, before building this for real.
 };
 
 function App() {

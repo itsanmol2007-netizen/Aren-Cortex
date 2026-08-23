@@ -89,7 +89,14 @@ src/
     MedicineInspector.tsx / GlobalLogoTrigger.tsx / ShortcutsSheet.tsx
   features/prescription/PrescriptionDocument.tsx  — what the patient actually receives (print/PDF/WhatsApp)
   features/settings/SettingsPage.tsx  — specialty switch (doctor self-service, temporary) + logout
-  features/patients/  — PatientsPage (built); 7 other feature folders are still 0-byte stubs
+  features/patients/  — PatientsPage + PatientRecord (built). features/sidebar/ — Sidebar +
+    SidebarNav, six real destinations (Consult action, Patients, Communication, Practice,
+    Clinic, Settings) + Help & Support utility, rebuilt 2026-08-23 — "Prescriptions" and
+    "Investigations" are deliberately NOT pages (see SidebarNav.tsx's header for why); their
+    0-byte stub folders were deleted, not left as dead placeholders. features/communication/,
+    features/practice/, features/clinic/, features/support/ are still 0-byte stubs — real
+    destinations, not yet built (each renders ComingSoonPage today, App.tsx's
+    COMING_SOON_META). See §7 for which of those is the best next build.
   styles/
     consult.css   (cs-*)  — the consult screen. ALL new consult UI goes here.
     workspace.css (cx-*)  — legacy, mostly dead; 3 sheets + 1 selector hook still live
@@ -335,8 +342,35 @@ brand-priority over label-priority).
   filter without knowing which one (or both) is the real cause.
 
 **Cross-cutting:**
-- **WhatsApp follow-up reminders**: not built at all, blocked on Anmol choosing a
-  provider.
+- **WhatsApp follow-up reminders**: still not built — the real API integration
+  is still blocked on Anmol choosing a provider. **A placeholder now exists**
+  (`lib/whatsapp.ts`, added 2026-08-23 for the Patient Record page's "Send via
+  WhatsApp" prescription action, Anmol's own ask, explicitly framed as
+  temporary): opens a `wa.me` deep link with the message pre-filled, no
+  template system, no delivery tracking, no automated send. Every caller goes
+  through `buildWhatsAppLink()` so swapping in the real API later doesn't mean
+  hunting down every place that builds a wa.me URL by hand.
+- **Sidebar rebuilt to six real destinations 2026-08-23** (Consult, Patients,
+  Communication, Practice, Clinic, Settings + a Help & Support utility) —
+  full reasoning in `SidebarNav.tsx`'s header. Of the four still-stub pages
+  (Communication, Practice, Clinic, Support — each renders `ComingSoonPage`
+  today), **Practice is the best next build**: the real data already exists
+  (`doctor_pinned_intent` / `usePinnedMedicines.ts`, a doctor's pinned
+  medicines) and needs no product decision from Anmol, only wiring — but it
+  was NOT built this session because resolving a pinned `intent_id` to a
+  display name has no existing standalone query (every current caller reads
+  it out of the full ruleset the consult screen loads, which is heavy to
+  pull in for one static page) and this session had no live DB access to
+  write and verify a new one. **Concretely for that session:** write
+  `fetchPinnedMedicineDetails(doctorId)` in `lib/db/synapse.ts` alongside
+  `loadPinnedIntents`/`setPinnedIntent` (join `doctor_pinned_intent` →
+  `intents` → whatever table actually carries the display name — check
+  live, don't assume the column name), verify it against Ekanki's account,
+  then build `features/practice/PracticePage.tsx` on it. Communication and
+  Clinic are genuinely more complex (need new data models — conversation/
+  message storage, staff/hours/operational config) and are reasonable to
+  leave for later; Support's existing "Help & documentation" ComingSoon
+  copy is fine as-is, it was never meant to be a major destination.
 - **Confirmed-condition resolve/refute** (status active/resolved/refuted) only
   works on the Case Sheet surface (General OPD, Physio) — the 6 SOAP-fallback
   profiles still treat removal as silent and today-only.

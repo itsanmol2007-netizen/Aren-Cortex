@@ -490,6 +490,10 @@ export type RealVisit = {
      * one place that reads it and it treats every value as untrusted.
      */
     vitals: Record<string, unknown> | null;
+    /** The prescription this visit produced, if any — lets a caller open the
+     *  same ReviewModal/fetchPrescriptionRenderData pipeline Print RX and
+     *  Consult already use, instead of a second prescription renderer. */
+    prescription_id: string | null;
 };
 
 export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
@@ -603,6 +607,7 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
                 .filter(Boolean) as { name: string; is_abnormal: boolean }[],
             medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
             vitals: (v as { vitals?: Record<string, unknown> | null }).vitals ?? null,
+            prescription_id: rxId ?? null,
         };
     });
 }
