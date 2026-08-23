@@ -158,8 +158,8 @@ function Header({
 
             {/* Full-bleed (not centered): the brand mark anchors the top-left
                 corner, exactly above the navigation rail it toggles. */}
-            <div className="relative z-10 flex items-center gap-[18px] py-3 pl-[15px] pr-6">
-                <div className="flex shrink-0 items-center gap-[11px]">
+            <div className="relative z-10 flex items-center gap-[14px] py-[9px] pl-3 pr-5">
+                <div className="flex shrink-0 items-center gap-[9px]">
                     {/* The permanent application mark — clicking it grows the rail
                         into the sidebar (same logo-as-menu language as Cortex). */}
                     <button
@@ -169,37 +169,37 @@ function Header({
                         aria-expanded={navOpen}
                         aria-label={t("navToggle")}
                         title={t("navToggle")}
-                        className="group flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[rgba(139,92,246,0.42)] shadow-[0_0_14px_rgba(139,92,246,0.30)] transition-shadow duration-150 hover:shadow-[0_0_22px_rgba(139,92,246,0.55)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.5)]"
+                        className="group flex h-[32px] w-[32px] shrink-0 items-center justify-center overflow-hidden rounded-[9px] border border-[rgba(139,92,246,0.42)] shadow-[0_0_12px_rgba(139,92,246,0.30)] transition-shadow duration-150 hover:shadow-[0_0_18px_rgba(139,92,246,0.55)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.5)]"
                     >
                         <img src={arenLogo} alt="AREN" className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.06] motion-reduce:transition-none" />
                     </button>
                     <div>
-                        <div className="font-[Manrope,sans-serif] text-[16px] font-extrabold leading-[1.1] tracking-[-0.01em]">
+                        <div className="font-[Manrope,sans-serif] text-[13.5px] font-extrabold leading-[1.1] tracking-[-0.01em]">
                             <span className="text-white">{brandWord}</span>
                             {productWords.length > 0 && <span className="text-[#f0abc8]"> {productWords.join(" ")}</span>}
                         </div>
-                        <div className="mt-[1px] text-[11.5px] font-medium text-[rgba(199,195,224,0.62)]">{t("appSub")}</div>
+                        <div className="mt-[1px] text-[10px] font-medium text-[rgba(199,195,224,0.62)]">{t("appSub")}</div>
                     </div>
                 </div>
 
                 <div className="flex-1" />
 
-                <div className="flex shrink-0 items-center gap-[14px]">
-                    <div className="whitespace-nowrap text-[15px] font-bold tracking-[-0.01em] text-white">{hospitalName ?? "Clinic"}</div>
-                    <div className="h-6 w-px bg-white/10" />
-                    <div className="flex items-center gap-[6px] whitespace-nowrap text-[12.5px] font-medium text-white/55">
-                        <Clock size={13.5} strokeWidth={2} />
+                <div className="flex shrink-0 items-center gap-[11px]">
+                    <div className="whitespace-nowrap text-[13px] font-bold tracking-[-0.01em] text-white">{hospitalName ?? "Clinic"}</div>
+                    <div className="h-5 w-px bg-white/10" />
+                    <div className="flex items-center gap-[6px] whitespace-nowrap text-[11px] font-medium text-white/55">
+                        <Clock size={12} strokeWidth={2} />
                         <span>{date}</span>
                         <span className="text-white/30">·</span>
                         <span className="tabular-nums">{time}</span>
                     </div>
-                    <div className="h-6 w-px bg-white/10" />
+                    <div className="h-5 w-px bg-white/10" />
                     <LanguageDropdown />
                     <div
                         title={userName || t("navUser")}
-                        className="flex h-[34px] min-w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-[rgba(99,102,241,0.28)] px-[7px] text-[12px] font-bold text-[#c7d2fe]"
+                        className="flex h-[29px] min-w-[29px] shrink-0 items-center justify-center rounded-[8px] bg-[rgba(99,102,241,0.28)] px-[6px] text-[11px] font-bold text-[#c7d2fe]"
                     >
-                        {userInitials || <UserRound size={16} strokeWidth={2.2} />}
+                        {userInitials || <UserRound size={14} strokeWidth={2.2} />}
                     </div>
                 </div>
             </div>
@@ -238,11 +238,11 @@ function LanguageDropdown() {
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                className="flex h-[34px] items-center gap-[6px] rounded-[9px] border border-white/15 bg-transparent px-[10px] text-[12.5px] font-semibold text-[#c7c3e0] transition-colors hover:border-white/30 hover:bg-white/5 focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                className="flex h-[29px] items-center gap-[6px] rounded-[8px] border border-white/15 bg-transparent px-[9px] text-[11px] font-semibold text-[#c7c3e0] transition-colors hover:border-white/30 hover:bg-white/5 focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
             >
-                <Globe size={14} className="text-[#8f8bb0]" />
+                <Globe size={12.5} className="text-[#8f8bb0]" />
                 {t(current.labelKey)}
-                <ChevronDown size={13} className={`text-white/40 transition-transform ${open ? "rotate-180" : ""}`} />
+                <ChevronDown size={12} className={`text-white/40 transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
 
             {open && (

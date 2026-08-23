@@ -35,35 +35,35 @@ export function SummaryCard({ visits, now }: Props) {
     const tokenAsleep = currentToken === "—";
 
     return (
-        <div className="relative shrink-0 overflow-hidden rounded-[13px] border border-[#e7e9f0] bg-white p-4 shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
+        <div className="relative shrink-0 overflow-hidden rounded-[12px] border border-[#e7e9f0] bg-white p-[13px] shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
             <div className="absolute inset-x-0 top-0 h-px bg-white/60" />
-            <h3 className="m-0 mb-3 flex items-center gap-[7px] text-[14px] font-bold text-[#161d29]">
-                <Activity size={15} className="text-[#7c5cf0]" />
+            <h3 className="m-0 mb-[10px] flex items-center gap-[6px] text-[13px] font-bold text-[#161d29]">
+                <Activity size={13} className="text-[#7c5cf0]" />
                 {t("sumTitle")}
             </h3>
 
             {/* Current Token — the day's "you are here" marker in the brand's
                 lavender (structural violet, not a status color). */}
-            <div className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e9e4fa] bg-[linear-gradient(135deg,#f6f3fe,#f1effc)] px-[14px] py-[11px]">
+            <div className="flex items-center justify-between gap-[10px] rounded-[11px] border border-[#e9e4fa] bg-[linear-gradient(135deg,#f6f3fe,#f1effc)] px-[12px] py-[9px]">
                 <div className="min-w-0">
-                    <div className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#8b7fd4]">{t("currentToken")}</div>
+                    <div className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-[#8b7fd4]">{t("currentToken")}</div>
                     <div
-                        className={`mt-[1px] font-[Manrope,sans-serif] text-[25px] font-extrabold leading-[1.1] tracking-[-0.01em] tabular-nums ${
+                        className={`mt-[1px] font-[Manrope,sans-serif] text-[20px] font-extrabold leading-[1.1] tracking-[-0.01em] tabular-nums ${
                             tokenAsleep ? "text-[#b6aee0]" : "text-[#5b3df5]"
                         }`}
                     >
                         {currentToken}
                     </div>
-                    {servingName && <div className="mt-[1px] truncate text-[11.5px] font-medium text-[#5a6472]">{servingName}</div>}
+                    {servingName && <div className="mt-[1px] truncate text-[10.5px] font-medium text-[#5a6472]">{servingName}</div>}
                 </div>
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white shadow-[0_1px_3px_rgba(91,61,245,0.14)] ${tokenAsleep ? "text-[#c4bce8]" : "text-[#7c5cf0]"}`}>
-                    <Radio size={17} />
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-white shadow-[0_1px_3px_rgba(91,61,245,0.14)] ${tokenAsleep ? "text-[#c4bce8]" : "text-[#7c5cf0]"}`}>
+                    <Radio size={15} />
                 </div>
             </div>
 
-            <MetricRow icon={<Timer size={14} />} label={t("avgWait")} value={avgWait} />
-            <MetricRow icon={<Hourglass size={14} />} label={t("longestWait")} value={longestWait} />
-            <MetricRow icon={<UsersRound size={14} />} label={t("patientsSeen")} value={String(seen)} asleep={seen === 0} last />
+            <MetricRow icon={<Timer size={13} />} label={t("avgWait")} value={avgWait} />
+            <MetricRow icon={<Hourglass size={13} />} label={t("longestWait")} value={longestWait} />
+            <MetricRow icon={<UsersRound size={13} />} label={t("patientsSeen")} value={String(seen)} asleep={seen === 0} last />
         </div>
     );
 }
@@ -83,12 +83,12 @@ function MetricRow({
 }) {
     const dash = value === "—" || asleep;
     return (
-        <div className={`flex items-center justify-between pt-[11px] ${last ? "" : "border-b border-[#f2f3f7] pb-[11px]"}`}>
-            <div className="flex items-center gap-[9px] text-[12.5px] font-medium text-[#5a6472]">
+        <div className={`flex items-center justify-between pt-[9px] ${last ? "" : "border-b border-[#f2f3f7] pb-[9px]"}`}>
+            <div className="flex items-center gap-[8px] text-[11.5px] font-medium text-[#5a6472]">
                 <span className="text-[#a3aab8]">{icon}</span>
                 {label}
             </div>
-            <div className={`font-[Manrope,sans-serif] text-[14.5px] font-extrabold tabular-nums ${dash ? "text-[#a8aeba]" : "text-[#161d29]"}`}>
+            <div className={`font-[Manrope,sans-serif] text-[13px] font-extrabold tabular-nums ${dash ? "text-[#a8aeba]" : "text-[#161d29]"}`}>
                 {value}
             </div>
         </div>

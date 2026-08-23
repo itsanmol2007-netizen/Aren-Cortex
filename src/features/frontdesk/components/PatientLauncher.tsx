@@ -124,31 +124,38 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
         : null;
 
     return (
-        <div ref={wrapRef} className="group relative mb-[14px]">
+        <div ref={wrapRef} className="group relative mb-[10px]">
             <div
                 ref={barRef}
-                className="relative flex h-[64px] items-center gap-3 overflow-hidden rounded-[13px] border-[1.5px] border-[#e4e7ee] bg-white pl-[18px] pr-3 shadow-[0_1px_2px_rgba(20,30,50,0.05)] transition-[border-color,box-shadow] duration-150 focus-within:border-[#2f6bed] focus-within:shadow-[0_0_0_4px_rgba(99,102,241,0.28)]"
+                // No overflow-hidden here (the ambient wash below is clipped in
+                // its own inner layer instead) — overflow-hidden on this element
+                // would silently clip its own box-shadow, which is exactly why
+                // the calm outer glow wasn't visible before.
+                className="relative flex h-[54px] items-center gap-[10px] rounded-[12px] border-[1.5px] border-[#d7dae4] bg-white pl-[15px] pr-[10px] shadow-[0_1px_2px_rgba(20,30,50,0.05),0_0_0_1px_rgba(124,92,240,0.05),0_10px_26px_-6px_rgba(124,92,240,0.38)] transition-[border-color,box-shadow] duration-150 focus-within:border-[#2f6bed] focus-within:shadow-[0_0_0_4px_rgba(99,102,241,0.24),0_10px_26px_-6px_rgba(124,92,240,0.42)]"
             >
                 {/* Dawn wash (§6): a static violet→pink glow bleeding in from the
                     left. It breathes ±6% over 8s while idle (one of two ambient
                     animations); the breath stops and the wash brightens on focus.
-                    Element is oversized so the drift never reveals a hard edge. */}
-                <div
-                    className={`pointer-events-none absolute inset-y-0 -left-[10%] w-[130%] ${focused ? "" : "aren-breath"}`}
-                    style={{
-                        backgroundImage: focused
-                            ? "linear-gradient(90deg, rgba(124,92,240,0.09), rgba(240,171,200,0.05) 30%, transparent 55%)"
-                            : "linear-gradient(90deg, rgba(124,92,240,0.06), rgba(240,171,200,0.04) 30%, transparent 55%)",
-                    }}
-                />
-                <Search size={19} strokeWidth={2.1} className="relative shrink-0 text-[#a3aab8]" />
+                    Clipped to its own rounded layer so the bar's outer shadow
+                    (above) isn't cut off too. */}
+                <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[12px]">
+                    <div
+                        className={`absolute inset-y-0 -left-[10%] w-[130%] ${focused ? "" : "aren-breath"}`}
+                        style={{
+                            backgroundImage: focused
+                                ? "linear-gradient(90deg, rgba(124,92,240,0.09), rgba(240,171,200,0.05) 30%, transparent 55%)"
+                                : "linear-gradient(90deg, rgba(124,92,240,0.06), rgba(240,171,200,0.04) 30%, transparent 55%)",
+                        }}
+                    />
+                </div>
+                <Search size={17} strokeWidth={2.2} className="relative shrink-0 text-[#6d6690]" />
                 <input
                     value={query}
                     onChange={(e) => { setQuery(e.target.value); openDrop(); }}
                     onFocus={() => { setFocused(true); openDrop(); }}
                     onBlur={() => setFocused(false)}
                     placeholder={t("launcherPlaceholder")}
-                    className="fd-bare fd-bare-lg relative flex-1 font-[450] placeholder:font-[450]"
+                    className="fd-bare relative flex-1 text-[14px] font-[450] placeholder:font-[450]"
                 />
                 {/* Add Patient lives INSIDE the search bar (V3): a labelled deep
                     indigo gradient button — the launcher's one loud element. */}
@@ -156,9 +163,9 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                     type="button"
                     title={t("launcherAddTitle")}
                     onClick={() => onCreateNew("")}
-                    className="relative flex h-11 shrink-0 items-center gap-[7px] rounded-[11px] bg-[linear-gradient(155deg,#6366f1,#3d3ac9)] px-[17px] text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(79,70,229,0.35)] transition-[box-shadow,transform,filter] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(79,70,229,0.5)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                    className="relative flex h-9 shrink-0 items-center gap-[6px] rounded-[10px] bg-[linear-gradient(155deg,#6366f1,#3d3ac9)] px-[13px] text-[12.5px] font-bold text-white shadow-[0_3px_12px_rgba(79,70,229,0.35)] transition-[box-shadow,transform,filter] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(79,70,229,0.5)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
                 >
-                    <Plus size={16} strokeWidth={2.6} />
+                    <Plus size={15} strokeWidth={2.6} />
                     <span className="max-[900px]:hidden">{t("addPatient")}</span>
                 </button>
             </div>

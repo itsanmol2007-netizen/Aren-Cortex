@@ -13,6 +13,7 @@ type Props = {
     onComplete: (visit: TodayVisit) => void;
     onCancel: (visit: TodayVisit) => void;
     selectedVisitId?: string | null;
+    onAddPatient?: () => void;
 };
 
 const ORDER: Record<string, number> = { waiting: 0, serving: 1, completed: 2, discarded: 3, referred: 3 };
@@ -25,7 +26,7 @@ const TAB_KIND: Record<QueueTab, "waiting" | "serving" | "completed" | "generic"
     completed: "completed",
 };
 
-export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel, selectedVisitId }: Props) {
+export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel, selectedVisitId, onAddPatient }: Props) {
     const t = useT();
     const [tab, setTab] = useState<QueueTab>("all");
 
@@ -63,38 +64,41 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
             />
             {/* div, not h2 — Cortex's unlayered legacy CSS restyles raw heading
                 elements and silently beats Tailwind here (§13 layer trap). */}
-            <div className="flex items-center justify-between px-5 pt-[15px]">
-                <div role="heading" aria-level={2} className="font-[Manrope,sans-serif] text-[16px] font-extrabold text-[#161d29]">{t("queueTitle")}</div>
+            <div className="flex items-center justify-between px-4 pt-[12px]">
+                <div role="heading" aria-level={2} className="font-[Manrope,sans-serif] text-[14px] font-extrabold text-[#161d29]">{t("queueTitle")}</div>
             </div>
 
-            <div className="flex flex-wrap gap-[6px] px-5 py-[13px]">
+            <div className="flex flex-wrap gap-[5px] px-4 py-[10px]">
                 <Tab active={tab === "all"} onClick={() => setTab("all")} labelKey="tabAll" count={counts.all} t={t} />
                 <Tab active={tab === "waiting"} onClick={() => setTab("waiting")} labelKey="tabWaiting" dot="#c9791a" count={counts.waiting} t={t} />
                 <Tab active={tab === "serving"} onClick={() => setTab("serving")} labelKey="tabConsult" dot="#2f6bed" count={counts.serving} t={t} />
                 <Tab active={tab === "completed"} onClick={() => setTab("completed")} labelKey="tabCompleted" dot="#1c8a4d" count={counts.completed} t={t} />
             </div>
 
-            {loading ? (
-                <SkeletonRows />
-            ) : rows.length === 0 ? (
-                !hasVisitsToday ? (
-                    tab === "all" ? <MorningWelcome /> : <TabEmpty kind={TAB_KIND[tab]} />
-                ) : tab === "all" && everyoneDone ? (
-                    <DayDone />
+            {/* Nested scroll (V3): the queue scrolls inside its own panel
+                instead of growing the page as the day fills up — this wraps
+                every branch (skeleton / empty states / rows), not just the
+                row list, so a short viewport never clips content with no way
+                to reach it. Column headers stay pinned to the top when rows
+                are present. */}
+            <div
+                role="listbox"
+                aria-label={t("queueTitle")}
+                className="overflow-y-auto overscroll-contain"
+                style={{ maxHeight: "clamp(200px, calc(100vh - 250px), 600px)" }}
+            >
+                {loading ? (
+                    <SkeletonRows />
+                ) : rows.length === 0 ? (
+                    !hasVisitsToday ? (
+                        tab === "all" ? <MorningWelcome onAddPatient={onAddPatient} /> : <TabEmpty kind={TAB_KIND[tab]} />
+                    ) : tab === "all" && everyoneDone ? (
+                        <DayDone />
+                    ) : (
+                        <TabEmpty kind={TAB_KIND[tab]} />
+                    )
                 ) : (
-                    <TabEmpty kind={TAB_KIND[tab]} />
-                )
-            ) : (
-                <>
-                    {/* Nested scroll (V3): the queue scrolls inside its own panel
-                        instead of growing the page as the day fills up. Column
-                        headers stay pinned to the top of the scroll area. */}
-                    <div
-                        role="listbox"
-                        aria-label={t("queueTitle")}
-                        className="overflow-y-auto overscroll-contain"
-                        style={{ maxHeight: "clamp(260px, calc(100vh - 380px), 640px)" }}
-                    >
+                    <>
                         <ColumnHeaders t={t} />
                         {rows.map((v) => (
                             <VisitRow
@@ -108,11 +112,13 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
                             />
                         ))}
                         {tab === "all" && everyoneDone && <DayDone />}
-                    </div>
-                    <div className="border-t border-[#eef0f5] px-5 py-[9px] text-[11.5px] font-medium text-[#8a91a0]">
-                        {t("showingCount", { n: rows.length })}
-                    </div>
-                </>
+                    </>
+                )}
+            </div>
+            {!loading && rows.length > 0 && (
+                <div className="border-t border-[#eef0f5] px-4 py-[7px] text-[10.5px] font-medium text-[#8a91a0]">
+                    {t("showingCount", { n: rows.length })}
+                </div>
             )}
         </div>
     );
@@ -121,9 +127,9 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
 // Table headers, image-style: quiet uppercase micro-labels that pin to the
 // top of the scroll area. Grid template mirrors VisitRow exactly.
 function ColumnHeaders({ t }: { t: (k: StringKey) => string }) {
-    const th = "text-[10px] font-bold uppercase tracking-[0.08em] text-[#a3aab8]";
+    const th = "text-[9px] font-bold uppercase tracking-[0.08em] text-[#a3aab8]";
     return (
-        <div className="sticky top-0 z-10 grid grid-cols-[64px_1.7fr_1.4fr_0.9fr_0.8fr_148px_34px] max-lg:grid-cols-[56px_1.5fr_0.9fr_132px_34px] items-center gap-3 border-b border-[#eef0f5] bg-white pl-[23px] pr-5 pb-[7px] pt-[3px]">
+        <div className="sticky top-0 z-10 grid grid-cols-[56px_1.7fr_1.4fr_0.9fr_0.8fr_130px_30px] max-lg:grid-cols-[48px_1.5fr_0.9fr_116px_30px] items-center gap-[10px] border-b border-[#eef0f5] bg-white pl-[19px] pr-4 pb-[6px] pt-[3px]">
             <span className={th}>{t("colToken")}</span>
             <span className={th}>{t("colPatient")}</span>
             <span className={`${th} max-lg:hidden`}>{t("colSymptoms")}</span>
@@ -154,7 +160,7 @@ function Tab({
         <button
             type="button"
             onClick={onClick}
-            className={`flex h-[34px] items-center gap-[7px] rounded-lg border px-[13px] text-[12.5px] font-semibold transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${active ? "border-[#2f6bed] bg-[rgba(47,107,237,0.055)] text-[#1d51c9]" : "border-[#e4e7ee] bg-white text-[#5a6472] hover:border-[#d5dae4]"
+            className={`flex h-[30px] items-center gap-[6px] rounded-lg border px-[11px] text-[11.5px] font-semibold transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${active ? "border-[#2f6bed] bg-[rgba(47,107,237,0.055)] text-[#1d51c9]" : "border-[#e4e7ee] bg-white text-[#5a6472] hover:border-[#d5dae4]"
                 }`}
         >
             {dot && <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: dot }} />}
@@ -170,7 +176,7 @@ function SkeletonRows() {
             {Array.from({ length: 5 }).map((_, i) => (
                 <div
                     key={i}
-                    className="grid grid-cols-[64px_1.7fr_1.4fr_0.9fr_0.8fr_148px_34px] items-center gap-3 border-t border-[#eef0f5] px-5 py-[14px]"
+                    className="grid grid-cols-[56px_1.7fr_1.4fr_0.9fr_0.8fr_130px_30px] items-center gap-[10px] border-t border-[#eef0f5] px-4 py-[12px]"
                 >
                     <div className="h-8 animate-pulse rounded-md bg-[linear-gradient(90deg,#eef0f4_25%,#e4e7ee_37%,#eef0f4_63%)]" />
                     <div>

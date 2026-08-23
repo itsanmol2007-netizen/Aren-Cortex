@@ -1,16 +1,18 @@
-# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Part J · 2026-08-06)
+# AREN FRONT DESK — SINGLE SOURCE OF TRUTH (through Part K · 2026-08-23)
 
-Last consolidated: 2026-07-21 · Branch: `master` · Routes: `/app/frontdesk`,
+Last consolidated: 2026-08-23 · Branch: `master` · Routes: `/app/frontdesk`,
 `/app/patients`, `/app/printrx`, `/app/clinicstatus` (+ `/login`)
-Part J appended 2026-08-06 · Branch `claude/cortex-atlas-summary-auycuc` ·
-Commit `edfb000` — a real bug fix (the hardcoded-clinic tenancy issue), not a
-design pass. It closes §32 item 4 below; nothing else in Parts A–I changed.
 
-> Reading order: Parts A–H are the frozen product/architecture/design history.
-> Part I (Clinic Status + operational layer + auth persistence) wins on
-> anything it covers. **Part J (identity/tenancy fix) is newest and wins on
-> anything using `HOSPITAL_ID`/`DOCTOR_ID` or per-clinic data.** For pure
-> file-level "what is this code", pair this with `docs/aren-technical-atlas.md`.
+> Reading order: Parts A–D are the frozen product/architecture/rules —
+> authoritative, execute don't re-litigate. Part E is the file tree/DB call
+> map (reference, keep current). Part F is state/open items. Part G folds
+> everything that shipped between sessions 37–2026-08-06 (Patients page,
+> Clinic Status + operational layer, auth persistence, the identity/tenancy
+> fix) into compact facts — the old per-session narrative write-ups were
+> cache, not truth, and were collapsed here on 2026-08-23. **Part K (today)
+> is newest and wins on anything about Front Desk's resting/empty-state
+> visuals.** For pure file-level "what is this code", pair this with
+> `docs/aren-technical-atlas.md`.
 
 ## 0. How to read this document
 
@@ -710,7 +712,7 @@ verified. `tsc -b` shows zero *new* errors.
 | The visit detail / status buttons | `components/VisitDetailModal.tsx` |
 | Anything common to all modals / a new modal | `components/ModalShell.tsx` |
 | Sidebar cards | `components/SummaryCard.tsx` / `DoctorsCard.tsx` / `DoctorRequestsCard.tsx` |
-| Empty-state illustration/copy | `components/EmptyStates.tsx` / `DawnArcs.tsx` |
+| Empty-state illustration/copy | `components/EmptyStates.tsx` (`MorningMark`, inline SVG — `DawnArcs.tsx` no longer exists) |
 | Queue refresh cadence / what loads | `hooks/useQueue.ts` |
 | Status-change / create logic | `hooks/useVisitActions.ts` |
 | A DB query / new table access | `src/lib/db/patients.ts` (or `reference.ts`) |
@@ -719,389 +721,160 @@ verified. `tsc -b` shows zero *new* errors.
 
 ---
 
-# PART G — SESSION 37 ADDENDUM (V3 refinement)
+# PART G — CONSOLIDATED HISTORY (sessions 37 → 2026-08-06)
 
-Visual reference frozen as `docs/Frontdesk V3 Refine inspiration.png` — refine
-toward it, never away from it.
+Everything that shipped across sessions 37, 39, the Clinic Status build, and
+the 2026-08-06 identity fix, folded from separate narrative addenda into flat
+facts on 2026-08-23 (the investigation prose is gone; what's still true isn't).
 
-## 21. The "existing patient silently fails" regression — cause + fix
+**Modal-save regression (s37), fixed and still in the code:** `ModalShell`'s
+backdrop-close requires mousedown *and* click to both land on the overlay
+(`pressedOnBackdrop` ref); `SymptomPicker`'s catalog dismisses on outside
+`click`, not `mousedown`. Don't revert either half.
 
-Root cause (proved with trusted-input CDP runs): the symptom catalog rendered
-in-flow and was dismissed on **mousedown**. Clicking Save while the catalog was
-open closed it on the press, the modal collapsed ~200px mid-click, the mouseup
-landed on the overlay, and ModalShell's `target === currentTarget` check read
-it as a backdrop click → modal closed, nothing saved, no error. The
-existing-patient modal is short, so its Save button always sat in the collapse
-zone. Two-layer fix (both required, keep both):
+**Intake modal:** field order Name → Age → Gender → Phone → Symptoms →
+Doctor; `+91` phone hard-capped at 10 digits; Age clamped 0–120 (arrows/wheel
+step); Gender is a keyboard-first segmented radiogroup (M/F/O); Enter
+advances field to field then saves. Smart dedupe: typing name/phone silently
+searches patients (350ms debounce), a violet banner offers "create visit for
+this patient", same phone+different name blocks until resolved.
 
-1. **ModalShell** — backdrop close now requires the *mousedown AND click* to
-   both start on the overlay (`pressedOnBackdrop` ref).
-2. **SymptomPicker** — catalog dismissal moved from `mousedown` to completed
-   outside `click` (deferred one tick so the click that opens the modal can't
-   self-close it; detached targets — a just-picked chip — count as inside).
-   Layout is therefore stable for the full duration of any press: first click
-   on Save both saves and dismisses.
+**Navigation rail** (`components/NavRail.tsx`): collapsible icon rail ↔
+sidebar, toggled by the header logo, state in localStorage
+`aren.frontdesk.nav`. `NAV_ITEMS` registry: Front Desk, Patients (`BookUser`),
+Print RX (`Printer`, still no page), Clinic Status (`HeartPulse`) — adding a
+page is one registry entry + a route + a label.
 
-## 22. Intake modal (amends §8 / s36 field details)
+**Patients page** (`/app/patients` → `PatientsPage.tsx`): left Patient
+Browser (search + Gender/Doctor/Sort filters) / right Patient Workspace
+(header card, summary strip, proportional Visit Timeline, Recent Visits,
+Quick Actions — Copy Phone, WhatsApp deep link, Print RX disabled-soon).
+Timeline overflow opens `components/patients/TimelineModal.tsx`; edits go
+through `components/patients/EditPatientModal.tsx` (phone-dedupe guarded,
+same as intake). New DB layer `src/lib/db/patients.ts`:
+`fetchPatientDirectory()`, `fetchPatientHistory(patientId)`,
+`updatePatient(patientId, fields)` — demographics only, never clinical.
+`patients` has no address column; "Update address" in the original design
+brief has no backing field.
 
-- Field order: Name → Age → Gender → Phone → Symptoms → Doctor.
-- **Phone**: +91 prefix box (India assumed), digits-only input hard-capped at
-  10, live `n/10` counter (green at 10), save validates `/^\d{10}$/`.
-- **Age**: required, compact 128px column, digits only clamped 0–120,
-  ArrowUp/Down steps, mouse wheel steps while focused (non-passive listener).
-- **Gender**: required, segmented radiogroup, one tab stop; keys M/F/O select,
-  arrows cycle; dotted underline under each first letter teaches the shortcut.
-- **Enter flow**: Enter advances to the next field until every required field
-  is complete, then Enter = Save from anywhere. The SymptomPicker consumes
-  Enter only while it has a query + match.
-- Autofocus: first empty field (existing patients → symptoms, catalog opens).
+**Shared-chrome extraction:** the ink header, nav rail, language dropdown,
+and dawn background live in `components/WorkspaceShell.tsx` — both Front
+Desk and Patients render it, so header/rail changes are made once. Shared
+form fields (`SectionLabel`, `Field`, `AgeInput`, `GenderControl`,
+`PhoneInput`) live in `components/fields.tsx`, used by both
+`CreateVisitModal` and `EditPatientModal`. `ModalShell` takes an optional
+`maxWidth` (default 580). `.fd-field-sm` (34px filter select) lives in
+`FrontDeskStyles.tsx`.
 
-## 23. Queue rows: waiting time (amends §6 row order)
+**Clinic Status** (`/app/clinicstatus` → `ClinicStatusPage.tsx`, brief:
+`docs/clinic-status-page-overview.md`): an operational assistant, not a
+dashboard — answers "can I keep working?" in three progressive layers (L1
+summary hero, L2 Core Operations vs Supporting Services + event log, L3 one
+service's impact→recovery→diagnostics). Every technical failure is
+translated to plain operational language by the single translator
+`clinicStatus/model.ts` (`buildClinicStatus`) before it reaches reception.
+Logout lives here now (buried in the L1 Session card, always confirms via
+`LogoutConfirmModal`) — it left the NavRail.
 
-The 5th column is now created-time (`2:33 pm`) with, on waiting rows only, a
-live amber `Waiting «m» min` / `Just arrived` line under it (ticks with the
-20s page clock, passed down as `now`). The last-visit date moved out of the
-row; it still lives in the Returning badge tooltip.
+**Reception operational layer** (`src/features/frontdesk/operational/`):
+`useOnline.ts` is the one real connectivity signal, surfaced by
+`OperationalBanner.tsx` (mounted in `WorkspaceShell`, every reception page).
+`referenceCache.ts` caches doctors + symptoms in localStorage (cache-first,
+refetch on reconnect, doctors also every 45s for live presence) so intake
+dropdowns never go empty offline. `eventLog.ts` is a local-only (not DB)
+connectivity ring buffer feeding the L2 timeline. Doctor presence is a real
+heartbeat (`doctors.last_seen`, written every ~30s by
+`src/hooks/useDoctorHeartbeat.ts`, read as Online/Away/Offline by
+`DoctorsCard` — "busy" from an active visit always wins). Doctor Requests
+are real: `useDoctorRequests` reads the `doctor_requests` table via Realtime
++ 25s poll fallback, auto-disables if the table is absent.
 
-## 24. Navigation rail (new — replaces "future navigation" open item)
+**Auth persistence:** losing Wi-Fi no longer logs reception out. Identity
+failures split by kind — a network-unreachable check with a valid cached
+session (`aren.identity.v1`) admits `{status:"authed", offline:true}`; only
+a definitive rejection (inactive user/hospital) fails closed. Reconnect
+re-verifies automatically.
 
-- `components/NavRail.tsx`: slim 68px icon rail → 228px sidebar; the **AREN
-  logo in the header** (real `src/assets/aren-logo.png`, replacing the SVG
-  house tile) toggles it; state persists in localStorage `aren.frontdesk.nav`.
-- Animation: width interpolation + label fade/translateX(-8px), 200ms
-  ease-out, icons anchored, `motion-reduce` safe. Content shares a flex row so
-  it shifts naturally.
-- `NAV_ITEMS` registry: Front Desk (active), Patients / Reports / Settings as
-  disabled "Soon" placeholders. Adding a page = one entry + route in
-  `main.tsx` + label in `strings.ts`.
-- Header is now full-bleed (logo aligned over the rail) and carries the same
-  `/aren-nebula.svg` sky as Cortex, at 45% opacity under the dawn radials.
+**Identity/tenancy fix (2026-08-06):** every reception page used to read the
+hardcoded `HOSPITAL_ID` constant instead of the signed-in clinic — harmless
+under RLS (queries just came back empty for 11 of 12 clinics) but broke the
+product for everyone except the one seed clinic. Fixed via
+`features/frontdesk/hooks/useHospitalId.ts`, a read off the already-verified
+auth identity, no fallback to the constant (an absent tenancy id shows an
+empty state; a guessed one would show the wrong clinic's data). A related
+bug in the same path — the intake doctor `<select>` had no placeholder, so
+an unlisted `defaultDoctorId` rendered as the first option while still
+submitting that unlisted id — is fixed by reconciling `doctorId` state
+against the live `doctors` prop.
 
-## 25. V3 visual pass (s38 — matches the frozen inspiration image)
-
-- **Stat cards**: tinted icon chip + sentence-case label on one line, big
-  Manrope numeral, semantic subline ("Currently waiting" …). No watermark
-  circles. Zero rule intact.
-- **Queue = table**: "Patients Today" heading (a `div` — raw `h2` is eaten by
-  the §13 layer trap), pinned uppercase column headers (Token/Patient/
-  Symptoms/Doctor/Time/Status), lavender token chip, patient line carries
-  `phone · age · gender`, TIME shows clock + "Today", STATUS is a tinted pill
-  that carries the live wait ("Waiting · 18 min"). Rows keep the faint
-  amber/blue/green ambient tints + left stripe. The row list scrolls INSIDE
-  the panel (`clamp(260px, 100vh-380px, 640px)`) — the page never grows —
-  with a "Showing n patient(s)" footer.
-- **Launcher**: plain search glyph; Add Patient is a labelled deep-indigo
-  gradient button INSIDE the bar.
-- **Sidebar**: card titles are sentence-case ink + violet icon; Current Token
-  is a lavender brand box (Radio icon chip); metric rows Average Wait /
-  Longest Wait / Patients Seen tick with the 20s clock (`now` prop).
-- **Nav drawer**: any outside mousedown folds it back (elements marked
-  `data-nav-keep` are exempt).
-- **Intake modal**: compacted (42px fields, tighter rhythm, violet-tinted
-  fills/borders, +91 cell violet) and **duplicate-aware**: typing name/phone
-  silently searches patients (350ms debounce); a violet banner offers
-  "Create visit for this patient"; save with same phone+name silently reuses
-  the existing patient (never mints a twin); same phone under a different
-  name blocks with an explanatory error until resolved via the banner.
-
----
-
-# PART H — SESSION 39 ADDENDUM (Patients page shipped)
-
-## 26. The Patients page (new — `/app/patients`)
-
-Built per `docs/Patients Page Design Brief.md` against the frozen reference
-`docs/Frontdesk-Patient-Page (Frozen).png`. Same AREN room, different tempo:
-Front Desk answers "what's happening today", Patients answers "tell me about
-this patient." No diagnosis/SOAP/prescriptions/findings here — reception-only.
-
-- **Route**: `/app/patients` → `src/features/frontdesk/PatientsPage.tsx`
-  (registered in `main.tsx` alongside `/app/frontdesk`).
-- **Layout**: left **Patient Browser** (search + Gender/Doctor/Sort filters,
-  internally scrolling list, no pagination) / right **Patient Workspace**
-  (header card with avatar + New/Returning badge + Edit Details + New Visit,
-  a compact 4-cell summary strip, a proportional **Visit Timeline** strip,
-  Recent Visits, Quick Actions). Empty state before selection uses the same
-  dawn-arcs motif as Front Desk's `MorningWelcome`.
-- **Visit Timeline**: dots placed at true chronological distance (not evenly
-  spaced) — clusters read as clusters, gaps read as gaps. "+N earlier visits"
-  opens a **Timeline modal** (`components/patients/TimelineModal.tsx`, Bhor
-  `ModalShell` at `maxWidth={640}`, pure exploration — no editing).
-- **Edit Patient Details** (`components/patients/EditPatientModal.tsx`):
-  same Bhor field system as intake; blocks saving a phone number that
-  already belongs to a different patient (dedupe guard, same spirit as
-  CreateVisitModal's).
-- **Quick Actions**: Copy Phone Number, Send WhatsApp (`wa.me` deep link),
-  View in Print RX (disabled "Soon" — no Print RX page yet). Edit Details /
-  New Visit are **not** duplicated here — they live in the header only, per
-  the design brief.
-
-### 26.1 Shared-chrome extraction
-
-`FrontDeskPage.tsx`'s header/rail/background were pulled out into
-**`components/WorkspaceShell.tsx`** so Front Desk and Patients render
-identical chrome by construction. `FrontDeskPage.tsx` and `PatientsPage.tsx`
-now only own their own data + content; `WorkspaceShell` owns the ink header,
-`LanguageDropdown`, nav-rail open/close state, hospital fetch, and the dawn
-background. *Open this to change:* the header, language switcher, or nav
-toggle for **either** page.
-
-### 26.2 Shared form fields extraction
-
-`CreateVisitModal.tsx`'s field primitives were pulled into
-**`components/fields.tsx`**: `SectionLabel`, `Field`, `AgeInput`,
-`GenderControl`, `PhoneInput`. Both `CreateVisitModal` and
-`EditPatientModal` import from here now — a form-field change should be made
-once, in `fields.tsx`.
-
-### 26.3 Navigation rail update (amends §24's registry)
-
-`NAV_ITEMS` is now: **Front Desk** (active) / **Patients** (`BookUser` icon,
-now live, no longer "Soon") / **Print RX** (renamed from "Reports"; `Printer`
-icon; still "Soon" — no page built) / **Settings** (still "Soon"). Icon
-column padding nudged (`pt-6` vs `pt-4`) per the design brief's "sit slightly
-lower" note. i18n key `navReports` was replaced by `navPrintRx`.
-
-### 26.4 New shared primitives
-
-- `ModalShell` gained an optional `maxWidth` prop (default `580`, unchanged
-  for existing modals; the Timeline modal uses `640`).
-- `FrontDeskStyles.tsx` gained `.fd-field-sm` — a compact 34px filter-select
-  class (same unlayered-CSS counterweight family as `.fd-field`) for the
-  Patient Browser's Gender/Doctor/Sort filters.
-- `utils.ts` gained `formatArchiveDate` — like `formatShortDate` but appends
-  the year when a date falls outside the current year (Patients spans years;
-  the queue never needs to).
-
-### 26.5 New DB layer — `src/lib/db/patients.ts`
-
-| DB function | Called from | Notes |
-|---|---|---|
-| `fetchPatientDirectory()` | `usePatientDirectory` | All patients + client-aggregated visit_count/first/last visit/primary doctor. Two queries (patients, visits), aggregated in memory — same pattern as `fetchTodayVisits`. Does **not** filter by `hospital_id` (many rows have it null; matches `searchPatients`'s existing behavior). |
-| `fetchPatientHistory(patientId)` | `usePatientHistory` | Every visit for one patient, any status — date/status/doctor/token only, no clinical payload (kept separate from the clinical `fetchPatientVisits`). |
-| `updatePatient(patientId, fields)` | `EditPatientModal` | Demographics only (name/age/gender/phone) — reception may correct these, never anything clinical. |
-
-Confirmed via live Supabase schema probe: `patients` has `created_at`,
-`abha_id`, `phone_normalized` columns; **no address column exists** (the
-design brief's "Update address" workflow has no backing field yet — not
-built, flagged here rather than silently dropped).
-
-### 26.6 Verified working (s39)
-
-Live headless-Chrome + trusted-CDP runs against the real dev server + real
-Supabase: directory loads and renders (16 real patients), search narrows the
-list, selecting a patient populates the full workspace (summary/timeline/
-recent visits/quick actions), the Timeline modal opens with proportional
-dot spacing, Edit Details opens and shows the correct pre-filled values, New
-Visit reuses `useVisitActions.createNewVisit` unchanged. Front Desk
-re-screenshotted after the `WorkspaceShell` extraction — pixel-identical,
-zero regressions. `npx tsc -b` filtered to `frontdesk|lib/db|main.tsx`:
-zero new errors (same 47 pre-existing legacy errors as before).
-
-### 26.7 Open items added by this page
-
-1. **Print RX page** — nav entry exists, disabled "Soon"; no route, no
-   component yet.
-2. **Address field** — design brief expects "Update address" but `patients`
-   has no address column; Edit Details only covers name/age/gender/phone.
-3. **Doctor filter in the Patient Browser** filters on `primary_doctor_id`
-   (most-visited doctor), not "ever seen by" — a patient seen once by a
-   second doctor won't surface under that doctor's filter. Acceptable for
-   v1 (matches "Primary Doctor" elsewhere on the page) but worth a second
-   look if reception reports it as confusing.
+**Open items still standing** (superseded items dropped): Print RX page
+(nav entry exists, disabled, no route/component); Patients page has no
+address field to edit (`patients` table has none); Patient Browser's doctor
+filter is "most-visited doctor", not "ever seen by"; offline write-queue for
+create-while-offline is a separate future project; `clinic_mode`/Solo Mode
+and Cortex's "Next Patient" button remain unbuilt; Devanagari (`hi`) still
+ships as empty English-fallback stubs; native doctor `<select>` in both
+modals is still the least-premium visible element.
 
 ---
 
----
+# PART K — SESSION 2026-08-23 (resting-state visual polish)
 
-# PART I — CLINIC STATUS + OPERATIONAL LAYER + AUTH PERSISTENCE (2026-07-20 → 07-21)
+Scope: Front Desk's **resting/empty state** was flat and the whole workspace
+read oversized on a 13–14" laptop. Visual-only — no architecture, DB, or
+workflow changes; every file below is a Front Desk component.
 
-The product design brief for this work is `docs/clinic-status-page-overview.md`
-(Error Morphology philosophy, the three-screen model, illustration direction).
-The database hand-off is `docs/Supabase Wiring TODO.md`. This part records what
-shipped and the doctrine behind it.
+- **`EmptyStates.tsx`** — `MorningWelcome` (all-tabs, zero-visits-today) got
+  a small hand-drawn `MorningMark` inline SVG (orbit ring in the dawn thread
+  + a planet with a medical cross + telescope + sparkle stars,
+  near-monochrome violet) replacing the old bare-typographic treatment, a
+  real greeting (`"{greeting}, {name}"` off `useAuth`, **no emoji anywhere
+  in this feature**), and an `onAddPatient` CTA button that opens
+  `CreateVisitModal` — wired through `QueuePanel` → `FrontDeskPage`.
+  `TabEmpty` (a filter empty mid-day) keeps its quiet one-icon-one-line
+  doctrine but the icon now sits in a small neutral gray circle instead of
+  floating bare.
+- **`StatStrip.tsx`** — icon chips are flat single-tone tint + one soft
+  tone-colored shadow (a multi-layer gradient/inset version was tried and
+  read as busy at 30px — reverted to flat). Waiting = `Clock`, Completed =
+  `BadgeCheck` (was `CheckCircle2`).
+- **`PatientLauncher.tsx`** — the ambient violet glow around the search bar
+  was invisible because the bar had `overflow-hidden` on the same element
+  as its `box-shadow` (overflow clips the box's own shadow). Fixed by
+  moving the dawn-wash gradient into its own inner `overflow-hidden` layer
+  so the outer bar can carry its shadow/glow uncut. **Do not put
+  `overflow-hidden` and an ambient `box-shadow` on the same element in this
+  feature again** — nest the clipped content instead.
+- **`QueuePanel.tsx`** — the empty/loading/skeleton branches now render
+  *inside* the same `overflow-y-auto` scroll wrapper as the row list (they
+  used to sit outside it, under the panel's own `overflow-hidden`, so on a
+  short viewport the morning illustration + CTA could be clipped with no
+  way to scroll to the rest). `ColumnHeaders`/`VisitRow`/`SkeletonRows`
+  grid templates were resized together — keep those three in sync (§14.1
+  already says "mirrors VisitRow exactly"; the same now applies to
+  `SkeletonRows`).
+- **Density pass** — Header, `NavRail` (68px→58px rail, 228px→200px
+  drawer), `PatientLauncher`, `StatStrip`, `QueuePanel` chrome,
+  `SummaryCard`, `DoctorsCard`, `DoctorRequestsCard`, and the page's outer
+  padding/grid gap were all shrunk roughly one density step (for a 13–14"
+  laptop, without the receptionist manually zooming Chrome to 80%). **A
+  `document.documentElement.style.zoom` hack was tried first and
+  reverted** — `vh`/`dvh` (used throughout this feature's scroll-height
+  clamps and `WorkspaceShell`'s `h-dvh`) don't rescale consistently under a
+  zoomed root, producing cropped cards and dead space. Real Tailwind value
+  reductions are the only sound way to resize this feature; don't reach
+  for `zoom` here again. `VisitRow`'s `min-h-[44px]` touch target (rule
+  §C.6) was deliberately left untouched.
 
-## 27. Clinic Status — the operational assistant
-
-The nav slot formerly called **Settings** is now officially **Clinic Status**
-(`/app/clinicstatus` → `ClinicStatusPage.tsx`). It is **not** a dashboard and
-**not** infrastructure monitoring — it is an operational assistant that answers
-one question in 2–3 seconds: *"Can I keep working?"*
-
-**Error Morphology (mandatory).** Every technical failure is translated into
-operational meaning — headline, impact, recovery — *before* it reaches the
-receptionist. The single translator is `clinicStatus/model.ts`
-(`buildClinicStatus({demo, online})`), the one place service health becomes a
-page model. Nothing user-facing ever shows a stack trace, a spooler error, or a
-timeout code.
-
-**Progressive disclosure — three layers, receptionist rarely leaves L1:**
-
-- **L1 Summary** (`ClinicStatusSummary`): status hero (headline + state
-  illustration + recommended action + last-checked), "today's operations", an
-  "at a glance" context column, and the door down to L2. The buried **Session**
-  card (logout) lives here.
-- **L2 Detailed** (`ClinicStatusDetailed`): information architecture over table —
-  **Core Operations** (a softly-lit panel of elevated cards with status spines +
-  an "n/n operational" pill) read as heavier than **Supporting Services** (a flat,
-  quiet list). Plus summary tiles, a "needs attention" panel, and the event-log
-  timeline (§28).
-- **L3 Service detail** (`ServiceDetailModal`, on ModalShell): one service —
-  "why this matters" (`roleKey`) → impact → recovery steps → automatic-recovery
-  progress → advanced diagnostics (folded away) → support. Recovery always before
-  support.
-
-**Reusable illustration language** (`StatusIllustration.tsx`): an integrity core
-(shield motif) stitched by dawn-thread pathways to service nodes, with travelling
-light along the connections (synchronisation). State-adaptive — healthy (threaded)
-→ warning (an amber dashed disconnect) → critical (a fractured pathway + spark).
-No stock art, no cartoons, no concentric-circle wallpaper. This is AREN's SVG
-vocabulary for operational state; reuse it, don't reinvent per-screen.
-
-**Logout moved here + always confirms.** Logout left the NavRail; it is now buried
-in the L1 Session card and always passes through `LogoutConfirmModal` before
-ending the session. The NavRail identity chip links here.
-
-**Demo vs real:** `?demo=warning|critical` simulates only the printer (no live
-probe). Internet health is **real** (§28).
-
-## 28. The reception operational layer (`src/features/frontdesk/operational/`)
-
-The real-behavior subsystem behind Clinic Status. Design rule: **react to actual
-application state, not URL parameters, wherever a real signal exists.**
-
-- **`useOnline.ts`** — `navigator.onLine` + online/offline events. The one true
-  connectivity signal; drives the model and the banner.
-- **`OperationalBanner.tsx`** (mounted in WorkspaceShell, so every reception page):
-  proactive operational voice. Offline → a slim amber Error-Morphology band;
-  reconnect → a transient green note; auto-clears. Copy is plain-language impact,
-  never implementation.
-- **`referenceCache.ts`** — doctors + symptoms cached in localStorage,
-  **cache-first + always-fresh**: serve the last copy instantly (works offline),
-  re-fetch on every online mount and on reconnect. Doctors additionally refresh
-  every 45s so **presence** stays live. Wired into `CreateVisitModal` (symptoms)
-  and `FrontDeskPage`/`PatientsPage` (doctors) — the intake dropdowns never empty
-  during an outage. (Full offline *saving* of new patients is deliberately a
-  future project — the form is usable offline but save needs the connection back.)
-- **`eventLog.ts`** — a local operational history (localStorage ring buffer, **not
-  the DB** — a clinic has no use for a server-side audit of connectivity blips).
-  `logEvent`/`useEventLog`/`useConnectivityLog` record session-start / offline /
-  online; the L2 timeline reads this (the old placeholder events were removed).
-- **Doctor presence = heartbeat.** Cortex writes `doctors.last_seen` every ~30s
-  via `src/hooks/useDoctorHeartbeat.ts` (mounted in `App.tsx`, cleans up on
-  unmount/logout); reception derives **Online (<3m) / Away ("Seen X min", <15m) /
-  Offline** in `DoctorsCard` (a doctor actively serving = "busy" always wins). No
-  more dishonest always-online. DB writer: `updateDoctorLastSeen`.
-- **Doctor Requests are real** — the simulator/mock is deleted. `useDoctorRequests`
-  reads the `doctor_requests` table with a **Realtime** subscription
-  (`subscribeDoctorRequests`, filtered by `hospital_id`) plus a 25s poll safety
-  net; chime on genuine arrivals; acknowledge writes back. Auto-disables cleanly
-  if the table is ever absent (`isMissingRelation`).
-
-## 29. Auth persistence — losing Wi-Fi must never log you out
-
-Root cause of the old bug: `AuthProvider` treated a *network* failure to
-re-verify identity the same as a *rejection*, so an offline refresh ejected the
-receptionist to /login. Fix (see also the atlas §8): identity failures are now
-split by **kind**. A last-known-good identity is cached in localStorage
-(`aren.identity.v1`); a `unreachable` result with a valid session + cache admits
-an **offline-authed** state (`{status:"authed", offline:true}`) instead of
-logging out; a definitive rejection (inactive user/hospital) still fails closed
-and clears the cache. Reconnect (`window` "online" / `TOKEN_REFRESHED`)
-re-verifies automatically. The Supabase session itself already survives offline
-(`persistSession`, made explicit).
-
-## 30. Modal refinement (ModalShell, applies to every reception modal)
-
-`ModalShell` was refined once so the whole family benefits: a warm dawn backdrop
-glow, deeper (8px) blur, crisper elevation with a pink-tinted shadow, and a gentle
-lift-in entrance (`aren-modal-in` / `aren-overlay-in` keyframes in
-`FrontDeskStyles`). Still ≤ 580 by default, comfortable on 13–15" laptops. Warm/
-pink accents were introduced subtly to soften the purple. **All new modals still
-use ModalShell** — never hand-roll chrome.
-
-## 31. Quick fine-tunes (2026-07-21)
-
-- The hardcoded **"RS"** placeholder (an old demo user) is gone: header + NavRail
-  now show the **real signed-in person's** name + initials from `useAuth`
-  identity (neutral person icon when no name). Clinic name on the ink band was
-  enlarged.
-- **Intake field order**: phone now sits **directly under name** so an existing
-  patient surfaces from the silent dedupe before age/gender are asked.
-- Clinic Status white-space was rebalanced (the healthy L2 right rail carries the
-  integrity illustration rather than empty space).
-
-## 32. Open items updated by this part
-
-1. **Offline write-queue** (create patients/visits offline, sync on reconnect) —
-   scoped as a separate future project (`Supabase Wiring TODO.md` §4). Today only
-   the intake *form* is offline-usable.
-2. **`clinic_mode`/Solo Mode** and the Cortex **"Next Patient"** button remain
-   unbuilt (carried from §19).
-3. **Reference-cache invalidation** by `updated_at`/version was **intentionally
-   skipped** — symptoms/doctors change monthly, refresh-on-online suffices.
-4. ~~Session-identity sweep (pages still use hardcoded `HOSPITAL_ID`/`DOCTOR_ID`).~~
-   **Fixed 2026-08-06 — see Part J.**
+Not touched: `CreateVisitModal.tsx`, `VisitDetailModal.tsx`,
+`ModalShell.tsx`, `clinicstatus/`, `patients/` — none are part of the
+resting Front Desk dashboard this session scoped to.
 
 ---
 
----
-
-# PART J — SESSION 2026-08-06 ADDENDUM (identity/tenancy fix)
-
-Not a design or workflow session — a correctness bug found and fixed while
-doing unrelated Cortex/Synapse content work on the same branch. Recorded here
-because it changes §11's data-flow diagram and closes §32 item 4.
-
-## 33. Every reception page was pinned to one hardcoded clinic
-
-`HOSPITAL_ID` (`src/lib/db/reference.ts`) — one specific clinic out of twelve
-in the database — was read directly by `FrontDeskPage`, `PatientsPage`,
-`ClinicStatusPage`, `PrintRxPage`, `WorkspaceShell`, and the queue/doctor-list/
-doctor-requests hooks, instead of the signed-in identity.
-
-**No data ever leaked.** `hospital_isolation` RLS (`hospital_id =
-current_user_hospital_id()`) is enabled on `patients`, `visits`,
-`prescriptions`, `doctors` and `hospitals`, so a query for the constant's
-hospital intersected with the caller's real one returned nothing. The effect
-was the opposite of a leak: for eleven of the twelve clinics, every page above
-came up **empty** — blank queue, empty doctor dropdown, `ClinicStatusPage`
-naming the real clinic from the auth identity directly above a patient count
-fetched for a different one, `WorkspaceShell`'s header falling back to the
-generic "Clinic" because `fetchHospital` couldn't see the row it asked for.
-
-**The fix:** `features/frontdesk/hooks/useHospitalId.ts` — a read, not a fetch,
-since `AuthProvider` already loads and activity-checks the `hospitals` row
-during the gate, and every reception route sits behind `RequireAuth` +
-`RequireRole allow={["reception"]}`. Deliberately **no fallback** to the
-constant: a tenancy id that guesses is worse than one that's visibly absent
-(empty state, not wrong-clinic state). Threaded through every page and hook
-above; `WorkspaceShell` now reads the clinic name straight off the identity
-instead of re-fetching it, dropping a redundant round trip. `PrintRxPage`
-still fetches the full `hospitals` row (the letterhead needs address/phone/
-logo the identity doesn't carry) — but now for the right clinic.
-
-**A second bug surfaced in the same code path:** the intake `<select>` in
-`CreateVisitModal` has no placeholder option, so a `defaultDoctorId` not
-present in `doctors` rendered as the first option in the list while still
-*submitting the unlisted id* — a silent mis-assignment. Two ordinary cases hit
-this: the cached doctor list still empty on first paint, and an existing
-patient whose stored `primary_doctor_id` no longer practises at this clinic.
-Fixed by reconciling `doctorId` state against the actual `doctors` prop
-whenever it changes.
-
-**Verified:** `tsc -b` and `npm run build` both pass clean.
-
-**Not touched by this session:** the Cortex/Synapse knowledge base changed
-substantially on the same branch (panel and test wiring, a duplicate-catalogue
-bug in both tests and medicines, an `is_active` bug in the ranking engine
-itself). None of it is Front Desk's concern per §17 — see
-`docs/aren-cortex-atlas.md` for that work, not here.
-
----
-
-*This document supersedes the styling guidance in sessions 33–34 and the modal
-guidance in the design direction §10.2. Architecture and creative direction are
-frozen. When in doubt, the tie-breaker order is: **Part J** (identity/tenancy)
-→ this doc (incl. Part I) → Part H → Part G → session 36 → session 35 →
-design direction → brief → architecture.*
+*This document supersedes the styling guidance in sessions 33–34 and the
+modal guidance in the design direction §10.2. Architecture and creative
+direction are frozen. Tie-breaker order when in doubt: **Part K** (today's
+resting-state visuals) → **Part G** (identity/tenancy + everything it folds
+in) → this doc → session 36 → session 35 → design direction → brief →
+architecture.*

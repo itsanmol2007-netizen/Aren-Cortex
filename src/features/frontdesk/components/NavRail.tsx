@@ -22,8 +22,8 @@ const NAV_ITEMS: NavItem[] = [
     { labelKey: "navClinicStatus", icon: HeartPulse, path: "/app/clinicstatus" },
 ];
 
-const RAIL_W = 68;
-const SIDEBAR_W = 228;
+const RAIL_W = 58;
+const SIDEBAR_W = 200;
 
 // The collapsible navigation rail. Collapsed it is a slim icon column; the
 // AREN logo in the header toggles it into a full sidebar. One continuous
@@ -49,10 +49,10 @@ export function NavRail({
         <nav
             aria-label={t("appTitle")}
             data-nav-keep
-            className="relative z-10 flex shrink-0 flex-col overflow-hidden border-r border-[#e7e9f0] bg-white pb-4 pt-6 transition-[width] duration-200 ease-out motion-reduce:transition-none"
+            className="relative z-10 flex shrink-0 flex-col overflow-hidden border-r border-[#e7e9f0] bg-white pb-3 pt-5 transition-[width] duration-200 ease-out motion-reduce:transition-none"
             style={{ width: expanded ? SIDEBAR_W : RAIL_W }}
         >
-            <div className="flex flex-col gap-[6px] px-3">
+            <div className="flex flex-col gap-[5px] px-[9px]">
                 {NAV_ITEMS.map((item) => {
                     const Icon = item.icon;
                     const active = pathname.startsWith(item.path);
@@ -65,7 +65,7 @@ export function NavRail({
                             aria-disabled={item.soon || undefined}
                             title={expanded ? undefined : item.soon ? `${label} · ${t("navSoon")}` : label}
                             onClick={() => { if (!item.soon && !active) navigate(item.path); }}
-                            className={`flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-3 text-left transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${
+                            className={`flex h-10 items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-[9px] px-[10px] text-left transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${
                                 active
                                     ? "bg-[rgba(124,92,240,0.10)]"
                                     : item.soon
@@ -74,16 +74,16 @@ export function NavRail({
                             }`}
                         >
                             <Icon
-                                size={20}
+                                size={17.5}
                                 strokeWidth={2}
                                 className={`shrink-0 ${active ? "text-[#7c5cf0]" : item.soon ? "text-[#b6bcc8]" : "text-[#5a6472]"}`}
                             />
                             <NavLabel expanded={expanded}>
-                                <span className={`text-[13.5px] ${active ? "font-bold text-[#4c3db2]" : item.soon ? "font-medium text-[#a8aeba]" : "font-semibold text-[#3b4453]"}`}>
+                                <span className={`text-[12.5px] ${active ? "font-bold text-[#4c3db2]" : item.soon ? "font-medium text-[#a8aeba]" : "font-semibold text-[#3b4453]"}`}>
                                     {label}
                                 </span>
                                 {item.soon && (
-                                    <span className="ml-auto rounded-[5px] border border-[#eef0f5] bg-[#f5f6f9] px-[6px] py-[1px] text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#a8aeba]">
+                                    <span className="ml-auto rounded-[5px] border border-[#eef0f5] bg-[#f5f6f9] px-[6px] py-[1px] text-[9px] font-bold uppercase tracking-[0.06em] text-[#a8aeba]">
                                         {t("navSoon")}
                                     </span>
                                 )}
@@ -96,19 +96,19 @@ export function NavRail({
             {/* Bottom zone: the reception identity chip. Session actions
                 (including logout) now live inside Clinic Status — this chip is
                 the quiet way in. */}
-            <div className="mt-auto px-3">
-                <div className="mb-3 h-px bg-[#eef0f5]" />
+            <div className="mt-auto px-[9px]">
+                <div className="mb-[10px] h-px bg-[#eef0f5]" />
                 <button
                     type="button"
                     title={expanded ? undefined : displayName}
                     onClick={() => { if (!pathname.startsWith("/app/clinicstatus")) navigate("/app/clinicstatus"); }}
-                    className="flex h-11 w-full items-center gap-3 overflow-hidden whitespace-nowrap rounded-[10px] px-[6px] text-left transition-colors hover:bg-[#f5f6f9] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
+                    className="flex h-10 w-full items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-[9px] px-[5px] text-left transition-colors hover:bg-[#f5f6f9] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)]"
                 >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[rgba(99,102,241,0.12)] text-[11px] font-bold text-[#4c3db2]">
-                        {userInitials || <UserRound size={15} strokeWidth={2.2} />}
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[rgba(99,102,241,0.12)] text-[10px] font-bold text-[#4c3db2]">
+                        {userInitials || <UserRound size={13.5} strokeWidth={2.2} />}
                     </div>
                     <NavLabel expanded={expanded}>
-                        <span className="truncate text-[12.5px] font-semibold text-[#3b4453]">{displayName}</span>
+                        <span className="truncate text-[11.5px] font-semibold text-[#3b4453]">{displayName}</span>
                     </NavLabel>
                 </button>
             </div>

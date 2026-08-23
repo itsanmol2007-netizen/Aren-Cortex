@@ -75,7 +75,9 @@ export const en = {
     greetingAfternoon: "Good afternoon",
     greetingEvening: "Good evening",
 
-    emptyMorningBody: "Your first patient will appear here. Search or add them above.",
+    emptyMorningLead: "Your day looks clear so far.",
+    emptyMorningBody: "Search or add a patient from the top to get started.",
+    emptyMorningCta: "Add Your First Patient",
     emptyTabWaiting: "No one is waiting right now",
     emptyTabConsult: "No one is with a doctor right now",
     emptyTabCompleted: "Nothing completed yet",
@@ -521,7 +523,9 @@ export const hinglish: Record<StringKey, string> = {
     greetingAfternoon: "Namaste",
     greetingEvening: "Good evening",
 
-    emptyMorningBody: "Pehla patient yahan dikhega. Upar se search ya add karo.",
+    emptyMorningLead: "Aaj ka din abhi khaali hai.",
+    emptyMorningBody: "Upar se patient search ya add karo shuru karne ke liye.",
+    emptyMorningCta: "Pehla Patient Add Karo",
     emptyTabWaiting: "Abhi koi wait nahi kar raha",
     emptyTabConsult: "Abhi koi andar nahi hai",
     emptyTabCompleted: "Abhi tak kuch complete nahi hua",

@@ -90,7 +90,7 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel }:
             role="option"
             aria-selected={!!selected}
             data-token={padToken(visit.token_number)}
-            className={`grid grid-cols-[64px_1.7fr_1.4fr_0.9fr_0.8fr_148px_34px] max-lg:grid-cols-[56px_1.5fr_0.9fr_132px_34px] items-center gap-3 border-t border-[#eef0f5] border-l-[3px] px-5 py-[11px] min-h-[44px] cursor-pointer relative transition-[background,box-shadow,border-color] duration-100 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.28)] ${selected ? "bg-[rgba(47,107,237,0.055)]" : ""} ${isCancelled ? "opacity-60" : ""}`}
+            className={`grid grid-cols-[56px_1.7fr_1.4fr_0.9fr_0.8fr_130px_30px] max-lg:grid-cols-[48px_1.5fr_0.9fr_116px_30px] items-center gap-[10px] border-t border-[#eef0f5] border-l-[3px] px-4 py-[9px] min-h-[44px] cursor-pointer relative transition-[background,box-shadow,border-color] duration-100 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.28)] ${selected ? "bg-[rgba(47,107,237,0.055)]" : ""} ${isCancelled ? "opacity-60" : ""}`}
             style={{
                 borderLeftColor: tint.borderColor,
                 backgroundImage: !selected ? (hovered ? tint.backgroundHover : tint.background) : undefined,
