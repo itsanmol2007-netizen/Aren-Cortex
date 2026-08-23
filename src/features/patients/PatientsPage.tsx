@@ -29,6 +29,7 @@ import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { PatientRecord } from "./PatientRecord";
 import { PatientsList, PatientsSearchBar } from "./PatientsList";
 import { visitStatusKind } from "./visitStatus";
+import { deriveRanked, RankedBarList } from "./RankedBarList";
 import "./patients.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -92,59 +93,127 @@ function averageVisitMinutes(rows: PatientRecordRow[]): string | null {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function deriveRanked(rows: PatientRecordRow[], pick: (r: PatientRecordRow) => string[]): { name: string; count: number }[] {
-    const map = new Map<string, number>();
-    for (const row of rows) {
-        for (const s of pick(row)) map.set(s, (map.get(s) ?? 0) + 1);
-    }
-    return Array.from(map.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, count]) => ({ name, count }));
+// ── Right Operational Panel ───────────────────────────────────────────────────
+
+/** A skeleton block matching whatever width/height the caller needs — same
+ *  shimmer as PatientsList.tsx's, not a second animation to keep in sync. */
+function PanelSkeletonBlock({ width, height = 12 }: { width: string | number; height?: number }) {
+    return <div className="prec-skeleton" style={{ width, height, borderRadius: 4 }} />;
 }
 
-function RankedBarList({
-    items,
-    onSelect,
-}: {
-    items: { name: string; count: number }[];
-    onSelect?: (name: string) => void;
-}) {
-    if (!items.length) {
-        return <span style={{ fontSize: 12, color: "#94a3b8" }}>No data yet.</span>;
-    }
-    const max = items[0]?.count ?? 1;
+/**
+ * The sidebar's own loading state. Before this, RightPanel rendered on
+ * empty arrays while `loading` was true upstream — every count read "0" and
+ * every ranked list read "No data yet.", which looks like a patient-less
+ * clinic rather than a page still loading. Shaped like the real panel
+ * (same card titles, same is-physio branch) so the swap-in doesn't jump.
+ */
+function RightPanelSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
+    const isPhysio = specialty.id === "physiotherapy";
     return (
-        <div className="prec-complaint-list">
-            {items.map((c, i) => {
-                const inner = (
-                    <>
-                        <span className="prec-complaint-rank">{i + 1}</span>
-                        <span className="prec-complaint-name">{c.name}</span>
-                        <div className="prec-complaint-bar-wrap">
-                            <div className="prec-complaint-bar-fill" style={{ width: `${Math.round((c.count / max) * 100)}%` }} />
+        <aside className="prec-right-col">
+            <div className="prec-panel-section">
+                <div className="prec-panel-card">
+                    <div className="prec-panel-card-header">
+                        <Activity size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
+                        <span className="prec-panel-card-title">Today's Practice</span>
+                    </div>
+                    <div className="prec-panel-card-body">
+                        <div className="prec-summary-grid">
+                            {[0, 1, 2, 3].map((i) => (
+                                <div key={i} className="prec-summary-cell">
+                                    <PanelSkeletonBlock width={24} height={20} />
+                                    <PanelSkeletonBlock width="70%" height={9} />
+                                </div>
+                            ))}
                         </div>
-                        <span className="prec-complaint-count">{c.count}</span>
-                    </>
-                );
-                return onSelect ? (
-                    <button key={c.name} type="button" className="prec-complaint-row prec-complaint-row--clickable" onClick={() => onSelect(c.name)}>
-                        {inner}
-                    </button>
-                ) : (
-                    <div key={c.name} className="prec-complaint-row">{inner}</div>
-                );
-            })}
-        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="prec-panel-section">
+                <div className="prec-panel-card">
+                    <div className="prec-panel-card-header">
+                        {isPhysio
+                            ? <HeartPulse size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
+                            : <Stethoscope size={13} className="prec-panel-card-icon" />}
+                        <span className="prec-panel-card-title">{isPhysio ? "Active Care" : "Common Complaints"}</span>
+                    </div>
+                    <div className="prec-panel-card-body">
+                        {isPhysio ? (
+                            <div className="prec-activecare-grid">
+                                {[0, 1, 2].map((i) => (
+                                    <div key={i} className="prec-activecare-cell" style={{ cursor: "default" }}>
+                                        <PanelSkeletonBlock width={20} height={18} />
+                                        <PanelSkeletonBlock width="80%" height={8} />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                                {[0, 1, 2].map((i) => (
+                                    <PanelSkeletonBlock key={i} width={`${90 - i * 12}%`} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="prec-panel-section">
+                <div className="prec-panel-card">
+                    <div className="prec-panel-card-header">
+                        <ListChecks size={13} className="prec-panel-card-icon" />
+                        <span className="prec-panel-card-title">{isPhysio ? "Common Conditions" : "Top Prescribed Medicines"}</span>
+                    </div>
+                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                        {[0, 1, 2, 3].map((i) => (
+                            <PanelSkeletonBlock key={i} width={`${88 - i * 10}%`} />
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {isPhysio && (
+                <div className="prec-panel-section">
+                    <div className="prec-panel-card">
+                        <div className="prec-panel-card-header">
+                            <Clock3 size={13} className="prec-panel-card-icon prec-panel-card-icon--green" />
+                            <span className="prec-panel-card-title">Recent Activity</span>
+                        </div>
+                        <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {[0, 1, 2].map((i) => (
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
+                                    <PanelSkeletonBlock width={90} />
+                                    <PanelSkeletonBlock width={60} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="prec-panel-section">
+                <div className="prec-panel-card">
+                    <div className="prec-panel-card-header">
+                        <Zap size={13} className="prec-panel-card-icon prec-panel-card-icon--green" />
+                        <span className="prec-panel-card-title">Quick Actions</span>
+                    </div>
+                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <PanelSkeletonBlock width="100%" height={28} />
+                        <PanelSkeletonBlock width="100%" height={28} />
+                    </div>
+                </div>
+            </div>
+        </aside>
     );
 }
-
-// ── Right Operational Panel ───────────────────────────────────────────────────
 
 function RightPanel({
     todayRows,
     recentRows,
     specialty,
+    loading,
     activeFilter,
     onSetFilter,
     onNewPatient,
@@ -153,6 +222,7 @@ function RightPanel({
     todayRows: PatientRecordRow[];
     recentRows: PatientRecordRow[];
     specialty: SpecialtyProfile;
+    loading: boolean;
     activeFilter: PatientFilter | null;
     onSetFilter: (f: PatientFilter | null) => void;
     onNewPatient: () => void;
@@ -208,6 +278,13 @@ function RightPanel({
     );
 
     const toggle = (f: PatientFilter) => onSetFilter(activeFilter && activeFilter.kind === f.kind && ("value" in activeFilter ? activeFilter.value : "") === ("value" in f ? f.value : "") ? null : f);
+
+    // All the above ran on empty arrays while the fetch was still in flight —
+    // harmless (every derived value is just empty/zero) — but rendering that
+    // as the real panel reads as "this clinic has no patients" rather than
+    // "still loading". The skeleton goes after every hook above so hook order
+    // stays unconditional.
+    if (loading) return <RightPanelSkeleton specialty={specialty} />;
 
     return (
         <aside className="prec-right-col">
@@ -522,6 +599,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
         return (
             <PatientRecord
                 row={selectedRow}
+                specialty={specialty}
                 onBack={goBack}
                 onStartConsult={onStartConsult}
                 logoRef={logoRef}
@@ -578,6 +656,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
                         todayRows={todayRows}
                         recentRows={recentRows}
                         specialty={specialty}
+                        loading={loading}
                         activeFilter={filter}
                         onSetFilter={setFilter}
                         onNewPatient={() => { /* wire in next session */ }}

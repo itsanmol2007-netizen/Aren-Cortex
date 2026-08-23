@@ -75,7 +75,13 @@ import { formatDelta, formatValue, type TrendSeries, type TrendSummary, type Tre
  * each one, so what is a measurement and what is just the line between two of
  * them stays distinguishable.
  */
-function Sparkline({ series }: { series: TrendSeries }) {
+// Exported for the Patient Detail page (`features/patients/PatientRecord.tsx`),
+// which reuses this SAME sparkline math/SVG rather than forking it for a
+// second visual context — only the surrounding CSS differs (see
+// `patients-detail.css`'s `.prec-trend-card .cs-lt-spark` rules, which
+// restyle this same `<svg class="cs-lt-spark">` under a different ancestor
+// class instead of duplicating `Sparkline` itself).
+export function Sparkline({ series }: { series: TrendSeries }) {
     const W = 104;
     const H = 26;
     const PAD = 3;
@@ -129,7 +135,12 @@ function Sparkline({ series }: { series: TrendSeries }) {
  * behind it. `null` only when nothing in the series was ever saved, which the
  * caller reads as "not clickable".
  */
-function visitForLastReading(series: TrendSeries, pastVisits: RealVisit[]): RealVisit | null {
+// Exported alongside Sparkline — see that export's note. Same reasoning:
+// the Patient Detail page's trend cards need to open the same visit a click
+// here would, and re-deriving "walk back to the newest SAVED point" would be
+// a second copy of a rule that is easy to get subtly wrong (skipping today's
+// unsaved reading correctly).
+export function visitForLastReading(series: TrendSeries, pastVisits: RealVisit[]): RealVisit | null {
     for (let i = series.points.length - 1; i >= 0; i--) {
         const id = series.points[i].visitId;
         if (id) return pastVisits.find((v) => v.id === id) ?? null;
@@ -138,7 +149,7 @@ function visitForLastReading(series: TrendSeries, pastVisits: RealVisit[]): Real
 }
 
 /** How long a series covers, in the unit a doctor would say it in. */
-function formatSpan(days: number): string {
+export function formatSpan(days: number): string {
     if (days < 1) return "today";
     if (days < 14) return `${days} days`;
     if (days < 70) return `${Math.round(days / 7)} weeks`;
