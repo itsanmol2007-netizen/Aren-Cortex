@@ -120,44 +120,18 @@
     line-height: 1.25;
 }
 
-/* ── 2-column detail grid ─────────────────────────────────────────────────── */
-
-.prec-detail-grid {
-    display: grid;
-    grid-template-columns: 1.7fr 1fr;
-    gap: 16px;
-    align-items: start;
-}
-
-.prec-detail-main,
-.prec-detail-side {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    min-width: 0;
-}
-
-@media (max-width: 980px) {
-    .prec-detail-grid {
-        grid-template-columns: 1fr;
-    }
+/* The main column is a straightforward vertical flow of full-width panel
+   cards (Identity, Clinical Snapshot, Progress Trend, Visit Timeline) —
+   same "one main flow + one packed sidebar" shape as the Overview page,
+   not a second, thinner content column. See PatientRecord.tsx's comment
+   on why an earlier 3-region layout got folded back to this. */
+.prec-main-col > .prec-panel-card {
+    margin-bottom: 16px;
 }
 
 /* ── Progress Trend — mini card grid, Sparkline reused from the consult
    screen's longitudinal band, restyled here under a different ancestor
    class rather than forked (see LongitudinalBand.tsx's export notes). ──── */
-
-.prec-trend-careplan-chip {
-    margin-left: auto;
-    font-size: 10px;
-    font-weight: 700;
-    color: #6d28d9;
-    background: #f5f3ff;
-    border: 1px solid rgba(109, 40, 217, 0.18);
-    border-radius: 20px;
-    padding: 2px 9px;
-    white-space: nowrap;
-}
 
 .prec-trend-grid {
     display: grid;
@@ -281,6 +255,39 @@ button.prec-trend-card.is-clickable:hover {
     color: #94a3b8;
     margin: 0;
     line-height: 1.5;
+}
+
+/* ── Care Plan card (sidebar) — real numbers only: `row.care_plan_progress`
+   is null unless a visit has actually been linked to an active plan, so
+   this card simply doesn't render rather than showing a fabricated "no
+   plan" placeholder frame. ─────────────────────────────────────────────── */
+
+.prec-careplan-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+
+.prec-careplan-bar {
+    width: 100%;
+    height: 6px;
+    background: #edf0f7;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.prec-careplan-bar span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #1268e8, #3b82f6);
+    border-radius: 3px;
+}
+
+.prec-careplan-sub {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 6px;
 }
 
 /* ── Visit timeline (spine list) ──────────────────────────────────────────── */

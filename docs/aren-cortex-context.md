@@ -278,17 +278,61 @@ brand-priority over label-priority).
   wired**: no write in `useConsultPlan.ts`'s accept handler, no read in the
   consult screen. Schema is ready; the write/read path is real clinical work
   for a dedicated physio-consult session, not a wiring task.
-- **`care_plans` is correctly modeled but never actually used in practice**
-  (confirmed live 2026-08-23 against Ekanki's 165 real physio visits —
-  `care_plan_id` is `null` on effectively every one, including patients with
-  5+ visits). The table and its functions (`lib/db/carePlans.ts`) have existed
-  since 2026-08-16 and work; nothing in the physio consult flow ever calls
-  `createCarePlan` or `linkVisitToCarePlan`. So "session 4 of 12" is
-  structurally supported but has never once rendered true data. Needs: prompt
-  to start a care plan when physio treatment begins, auto-link each
-  subsequent visit for that patient/doctor. Until this is wired, any UI
-  showing a session count for a physio patient must use their real visit
-  count, not a fabricated plan-session number.
+- **`care_plans` is correctly modeled and — UPDATE, later on 2026-08-23 — is
+  now genuinely linked for at least one real patient.** The entry above (same
+  date, earlier check) said `care_plan_id` was null on effectively every
+  visit including patients with 5+ visits, and concluded "session 4 of 12"
+  had never once rendered true data. Building the Patient Record page's Care
+  Plan card that same day, against Ekanki's live account, showed Rohan
+  Malhotra with a real `care_plan_progress` — "Session 6 of 12", a correct
+  50% bar, target 12 — not fabricated, read straight from
+  `PatientRecordRow.care_plan_progress` (which itself reads `care_plans` via
+  `buildPatientRecordRows`). Both checks were real reads of the same live
+  data hours apart; the honest reading is that **something started linking
+  visits to a plan for this patient in between**, not that the earlier
+  finding was wrong. **Left for the next physio-consult session:** re-run the
+  live check this entry originally did (how many patients now have a real
+  `care_plan_id`, is it one patient or a pattern) before trusting or
+  distrusting "session N of M" anywhere in the product — don't assume either
+  the old "never used" claim or the new one-patient sighting generalizes.
+- **`fetchPatientVisits` (`lib/db/patients.ts`, used by the Patient Record
+  page) has no physio fields at all — found 2026-08-23, second pass on the
+  Patient Record page.** `PatientRecordRow` (the Overview table's row) got
+  real `body_sites`/`exercise_names`/`impairment_names` in the first pass of
+  this arc; `RealVisit`/`fetchPatientVisits` (the PER-VISIT history the
+  Record page's timeline reads) never did — it still only selects
+  symptoms/findings/medicines via the v1-legacy join. Concretely, live
+  against Rohan Malhotra: every visit in his timeline reads as generic
+  "Consultation" (the badge logic is `hasMeds ? "Prescription" : hasFindings
+  ? "Examination" : "Consultation"`, and physio visits routinely have
+  neither) even though the account's own real exercise data exists — the
+  Identity card's "Last Exercise" stat only manages to show something real
+  because it reads `row.exercise_names[0]` off the Overview row instead, which
+  is only ever the MOST RECENT exercise, not per-visit. A physiotherapist
+  opening a past session in the timeline cannot see what was actually
+  prescribed that day. Needs: extend `RealVisit`/`fetchPatientVisits` with
+  the same `body_sites`/`exercise_names`/`impairment_names` fields
+  `buildPatientRecordRows` already knows how to compute, then give
+  `VisitRow` (`PatientRecord.tsx`) a physio-aware branch on the visit-type
+  badge and expanded body, same specialty-branch discipline as rule 16.
+- **`fetchPatientVisits`'s `visit_count` vs `PatientRecordRow.visit_count` can
+  disagree by a lot — found 2026-08-23, not root-caused.** Live on Rohan
+  Malhotra: the Identity card's "Total sessions" (from `row.visit_count`,
+  computed by `buildPatientRecordRows`) read **24**; the Visit Timeline right
+  below it (from `fetchPatientVisits`, `.eq("status","completed")` capped at
+  `.limit(20)`) showed **6**. Two live reads of the same account, same
+  session, genuinely 18 apart. Two candidate explanations, neither confirmed
+  against the schema this session (no live DB access — see
+  SESSION-HANDOFF.md §2): either most of Rohan's 24 visits carry a
+  `visits.status` other than `completed` (plausible — physio sessions may
+  legitimately sit in `serving`/`waiting`/`draft` more often than a
+  General-OPD visit does, and `visit_count`'s own count query may not filter
+  the same way `fetchPatientVisits` does), or the `.limit(20)` cap is
+  genuinely too low for a physio patient this far into a course and quietly
+  truncating real history. **Left for the next session with live DB access:**
+  check which status values Rohan's other 18 visits actually carry before
+  changing either query — do not just raise the limit or loosen the status
+  filter without knowing which one (or both) is the real cause.
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: not built at all, blocked on Anmol choosing a
