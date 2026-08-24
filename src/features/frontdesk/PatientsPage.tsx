@@ -51,14 +51,20 @@ function PatientsInner() {
     const [editing, setEditing] = useState(false);
     const [timelineOpen, setTimelineOpen] = useState(false);
 
-    const handleCreate: typeof actions.createNewVisit = async (opts) => {
-        const result = await actions.createNewVisit(opts);
-        if (result) {
-            // The archive's aggregates just changed — refresh both quietly.
-            history.refetch();
-            directory.refetch();
-        }
-        return result;
+    // createNewVisit is fire-and-forget now (2026-08-24 — CreateVisitModal
+    // closes instantly, the real create happens in the background). This
+    // page still wants to know when that background attempt actually lands,
+    // so its own aggregates (the directory list, this patient's visit
+    // history) refresh — onSuccess is exactly that hook, called once the
+    // visit is genuinely committed rather than on the modal closing.
+    const handleCreate: (opts: Parameters<typeof actions.createNewVisit>[0]) => void = (opts) => {
+        actions.createNewVisit({
+            ...opts,
+            onSuccess: () => {
+                history.refetch();
+                directory.refetch();
+            },
+        });
     };
 
     return (

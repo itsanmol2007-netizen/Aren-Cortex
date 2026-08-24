@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ExternalLink, ArrowRightLeft, CheckCircle2, XCircle, MoreVertical, Paperclip, Printer } from "lucide-react";
+import { ExternalLink, ArrowRightLeft, CheckCircle2, Loader2, WifiOff, XCircle, MoreVertical, Paperclip, Printer } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { tintFor } from "../statusStyle";
 import { maskPhone, padToken, formatShortDate } from "../utils";
@@ -42,6 +42,13 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
 
     const isCompleted = visit.status === "completed";
     const goToPrintRx = () => navigate(`/app/printrx?visit=${visit.visit_id}`);
+
+    // An optimistic row (see useVisitActions.createNewVisit): the queue
+    // shows it the instant reception clicks Save, before the server has
+    // confirmed anything — so it carries a temp id and none of its actions
+    // (open/complete/attachments/…) are real yet. Row is inert until the
+    // background create resolves and a live refresh replaces it.
+    const isPending = !!visit.pending;
 
     const openMenu = () => {
         const rect = menuBtnRef.current?.getBoundingClientRect();
@@ -94,7 +101,7 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
             role="option"
             aria-selected={!!selected}
             data-token={padToken(visit.token_number)}
-            className={`grid grid-cols-[56px_1.7fr_1.4fr_0.9fr_0.8fr_130px_30px] max-lg:grid-cols-[48px_1.5fr_0.9fr_116px_30px] items-center gap-[10px] border-t border-[#eef0f5] border-l-[3px] px-4 py-[9px] min-h-[44px] cursor-pointer relative transition-[background,box-shadow,border-color] duration-100 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.28)] ${selected ? "bg-[rgba(47,107,237,0.055)]" : ""} ${isCancelled ? "opacity-60" : ""}`}
+            className={`grid grid-cols-[56px_1.7fr_1.4fr_0.9fr_0.8fr_130px_30px] max-lg:grid-cols-[48px_1.5fr_0.9fr_116px_30px] items-center gap-[10px] border-t border-[#eef0f5] border-l-[3px] px-4 py-[9px] min-h-[44px] relative transition-[background,box-shadow,border-color] duration-100 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.28)] ${isPending ? "cursor-default" : "cursor-pointer"} ${selected ? "bg-[rgba(47,107,237,0.055)]" : ""} ${isCancelled ? "opacity-60" : ""} ${isPending ? "opacity-70" : ""}`}
             style={{
                 borderLeftColor: tint.borderColor,
                 backgroundImage: !selected ? (hovered ? tint.backgroundHover : tint.background) : undefined,
@@ -102,6 +109,7 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             onClick={(e) => {
+                if (isPending) return;
                 if ((e.target as HTMLElement).closest("[data-row-menu-btn]")) return;
                 onOpen(visit);
             }}
@@ -121,6 +129,18 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
                             className="shrink-0 whitespace-nowrap rounded-[5px] border border-[#e4e7ee] bg-[#f5f6f9] px-[7px] py-[2px] text-[10px] font-semibold text-[#5a6472]"
                         >
                             {t("returning")}
+                        </span>
+                    )}
+                    {/* Quiet indicator, not a status — a visit with files
+                        attached (from intake or the ⋮ menu) shouldn't need
+                        opening it to know they're there. */}
+                    {visit.attachment_count > 0 && (
+                        <span
+                            title={t("attachCount", { n: visit.attachment_count })}
+                            className="flex shrink-0 items-center gap-[3px] whitespace-nowrap rounded-[5px] border border-[#e5ddfa] bg-[#f7f5fd] px-[6px] py-[2px] text-[10px] font-semibold text-[#6d5bc7]"
+                        >
+                            <Paperclip size={10} />
+                            {visit.attachment_count}
                         </span>
                     )}
                 </div>
@@ -152,15 +172,22 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
             {/* Status pill: dot + label, and for waiting the live duration —
                 "Waiting · 18 min" says what AND how long in one breath. */}
             <div className="flex items-center gap-[4px]">
-                <div className={`inline-flex w-fit items-center gap-[6px] rounded-full px-[11px] py-[5px] text-[11.5px] font-semibold ${tint.chipBg} ${tint.textClass}`}>
-                    <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: tint.dotColor }} />
-                    <span className="whitespace-nowrap">
-                        {t(tint.labelKey)}
-                        {visit.status === "waiting" && waitMins >= 1 && (
-                            <span className="tabular-nums"> · {waitMins} {t("min")}</span>
-                        )}
-                    </span>
-                </div>
+                {isPending ? (
+                    <div className="inline-flex w-fit items-center gap-[6px] rounded-full bg-[#f5f6f9] px-[11px] py-[5px] text-[11.5px] font-semibold text-[#5a6472]">
+                        {visit.offline ? <WifiOff size={11} /> : <Loader2 size={11} className="animate-spin" />}
+                        <span className="whitespace-nowrap">{visit.offline ? t("syncOffline") : t("syncSaving")}</span>
+                    </div>
+                ) : (
+                    <div className={`inline-flex w-fit items-center gap-[6px] rounded-full px-[11px] py-[5px] text-[11.5px] font-semibold ${tint.chipBg} ${tint.textClass}`}>
+                        <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: tint.dotColor }} />
+                        <span className="whitespace-nowrap">
+                            {t(tint.labelKey)}
+                            {visit.status === "waiting" && waitMins >= 1 && (
+                                <span className="tabular-nums"> · {waitMins} {t("min")}</span>
+                            )}
+                        </span>
+                    </div>
+                )}
                 {/* Completed visits grow a quiet next step: jump to Print RX
                     with this visit's prescription already selected. Contextual,
                     never dominant — same presence rules as the kebab. */}
@@ -177,16 +204,18 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
                 )}
             </div>
 
-            <button
-                ref={menuBtnRef}
-                data-row-menu-btn
-                type="button"
-                onClick={(e) => { e.stopPropagation(); openMenu(); }}
-                aria-label={t("menuOpen")}
-                className={`flex h-8 w-8 items-center justify-center rounded-lg text-[#a8aeba] transition-opacity duration-100 hover:bg-[#eef0f5] hover:text-[#5a6472] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${hovered || menuOpen ? "opacity-100" : "opacity-40"}`}
-            >
-                <MoreVertical size={17} />
-            </button>
+            {!isPending && (
+                <button
+                    ref={menuBtnRef}
+                    data-row-menu-btn
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); openMenu(); }}
+                    aria-label={t("menuOpen")}
+                    className={`flex h-8 w-8 items-center justify-center rounded-lg text-[#a8aeba] transition-opacity duration-100 hover:bg-[#eef0f5] hover:text-[#5a6472] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.28)] ${hovered || menuOpen ? "opacity-100" : "opacity-40"}`}
+                >
+                    <MoreVertical size={17} />
+                </button>
+            )}
 
             {menu}
         </div>

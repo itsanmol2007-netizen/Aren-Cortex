@@ -62,7 +62,7 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                     if (disabled) return;
                     accept(Array.from(e.dataTransfer.files));
                 }}
-                className={`flex flex-col items-center gap-[7px] rounded-[12px] border-[1.5px] border-dashed px-4 py-5 text-center transition-colors ${
+                className={`flex flex-col items-center gap-[6px] rounded-[12px] border-[1.5px] border-dashed px-4 py-[14px] text-center transition-colors ${
                     disabled
                         ? "cursor-default border-[#e9e7f4] bg-[#f8f8fb] opacity-60"
                         : dragging

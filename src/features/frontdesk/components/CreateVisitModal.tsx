@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
 import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
 import type { IntakeChip } from "@/lib/db/synapse";
-import { uploadAttachment } from "@/lib/db/attachments";
+import type { AttachmentType } from "@/lib/attachments/types";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
 import { useCachedIntakeChips } from "../operational/referenceCache";
@@ -22,6 +21,10 @@ type Props = {
     // detection); picked symptoms/doctor survive because the component stays
     // mounted — only the identity half of the form changes.
     onUseExisting: (patient: DBPatient) => void;
+    // Fire-and-forget (2026-08-24) — Save closes this modal instantly rather
+    // than waiting on the network; useVisitActions.createNewVisit does the
+    // real work (patient lookup/create, visit create, attachments) in the
+    // background and reconciles the queue itself. Nothing here awaits it.
     onCreate: (opts: {
         existingPatient: DBPatient | null;
         name: string;
@@ -30,8 +33,11 @@ type Props = {
         dateOfBirth: string;
         gender: string;
         observableIds: number[];
+        symptomNames: string[];
         doctorId: string;
-    }) => Promise<{ patientName: string; visitId: string } | null>;
+        doctorName: string;
+        attachments: { file: File; attachmentType: AttachmentType }[];
+    }) => void;
 };
 
 export function CreateVisitModal({ existingPatient, prefillName, doctors, defaultDoctorId, onClose, onUseExisting, onCreate }: Props) {
@@ -62,7 +68,6 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         setDoctorId(doctors[0].id);
     }, [doctors, doctorId]);
     const [errors, setErrors] = useState<Record<string, boolean>>({});
-    const [saving, setSaving] = useState(false);
     const [visitStats, setVisitStats] = useState<{ visit_count: number; last_visit_at: string | null } | null>(null);
 
     // Keyboard flow (receptionists live on the keyboard): Enter advances
@@ -144,8 +149,14 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         return Object.keys(nextErrors).length === 0;
     };
 
-    const handleSave = async () => {
-        if (saving) return;
+    // Synchronous and instant on purpose (2026-08-24): registering used to
+    // block on 2-3 sequential network round trips (find/create patient,
+    // create visit) with the modal sitting open the whole time — reported as
+    // "very slow". Validation still runs first (bad data shouldn't create a
+    // phantom queue row), but the moment it passes, this closes immediately
+    // and hands everything to onCreate, which inserts an optimistic row and
+    // does the real work in the background — see useVisitActions.createNewVisit.
+    const handleSave = () => {
         if (!validate()) return;
         // Duplicate guard: same phone + same name = that IS this patient —
         // create the visit for them instead of minting a twin record. Same
@@ -158,8 +169,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             setErrors((e) => ({ ...e, phone: true }));
             return;
         }
-        setSaving(true);
-        const result = await onCreate({
+        onCreate({
             existingPatient: asExisting,
             name,
             phone,
@@ -167,30 +177,12 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             dateOfBirth,
             gender,
             observableIds: selectedSymptoms.map((s) => s.observableId),
+            symptomNames: selectedSymptoms.map((s) => s.label),
             doctorId,
+            doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
+            attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
         });
-        setSaving(false);
-        if (result) {
-            // Best-effort, non-blocking — same rule as the observation writes
-            // above: a failed attachment must never be mistaken for a failed
-            // visit. The visit is already saved and the receptionist has
-            // already moved on by the time this settles, so failures surface
-            // as a toast rather than holding the modal open.
-            if (stagedAttachments.length) {
-                const { visitId } = result;
-                (async () => {
-                    for (const staged of stagedAttachments) {
-                        try {
-                            await uploadAttachment({ visitId, file: staged.file, attachmentType: staged.attachmentType });
-                        } catch (err) {
-                            console.warn("intake attachment upload failed (non-fatal):", err);
-                            toast.error(t("attachUploadFailed"));
-                        }
-                    }
-                })();
-            }
-            onClose();
-        }
+        onClose();
     };
 
     // Enter anywhere in the form: save when complete, otherwise walk to the
@@ -245,10 +237,9 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         Retry) carries the identical treatment — see §7.7. */}
                     <button
                         onClick={handleSave}
-                        disabled={saving}
-                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[background-color,box-shadow] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] disabled:opacity-50 disabled:hover:bg-[#2f6bed]"
+                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[background-color,box-shadow] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)]"
                     >
-                        {saving ? t("saving") : t("save")}
+                        {t("save")}
                         <ArrowRight size={15} strokeWidth={2.4} />
                     </button>
                 </>
@@ -256,7 +247,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         >
             <div onKeyDown={handleFormKeyDown}>
                 {existing && existingPatient ? (
-                    <div className="mb-4 flex items-center gap-3 rounded-[11px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[10px]">
+                    <div className="mb-3 flex items-center gap-3 rounded-[11px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[8px]">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[13px] font-bold text-[#6d28d9]">
                             {initials(existingPatient.name)}
                         </div>
@@ -277,7 +268,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 ) : (
                     <>
                         <SectionLabel text={t("secPatient")} />
-                        <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-3">
+                        <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2">
                             <Field className="col-span-2" icon={<UserRound size={13} />} label={t("fldName")} required error={errors.name ? t("errRequired") : undefined}>
                                 <input
                                     ref={nameRef}
@@ -366,7 +357,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         {/* Duplicate-patient banner: appears silently as they type;
                             one click turns "register" into "new visit for them". */}
                         {dup && (
-                            <div className="mt-3 flex items-center gap-[10px] rounded-[11px] border border-[#e2d9fb] bg-[linear-gradient(135deg,rgba(124,92,240,0.09),rgba(124,92,240,0.02))] px-3 py-[9px]">
+                            <div className="mt-[10px] flex items-center gap-[10px] rounded-[11px] border border-[#e2d9fb] bg-[linear-gradient(135deg,rgba(124,92,240,0.09),rgba(124,92,240,0.02))] px-3 py-[8px]">
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[12.5px] font-bold text-[#6d28d9]">
                                     {initials(dup.name)}
                                 </div>
@@ -392,7 +383,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     </>
                 )}
 
-                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[18px]"} />
+                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[14px]"} />
                 <Field icon={<Thermometer size={13} />} label={t("fldSymptoms")} required error={errors.symptoms ? t("errSymptom") : undefined}>
                     <SymptomPicker
                         inputRef={symptomRef}
@@ -404,7 +395,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         error={!!errors.symptoms}
                     />
                 </Field>
-                <Field className="mt-3" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
+                <Field className="mt-[10px]" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
                     <select ref={doctorRef} value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={fieldClass()}>
                         {doctors.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
@@ -412,7 +403,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     </select>
                 </Field>
 
-                <SectionLabel text={t("secAttachments")} className="mt-[18px]" />
+                <SectionLabel text={t("secAttachments")} className="mt-[14px]" />
                 <IntakeAttachmentsField files={stagedAttachments} onChange={setStagedAttachments} />
             </div>
         </ModalShell>

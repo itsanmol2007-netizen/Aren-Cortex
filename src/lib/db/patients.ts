@@ -1219,6 +1219,15 @@ export type TodayVisit = {
     symptom_names: string[];
     visit_count: number;
     last_visit_at: string | null;
+    attachment_count: number;
+    // Client-only, optimistic-UI flags — never set by a real fetch. A row
+    // carries `pending` from the instant Front Desk inserts it (before the
+    // server has confirmed anything) until the next real queue refresh
+    // replaces it with the authoritative row. `offline` distinguishes "still
+    // trying" from "waiting for connectivity to come back" — see
+    // useVisitActions.createNewVisit.
+    pending?: boolean;
+    offline?: boolean;
 };
 
 export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]> {
@@ -1267,6 +1276,18 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
     // The canonical intake record, which the v1 join above cannot represent in full.
     const obsNamesByVisit = await observationNamesByVisit(visitIds);
 
+    // How many files (if any) are attached to each visit — cheap (id +
+    // visit_id only) so the queue can show a quiet indicator without a
+    // separate round trip per row.
+    const { data: attRows } = await supabase
+        .from("visit_attachments")
+        .select("visit_id")
+        .in("visit_id", visitIds);
+    const attachmentCountByVisit = new Map<string, number>();
+    (attRows ?? []).forEach((r: any) => {
+        attachmentCountByVisit.set(r.visit_id, (attachmentCountByVisit.get(r.visit_id) ?? 0) + 1);
+    });
+
     const { data: allVisitsForPatients } = await supabase
         .from("visits")
         .select("patient_id, created_at")
@@ -1307,6 +1328,7 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
                     .filter(Boolean) as string[]),
             visit_count: visitCountMap.get(v.patient_id) ?? 1,
             last_visit_at: lastVisitMap.get(v.patient_id) ?? v.created_at,
+            attachment_count: attachmentCountByVisit.get(v.id) ?? 0,
         };
     });
 }

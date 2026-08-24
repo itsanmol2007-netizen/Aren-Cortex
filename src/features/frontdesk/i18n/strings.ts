@@ -175,8 +175,13 @@ export const en = {
     attachViewFailed: "Could not open attachment",
     attachUploadFailed: "Upload failed",
     attachDeleteFailed: "Delete failed",
-    attachStagedHint: "Uploads once the visit is saved",
+    attachStagedHint: "Compressed automatically and uploaded once the visit is saved",
     attachStagedNone: "No files added yet",
+    attachTypeLabel: "Type",
+    attachPreview: "Preview",
+
+    syncSaving: "Saving…",
+    syncOffline: "Offline — will sync",
 
     toastCreated: "«name» added · #«t»",
     undo: "Undo",
@@ -644,8 +649,13 @@ export const hinglish: Record<StringKey, string> = {
     attachViewFailed: "Attachment nahi khul paya",
     attachUploadFailed: "Upload nahi ho paya",
     attachDeleteFailed: "Hata nahi paye",
-    attachStagedHint: "Visit save hote hi upload ho jayega",
+    attachStagedHint: "Automatically compress hoga aur visit save hote hi upload ho jayega",
     attachStagedNone: "Abhi koi file add nahi ki",
+    attachTypeLabel: "Type",
+    attachPreview: "Preview",
+
+    syncSaving: "Save ho raha…",
+    syncOffline: "Offline — sync hoga jaise hi net aayega",
 
     toastCreated: "«name» add ho gaya · #«t»",
     undo: "Wapas",

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, FileText, Image as ImageIcon, Loader2, Paperclip, Trash2 } from "lucide-react";
-import { deleteAttachment, getViewUrl, listAttachments, uploadAttachment } from "@/lib/db/attachments";
+import { Eye, FileText, Image as ImageIcon, Loader2, Paperclip, Trash2 } from "lucide-react";
+import { deleteAttachment, listAttachments, uploadAttachment } from "@/lib/db/attachments";
 import { ATTACHMENT_TYPE_LABEL, type Attachment } from "@/lib/attachments/types";
 import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
 import { ModalShell } from "./ModalShell";
 import { AttachmentDropzone, inferAttachmentType } from "./AttachmentDropzone";
+import { AttachmentPreviewModal } from "./AttachmentPreviewModal";
 
 // Visit-level attachments, reached from a queue row's ⋮ menu. Shows what's
 // already on this visit and lets reception add more — the exact same
@@ -36,7 +37,7 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
     const [items, setItems] = useState<Attachment[]>([]);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<string | null>(null); // status text while uploading
-    const [viewing, setViewing] = useState<number | null>(null);
+    const [previewing, setPreviewing] = useState<Attachment | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -62,19 +63,6 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
             }
         }
         setBusy(null);
-    };
-
-    const onView = async (att: Attachment) => {
-        setViewing(att.id);
-        setError(null);
-        try {
-            const url = await getViewUrl(att.storagePath);
-            window.open(url, "_blank", "noopener,noreferrer");
-        } catch (err) {
-            setError(err instanceof Error ? err.message : t("attachViewFailed"));
-        } finally {
-            setViewing(null);
-        }
     };
 
     const onDelete = async (att: Attachment) => {
@@ -130,13 +118,12 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => onView(att)}
-                                disabled={viewing === att.id}
+                                onClick={() => setPreviewing(att)}
                                 aria-label={t("attachView")}
                                 title={t("attachView")}
                                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#8a91a0] transition-colors hover:bg-[#eef0f5] hover:text-[#5a6472]"
                             >
-                                {viewing === att.id ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+                                <Eye size={15} />
                             </button>
                             <button
                                 type="button"
@@ -153,6 +140,10 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
             ) : null}
 
             {error && <p className="mt-3 text-[12px] font-medium text-[#d23b34]">{error}</p>}
+
+            {previewing && (
+                <AttachmentPreviewModal attachment={previewing} onClose={() => setPreviewing(null)} />
+            )}
         </ModalShell>
     );
 }

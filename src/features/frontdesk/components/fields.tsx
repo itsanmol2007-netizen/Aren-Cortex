@@ -10,7 +10,7 @@ import { useT } from "../i18n/i18n";
 // across the modal family (§4 micro-label system).
 export function SectionLabel({ text, className = "" }: { text: string; className?: string }) {
     return (
-        <div className={`mb-[10px] flex items-center gap-2 ${className}`}>
+        <div className={`mb-[7px] flex items-center gap-2 ${className}`}>
             <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">{text}</span>
             <span aria-hidden className="h-px flex-1 bg-[linear-gradient(90deg,#e9e6f5,transparent)]" />
         </div>
@@ -39,7 +39,7 @@ export function Field({
         <div className={className}>
             {/* fd-ico / fd-tag are unlayered classes (FrontDeskStyles): the legacy
                 `label span` rules would override Tailwind utilities here. */}
-            <label className="fd-label mb-[5px] text-[12.5px] font-bold text-[#3b4453]">
+            <label className="fd-label mb-[4px] text-[12.5px] font-bold text-[#3b4453]">
                 {icon && <span className="fd-ico">{icon}</span>}
                 {label}
                 {/* Required mark (§10.2): structural violet, known upfront — not
@@ -155,7 +155,7 @@ export function GenderControl({
             aria-label={t("fldGender")}
             tabIndex={0}
             onKeyDown={handleKeyDown}
-            className={`flex h-[42px] items-stretch gap-[3px] rounded-[10px] border-[1.5px] p-[3px] outline-none transition-[border-color,box-shadow,background-color] duration-150 ${
+            className={`flex h-[38px] items-stretch gap-[3px] rounded-[10px] border-[1.5px] p-[3px] outline-none transition-[border-color,box-shadow,background-color] duration-150 ${
                 error
                     ? "border-[#d23b34] bg-[#fffafa]"
                     : "border-[#e9e7f4] bg-[#f8f8fd] focus-visible:border-[#7c5cf0] focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
@@ -208,7 +208,7 @@ export function PhoneInput({
     const complete = /^\d{10}$/.test(value);
     return (
         <div
-            className={`flex h-[42px] items-center overflow-hidden rounded-[10px] border-[1.5px] transition-[border-color,box-shadow,background-color] duration-150 ${
+            className={`flex h-[38px] items-center overflow-hidden rounded-[10px] border-[1.5px] transition-[border-color,box-shadow,background-color] duration-150 ${
                 error
                     ? "border-[#d23b34] bg-[#fffafa]"
                     : "border-[#e9e7f4] bg-[#f8f8fd] focus-within:border-[#7c5cf0] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
