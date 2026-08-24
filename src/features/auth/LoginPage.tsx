@@ -28,9 +28,9 @@ const MSG = {
     phoneLength: "Enter the 10-digit phone number your clinic registered with.",
     passwordEmpty: "Enter your password.",
     invalid: "That phone number and password don't match our records.",
-    incomplete: "Your account setup looks incomplete. Write to arenode.core@gmail.com and we'll sort it out.",
+    incomplete: "Your account setup looks incomplete. Write to care@arenode.com and we'll sort it out.",
     disabled: "This account has been disabled. Please contact your clinic administrator.",
-    pending: "Your clinic's account isn't active yet. Write to arenode.core@gmail.com and we'll get you started.",
+    pending: "Your clinic's account isn't active yet. Write to care@arenode.com and we'll get you started.",
     unreachable: "Can't reach AREN right now. Check your connection and try again.",
     sessionLost: "Please sign in again to continue.",
 } as const;
@@ -212,7 +212,7 @@ export function LoginPage() {
                     </p>
                     <p>
                         Trouble signing in or forgot your password? Write to{" "}
-                        <a href="mailto:arenode.core@gmail.com">arenode.core@gmail.com</a>
+                        <a href="mailto:care@arenode.com">care@arenode.com</a>
                     </p>
                 </div>
             </main>

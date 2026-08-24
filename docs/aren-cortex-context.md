@@ -427,32 +427,52 @@ brand-priority over label-priority).
   scrim/panel in with a fade + spring bounce on every open — it still opens
   and closes, just without the motion.
 - **"Confirming a condition doesn't rerank medicines/tests" — investigated
-  2026-08-24, not a bug, and not fixed because the real fix is clinical
-  content, not code.** The mechanism is real and does work
-  (`useLongitudinalRecord.ts`'s `confirmCondition`, called from
-  `useConsultPlan.ts`'s `case "finding"`): confirming a Possible Condition
-  adds it as a context observable and the engine re-ranks in the same
-  frame — but ONLY for a condition with a row in `condition_observable_map`,
-  and that table has exactly **7 rows, covering 7 of the 87 active
-  `finding`-type intents** (checked live: `select count(*) from
-  condition_observable_map` → 7, all `is_chronic`; `select count(*) from
-  intents where type='finding' and is_active` → 87) — asthma/COPD (×2
-  intents), T2DM (×2), dyslipidaemia, hypertension (×2). Every other
-  Possible Condition a doctor confirms — the ~80 remaining, e.g. migraine,
-  UTI, gastritis, anaemia — genuinely does nothing beyond printing on the
-  Rx, on purpose: there is no corresponding "Known X" observable in the
-  catalogue for most of them to map to (checked: only 7 `kind='history'`
-  observables are even named "Known %", and all 7 already have every
-  matching intent wired — zero free wiring left). Widening this means, per
-  condition, deciding whether it needs a new observable, whether that
-  observable should be chronic (durable across visits) or episodic
-  (today only), and what `signal_intent_rules` that observable should
-  drive — real clinical judgement calls, which is exactly what
-  `useLongitudinalRecord.ts`'s own header already refuses to invent ("a
-  wrong standing fact is worse than no standing fact"). Needs a doctor's
-  (Anmol's, or a clinical reviewer's) curated list of condition→observable
-  pairs before a future session can wire more rows in — the wiring itself
-  is small once that list exists.
+  2026-08-24, widened 2026-08-25 with Anmol's explicit go-ahead ("we are in
+  MVP, the goal is shipping fast... not database perfection").**
+  Coverage went from **7 of 87 active `finding`-type intents to 21 of 87**
+  (verified live, both counts). Two kinds of addition, both via
+  `apply_migration` (not raw `execute_sql`) so they show up in
+  `list_migrations` like every other content batch this ruleset has had
+  (`mumps_measles_gout_*`, `cardio_depth_*`, the original
+  `seed_condition_observable_map_chronic_subset`):
+  - **6 "free wins"** (`condition_observable_map_free_wins`) — conditions
+    pointed at an observable that ALREADY existed and was ALREADY wired to
+    real `signal_intent_rules`, so no new clinical content was authored,
+    just recognised: Piles→"Piles / haemorrhoids", Dengue fever→"Dengue
+    suspected", Atrial fibrillation→"ECG: Atrial fibrillation rhythm",
+    Vertigo→"Vertigo — spinning sensation", Mechanical low back pain→"Low
+    back pain", Mechanical neck pain→"Neck pain".
+  - **8 new chronic facts** (3 migrations:
+    `chronic_conditions_batch1_signals_and_observables` →
+    `..._batch2_link_and_map` → `..._batch3_intent_rules`, same 3-step
+    split the ruleset's own history uses) — Migraine, GERD, Hip+Knee
+    osteoarthritis (shared one observable — same disease process, same
+    rerank, matching how asthma+COPD-exacerbation already share
+    `known_asthma_copd`), Gout, Allergic rhinitis, Peripheral arterial
+    disease, Congestive heart failure. Every medicine/test referenced
+    already existed in the catalogue (rule 22 — nothing minted); every
+    association was checked against a real guideline before being written
+    (AAFP migraine prophylaxis, ACP/ACR gout management, current OA
+    guidance — paracetamol is explicitly NOT first-line any more, NSAID +
+    physiotherapy referral outrank it here on purpose — AAFP allergic
+    rhinitis, ACC/AHA PAD, AHA/ACC heart failure GDMT). Weights follow the
+    existing DIABETIC/LOW_BACK_PAIN pattern (primary ~0.35–0.45, secondary
+    ~0.25–0.35, adjuncts/tests ~0.15–0.30); every new row is
+    `is_safety_critical=false` — these are rank-order nudges, not guards,
+    and no `intent_guards`/`intent_class` row was touched this pass.
+    Verified end-to-end live (every one of the 21 rows resolves
+    intent→observable→signal→≥3 real rules; the 8 new ones average 6–8
+    each) and against `get_advisors` (no new findings — everything flagged
+    pre-dates this batch).
+  **Still not mapped: 66 of 87.** Mostly genuine one-off acute infections/
+  injuries (URI, gastroenteritis, malaria, ankle sprain, appendicitis, …)
+  where a "confirm" adding today's context has real but smaller value than
+  the chronic batch did, plus a handful of cardiology/paediatric findings
+  closer to a monitoring finding than a "diagnosis a doctor confirms". Same
+  process works for more of them — `condition_observable_map`'s own
+  `note` column on each row this pass documents the reasoning so a future
+  batch (or a scan for more "free wins" against observables added since)
+  is a repeat of this playbook, not a re-investigation.
 - **Communication, Clinic and Support given real pages 2026-08-24** —
   replacing the generic `ComingSoonPage` for those three specifically
   (`COMING_SOON_META` now stays empty, kept only as the fallback for a
