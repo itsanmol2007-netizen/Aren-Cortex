@@ -6,7 +6,10 @@
 .clinic-page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    /* Not `height: 100%` — see support.css's identical note. `.app-shell`
+       has no height of its own, so this collapsed to its own short content
+       instead of filling the screen. */
+    min-height: 100vh;
     background: #f0f2f7;
 }
 
@@ -19,6 +22,9 @@
     width: 100%;
     display: flex;
     flex-direction: column;
+    /* Centres the hero + list in whatever space `min-height: 100vh` above
+       actually gives this page. */
+    justify-content: center;
     gap: 20px;
 }
 
@@ -32,7 +38,6 @@
     align-items: center;
     text-align: center;
     gap: 10px;
-    margin-top: 24px;
 }
 
 .clinic-hero-title {

@@ -472,6 +472,38 @@ brand-priority over label-priority).
   configuration, slate = account-level) instead of five arbitrary picks.
   See `SidebarNav.tsx`'s `tone` prop comment and `sidebar.css`'s
   `.tone-indigo`.
+- **Every feature page was silently collapsed to its own content height —
+  found and fixed 2026-08-24, same day the 3 above were built, from a
+  screenshot: "half rendered page, split screen and the content is not in
+  the centre too... every page looks half rendered except consult and
+  patient."** Root cause, verified with a local CSS-only harness (this
+  sandbox's Chromium can reach the app's own dev server but not Supabase,
+  so full login-gated screens can't be driven end-to-end — see §7's
+  Cross-cutting note on this): `.app-shell` (App.tsx, the ancestor of
+  every page) has no height of its own — `max-width`/`margin`/`padding`
+  only, sized by its content like `<body>` above it, and nothing in the
+  app (`html`/`body`/`#root` included) ever gives it one. Every feature
+  page's root div used `height: 100%`, which — per plain CSS, a parent
+  with no explicit height makes a percentage height on the child compute
+  to `auto` — silently did nothing, and the page shrank to fit its own
+  content instead of filling the screen. Invisible on Patients (enough
+  rows to exceed the viewport regardless) and on Consult (never used
+  `height: 100%` at all — it just grows and the whole page scrolls), which
+  is exactly why those two "looked fine" and the screenshot was Support.
+  Fixed on Communication/Clinic/Support (built the same day) and,
+  found while fixing those three, the SAME latent bug on Practice and
+  Settings (both pre-existing) — `height: 100%` → `min-height: 100vh` on
+  each page's root class, an absolute floor rather than a percentage, so
+  it holds regardless of what `.app-shell` does. `.prac-body` was also
+  missing the `margin: 0 auto` its 3 sibling pages have (content sat flush
+  left on a wide screen); added. `ComingSoonPage.tsx` (unused today, kept
+  as the fallback for a future destination) got the same height fix plus
+  a real bug — its body div's className never matched anything sidebar.css
+  defined (`coming-soon-body` vs `.coming-soon-page`), so it rendered
+  unstyled. `Patients`/`PatientRecord` (`.prec-page`) were NOT touched —
+  not reported broken, and the same latent bug there is currently masked
+  by real content length, so leaving it alone is the smaller, safer diff
+  (targeted edits, rule 11) until it's ever actually visible.
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: still not built — the real API integration
@@ -538,6 +570,13 @@ brand-priority over label-priority).
 
 ## 8. Gotchas worth remembering (one-liners only)
 
+- `.app-shell` (App.tsx) has no height of its own — a feature page's root
+  must use `min-height: 100vh`, never `height: 100%`, or it silently
+  collapses to its own content height instead of filling the screen.
+  Chromium in this sandbox can reach the app's own dev/preview server but
+  not Supabase, so a login-gated screen can't be driven end-to-end here —
+  a plain HTML file loading the built CSS bundle against the real class
+  names is how the fix above was actually confirmed, not guessed.
 - BP is one UI field but must become two measurements (`BP_SYS`/`BP_DIA`) or the
   BP rule never fires.
 - The rule base is in Celsius; the UI takes Fahrenheit — conversion happens in

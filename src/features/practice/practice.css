@@ -8,7 +8,16 @@
 .prac-page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    /* Not `height: 100%` — `.app-shell` (App.tsx), this page's parent, has
+       no height of its own (sized by its content, same as `<body>` above
+       it), so a percentage height here silently computed to `auto` and the
+       page collapsed to fit its own content instead of filling the screen
+       — invisible while Pinned Medicines has rows, but with the empty
+       state (0 rows today) the page was as short as its 3 cards, the rest
+       of the viewport showing whatever sits behind the app. Same fix and
+       reasoning as Communication/Clinic/Support (support.css). Found
+       2026-08-24 — reported as "half rendered... split screen". */
+    min-height: 100vh;
     background: #f0f2f7;
 }
 
@@ -17,6 +26,11 @@
     overflow-y: auto;
     padding: 20px;
     max-width: 640px;
+    /* Was missing on this page only (its 3 sibling pages all centre their
+       column) — on a wide screen the cards sat flush against the left
+       edge instead of in the middle of the page. */
+    margin: 0 auto;
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 16px;
