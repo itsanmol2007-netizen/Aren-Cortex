@@ -132,7 +132,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
             visit_id: tempId,
             patient_id: opts.existingPatient?.id ?? tempId,
             patient_name: opts.existingPatient?.name ?? opts.name.trim(),
-            age: opts.existingPatient?.age ?? Number(opts.age) || 0,
+            age: opts.existingPatient?.age ?? (Number(opts.age) || 0),
             gender: opts.existingPatient?.gender ?? opts.gender,
             phone: opts.existingPatient?.phone ?? opts.phone.trim(),
             token_number: null,
