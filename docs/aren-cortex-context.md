@@ -429,7 +429,7 @@ brand-priority over label-priority).
 - **"Confirming a condition doesn't rerank medicines/tests" — investigated
   2026-08-24, widened over two sessions 2026-08-25 with Anmol's explicit
   go-ahead ("we are in MVP, the goal is shipping fast... not database
-  perfection").** Coverage went **7 → 21 → 65 of 87 active `finding`-type
+  perfection").** Coverage went **7 → 21 → 65 → 66 of 87 active `finding`-type
   intents** (verified live at each step). Every addition via
   `apply_migration` (not raw `execute_sql`), so it shows up in
   `list_migrations` like every other content batch this ruleset has had.
@@ -481,15 +481,50 @@ brand-priority over label-priority).
      competing diagnosis's weight; the guard is what makes an unconfirmed
      antimalarial visually distinct from a routine suggestion regardless
      of which other diagnosis gets confirmed.
+  5. `malaria_medicines_require_confirmation_not_symptoms` — same day,
+     Anmol pushed back on the guard alone being enough: "selecting an
+     Assessment should immediately change the ranking... right now the
+     engine is thinking oh cold wild rigors and fever, wow let's assume
+     it's malaria before any confirmation." Right — a `warn_hard` flag
+     doesn't touch the RANKING, and the ranking was the actual complaint.
+     Checked live: ALL 12 of artemether/artesunate/quinine's rules were
+     the 4 raw symptom signals (FEVER/RIGORS/HIGH_FEVER/FEVER_RECURRENT)
+     — nothing else ranked them, so they scored purely off symptom chips
+     with zero dependency on the diagnosis actually being confirmed.
+     Retired (`is_active=false`, same convention as
+     `retire_duplicate_test_catalogue_rows`) all 12; added a
+     `MALARIA_CONFIRMED` signal (the `condition_observable_map` pattern
+     every other batch this round used) as the ONLY thing that now ranks
+     the 3 antimalarials, at a clearly-above-differential weight (0.70/
+     0.70/0.50) so treatment visibly jumps once the doctor actually
+     confirms the diagnosis from Possible Conditions. Malaria TESTS
+     (RDT/smear) were deliberately left untouched — still rank from raw
+     symptoms, confirmed correct by Anmol ("that's not a big problem" —
+     ordering the confirmatory test from a suspicious pattern is exactly
+     right, presumptively treating off it is not). The RIGORS/
+     FEVER_RECURRENT `warn_hard` guard (item 4, previous session) still
+     fires independently even after confirmation, on purpose — a
+     differential confirm is a clinical impression, not the positive
+     lab result WHO's guideline actually asks for. Verified live: each of
+     the 3 medicines now has exactly one active rule (`MALARIA_CONFIRMED`);
+     the engine's own `loadRuleset` (`lib/synapse/engine.ts`) filters
+     `signal_intent_rules` on `is_active`, confirmed by reading it rather
+     than assumed. Same fix is available for any other condition where a
+     "differential" signal is doing double duty as a "treat now" signal —
+     checked `DENGUE_SUSPICION` specifically (the other guarded signal)
+     and it was already correct: ranks tests/fluids/safety-netting, never
+     a specific drug, so no analogous fix was needed there.
   Every medicine/test/advice referenced already existed in the catalogue
   (rule 22 — nothing minted); every non-obvious association was checked
   against a real guideline before being written. Every new
   `signal_intent_rules`/`intent_guards` row is `is_safety_critical=false`
-  except the malaria guard itself (a real `warn_hard`) — everything else
-  is a rank-order nudge, not a new gate. Verified end-to-end live after
-  every batch (zero of the 65 `condition_observable_map` rows resolve to
-  zero rules) and against `get_advisors` (no new findings).
-  **Still not mapped: 22 of 87** — Acute appendicitis, Cauda equina
+  except the malaria guard and the 3 new `MALARIA_CONFIRMED` rules
+  (genuine `is_safety_critical=true`, matching what they replaced) —
+  everything else is a rank-order nudge, not a new gate. Verified
+  end-to-end live after every batch (zero of the 66
+  `condition_observable_map` rows resolve to zero ACTIVE rules) and
+  against `get_advisors` (no new findings).
+  **Still not mapped: 21 of 87** — Acute appendicitis, Cauda equina
   syndrome, Febrile seizure, Hypoglycaemia (emergencies needing a REFERRAL
   action, not a medicine rank list); Acute coronary syndrome, Angina
   pectoris, Arrhythmia, Bradyarrhythmia, Heart block, SVT, Valvular heart
