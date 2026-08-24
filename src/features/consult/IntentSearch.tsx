@@ -35,7 +35,7 @@ import {
 import { searchIntents, type IntentSearchHit } from "../../lib/db/synapse";
 import { fetchProductsByNames, type ResolvedProduct } from "../../lib/db/medicines";
 import type { AcceptPayload } from "./types";
-import { GuardReason } from "./parts";
+import { GuardReason, PinButton } from "./parts";
 
 /** Below this a query matches most of the catalogue and means nothing. */
 const MIN_QUERY = 2;
@@ -202,7 +202,7 @@ const MATCH_TEXT: Record<IntentSearchHit["matchKind"], (via: string | null) => s
  */
 export function IntentSearchResults({
     state, verbOf, ruleset, activeSignals, rankedIntentIds, acceptedIntentIds,
-    acknowledged, onAcknowledge, onAccept, onRemove,
+    acknowledged, onAcknowledge, onAccept, onRemove, isPinned, onTogglePin,
 }: {
     state: IntentSearchState;
     /**
@@ -227,6 +227,16 @@ export function IntentSearchResults({
      * absent in a context that has no plan to remove FROM.
      */
     onRemove?: (intentId: number, type: IntentType, label: string) => void;
+    /**
+     * The doctor's pin, for a medicine hit — §1, 2026-08-24. A searched
+     * medicine could not be favourited at all before this; only a ranked row
+     * could. Optional and medicine-only: every OTHER type this search spans
+     * (finding/test/referral/advice/exercise) has no pin concept, and a
+     * caller with nothing to pin (ConditionsCard, SuggestionsCard's
+     * non-medicine sections) simply omits both props.
+     */
+    isPinned?: (intentId: number) => boolean;
+    onTogglePin?: (intentId: number) => void;
 }) {
     const products = useHitProducts(state.hits);
 
@@ -308,7 +318,18 @@ export function IntentSearchResults({
                 return (
                     <div
                         key={hit.intentId}
-                        className={`cs-sug is-hit${added ? " is-added" : ""}${isHard ? " is-hard" : ""}`}
+                        // `is-medicine` (§8, 2026-08-24) gives a searched
+                        // medicine the same "one object" card presence a
+                        // RANKED medicine row has (see `.cs-rec`'s own doc
+                        // comment) — better visual tone was the ask. It stays
+                        // honestly UNRANKED regardless: no rank badge, no
+                        // relevance word, grey icon — see `.cs-sug.is-hit
+                        // .cs-sug-icon`'s comment for why that line is not
+                        // crossed here either.
+                        className={
+                            `cs-sug is-hit${added ? " is-added" : ""}${isHard ? " is-hard" : ""}` +
+                            (hit.type === "medicine" ? " is-medicine" : "")
+                        }
                     >
                         <span className={`cs-sug-icon is-${hit.type}`} aria-hidden="true">
                             <Search size={13} />
@@ -355,55 +376,69 @@ export function IntentSearchResults({
                             )}
                         </div>
 
-                        {added ? (
-                            onRemove ? (
+                        <div className="cs-sug-actions">
+                            {added ? (
+                                onRemove ? (
+                                    <button
+                                        type="button"
+                                        className="cs-added is-removable"
+                                        aria-label={`Remove ${hit.label}`}
+                                        title="Remove from the plan"
+                                        onClick={() => onRemove(hit.intentId, hit.type, hit.label)}
+                                    >
+                                        <Check size={15} className="cs-added-check" />
+                                        <X size={13} className="cs-added-x" />
+                                    </button>
+                                ) : (
+                                    <span className="cs-added" aria-label="Taken"><Check size={15} /></span>
+                                )
+                            ) : locked ? (
+                                <span style={{ width: 29 }} aria-hidden="true" />
+                            ) : (
                                 <button
                                     type="button"
-                                    className="cs-added is-removable"
-                                    aria-label={`Remove ${hit.label}`}
-                                    title="Remove from the plan"
-                                    onClick={() => onRemove(hit.intentId, hit.type, hit.label)}
-                                >
-                                    <Check size={15} className="cs-added-check" />
-                                    <X size={13} className="cs-added-x" />
-                                </button>
-                            ) : (
-                                <span className="cs-added" aria-label="Taken"><Check size={15} /></span>
-                            )
-                        ) : locked ? (
-                            <span style={{ width: 29 }} aria-hidden="true" />
-                        ) : (
-                            <button
-                                type="button"
-                                className="cs-act"
-                                onClick={() =>
-                                    onAccept({
-                                        intentId: hit.intentId,
-                                        type: hit.type,
-                                        label: hit.label,
-                                        refTable: hit.refTable,
-                                        refId: hit.refId,
-                                        // App resolves the brand for a medicine
-                                        // it was handed without one.
-                                        medicine: null,
-                                        // The product the doctor NAMED. Until
-                                        // this was carried, the accept knew
-                                        // only the molecule, and the resolver
-                                        // behind it returns single-molecule
-                                        // products only, so a combination the
-                                        // search had just displayed could
-                                        // never be the thing prescribed.
-                                        brandHint:
-                                            hit.matchKind === "brand" ? hit.viaLabel : null,
-                                        // Only a pick the ranking never offered
-                                        // is a miss. Anything already on screen
-                                        // is an ordinary accept.
-                                        viaSearch: !wasRanked,
-                                        overridden: !!isHard,
-                                    })
-                                }
-                            >{verbOf(hit.type)}</button>
-                        )}
+                                    className="cs-act"
+                                    onClick={() =>
+                                        onAccept({
+                                            intentId: hit.intentId,
+                                            type: hit.type,
+                                            label: hit.label,
+                                            refTable: hit.refTable,
+                                            refId: hit.refId,
+                                            // App resolves the brand for a medicine
+                                            // it was handed without one.
+                                            medicine: null,
+                                            // The product the doctor NAMED. Until
+                                            // this was carried, the accept knew
+                                            // only the molecule, and the resolver
+                                            // behind it returns single-molecule
+                                            // products only, so a combination the
+                                            // search had just displayed could
+                                            // never be the thing prescribed.
+                                            brandHint:
+                                                hit.matchKind === "brand" ? hit.viaLabel : null,
+                                            // Only a pick the ranking never offered
+                                            // is a miss. Anything already on screen
+                                            // is an ordinary accept.
+                                            viaSearch: !wasRanked,
+                                            overridden: !!isHard,
+                                        })
+                                    }
+                                >{verbOf(hit.type)}</button>
+                            )}
+                            {/* §1, 2026-08-24: a searched medicine could not be
+                                favourited at all before this — only a ranked
+                                row could. Medicine-only, and only when the
+                                caller has something to pin TO (RecommendationsCard
+                                does; the other five types never render this). */}
+                            {hit.type === "medicine" && isPinned && onTogglePin && (
+                                <PinButton
+                                    pinned={isPinned(hit.intentId)}
+                                    label={hit.matchKind === "brand" && hit.viaLabel ? hit.viaLabel : hit.label}
+                                    onToggle={() => onTogglePin(hit.intentId)}
+                                />
+                            )}
+                        </div>
 
                         {(isWarn || isHard) && (verdict?.reasons.length ?? 0) > 0 && (
                             <div style={{ gridColumn: "2 / -1" }}>

@@ -111,6 +111,15 @@ interface Props {
     onAccept: (payload: AcceptPayload) => void;
     /** Undo an accept in place, on the same row — §9, 2026-08-24. */
     onRemove?: (intentId: number, type: IntentType, label: string) => void;
+    /**
+     * The doctor's pin, threaded through to a SEARCHED medicine hit only —
+     * §1, 2026-08-24. This card's own ranked medicine rows (when a profile
+     * demotes medicine out of `RecommendationsCard`) render as
+     * `SuggestionRow`, which has never had a pin concept and is out of
+     * scope here; this is specifically the "searched medicines" gap.
+     */
+    isPinned?: (intentId: number) => boolean;
+    onTogglePin?: (intentId: number) => void;
     onExplain: (intent: PersonalizedIntent, anchor: DOMRect) => void;
     /** for the guard verdict on a searched, never-ranked intent */
     ruleset: Ruleset | null;
@@ -123,6 +132,7 @@ interface Props {
 
 export function SuggestionsCard({
     byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept, onRemove,
+    isPinned, onTogglePin,
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
     types, title = "Clinical Suggestions",
@@ -139,12 +149,19 @@ export function SuggestionsCard({
     );
     const SEARCH_TYPES = useMemo(() => SECTIONS.map((s) => s.type), [SECTIONS]);
     /**
-     * Which category the search box is pointed at.
+     * Which category is in view — §3, 2026-08-24 (was: which category the
+     * search box was scoped to, via a `<select>` that had no effect on
+     * anything except an active search, so choosing "Tests" while NOT
+     * searching visibly did nothing — reported as "the Search Filter button
+     * is not working at all."
      *
-     * `null` means all four. A filter rather than four separate boxes: the
-     * doctor is looking for one thing and usually knows its name before they
-     * know which of our four buckets we filed it under, and four search fields
-     * on one card is four places to look for the same feature.
+     * `null` means all types. Now a real filter on the ranked list itself,
+     * AND the search scope, from ONE piece of state — picking "Advice" both
+     * narrows what a query searches and narrows what the unranked list
+     * shows, so the two can never disagree about what "Advice" is currently
+     * showing. Rendered as tabs rather than a `<select>` per the same
+     * request: "add buttons like tabs for Tests and Advices... to quickly
+     * get to it."
      */
     const [scope, setScope] = useState<IntentType | null>(null);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
@@ -193,14 +210,17 @@ export function SuggestionsCard({
     const rows = useMemo(() => {
         const out: { intent: PersonalizedIntent; section: (typeof SECTIONS)[number] }[] = [];
         for (const section of SECTIONS) {
+            if (scope && section.type !== scope) continue;
             for (const intent of byType[section.type] ?? []) out.push({ intent, section });
         }
         return out;
-    }, [byType]);
+    }, [byType, SECTIONS, scope]);
 
     const total = useMemo(
-        () => SECTIONS.reduce((n, s) => n + (byType[s.type]?.length ?? 0), 0),
-        [byType]
+        () => SECTIONS
+            .filter((s) => !scope || s.type === scope)
+            .reduce((n, s) => n + (byType[s.type]?.length ?? 0), 0),
+        [byType, SECTIONS, scope]
     );
 
     const rankedIds = useMemo(() => {
@@ -223,6 +243,8 @@ export function SuggestionsCard({
                     onAcknowledge={onAcknowledge}
                     onAccept={onAccept}
                     onRemove={onRemove}
+                    isPinned={isPinned}
+                    onTogglePin={onTogglePin}
                 />
             );
         }
@@ -309,6 +331,40 @@ export function SuggestionsCard({
                 <span className="cs-sort">Sort by: <b>Relevance</b></span>
             </div>
 
+            {/* §3, 2026-08-24. One button per category — "Tests", "Advice"…
+                — to get straight to that section, replacing a `<select>`
+                that only ever narrowed an active SEARCH and did nothing to
+                the list otherwise (see `scope`'s doc comment above). Tabs
+                because the ask named them specifically, and because a
+                doctor scanning six words reads them faster than opening a
+                dropdown to find the same six. */}
+            <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={scope === null}
+                    className={`cs-sug-filter-btn${scope === null ? " is-on" : ""}`}
+                    onClick={() => setScope(null)}
+                >
+                    All
+                </button>
+                {SECTIONS.map((s) => (
+                    <button
+                        key={s.type}
+                        type="button"
+                        role="tab"
+                        aria-selected={scope === s.type}
+                        className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
+                        // A second click on the active tab clears it — the
+                        // fastest way back to "All" without a second control.
+                        onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
+                    >
+                        {s.icon}
+                        {s.label}
+                    </button>
+                ))}
+            </div>
+
             <IntentSearchField
                 state={search}
                 placeholder={
@@ -317,19 +373,6 @@ export function SuggestionsCard({
                         : "Search tests, referrals, advice, exercises…"
                 }
                 disabled={disabled}
-                trailing={
-                    <select
-                        className="cs-scope"
-                        value={scope ?? ""}
-                        aria-label="Limit the search to one category"
-                        onChange={(e) => setScope((e.target.value || null) as IntentType | null)}
-                    >
-                        <option value="">All</option>
-                        {SECTIONS.map((s) => (
-                            <option key={s.type} value={s.type}>{s.label}</option>
-                        ))}
-                    </select>
-                }
                 onKeyDown={onSearchKeyDown}
             />
 

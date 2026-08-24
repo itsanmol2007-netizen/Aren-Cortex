@@ -19,15 +19,16 @@
 .comm-body {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 56px 20px 20px;
     max-width: 560px;
     margin: 0 auto;
     width: 100%;
     display: flex;
     flex-direction: column;
-    /* Centres the hero + list in whatever space `min-height: 100vh` above
-       actually gives this page. */
-    justify-content: center;
+    /* §11, 2026-08-24 — was `justify-content: center`, same fix as
+       support.css's identical note: centring short real content in a full
+       `min-height: 100vh` box reads as the page being half-missing, not as
+       a deliberately short page. Top-aligned instead. */
     gap: 20px;
 }
 

@@ -404,6 +404,8 @@ export function RecommendationsCard({
                         onAcknowledge={onAcknowledge}
                         onAccept={onAccept}
                         onRemove={onRemove}
+                        isPinned={isPinned}
+                        onTogglePin={onTogglePin}
                     />
                     {/* "Not found in ranking or search" is not a dead end any
                         more — §5, 2026-08-24. Deliberately worded around

@@ -24,16 +24,25 @@
 .supp-body {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 56px 20px 20px;
     max-width: 480px;
     margin: 0 auto;
     width: 100%;
     display: flex;
     flex-direction: column;
-    /* Centres the hero + cards in whatever space `min-height: 100vh` above
-       actually gives this page, instead of pinning them to the top of a
-       box that is now taller than their own content. */
-    justify-content: center;
+    /* §11, 2026-08-24 — was `justify-content: center`, vertically centring
+       three short lines of content inside a full `min-height: 100vh` box.
+       Technically correct (doctrine: an empty state should be short and
+       centred in whatever space is left) but this page is not empty, it is
+       just SHORT — and centring a small card in a full screen reads exactly
+       like the "halfway rendered" bug this same box's `min-height` fix was
+       written to solve, one layer up: roughly half the viewport as visible
+       blank space above the card and the same again below it. Top-aligned
+       instead, with a fixed top offset rather than a centred one, so the
+       page reads as "here is the content" the way every other real page in
+       the app does — the blank space below (unavoidable on a page this
+       short, on a tall screen) now reads as trailing room, not as a missing
+       half of the page. */
     gap: 20px;
 }
 

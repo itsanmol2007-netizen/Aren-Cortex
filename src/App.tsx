@@ -1409,6 +1409,8 @@ function App() {
                     onAcknowledge={handleAcknowledge}
                     onAccept={handleAcceptIntent}
                     onRemove={removeAcceptedIntent}
+                    isPinned={pins.isPinned}
+                    onTogglePin={pins.toggle}
                     onExplain={handleExplain}
                     ruleset={synapse.data?.ruleset ?? null}
                     activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1429,6 +1431,8 @@ function App() {
                   onAcknowledge={handleAcknowledge}
                   onAccept={handleAcceptIntent}
                   onRemove={removeAcceptedIntent}
+                  isPinned={pins.isPinned}
+                  onTogglePin={pins.toggle}
                   onExplain={handleExplain}
                   ruleset={synapse.data?.ruleset ?? null}
                   activeSignals={intelligence.result?.activeSignals ?? []}

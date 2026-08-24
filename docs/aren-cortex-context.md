@@ -696,6 +696,84 @@ brand-priority over label-priority).
   has NOT been driven against the actual live app** — the working environment's
   Chromium has no outbound network. Treat recent physiotherapy work as
   type-checked and structurally verified, not yet eyeballed in production.
+- **A batch of eleven bugs Anmol filed 2026-08-24 ("Aren Cortex Open Bugs to
+  fix"), fixed the same day — `tsc -b` and `npm run build` both clean, NOT
+  yet eyeballed live (same Chromium/no-outbound-network gap as above).**
+  Numbered against his own list:
+  1. Measurements: the card head's "+" and the card-foot "More ▾" were two
+     different controls for what read as one question. One "+" now, always
+     opening the same modal; the "Add Measurement" surface inside it
+     (`MeasurementSearch`, replacing `MeasurementPicker`) is a search box
+     over the hidden fields rather than a categorised menu of the whole
+     catalogue.
+  2. `GuardReason` (`parts.tsx`) now shows only the first reason, clamped to
+     two lines, with "Show N more" — checked live, the malaria guard alone
+     carries two ~190-character WHO-guidance paragraphs when RIGORS and
+     FEVER_RECURRENT are both active, which was genuinely burying the
+     medicine's name under red text. Full text is one click away, never
+     hidden (rule 8 intact).
+  3. `SuggestionsCard`'s category filter was a `<select>` that only ever
+     scoped an ACTIVE search and did nothing to the ranked list otherwise —
+     replaced with tabs (`.cs-sug-filter`) that filter both.
+  4. Assessment free-text fallback: new `doctor_free_findings` table
+     (doctor-scoped, `hospital_isolation` RLS, never touches
+     `intents`/`signal_intent_rules` — rule 22 territory) remembers a typed
+     term against the visit's active signals; `ConditionsCard` surfaces a
+     doctor's own matching terms both under a live search and, quietly, as
+     a "Your terms" strip on the ranked view when today's signals overlap a
+     remembered one. Scoped to Assessment only this round (Anmol's own
+     example) — Medicine has its own path (below); Advice/Investigation/
+     Referral/Exercise free text is a natural follow-up, not attempted.
+  5. `add_medicine()` RPC (built 2026-08-09, never wired to any screen)
+     is now reachable: `AddMedicineSheet.tsx`, opened from a medicine
+     search's "Add 'x' to your medicines" prompt. FORCES an existing
+     composition pick (rule 22 — never mints one), dosage/form stay
+     optional. Hands off into the existing `MedicineAddSheet` via
+     `brandHint` (a live `medicines` table read, not the materialized
+     view — the new brand is reachable immediately, no manual refresh
+     wait).
+  6. Dosage prefill (`doseFieldValue`, `MedicineAddSheet`) was already
+     built and wired — verified, not touched.
+  7. `resolveBrands` (`lib/synapse/brands.ts`) gained a form-priority tier:
+     a paediatric consult's DEFAULT brand is now syrup/drops when one
+     exists, reading the catalogue's structured `form` column rather than
+     matching "syrup" in the product name (the exact trap flagged in the
+     ask). Reuses the existing `PEDIATRIC` signal (age ≤ 12, per
+     `measurement_rules`) rather than a new "under 8" cutoff — asked for
+     8, but a second age boundary living only in the UI would drift from
+     the one `isPediatric` already uses for brand-preference neutralisation
+     (rule 19); flagged for Anmol rather than silently picked.
+  8. A searched medicine (`.cs-sug.is-hit`) now renders as its own bordered
+     card (`.is-medicine`) instead of a bare hairline list row — still
+     honestly unranked (no colour, no rank badge, no relevance word; that
+     rule is untouched).
+  9. Every accepted row, ranked or searched, across all six intent types,
+     now turns its checkmark into a click-to-remove (`removeAcceptedIntent`
+     dispatcher, `useConsultPlan.ts`). Root-caused and fixed the specific
+     complaint underneath it: confirming a mapped condition silently added
+     an observable to the Case Sheet (`confirmCondition` →
+     `addContextObservable`), and un-confirming it never took that chip
+     back off (`useLongitudinalRecord.ts`'s new `unconfirmCondition` — safe
+     against a chip shared by two confirmed diagnoses, and never touches a
+     chip the doctor ticked by hand). Also dropped the Plan rail's
+     "+ Add" buttons on Medicines/Investigations — they only ever moved
+     focus to a search box already on screen.
+  10. `ConditionsCard`'s second column, previously a confirmed-conditions
+      list Anmol had already called "essentially a useless thing" (2026-08-16
+      comment) on any profile with no specialty exam launcher, now runs a
+      compact Investigations quick-list there instead (`SuggestionsCard`
+      reused, not forked — rule 7). `planSlots` drops `test` from the main
+      Clinical Suggestions listing when this is showing, so nothing ranks
+      twice on one screen; excluded for a Diagnostics-primary profile,
+      which already gets Investigations as its own full elevated slot.
+  11. The "half-rendered" look on Support (and, checked, the same
+      `justify-content: center` on Communication and Clinic) — technically
+      correct per the empty-state doctrine (§8's gotcha: "short and centred
+      in whatever space is left") but centring three short lines of REAL
+      content in a full `min-height: 100vh` box reads exactly like the
+      collapsed-page bug that `min-height` fix was written to solve, one
+      layer up. Top-aligned instead on all three pages. Settings and
+      Practice were already top-aligned; untouched.
 
 ---
 

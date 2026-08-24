@@ -6,6 +6,7 @@
 // is a convention that drifts.
 // ---------------------------------------------------------------------------
 
+import { useState } from "react";
 import { Heart, Sparkles, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import type { IntentType } from "../../lib/synapse/engine";
@@ -198,6 +199,19 @@ export function PinButton({ pinned, label, onToggle }: {
  * arriving. Height, not just opacity, because a badge shifting straight
  * from nothing to full height above content that is about to move is what
  * makes a guard feel like it shoved the row.
+ *
+ * ── Collapsed by default — §2, 2026-08-24 ──────────────────────────────────
+ * A row can carry more than one reason at once (a malaria antimalarial
+ * guarded on BOTH "rigors" and "recurrent fever" firing together, checked
+ * live — two ~190-character WHO-guidance paragraphs), and every one of them
+ * used to render in full underneath the medicine's name. On a compact row
+ * that is not "a warning with a drug name near it" any more, it is a wall
+ * of red text with a drug name lost above it — reported as "the guard
+ * instructions... taking too much space that the actual medicine name is
+ * invisible." The full text is never hidden (rule 8 — no guard may hide
+ * anything) — it is one click away behind "Show N more" — but the DEFAULT
+ * is now the first reason, clamped to two lines, which is enough to know
+ * this needs reading without it outweighing the row it is attached to.
  */
 export function GuardReason({
     hard, reasons, acknowledged, onAcknowledge,
@@ -208,6 +222,9 @@ export function GuardReason({
     onAcknowledge: (v: boolean) => void;
 }) {
     const reduce = useReducedMotion();
+    const [expanded, setExpanded] = useState(false);
+    const extra = reasons.length - 1;
+
     return (
         <motion.div
             className={`cs-reason ${hard ? "is-hard" : "is-warn"}`}
@@ -217,7 +234,19 @@ export function GuardReason({
             style={{ overflow: "hidden" }}
         >
             {hard && <strong>Contraindicated — read before prescribing</strong>}
-            {reasons.map((r, i) => <p key={i}>{r}</p>)}
+            {reasons.length > 0 && (
+                <p className={expanded ? undefined : "cs-reason-clamp"}>{reasons[0]}</p>
+            )}
+            {expanded && reasons.slice(1).map((r, i) => <p key={i}>{r}</p>)}
+            {extra > 0 && (
+                <button
+                    type="button"
+                    className="cs-reason-more"
+                    onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+                >
+                    {expanded ? "Show less" : `Show ${extra} more reason${extra === 1 ? "" : "s"}`}
+                </button>
+            )}
             {hard && (
                 <button
                     type="button"
