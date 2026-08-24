@@ -427,52 +427,83 @@ brand-priority over label-priority).
   scrim/panel in with a fade + spring bounce on every open — it still opens
   and closes, just without the motion.
 - **"Confirming a condition doesn't rerank medicines/tests" — investigated
-  2026-08-24, widened 2026-08-25 with Anmol's explicit go-ahead ("we are in
-  MVP, the goal is shipping fast... not database perfection").**
-  Coverage went from **7 of 87 active `finding`-type intents to 21 of 87**
-  (verified live, both counts). Two kinds of addition, both via
-  `apply_migration` (not raw `execute_sql`) so they show up in
-  `list_migrations` like every other content batch this ruleset has had
-  (`mumps_measles_gout_*`, `cardio_depth_*`, the original
-  `seed_condition_observable_map_chronic_subset`):
-  - **6 "free wins"** (`condition_observable_map_free_wins`) — conditions
-    pointed at an observable that ALREADY existed and was ALREADY wired to
-    real `signal_intent_rules`, so no new clinical content was authored,
-    just recognised: Piles→"Piles / haemorrhoids", Dengue fever→"Dengue
-    suspected", Atrial fibrillation→"ECG: Atrial fibrillation rhythm",
-    Vertigo→"Vertigo — spinning sensation", Mechanical low back pain→"Low
-    back pain", Mechanical neck pain→"Neck pain".
-  - **8 new chronic facts** (3 migrations:
-    `chronic_conditions_batch1_signals_and_observables` →
-    `..._batch2_link_and_map` → `..._batch3_intent_rules`, same 3-step
-    split the ruleset's own history uses) — Migraine, GERD, Hip+Knee
-    osteoarthritis (shared one observable — same disease process, same
-    rerank, matching how asthma+COPD-exacerbation already share
-    `known_asthma_copd`), Gout, Allergic rhinitis, Peripheral arterial
-    disease, Congestive heart failure. Every medicine/test referenced
-    already existed in the catalogue (rule 22 — nothing minted); every
-    association was checked against a real guideline before being written
-    (AAFP migraine prophylaxis, ACP/ACR gout management, current OA
-    guidance — paracetamol is explicitly NOT first-line any more, NSAID +
-    physiotherapy referral outrank it here on purpose — AAFP allergic
-    rhinitis, ACC/AHA PAD, AHA/ACC heart failure GDMT). Weights follow the
-    existing DIABETIC/LOW_BACK_PAIN pattern (primary ~0.35–0.45, secondary
-    ~0.25–0.35, adjuncts/tests ~0.15–0.30); every new row is
-    `is_safety_critical=false` — these are rank-order nudges, not guards,
-    and no `intent_guards`/`intent_class` row was touched this pass.
-    Verified end-to-end live (every one of the 21 rows resolves
-    intent→observable→signal→≥3 real rules; the 8 new ones average 6–8
-    each) and against `get_advisors` (no new findings — everything flagged
-    pre-dates this batch).
-  **Still not mapped: 66 of 87.** Mostly genuine one-off acute infections/
-  injuries (URI, gastroenteritis, malaria, ankle sprain, appendicitis, …)
-  where a "confirm" adding today's context has real but smaller value than
-  the chronic batch did, plus a handful of cardiology/paediatric findings
-  closer to a monitoring finding than a "diagnosis a doctor confirms". Same
-  process works for more of them — `condition_observable_map`'s own
-  `note` column on each row this pass documents the reasoning so a future
-  batch (or a scan for more "free wins" against observables added since)
-  is a repeat of this playbook, not a re-investigation.
+  2026-08-24, widened over two sessions 2026-08-25 with Anmol's explicit
+  go-ahead ("we are in MVP, the goal is shipping fast... not database
+  perfection").** Coverage went **7 → 21 → 65 of 87 active `finding`-type
+  intents** (verified live at each step). Every addition via
+  `apply_migration` (not raw `execute_sql`), so it shows up in
+  `list_migrations` like every other content batch this ruleset has had.
+  Four migration sets:
+  1. `condition_observable_map_free_wins` (6) + `..._msk_free_wins` (20) —
+     conditions pointed at an observable that ALREADY existed and was
+     ALREADY wired to real `signal_intent_rules`, so no new clinical
+     content authored, just recognised. The 20 MSK ones share regional
+     pain observables (Shoulder/Elbow/Wrist/Hip/Knee/Ankle pain, 25–34
+     rules each) the same way Hip+Knee osteoarthritis already share
+     `known_osteoarthritis` below — a specific diagnosis (Rotator cuff
+     tendinopathy) confirming its region's general symptom (Shoulder pain)
+     is the same relationship, not a new idea repeated 20 times.
+  2. `chronic_conditions_batch1-3_*` (8, `is_chronic=true`) — Migraine,
+     GERD, Hip+Knee osteoarthritis, Gout, Allergic rhinitis, Peripheral
+     arterial disease, Congestive heart failure. Current OA guidance
+     explicitly demotes paracetamol below NSAID+physiotherapy here, on
+     purpose — not an oversight.
+  3. `episodic_conditions_batch1-4_*` (24, `is_chronic=false` except Iron
+     deficiency anaemia) — UTI, pharyngitis/tonsillitis, otitis media,
+     pneumonia, gastroenteritis, dyspepsia, peptic ulcer disease, iron
+     deficiency anaemia, tension headache, renal colic, cellulitis,
+     allergic dermatitis, fungal skin infection, scabies, hepatitis,
+     conjunctivitis, URI/common cold, viral fever undifferentiated, acute
+     bronchitis, sinusitis, typhoid, chickenpox, measles, mumps. URI/viral
+     fever/bronchitis deliberately rank supportive care (paracetamol,
+     steam inhalation) ABOVE any antibiotic — most are viral, ranking an
+     antibiotic by default would be the wrong kind of "confident-looking"
+     suggestion. Chickenpox never ranks aspirin (Reye syndrome in
+     varicella, verified against CDC/WHO). Typhoid ranks azithromycin
+     above cefixime (WHO 2024, current resistance patterns) — verified
+     live it used to be the reverse assumption.
+  4. `antimalarial_confirmation_guard` — the actual safety finding this
+     round surfaced. Checked live: artemether/artesunate/quinine were
+     ranking at combined weight ~1.3 off symptom chips ALONE (chills/
+     rigors + recurrent fever), already flagged `is_safety_critical=true`
+     — which is only a cosmetic "Safety" badge, not a gate (confirmed by
+     reading `ConditionRow` in `ConditionsCard.tsx`). WHO's malaria
+     guideline is explicit: parasitological confirmation (RDT/smear)
+     before antimalarial therapy, presumptive treatment discouraged.
+     Fixed with the SAME mechanism the existing DENGUE_SUSPICION→
+     antibiotics guard already uses (`intent_guards` id 12) — `warn_hard`
+     on the 3 antimalarials whenever RIGORS or FEVER_RECURRENT is active.
+     Doctrine-consistent on purpose: never hides the medicine (ranking is
+     a safety property), but forces a conscious acknowledgement instead of
+     letting it sit at the top of the list looking routine. This is also
+     most of the answer to "why doesn't confirming Dengue demote malaria
+     meds" — the engine is additive, not exclusive, so nothing SUBTRACTS a
+     competing diagnosis's weight; the guard is what makes an unconfirmed
+     antimalarial visually distinct from a routine suggestion regardless
+     of which other diagnosis gets confirmed.
+  Every medicine/test/advice referenced already existed in the catalogue
+  (rule 22 — nothing minted); every non-obvious association was checked
+  against a real guideline before being written. Every new
+  `signal_intent_rules`/`intent_guards` row is `is_safety_critical=false`
+  except the malaria guard itself (a real `warn_hard`) — everything else
+  is a rank-order nudge, not a new gate. Verified end-to-end live after
+  every batch (zero of the 65 `condition_observable_map` rows resolve to
+  zero rules) and against `get_advisors` (no new findings).
+  **Still not mapped: 22 of 87** — Acute appendicitis, Cauda equina
+  syndrome, Febrile seizure, Hypoglycaemia (emergencies needing a REFERRAL
+  action, not a medicine rank list); Acute coronary syndrome, Angina
+  pectoris, Arrhythmia, Bradyarrhythmia, Heart block, SVT, Valvular heart
+  disease (cardiology subtypes needing specialist-level nuance a general
+  pass shouldn't approximate); Pulmonary tuberculosis (multi-drug regimen,
+  India's RNTCP program-driven, resistance-monitored — too high-stakes to
+  approximate); Croup, Developmental delay, Failure to thrive, Infantile
+  reflux (paediatric, narrower safety margins, deserves its own verified
+  pass); Balance and falls risk, Deconditioning, Post-operative
+  rehabilitation, Myofascial pain syndrome, Inflammatory arthropathy
+  suspected (impression categories that lead to a referral/exercise plan,
+  not a specific drug). `condition_observable_map`'s own `note` column on
+  every row this round documents the reasoning, so a future pass on any of
+  these 22 is a deliberate clinical review, not a re-investigation.
 - **Communication, Clinic and Support given real pages 2026-08-24** —
   replacing the generic `ComingSoonPage` for those three specifically
   (`COMING_SOON_META` now stays empty, kept only as the fallback for a
