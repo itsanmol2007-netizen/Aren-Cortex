@@ -64,7 +64,7 @@ export function ServiceDetailModal({ service, onClose }: { service: Service; onC
                             type="button"
                             onClick={retry}
                             disabled={checking}
-                            className="flex h-[38px] items-center gap-[7px] rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-[16px] text-[13px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.30)] transition-transform hover:scale-[1.015] disabled:opacity-70"
+                            className="flex h-[38px] items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-[16px] text-[13px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[transform,box-shadow] hover:scale-[1.015] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] disabled:opacity-70"
                         >
                             {checking ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
                             {t("csRetry")}

@@ -3,7 +3,7 @@ import { ClipboardList, History, RefreshCw, Stethoscope, Thermometer } from "luc
 import { fetchPatientVisits, type DBDoctor, type RealVisit } from "@/lib/db";
 import type { TodayVisit } from "../types/frontdesk";
 import { tintFor } from "../statusStyle";
-import { formatShortDate } from "../utils";
+import { formatShortDate, initials, padToken } from "../utils";
 import { useT } from "../i18n/i18n";
 import { ModalShell } from "./ModalShell";
 
@@ -20,12 +20,18 @@ type Props = {
 export function VisitDetailModal({ visit, doctors, onClose, onReassignDoctor, onStartConsultation, onComplete, onCancel }: Props) {
     const t = useT();
     const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
+    // "Recent Visits" used to just be absent for the couple of seconds the
+    // fetch was in flight, then pop in — read as the modal not being ready
+    // rather than as loading. A skeleton says the same thing honestly.
+    const [pastLoading, setPastLoading] = useState(true);
 
     useEffect(() => {
         let cancelled = false;
+        setPastLoading(true);
         fetchPatientVisits(visit.patient_id)
             .then((rows) => { if (!cancelled) setPastVisits(rows.slice(0, 3)); })
-            .catch((err) => console.warn("fetchPatientVisits failed (non-fatal):", err));
+            .catch((err) => console.warn("fetchPatientVisits failed (non-fatal):", err))
+            .finally(() => { if (!cancelled) setPastLoading(false); });
         return () => { cancelled = true; };
     }, [visit.patient_id]);
 
@@ -34,17 +40,41 @@ export function VisitDetailModal({ visit, doctors, onClose, onReassignDoctor, on
     return (
         <ModalShell
             eyebrow={t("detEyebrow")}
-            title={`#${visit.token_number != null ? String(visit.token_number).padStart(3, "0") : "—"}`}
+            title={`#${padToken(visit.token_number)}`}
             icon={<ClipboardList size={19} strokeWidth={2.2} />}
             onClose={onClose}
         >
-            <div className="font-[Manrope,sans-serif] text-[22px] font-extrabold leading-[1.15] tracking-[-0.01em]" style={{ color: tint.borderColor }}>
-                {visit.patient_name}
-            </div>
-            <div className="mt-[3px] text-[13px] text-[#5a6472]">
-                {visit.phone}
-                <span className="mx-[7px] text-[#a8aeba]">·</span>
-                {visit.age}{visit.gender ? `, ${visit.gender[0]}` : ""}
+            {/* Identity card — the same violet-tinted object CreateVisitModal's
+                existing-patient state wears (§ visual-standard hard rule: every
+                modal in this family carries the same weight). This used to be
+                bare text sitting directly on the paper body, the one part of
+                the modal that didn't look like it belonged to the same app as
+                intake. */}
+            <div className="flex items-center gap-3 rounded-[12px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.09),rgba(244,114,182,0.03))] px-3 py-[10px]">
+                <div
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] text-[14px] font-bold text-white"
+                    style={{ background: "linear-gradient(155deg,#7c5cf0,#f472b6)", boxShadow: "0 3px 10px rgba(124,92,240,0.3)" }}
+                >
+                    {initials(visit.patient_name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-[8px]">
+                        <div className="truncate font-[Manrope,sans-serif] text-[17px] font-extrabold leading-[1.2] tracking-[-0.01em] text-[#161d29]">
+                            {visit.patient_name}
+                        </div>
+                        <span className="shrink-0 rounded-[6px] bg-[rgba(99,102,241,0.1)] px-[7px] py-[2px] font-[Manrope,sans-serif] text-[11px] font-extrabold tracking-[-0.01em] text-[#4c46c9] tabular-nums">
+                            #{padToken(visit.token_number)}
+                        </span>
+                    </div>
+                    <div className="mt-[2px] text-[12.5px] text-[#5a6472]">
+                        {visit.phone}
+                        <span className="mx-[6px] text-[#a8aeba]">·</span>
+                        {visit.age}{visit.gender ? `, ${visit.gender[0]}` : ""}
+                    </div>
+                </div>
+                <span className={`shrink-0 rounded-full px-[10px] py-[4px] text-[11px] font-semibold ${tint.chipBg} ${tint.textClass}`}>
+                    {t(tint.labelKey)}
+                </span>
             </div>
 
             <Section icon={<Thermometer size={13} />} label={t("detSymptoms")}>
@@ -85,25 +115,38 @@ export function VisitDetailModal({ visit, doctors, onClose, onReassignDoctor, on
                 <StatusBar visit={visit} onStartConsultation={onStartConsultation} onComplete={onComplete} onCancel={onCancel} onClose={onClose} />
             </Section>
 
-            {pastVisits.length > 0 && (
+            {(pastLoading || pastVisits.length > 0) && (
                 <Section icon={<History size={13} />} label={t("detPast")}>
-                    {pastVisits.map((pv) => {
-                        const pvTint = tintFor(pv.status);
-                        return (
-                            <div key={pv.id} className="mb-[7px] flex items-center justify-between rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
-                                <div className="min-w-0">
-                                    <div className="truncate text-[13px] font-semibold text-[#161d29]">
-                                        {pv.symptoms.length ? pv.symptoms.join(", ") : "—"}
-                                    </div>
-                                    <div className="mt-[1px] flex items-center gap-[6px] text-[12px] font-medium text-[#8a91a0]">
-                                        {/* past visits had states too */}
-                                        <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: pvTint.dotColor }} />
-                                        {formatShortDate(pv.created_at)}
+                    {pastLoading ? (
+                        <div className="flex flex-col gap-[7px]">
+                            {[0, 1].map((i) => (
+                                <div key={i} className="flex items-center justify-between rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="h-[13px] w-[62%] animate-pulse rounded-md bg-[linear-gradient(90deg,#eef0f4_25%,#e4e7ee_37%,#eef0f4_63%)]" />
+                                        <div className="mt-[6px] h-[11px] w-[38%] animate-pulse rounded-md bg-[linear-gradient(90deg,#eef0f4_25%,#e4e7ee_37%,#eef0f4_63%)]" />
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })}
+                            ))}
+                        </div>
+                    ) : (
+                        pastVisits.map((pv) => {
+                            const pvTint = tintFor(pv.status);
+                            return (
+                                <div key={pv.id} className="mb-[7px] flex items-center justify-between rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
+                                    <div className="min-w-0">
+                                        <div className="truncate text-[13px] font-semibold text-[#161d29]">
+                                            {pv.symptoms.length ? pv.symptoms.join(", ") : "—"}
+                                        </div>
+                                        <div className="mt-[1px] flex items-center gap-[6px] text-[12px] font-medium text-[#8a91a0]">
+                                            {/* past visits had states too */}
+                                            <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: pvTint.dotColor }} />
+                                            {formatShortDate(pv.created_at)}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </Section>
             )}
         </ModalShell>
@@ -114,9 +157,9 @@ export function VisitDetailModal({ visit, doctors, onClose, onReassignDoctor, on
 // device as CreateVisitModal (§4 micro-label system).
 function Section({ icon, label, children }: { icon?: React.ReactNode; label: string; children: React.ReactNode }) {
     return (
-        <div className="mt-5">
-            <div className="mb-2 flex items-center gap-[6px]">
-                {icon && <span className="flex text-[#837bb2] opacity-70">{icon}</span>}
+        <div className="mt-4">
+            <div className="mb-[7px] flex items-center gap-[6px]">
+                {icon && <span className="flex text-[#8b5cf6] opacity-80">{icon}</span>}
                 <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">{label}</span>
                 <span aria-hidden className="h-px flex-1 bg-[linear-gradient(90deg,#e9e6f5,transparent)]" />
             </div>
@@ -140,7 +183,7 @@ function StatusBar({
 }) {
     const t = useT();
     const btnBase =
-        "flex h-11 flex-1 items-center justify-center gap-[6px] rounded-[10px] border-[1.5px] text-[13px] font-semibold transition-colors";
+        "flex h-10 flex-1 items-center justify-center gap-[6px] rounded-[10px] border-[1.5px] text-[13px] font-semibold transition-colors";
 
     if (visit.status === "waiting") {
         return (

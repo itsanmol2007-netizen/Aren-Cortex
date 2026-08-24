@@ -3,6 +3,15 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useT } from "../i18n/i18n";
 
+// A module-level stack of currently-open ModalShell instances (by a stable
+// per-instance id, not the onClose reference — that identity churns on every
+// parent re-render). First real use of a stacked modal is the attachment
+// preview opening over the visit-attachments list (2026-08-24); without this
+// Escape closed BOTH at once, since every mounted ModalShell listened for it
+// globally with no idea another one was on top.
+let nextModalId = 0;
+const openModalIds: number[] = [];
+
 // The Bhor modal surface (session 36). Every Front Desk modal renders inside
 // this shell so the whole family — intake, visit details, future
 // confirmations — reads as one AREN object: dawn thread at full strength on
@@ -32,15 +41,35 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
     // mouseup land on the overlay and silently destroys the user's work.
     const pressedOnBackdrop = useRef(false);
 
+    // Register this instance on the stack once, for its whole lifetime —
+    // not tied to onClose's identity, which is a fresh closure most renders.
+    const idRef = useRef<number | null>(null);
+    if (idRef.current === null) idRef.current = ++nextModalId;
     useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        const id = idRef.current!;
+        openModalIds.push(id);
+        return () => {
+            const i = openModalIds.indexOf(id);
+            if (i !== -1) openModalIds.splice(i, 1);
+        };
+    }, []);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            // Only the topmost modal answers Escape — a nested one (e.g. the
+            // attachment preview over the attachments list) must not also
+            // close whatever it's stacked on.
+            if (openModalIds[openModalIds.length - 1] !== idRef.current) return;
+            onClose();
+        };
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
     }, [onClose]);
 
     return createPortal(
         <div
-            className="aren-overlay-in fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto p-[5vh_20px_24px] backdrop-blur-[8px]"
+            className="aren-overlay-in fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto p-[3vh_20px_20px] backdrop-blur-[8px]"
             style={{
                 // A cooler ink wash overall, warmed by a faint dawn glow rising
                 // from the lower-centre so the modal sits in AREN's own weather.
@@ -62,7 +91,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     itself can stay overflow-visible — floating dropdowns inside the
                     body (e.g. the symptom catalog) must never be cut off. */}
                 <div
-                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eeebf7] px-[22px] pb-4 pt-[17px]"
+                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eeebf7] px-[20px] pb-[10px] pt-[11px]"
                     style={{
                         background:
                             "radial-gradient(ellipse 320px 140px at 90% 0%, rgba(168,85,247,0.10), transparent 70%), " +
@@ -80,8 +109,8 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                         }}
                     />
                     <CornerArcs />
-                    <div className="relative flex items-center gap-[13px] pr-10">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)]">
+                    <div className="relative flex items-center gap-[11px] pr-10">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)]">
                             {icon}
                         </div>
                         <div className="min-w-0">
@@ -101,10 +130,10 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     </button>
                 </div>
 
-                <div className="px-[22px] pb-5 pt-4">{children}</div>
+                <div className="px-[20px] pb-[14px] pt-[10px]">{children}</div>
 
                 {footer && (
-                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eeebf7] bg-[#fbfaff] px-[22px] py-3">
+                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eeebf7] bg-[#fbfaff] px-[20px] py-[9px]">
                         {footer}
                     </div>
                 )}

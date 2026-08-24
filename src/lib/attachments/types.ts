@@ -53,6 +53,12 @@ export interface Attachment {
     createdAt: string;
     laterality: Laterality | null;
     bodyRegion: string | null;
+    /** Pixel dimensions after client-side compression — images only (compress.ts
+     *  computes these as a side effect of resizing). Null for PDFs and for any
+     *  row uploaded before this column existed. Lets a preview surface render
+     *  a correctly-shaped skeleton before the file itself has loaded. */
+    width: number | null;
+    height: number | null;
 }
 
 /** What the file picker is allowed to accept — mirrors attachment-upload-url's ALLOWED_MIME. */

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
+import { ArrowRight, Cake, Calendar, Paperclip, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
 import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
 import type { IntakeChip } from "@/lib/db/synapse";
+import type { AttachmentType } from "@/lib/attachments/types";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
 import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
-import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
+import { AgeInput, Field, PhoneInput, SectionLabel } from "./fields";
+import { IntakeAttachmentsField, type StagedAttachment } from "./IntakeAttachmentsField";
 import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 
 type Props = {
@@ -19,6 +21,10 @@ type Props = {
     // detection); picked symptoms/doctor survive because the component stays
     // mounted — only the identity half of the form changes.
     onUseExisting: (patient: DBPatient) => void;
+    // Fire-and-forget (2026-08-24) — Save closes this modal instantly rather
+    // than waiting on the network; useVisitActions.createNewVisit does the
+    // real work (patient lookup/create, visit create, attachments) in the
+    // background and reconciles the queue itself. Nothing here awaits it.
     onCreate: (opts: {
         existingPatient: DBPatient | null;
         name: string;
@@ -27,8 +33,11 @@ type Props = {
         dateOfBirth: string;
         gender: string;
         observableIds: number[];
+        symptomNames: string[];
         doctorId: string;
-    }) => Promise<{ patientName: string } | null>;
+        doctorName: string;
+        attachments: { file: File; attachmentType: AttachmentType }[];
+    }) => void;
 };
 
 export function CreateVisitModal({ existingPatient, prefillName, doctors, defaultDoctorId, onClose, onUseExisting, onCreate }: Props) {
@@ -42,6 +51,10 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [gender, setGender] = useState("");
     const [selectedSymptoms, setSelectedSymptoms] = useState<IntakeChip[]>([]);
     const [doctorId, setDoctorId] = useState(defaultDoctorId);
+    // Staged only — no visit_id exists yet to attach these to. Uploaded (same
+    // pipeline as everywhere else attachments happen) right after Save
+    // actually creates the visit; see handleSave.
+    const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
 
     // The doctor <select> has no placeholder option, so a value that is not in
     // `doctors` renders as the first option while still SUBMITTING the unlisted
@@ -55,7 +68,6 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         setDoctorId(doctors[0].id);
     }, [doctors, doctorId]);
     const [errors, setErrors] = useState<Record<string, boolean>>({});
-    const [saving, setSaving] = useState(false);
     const [visitStats, setVisitStats] = useState<{ visit_count: number; last_visit_at: string | null } | null>(null);
 
     // Keyboard flow (receptionists live on the keyboard): Enter advances
@@ -63,15 +75,17 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     // triggers Save from anywhere in the form.
     const nameRef = useRef<HTMLInputElement>(null);
     const ageRef = useRef<HTMLInputElement>(null);
-    const genderRef = useRef<HTMLDivElement>(null);
+    const genderRef = useRef<HTMLSelectElement>(null);
     const phoneRef = useRef<HTMLInputElement>(null);
     const symptomRef = useRef<HTMLInputElement>(null);
     const doctorRef = useRef<HTMLSelectElement>(null);
     // Phone sits directly under the name so an existing patient surfaces the
-    // instant both are typed — before age/gender are even asked.
+    // instant both are typed — before age/gender are even asked. Reading
+    // order otherwise follows the visual layout: Phone+Gender share a row,
+    // then Age+DOB share the next one (see the reference-matched grid below).
     const fieldOrder: React.RefObject<HTMLElement | null>[] = existing
         ? [symptomRef, doctorRef]
-        : [nameRef, phoneRef, ageRef, genderRef, symptomRef, doctorRef];
+        : [nameRef, phoneRef, genderRef, ageRef, symptomRef, doctorRef];
 
     useEffect(() => {
         // Land the cursor where typing starts: the first empty field.
@@ -137,8 +151,14 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         return Object.keys(nextErrors).length === 0;
     };
 
-    const handleSave = async () => {
-        if (saving) return;
+    // Synchronous and instant on purpose (2026-08-24): registering used to
+    // block on 2-3 sequential network round trips (find/create patient,
+    // create visit) with the modal sitting open the whole time — reported as
+    // "very slow". Validation still runs first (bad data shouldn't create a
+    // phantom queue row), but the moment it passes, this closes immediately
+    // and hands everything to onCreate, which inserts an optimistic row and
+    // does the real work in the background — see useVisitActions.createNewVisit.
+    const handleSave = () => {
         if (!validate()) return;
         // Duplicate guard: same phone + same name = that IS this patient —
         // create the visit for them instead of minting a twin record. Same
@@ -151,8 +171,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             setErrors((e) => ({ ...e, phone: true }));
             return;
         }
-        setSaving(true);
-        const result = await onCreate({
+        onCreate({
             existingPatient: asExisting,
             name,
             phone,
@@ -160,10 +179,12 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             dateOfBirth,
             gender,
             observableIds: selectedSymptoms.map((s) => s.observableId),
+            symptomNames: selectedSymptoms.map((s) => s.label),
             doctorId,
+            doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
+            attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
         });
-        setSaving(false);
-        if (result) onClose();
+        onClose();
     };
 
     // Enter anywhere in the form: save when complete, otherwise walk to the
@@ -210,13 +231,17 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         {t("cancel")}
                     </button>
                     {/* Registration is a front door, not a status change — it wears
-                        the brand gradient like the header mark and the launcher +. */}
+                        the loud brand treatment like the header mark and the launcher
+                        +. Was the purple→blue brand gradient; flattened to solid
+                        brand blue (#2f6bed) with a glow instead of a hue shift —
+                        session 2026-08-23, Anmol's call: the gradient "looked
+                        terrible". Every other front-door button (New Visit, Print,
+                        Retry) carries the identical treatment — see §7.7. */}
                     <button
                         onClick={handleSave}
-                        disabled={saving}
-                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[filter,box-shadow] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] disabled:opacity-50 disabled:hover:brightness-100"
+                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[background-color,box-shadow] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)]"
                     >
-                        {saving ? t("saving") : t("save")}
+                        {t("save")}
                         <ArrowRight size={15} strokeWidth={2.4} />
                     </button>
                 </>
@@ -224,7 +249,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         >
             <div onKeyDown={handleFormKeyDown}>
                 {existing && existingPatient ? (
-                    <div className="mb-4 flex items-center gap-3 rounded-[11px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[10px]">
+                    <div className="mb-3 flex items-center gap-3 rounded-[11px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[8px]">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[13px] font-bold text-[#6d28d9]">
                             {initials(existingPatient.name)}
                         </div>
@@ -245,7 +270,10 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 ) : (
                     <>
                         <SectionLabel text={t("secPatient")} />
-                        <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-3">
+                        {/* Two equal columns, not the old fixed-120px/1fr split —
+                            matches the reference layout exactly: Name full width,
+                            then Phone+Gender share a row, then Age+DOB share one. */}
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                             <Field className="col-span-2" icon={<UserRound size={13} />} label={t("fldName")} required error={errors.name ? t("errRequired") : undefined}>
                                 <input
                                     ref={nameRef}
@@ -259,7 +287,6 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 the duplicate banner surfaces an existing patient —
                                 no need to fill age/gender first. */}
                             <Field
-                                className="col-span-2"
                                 icon={<Phone size={13} />}
                                 label={t("fldPhone")}
                                 required
@@ -276,8 +303,22 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     placeholder={t("phPhone")}
                                 />
                             </Field>
-                            {/* Age is a tiny number — it gets a tiny box (fixed 120px
-                                column), gender fills the rest of the row. */}
+                            {/* Plain dropdown, not the segmented M/F/O control — matches
+                                the reference exactly; a native select still gets
+                                type-to-jump and arrow-key cycling for free. */}
+                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
+                                <select
+                                    ref={genderRef}
+                                    value={gender}
+                                    onChange={(e) => { setGender(e.target.value); setErrors((er) => ({ ...er, gender: false })); }}
+                                    className={fieldClass(errors.gender)}
+                                >
+                                    <option value="" disabled>{t("selectGender")}</option>
+                                    <option value="Male">{t("male")}</option>
+                                    <option value="Female">{t("female")}</option>
+                                    <option value="Other">{t("other")}</option>
+                                </select>
+                            </Field>
                             <Field icon={<Cake size={13} />} label={t("fldAge")} required error={errors.age ? t("errRequired") : undefined}>
                                 <AgeInput
                                     inputRef={ageRef}
@@ -295,7 +336,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 where this is genuinely known, which is why the
                                 field is here and not only in Cortex. */}
                             <Field
-                                icon={<Cake size={13} />}
+                                icon={<Calendar size={13} />}
                                 label={
                                     dobMattersFor(Number.parseInt(age, 10))
                                         ? `${t("fldDob")} — ${t("fldDobNeeded")}`
@@ -321,20 +362,12 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     }}
                                 />
                             </Field>
-                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
-                                <GenderControl
-                                    groupRef={genderRef}
-                                    value={gender}
-                                    onChange={(v) => { setGender(v); setErrors((er) => ({ ...er, gender: false })); }}
-                                    error={!!errors.gender}
-                                />
-                            </Field>
                         </div>
 
                         {/* Duplicate-patient banner: appears silently as they type;
                             one click turns "register" into "new visit for them". */}
                         {dup && (
-                            <div className="mt-3 flex items-center gap-[10px] rounded-[11px] border border-[#e2d9fb] bg-[linear-gradient(135deg,rgba(124,92,240,0.09),rgba(124,92,240,0.02))] px-3 py-[9px]">
+                            <div className="mt-[10px] flex items-center gap-[10px] rounded-[11px] border border-[#e2d9fb] bg-[linear-gradient(135deg,rgba(124,92,240,0.09),rgba(124,92,240,0.02))] px-3 py-[8px]">
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[12.5px] font-bold text-[#6d28d9]">
                                     {initials(dup.name)}
                                 </div>
@@ -360,7 +393,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     </>
                 )}
 
-                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[18px]"} />
+                <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[14px]"} />
                 <Field icon={<Thermometer size={13} />} label={t("fldSymptoms")} required error={errors.symptoms ? t("errSymptom") : undefined}>
                     <SymptomPicker
                         inputRef={symptomRef}
@@ -372,12 +405,19 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         error={!!errors.symptoms}
                     />
                 </Field>
-                <Field className="mt-3" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
+                <Field className="mt-[10px]" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
                     <select ref={doctorRef} value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={fieldClass()}>
                         {doctors.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                     </select>
+                </Field>
+
+                {/* A field, not a new section — matches the reference exactly
+                    (same label weight as Symptoms/Doctor above it, "(Optional)"
+                    tag, no section hairline). */}
+                <Field className="mt-[10px]" icon={<Paperclip size={13} />} label={t("attachAdd")} optional>
+                    <IntakeAttachmentsField files={stagedAttachments} onChange={setStagedAttachments} />
                 </Field>
             </div>
         </ModalShell>
@@ -508,7 +548,7 @@ function SymptomPicker({
                 input/select/label elements). */}
             <div
                 onClick={() => { inputRef.current?.focus(); setOpen(true); }}
-                className={`flex min-h-[42px] cursor-text flex-wrap items-center gap-[6px] rounded-[10px] border-[1.5px] px-3 py-[5px] transition-[border-color,box-shadow,background-color] duration-150 ${
+                className={`flex min-h-[36px] cursor-text flex-wrap items-center gap-[6px] rounded-[10px] border-[1.5px] px-3 py-[5px] transition-[border-color,box-shadow,background-color] duration-150 ${
                     error
                         ? "border-[#d23b34] bg-[#fffafa]"
                         : open

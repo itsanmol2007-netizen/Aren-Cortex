@@ -19,7 +19,7 @@ import { compressImage, needsCompression } from "../attachments/compress";
 import type { Attachment, AttachmentType, Laterality } from "../attachments/types";
 
 const ATTACHMENT_COLUMNS =
-    "id, visit_id, storage_path, mime_type, label, attachment_type, size_bytes, uploaded_by_doctor_id, created_at, laterality, body_region";
+    "id, visit_id, storage_path, mime_type, label, attachment_type, size_bytes, uploaded_by_doctor_id, created_at, laterality, body_region, width, height";
 
 function attachmentFromRow(r: {
     id: number;
@@ -33,6 +33,8 @@ function attachmentFromRow(r: {
     created_at: string;
     laterality: string | null;
     body_region: string | null;
+    width: number | null;
+    height: number | null;
 }): Attachment {
     return {
         id: r.id,
@@ -46,6 +48,8 @@ function attachmentFromRow(r: {
         createdAt: r.created_at,
         laterality: r.laterality as Laterality | null,
         bodyRegion: r.body_region,
+        width: r.width,
+        height: r.height,
     };
 }
 
@@ -162,12 +166,18 @@ export async function uploadAttachment(
 ): Promise<Attachment> {
     let toUpload: Blob = opts.file;
     let mimeType = opts.file.type;
+    // Known only for images (compressImage decodes onto a canvas as a side
+    // effect of resizing anyway, so this costs nothing extra to capture) —
+    // stays null for PDFs. Lets a preview render a correctly-shaped skeleton
+    // before the file itself has loaded, instead of a generic spinner.
+    let dimensions: { width: number; height: number } | null = null;
 
     if (needsCompression(opts.file.type)) {
         onProgress?.({ stage: "compressing" });
         const result = await compressImage(opts.file, opts.attachmentType);
         toUpload = result.blob;
         mimeType = "image/jpeg"; // compressImage always re-encodes to JPEG
+        dimensions = { width: result.width, height: result.height };
     }
 
     onProgress?.({ stage: "uploading" });
@@ -200,6 +210,8 @@ export async function uploadAttachment(
             uploaded_by_doctor_id: uploadedByDoctorId,
             laterality: opts.laterality ?? null,
             body_region: opts.bodyRegion ?? null,
+            width: dimensions?.width ?? null,
+            height: dimensions?.height ?? null,
         })
         .select(ATTACHMENT_COLUMNS)
         .single();

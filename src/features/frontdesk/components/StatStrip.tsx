@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Users, Clock, ClipboardCheck, BadgeCheck } from "lucide-react";
+import { Users, Armchair, ClipboardCheck, BadgeCheck } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
 import type { StringKey } from "../i18n/strings";
@@ -21,20 +21,29 @@ export function StatStrip({ visits }: Props) {
     return (
         <div className="mb-[10px] grid grid-cols-4 gap-[10px] max-[1040px]:grid-cols-2">
             <StatCard icon={<Users size={16} />} tone="indigo" labelKey="statTotal" value={stats.total} t={t} />
-            <StatCard icon={<Clock size={16} />} tone="amber" labelKey="statWaiting" value={stats.waiting} t={t} />
+            {/* Waiting used to be a flat yellow clock face — read as a cheap
+                clip-art glyph, and "waiting" isn't really about the clock,
+                it's about someone sitting in the room. Armchair says that
+                more honestly, in the same warm-amber family the rest of the
+                app already uses for this status (row tint, tab dot) — this
+                pass deepens that amber slightly so it reads less yellow. */}
+            <StatCard icon={<Armchair size={16} />} tone="amber" labelKey="statWaiting" value={stats.waiting} t={t} />
             <StatCard icon={<ClipboardCheck size={16} />} tone="blue" labelKey="statConsult" value={stats.serving} t={t} />
             <StatCard icon={<BadgeCheck size={16} />} tone="green" labelKey="statCompleted" value={stats.completed} t={t} />
         </div>
     );
 }
 
+// Glass tile, not a flat tint square: a soft two-stop gradient, an inner
+// top highlight (the "sheen"), and a colored glow shadow instead of a plain
+// drop shadow. Same family of trick as ModalShell's icon tile, scaled down
+// for a 30px chip — replaces the single-flat-color treatment that read as
+// "clip-art" at this size (Anmol's word for it, live, 2026-08-24).
 const TONE = {
-    // indigo decorates only the icon chip (brand aura, not data); the Today
-    // numeral itself stays ink and the subline neutral.
-    indigo: { bg: "#eceafc", glow: "rgba(99,102,241,0.18)", icon: "text-[#4f46e5]", num: "text-[#161d29]", sub: "text-[#8a91a0]" },
-    amber: { bg: "#fdf1de", glow: "rgba(201,121,26,0.18)", icon: "text-[#c9791a]", num: "text-[#c9791a]", sub: "text-[#c9791a]" },
-    blue: { bg: "#e9f0fe", glow: "rgba(47,107,237,0.18)", icon: "text-[#1d51c9]", num: "text-[#1d51c9]", sub: "text-[#2f6bed]" },
-    green: { bg: "#e4f5eb", glow: "rgba(28,138,77,0.16)", icon: "text-[#1c8a4d]", num: "text-[#1c8a4d]", sub: "text-[#1c8a4d]" },
+    indigo: { from: "#f1effe", to: "#dedbfa", icon: "text-[#5b4fe0]", glow: "rgba(99,102,241,0.32)", num: "text-[#161d29]", sub: "text-[#8a91a0]" },
+    amber: { from: "#fff1de", to: "#ffdfb0", icon: "text-[#a05e0c]", glow: "rgba(194,120,15,0.34)", num: "text-[#a05e0c]", sub: "text-[#a05e0c]" },
+    blue: { from: "#eef4ff", to: "#d7e6ff", icon: "text-[#1d51c9]", glow: "rgba(47,107,237,0.32)", num: "text-[#1d51c9]", sub: "text-[#2f6bed]" },
+    green: { from: "#eafaf1", to: "#cdf1de", icon: "text-[#157a41]", glow: "rgba(28,138,77,0.3)", num: "text-[#1c8a4d]", sub: "text-[#1c8a4d]" },
 } as const;
 
 function StatCard({
@@ -60,14 +69,16 @@ function StatCard({
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/60" />
             {/* Single horizontal row: icon chip · label · number pushed right. */}
             <div className="flex items-center gap-[9px]">
-                {/* Flat tinted chip with one soft tone-colored shadow — enough
-                    lift to not look pasted-on, without the busy multi-layer
-                    gradient treatment that read as messy at this size. */}
                 <div
-                    className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] ${tn.icon}`}
-                    style={{ background: tn.bg, boxShadow: `0 2px 6px -2px ${tn.glow}` }}
+                    className={`relative flex h-[32px] w-[32px] shrink-0 items-center justify-center overflow-hidden rounded-[10px] ${tn.icon}`}
+                    style={{
+                        background: `linear-gradient(155deg, ${tn.from}, ${tn.to})`,
+                        boxShadow: `0 3px 10px -2px ${tn.glow}, inset 0 1px 0 rgba(255,255,255,0.65)`,
+                    }}
                 >
                     {icon}
+                    {/* the glass sheen */}
+                    <span aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(160deg,rgba(255,255,255,0.55),transparent_55%)]" />
                 </div>
                 <div className="min-w-0 truncate text-[11.5px] font-medium text-[#5a6472]">{t(labelKey)}</div>
                 <div className={`ml-auto pl-2 font-[Manrope,sans-serif] text-[21px] font-extrabold leading-[1.05] tracking-[-0.01em] ${asleep ? "text-[#a8aeba]" : tn.num}`}>

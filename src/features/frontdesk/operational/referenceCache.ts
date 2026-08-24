@@ -14,9 +14,12 @@ import { useOnline } from "./useOnline";
 // overwrite the cache. No long expiry to reason about: online means fresh,
 // offline means the last-known-good list keeps the clinic running.
 
-type Cached<T> = { at: string; data: T };
+export type Cached<T> = { at: string; data: T };
 
-function readCache<T>(key: string): Cached<T> | null {
+// Exported — useQueue reuses this exact cache-first mechanism for the live
+// visit queue (2026-08-24), not just the reference lists below. Same
+// localStorage-shaped snapshot, same "never throw, cache is a bonus" rule.
+export function readCache<T>(key: string): Cached<T> | null {
     try {
         const raw = localStorage.getItem(key);
         return raw ? (JSON.parse(raw) as Cached<T>) : null;
@@ -25,7 +28,7 @@ function readCache<T>(key: string): Cached<T> | null {
     }
 }
 
-function writeCache<T>(key: string, data: T): void {
+export function writeCache<T>(key: string, data: T): void {
     try {
         localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
     } catch {

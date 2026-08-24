@@ -163,13 +163,16 @@ export function PrintWorkspace({
                 ) : (
                     <div className="flex flex-wrap items-center gap-[10px]">
                         {/* Printing opens a door (the OS print flow) — it wears the
-                            brand gradient like the other front doors (§7.7). */}
+                            loud brand treatment like the other front doors (§7.7,
+                            amended 2026-08-23: was a purple→blue gradient,
+                            flattened to solid #2f6bed with a glow — Anmol's call,
+                            the gradient "looked terrible"). */}
                         <button
                             type="button"
                             onClick={onPrint}
                             disabled={!ready}
                             aria-busy={detailLoading || undefined}
-                            className="flex h-11 items-center gap-[9px] rounded-[11px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] px-[22px] text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)] transition-[filter,box-shadow,opacity] duration-100 hover:brightness-110 hover:shadow-[0_3px_16px_rgba(124,92,240,0.45)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.4)] disabled:cursor-default disabled:opacity-60"
+                            className="flex h-11 items-center gap-[9px] rounded-[11px] bg-[#2f6bed] px-[22px] text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[background-color,box-shadow,opacity] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(47,107,237,0.35)] disabled:cursor-default disabled:opacity-60"
                         >
                             <Printer size={16} strokeWidth={2.2} />
                             {t("printPrescription")}
