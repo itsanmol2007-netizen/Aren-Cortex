@@ -8,7 +8,16 @@
 .supp-page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    /* Not `height: 100%` — `.app-shell` (App.tsx), this page's parent, has
+       no height of its own (it's sized by its content, same as `<body>`
+       above it), so a percentage height here silently computed to `auto`
+       and the page collapsed to fit its own short content instead of
+       filling the screen — the rest of the viewport showed whatever sits
+       behind the app. `min-height: 100vh` doesn't have that problem: it's
+       an absolute floor, not a percentage of an ancestor, so it holds
+       regardless of what `.app-shell` does. Found 2026-08-24 — reported as
+       "half rendered... split screen". */
+    min-height: 100vh;
     background: #f0f2f7;
 }
 
@@ -21,6 +30,10 @@
     width: 100%;
     display: flex;
     flex-direction: column;
+    /* Centres the hero + cards in whatever space `min-height: 100vh` above
+       actually gives this page, instead of pinning them to the top of a
+       box that is now taller than their own content. */
+    justify-content: center;
     gap: 20px;
 }
 
@@ -30,7 +43,6 @@
     align-items: center;
     text-align: center;
     gap: 8px;
-    margin-top: 24px;
     padding: 0 12px;
 }
 

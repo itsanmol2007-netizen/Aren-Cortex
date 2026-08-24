@@ -8,7 +8,13 @@
 .settings-page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    /* Not `height: 100%` — `.app-shell` (App.tsx), this page's parent, has
+       no height of its own, so a percentage height here silently computed
+       to `auto` and the page collapsed to fit its own content instead of
+       filling the screen. Same fix and reasoning as Communication/Clinic/
+       Support/Practice (support.css). Found 2026-08-24 — reported as "half
+       rendered... split screen". */
+    min-height: 100vh;
     background: #f5f6f8;
 }
 
