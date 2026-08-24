@@ -61,10 +61,23 @@ type NavItem =
         page: SidebarPage;
         /** Small, muted treatment — Help & Support only. */
         variant?: "utility";
-        /** Which color badge the icon sits in — gives it depth (a filled,
-         *  tinted chip) instead of a bare monoline glyph. Omitted for
-         *  "utility" items, which stay deliberately flat/muted. */
-        tone?: "blue" | "teal" | "purple" | "amber" | "slate";
+        /**
+         * Which color badge the icon sits in — gives it depth (a filled,
+         * tinted chip) instead of a bare monoline glyph. Omitted for
+         * "utility" items, which stay deliberately flat/muted.
+         *
+         * Three tones, all cool-family (blue → indigo → slate), replacing
+         * the original five (blue/teal/purple/amber/slate) 2026-08-24 —
+         * Anmol: "the color they are carrying is bad, like a mixture of
+         * color... make them belong from the same color family." Teal and
+         * amber were the outliers (green- and orange-hued, the actual
+         * "rainbow" the complaint was about); blue and slate were already
+         * in-family and kept. The three left carry a grouping that reads
+         * on its own even without the label: blue for the two
+         * patient-facing destinations, indigo for the two configuration
+         * destinations, slate for the one account-level one.
+         */
+        tone?: "blue" | "indigo" | "slate";
     };
 
 type SidebarNavProps = {
@@ -93,7 +106,7 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Communication",
             icon: <MessageSquare size={14} />,
             page: "communication",
-            tone: "teal",
+            tone: "blue",
         },
         { type: "divider" },
         {
@@ -101,14 +114,14 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
             label: "Practice",
             icon: <Stethoscope size={14} />,
             page: "practice",
-            tone: "purple",
+            tone: "indigo",
         },
         {
             type: "page",
             label: "Clinic",
             icon: <Building2 size={14} />,
             page: "clinic",
-            tone: "amber",
+            tone: "indigo",
         },
         { type: "divider" },
         {

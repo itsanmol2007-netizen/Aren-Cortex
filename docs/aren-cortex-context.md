@@ -94,10 +94,13 @@ src/
     SidebarNav, six real destinations (Consult action, Patients, Communication, Practice,
     Clinic, Settings) + Help & Support utility, rebuilt 2026-08-23 — "Prescriptions" and
     "Investigations" are deliberately NOT pages (see SidebarNav.tsx's header for why); their
-    0-byte stub folders were deleted, not left as dead placeholders. features/communication/,
-    features/clinic/, features/support/ are still 0-byte stubs — real destinations, not yet
-    built (each renders ComingSoonPage today, App.tsx's COMING_SOON_META). See §7 for why
-    those two (not Practice) are the ones actually worth deferring.
+    0-byte stub folders were deleted, not left as dead placeholders. features/communication/
+    CommunicationPage.tsx and features/clinic/ClinicPage.tsx (2026-08-24) are dedicated
+    coming-soon pages now, own illustration + own copy — genuinely still not built (no data
+    model behind either), just no longer the generic ComingSoonPage. features/support/
+    SupportPage.tsx (same day) is real: mailto:/tel: cards, not a stub. App.tsx's
+    COMING_SOON_META now stays empty, kept only as the fallback for a future destination
+    with no page yet. See §7 for the full reasoning on all three.
   styles/
     consult.css   (cs-*)  — the consult screen. ALL new consult UI goes here.
     workspace.css (cx-*)  — legacy, mostly dead; 3 sheets + 1 selector hook still live
@@ -423,6 +426,52 @@ brand-priority over label-priority).
   medicine" brand/dose sheet (`MedicineAddSheet.tsx`) no longer animates its
   scrim/panel in with a fade + spring bounce on every open — it still opens
   and closes, just without the motion.
+- **"Confirming a condition doesn't rerank medicines/tests" — investigated
+  2026-08-24, not a bug, and not fixed because the real fix is clinical
+  content, not code.** The mechanism is real and does work
+  (`useLongitudinalRecord.ts`'s `confirmCondition`, called from
+  `useConsultPlan.ts`'s `case "finding"`): confirming a Possible Condition
+  adds it as a context observable and the engine re-ranks in the same
+  frame — but ONLY for a condition with a row in `condition_observable_map`,
+  and that table has exactly **7 rows, covering 7 of the 87 active
+  `finding`-type intents** (checked live: `select count(*) from
+  condition_observable_map` → 7, all `is_chronic`; `select count(*) from
+  intents where type='finding' and is_active` → 87) — asthma/COPD (×2
+  intents), T2DM (×2), dyslipidaemia, hypertension (×2). Every other
+  Possible Condition a doctor confirms — the ~80 remaining, e.g. migraine,
+  UTI, gastritis, anaemia — genuinely does nothing beyond printing on the
+  Rx, on purpose: there is no corresponding "Known X" observable in the
+  catalogue for most of them to map to (checked: only 7 `kind='history'`
+  observables are even named "Known %", and all 7 already have every
+  matching intent wired — zero free wiring left). Widening this means, per
+  condition, deciding whether it needs a new observable, whether that
+  observable should be chronic (durable across visits) or episodic
+  (today only), and what `signal_intent_rules` that observable should
+  drive — real clinical judgement calls, which is exactly what
+  `useLongitudinalRecord.ts`'s own header already refuses to invent ("a
+  wrong standing fact is worse than no standing fact"). Needs a doctor's
+  (Anmol's, or a clinical reviewer's) curated list of condition→observable
+  pairs before a future session can wire more rows in — the wiring itself
+  is small once that list exists.
+- **Communication, Clinic and Support given real pages 2026-08-24** —
+  replacing the generic `ComingSoonPage` for those three specifically
+  (`COMING_SOON_META` now stays empty, kept only as the fallback for a
+  FUTURE sidebar destination with no page yet). `CommunicationPage.tsx` and
+  `ClinicPage.tsx` are still honestly "coming soon" (no data model behind
+  either), each with its own hero illustration (`PlaceholderArt.tsx`) and a
+  short list of what will actually be there — Anmol's ask, specifically
+  against the old page's one-line generic copy. `SupportPage.tsx` is the
+  one exception: genuinely real today, `mailto:`/`tel:` cards for
+  care@arenode.com / +91 95599 51905, no form and no fabricated hours.
+- **Sidebar badge colors unified 2026-08-24** — the five per-page icon
+  badges (Patients/Communication/Practice/Clinic/Settings) were blue, teal,
+  purple, amber and slate: five unrelated hues, reported as "a mixture of
+  color... like a rainbow." Teal and amber (the two actual outliers — green
+  and orange) are gone; the `tone` prop is now `"blue" | "indigo" |
+  "slate"` and doubles as a grouping (blue = patient-facing, indigo =
+  configuration, slate = account-level) instead of five arbitrary picks.
+  See `SidebarNav.tsx`'s `tone` prop comment and `sidebar.css`'s
+  `.tone-indigo`.
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: still not built — the real API integration

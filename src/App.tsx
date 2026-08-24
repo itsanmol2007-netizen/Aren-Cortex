@@ -14,6 +14,9 @@ import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PracticePage } from "./features/practice/PracticePage";
+import { CommunicationPage } from "./features/communication/CommunicationPage";
+import { ClinicPage } from "./features/clinic/ClinicPage";
+import { SupportPage } from "./features/support/SupportPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
 import { useDoctorHeartbeat } from "./hooks/useDoctorHeartbeat";
@@ -75,22 +78,16 @@ import {
 } from "./lib/db";
 import { fetchLastExercisePlan } from "./lib/db/exercises";
 
-// Title + subtitle for every coming-soon feature page
-// Sidebar IA rebuilt 2026-08-23 to six real destinations (SidebarNav.tsx's
-// own header has the full reasoning) — "prescriptions"/"investigations"
-// were removed as standalone destinations, not renamed, so no entries here.
-const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {
-  communication: { title: "Communication", subtitle: "WhatsApp conversations, patient messages & follow-ups" },
-  clinic: { title: "Clinic", subtitle: "Clinic profile, staff, working hours & operations" },
-  support: { title: "Help & Support", subtitle: "Documentation & assistance" },
-  // "settings" and "practice" deliberately have no entry here — both are
-  // real pages now (features/settings/SettingsPage.tsx,
-  // features/practice/PracticePage.tsx), not coming-soon stubs. Practice
-  // was blocked earlier the same day on "no standalone query exists to
-  // resolve a pinned intent id to a name" — checked live instead of
-  // assumed (see lib/db/synapse.ts's fetchPinnedMedicineDetails) and it
-  // turned out to be one join, not the full ruleset loader.
-};
+// Title + subtitle for a coming-soon feature page — now the FALLBACK for a
+// future sidebar destination that hasn't earned its own page yet, not a
+// live route. Communication, Clinic and Support all got dedicated pages
+// 2026-08-24 (own illustration, own copy — CommunicationPage.tsx/
+// ClinicPage.tsx/SupportPage.tsx); "settings" and "practice" were already
+// real pages before that (features/settings/SettingsPage.tsx,
+// features/practice/PracticePage.tsx). Nothing in `SidebarPage` hits this
+// today — kept rather than deleted so the NEXT destination this sidebar
+// grows has somewhere to land on day one instead of a blank screen.
+const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {};
 
 function App() {
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
@@ -994,6 +991,12 @@ function App() {
         />
       ) : activePage === "practice" ? (
         <PracticePage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
+      ) : activePage === "communication" ? (
+        <CommunicationPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
+      ) : activePage === "clinic" ? (
+        <ClinicPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
+      ) : activePage === "support" ? (
+        <SupportPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : isFeaturePage && comingSoonMeta ? (
         <ComingSoonPage
           logoRef={logoRef}

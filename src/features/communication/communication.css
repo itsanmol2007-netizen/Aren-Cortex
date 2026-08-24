@@ -1,0 +1,100 @@
+/* ── COMMUNICATION PAGE ────────────────────────────────────────────────────
+   Same light shell as Patients/Practice (`.prac-page` etc.) — an independent
+   file rather than importing another feature's stylesheet, same reasoning
+   practice.css states for itself. Green is the one deliberate departure
+   from the app's blue/indigo family: this page is specifically about
+   WhatsApp, and PlaceholderArt.tsx's own header explains why that earns it.
+──────────────────────────────────────────────────────────────────────────── */
+
+.comm-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #f0f2f7;
+}
+
+.comm-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    max-width: 560px;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.comm-hero {
+    background: #ffffff;
+    border: 1px solid #d0d8e8;
+    border-radius: 14px;
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    margin-top: 24px;
+}
+
+.comm-hero-title {
+    margin: 6px 0 0;
+    font-size: 16px;
+    font-weight: 750;
+    color: #1e293b;
+}
+
+.comm-hero-sub {
+    margin: 0;
+    max-width: 360px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #64748b;
+}
+
+.comm-badge {
+    margin-top: 4px;
+    font-size: 9.5px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #15803d;
+    background: rgba(37, 211, 102, 0.14);
+    border: 1px solid rgba(37, 211, 102, 0.32);
+    border-radius: 20px;
+    padding: 4px 14px;
+}
+
+.comm-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.comm-list li {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    color: #475569;
+    font-weight: 500;
+    position: relative;
+    padding-left: 30px;
+}
+
+.comm-list li::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #25d366;
+}
