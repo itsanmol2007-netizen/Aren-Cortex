@@ -1,10 +1,26 @@
-import { ChevronLeft, ChevronRight, Stethoscope, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pill, Stethoscope, Plus } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient } from "../types";
 import { ActionButton } from "./ActionButton";
 import { formatVisitDate } from "./PastVisitCard";
 import type { RealVisit } from "../lib/db";
+import { visitTypeLabel } from "../features/patients/visitStatus";
+
+/**
+ * The small glyph on each past-visit chip. Same ordering `visitTypeLabel`
+ * already reasons in (features/patients/visitStatus.ts) — a chip that ALSO
+ * has exercises but led with a prescription still reads as a prescription
+ * visit, same as everywhere else that label appears.
+ */
+function VisitTypeIcon({ visit }: { visit: RealVisit }) {
+  const label = visitTypeLabel(visit);
+  const size = 10;
+  if (label === "Prescription") return <Pill size={size} aria-hidden="true" />;
+  if (label === "Exercise Plan") return <Dumbbell size={size} aria-hidden="true" />;
+  if (label === "Examination") return <Stethoscope size={size} aria-hidden="true" />;
+  return <ClipboardList size={size} aria-hidden="true" />;
+}
 
 type PatientHeaderProps = {
   patient: Patient;
@@ -234,6 +250,15 @@ export function PatientHeader({
                   // whenever no plan is running — which is every profile that
                   // does not use one.
                   const session = sessionLabels?.get(visit.id);
+                  // A fuller preview than just the first 3 symptoms — the
+                  // chip itself only has room for one line, but the tooltip
+                  // can say what the click will actually open into.
+                  const tooltip = [
+                    visit.symptoms.slice(0, 3).join(", "),
+                    visit.findings.length > 0 ? `${visit.findings.length} finding${visit.findings.length > 1 ? "s" : ""}` : "",
+                    visit.medicines.length > 0 ? `${visit.medicines.length} medicine${visit.medicines.length > 1 ? "s" : ""}` : "",
+                    visit.exercise_names.length > 0 ? `${visit.exercise_names.length} exercise${visit.exercise_names.length > 1 ? "s" : ""}` : "",
+                  ].filter(Boolean).join(" · ") || "Visit details";
                   return (
                     <button
                       key={visit.id}
@@ -243,13 +268,18 @@ export function PatientHeader({
                         const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
                         onOpenVisit?.(visit, rect.left + rect.width / 2);
                       }}
-                      title={visit.symptoms.slice(0, 3).join(", ") || "Visit details"}
+                      title={tooltip}
                     >
-                      <span className="tb-visit-date">{formatVisitDate(visit.created_at)}</span>
+                      <span className="tb-visit-date">
+                        <VisitTypeIcon visit={visit} />
+                        {formatVisitDate(visit.created_at)}
+                      </span>
                       {session ? (
                         <span className="tb-visit-diag">{session}</span>
                       ) : visit.medicines.length > 0 ? (
                         <span className="tb-visit-diag">{visit.medicines[0].name}</span>
+                      ) : visit.exercise_names.length > 0 ? (
+                        <span className="tb-visit-diag">{visit.exercise_names[0]}</span>
                       ) : null}
                     </button>
                   );

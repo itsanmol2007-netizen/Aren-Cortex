@@ -23,7 +23,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Check, Pill, X } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandVariantLabel, doseFieldValue } from "../../lib/synapse/brands";
@@ -72,7 +72,6 @@ export function MedicineAddSheet({
     const [dosage, setDosage] = useState("");
     const [timing, setTiming] = useState(TIMINGS[0]);
     const [sos, setSos] = useState(false);
-    const reduce = useReducedMotion();
 
     // Re-seed whenever a different medicine opens the sheet.
     useEffect(() => {
@@ -285,10 +284,16 @@ export function MedicineAddSheet({
                     <motion.div
                         className="cs-addmed-scrim"
                         onClick={onCancel}
-                        initial={reduce ? false : { opacity: 0 }}
+                        // No entrance/exit motion — Anmol: the sheet used to
+                        // fade+blur in over a spring bounce every time a chip
+                        // resolved to a medicine that needed a brand/dose
+                        // pick, which read as a "weird blue screen animation"
+                        // for something that just needs to appear. It still
+                        // opens and closes; it no longer animates doing so.
+                        initial={false}
                         animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.16 }}
+                        exit={{ opacity: 0, transition: { duration: 0 } }}
+                        transition={{ duration: 0 }}
                     />
                     <motion.div
                         className="cs-addmed-panel cx-kbd-surface"
@@ -296,10 +301,10 @@ export function MedicineAddSheet({
                         // Programmatic focus only — the panel is a landing
                         // place for the keyboard, never a Tab stop of its own.
                         tabIndex={-1}
-                        initial={reduce ? false : { opacity: 0, y: 16, scale: 0.97 }}
+                        initial={false}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.12 } }}
-                        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                        exit={{ opacity: 0, transition: { duration: 0 } }}
+                        transition={{ duration: 0 }}
                     >
                 <div className="cs-addmed-head">
                     <span className="cs-glyph is-teal"><Pill size={16} /></span>

@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { Heart, Sparkles, X } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { IntentType } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { CompanionScope, CompanionSuggestion } from "../../lib/synapse/companions";
@@ -17,40 +17,22 @@ import type { CompanionScope, CompanionSuggestion } from "../../lib/synapse/comp
 // ============================================================
 
 /**
- * A brief violet ripple on a card's glyph icon, fired once whenever the
- * ranking behind that card actually recomputes — not a loop, not an idle
- * decoration. `pulseKey` is `useConsultIntelligence`'s `thinkingKey`: a
- * value that only changes identity when the engine's OUTPUT changes (a
- * different set of ranked intents or different scores), so typing in an
- * unrelated search box never fires it and neither does a re-render with
- * nothing new to say.
- *
- * The same three cards (Possible Conditions, Medicine Recommendations,
- * Suggestions) all receive the identical `pulseKey`, so they ripple in the
- * same frame — the point is not "this list changed", it is "the one engine
- * behind all three just thought again". Violet because doctrine's colour
- * law already reserves it for "the engine's reading" (§12.1); this reuses
- * that meaning rather than inventing a new one.
- *
- * Render it inside a `position: relative` wrapper around the glyph — see
- * `.cs-glyph-live` in consult.css.
+ * REMOVED 2026-08-24 — Anmol: every accept/chip-toggle re-runs the engine
+ * (doctrine §4: `useConsultIntelligence` runs synchronously on every chart
+ * change), which fired this ripple on Possible Conditions, Medicine
+ * Recommendations, Suggestions and Exercise Plan simultaneously — in
+ * practice a wash across the whole output strip on nearly every keystroke,
+ * reported as a "weird blue screen animation" that showed up "whenever a
+ * new thing is added in Synapse, selecting any chip." Rather than pull the
+ * `<ThinkingRing pulseKey={thinkingKey} />` call out of all four cards (a
+ * bigger, riskier diff for the same net effect), this stays the one place
+ * that decides whether it renders — it renders nothing, always. Kept as a
+ * no-op rather than deleted so those four call sites don't need touching,
+ * and `.cs-thinking-ring`/`.cs-glyph-live` in consult.css are dead CSS now,
+ * same status as the rest of that file's already-dead classes.
  */
-export function ThinkingRing({ pulseKey }: { pulseKey: string }) {
-    const reduce = useReducedMotion();
-    if (!pulseKey) return null;
-    if (reduce) return null; // a ring that never fades is a decoration, not a cue
-    return (
-        <AnimatePresence>
-            <motion.span
-                key={pulseKey}
-                className="cs-thinking-ring"
-                aria-hidden="true"
-                initial={{ opacity: 0.6, scale: 0.5 }}
-                animate={{ opacity: 0, scale: 1.9 }}
-                transition={{ duration: 0.85, ease: "easeOut" }}
-            />
-        </AnimatePresence>
-    );
+export function ThinkingRing(_props: { pulseKey: string }) {
+    return null;
 }
 
 // ============================================================

@@ -178,7 +178,10 @@ export function useConsultLifecycle({
       showToast(`Consult started for ${incomingPatient.name}`);
       focusChartSearch();
 
-      session.loadPastVisits(incomingPatient.id!);
+      // Excludes the visit just resolved above — otherwise a patient's very
+      // first-ever consult sees its own brand-new, still-empty visit come
+      // back as "1 previous visit".
+      session.loadPastVisits(incomingPatient.id!, visit.id);
       // After clearWorkspace, never before — the reset would wipe them.
       carryForwardFor(incomingPatient.id!);
     } catch (err: any) {
@@ -234,7 +237,8 @@ export function useConsultLifecycle({
       // and the first complaint is one keystroke away (spec §4.2).
       focusChartSearch();
 
-      session.loadPastVisits(dbPatient.id!);
+      // Same exclusion as handleStartConsultFromRecord above.
+      session.loadPastVisits(dbPatient.id!, visit.id);
       // After clearWorkspace, never before — the reset would wipe them.
       carryForwardFor(dbPatient.id!);
     } catch (err: any) {
