@@ -1,5 +1,5 @@
 import { FileText, Image as ImageIcon, X } from "lucide-react";
-import { ATTACHMENT_TYPES, ATTACHMENT_TYPE_LABEL, type AttachmentType } from "@/lib/attachments/types";
+import type { AttachmentType } from "@/lib/attachments/types";
 import { useT } from "../i18n/i18n";
 import { AttachmentDropzone, inferAttachmentType } from "./AttachmentDropzone";
 
@@ -10,6 +10,13 @@ import { AttachmentDropzone, inferAttachmentType } from "./AttachmentDropzone";
 // entry point Consult's AttachmentsCard and VisitAttachmentsModal call, same
 // compression, same edge functions, same B2 bucket) happens once the new
 // visit_id comes back from onCreate, right before the modal closes.
+//
+// Deliberately no "what type of file is this" question here — a prior pass
+// added a per-file type picker (it drives the compression profile), but
+// Anmol's read live: "before uploading any images, I'd ask what kind of
+// image this is. It should be simple upload." Drop or click; the type is
+// still inferred from the mime type for compress.ts, just never asked
+// about — same simplification VisitAttachmentsModal already made.
 
 export type StagedAttachment = { localId: string; file: File; attachmentType: AttachmentType };
 
@@ -38,14 +45,6 @@ export function IntakeAttachmentsField({ files, onChange }: Props) {
 
     const remove = (localId: string) => onChange(files.filter((f) => f.localId !== localId));
 
-    // The type is auto-inferred from the file (see AttachmentDropzone), but
-    // reception can correct it here before Save — it drives which
-    // compression profile the upload gets, so this is the one piece of "what
-    // am I uploading" control that's worth keeping visible rather than
-    // silently guessed.
-    const setType = (localId: string, attachmentType: AttachmentType) =>
-        onChange(files.map((f) => (f.localId === localId ? { ...f, attachmentType } : f)));
-
     return (
         <div>
             {files.length > 0 && (
@@ -59,27 +58,6 @@ export function IntakeAttachmentsField({ files, onChange }: Props) {
                                 <div className="truncate text-[12.5px] font-semibold text-[#161d29]">{f.file.name}</div>
                                 <div className="mt-[1px] truncate text-[11px] text-[#8a91a0]">{formatBytes(f.file.size)}</div>
                             </div>
-                            {/* Compact, unlayered so it isn't eaten by the §13
-                                Cortex legacy `select` rule the way a Tailwind
-                                utility select would be — same reasoning as
-                                fd-field, just a plain inline style here since
-                                this one row-scoped control doesn't need a
-                                shared class. */}
-                            <select
-                                aria-label={t("attachTypeLabel")}
-                                value={f.attachmentType}
-                                onChange={(e) => setType(f.localId, e.target.value as AttachmentType)}
-                                style={{
-                                    height: 28, borderRadius: 7, border: "1.5px solid #e4e7ee",
-                                    background: "#fff", padding: "0 6px", fontSize: 11.5, fontWeight: 600,
-                                    color: "#5a6472", outline: "none",
-                                }}
-                                className="shrink-0"
-                            >
-                                {ATTACHMENT_TYPES.map((ty) => (
-                                    <option key={ty} value={ty}>{ATTACHMENT_TYPE_LABEL[ty]}</option>
-                                ))}
-                            </select>
                             <button
                                 type="button"
                                 onClick={() => remove(f.localId)}

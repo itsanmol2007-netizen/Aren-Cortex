@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, FileText, Image as ImageIcon, Loader2, Paperclip, Trash2 } from "lucide-react";
+import { FileText, Image as ImageIcon, Loader2, Paperclip, Trash2 } from "lucide-react";
 import { deleteAttachment, listAttachments, uploadAttachment } from "@/lib/db/attachments";
 import { ATTACHMENT_TYPE_LABEL, type Attachment } from "@/lib/attachments/types";
 import type { TodayVisit } from "../types/frontdesk";
@@ -106,7 +106,21 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
             ) : items.length > 0 ? (
                 <div className="mt-3 flex flex-col gap-[8px]">
                     {items.map((att) => (
-                        <div key={att.id} className="flex items-center gap-3 rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
+                        // The row itself is the "open" affordance — clicking
+                        // anywhere on it (the thumbnail, the name, the empty
+                        // space) previews it, the way a file normally opens.
+                        // A separate view-only icon used to be the one thing
+                        // that worked, which read as broken everywhere else
+                        // on the row. Delete stays a deliberate, separate
+                        // target — an accidental click there is destructive.
+                        <div
+                            key={att.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setPreviewing(att)}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPreviewing(att); } }}
+                            className="flex cursor-pointer items-center gap-3 rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px] transition-colors hover:border-[#e2d9fb] hover:bg-[#faf8ff]"
+                        >
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[#efeafd] text-[#6d28d9]">
                                 {att.mimeType?.startsWith("image/") ? <ImageIcon size={16} /> : <FileText size={16} />}
                             </div>
@@ -118,16 +132,7 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => setPreviewing(att)}
-                                aria-label={t("attachView")}
-                                title={t("attachView")}
-                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#8a91a0] transition-colors hover:bg-[#eef0f5] hover:text-[#5a6472]"
-                            >
-                                <Eye size={15} />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onDelete(att)}
+                                onClick={(e) => { e.stopPropagation(); onDelete(att); }}
                                 aria-label={t("attachRemove")}
                                 title={t("attachRemove")}
                                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#a8aeba] transition-colors hover:bg-[rgba(210,59,52,0.08)] hover:text-[#d23b34]"

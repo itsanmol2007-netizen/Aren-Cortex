@@ -133,15 +133,22 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
                     )}
                     {/* Quiet indicator, not a status — a visit with files
                         attached (from intake or the ⋮ menu) shouldn't need
-                        opening it to know they're there. */}
+                        opening the row to know they're there. Also a
+                        shortcut straight into the attachments modal —
+                        data-row-menu-btn opts it out of the row's own
+                        onOpen click, same mechanism the kebab uses. */}
                     {visit.attachment_count > 0 && (
-                        <span
+                        <button
+                            type="button"
+                            data-row-menu-btn
+                            onClick={(e) => { e.stopPropagation(); if (!isPending) onAttachments(visit); }}
                             title={t("attachCount", { n: visit.attachment_count })}
-                            className="flex shrink-0 items-center gap-[3px] whitespace-nowrap rounded-[5px] border border-[#e5ddfa] bg-[#f7f5fd] px-[6px] py-[2px] text-[10px] font-semibold text-[#6d5bc7]"
+                            aria-label={t("menuAttachments")}
+                            className="flex shrink-0 items-center gap-[3px] whitespace-nowrap rounded-[5px] border border-[#e5ddfa] bg-[#f7f5fd] px-[6px] py-[2px] text-[10px] font-semibold text-[#6d5bc7] transition-colors hover:border-[#c9bdf5] hover:bg-[#efeafd]"
                         >
                             <Paperclip size={10} />
                             {visit.attachment_count}
-                        </span>
+                        </button>
                     )}
                 </div>
                 <div className="mt-[1px] truncate text-[12px] text-[#8a91a0] tabular-nums">
