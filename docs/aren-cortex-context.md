@@ -219,6 +219,42 @@ brand-priority over label-priority).
     attach a new *medicine* to an *existing* composition (`add_medicine` RPC); a new
     composition is a clinical decision requiring the full compositions → gates →
     rules pipeline.
+23. **The four-tier weight structure, Anmol's own words (2026-08-25): "symptoms
+    should have full freedom to recommend assessment and even tests... but an
+    assessment should carry super weight [for] the medicine or exercise."**
+    Symptoms rank Possible Conditions and tests freely and always will — a
+    differential is SUPPOSED to fire every plausible disease at once, that is
+    what makes it a differential, not a bug. What must not happen is a
+    *disease-specific* medicine (an antimalarial, an antibiotic aimed at one
+    diagnosis) reading as confidently ranked off a symptom pattern that is
+    itself ambiguous across several serious differentials — the doctor should
+    see it move once they actually confirm which one it is, not before. Four
+    tiers, by intent type, verified live 2026-08-25 across all 31 signals this
+    session's `condition_observable_map` batches created: test 0.15–0.35
+    (symptom-driven, unchanged — ordering a confirmatory test off a
+    suspicious pattern is correct, not presumptive), referral ~0.45 (sits
+    between test and medicine on purpose — lower stakes than a prescription),
+    advice 0.35–0.55, medicine/exercise 0.55–0.85 (a floor clearly above any
+    ordinary 1–2 signal symptom stack, capped so nothing saturates). This is
+    an *approximation* of "confirming X means Y is no longer relevant" — the
+    engine is purely additive (`lib/synapse/engine.ts`), nothing SUBTRACTS a
+    competing diagnosis's weight, and no guard may ever hide a suggestion
+    (rule 8) — so "super weight" is what actually available: the confirmed
+    tier is engineered to outrank a merely-symptom-matched competitor in
+    practice, not to suppress it. A genuinely competing mechanism (negative
+    weights) would be a real engine change, not attempted. New content in this
+    disease-differential shape (a symptom pattern several serious diagnoses
+    share) should land in this same 4-tier structure from the start, not
+    the flat single-tier weighting older content used — see
+    `confirmed_diagnosis_dominant_weight_tier`/`malaria_medicines_require_
+    confirmation_not_symptoms` migrations for the worked example. This is
+    NOT retroactive across the ~1700 pre-existing rows — checked live,
+    most of that content already ranks off a near-unambiguous single
+    symptom (DYSURIA→nitrofurantoin, DENTAL_ABSCESS→amoxicillin,
+    THROAT_EXUDATE→amoxicillin), a materially lower-risk pattern than
+    fever+chills+rigors firing for malaria/dengue/typhoid/plain viral fever
+    alike. A full audit for the same ambiguous-symptom shape elsewhere is
+    real clinical review work, flagged not attempted.
 
 ---
 
@@ -514,6 +550,15 @@ brand-priority over label-priority).
      checked `DENGUE_SUSPICION` specifically (the other guarded signal)
      and it was already correct: ranks tests/fluids/safety-netting, never
      a specific drug, so no analogous fix was needed there.
+  6. `confirmed_diagnosis_dominant_weight_tier` — Anmol generalised the
+     malaria fix into a standing architecture, not a one-off: "it needs to
+     be done for every thing." Formalised as rule 23 in §5 — read that for
+     the full reasoning. In one line: all 31 `condition_observable_map`
+     signals this session built now sit in a verified 4-tier weight
+     structure by intent type (test 0.15–0.35 unchanged, referral ~0.45,
+     advice 0.35–0.55, medicine 0.55–0.85), so confirming a diagnosis
+     reliably outranks a merely-symptom-matched competitor without the
+     engine needing a suppression mechanism it doesn't have.
   Every medicine/test/advice referenced already existed in the catalogue
   (rule 22 — nothing minted); every non-obvious association was checked
   against a real guideline before being written. Every new
