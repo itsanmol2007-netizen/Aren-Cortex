@@ -22,11 +22,12 @@
 // ---------------------------------------------------------------------------
 
 import { useRef } from "react";
-import { Calendar, Pill, X, RefreshCw } from "lucide-react";
+import { Activity, Calendar, Dumbbell, MapPin, Pill, Quote, X, RefreshCw } from "lucide-react";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import type { RealVisit } from "../lib/db";
 import { freqSlotToLabel } from "../lib/db";
 import { doctorName } from "../lib/format";
+import { FIELD_BY_KEY, type MeasureFieldKey } from "../features/consult/measures";
 
 export function formatVisitDate(isoString: string): string {
     const d = new Date(isoString);
@@ -43,6 +44,55 @@ function buildMedDetail(med: RealVisit["medicines"][0]): string {
     if (med.frequency) parts.push(freqSlotToLabel(med.frequency));
     if (med.duration_days) parts.push(`${med.duration_days}d`);
     return parts.join(" · ");
+}
+
+/** A vitals blob with at least one real value — see `visitHasContent` below. */
+function hasRecordedVitals(vitals: RealVisit["vitals"]): boolean {
+    if (!vitals) return false;
+    return Object.values(vitals).some((v) => String(v ?? "").trim() !== "");
+}
+
+/**
+ * The non-blank entries of a visit's `vitals` blob, labelled off the same
+ * `MEASURE_FIELDS` catalogue every input card and the longitudinal band
+ * read (rule 19 — one catalogue, not a second hand-written label map). A
+ * key no longer in the catalogue (an older build wrote it) still shows,
+ * under its own raw key, rather than silently disappearing.
+ */
+function recordedMeasurements(vitals: RealVisit["vitals"]): { label: string; unit: string; value: string }[] {
+    if (!vitals) return [];
+    return Object.entries(vitals)
+        .map(([key, raw]) => ({ key, value: String(raw ?? "").trim() }))
+        .filter((e) => e.value !== "")
+        .map((e) => {
+            const field = FIELD_BY_KEY.get(e.key as MeasureFieldKey);
+            return { label: field?.shortLabel ?? e.key, unit: field?.unit ?? "", value: e.value };
+        });
+}
+
+/**
+ * Does this visit have anything a doctor would actually want to see?
+ *
+ * Extracted 2026-08-24 so the top past-visits strip, the longitudinal band
+ * and this card's own footer all agree on what "empty" means — before this
+ * they each checked a different subset (this card checked only symptoms/
+ * findings/medicines, which is why a physio visit that was ALL exercises and
+ * body sites, or a visit that only carried a measurement reading, still
+ * showed this card's "No detailed records found" line despite genuinely
+ * having a record).
+ */
+export function visitHasContent(visit: RealVisit): boolean {
+    return (
+        visit.symptoms.length > 0 ||
+        visit.findings.length > 0 ||
+        visit.medicines.length > 0 ||
+        visit.body_sites.length > 0 ||
+        visit.exercise_names.length > 0 ||
+        visit.impairment_names.length > 0 ||
+        !!visit.story_mechanism ||
+        !!visit.story_duration ||
+        hasRecordedVitals(visit.vitals)
+    );
 }
 
 export function PastVisitCard({
@@ -67,10 +117,16 @@ export function PastVisitCard({
     // scrim.
     useOverlayFocus(panelRef, true);
 
+    // Repeat Rx only ever pre-fills these three (its own footer hint says
+    // so) — kept separate from `visitHasContent` below, which is broader and
+    // decides whether the card has ANYTHING to show, not whether Repeat Rx
+    // specifically applies.
     const hasImportable =
         visit.symptoms.length > 0 ||
         visit.findings.length > 0 ||
         visit.medicines.length > 0;
+
+    const measurements = recordedMeasurements(visit.vitals);
 
     return (
         <div className="pv-overlay" onClick={onClose}>
@@ -98,11 +154,25 @@ export function PastVisitCard({
                         <div>
                             <p className="pv-eyebrow">Past consultation</p>
                             <h3 className="pv-title">
+                                {/* Same priority a physio visit actually reasons in:
+                                    a prescription is the headline when there is one,
+                                    otherwise whatever this visit's own record is
+                                    ABOUT — exercises, a functional limitation,
+                                    symptoms, findings — rather than always falling
+                                    back to a title that says nothing (see
+                                    `visitTypeLabel` in features/patients/visitStatus.ts
+                                    for the same ordering, badge-shaped). */}
                                 {visit.medicines.length > 0
                                     ? `${visit.medicines.length} medicine${visit.medicines.length > 1 ? "s" : ""} prescribed`
-                                    : visit.symptoms.length > 0
-                                        ? visit.symptoms[0]
-                                        : "Visit record"}
+                                    : visit.exercise_names.length > 0
+                                        ? `${visit.exercise_names.length} exercise${visit.exercise_names.length > 1 ? "s" : ""} prescribed`
+                                        : visit.symptoms.length > 0
+                                            ? visit.symptoms[0]
+                                            : visit.impairment_names.length > 0
+                                                ? visit.impairment_names[0]
+                                                : visit.findings.length > 0
+                                                    ? visit.findings[0].name
+                                                    : "Visit record"}
                             </h3>
                         </div>
                     </div>
@@ -133,6 +203,31 @@ export function PastVisitCard({
                         </div>
                     )}
 
+                    {/* The patient's own account — physiotherapy's Story intake
+                        (visit_story). Not every specialty records one, so this
+                        only shows on the visits that actually have it. */}
+                    {(visit.story_mechanism || visit.story_duration) && (
+                        <>
+                            {visit.symptoms.length > 0 && <hr className="pv-divider" />}
+                            <div>
+                                <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                    <Quote size={10} style={{ opacity: 0.5 }} />
+                                    Patient&apos;s account
+                                </p>
+                                {visit.story_duration && (
+                                    <p className="pv-med-detail" style={{ marginBottom: visit.story_mechanism ? 3 : 0 }}>
+                                        Going on {visit.story_duration}
+                                    </p>
+                                )}
+                                {visit.story_mechanism && (
+                                    <p className="pv-med-name" style={{ fontWeight: 500, lineHeight: 1.4 }}>
+                                        {visit.story_mechanism}
+                                    </p>
+                                )}
+                            </div>
+                        </>
+                    )}
+
                     {visit.findings.length > 0 && (
                         <>
                             <hr className="pv-divider" />
@@ -146,6 +241,41 @@ export function PastVisitCard({
                                     ))}
                                 </div>
                             </div>
+                        </>
+                    )}
+
+                    {/* Body site + functional limitation — physiotherapy's own
+                        record of WHERE and WHAT, alongside the generic findings
+                        above rather than replacing them. */}
+                    {(visit.body_sites.length > 0 || visit.impairment_names.length > 0) && (
+                        <>
+                            <hr className="pv-divider" />
+                            {visit.body_sites.length > 0 && (
+                                <div>
+                                    <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                        <MapPin size={10} style={{ opacity: 0.5 }} />
+                                        Body site
+                                    </p>
+                                    <div className="pv-chips">
+                                        {visit.body_sites.map((s) => (
+                                            <span key={s} className="pv-chip">{s}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {visit.impairment_names.length > 0 && (
+                                <div style={{ marginTop: visit.body_sites.length > 0 ? 10 : 0 }}>
+                                    <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                        <Activity size={10} style={{ opacity: 0.5 }} />
+                                        Functional limitation
+                                    </p>
+                                    <div className="pv-chips">
+                                        {visit.impairment_names.map((s) => (
+                                            <span key={s} className="pv-chip abnormal">{s}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </>
                     )}
 
@@ -172,11 +302,46 @@ export function PastVisitCard({
                         </>
                     )}
 
-                    {visit.symptoms.length === 0 &&
-                        visit.findings.length === 0 &&
-                        visit.medicines.length === 0 && (
-                            <p className="pv-empty">No detailed records found for this visit.</p>
-                        )}
+                    {visit.exercise_names.length > 0 && (
+                        <>
+                            <hr className="pv-divider" />
+                            <div>
+                                <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                    <Dumbbell size={10} style={{ opacity: 0.5 }} />
+                                    Exercises prescribed
+                                </p>
+                                <div className="pv-chips">
+                                    {visit.exercise_names.map((e, i) => (
+                                        <span key={`${e}-${i}`} className="pv-chip normal">{e}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Every number actually recorded this visit — the same
+                        catalogue the longitudinal band trends off, so a
+                        reading that shows up in a trend card can always be
+                        traced back to the visit it came from here. */}
+                    {measurements.length > 0 && (
+                        <>
+                            <hr className="pv-divider" />
+                            <div>
+                                <p className="pv-section-label">Measurements recorded</p>
+                                <div className="pv-chips">
+                                    {measurements.map((m) => (
+                                        <span key={m.label} className="pv-chip">
+                                            {m.label}: {m.value}{m.unit && ` ${m.unit}`}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {!visitHasContent(visit) && (
+                        <p className="pv-empty">No detailed records found for this visit.</p>
+                    )}
                 </div>
 
                 {hasImportable && onRepeatRx && (

@@ -86,11 +86,22 @@
 }
 
 .tb-visit-date {
+    display: flex;
+    align-items: center;
+    gap: 3px;
     font-size: 10px;
     font-weight: 700;
     color: rgba(255, 255, 255, 0.75);
     letter-spacing: 0.03em;
     white-space: nowrap;
+}
+
+/* The visit-type glyph (Rx / exercise / exam / generic) — see
+   `VisitTypeIcon` in PatientHeader.tsx. Dimmer than the date text itself,
+   same relationship `.tb-visit-diag` has to `.tb-visit-date`. */
+.tb-visit-date svg {
+    color: rgba(255, 255, 255, 0.45);
+    flex-shrink: 0;
 }
 
 .tb-visit-diag {

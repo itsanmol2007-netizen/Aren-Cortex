@@ -517,7 +517,24 @@ export type RealVisit = {
     story_mechanism: string | null;
 };
 
-export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]> {
+export async function fetchPatientVisits(
+    patientId: string,
+    /**
+     * The consult in progress right now, if any. Excluded before it reaches
+     * anything downstream — the topbar's "past visits" strip and the
+     * longitudinal band both READ `pastVisits` as history to compare today
+     * against, and `resolveVisitForConsult` (`useConsultLifecycle.ts`)
+     * always creates or resumes that visit row BEFORE this loader ever
+     * runs. Without this, a patient's very FIRST visit still returns one
+     * row — their own brand-new `waiting`/`serving` visit, symptoms and
+     * findings still empty because nothing has been charted yet — so
+     * `pastVisits.length === 0` (the check both surfaces use to render
+     * nothing for a first-time patient) was never true for anyone, and the
+     * longitudinal band showed an empty "1 previous visit" strip on a
+     * patient's first-ever consult. Found 2026-08-24.
+     */
+    excludeVisitId?: string | null,
+): Promise<RealVisit[]> {
     // Used to filter to status="completed" only. That silently dropped every
     // visit still `serving`/`waiting` — for a patient whose most recent visit
     // hasn't been finished in Consult yet, this page showed a flat empty
@@ -541,7 +558,9 @@ export async function fetchPatientVisits(patientId: string): Promise<RealVisit[]
         .limit(20);
 
     if (visitErr) throw new Error(`fetchPatientVisits: ${visitErr.message}`);
-    const liveVisits = (visits ?? []).filter((v) => visitStatusKind(v.status) !== "inactive");
+    const liveVisits = (visits ?? [])
+        .filter((v) => visitStatusKind(v.status) !== "inactive")
+        .filter((v) => v.id !== excludeVisitId);
     if (liveVisits.length === 0) return [];
 
     const visitIds = liveVisits.map((v) => v.id);

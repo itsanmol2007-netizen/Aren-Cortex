@@ -372,6 +372,57 @@ brand-priority over label-priority).
   19), and given a fourth branch: exercises now count too (`"Exercise
   Plan"`), so a physio visit with exercises prescribed but no formal
   "finding" stops reading as generic "Consultation".
+- **The longitudinal band showed an empty strip on a patient's very FIRST
+  visit — root-caused and fixed 2026-08-24.** `resolveVisitForConsult`
+  (`useConsultLifecycle.ts`) always creates/resumes the CURRENT visit before
+  `loadPastVisits` runs, so that brand-new, still-empty row came back as the
+  patient's own "1 previous visit" — `LongitudinalBand`'s
+  `pastVisits.length === 0` guard, and the topbar's "no past visits" empty
+  state, were never true for a genuine first-time patient. `fetchPatientVisits`
+  now takes an `excludeVisitId` (the visit just resolved); both call sites in
+  `useConsultLifecycle.ts` pass it.
+  **Second, separate gap same session**: even for a returning patient, the
+  topbar's dark "Past visits" strip and the band were showing visits that
+  were still `waiting`/`serving` elsewhere, or that closed with literally
+  nothing charted — a chip with only a date, a band card saying "Nothing"
+  prescribed. Both now read a new `meaningfulPastVisits` (`App.tsx`): the raw
+  `pastVisits` filtered to `visitStatusKind(status) === "done"` AND
+  `visitHasContent(visit)` (new export, `PastVisitCard.tsx` — symptoms,
+  findings, medicines, body sites, exercises, impairments, story, OR a real
+  recorded measurement). `trendSummary` is built off the same filtered array
+  the band's `pastVisits` prop gets, on purpose — `visitForLastReading` looks
+  up a trend point's visit BY id against whatever array the band was handed,
+  so the two have to agree. The 3 input surfaces (`PhysioInputs`/
+  `GeneralOpdInputs`/`SoapInputs`, measurement carry-forward) still get the
+  raw, unfiltered array — untouched.
+  **Third**: `PastVisitCard` — the one detail view both the topbar chips and
+  the band's timeline open (doctrine: "do not build a second detail view") —
+  only ever showed symptoms/findings/medicines, so a physio visit that was
+  all exercises/body sites/impairments/story, or a visit that only carried a
+  measurement reading, opened looking emptier than it actually was. Now also
+  renders Patient's account (`visit_story`), Body site, Functional
+  limitation, Exercises prescribed, and Measurements recorded (labelled off
+  `MEASURE_FIELDS`, the same catalogue the band trends off) — each section
+  still gated on that visit actually having it, same convention as the
+  existing sections.
+  **Fourth**: the topbar's past-visit chips carried no signal about what
+  KIND of visit each one was beyond a medicine name if one existed — added a
+  small type glyph per chip (`VisitTypeIcon`, `PatientHeader.tsx`, same
+  ordering as `visitTypeLabel`) and widened the hover tooltip beyond the
+  first 3 symptoms to include finding/medicine/exercise counts.
+- **The "just re-ranked" ripple (`ThinkingRing`, `parts.tsx`) — removed
+  2026-08-24, Anmol's call.** It fired on Possible Conditions, Medicine
+  Recommendations, Suggestions and Exercise Plan simultaneously every time
+  `useConsultIntelligence`'s `thinkingKey` changed — which is every accept
+  and every chip toggle, since the engine re-runs synchronously on every
+  chart change (doctrine §4). Reported as a "weird blue screen animation"
+  showing up "whenever a new thing is added in Synapse, selecting any chip."
+  `ThinkingRing` now always renders `null`; the 4 call sites were left alone
+  on purpose (smaller diff, same net effect) — `.cs-thinking-ring`/
+  `.cs-glyph-live` in consult.css are dead CSS now. Same pass: the "Add
+  medicine" brand/dose sheet (`MedicineAddSheet.tsx`) no longer animates its
+  scrim/panel in with a fade + spring bounce on every open — it still opens
+  and closes, just without the motion.
 
 **Cross-cutting:**
 - **WhatsApp follow-up reminders**: still not built — the real API integration

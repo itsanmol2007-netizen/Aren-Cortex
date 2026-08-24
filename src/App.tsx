@@ -57,7 +57,8 @@ import { formatLine, type ExerciseLine } from "./features/consult/exercisePlan";
 import { ExercisePlanCard } from "./features/consult/ExercisePlanCard";
 import { LongitudinalBand } from "./features/consult/LongitudinalBand";
 import { CarePlanSheet } from "./features/consult/CarePlanSheet";
-import { PastVisitCard } from "./components/PastVisitCard";
+import { PastVisitCard, visitHasContent } from "./components/PastVisitCard";
+import { visitStatusKind } from "./features/patients/visitStatus";
 import { PlanCard } from "./features/consult/PlanCard";
 import { StatusBar } from "./features/consult/StatusBar";
 import { topScoreByType } from "./features/consult/parts";
@@ -559,6 +560,22 @@ function App() {
     [hospitalProfile?.specialty_profile]
   );
 
+  // ── What counts as a "past visit" a doctor actually wants to see ───────
+  // `pastVisits` (from `useConsultSession`) is every visit `fetchPatientVisits`
+  // considers "not inactive" — that deliberately includes visits still
+  // `waiting`/`serving` elsewhere, per the fix documented on that loader,
+  // so the raw array stays available below for surfaces that genuinely want
+  // full history (the input cards' measurement carry-forward). But the
+  // topbar's "Past visits" strip and the longitudinal band are both asking
+  // "what has this patient actually been seen FOR" — a visit still open, or
+  // one that closed with nothing charted, answers neither question and just
+  // reads as noise (a chip with a date and nothing else, a "1 previous
+  // visit" band with an empty last-visit card). Both now read this instead.
+  const meaningfulPastVisits = useMemo(
+    () => pastVisits.filter((v) => visitStatusKind(v.status) === "done" && visitHasContent(v)),
+    [pastVisits]
+  );
+
   // ── The longitudinal trend ──────────────────────────────────────────────
   // Pure arithmetic over data two other hooks already loaded, so it is a memo
   // rather than a hook of its own: no state, no fetch, nothing to own. It
@@ -567,14 +584,18 @@ function App() {
   // physio watching pain go 7 → 5 → 4 should see the 4 land.
   //
   // `specialty.trend` is the ENTIRE specialty input. See LongitudinalBand.tsx
-  // on why there is no per-profile branch anywhere below this line.
+  // on why there is no per-profile branch anywhere below this line. Trended
+  // off `meaningfulPastVisits`, not the raw array — same reasoning as above,
+  // and it has to be the same array the band's `pastVisits` prop gets, or
+  // `visitForLastReading`'s lookup (LongitudinalBand.tsx) can point at a
+  // trend point whose visit isn't in the list the band was handed.
   const trendSummary = useMemo(
     () => buildTrendSummary({
       trend: specialty.trend,
-      visits: pastVisits,
+      visits: meaningfulPastVisits,
       todayVitals: vitals as unknown as Record<string, unknown>,
     }),
-    [specialty.trend, pastVisits, vitals]
+    [specialty.trend, meaningfulPastVisits, vitals]
   );
 
 
@@ -906,7 +927,7 @@ function App() {
           onCancelConsult={resetConsultState}
           onOpenSidebar={handleOpenSidebar}
           isSidebarOpen={sidebarOpen}
-          pastVisits={pastVisits}
+          pastVisits={meaningfulPastVisits}
           pastVisitsLoading={pastVisitsLoading}
           onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
           sessionLabels={carePlan.sessionLabels}
@@ -1012,7 +1033,7 @@ function App() {
               empty frame — so a first consult is the screen it always was. */}
           <LongitudinalBand
             summary={trendSummary}
-            pastVisits={pastVisits}
+            pastVisits={meaningfulPastVisits}
             carePlan={carePlan.plan}
             sessionNumbers={carePlan.sessionNumbers}
             onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}

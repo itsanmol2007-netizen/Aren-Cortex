@@ -48,8 +48,14 @@ export interface ConsultSession {
 
   pastVisits: RealVisit[];
   pastVisitsLoading: boolean;
-  /** fetch this patient's history for the past-visit rail */
-  loadPastVisits: (patientId: string) => void;
+  /**
+   * Fetch this patient's history for the past-visit rail. `excludeVisitId` is
+   * the consult in progress right now — always pass it once
+   * `resolveVisitForConsult` has returned a visit id, or that brand-new,
+   * still-empty row comes back as this patient's own "past visit" (see
+   * `fetchPatientVisits`).
+   */
+  loadPastVisits: (patientId: string, excludeVisitId?: string | null) => void;
 
   repeatRxBanner: string | null;
   setRepeatRxBanner: React.Dispatch<React.SetStateAction<string | null>>;
@@ -161,9 +167,9 @@ export function useConsultSession({ chart, data }: ConsultSessionArgs): ConsultS
   }, [visitId, data, selectedSymptoms, selectedFindings,
       selectedSymptomsWithIntensity, observableByLabel]);
 
-  const loadPastVisits = useCallback((patientId: string) => {
+  const loadPastVisits = useCallback((patientId: string, excludeVisitId?: string | null) => {
     setPastVisitsLoading(true);
-    fetchPatientVisits(patientId)
+    fetchPatientVisits(patientId, excludeVisitId)
       .then(setPastVisits)
       .catch(() => { })
       .finally(() => setPastVisitsLoading(false));
