@@ -124,6 +124,8 @@ export interface ConsultPlanArgs {
    * about a patient is not a line on a prescription. See useLongitudinalRecord.
    */
   confirmCondition: (intentId: number) => string | null;
+  /** The inverse — see useLongitudinalRecord.ts's doc comment. */
+  unconfirmCondition: (intentId: number, stillConfirmedIntentIds: Iterable<number>) => void;
 }
 
 export interface ConsultPlan {
@@ -184,8 +186,12 @@ export interface ConsultPlan {
   removeMedicine: (id: string) => void;
   removeTest: (label: string) => void;
   removeDiagnosis: (label: string) => void;
+  /** The chart-local half of the free-text fallback — see the doc comment. */
+  addFreeDiagnosis: (label: string) => void;
   removeAdviceLine: (line: string) => void;
   removeTherapyLine: (line: string) => void;
+  /** Undo any accept, from the row it was accepted on — see the doc comment. */
+  removeAcceptedIntent: (intentId: number, type: AcceptPayload["type"], label: string) => void;
   updateExercise: (id: string, patch: Partial<ExerciseLine>) => void;
   removeExercise: (id: string) => void;
   duplicateExerciseForSide: (id: string, side: ExerciseSide) => void;
@@ -217,6 +223,7 @@ export function useConsultPlan({
   hospitalId,
   showToast,
   confirmCondition,
+  unconfirmCondition,
 }: ConsultPlanArgs): ConsultPlan {
   const {
     acceptedIntents, setAcceptedIntents,
@@ -725,10 +732,42 @@ export function useConsultPlan({
 
   const removeDiagnosis = useCallback((label: string) => {
     setDiagnoses((curr) => curr.filter((d) => d !== label));
+    // Found first, released after: `unconfirmCondition` needs to know which
+    // OTHER finding intents are still confirmed so a chip shared by two
+    // confirmed diagnoses is not pulled out from under the one that stays.
+    let removedIntentId: number | null = null;
+    const stillConfirmed: number[] = [];
     for (const [intentId, p] of acceptedIntents) {
-      if (p.type === "finding" && p.label === label) releaseIntent(intentId);
+      if (p.type !== "finding") continue;
+      if (p.label === label) removedIntentId = intentId;
+      else stillConfirmed.push(intentId);
     }
-  }, [acceptedIntents, releaseIntent]);
+    if (removedIntentId != null) {
+      releaseIntent(removedIntentId);
+      // The other half of the fix: taking the diagnosis chip off must also
+      // take back whatever it silently put on the Case Sheet — see
+      // useLongitudinalRecord.ts's doc comment on this function.
+      unconfirmCondition(removedIntentId, stillConfirmed);
+    }
+  }, [acceptedIntents, releaseIntent, unconfirmCondition]);
+
+  /**
+   * The Assessment free-text fallback, chart-local half — §4, 2026-08-24.
+   * `diagnoses` has always been a plain string array with no catalogue
+   * intent behind an entry (see `handleAcceptIntent`'s `finding` case, which
+   * pushes `payload.label` the same way) — that is what makes this safe: a
+   * free label slots in exactly where a ranked confirm already lands, no new
+   * shape, no fake intent id to invent. The Supabase write that lets this
+   * term come back for a similar chart next time is a separate, non-fatal
+   * call the caller makes alongside this — see `lib/db/synapse.ts`'s
+   * `saveDoctorFreeFinding` — because this hook never writes to the
+   * database (header rule).
+   */
+  const addFreeDiagnosis = useCallback((label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setDiagnoses((curr) => (curr.includes(trimmed) ? curr : [...curr, trimmed]));
+  }, []);
 
   const removeAdviceLine = useCallback((line: string) => {
     setAdviceNotes((curr) =>
@@ -788,6 +827,69 @@ export function useConsultPlan({
       if (p.type === "modality" && p.label === line) releaseIntent(intentId);
     }
   }, [acceptedIntents, releaseIntent]);
+
+  /**
+   * Take ANYTHING already accepted straight back off, from wherever it was
+   * accepted — the ranked row itself, or a search hit. §9, 2026-08-24.
+   *
+   * Before this, the only undo for an accepted row was the checkmark it
+   * turned into — no click target, nothing — so taking something back meant
+   * hunting it down a second time on the Plan rail on the right, which is a
+   * different panel from the one the doctor was just looking at. Reported as
+   * "after adding any field... there should be an instant clickable x button
+   * to remove it."
+   *
+   * A thin dispatcher over the per-type removers that already existed,
+   * rather than a sixth implementation of "how do I take this back off":
+   * every one of them is keyed on the LABEL already (removeTest,
+   * removeDiagnosis, removeAdviceLine, removeTherapyLine), which is exactly
+   * what a ranked/searched row already has in hand. Medicine and exercise are
+   * the two exceptions — their plan lines are keyed on their OWN id, not the
+   * intent id, so this looks that line up first.
+   */
+  const removeAcceptedIntent = useCallback(
+    (intentId: number, type: AcceptPayload["type"], label: string) => {
+      switch (type) {
+        case "medicine": {
+          const line = prescription.find((m) => m.intent_id === intentId);
+          if (line) removeMedicine(line.id);
+          else releaseIntent(intentId); // staged but never confirmed in the sheet
+          break;
+        }
+        case "test":
+          removeTest(label);
+          break;
+        case "finding":
+          removeDiagnosis(label);
+          break;
+        case "referral":
+          removeAdviceLine(`Refer to ${label}`);
+          break;
+        case "advice":
+          removeAdviceLine(label);
+          break;
+        case "exercise": {
+          const line = exercisePlan.find((l) => l.intentId === intentId && l.side === null);
+          if (line) removeExercise(line.id);
+          else releaseIntent(intentId);
+          break;
+        }
+        case "modality":
+          removeTherapyLine(label);
+          break;
+        // Not persisted anywhere queryable yet (docs §7, "Accepted impairments
+        // are not persisted") — releasing the intent is the whole of "taken
+        // back" until that lands.
+        case "impairment":
+          releaseIntent(intentId);
+          break;
+      }
+    },
+    [
+      prescription, exercisePlan, removeMedicine, removeTest, removeDiagnosis,
+      removeAdviceLine, removeExercise, removeTherapyLine, releaseIntent,
+    ]
+  );
 
   const handleAcknowledge = useCallback((intentId: number, ack: boolean) => {
     setAcknowledgedIntents((curr) => {
@@ -995,8 +1097,10 @@ export function useConsultPlan({
     removeMedicine,
     removeTest,
     removeDiagnosis,
+    addFreeDiagnosis,
     removeAdviceLine,
     removeTherapyLine,
+    removeAcceptedIntent,
     updateExercise,
     removeExercise,
     duplicateExerciseForSide,

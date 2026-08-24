@@ -27,14 +27,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Activity, ChevronDown, Plus } from "lucide-react";
+import { Activity, Plus, Search } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
-import { useDismiss } from "./useDismiss";
-import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 import { useRovingList } from "../../hooks/useRovingList";
 import type { Vitals } from "../../types";
 import {
-    FIELD_BY_KEY, MEASURE_FIELDS, groupFields,
+    FIELD_BY_KEY, MEASURE_FIELDS,
     type MeasureField, type MeasureFieldKey,
 } from "./measures";
 import {
@@ -140,11 +138,6 @@ export function MeasurementsCard({
 
     /** Fields the doctor asked for by name. Never shrinks during a consult. */
     const [added, setAdded] = useState<Set<MeasureFieldKey>>(new Set());
-    const [pickerOpen, setPickerOpen] = useState(false);
-    const headRef = useRef<HTMLDivElement>(null);
-    const menuRef = useRef<HTMLDivElement>(null);
-
-    useDismiss(pickerOpen, () => setPickerOpen(false), [headRef, menuRef]);
 
     /**
      * The most recent previous reading of every field, computed once rather
@@ -207,8 +200,13 @@ export function MeasurementsCard({
     const overflow = shown.length - inline.length;
     /** The main card's own field order — see `focusNext`'s doc comment. */
     const order = inline.map((f) => f.key);
-    /** The card-foot "More" button, so Enter has somewhere to go past the last field. */
-    const footMoreRef = useRef<HTMLButtonElement>(null);
+    /**
+     * The header "+" button, so Enter has somewhere to go past the last
+     * field — since §0, 2026-08-24, the ONE way into "see/add everything",
+     * now that the separate card-foot "More" button it used to land on is
+     * gone (see the header block's own doc comment).
+     */
+    const headBtnRef = useRef<HTMLButtonElement>(null);
 
     /**
      * Enter walks `fields` — but WHICH fields depends on where the walk is
@@ -222,19 +220,19 @@ export function MeasurementsCard({
      * caller passes the list it is actually rendering, and the two grids
      * below pass their own.
      *
-     * Falling off the end lands on the card-foot "More" button rather than
-     * doing nothing — bare `Tab` is reserved GLOBALLY for moving between the
+     * Falling off the end lands on the header "+" button rather than doing
+     * nothing — bare `Tab` is reserved GLOBALLY for moving between the
      * workspace's Tab stops (`useConsultKeyboard.ts`), so it cannot also be
-     * how a doctor reaches this button; Enter finishing the walk here is the
-     * only way in. `footMoreRef.current` is null inside the "More" modal,
-     * where this button does not exist, so the fallback is a correct no-op
-     * there — nowhere further to go once everything is already on screen.
+     * how a doctor reaches it; Enter finishing the walk here is the only way
+     * in. `headBtnRef.current` is null inside the modal, where this button
+     * does not exist, so the fallback is a correct no-op there — nowhere
+     * further to go once everything is already on screen.
      */
     const focusNext = (fields: MeasureField[], key: MeasureFieldKey) => {
         const keys = fields.map((f) => f.key);
         const next = keys[keys.indexOf(key) + 1];
         if (next) refs.current[next]?.focus();
-        else footMoreRef.current?.focus();
+        else headBtnRef.current?.focus();
     };
 
     const grid = (fields: MeasureField[]) => (
@@ -260,29 +258,31 @@ export function MeasurementsCard({
 
     return (
         <section className="cs-card cs-meas-card" aria-label="Measurements" ref={containerRef as React.Ref<HTMLElement>}>
-            {/* The heading carries the add control, on the same line, so the
-                field picker costs no row of its own. Pressing anywhere on it
-                opens the list. */}
-            <div className="cs-card-head is-trigger" ref={headRef}>
+            {/* One "+", one destination — §0, 2026-08-24. This used to be
+                two ways into two different things: this same button opened a
+                small popup FOR ADDING a field, and a second "More ▾" control
+                at the card's foot opened a modal for VIEWING everything —
+                two controls, two mental models, for what a doctor experiences
+                as one question ("what else can this card show or take?").
+                Now there is one button and it always opens the one modal,
+                which both shows every field already on this visit AND is
+                where a new one gets added — see `MeasurementSearch` below for
+                the second half of the fix: that modal's own "add a field"
+                control is a search box, not a length categorised menu. */}
+            <div className="cs-card-head is-trigger">
                 <button
                     type="button"
+                    ref={headBtnRef}
                     className="cs-head-action"
-                    disabled={disabled || hidden.length === 0}
-                    aria-expanded={pickerOpen}
-                    aria-haspopup="menu"
-                    onClick={() => setPickerOpen((v) => !v)}
-                    // ↓ from the header jumps into the readings, ↑ escapes
-                    // back to whatever comes before this stop on the
-                    // workspace's Tab ring. Needed because bare Tab is
-                    // reserved GLOBALLY for moving BETWEEN stops
-                    // (useConsultKeyboard.ts) — it does not, and must not,
-                    // also walk fields within one, so landing here (by Alt+M
-                    // or by Tab-cycling to this stop) had no local way
-                    // forward into the grid at all until this. Skipped while
-                    // the Add Measurement menu is open — that menu owns
-                    // ArrowDown itself, and this must not race it.
+                    disabled={disabled}
+                    onClick={() => setShowAll(true)}
+                    // ↓ from the header jumps straight into the readings —
+                    // needed because bare Tab is reserved GLOBALLY for moving
+                    // BETWEEN workspace stops (useConsultKeyboard.ts), so it
+                    // cannot also walk fields within this one; landing here
+                    // (Alt+M, or Tab-cycling to this stop) had no local way
+                    // forward into the grid at all without this.
                     onKeyDown={(e) => {
-                        if (pickerOpen) return;
                         if (e.key === "ArrowDown" && order.length > 0) {
                             e.preventDefault();
                             refs.current[order[0]]?.focus();
@@ -291,20 +291,8 @@ export function MeasurementsCard({
                 >
                     <span className="cs-glyph is-slate"><Activity size={14} /></span>
                     <span className="cs-card-title">Measurements</span>
-                    {hidden.length > 0 && <Plus size={15} className="cs-head-plus" />}
+                    <Plus size={15} className="cs-head-plus" />
                 </button>
-
-                {pickerOpen && (
-                    <MeasurementPicker
-                        menuRef={menuRef}
-                        fields={hidden}
-                        onPick={(key) => {
-                            setAdded((curr) => new Set(curr).add(key));
-                            setPickerOpen(false);
-                            window.setTimeout(() => refs.current[key]?.focus(), 0);
-                        }}
-                    />
-                )}
             </div>
 
             <div className="cs-meas-grid">
@@ -350,26 +338,6 @@ export function MeasurementsCard({
 
             </div>
 
-            {/* The count, then the way to the rest. States plainly how much of
-                the readout is on screen, so a capped card never silently
-                implies it is showing everything. */}
-            {maxInline != null && (
-                <div className="cs-card-foot">
-                    <span className="cs-card-foot-count">
-                        {inline.length} / {shown.length} shown
-                    </span>
-                    <button
-                        type="button"
-                        ref={footMoreRef}
-                        className="cs-card-foot-more"
-                        onClick={() => setShowAll(true)}
-                    >
-                        More
-                        <ChevronDown size={13} />
-                    </button>
-                </div>
-            )}
-
             {showAll && (
                 <ChartSurface
                     title="Measurements"
@@ -384,10 +352,17 @@ export function MeasurementsCard({
                     // it holds what the capped card does not.
                     onEnterContent={() => refs.current[shown[0]?.key]?.focus()}
                 >
+                    {/* States plainly how much of the readout is on screen —
+                        the count this card-foot used to carry, kept as plain
+                        text now that there is nowhere else for it to point. */}
+                    {maxInline != null && overflow > 0 && (
+                        <p className="cs-meas-modal-count">
+                            {inline.length} of {shown.length} shown on the main card — everything is here.
+                        </p>
+                    )}
                     {grid(shown)}
                     {hidden.length > 0 && (
-                        <MeasurementPicker
-                            inline
+                        <MeasurementSearch
                             fields={hidden}
                             onPick={(key) => {
                                 setAdded((curr) => new Set(curr).add(key));
@@ -402,36 +377,37 @@ export function MeasurementsCard({
 }
 
 /**
- * ADD MEASUREMENT — the "which field" picker, in both of its homes.
+ * ADD MEASUREMENT — a search box, not a menu of every field that exists.
  *
- * One implementation for two renderings: the popup that drops from the card
- * head, and the inline strip inside the "More" modal. They were two hand-
- * written copies of the same `role="menu"` markup until 2026-08-15b, which
- * meant a fix to one silently left the other exactly as broken. Now there is
- * one place to add a fourth.
+ * §0, 2026-08-24: this used to be `MeasurementPicker`, a categorised menu
+ * that listed every hidden field in the whole catalogue at once — "don't
+ * expose every measurement possible to mankind" was the complaint, and it
+ * was fair: the catalogue passed thirty-plus fields once per-joint range
+ * landed, and most facilities will only ever want two or three of them in
+ * a given search. A doctor typing "puls" now sees Pulse; they do not have
+ * to first find which of six section headings Pulse lives under.
  *
- * Keyboard added the same day, using the roving-cursor mechanism every other
- * list in this app already uses (`useRovingList`) rather than a bespoke one:
- * ↓ ↑ walk the hidden fields, Enter adds the highlighted one. Only the POPUP
- * variant takes focus on mount (`useOverlayFocus`, gated on `!inline`) — the
- * inline one lives inside a modal `ChartSurface` already focused when it
- * opened, and a second component grabbing focus the instant it mounts would
- * fight that. `[role="menuitem"]` is the roving list's selector rather than a
- * bespoke class, because it already uniquely and correctly identifies these
- * buttons.
+ * Lives only inside the modal now — the card-head popup this used to also
+ * render is gone along with the "+" button that opened it (see the header
+ * block's doc comment), so there is one home instead of two and no `inline`
+ * branch to keep in sync.
+ *
+ * Keyboard keeps the roving-cursor mechanism every other list in this app
+ * uses (`useRovingList`) rather than a bespoke one: ↓ ↑ walk the FILTERED
+ * fields, Enter adds the highlighted one.
  */
-function MeasurementPicker({
-    fields, onPick, inline = false, menuRef,
+function MeasurementSearch({
+    fields, onPick,
 }: {
     fields: MeasureField[];
     onPick: (key: MeasureFieldKey) => void;
-    inline?: boolean;
-    menuRef?: React.RefObject<HTMLDivElement | null>;
 }) {
-    const localRef = useRef<HTMLDivElement>(null);
-    const ref = (menuRef ?? localRef) as React.RefObject<HTMLDivElement | null>;
+    const [query, setQuery] = useState("");
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
-    useOverlayFocus(ref, !inline);
+    const q = query.trim().toLowerCase();
+    const matches = q ? fields.filter((f) => f.label.toLowerCase().includes(q)) : fields;
 
     const roving = useRovingList({
         containerRef: ref,
@@ -439,7 +415,7 @@ function MeasurementPicker({
         actionSelector: '[role="menuitem"]',
     });
 
-    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const onKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
             roving.move(e.key === "ArrowUp" ? -1 : 1);
@@ -450,29 +426,29 @@ function MeasurementPicker({
     };
 
     return (
-        <div
-            ref={ref}
-            className={`cs-meas-menu${inline ? " is-inline" : ""} cx-kbd-surface`}
-            role="menu"
-            tabIndex={-1}
-            onKeyDown={onKeyDown}
-        >
-            {/* Sectioned since 2026-08-16: the catalogue passed thirty fields
-                when per-joint range landed, and a flat list that long buries
-                blood pressure under fourteen joint angles for every facility
-                that is not a physiotherapy one. The headings are not
-                menuitems, so the roving list walks exactly the same buttons it
-                did before — keyboard behaviour is unchanged. */}
-            {groupFields(fields).map((section) => (
-                <div key={section.group} className="cs-meas-menu-group">
-                    <p className="cs-meas-menu-head">{section.label}</p>
-                    {section.fields.map((f) => (
+        <div ref={ref} className="cs-meas-menu is-inline cx-kbd-surface">
+            <div className="cs-field cs-meas-search">
+                <Search size={14} />
+                <input
+                    ref={inputRef}
+                    value={query}
+                    placeholder="Search measurements to add…"
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    aria-label="Search measurements to add"
+                />
+            </div>
+            <div className="cs-meas-menu-group" role="menu">
+                {matches.length === 0 ? (
+                    <p className="cs-meas-menu-head">Nothing matches “{query.trim()}”</p>
+                ) : (
+                    matches.map((f) => (
                         <button key={f.key} type="button" role="menuitem" onClick={() => onPick(f.key)}>
                             {f.label}
                         </button>
-                    ))}
-                </div>
-            ))}
+                    ))
+                )}
+            </div>
         </div>
     );
 }

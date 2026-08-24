@@ -328,12 +328,18 @@ export function PlanCard({
                             </Group>
                         )}
 
+                        {/* No "+ Add" here any more (§9, 2026-08-24): it only
+                            ever moved focus to the search field two panels to
+                            the left, which is already on screen and already
+                            reachable — a second, redundant way to reach the
+                            same box, on a rail whose job is showing what was
+                            already decided. `onAddMedicine` stays wired for
+                            the keyboard shortcut that does the same jump. */}
                         <Group
                             icon={<Pill size={12} />}
                             tone="teal"
                             title="Medicines"
                             count={prescription.length}
-                            onAdd={onAddMedicine}
                         >
                             {prescription.map((m) => {
                                 // Companions attach to the RANKED intent, so a line with
@@ -414,7 +420,6 @@ export function PlanCard({
                             tone="blue"
                             title="Investigations"
                             count={tests.length}
-                            onAdd={onAddTest}
                         >
                             {tests.map((t) => (
                                 <div key={t} className={`cs-line${justAdded.has(t) ? " is-new" : ""}`}>

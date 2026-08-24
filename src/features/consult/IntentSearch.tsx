@@ -27,7 +27,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Plus, Search, ShieldAlert } from "lucide-react";
+import { Check, Plus, Search, ShieldAlert, X } from "lucide-react";
 import {
     guardCombination, guardIntent, medicineIntentIndex,
     type ActiveSignal, type GuardStatus, type GuardVerdict, type IntentType, type Ruleset,
@@ -202,7 +202,7 @@ const MATCH_TEXT: Record<IntentSearchHit["matchKind"], (via: string | null) => s
  */
 export function IntentSearchResults({
     state, verbOf, ruleset, activeSignals, rankedIntentIds, acceptedIntentIds,
-    acknowledged, onAcknowledge, onAccept,
+    acknowledged, onAcknowledge, onAccept, onRemove,
 }: {
     state: IntentSearchState;
     /**
@@ -220,6 +220,13 @@ export function IntentSearchResults({
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
     onAccept: (payload: AcceptPayload) => void;
+    /**
+     * Undo, on the same row that took it — optional, and absent means the
+     * checkmark stays a checkmark rather than a live control. Every caller
+     * today passes its own `removeAcceptedIntent`, so this is only ever
+     * absent in a context that has no plan to remove FROM.
+     */
+    onRemove?: (intentId: number, type: IntentType, label: string) => void;
 }) {
     const products = useHitProducts(state.hits);
 
@@ -349,7 +356,20 @@ export function IntentSearchResults({
                         </div>
 
                         {added ? (
-                            <span className="cs-added" aria-label="Taken"><Check size={15} /></span>
+                            onRemove ? (
+                                <button
+                                    type="button"
+                                    className="cs-added is-removable"
+                                    aria-label={`Remove ${hit.label}`}
+                                    title="Remove from the plan"
+                                    onClick={() => onRemove(hit.intentId, hit.type, hit.label)}
+                                >
+                                    <Check size={15} className="cs-added-check" />
+                                    <X size={13} className="cs-added-x" />
+                                </button>
+                            ) : (
+                                <span className="cs-added" aria-label="Taken"><Check size={15} /></span>
+                            )
                         ) : locked ? (
                             <span style={{ width: 29 }} aria-hidden="true" />
                         ) : (

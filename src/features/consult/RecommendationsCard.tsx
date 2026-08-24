@@ -26,11 +26,11 @@
 import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    AlertTriangle, Check, ChevronDown, Pill, Pin, Plus, ShieldAlert,
+    AlertTriangle, Check, ChevronDown, Pill, Pin, Plus, ShieldAlert, X,
 } from "lucide-react";
 import {
     guardCombination, medicineIntentIndex,
-    type ActiveSignal, type GuardStatus, type GuardVerdict, type Intent, type Ruleset,
+    type ActiveSignal, type GuardStatus, type GuardVerdict, type Intent, type IntentType, type Ruleset,
 } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { Medicine } from "../../lib/synapse/brands";
@@ -87,6 +87,12 @@ interface Props {
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
     onAccept: (payload: AcceptPayload) => void;
+    /**
+     * Undo an accept in place, on the same row — §9, 2026-08-24. Optional so
+     * this card keeps working, unwired, anywhere it has no plan to remove
+     * FROM; every real caller today passes `removeAcceptedIntent`.
+     */
+    onRemove?: (intentId: number, type: IntentType, label: string) => void;
     /** the doctor's pins */
     isPinned: (intentId: number) => boolean;
     onTogglePin: (intentId: number) => void;
@@ -97,14 +103,21 @@ interface Props {
     activeSignals: ActiveSignal[];
     hasChart: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
+    /**
+     * "Not found in ranking or search" used to be a dead end — §5,
+     * 2026-08-24. Opens `AddMedicineSheet` with the doctor's own query
+     * already in the name field. Optional so this card keeps working
+     * unwired anywhere that has nowhere to put the sheet it would open.
+     */
+    onOpenAddMedicine?: (initialName: string) => void;
 }
 
 export function RecommendationsCard({
     intents, topScore, thinkingKey, brands, brandsLoading, brandError, combinations,
     combinationsLoading, brandPreferences,
-    acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept,
+    acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept, onRemove,
     isPinned, onTogglePin, onOpenBrandSheet, onExplain, ruleset, activeSignals,
-    hasChart, searchRef, className = "",
+    hasChart, searchRef, onOpenAddMedicine, className = "",
 }: Props) {
 
     const internalRef = useRef<HTMLInputElement>(null);
@@ -379,17 +392,37 @@ export function RecommendationsCard({
     const body = () => {
         if (isSearching) {
             return (
-                <IntentSearchResults
-                    state={search}
-                    verbOf={() => "Prescribe"}
-                    ruleset={ruleset}
-                    activeSignals={activeSignals}
-                    rankedIntentIds={rankedIds}
-                    acceptedIntentIds={acceptedIntentIds}
-                    acknowledged={acknowledged}
-                    onAcknowledge={onAcknowledge}
-                    onAccept={onAccept}
-                />
+                <>
+                    <IntentSearchResults
+                        state={search}
+                        verbOf={() => "Prescribe"}
+                        ruleset={ruleset}
+                        activeSignals={activeSignals}
+                        rankedIntentIds={rankedIds}
+                        acceptedIntentIds={acceptedIntentIds}
+                        acknowledged={acknowledged}
+                        onAcknowledge={onAcknowledge}
+                        onAccept={onAccept}
+                        onRemove={onRemove}
+                    />
+                    {/* "Not found in ranking or search" is not a dead end any
+                        more — §5, 2026-08-24. Deliberately worded around
+                        "new medicine": it is not new to the doctor, only to
+                        this catalogue. Shown once loading settles, whether
+                        or not the search above found something else — the
+                        exact brand the doctor is thinking of can be genuinely
+                        absent even when its molecule ranks plenty of others. */}
+                    {onOpenAddMedicine && !search.loading && (
+                        <button
+                            type="button"
+                            className="cs-newmed-prompt"
+                            onClick={() => onOpenAddMedicine(search.query.trim())}
+                        >
+                            <Plus size={13} />
+                            Can’t find it? Add “{search.query.trim()}” to your medicines
+                        </button>
+                    )}
+                </>
             );
         }
 
@@ -443,6 +476,7 @@ export function RecommendationsCard({
                     onOpenSheet={(rect) => onOpenBrandSheet(intent, rect)}
                     onExplain={(rect) => onExplain(intent, rect)}
                     onSearchProducts={() => { search.setQuery(intent.label); inputRef.current?.focus(); }}
+                    onRemove={onRemove && (() => onRemove(intent.intentId, intent.type, intent.label))}
                 />
             );
         });
@@ -489,7 +523,7 @@ export function RecommendationsCard({
 function MedicineRow({
     intent, verdict, position, fill, pinned, onTogglePin, added, acknowledged, onAcknowledge,
     composition, brandsLoading, combos, combosLoading, comboVerdictOf, chosen, brandPreferences,
-    onAccept, onOpenSheet, onExplain, onSearchProducts,
+    onAccept, onOpenSheet, onExplain, onSearchProducts, onRemove,
 }: {
     intent: PersonalizedIntent;
     /** the row's REAL status — the engine's own verdict merged with every
@@ -514,6 +548,8 @@ function MedicineRow({
     onOpenSheet: (rect: DOMRect) => void;
     onExplain: (rect: DOMRect) => void;
     onSearchProducts: () => void;
+    /** instant undo, right on the "on the plan" badge — see the card's doc comment */
+    onRemove?: () => void;
 }) {
     const moreRef = useRef<HTMLButtonElement>(null);
     const reduceMotion = useReducedMotion();
@@ -617,7 +653,20 @@ function MedicineRow({
             <div className="cs-rec-side">
                 <RankBar fill={fill} rank={position} hard={isHard} />
                 {added ? (
-                    <span className="cs-added" aria-label="On the plan"><Check size={15} /></span>
+                    onRemove ? (
+                        <button
+                            type="button"
+                            className="cs-added is-removable"
+                            aria-label={`Remove ${face?.name ?? intent.label} from the plan`}
+                            title="On the plan — click to remove"
+                            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                        >
+                            <Check size={15} className="cs-added-check" />
+                            <X size={13} className="cs-added-x" />
+                        </button>
+                    ) : (
+                        <span className="cs-added" aria-label="On the plan"><Check size={15} /></span>
+                    )
                 ) : locked || !primary ? (
                     // Withheld, not disabled. A greyed-out button still reads
                     // as "press me once you scroll past the red text".

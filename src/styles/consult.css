@@ -2213,6 +2213,34 @@ body.cs-locked-shell {
     color: var(--cs-green);
 }
 
+/* An accepted row's undo, in place — §9, 2026-08-24. Same badge, made a
+   button: the check is the resting state, and hovering (or focusing, so a
+   keyboard walk sees it too) swaps it for an × on the same red the rest of
+   this file uses for a destructive action. Both icons occupy the same grid
+   cell (`grid-area: 1 / 1` inside `.cs-added`'s existing single-cell grid)
+   so the swap is a crossfade of visibility, not a layout shift. */
+.cs-added.is-removable {
+    position: relative;
+    cursor: pointer;
+    border: 0;
+    padding: 0;
+}
+.cs-added.is-removable .cs-added-check,
+.cs-added.is-removable .cs-added-x {
+    grid-area: 1 / 1;
+}
+.cs-added.is-removable .cs-added-x { display: none; }
+.cs-added.is-removable:hover,
+.cs-added.is-removable:focus-visible {
+    background: #fee2e2;
+    color: #dc2626;
+    outline: none;
+}
+.cs-added.is-removable:hover .cs-added-check,
+.cs-added.is-removable:focus-visible .cs-added-check { display: none; }
+.cs-added.is-removable:hover .cs-added-x,
+.cs-added.is-removable:focus-visible .cs-added-x { display: block; }
+
 .cs-more {
     display: flex;
     align-items: center;
@@ -4386,6 +4414,94 @@ body.cs-locked-shell {
     overflow-y: auto;
     padding-right: 2px;
 }
+
+/* AddMedicineSheet — §5, 2026-08-24. Shares `.cs-addmed-*` throughout (rule
+   5: never redefine an existing class); these are the few bits that sheet
+   did not already have a shape for. */
+.cs-newmed-panel { width: min(440px, 100%); }
+
+.cs-newmed-comp-chosen {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid #b6e6cd;
+    border-radius: var(--cs-radius-sm);
+    background: linear-gradient(180deg, #f4fdf8, #e6f8ef);
+    padding: 9px 11px;
+    color: #15803d;
+    font-size: 13px;
+    font-weight: 650;
+}
+.cs-newmed-comp-chosen span { flex: 1; min-width: 0; }
+.cs-newmed-comp-chosen button {
+    flex: none;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 3px 7px;
+    color: var(--cs-blue);
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cs-newmed-comp-chosen button:hover { background: rgba(18, 104, 232, 0.08); }
+
+.cs-newmed-comp-hits {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 160px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    padding: 4px;
+}
+.cs-newmed-comp-hits button {
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 7px 9px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-newmed-comp-hits button:hover { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-newmed-comp-hint {
+    padding: 7px 9px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+}
+
+.cs-newmed-error {
+    margin: 0;
+    color: #dc2626;
+    font-size: 12.5px;
+    font-weight: 550;
+}
+
+/* The "not found, add it" prompt under a medicine search — §5, 2026-08-24.
+   Quiet on purpose: this is a fallback, not the primary action, so it reads
+   as a footnote under the search results rather than competing with
+   "Prescribe" on every row above it. */
+.cs-newmed-prompt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    border: 0;
+    border-top: 1px solid var(--cs-line);
+    background: none;
+    margin-top: 4px;
+    padding: 11px;
+    color: var(--cs-blue);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cs-newmed-prompt:hover { background: var(--cs-blue-soft); }
 .cs-addmed-brand {
     display: flex;
     align-items: center;
@@ -4650,6 +4766,44 @@ body.cs-locked-shell {
     box-shadow: none;
     border: 0;
     padding: 0;
+}
+
+/* §0, 2026-08-24 — the search-based "add a field" control replacing the
+   categorised menu. The search box takes its own full-width row; the
+   filtered matches wrap as pill chips beneath it rather than stacking one
+   per line, since there is no longer a section heading to hang a column on. */
+.cs-meas-menu.is-inline .cs-meas-search {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-bottom: 2px;
+}
+.cs-meas-menu.is-inline .cs-meas-menu-group {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.cs-meas-menu.is-inline .cs-meas-menu-group button {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    padding: 6px 11px;
+}
+.cs-meas-menu.is-inline .cs-meas-menu-group button:hover {
+    border-color: rgba(18, 104, 232, 0.4);
+}
+.cs-meas-menu.is-inline .cs-meas-menu-group .cs-meas-menu-head {
+    width: 100%;
+    margin: 4px 2px;
+}
+
+/* Plain informational text, not a control — the "N of M shown on the main
+   card" line that used to live in the card-foot button that opened this
+   modal (see MeasurementsCard's header doc comment, §0, 2026-08-24). */
+.cs-meas-modal-count {
+    margin: 0 var(--cs-s4) var(--cs-s3);
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 500;
 }
 
 /* ── Attachments, as a horizontal strip ──────────────────────────────────
@@ -6167,6 +6321,28 @@ body.cs-locked-shell {
     max-width: 100%;
     white-space: normal;
     overflow: visible;
+}
+
+/* Investigations, embedded in the side column instead of the default
+   confirmed-conditions list — §10, 2026-08-24. It is `SuggestionsCard`
+   itself (rule 7: one search per category, never a second implementation),
+   which renders as its own `.cs-card` — full border, shadow, padding. Nested
+   inside ANOTHER `.cs-card`'s column that reads as two stacked boxes, so the
+   outer chrome is stripped here and the list is capped with its own scroll:
+   this column does not stretch with however many tests happen to rank, the
+   way the ranked-conditions column beside it is deliberately bounded too. */
+.cs-cond-side-sug.cs-card {
+    flex: 1;
+    min-height: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+}
+.cs-cond-side-sug .cs-card-head { padding: 0 0 8px; }
+.cs-cond-side-sug .cs-rec-search { padding: 0 0 8px; }
+.cs-cond-side-sug .cs-list {
+    padding: 0;
+    max-height: 280px;
 }
 
 /* ════════════════════════════════════════════════════════════

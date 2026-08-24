@@ -32,9 +32,11 @@ import {
     loadFrequentMedicines,
     loadCompanionEdges,
     loadFindingSuggestionRules,
+    loadDoctorFreeFindings,
     type ObservableMaps,
     type ClinicBrandDefaults,
     type FrequentMedicine,
+    type DoctorFreeFinding,
 } from "../lib/db/synapse";
 import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
@@ -65,6 +67,12 @@ export interface SynapseData {
     /** this doctor's most-prescribed molecules. Not a model, a flat count. */
     frequent: FrequentMedicine[];
     companionEdges: CompanionEdge[];
+    /**
+     * This doctor's Assessment free-text fallback — §4, 2026-08-24. Local to
+     * them, never fed into the shared ruleset — see the
+     * `add_doctor_free_findings` migration's header.
+     */
+    freeFindings: DoctorFreeFinding[];
     /** signals that at least one active rule points at — i.e. can produce output */
     signalsWithRules: Set<string>;
     loadedAt: Date;
@@ -144,6 +152,7 @@ export function useSynapse(): UseSynapse {
                     [clinicBrandDefaults, f3],
                     [frequent, f4],
                     [companionEdges, f5],
+                    [freeFindings, f6],
                 ] = await Promise.all([
                     doctorId
                         ? soft(loadPreferences(doctorId), [] as PreferenceRow[])
@@ -158,6 +167,9 @@ export function useSynapse(): UseSynapse {
                         ? soft(loadFrequentMedicines(doctorId), [] as FrequentMedicine[])
                         : ([[] as FrequentMedicine[], false] as const),
                     soft(loadCompanionEdges(), [] as CompanionEdge[]),
+                    doctorId
+                        ? soft(loadDoctorFreeFindings(doctorId), [] as DoctorFreeFinding[])
+                        : ([[] as DoctorFreeFinding[], false] as [DoctorFreeFinding[], boolean]),
                 ]);
 
                 if (!mounted.current) return;
@@ -174,13 +186,14 @@ export function useSynapse(): UseSynapse {
                     clinicBrandDefaults,
                     frequent,
                     companionEdges,
+                    freeFindings,
                     // A chip can be perfectly wired to a signal and still
                     // produce nothing because no rule points at that signal
                     // yet. That is a gap in the knowledge base, not an empty
                     // result, and the two must not look the same.
                     signalsWithRules: new Set(ruleset.signalIntentRules.map((r) => r.signalId)),
                     loadedAt: new Date(),
-                    degraded: f1 || f2 || f3 || f4 || f5,
+                    degraded: f1 || f2 || f3 || f4 || f5 || f6,
                 });
                 setStatus("ready");
             } catch (e) {

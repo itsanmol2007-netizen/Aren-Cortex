@@ -91,6 +91,29 @@ export interface LongitudinalRecord {
    * say anything; the reranking has already happened either way.
    */
   confirmCondition: (intentId: number) => string | null;
+  /**
+   * The inverse of `confirmCondition`, for the moment the doctor takes the
+   * diagnosis chip back off — see the header on §9's fix, 2026-08-24.
+   *
+   * `confirmCondition` was one-directional at the CHART level: it could ADD
+   * `label`'s mapped observable to `selectedSymptoms`, but nothing ever took
+   * it back off again. Removing the diagnosis chip (`ConditionsCard`'s ×)
+   * only ever touched `diagnoses` and the accept ledger — the chip it had
+   * silently added to the Case Sheet stayed there, still feeding the engine,
+   * so the doctor had to notice it and remove it a SECOND time by hand from a
+   * completely different panel. Reported as "removing an assessment doesn't
+   * work, it's still there on case sheet."
+   *
+   * `stillConfirmedIntentIds` is every OTHER finding intent still confirmed
+   * this consult — when a second confirmed diagnosis maps to the SAME
+   * observable (the regional MSK sharing §7 documents: several diagnoses
+   * confirming one "Shoulder pain"-shaped observable), the chip is still
+   * earned by that other confirmation and must not disappear out from under
+   * it. And a chip the doctor ticked BY HAND, independent of any
+   * confirmation, is never touched here — `chipOrigins` already marks that
+   * distinction and this reads it rather than assuming.
+   */
+  unconfirmCondition: (intentId: number, stillConfirmedIntentIds: Iterable<number>) => void;
   /** Pull this patient's standing conditions onto a freshly started consult. */
   carryForwardFor: (patientId: string) => Promise<void>;
   /**
@@ -163,6 +186,33 @@ export function useLongitudinalRecord({
      identity.isReal, identity.doctorId]
   );
 
+  const unconfirmCondition = useCallback(
+    (intentId: number, stillConfirmedIntentIds: Iterable<number>) => {
+      const entry = data?.conditionMap.get(intentId);
+      if (!entry) return; // unmapped confirm never touched the chart in the first place
+
+      const label = labelOf(entry.observableId);
+      if (!label) return;
+
+      // Another still-confirmed diagnosis maps to the same observable — the
+      // chip is still earned, just not by the one being taken back.
+      for (const otherId of stillConfirmedIntentIds) {
+        if (otherId === intentId) continue;
+        const other = data?.conditionMap.get(otherId);
+        if (other && other.observableId === entry.observableId) return;
+      }
+
+      // Only a chip THIS confirmation put there. A doctor who had already
+      // ticked it themselves keeps it — `addContextObservable` never
+      // relabels a doctor's own chip as 'confirmed', so this check is exact,
+      // not a heuristic.
+      if (chart.chipOrigins.get(label) !== "confirmed") return;
+
+      chart.handleCaseSheetRemove(label);
+    },
+    [data, labelOf, chart]
+  );
+
   const retireCondition = useCallback(
     async (label: string, status: "resolved" | "refuted") => {
       const patientId = session.patient?.id;
@@ -202,5 +252,5 @@ export function useLongitudinalRecord({
     [labelOf, carryForward]
   );
 
-  return { confirmCondition, carryForwardFor, retireCondition };
+  return { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition };
 }

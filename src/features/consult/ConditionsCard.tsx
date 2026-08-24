@@ -33,7 +33,8 @@
 import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Check, ChevronDown, ShieldAlert, Stethoscope, X } from "lucide-react";
-import type { ActiveSignal, Ruleset } from "../../lib/synapse/engine";
+import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
+import type { DoctorFreeFinding } from "../../lib/db/synapse";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
@@ -80,6 +81,27 @@ interface Props {
     /** the doctor's confirmed assessment, in confirmation order */
     diagnoses: string[];
     onRemoveDiagnosis: (label: string) => void;
+    /**
+     * Undo an accept found through search, right on the hit — §9, 2026-08-24.
+     * The ranked list's own confirmed rows use `onRemoveDiagnosis` directly
+     * (a finding is the one type this card ever ranks), so this is only
+     * threaded to `IntentSearchResults`, which spans every type search can
+     * reach here.
+     */
+    onRemove?: (intentId: number, type: IntentType, label: string) => void;
+    /**
+     * The free-text fallback — §4, 2026-08-24. "if I don't get 'Cardio
+     * Aquinian' in Assessment, I can simply add it as a new free text" —
+     * Anmol's own example. `freeFindings` is this doctor's own remembered
+     * list (Supabase-backed, `useSynapse`); `onAddFreeText` both puts a label
+     * straight onto `diagnoses` (no catalogue intent behind it — `diagnoses`
+     * has always been a plain string array, see `useConsultPlan.ts`) and
+     * saves/bumps it against today's active signals so a similar chart
+     * surfaces it again next time. Optional so this card keeps working
+     * unwired anywhere that has no doctor identity to save against.
+     */
+    freeFindings?: DoctorFreeFinding[];
+    onAddFreeText?: (label: string) => void;
     disabled?: boolean;
     /** the Assessment Tab stop — see STOPS in useConsultKeyboard.ts */
     searchRef?: React.RefObject<HTMLInputElement>;
@@ -116,11 +138,38 @@ interface Props {
 export function ConditionsCard({
     intents, topScore, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, hasChart,
-    diagnoses, onRemoveDiagnosis, disabled = false, searchRef, sideSlot,
+    diagnoses, onRemoveDiagnosis, onRemove, freeFindings = [], onAddFreeText,
+    disabled = false, searchRef, sideSlot,
 }: Props) {
     const [expanded, setExpanded] = useState(false);
     const reduce = useReducedMotion();
     const search = useIntentSearch(["finding"]);
+
+    /**
+     * This doctor's free-text terms whose signals overlap what is active on
+     * THIS chart, best overlap first — the "show this to that doctor in
+     * future for similar inputs" half of §4. Already-confirmed labels are
+     * dropped; there is nothing to suggest re-adding.
+     */
+    const suggestedFreeFindings = useMemo(() => {
+        if (!freeFindings.length || !activeSignals.length) return [];
+        const active = new Set(activeSignals.map((s) => s.signalId));
+        return freeFindings
+            .map((f) => ({ f, overlap: f.signalIds.filter((id) => active.has(id)).length }))
+            .filter(({ f, overlap }) => overlap > 0 && !diagnoses.includes(f.label))
+            .sort((a, b) => b.overlap - a.overlap || b.f.useCount - a.f.useCount)
+            .slice(0, 3)
+            .map(({ f }) => f);
+    }, [freeFindings, activeSignals, diagnoses]);
+
+    /** The same list, filtered to what is actually typed — for search mode. */
+    const matchingFreeFindings = useMemo(() => {
+        const q = search.query.trim().toLowerCase();
+        if (!q || !freeFindings.length) return [];
+        return freeFindings.filter(
+            (f) => f.label.toLowerCase().includes(q) && !diagnoses.includes(f.label)
+        );
+    }, [freeFindings, search.query, diagnoses]);
 
     /**
      * This card is the second Tab stop, so its search field is where a doctor
@@ -177,17 +226,27 @@ export function ConditionsCard({
     const body = () => {
         if (search.isSearching) {
             return (
-                <IntentSearchResults
-                    state={search}
-                    verbOf={() => "Confirm"}
-                    ruleset={ruleset}
-                    activeSignals={activeSignals}
-                    rankedIntentIds={rankedIds}
-                    acceptedIntentIds={acceptedIntentIds}
-                    acknowledged={acknowledged}
-                    onAcknowledge={onAcknowledge}
-                    onAccept={onAccept}
-                />
+                <>
+                    <IntentSearchResults
+                        state={search}
+                        verbOf={() => "Confirm"}
+                        ruleset={ruleset}
+                        activeSignals={activeSignals}
+                        rankedIntentIds={rankedIds}
+                        acceptedIntentIds={acceptedIntentIds}
+                        acknowledged={acknowledged}
+                        onAcknowledge={onAcknowledge}
+                        onAccept={onAccept}
+                        onRemove={onRemove}
+                    />
+                    {onAddFreeText && !search.loading && (
+                        <FreeTextFallback
+                            query={search.query}
+                            matches={matchingFreeFindings}
+                            onAdd={(label) => { onAddFreeText(label); search.setQuery(""); }}
+                        />
+                    )}
+                </>
             );
         }
 
@@ -229,6 +288,7 @@ export function ConditionsCard({
                 acknowledged={acknowledged.has(intent.intentId)}
                 onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
                 onExplain={(rect) => onExplain(intent, rect)}
+                onRemove={() => onRemoveDiagnosis(intent.label)}
                 onAccept={() =>
                     onAccept({
                         intentId: intent.intentId,
@@ -348,6 +408,31 @@ export function ConditionsCard({
                         <p className="mt-1.5 text-[12px] font-[460] leading-snug text-[var(--cs-muted)]">
                             Ranked from symptoms, findings and measurements. You decide.
                         </p>
+                        {/* "Show this to that doctor in future for similar
+                            inputs" — §4, 2026-08-24. A quiet strip, not a
+                            ranked row: these never came from the shared
+                            catalogue, so they sit visually apart (dashed
+                            border, violet-on-white rather than the ranked
+                            list's slate badge) — "obviously slightly
+                            different color and visual tone" was the ask. */}
+                        {onAddFreeText && suggestedFreeFindings.length > 0 && (
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8b5cf6]">
+                                    Your terms
+                                </span>
+                                {suggestedFreeFindings.map((f) => (
+                                    <button
+                                        key={f.label}
+                                        type="button"
+                                        title="From your own earlier notes — not the shared catalogue"
+                                        onClick={() => onAddFreeText(f.label)}
+                                        className="rounded-full border border-dashed border-[#c4b5fd] bg-[#faf7ff] px-2.5 py-1 text-[12px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#f3ecff]"
+                                    >
+                                        {f.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         {/* ── SCROLL IS OFF UNTIL ASKED FOR ────────────────
                             Collapsed, the list shows CAP rows and simply ends:
                             no inner scrollbar, because a scroll region the
@@ -455,8 +540,61 @@ export function ConditionsCard({
     );
 }
 
+/**
+ * The Assessment free-text fallback, under the search results — §4,
+ * 2026-08-24. Anmol's own example: "Cardio Aquinian" is not in the
+ * catalogue, so the doctor needs an easy, low-friction way in that is
+ * still visually honest about what it is — never styled to look like a
+ * ranked catalogue hit, which is what the dashed border and violet tone do
+ * here too, matching the "Your terms" strip on the ranked view.
+ */
+function FreeTextFallback({
+    query, matches, onAdd,
+}: {
+    query: string;
+    /** this doctor's own earlier terms that match what is typed now */
+    matches: DoctorFreeFinding[];
+    onAdd: (label: string) => void;
+}) {
+    const q = query.trim();
+    const exact = matches.some((m) => m.label.toLowerCase() === q.toLowerCase());
+
+    if (!q) return null;
+
+    return (
+        <div className="mx-4 my-2 flex flex-col gap-1.5 rounded-lg border border-dashed border-[#c4b5fd] bg-[#faf7ff] p-2.5">
+            {matches.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8b5cf6]">
+                        Your terms
+                    </span>
+                    {matches.map((m) => (
+                        <button
+                            key={m.label}
+                            type="button"
+                            onClick={() => onAdd(m.label)}
+                            className="rounded-full border border-[#c4b5fd] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#f3ecff]"
+                        >
+                            {m.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+            {!exact && (
+                <button
+                    type="button"
+                    onClick={() => onAdd(q)}
+                    className="flex items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-0.5 py-0.5 text-[12.5px] font-semibold text-[#6d28d9] hover:underline"
+                >
+                    Add “{q}” — not in the catalogue
+                </button>
+            )}
+        </div>
+    );
+}
+
 function ConditionRow({
-    intent, rank, relevance, confirmed, acknowledged, onAcknowledge, onExplain, onAccept,
+    intent, rank, relevance, confirmed, acknowledged, onAcknowledge, onExplain, onAccept, onRemove,
 }: {
     intent: PersonalizedIntent;
     /** position in the list, 1-based, for the badge */
@@ -467,6 +605,8 @@ function ConditionRow({
     onAcknowledge: (v: boolean) => void;
     onExplain: (anchor: DOMRect) => void;
     onAccept: () => void;
+    /** instant undo, right on the confirmed badge — see parent's doc comment */
+    onRemove: () => void;
 }) {
     const rowRef = useRef<HTMLDivElement>(null);
     const isHard = intent.status === "warn_hard";
@@ -529,12 +669,16 @@ function ConditionRow({
             </div>
 
             {confirmed ? (
-                <span
-                    aria-label="Confirmed"
-                    className="grid size-[22px] flex-none place-items-center rounded-full bg-[#dcf5e8] text-[#15803d]"
+                <button
+                    type="button"
+                    aria-label={`Remove ${intent.label} from the assessment`}
+                    title="Confirmed — click to remove"
+                    onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                    className="group grid size-[22px] flex-none place-items-center rounded-full border-0 bg-[#dcf5e8] text-[#15803d] transition-colors duration-150 hover:bg-[#fee2e2] hover:text-[#dc2626]"
                 >
-                    <Check size={14} />
-                </span>
+                    <Check size={14} className="group-hover:hidden" />
+                    <X size={13} className="hidden group-hover:block" />
+                </button>
             ) : locked ? (
                 <span className="w-[62px] flex-none" aria-hidden="true" />
             ) : (

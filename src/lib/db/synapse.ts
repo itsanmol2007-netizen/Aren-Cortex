@@ -929,6 +929,80 @@ export async function fetchPinnedMedicineDetails(doctorId: string): Promise<Pinn
 }
 
 /**
+ * The Assessment free-text fallback — §4, 2026-08-24. See the
+ * `add_doctor_free_findings` migration's header for the full reasoning: a
+ * doctor-local convenience list, remembered against the signals active when
+ * it was typed, never fed into the shared ruleset.
+ */
+export interface DoctorFreeFinding {
+    label: string;
+    signalIds: string[];
+    useCount: number;
+}
+
+/** This doctor's whole free-text list, for matching against a fresh chart. */
+export async function loadDoctorFreeFindings(doctorId: string): Promise<DoctorFreeFinding[]> {
+    const { data, error } = await supabase
+        .from("doctor_free_findings")
+        .select("label, signal_ids, use_count")
+        .eq("doctor_id", doctorId);
+    if (error) throw new Error(`doctor_free_findings (load): ${error.message}`);
+    return (data ?? []).map((r: any) => ({
+        label: r.label,
+        signalIds: r.signal_ids ?? [],
+        useCount: Number(r.use_count ?? 1),
+    }));
+}
+
+/**
+ * Remember one free-text term against this consult's active signals.
+ *
+ * Upserts on (doctor_id, lower(label)) — typing the same term again bumps
+ * `use_count` and refreshes the signal set to the CURRENT chart rather than
+ * the one it was first typed against, so the match keeps tracking how this
+ * doctor actually uses the term. Non-fatal by rule 4: a doctor's consult
+ * must never break because this convenience write did.
+ */
+export async function saveDoctorFreeFinding(opts: {
+    doctorId: string;
+    hospitalId: string;
+    label: string;
+    signalIds: string[];
+}): Promise<void> {
+    const label = opts.label.trim();
+    if (!label) return;
+
+    const { data: existing, error: readErr } = await supabase
+        .from("doctor_free_findings")
+        .select("id, use_count")
+        .eq("doctor_id", opts.doctorId)
+        .ilike("label", label)
+        .maybeSingle();
+    if (readErr) throw new Error(`doctor_free_findings (read): ${readErr.message}`);
+
+    if (existing) {
+        const { error } = await supabase
+            .from("doctor_free_findings")
+            .update({
+                signal_ids: opts.signalIds,
+                use_count: Number(existing.use_count ?? 1) + 1,
+                last_used_at: new Date().toISOString(),
+            })
+            .eq("id", existing.id);
+        if (error) throw new Error(`doctor_free_findings (bump): ${error.message}`);
+        return;
+    }
+
+    const { error } = await supabase.from("doctor_free_findings").insert({
+        doctor_id: opts.doctorId,
+        hospital_id: opts.hospitalId,
+        label,
+        signal_ids: opts.signalIds,
+    });
+    if (error) throw new Error(`doctor_free_findings (insert): ${error.message}`);
+}
+
+/**
  * A test panel's member tests, by name — "Fever Workup" resolves to CBC,
  * Widal, Dengue NS1, etc. via `test_panel_map`.
  *

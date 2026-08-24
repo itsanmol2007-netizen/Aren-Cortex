@@ -128,13 +128,31 @@ function formApplies(form: Form | null, ctx: BrandContext): boolean {
  * Fallback chain, strongest tier first:
  *   1. learned preference   (higher first; neutralised when the form does not apply)
  *   2. clinic default
- *   3. most-prescribed
- *   4. catalogue rank       (the order the lookup fetched them in, if it had one)
- *   5. alphabetical
+ *   3. paediatric-appropriate form (pediatric consult only — see below)
+ *   4. most-prescribed
+ *   5. catalogue rank       (the order the lookup fetched them in, if it had one)
+ *   6. alphabetical
  *
  * `resolveBrands` only reorders the candidates the caller already fetched; it
  * never introduces or removes a brand. A negative learned preference sinks a
  * brand below the neutral fallbacks, which is the doctor actively avoiding it.
+ *
+ * ── Tier 3, added §7, 2026-08-24 ────────────────────────────────────────────
+ * The DEFAULT — the brand a row opens on before the doctor picks anything —
+ * used to have no opinion about age at all beyond the learned-preference
+ * neutralisation above: a paediatric consult with no prior brand history for
+ * this doctor still led with whatever won on popularity, tablet or not. This
+ * tier makes the default itself age-aware: a syrup/drops brand leads for a
+ * paediatric consult, a non-syrup brand leads otherwise — without hiding
+ * anything either way, `all` still carries every form and every brand stays
+ * one click away as an alternate.
+ *
+ * Deliberately reads `Medicine.form` (sourced from
+ * `medicine_composition_map.route`, structured catalogue data) rather than
+ * matching the word "syrup" in the product NAME — a name match would
+ * misfire on a tablet that happens to be branded with "Syp" in it, which is
+ * exactly the trap the ask that prompted this flagged and asked to be
+ * tackled rather than worked around.
  */
 export function resolveBrands(
   compositionId: number,
@@ -150,16 +168,25 @@ export function resolveBrands(
     return row.preference
   }
 
+  // 0 (leads) for a paediatric-appropriate form under a paediatric consult;
+  // 0 always otherwise, so this tier is a complete no-op for every adult
+  // consult — byte-identical ordering to before this tier existed.
+  const formPriority = (m: Medicine): number =>
+    context.isPediatric && !PEDIATRIC_FORMS.has(m.form as Form) ? 1 : 0
+
   return [...candidates].sort((a, b) => {
     const pa = effectivePref(a)
     const pb = effectivePref(b)
     if (pa !== pb) return pb - pa // 1. learned preference
     if (a.isClinicDefault !== b.isClinicDefault) return a.isClinicDefault ? -1 : 1 // 2. clinic default
-    if (a.prescriptionCount !== b.prescriptionCount) return b.prescriptionCount - a.prescriptionCount // 3. most-prescribed
+    const fa = formPriority(a)
+    const fb = formPriority(b)
+    if (fa !== fb) return fa - fb // 3. paediatric-appropriate form
+    if (a.prescriptionCount !== b.prescriptionCount) return b.prescriptionCount - a.prescriptionCount // 4. most-prescribed
     const ra = a.catalogueRank ?? Infinity
     const rb = b.catalogueRank ?? Infinity
-    if (ra !== rb) return ra - rb // 4. catalogue rank
-    return a.name.localeCompare(b.name) // 5. alphabetical
+    if (ra !== rb) return ra - rb // 5. catalogue rank
+    return a.name.localeCompare(b.name) // 6. alphabetical
   })
 }
 

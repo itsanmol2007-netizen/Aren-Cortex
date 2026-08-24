@@ -41,6 +41,7 @@ import {
 import { type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MedicineAddSheet } from "./features/consult/MedicineAddSheet";
+import { AddMedicineSheet } from "./features/consult/AddMedicineSheet";
 import { useChartSummaries } from "./features/consult/useChartSummaries";
 import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
 import { PhysioInputs } from "./features/consult/PhysioInputs";
@@ -70,7 +71,7 @@ import { BrandSheet } from "./features/synapse/BrandSheet";
 import { profileFor, type ChartKind } from "./features/synapse/specialtyProfile";
 import { useOnline } from "./features/frontdesk/operational/useOnline";
 import type { PersonalizedIntent } from "./lib/synapse/personalize";
-import { type Observable } from "./lib/db/synapse";
+import { type Observable, saveDoctorFreeFinding } from "./lib/db/synapse";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchDoctor, fetchHospital,
@@ -146,6 +147,16 @@ function App() {
   const [brandSheet, setBrandSheet] = useState<
     { intentId: number; compositionId: number; label: string; rect: DOMRect } | null
   >(null);
+  /**
+   * `AddMedicineSheet` — §5, 2026-08-24. `null` closed; a string (possibly
+   * empty) is the query the doctor had already typed when they reached for
+   * it. Lifted here rather than kept local to `RecommendationsCard`, same
+   * as every other overlay on this list, so it can join `isAnyModalOpen`
+   * below — an overlay missing from that list is the exact bug
+   * `useOverlayFocus.ts`'s header documents (§14.22e): a bare Tab reaching
+   * straight through it to a workspace stop behind it.
+   */
+  const [addMedicineQuery, setAddMedicineQuery] = useState<string | null>(null);
   /**
    * The shared past-visit detail, and which point on screen it points at.
    *
@@ -236,7 +247,7 @@ function App() {
   // and, when it is chronic, a fact that survives the visit. Sits between the
   // session and the plan because it needs the patient at render time and the
   // plan needs it at render time. See useLongitudinalRecord.ts.
-  const { confirmCondition, carryForwardFor, retireCondition } = useLongitudinalRecord({
+  const { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition } = useLongitudinalRecord({
     data: synapse.data,
     chart,
     session,
@@ -350,6 +361,7 @@ function App() {
     hospitalId: identity.hospitalId,
     showToast,
     confirmCondition,
+    unconfirmCondition,
   });
   const {
     prescription, selectedTests, diagnoses, visitNotes, setVisitNotes,
@@ -361,8 +373,8 @@ function App() {
     pendingMedicine, setPendingMedicine, inspectorMedicine,
     confirmPendingMedicine, confirmStagedMedicine,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
-    updateMedicine, removeMedicine, removeTest, removeDiagnosis, removeAdviceLine,
-    removeTherapyLine, updateExercise, removeExercise, duplicateExerciseForSide,
+    updateMedicine, removeMedicine, removeTest, removeDiagnosis, addFreeDiagnosis, removeAdviceLine,
+    removeTherapyLine, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -430,7 +442,7 @@ function App() {
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
       !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
-      !!activeVisit || carePlanSheetOpen,
+      !!activeVisit || carePlanSheetOpen || addMedicineQuery != null,
   });
 
   // The consult workspace's shell (`.cs-shell`, consult.css) locks its own
@@ -716,15 +728,45 @@ function App() {
    * from `sections` rather than typed out, so a type can never be listed twice
    * or dropped entirely when a profile is edited.
    */
+  /**
+   * Whether ConditionsCard's second column is showing a specialty's own exam
+   * launcher (the odontogram, the body map…) — same gate as the `sideSlot`
+   * prop below, named so both that prop and `planSlots` read the one answer
+   * instead of two copies of "and not physio, and chartTools is non-empty"
+   * drifting apart.
+   */
+  const hasSpecialtyExamSideSlot =
+    usesRebuiltSurface && !usesPhysioInputs && chartTools.length > 0;
+  /**
+   * Whether that same column instead runs an Investigations quick-list —
+   * §10, 2026-08-24. Everything WITHOUT an exam launcher used to fall
+   * through to a static confirmed-conditions column Anmol called "essentially
+   * a useless thing" (it only ever repeated what the Plan rail three inches
+   * away already shows). Investigations is the one output type this facility
+   * has not already been given a home for at this point on the screen.
+   *
+   * Excluded when Investigations is ALREADY this facility's elevated primary
+   * slot (a Diagnostics practice) — showing the same ranked list twice, once
+   * full-size below and once compact here, is the duplicate this exists to
+   * avoid, not a second one to create.
+   */
+  const showInvestigationSideSlot =
+    !hasSpecialtyExamSideSlot && specialty.primary !== "test";
+
   const planSlots = useMemo(() => {
     const rest = specialty.sections
       .map((s) => s.type)
-      .filter((t) => t !== specialty.primary && t !== "finding");
+      .filter((t) => t !== specialty.primary && t !== "finding")
+      // Dropped from the Clinical Suggestions listing only, never from the
+      // Investigations side-slot itself — search and accept work identically
+      // in both, this just decides which panel owns the one copy so a test
+      // is never ranked twice on the same screen.
+      .filter((t) => !showInvestigationSideSlot || t !== "test");
     return {
       primaryIsMedicine: specialty.primary === "medicine",
       restTypes: rest,
     };
-  }, [specialty.primary, specialty.sections]);
+  }, [specialty.primary, specialty.sections, showInvestigationSideSlot]);
 
   /**
    * The one-line extract under each launcher, so the doctor can see what is
@@ -1189,6 +1231,32 @@ function App() {
                 hasChart={intelligence.hasInput}
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
+                onRemove={removeAcceptedIntent}
+                /* §4, 2026-08-24 — the Assessment free-text fallback. The
+                   chart-local half (`addFreeDiagnosis`) always runs; the
+                   Supabase write only under a REAL identity, same rule
+                   `confirmCondition`'s standing-fact write follows two
+                   panels up — an account with no `doctors` row would file
+                   this under the fallback doctor, and it is meant to follow
+                   ONE doctor. Non-fatal: a save that fails costs the doctor
+                   a future suggestion, never today's consult. Reloads
+                   Synapse on success so the new term can surface THIS
+                   session too, not only the next one — same pattern
+                   `handlePinClinicBrand` already uses for its own write. */
+                onAddFreeText={(label) => {
+                  addFreeDiagnosis(label);
+                  if (identity.isReal) {
+                    saveDoctorFreeFinding({
+                      doctorId: identity.doctorId,
+                      hospitalId: identity.hospitalId,
+                      label,
+                      signalIds: (intelligence.result?.activeSignals ?? []).map((s) => s.signalId),
+                    })
+                      .then(() => synapse.reload())
+                      .catch((e) => console.warn("doctor_free_findings save (non-fatal):", e));
+                  }
+                }}
+                freeFindings={synapse.data?.freeFindings ?? []}
                 disabled={!patient}
                 searchRef={assessmentSearchRef}
                 /* ── The Assessment's second column ────────────────────────
@@ -1216,11 +1284,42 @@ function App() {
                      launchers on one screen, which is what Anmol hit: a strip
                      above the Assessment and a card beside it, both opening the
                      identical surface. */
-                  usesRebuiltSurface && !usesPhysioInputs && chartTools.length > 0 ? (
+                  hasSpecialtyExamSideSlot ? (
                     <SpecialtyExamCard
                       tools={chartTools}
                       onOpen={(key) => setOpenChart(key as ChartKind)}
                       summaries={chartSummaries}
+                      disabled={!patient}
+                    />
+                  ) : showInvestigationSideSlot ? (
+                    /* §10, 2026-08-24 — see `showInvestigationSideSlot`'s doc
+                       comment. The SAME component Clinical Suggestions uses
+                       below, scoped to one type: "same rule all sections
+                       have" was the ask, and forking a second investigations
+                       list here would be exactly the thing rule 7 exists to
+                       prevent. `expanded`/`onToggleExpanded` are shared with
+                       the panel below — both are vestigial props neither
+                       reads today (every row renders unconditionally, see
+                       SuggestionsCard's own header comment), so sharing them
+                       costs nothing. */
+                    <SuggestionsCard
+                      className="cs-cond-side-sug"
+                      types={["test"]}
+                      title="Investigations"
+                      byType={intelligence.byType}
+                      topOfType={topOfType}
+                      thinkingKey={intelligence.thinkingKey}
+                      acceptedIntentIds={acceptedIntentIdSet}
+                      acknowledged={acknowledgedIntents}
+                      onAcknowledge={handleAcknowledge}
+                      onAccept={handleAcceptIntent}
+                      onRemove={removeAcceptedIntent}
+                      onExplain={handleExplain}
+                      ruleset={synapse.data?.ruleset ?? null}
+                      activeSignals={intelligence.result?.activeSignals ?? []}
+                      expanded={suggestionsExpanded}
+                      onToggleExpanded={() => setSuggestionsExpanded((v) => !v)}
+                      hasChart={intelligence.hasInput}
                       disabled={!patient}
                     />
                   ) : undefined
@@ -1260,6 +1359,7 @@ function App() {
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}
                     onAccept={handleAcceptIntent}
+                    onRemove={removeAcceptedIntent}
                     isPinned={pins.isPinned}
                     onTogglePin={pins.toggle}
                     onOpenBrandSheet={handleOpenBrandSheet}
@@ -1268,6 +1368,7 @@ function App() {
                     activeSignals={intelligence.result?.activeSignals ?? []}
                     hasChart={intelligence.hasInput}
                     searchRef={synapseSearchRef}
+                    onOpenAddMedicine={setAddMedicineQuery}
                   />
                 ) : specialty.primary === "exercise" ? (
                   /* An exercise HAS a dose, and the dose is the clinical
@@ -1307,6 +1408,7 @@ function App() {
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}
                     onAccept={handleAcceptIntent}
+                    onRemove={removeAcceptedIntent}
                     onExplain={handleExplain}
                     ruleset={synapse.data?.ruleset ?? null}
                     activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1326,6 +1428,7 @@ function App() {
                   acknowledged={acknowledgedIntents}
                   onAcknowledge={handleAcknowledge}
                   onAccept={handleAcceptIntent}
+                  onRemove={removeAcceptedIntent}
                   onExplain={handleExplain}
                   ruleset={synapse.data?.ruleset ?? null}
                   activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1471,6 +1574,18 @@ function App() {
             initialBrand={pendingMedicine?.initialBrand ?? null}
             onCancel={() => setPendingMedicine(null)}
             onConfirm={confirmPendingMedicine}
+          />
+
+          {/* "Not found in ranking or search" — §5, 2026-08-24. Hands off
+              into the sheet above unmodified: once `add_medicine` names the
+              brand, it is just an accepted medicine like any other and
+              `handleAcceptIntent` takes it from there (brand resolves via
+              `brandHint`, the sheet above opens for dose/timing). */}
+          <AddMedicineSheet
+            open={addMedicineQuery != null}
+            initialName={addMedicineQuery ?? ""}
+            onCancel={() => setAddMedicineQuery(null)}
+            onAccept={(payload) => { handleAcceptIntent(payload); setAddMedicineQuery(null); }}
           />
 
           {/* The brand picker, anchored to the row that opened it. */}

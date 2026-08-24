@@ -27,7 +27,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
     Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
-    ShieldAlert, Sparkles, Waves, ActivitySquare } from "lucide-react";
+    ShieldAlert, Sparkles, Waves, ActivitySquare, X } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
@@ -109,6 +109,8 @@ interface Props {
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
     onAccept: (payload: AcceptPayload) => void;
+    /** Undo an accept in place, on the same row — §9, 2026-08-24. */
+    onRemove?: (intentId: number, type: IntentType, label: string) => void;
     onExplain: (intent: PersonalizedIntent, anchor: DOMRect) => void;
     /** for the guard verdict on a searched, never-ranked intent */
     ruleset: Ruleset | null;
@@ -120,7 +122,7 @@ interface Props {
 }
 
 export function SuggestionsCard({
-    byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
+    byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept, onRemove,
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
     types, title = "Clinical Suggestions",
@@ -220,6 +222,7 @@ export function SuggestionsCard({
                     acknowledged={acknowledged}
                     onAcknowledge={onAcknowledge}
                     onAccept={onAccept}
+                    onRemove={onRemove}
                 />
             );
         }
@@ -265,6 +268,7 @@ export function SuggestionsCard({
                     acknowledged={acknowledged.has(intent.intentId)}
                     onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
                     onExplain={(rect) => onExplain(intent, rect)}
+                    onRemove={onRemove && (() => onRemove(intent.intentId, intent.type, intent.label))}
                     onAccept={() =>
                         onAccept({
                             intentId: intent.intentId,
@@ -336,7 +340,7 @@ export function SuggestionsCard({
 
 function SuggestionRow({
     intent, kindLabel, verb, icon, relevance, added, acknowledged, onAcknowledge,
-    onExplain, onAccept,
+    onExplain, onAccept, onRemove,
 }: {
     intent: PersonalizedIntent;
     kindLabel: string;
@@ -348,6 +352,8 @@ function SuggestionRow({
     onAcknowledge: (v: boolean) => void;
     onExplain: (anchor: DOMRect) => void;
     onAccept: () => void;
+    /** instant undo, right on the "Taken" badge — see the card's doc comment */
+    onRemove?: () => void;
 }) {
     const rowRef = useRef<HTMLDivElement>(null);
     const isHard = intent.status === "warn_hard";
@@ -381,7 +387,20 @@ function SuggestionRow({
             </div>
 
             {added ? (
-                <span className="cs-added" aria-label="Taken"><Check size={15} /></span>
+                onRemove ? (
+                    <button
+                        type="button"
+                        className="cs-added is-removable"
+                        aria-label={`Remove ${intent.label} from the plan`}
+                        title="Taken — click to remove"
+                        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                    >
+                        <Check size={15} className="cs-added-check" />
+                        <X size={13} className="cs-added-x" />
+                    </button>
+                ) : (
+                    <span className="cs-added" aria-label="Taken"><Check size={15} /></span>
+                )
             ) : locked ? (
                 <span style={{ width: 29 }} aria-hidden="true" />
             ) : (
