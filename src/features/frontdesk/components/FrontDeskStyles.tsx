@@ -31,7 +31,7 @@ const CSS = `
    violet-warmed in s38): soft violet-tinted fill at rest, lifts to white
    with the brand focus ring. */
 .fd-field {
-  width: 100%; height: 38px; border: 1.5px solid #e9e7f4; border-radius: 10px;
+  width: 100%; height: 36px; border: 1.5px solid #e9e7f4; border-radius: 10px;
   background: #f8f8fd; padding: 0 13px; font-size: 14px; color: #161d29;
   outline: none; box-shadow: none;
   transition: border-color 150ms, box-shadow 150ms, background-color 150ms;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Cake, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
+import { ArrowRight, Cake, Calendar, Paperclip, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
 import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
 import type { IntakeChip } from "@/lib/db/synapse";
 import type { AttachmentType } from "@/lib/attachments/types";
@@ -7,7 +7,7 @@ import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
 import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
-import { AgeInput, Field, GenderControl, PhoneInput, SectionLabel } from "./fields";
+import { AgeInput, Field, PhoneInput, SectionLabel } from "./fields";
 import { IntakeAttachmentsField, type StagedAttachment } from "./IntakeAttachmentsField";
 import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 
@@ -75,15 +75,17 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     // triggers Save from anywhere in the form.
     const nameRef = useRef<HTMLInputElement>(null);
     const ageRef = useRef<HTMLInputElement>(null);
-    const genderRef = useRef<HTMLDivElement>(null);
+    const genderRef = useRef<HTMLSelectElement>(null);
     const phoneRef = useRef<HTMLInputElement>(null);
     const symptomRef = useRef<HTMLInputElement>(null);
     const doctorRef = useRef<HTMLSelectElement>(null);
     // Phone sits directly under the name so an existing patient surfaces the
-    // instant both are typed — before age/gender are even asked.
+    // instant both are typed — before age/gender are even asked. Reading
+    // order otherwise follows the visual layout: Phone+Gender share a row,
+    // then Age+DOB share the next one (see the reference-matched grid below).
     const fieldOrder: React.RefObject<HTMLElement | null>[] = existing
         ? [symptomRef, doctorRef]
-        : [nameRef, phoneRef, ageRef, genderRef, symptomRef, doctorRef];
+        : [nameRef, phoneRef, genderRef, ageRef, symptomRef, doctorRef];
 
     useEffect(() => {
         // Land the cursor where typing starts: the first empty field.
@@ -268,7 +270,10 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 ) : (
                     <>
                         <SectionLabel text={t("secPatient")} />
-                        <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2">
+                        {/* Two equal columns, not the old fixed-120px/1fr split —
+                            matches the reference layout exactly: Name full width,
+                            then Phone+Gender share a row, then Age+DOB share one. */}
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                             <Field className="col-span-2" icon={<UserRound size={13} />} label={t("fldName")} required error={errors.name ? t("errRequired") : undefined}>
                                 <input
                                     ref={nameRef}
@@ -282,7 +287,6 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 the duplicate banner surfaces an existing patient —
                                 no need to fill age/gender first. */}
                             <Field
-                                className="col-span-2"
                                 icon={<Phone size={13} />}
                                 label={t("fldPhone")}
                                 required
@@ -299,8 +303,22 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                     placeholder={t("phPhone")}
                                 />
                             </Field>
-                            {/* Age is a tiny number — it gets a tiny box (fixed 120px
-                                column), gender fills the rest of the row. */}
+                            {/* Plain dropdown, not the segmented M/F/O control — matches
+                                the reference exactly; a native select still gets
+                                type-to-jump and arrow-key cycling for free. */}
+                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
+                                <select
+                                    ref={genderRef}
+                                    value={gender}
+                                    onChange={(e) => { setGender(e.target.value); setErrors((er) => ({ ...er, gender: false })); }}
+                                    className={fieldClass(errors.gender)}
+                                >
+                                    <option value="" disabled>{t("selectGender")}</option>
+                                    <option value="Male">{t("male")}</option>
+                                    <option value="Female">{t("female")}</option>
+                                    <option value="Other">{t("other")}</option>
+                                </select>
+                            </Field>
                             <Field icon={<Cake size={13} />} label={t("fldAge")} required error={errors.age ? t("errRequired") : undefined}>
                                 <AgeInput
                                     inputRef={ageRef}
@@ -318,7 +336,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 where this is genuinely known, which is why the
                                 field is here and not only in Cortex. */}
                             <Field
-                                icon={<Cake size={13} />}
+                                icon={<Calendar size={13} />}
                                 label={
                                     dobMattersFor(Number.parseInt(age, 10))
                                         ? `${t("fldDob")} — ${t("fldDobNeeded")}`
@@ -342,14 +360,6 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                             setErrors((er) => ({ ...er, age: false }));
                                         }
                                     }}
-                                />
-                            </Field>
-                            <Field icon={<Users size={13} />} label={t("fldGender")} required error={errors.gender ? t("errRequired") : undefined}>
-                                <GenderControl
-                                    groupRef={genderRef}
-                                    value={gender}
-                                    onChange={(v) => { setGender(v); setErrors((er) => ({ ...er, gender: false })); }}
-                                    error={!!errors.gender}
                                 />
                             </Field>
                         </div>
@@ -403,8 +413,12 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     </select>
                 </Field>
 
-                <SectionLabel text={t("secAttachments")} className="mt-[14px]" />
-                <IntakeAttachmentsField files={stagedAttachments} onChange={setStagedAttachments} />
+                {/* A field, not a new section — matches the reference exactly
+                    (same label weight as Symptoms/Doctor above it, "(Optional)"
+                    tag, no section hairline). */}
+                <Field className="mt-[10px]" icon={<Paperclip size={13} />} label={t("attachAdd")} optional>
+                    <IntakeAttachmentsField files={stagedAttachments} onChange={setStagedAttachments} />
+                </Field>
             </div>
         </ModalShell>
     );
@@ -534,7 +548,7 @@ function SymptomPicker({
                 input/select/label elements). */}
             <div
                 onClick={() => { inputRef.current?.focus(); setOpen(true); }}
-                className={`flex min-h-[42px] cursor-text flex-wrap items-center gap-[6px] rounded-[10px] border-[1.5px] px-3 py-[5px] transition-[border-color,box-shadow,background-color] duration-150 ${
+                className={`flex min-h-[36px] cursor-text flex-wrap items-center gap-[6px] rounded-[10px] border-[1.5px] px-3 py-[5px] transition-[border-color,box-shadow,background-color] duration-150 ${
                     error
                         ? "border-[#d23b34] bg-[#fffafa]"
                         : open

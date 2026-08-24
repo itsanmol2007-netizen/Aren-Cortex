@@ -91,7 +91,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     itself can stay overflow-visible — floating dropdowns inside the
                     body (e.g. the symptom catalog) must never be cut off. */}
                 <div
-                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eeebf7] px-[22px] pb-3 pt-[13px]"
+                    className="relative overflow-hidden rounded-t-[18px] border-b border-[#eeebf7] px-[20px] pb-[10px] pt-[11px]"
                     style={{
                         background:
                             "radial-gradient(ellipse 320px 140px at 90% 0%, rgba(168,85,247,0.10), transparent 70%), " +
@@ -109,8 +109,8 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                         }}
                     />
                     <CornerArcs />
-                    <div className="relative flex items-center gap-[13px] pr-10">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)]">
+                    <div className="relative flex items-center gap-[11px] pr-10">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[linear-gradient(155deg,#7c5cf0,#2f6bed)] text-white shadow-[0_3px_12px_rgba(124,92,240,0.32)]">
                             {icon}
                         </div>
                         <div className="min-w-0">
@@ -130,10 +130,10 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     </button>
                 </div>
 
-                <div className="px-[22px] pb-4 pt-3">{children}</div>
+                <div className="px-[20px] pb-[14px] pt-[10px]">{children}</div>
 
                 {footer && (
-                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eeebf7] bg-[#fbfaff] px-[22px] py-[10px]">
+                    <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eeebf7] bg-[#fbfaff] px-[20px] py-[9px]">
                         {footer}
                     </div>
                 )}

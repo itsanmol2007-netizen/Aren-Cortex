@@ -155,7 +155,7 @@ export function GenderControl({
             aria-label={t("fldGender")}
             tabIndex={0}
             onKeyDown={handleKeyDown}
-            className={`flex h-[38px] items-stretch gap-[3px] rounded-[10px] border-[1.5px] p-[3px] outline-none transition-[border-color,box-shadow,background-color] duration-150 ${
+            className={`flex h-[36px] items-stretch gap-[3px] rounded-[10px] border-[1.5px] p-[3px] outline-none transition-[border-color,box-shadow,background-color] duration-150 ${
                 error
                     ? "border-[#d23b34] bg-[#fffafa]"
                     : "border-[#e9e7f4] bg-[#f8f8fd] focus-visible:border-[#7c5cf0] focus-visible:bg-white focus-visible:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
@@ -208,7 +208,7 @@ export function PhoneInput({
     const complete = /^\d{10}$/.test(value);
     return (
         <div
-            className={`flex h-[38px] items-center overflow-hidden rounded-[10px] border-[1.5px] transition-[border-color,box-shadow,background-color] duration-150 ${
+            className={`flex h-[36px] items-center overflow-hidden rounded-[10px] border-[1.5px] transition-[border-color,box-shadow,background-color] duration-150 ${
                 error
                     ? "border-[#d23b34] bg-[#fffafa]"
                     : "border-[#e9e7f4] bg-[#f8f8fd] focus-within:border-[#7c5cf0] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"

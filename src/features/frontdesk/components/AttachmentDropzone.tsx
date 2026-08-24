@@ -62,7 +62,7 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                     if (disabled) return;
                     accept(Array.from(e.dataTransfer.files));
                 }}
-                className={`flex flex-col items-center gap-[6px] rounded-[12px] border-[1.5px] border-dashed px-4 py-[14px] text-center transition-colors ${
+                className={`flex flex-col items-center gap-[5px] rounded-[11px] border-[1.5px] border-dashed px-4 py-[11px] text-center transition-colors ${
                     disabled
                         ? "cursor-default border-[#e9e7f4] bg-[#f8f8fb] opacity-60"
                         : dragging
@@ -70,8 +70,8 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                             : "cursor-pointer border-[#d9d3ee] bg-[#faf9ff] hover:border-[#c9bdf5] hover:bg-[#f8f7fd]"
                 }`}
             >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[linear-gradient(155deg,#a855f7,#f472b6)] text-white shadow-[0_3px_10px_rgba(168,85,247,0.3)]">
-                    <UploadCloud size={17} />
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[linear-gradient(155deg,#a855f7,#f472b6)] text-white shadow-[0_3px_10px_rgba(168,85,247,0.3)]">
+                    <UploadCloud size={15} />
                 </span>
                 <div className="text-[12.5px] font-medium text-[#5a6472]">{t("attachDropLine")}</div>
                 <div className="text-[11px] text-[#a8aeba]">{t("attachDropCaption")}</div>
