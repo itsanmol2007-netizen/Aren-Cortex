@@ -1,6 +1,72 @@
-# Session handoff — 2026-08-25 (Cortex open-bugs arc, third pass)
+# Session handoff — 2026-08-25 (Cortex open-bugs arc, STOPPED — read this first)
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
+
+## ⚠ Read this before touching ConditionsCard.tsx / SuggestionsCard.tsx again
+
+Three passes today went at the Assessment/Investigations symmetry problem
+and the capped-list "show more" mechanism **blind — no screenshots, no
+running app, CSS and JSX edited from reasoning about selectors alone.**
+Each pass believed it fixed the last one's regression. Anmol's own words
+after the third: **"you're breaking everything, just at every single
+point... you followed the cheap path by matching a CSS element when the
+underlying thing behind it was not same, and now they are clashing even
+harder."** That is the accurate diagnosis, not "one more CSS tweak will
+close it" — take it as the starting assumption, not as something to
+re-litigate.
+
+**Reported broken right now, unverified by any screenshot from this
+session:**
+1. The Investigations "Show more" button is not visible at all (was meant
+   to sit below the capped list as a sibling — `.cs-sug-cap-toggle` in
+   `SuggestionsCard.tsx`/`consult.css`; something in the grid/flex chain
+   around `.cs-cond-side-sug` most likely clips or collapses it, but this
+   was never actually looked at rendered).
+2. Assessment and Investigations are STILL not symmetric, after two
+   separate attempts (matching the header row, then adding a shared
+   `.cs-ranked-head`/`.cs-ranked-label`/`.cs-ranked-count` subheader).
+   Matching class names/CSS was treated as the fix; the actual DATA SHAPES
+   the two panels render from remain different (Assessment: a ranked list
+   + a separate confirmed-diagnoses concept; Investigations: one flat
+   ranked/capped list with no second concept) — that is very likely why
+   visually matching the wrapper markup still "clashes" instead of
+   resolving. The symmetry problem may need a real shared component, or a
+   deliberate decision that these two panels are allowed to differ in
+   places, not another round of copying class names.
+3. Empty states: this session shortened their TEXT (fewer sentences) but
+   did not touch icon usage, and apparently made things read as MORE
+   text-heavy with FEWER icons in practice — Anmol: "less text there,
+   only those texts which are really important... you added more text and
+   removed all the SVG elements." Worth checking directly: `ConditionsCard`'s
+   ranked-list empty state (`"No condition ranks for this chart"`) has
+   **never had an icon/art component**, unlike `RecommendationsCard`'s
+   (`<BlankMedicineArt/>`) and `SuggestionsCard`'s (`<BlankTestArt/>`) —
+   that inconsistency predates this session and was never actually fixed;
+   confirm what's really on screen before changing text again.
+
+**Why this happened, plainly:** every fix this session was authored by
+reading source and CSS and reasoning about box models — never by running
+the app and looking at it. That works for logic; for "does this look
+right", it doesn't, and three consecutive blind passes making it worse is
+the proof. **Do not repeat that pattern.** Whatever picks this up next
+needs an actual render loop: run the dev server, open the consult screen
+with a real/seeded chart that has both ranked conditions AND ranked
+investigations (so both panels have real content, not just empty
+states), screenshot it, make ONE change, screenshot again, compare before
+claiming anything is fixed. If no browser/screenshot tool is available in
+that session, say so up front rather than doing another blind pass.
+
+**A live suggestion, not an instruction:** given three blind passes have
+now made this WORSE each time, it may be faster to `git diff` (or
+`git log -p`) `ConditionsCard.tsx`, `SuggestionsCard.tsx` and the
+`.cs-ranked-*`/`.cs-cond-side-sug`/`.cs-list`/`.cs-sug-cap-toggle` rules
+in `consult.css` across today's three commits on
+`claude/aren-cortex-open-bugs-vdirkm`, and consider reverting to
+whichever commit actually looked right in a real screenshot (possibly
+before this arc's "same template" pass entirely) rather than layering a
+fourth patch on top of three unverified ones.
+
+---
 
 **Read order for a cold start:** `docs/README-Cortex.md` first if you
 haven't already (2026-08-25: the actual entry point now — one page,
