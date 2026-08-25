@@ -149,15 +149,63 @@ interface Props {
      */
     freeTerms?: DoctorFreeTerm[];
     onAddFreeText?: (label: string, type: DoctorFreeTermType) => void;
+    /**
+     * The live plan, read-only, so a free term's row can show "taken" the
+     * instant it lands and go back to "add" the instant it's removed —
+     * §1 follow-up, 2026-08-24. `test`'s free label is on the plan iff it's
+     * in `selectedTests`; `referral`/`advice` share `adviceLines` the same
+     * way `useConsultPlan.ts`'s `addFreeReferral`/`addFreeAdvice` write it
+     * (`"Refer to X"` vs `X` plain), so both are checked against the one
+     * array rather than needing it split.
+     */
+    selectedTests?: string[];
+    adviceLines?: string[];
+    /**
+     * Caps the RANKED list to this many rows, with a "Show more" button that
+     * unlocks a bounded, scrolling list — the same mechanism
+     * `ConditionsCard`'s own ranked column already uses, applied here for
+     * the first time when this card is squeezed into a SHORT neighbour
+     * (the Assessment side-slot) rather than the tall, self-scrolling strip
+     * it normally sits in. Absent (the two full-height placements) keeps the
+     * old behaviour — unbounded, the panel's own container scrolls.
+     * §3, 2026-08-24: "add a show more button on bottom which unlocks the
+     * nested scrolling of it."
+     */
+    capped?: number;
 }
 
 export function SuggestionsCard({
     byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept, onRemove,
     isPinned, onTogglePin, freeTerms = [], onAddFreeText,
+    selectedTests = [], adviceLines = [],
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
-    types, title = "Clinical Suggestions",
+    types, title = "Clinical Suggestions", capped,
 }: Props) {
+    const [showAllCapped, setShowAllCapped] = useState(false);
+
+    /**
+     * §1 follow-up — the SAME split ConditionsCard's `isFreeLabel` makes:
+     * "is this label a free-text entry" (provenance — needs `freeTerms` or
+     * this-session tracking, since the label alone can't say) and "is it
+     * currently on the plan" (live — `selectedTests`/`adviceLines`, so
+     * removing it from the Plan rail directly is reflected here too, not
+     * just a click on this card's own remove button).
+     */
+    const [freeAddedNow, setFreeAddedNow] = useState<Set<string>>(new Set());
+    const freeKey = (type: DoctorFreeTermType, label: string) => `${type}:${label}`;
+    const isFreeLabel = (type: DoctorFreeTermType, label: string) =>
+        freeAddedNow.has(freeKey(type, label)) || freeTerms.some((f) => f.type === type && f.label === label);
+    const isTaken = (type: DoctorFreeTermType, label: string): boolean => {
+        if (type === "test") return selectedTests.includes(label);
+        if (type === "referral") return adviceLines.includes(`Refer to ${label}`);
+        return adviceLines.includes(label); // advice
+    };
+    // `intentId` is unused by every branch `removeAcceptedIntent` (the only
+    // thing ever passed as `onRemove`) takes for test/referral/advice — see
+    // its own doc comment in useConsultPlan.ts — so a free term's removal
+    // reuses the SAME dispatcher with a dummy id, no second removal path.
+    const removeFree = (type: DoctorFreeTermType, label: string) => onRemove?.(0, type, label);
     // The sections this instance renders, in the caller's order.
     const SECTIONS = useMemo(
         () =>
@@ -187,6 +235,13 @@ export function SuggestionsCard({
     const [scope, setScope] = useState<IntentType | null>(null);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
 
+    const addFree = (type: DoctorFreeTermType, label: string) => {
+        if (!onAddFreeText) return;
+        onAddFreeText(label, type);
+        setFreeAddedNow((curr) => new Set(curr).add(freeKey(type, label)));
+        search.setQuery("");
+    };
+
     /**
      * The one type free text can safely file into right now — the chosen
      * tab, or (when this instance only ever renders one section, e.g. the
@@ -200,22 +255,27 @@ export function SuggestionsCard({
         return isFreeTextType(t) ? t : null;
     })();
 
-    /** the doctor's own terms matching THIS chart, for the ranked view */
+    /** the doctor's own terms matching THIS chart, for the ranked view —
+     *  taken ones excluded, same as ConditionsCard's identical strip: this
+     *  is a SUGGESTION list, and an already-added term is pinned above the
+     *  ranked rows instead (see `freeRows` in `body()`). */
     const suggestedFreeTerms = useMemo(() => {
         if (!effectiveType || !onAddFreeText || !freeTerms.length) return [];
         const activeSignalIds = new Set(activeSignals.map((s) => s.signalId));
-        // Not filtered against what is already on the plan (§4 follow-up) —
-        // this card has no direct read of `selectedTests`/`adviceNotes`,
-        // only `acceptedIntentIds` (catalogue intents, which a free term
-        // never has). Re-clicking an already-added free term is harmless:
-        // `addFreeTest`/`addFreeAdvice` (useConsultPlan.ts) both no-op on a
-        // duplicate label.
-        return topFreeTermMatches(freeTerms, effectiveType, activeSignalIds, acceptedIntentIds, new Set());
-    }, [effectiveType, onAddFreeText, freeTerms, activeSignals, acceptedIntentIds]);
+        const taken = new Set(
+            freeTerms.filter((f) => f.type === effectiveType && isTaken(effectiveType, f.label)).map((f) => f.label)
+        );
+        return topFreeTermMatches(freeTerms, effectiveType, activeSignalIds, acceptedIntentIds, taken);
+    }, [effectiveType, onAddFreeText, freeTerms, activeSignals, acceptedIntentIds, selectedTests, adviceLines]);
 
-    /** the same list, filtered to what is actually typed — for search mode */
+    /**
+     * The same list, filtered to what is actually typed — for search mode.
+     * Includes already-taken labels now (§1 follow-up) — see
+     * `matchingFreeTerms`'s doc comment; the row itself renders the
+     * taken/not-taken state.
+     */
     const matchedFreeTerms = useMemo(
-        () => (effectiveType ? matchingFreeTerms(freeTerms, effectiveType, search.query, new Set()) : []),
+        () => (effectiveType ? matchingFreeTerms(freeTerms, effectiveType, search.query) : []),
         [effectiveType, freeTerms, search.query]
     );
 
@@ -300,34 +360,31 @@ export function SuggestionsCard({
                         isPinned={isPinned}
                         onTogglePin={onTogglePin}
                     />
-                    {/* §4, 2026-08-24. Only reachable with one category in
+                    {/* §4/§6, 2026-08-24. Only reachable with one category in
                         view (`effectiveType`) — see its own doc comment for
-                        why "All" cannot offer this. */}
+                        why "All" cannot offer this. Every row here is now
+                        shaped exactly like a `.cs-sug` catalogue hit — item 6
+                        of the follow-up: "this option should look like just
+                        another ranked option belonging to the same list." */}
                     {effectiveType && onAddFreeText && !search.loading && (
                         <div className="cs-freeterm">
-                            {matchedFreeTerms.length > 0 && (
-                                <div className="cs-freeterm-chips">
-                                    <span className="cs-freeterm-label">Your terms</span>
-                                    {matchedFreeTerms.map((f) => (
-                                        <button
-                                            key={f.label}
-                                            type="button"
-                                            className="cs-freeterm-chip"
-                                            onClick={() => { onAddFreeText(f.label, effectiveType); search.setQuery(""); }}
-                                        >
-                                            {f.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                            {matchedFreeTerms.map((f) => (
+                                <FreeMatchRow
+                                    key={f.label}
+                                    label={f.label}
+                                    taken={isTaken(effectiveType, f.label)}
+                                    onAdd={() => addFree(effectiveType, f.label)}
+                                    onRemove={() => removeFree(effectiveType, f.label)}
+                                />
+                            ))}
                             {!matchedFreeTerms.some((f) => f.label.toLowerCase() === search.query.trim().toLowerCase()) && (
-                                <button
-                                    type="button"
-                                    className="cs-freeterm-add"
-                                    onClick={() => { onAddFreeText(search.query.trim(), effectiveType); search.setQuery(""); }}
-                                >
-                                    Add “{search.query.trim()}” — not in the catalogue
-                                </button>
+                                <FreeMatchRow
+                                    label={search.query.trim()}
+                                    taken={false}
+                                    isNew
+                                    onAdd={() => addFree(effectiveType, search.query.trim())}
+                                    onRemove={() => {}}
+                                />
                             )}
                         </div>
                     )}
@@ -361,7 +418,7 @@ export function SuggestionsCard({
                         key={f.label}
                         type="button"
                         className="cs-freeterm-chip"
-                        onClick={() => onAddFreeText(f.label, effectiveType)}
+                        onClick={() => addFree(effectiveType, f.label)}
                     >
                         {f.label}
                     </button>
@@ -369,20 +426,55 @@ export function SuggestionsCard({
             </div>
         ) : null;
 
+        // §1 follow-up, 2026-08-24: "added assessments should be visible in
+        // the ranked/suggested... list too on the very top" — the same fix
+        // as ConditionsCard's `freeDiagnoses`, for whichever type is in
+        // view. A free term has no engine rank to sit at, so it is pinned
+        // ABOVE the ranked rows rather than folded into them.
+        const freePinned = effectiveType
+            ? [
+                ...new Set([
+                    ...freeTerms.filter((f) => f.type === effectiveType).map((f) => f.label),
+                    ...[...freeAddedNow]
+                        .filter((k) => k.startsWith(`${effectiveType}:`))
+                        .map((k) => k.slice(effectiveType.length + 1)),
+                ]),
+              ].filter((label) => isTaken(effectiveType, label))
+            : [];
+        const freeRows = freePinned.map((label) => (
+            <FreeSuggestionRow
+                key={`free-${effectiveType}-${label}`}
+                label={label}
+                onRemove={() => removeFree(effectiveType!, label)}
+            />
+        ));
+
         if (rows.length === 0) {
             return (
                 <>
+                    {freeRows}
                     {freeTermsStrip}
-                    <div className="cs-empty">
-                        <BlankTestArt />
-                        <strong>Nothing else to suggest for this chart</strong>
-                        <span>Search above to order or refer something directly.</span>
-                    </div>
+                    {freeRows.length === 0 && (
+                        <div className="cs-empty">
+                            <BlankTestArt />
+                            <strong>Nothing else to suggest for this chart</strong>
+                            <span>Search above to order or refer something directly.</span>
+                        </div>
+                    )}
                 </>
             );
         }
 
-        return [freeTermsStrip, ...rows.map(({ intent, section }) => {
+        // §3, 2026-08-24: "add a show more button... apply this to literally
+        // every section which starts growing over 4-5 cards." Only active
+        // when the caller passed `capped` (the Assessment side-slot) — the
+        // two full-height placements are unaffected, same as before.
+        const visibleRows = capped != null && !showAllCapped
+            ? rows.filter(
+                (r, i) => i < capped || acceptedIntentIds.has(r.intent.intentId)
+              )
+            : rows;
+        const rowNodes = visibleRows.map(({ intent, section }) => {
             const list = byType[section.type] ?? [];
             const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
             // A section of one has no other side to the comparison.
@@ -415,7 +507,22 @@ export function SuggestionsCard({
                     }
                 />
             );
-        })];
+        });
+
+        return [
+            ...freeRows, freeTermsStrip, ...rowNodes,
+            capped != null && rows.length > capped && (
+                <button
+                    key="cap-toggle"
+                    type="button"
+                    className="cs-card-foot-more cs-sug-cap-toggle"
+                    onClick={() => setShowAllCapped((v) => !v)}
+                >
+                    {showAllCapped ? "Show less" : `Show all ${rows.length}`}
+                    <ChevronDown size={13} className={showAllCapped ? "is-flipped" : undefined} />
+                </button>
+            ),
+        ];
     };
 
     return (
@@ -428,13 +535,18 @@ export function SuggestionsCard({
                 consult.css under `.cs-sug-tab`. */}
             <div className="cs-sug-head">
                 <span className="cs-sug-tab">
-                    {/* Slate, not a hue. This panel mixes four intent types
-                        that already carry their own row colours (test, referral,
-                        advice, exercise), and the standing rule reserves blue
-                        for the action — a category tile is not one. */}
+                    {/* Slate, not a hue — EXCEPT when this instance renders
+                        only one section (the Assessment side-slot): item 4,
+                        2026-08-24, "these two sections... look alien side by
+                        side, the icon". A single-section card IS that
+                        section, so its own icon replaces the generic
+                        Sparkles, and `.cs-cond-side-sug` (consult.css)
+                        recolours the tile to match Assessment's violet —
+                        the two panels read as one family now, not two
+                        different apps glued together. */}
                     <span className="cs-glyph is-slate cs-glyph-live">
                         <ThinkingRing pulseKey={thinkingKey} />
-                        <Sparkles size={14} />
+                        {SECTIONS.length === 1 ? SECTIONS[0].icon : <Sparkles size={14} />}
                     </span>
                     {title}
                 </span>
@@ -447,46 +559,64 @@ export function SuggestionsCard({
                 the list otherwise (see `scope`'s doc comment above). Tabs
                 because the ask named them specifically, and because a
                 doctor scanning six words reads them faster than opening a
-                dropdown to find the same six. */}
-            <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
-                <button
-                    type="button"
-                    role="tab"
-                    aria-selected={scope === null}
-                    className={`cs-sug-filter-btn${scope === null ? " is-on" : ""}`}
-                    onClick={() => setScope(null)}
-                >
-                    All
-                </button>
-                {SECTIONS.map((s) => (
+                dropdown to find the same six.
+
+                Hidden entirely when this instance only ever renders ONE
+                section (item 2, 2026-08-24) — "All" and that one section
+                are the identical filter, so a two-tab row that always says
+                the same thing twice was reading as a stray global search
+                bar rather than a scoped one. */}
+            {SECTIONS.length > 1 && (
+                <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
                     <button
-                        key={s.type}
                         type="button"
                         role="tab"
-                        aria-selected={scope === s.type}
-                        className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
-                        // A second click on the active tab clears it — the
-                        // fastest way back to "All" without a second control.
-                        onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
+                        aria-selected={scope === null}
+                        className={`cs-sug-filter-btn${scope === null ? " is-on" : ""}`}
+                        onClick={() => setScope(null)}
                     >
-                        {s.icon}
-                        {s.label}
+                        All
                     </button>
-                ))}
-            </div>
+                    {SECTIONS.map((s) => (
+                        <button
+                            key={s.type}
+                            type="button"
+                            role="tab"
+                            aria-selected={scope === s.type}
+                            className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
+                            // A second click on the active tab clears it — the
+                            // fastest way back to "All" without a second control.
+                            onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
+                        >
+                            {s.icon}
+                            {s.label}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <IntentSearchField
                 state={search}
                 placeholder={
+                    // Scoped to whichever ONE section is actually searchable
+                    // right now — a chosen tab, or (item 2) the card's only
+                    // section when there was never a second one to pick.
                     scope
                         ? `Search ${(SECTIONS.find((s) => s.type === scope)?.label ?? "").toLowerCase()}…`
-                        : "Search tests, referrals, advice, exercises…"
+                        : SECTIONS.length === 1
+                            ? `Search ${SECTIONS[0].label.toLowerCase()}…`
+                            : "Search tests, referrals, advice, exercises…"
                 }
                 disabled={disabled}
                 onKeyDown={onSearchKeyDown}
             />
 
-            <div className="cs-list" ref={listRef}>{body()}</div>
+            <div
+                className={`cs-list${capped != null && showAllCapped ? " is-capped-scroll" : ""}`}
+                ref={listRef}
+            >
+                {body()}
+            </div>
         </section>
     );
 }
@@ -569,6 +699,80 @@ function SuggestionRow({
                         onAcknowledge={onAcknowledge}
                     />
                 </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * A confirmed FREE-TEXT entry, pinned above the ranked rows — §1 follow-up,
+ * 2026-08-24. Same shape as `SuggestionRow` (`.cs-sug`), violet instead of
+ * the row's type colour, so it reads as part of the same list rather than a
+ * second kind of thing bolted above it.
+ */
+function FreeSuggestionRow({ label, onRemove }: { label: string; onRemove: () => void }) {
+    return (
+        <div className="cs-sug is-free is-added">
+            <span className="cs-sug-icon is-free" aria-hidden="true">
+                <span className="cs-sug-plus">+</span>
+            </span>
+            <div className="cs-sug-main">
+                <span className="cs-sug-kind is-free">Your term</span>
+                <div className="cs-sug-name"><span>{label}</span></div>
+            </div>
+            <button
+                type="button"
+                className="cs-added is-removable is-free"
+                aria-label={`Remove ${label} from the plan`}
+                title="Taken — click to remove"
+                onClick={onRemove}
+            >
+                <Check size={15} className="cs-added-check" />
+                <X size={13} className="cs-added-x" />
+            </button>
+        </div>
+    );
+}
+
+/**
+ * One row of the free-text fallback under a search — §4/§6, 2026-08-24.
+ * Shaped like `.cs-sug` (a catalogue hit) throughout — "just another ranked
+ * option belonging to the same list" was the ask — violet-tinted as the one
+ * honest tell it did not come from the catalogue, and no em dash / link
+ * styling anywhere in it.
+ */
+function FreeMatchRow({
+    label, taken, isNew = false, onAdd, onRemove,
+}: {
+    label: string;
+    taken: boolean;
+    /** this is the literal typed query, not a remembered term */
+    isNew?: boolean;
+    onAdd: () => void;
+    onRemove: () => void;
+}) {
+    return (
+        <div className={`cs-sug is-free${taken ? " is-added" : ""}`}>
+            <span className="cs-sug-icon is-free" aria-hidden="true">
+                <span className="cs-sug-plus">+</span>
+            </span>
+            <div className="cs-sug-main">
+                <span className="cs-sug-kind is-free">{isNew ? "Not in the catalogue" : "Your term"}</span>
+                <div className="cs-sug-name"><span>{label}</span></div>
+            </div>
+            {taken ? (
+                <button
+                    type="button"
+                    className="cs-added is-removable is-free"
+                    aria-label={`Remove ${label} from the plan`}
+                    title="Taken — click to remove"
+                    onClick={onRemove}
+                >
+                    <Check size={15} className="cs-added-check" />
+                    <X size={13} className="cs-added-x" />
+                </button>
+            ) : (
+                <button type="button" className="cs-act is-free" onClick={onAdd}>Add</button>
             )}
         </div>
     );

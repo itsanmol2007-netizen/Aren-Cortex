@@ -1,5 +1,8 @@
 # Context pockets — read one, not everything
 
+**Landed here directly?** Read `../README-Cortex.md` first — it's the
+actual entry point (one page) and sends you here in the right order.
+
 **The problem this solves:** a cold start used to mean "read the whole
 atlas" — dental, frontdesk, auth, dermatology, all of it — even for a task
 that touches one corner. That's why sessions were burning huge context on
@@ -17,6 +20,7 @@ task doesn't fit any pocket.
 | Synapse itself — signals, intents, rules, guards, ranking | `engine.md` | frontdesk, specialty UI detail |
 | The consult screen's own architecture — hooks, keyboard, layout doctrine | `consult-ui.md` | engine internals, frontdesk |
 | Cortex's own "current state" doc (what it is, file tree, data model, standing rules, change map, open work, gotchas) — **2026-08-24: this used to be one ~830-line file, now split** | `cortex-overview.md` / `cortex-data-model.md` / `cortex-intelligence-summary.md` / `cortex-standing-rules.md` / `cortex-change-map.md` / `cortex-open-physio.md` / `cortex-open-crosscutting.md` / `cortex-gotchas.md` — start from `../aren-cortex-context.md`'s own index table if unsure which one | the other `cortex-*.md` pockets you don't need |
+| Building or restyling ANY modal/sheet — sizing, accent colour, header shape | `../aren-modal-design.md` | everything above |
 | Front desk / patient queue / clinic status | `../aren-frontdesk-source-of-truth.md` + `../aren-frontdesk-brief.md` | everything above |
 | Auth / login / roles | `../Login Screen Implementation.md` | everything above |
 | Something none of these cover, or you need the full history of a decision | `../aren-technical-atlas.md` (search for the section, don't read start to finish) | — |

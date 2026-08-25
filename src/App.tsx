@@ -1325,6 +1325,13 @@ function App() {
                       className="cs-cond-side-sug"
                       types={["test"]}
                       title="Investigations"
+                      // §3, 2026-08-24: this instance sits beside a SHORT
+                      // neighbour (Assessment's ranked column), not the
+                      // tall self-scrolling strip the other two placements
+                      // live in — capped + "Show more" instead of an
+                      // unbounded list, the same mechanism that column
+                      // already uses.
+                      capped={4}
                       byType={intelligence.byType}
                       topOfType={topOfType}
                       thinkingKey={intelligence.thinkingKey}
@@ -1335,6 +1342,8 @@ function App() {
                       onRemove={removeAcceptedIntent}
                       freeTerms={synapse.data?.freeTerms ?? []}
                       onAddFreeText={handleAddFreeTerm}
+                      selectedTests={selectedTests}
+                      adviceLines={adviceLines}
                       onExplain={handleExplain}
                       ruleset={synapse.data?.ruleset ?? null}
                       activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1434,6 +1443,8 @@ function App() {
                     onTogglePin={pins.toggle}
                     freeTerms={synapse.data?.freeTerms ?? []}
                     onAddFreeText={handleAddFreeTerm}
+                    selectedTests={selectedTests}
+                    adviceLines={adviceLines}
                     onExplain={handleExplain}
                     ruleset={synapse.data?.ruleset ?? null}
                     activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1458,6 +1469,8 @@ function App() {
                   onTogglePin={pins.toggle}
                   freeTerms={synapse.data?.freeTerms ?? []}
                   onAddFreeText={handleAddFreeTerm}
+                  selectedTests={selectedTests}
+                  adviceLines={adviceLines}
                   onExplain={handleExplain}
                   ruleset={synapse.data?.ruleset ?? null}
                   activeSignals={intelligence.result?.activeSignals ?? []}

@@ -70,7 +70,13 @@ interface Props {
 
 export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identity }: Props) {
     const [name, setName] = useState(initialName);
-    const [composition, setComposition] = useState<CompositionPick | null>(null);
+    // A brand's composition is a LIST, not a single pick — "why can I only
+    // add one salt composition, a lot of medicines have more than one,
+    // sometimes 3 salt composition" (same-day follow-up, 2026-08-25). Order
+    // matters only for display (`label` joins them in pick order); the RPC
+    // itself (`add_medicine`) already took `p_composition_ids integer[]`
+    // from day one, so this was a UI limit, not a backend one.
+    const [compositions, setCompositions] = useState<CompositionPick[]>([]);
     const [dosage, setDosage] = useState("");
     const [form, setForm] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -96,7 +102,7 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
     useEffect(() => {
         if (!open) return;
         setName(initialName);
-        setComposition(null);
+        setCompositions([]);
         setDosage("");
         setForm("");
         setError(null);
@@ -135,17 +141,17 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
     const panelRef = useRef<HTMLDivElement>(null);
     useOverlayFocus(panelRef, open);
 
-    const canSubmit = !!name.trim() && !!composition && !submitting;
+    const canSubmit = !!name.trim() && compositions.length > 0 && !submitting;
 
     const submit = async () => {
-        if (!canSubmit || !composition) return;
+        if (!canSubmit || compositions.length === 0) return;
         setSubmitting(true);
         setError(null);
         try {
             const strengthMg = dosage.trim() ? Number(dosage.trim().replace(/[^\d.]/g, "")) : null;
             const results = await addMedicine({
                 name: name.trim(),
-                compositionIds: [composition.compositionId],
+                compositionIds: compositions.map((c) => c.compositionId),
                 route: form || null,
                 strengthMg: strengthMg != null && Number.isFinite(strengthMg) ? strengthMg : null,
             });
@@ -157,11 +163,14 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
             // gotcha) — so the brand this JUST created is reachable
             // immediately, not only after the next refresh.
             onAccept({
-                intentId: composition.intentId,
+                intentId: compositions[0].intentId,
                 type: "medicine",
-                label: composition.label,
+                // Every molecule, joined — the same rule `MedicineAddSheet`
+                // already follows for a combination's subtitle (never show
+                // half of what is being prescribed).
+                label: compositions.map((c) => c.label).join(" + "),
                 refTable: "compositions",
-                refId: composition.compositionId,
+                refId: compositions[0].compositionId,
                 medicine: null,
                 viaSearch: true,
                 overridden: false,
@@ -176,13 +185,16 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
 
     // Composition hits, deduplicated by composition id — `search_intents`
     // can return more than one row resolving to the same composition (a
-    // label match and a brand match both landing on it).
+    // label match and a brand match both landing on it) — and with
+    // whatever is already picked filtered out, so the same salt cannot be
+    // added twice (the RPC itself rejects a repeated id).
+    const chosenIds = new Set(compositions.map((c) => c.compositionId));
     const compositionHits = (() => {
         const seen = new Set<number>();
         const out: CompositionPick[] = [];
         for (const h of compSearch.hits) {
             if (h.refTable !== "compositions" || h.refId == null) continue;
-            if (seen.has(h.refId)) continue;
+            if (seen.has(h.refId) || chosenIds.has(h.refId)) continue;
             seen.add(h.refId);
             out.push({ intentId: h.intentId, compositionId: h.refId, label: h.label });
         }
@@ -210,9 +222,11 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                         exit={{ opacity: 0, transition: { duration: 0 } }}
                         transition={{ duration: 0 }}
                     >
+                        <div className="cs-addmed-topstripe" />
                         <div className="cs-addmed-head">
                             <span className="cs-glyph is-teal"><Plus size={16} /></span>
                             <div className="cs-addmed-title">
+                                <span className="cs-addmed-eyebrow">New brand</span>
                                 <strong>Add a medicine</strong>
                                 <span>One-time details, saved for next time you reach for it</span>
                             </div>
@@ -237,96 +251,122 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                                 <span className="cs-addmed-label">
                                     Salt / composition <em className="cs-addmed-keyhint">required</em>
                                 </span>
-                                {composition ? (
-                                    <div className="cs-newmed-comp-chosen">
-                                        <Check size={13} />
-                                        <span>{composition.label}</span>
-                                        <button type="button" onClick={() => setComposition(null)}>Change</button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="cs-field">
-                                            <Search size={15} />
-                                            <input
-                                                value={compSearch.query}
-                                                placeholder="Search the salt this contains…"
-                                                onChange={(e) => compSearch.setQuery(e.target.value)}
-                                                aria-label="Search compositions"
-                                            />
-                                        </div>
-                                        {compSearch.isSearching && (
-                                            <div className="cs-newmed-comp-hits">
-                                                {compSearch.loading ? (
-                                                    <span className="cs-newmed-comp-hint">Searching…</span>
-                                                ) : compositionHits.length === 0 ? (
-                                                    <span className="cs-newmed-comp-hint">
-                                                        Nothing matches — try the molecule name.
-                                                    </span>
-                                                ) : (
-                                                    compositionHits.map((c) => (
-                                                        <button
-                                                            key={c.compositionId}
-                                                            type="button"
-                                                            onClick={() => setComposition(c)}
-                                                        >
-                                                            {c.label}
-                                                        </button>
-                                                    ))
-                                                )}
-                                            </div>
-                                        )}
 
-                                        {/* The composition-adding fallback — same-day follow-up.
-                                            Deliberately NOT a way to finish adding THIS brand: the
-                                            salt still does not exist, so "Add & continue" below stays
-                                            disabled. This only tells the team it is missing — see
-                                            `requestNewComposition`'s doc comment for why that is a
-                                            request, never a live mint (rule 22). */}
-                                        {identity && compSearch.isSearching && !compSearch.loading && (
-                                            <div className="cs-newmed-request">
-                                                {requestSent ? (
-                                                    <span className="cs-newmed-request-sent">
-                                                        <Check size={13} /> Request sent — the team will review it.
-                                                        This brand can be added once the salt is in our library.
-                                                    </span>
-                                                ) : requestOpen ? (
-                                                    <div className="cs-newmed-request-form">
-                                                        <span className="cs-newmed-comp-hint">
-                                                            Requesting “{compSearch.query.trim()}” be added to our library.
-                                                        </span>
-                                                        <input
-                                                            className="cs-addmed-input"
-                                                            value={requestNotes}
-                                                            placeholder="Strength, form, or anything else — optional"
-                                                            onChange={(e) => setRequestNotes(e.target.value)}
-                                                        />
-                                                        {requestError && <p className="cs-newmed-error">{requestError}</p>}
-                                                        <div className="cs-newmed-request-actions">
-                                                            <button type="button" onClick={() => setRequestOpen(false)}>
-                                                                Cancel
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="cs-newmed-request-send"
-                                                                disabled={requestSubmitting}
-                                                                onClick={submitCompositionRequest}
-                                                            >
-                                                                {requestSubmitting ? "Sending…" : "Send request"}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
+                                {/* One chosen row per salt — most brands are one, some
+                                    combinations are two or three, and every row can be
+                                    dropped independently. */}
+                                {compositions.length > 0 && (
+                                    <div className="cs-newmed-comp-list">
+                                        {compositions.map((c) => (
+                                            <div key={c.compositionId} className="cs-newmed-comp-chosen">
+                                                <Check size={13} />
+                                                <span>{c.label}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setCompositions((cur) =>
+                                                            cur.filter((x) => x.compositionId !== c.compositionId)
+                                                        )
+                                                    }
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* The search box stays open even after the first salt is
+                                    picked — "a lot of medicines have more than one,
+                                    sometimes 3 salt composition" — so a combination
+                                    product is built by picking each one in turn. */}
+                                <div className="cs-field">
+                                    <Search size={15} />
+                                    <input
+                                        value={compSearch.query}
+                                        placeholder={
+                                            compositions.length === 0
+                                                ? "Search the salt this contains…"
+                                                : "Add another salt, if this is a combination…"
+                                        }
+                                        onChange={(e) => compSearch.setQuery(e.target.value)}
+                                        aria-label="Search compositions"
+                                    />
+                                </div>
+                                {compSearch.isSearching && (
+                                    <div className="cs-newmed-comp-hits">
+                                        {compSearch.loading ? (
+                                            <span className="cs-newmed-comp-hint">Searching…</span>
+                                        ) : compositionHits.length === 0 ? (
+                                            <span className="cs-newmed-comp-hint">
+                                                Nothing matches — try the molecule name.
+                                            </span>
+                                        ) : (
+                                            compositionHits.map((c) => (
+                                                <button
+                                                    key={c.compositionId}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCompositions((cur) => [...cur, c]);
+                                                        compSearch.setQuery("");
+                                                    }}
+                                                >
+                                                    {c.label}
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* The composition-adding fallback — same-day follow-up.
+                                    Deliberately NOT a way to finish adding THIS brand: the
+                                    salt still does not exist, so "Add & continue" below stays
+                                    disabled. This only tells the team it is missing — see
+                                    `requestNewComposition`'s doc comment for why that is a
+                                    request, never a live mint (rule 22). */}
+                                {identity && compSearch.isSearching && !compSearch.loading && (
+                                    <div className="cs-newmed-request">
+                                        {requestSent ? (
+                                            <span className="cs-newmed-request-sent">
+                                                <Check size={13} /> Request sent — the team will review it.
+                                                This brand can be added once the salt is in our library.
+                                            </span>
+                                        ) : requestOpen ? (
+                                            <div className="cs-newmed-request-form">
+                                                <span className="cs-newmed-comp-hint">
+                                                    Requesting “{compSearch.query.trim()}” be added to our library.
+                                                </span>
+                                                <input
+                                                    className="cs-addmed-input"
+                                                    value={requestNotes}
+                                                    placeholder="Strength, form, or anything else — optional"
+                                                    onChange={(e) => setRequestNotes(e.target.value)}
+                                                />
+                                                {requestError && <p className="cs-newmed-error">{requestError}</p>}
+                                                <div className="cs-newmed-request-actions">
+                                                    <button type="button" onClick={() => setRequestOpen(false)}>
+                                                        Cancel
+                                                    </button>
                                                     <button
                                                         type="button"
-                                                        className="cs-newmed-request-open"
-                                                        onClick={() => setRequestOpen(true)}
+                                                        className="cs-newmed-request-send"
+                                                        disabled={requestSubmitting}
+                                                        onClick={submitCompositionRequest}
                                                     >
-                                                        Salt not in our library either? Request it be added
+                                                        {requestSubmitting ? "Sending…" : "Send request"}
                                                     </button>
-                                                )}
+                                                </div>
                                             </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="cs-newmed-request-open"
+                                                onClick={() => setRequestOpen(true)}
+                                            >
+                                                Salt not in our library either? Request it be added
+                                            </button>
                                         )}
-                                    </>
+                                    </div>
                                 )}
                             </section>
 
@@ -363,7 +403,7 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                             <button
                                 type="button"
                                 className="cs-addmed-confirm"
-                                title={!composition ? "Pick the salt this medicine contains first" : undefined}
+                                title={compositions.length === 0 ? "Pick the salt this medicine contains first" : undefined}
                                 disabled={!canSubmit}
                                 onClick={submit}
                             >

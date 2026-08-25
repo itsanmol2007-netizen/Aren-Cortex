@@ -306,9 +306,11 @@ export function MedicineAddSheet({
                         exit={{ opacity: 0, transition: { duration: 0 } }}
                         transition={{ duration: 0 }}
                     >
+                <div className="cs-addmed-topstripe" />
                 <div className="cs-addmed-head">
                     <span className="cs-glyph is-teal"><Pill size={16} /></span>
                     <div className="cs-addmed-title">
+                        <span className="cs-addmed-eyebrow">Prescribe</span>
                         {/* Brand leads. Always. */}
                         <strong>{brand?.name ?? compositionLabel}</strong>
                         {/* EVERY molecule, joined. The subtitle used to print

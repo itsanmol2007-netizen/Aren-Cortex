@@ -58,16 +58,25 @@ export function topFreeTermMatches(
         .map(({ term }) => term);
 }
 
-/** The same list, filtered to what is actually typed — for search mode. */
+/**
+ * The same list, filtered to what is actually typed — for search mode.
+ *
+ * Deliberately does NOT drop an already-taken label — §1's follow-up fix,
+ * 2026-08-24: "searching same thing again could appear in search results"
+ * used to fail because this filtered taken labels out entirely, so a term
+ * the doctor had just added vanished from its own search the moment it was
+ * accepted. A catalogue hit that is already on the plan still shows up in
+ * search (as a checkmark, not a second "add"); a free term now behaves the
+ * same way — the caller renders the taken/not-taken state, this just
+ * answers "does it match", the same split `IntentSearchResults` already
+ * uses for catalogue hits.
+ */
 export function matchingFreeTerms(
     terms: DoctorFreeTerm[],
     type: DoctorFreeTermType,
-    query: string,
-    alreadyTaken: ReadonlySet<string>
+    query: string
 ): DoctorFreeTerm[] {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return terms.filter(
-        (t) => t.type === type && t.label.toLowerCase().includes(q) && !alreadyTaken.has(t.label)
-    );
+    return terms.filter((t) => t.type === type && t.label.toLowerCase().includes(q));
 }

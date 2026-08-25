@@ -153,6 +153,27 @@ export function ConditionsCard({
     const takenLabels = useMemo(() => new Set(diagnoses), [diagnoses]);
 
     /**
+     * §1 follow-up, 2026-08-24: "added Clinical Assessment don't appear
+     * anywhere except Sidebar" — a free-text diagnosis used to vanish the
+     * instant it was added: `topFreeTermMatches`/`matchingFreeTerms` both
+     * dropped taken labels, and nothing rendered a free entry back into the
+     * ranked list. Fixed two ways below — this Set is the instant half.
+     * `freeTerms` (the Supabase-backed list) only catches up after
+     * `synapse.reload()` resolves, which is a real round trip; tracking
+     * what THIS session just added locally means the row appears the same
+     * frame the doctor clicks it, not a moment later.
+     */
+    const [freeAddedNow, setFreeAddedNow] = useState<Set<string>>(new Set());
+    const isFreeLabel = (label: string) =>
+        freeAddedNow.has(label) || freeTerms.some((f) => f.type === "finding" && f.label === label);
+    const addFree = (label: string) => {
+        if (!onAddFreeText) return;
+        onAddFreeText(label);
+        setFreeAddedNow((curr) => new Set(curr).add(label));
+        search.setQuery("");
+    };
+
+    /**
      * This doctor's free-text terms that match THIS chart, best match first
      * — the "show this to that doctor in future for similar inputs" half of
      * §4. Scored on signal overlap AND accepted-intent overlap together —
@@ -164,10 +185,16 @@ export function ConditionsCard({
         return topFreeTermMatches(freeTerms, "finding", activeSignalIds, acceptedIntentIds, takenLabels);
     }, [freeTerms, activeSignals, acceptedIntentIds, takenLabels]);
 
-    /** The same list, filtered to what is actually typed — for search mode. */
+    /**
+     * The same list, filtered to what is actually typed — for search mode.
+     * Includes already-added terms now (§1 follow-up) — `matchingFreeTerms`
+     * no longer drops them, `FreeTextFallback` renders the taken ones as
+     * removable instead of hiding them, the same split a catalogue hit
+     * already gets in `IntentSearchResults`.
+     */
     const matchedFreeTerms = useMemo(
-        () => matchingFreeTerms(freeTerms, "finding", search.query, takenLabels),
-        [freeTerms, search.query, takenLabels]
+        () => matchingFreeTerms(freeTerms, "finding", search.query),
+        [freeTerms, search.query]
     );
 
     /**
@@ -242,7 +269,9 @@ export function ConditionsCard({
                         <FreeTextFallback
                             query={search.query}
                             matches={matchedFreeTerms}
-                            onAdd={(label) => { onAddFreeText(label); search.setQuery(""); }}
+                            takenLabels={takenLabels}
+                            onAdd={addFree}
+                            onRemove={onRemoveDiagnosis}
                         />
                     )}
                 </>
@@ -261,7 +290,14 @@ export function ConditionsCard({
             );
         }
 
-        if (intents.length === 0) {
+        // §1 follow-up, 2026-08-24: "added assessments should be visible in
+        // the ranked/suggested assessment list too on the very top." A free
+        // diagnosis has no engine rank to sit at, so it is not folded into
+        // `shown` — it is pinned ABOVE the ranked list instead, always, so
+        // confirming it once never has to be repeated to find it again.
+        const freeDiagnoses = diagnoses.filter(isFreeLabel);
+
+        if (intents.length === 0 && freeDiagnoses.length === 0) {
             return (
                 <div className="cs-empty">
                     <strong>No condition ranks for this chart</strong>
@@ -270,7 +306,11 @@ export function ConditionsCard({
             );
         }
 
-        return shown.map((intent, i) => (
+        return [
+            ...freeDiagnoses.map((label) => (
+                <FreeConditionRow key={`free-${label}`} label={label} onRemove={() => onRemoveDiagnosis(label)} />
+            )),
+            ...shown.map((intent, i) => (
             <ConditionRow
                 key={intent.intentId}
                 intent={intent}
@@ -301,7 +341,8 @@ export function ConditionsCard({
                     })
                 }
             />
-        ));
+            )),
+        ];
     };
 
     // The doctor's own assessment, in the order they confirmed it. First is
@@ -424,7 +465,7 @@ export function ConditionsCard({
                                         key={f.label}
                                         type="button"
                                         title="From your own earlier notes — not the shared catalogue"
-                                        onClick={() => onAddFreeText(f.label)}
+                                        onClick={() => addFree(f.label)}
                                         className="rounded-full border border-dashed border-[#c4b5fd] bg-[#faf7ff] px-2.5 py-1 text-[12px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#f3ecff]"
                                     >
                                         {f.label}
@@ -541,19 +582,26 @@ export function ConditionsCard({
 
 /**
  * The Assessment free-text fallback, under the search results — §4,
- * 2026-08-24. Anmol's own example: "Cardio Aquinian" is not in the
- * catalogue, so the doctor needs an easy, low-friction way in that is
- * still visually honest about what it is — never styled to look like a
- * ranked catalogue hit, which is what the dashed border and violet tone do
- * here too, matching the "Your terms" strip on the ranked view.
+ * 2026-08-24, restyled per follow-up (item 6): "this option should look
+ * like just another ranked option belonging to the same list, maybe
+ * slightly different color." Every row here is now the SAME shape as a
+ * `ConditionRow` (icon, name + subtitle, one action on the right) — just
+ * violet instead of slate/green, which is the one honest tell that it
+ * came from the doctor's own notes rather than the catalogue. No em dash,
+ * no link-styled text — this was previously punctuation ("— not in the
+ * catalogue") and an underlined link, neither of which read as a row in a
+ * list.
  */
 function FreeTextFallback({
-    query, matches, onAdd,
+    query, matches, takenLabels, onAdd, onRemove,
 }: {
     query: string;
     /** this doctor's own earlier terms that match what is typed now */
     matches: DoctorFreeTerm[];
+    /** already-confirmed labels — rendered as taken, not as another "add" */
+    takenLabels: ReadonlySet<string>;
     onAdd: (label: string) => void;
+    onRemove: (label: string) => void;
 }) {
     const q = query.trim();
     const exact = matches.some((m) => m.label.toLowerCase() === q.toLowerCase());
@@ -561,33 +609,101 @@ function FreeTextFallback({
     if (!q) return null;
 
     return (
-        <div className="mx-4 my-2 flex flex-col gap-1.5 rounded-lg border border-dashed border-[#c4b5fd] bg-[#faf7ff] p-2.5">
-            {matches.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8b5cf6]">
-                        Your terms
-                    </span>
-                    {matches.map((m) => (
-                        <button
-                            key={m.label}
-                            type="button"
-                            onClick={() => onAdd(m.label)}
-                            className="rounded-full border border-[#c4b5fd] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#6d28d9] transition-colors hover:bg-[#f3ecff]"
-                        >
-                            {m.label}
-                        </button>
-                    ))}
-                </div>
-            )}
-            {!exact && (
+        <div className="mx-4 my-2 flex flex-col gap-1.5">
+            {matches.map((m) => (
+                <FreeMatchRow
+                    key={m.label}
+                    label={m.label}
+                    taken={takenLabels.has(m.label)}
+                    onAdd={() => onAdd(m.label)}
+                    onRemove={() => onRemove(m.label)}
+                />
+            ))}
+            {!exact && <FreeMatchRow label={q} taken={false} isNew onAdd={() => onAdd(q)} onRemove={() => onRemove(q)} />}
+        </div>
+    );
+}
+
+/** One row of the fallback above — a search hit shaped like a ranked row. */
+function FreeMatchRow({
+    label, taken, isNew = false, onAdd, onRemove,
+}: {
+    label: string;
+    taken: boolean;
+    /** this is the literal query, not a remembered term — "not in the catalogue" */
+    isNew?: boolean;
+    onAdd: () => void;
+    onRemove: () => void;
+}) {
+    return (
+        <div className="flex items-center gap-2.5 rounded-lg border border-[#e6ddfb] bg-[#faf8ff] px-2.5 py-2">
+            <span
+                aria-hidden="true"
+                className="grid size-[22px] flex-none place-items-center rounded-full bg-[linear-gradient(180deg,#a78bfa_0%,#8b5cf6_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+            >
+                {taken ? <Check size={12} /> : <span className="text-[13px] font-bold leading-none">+</span>}
+            </span>
+            <div className="min-w-0 flex-1">
+                <span className="text-[13.5px] font-semibold leading-tight text-[#5b21b6]">{label}</span>
+                <span className="mt-[1px] block text-[11px] font-semibold text-[#8b5cf6]">
+                    {isNew ? "Not in the catalogue" : "Your term"}
+                </span>
+            </div>
+            {taken ? (
                 <button
                     type="button"
-                    onClick={() => onAdd(q)}
-                    className="flex items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-0.5 py-0.5 text-[12.5px] font-semibold text-[#6d28d9] hover:underline"
+                    aria-label={`Remove ${label} from the assessment`}
+                    title="Click to remove"
+                    onClick={onRemove}
+                    className="group grid size-[22px] flex-none place-items-center rounded-full border-0 bg-[#ede4fd] text-[#7c3aed] transition-colors duration-150 hover:bg-[#fee2e2] hover:text-[#dc2626]"
                 >
-                    Add “{q}” — not in the catalogue
+                    <Check size={14} className="group-hover:hidden" />
+                    <X size={13} className="hidden group-hover:block" />
+                </button>
+            ) : (
+                <button
+                    type="button"
+                    onClick={onAdd}
+                    className="cx-cond-act flex-none rounded-md border border-[#d9c9fb] bg-white px-2.5 py-[5px] text-[12px] font-semibold text-[#7c3aed] transition-colors duration-150 hover:bg-[#f3ecff]"
+                >
+                    Add
                 </button>
             )}
+        </div>
+    );
+}
+
+/**
+ * A confirmed FREE-TEXT diagnosis, pinned above the ranked list — §1
+ * follow-up, 2026-08-24. Shaped like `ConditionRow` (same row height, same
+ * slots) so it reads as part of the same list, not a second kind of thing
+ * bolted above it — but violet instead of green/slate, the one honest tell
+ * that this came from the doctor's own notes, not the engine.
+ */
+function FreeConditionRow({ label, onRemove }: { label: string; onRemove: () => void }) {
+    return (
+        <div className="flex items-center gap-2.5 rounded-lg border border-[#e6ddfb] bg-[#faf8ff] px-2.5 py-2">
+            <span
+                aria-hidden="true"
+                className="grid size-[22px] flex-none place-items-center rounded-full bg-[linear-gradient(180deg,#a78bfa_0%,#8b5cf6_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+            >
+                <Check size={12} />
+            </span>
+            <div className="min-w-0 flex-1">
+                <span className="text-[13.5px] font-semibold leading-tight text-[#5b21b6]">{label}</span>
+                <span className="mt-[1px] block text-[11px] font-semibold text-[#8b5cf6]">
+                    Your term — not from the catalogue
+                </span>
+            </div>
+            <button
+                type="button"
+                aria-label={`Remove ${label} from the assessment`}
+                title="Click to remove"
+                onClick={onRemove}
+                className="grid size-[22px] flex-none place-items-center rounded-full border-0 bg-[#ede4fd] text-[#7c3aed] transition-colors duration-150 hover:bg-[#fee2e2] hover:text-[#dc2626]"
+            >
+                <X size={13} />
+            </button>
         </div>
     );
 }

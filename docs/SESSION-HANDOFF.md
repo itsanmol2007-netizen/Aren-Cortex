@@ -2,10 +2,12 @@
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
-**Read order for a cold start:** this file → `docs/context/README.md` (routes
-to one scoped pocket) → `docs/aren-cortex-context.md` (2026-08-24: now a
-short index — it routes further into `docs/context/cortex-*.md`, don't read
-it expecting the full picture in one file any more).
+**Read order for a cold start:** `docs/README-Cortex.md` first if you
+haven't already (2026-08-25: the actual entry point now — one page,
+tells you to read this file next) → this file → `docs/context/README.md`
+(routes to one scoped pocket) → `docs/aren-cortex-context.md` (2026-08-24:
+now a short index — it routes further into `docs/context/cortex-*.md`,
+don't read it expecting the full picture in one file any more).
 
 **Where this arc actually is:** Patients Overview is done and Anmol-confirmed
 against Ekanki's live data. **Anmol has now actually opened the app and

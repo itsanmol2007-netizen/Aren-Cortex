@@ -1983,24 +1983,25 @@ body.cs-locked-shell {
 }
 .cs-sug-filter-btn.is-on svg { opacity: 1; }
 
-/* The free-text fallback in SuggestionsCard (§4, 2026-08-24 follow-up) —
-   same violet/dashed visual language as ConditionsCard's Tailwind version
-   of this, translated to this card's plain-CSS convention. Visually apart
-   from a real catalogue row on purpose: this is a doctor's own note, never
-   dressed up as a ranked suggestion. */
+/* The free-text fallback in SuggestionsCard (§4, 2026-08-24 follow-up).
+   `.cs-freeterm` used to be its own dashed box; item 6's restyle
+   ("this option should look like just another ranked option") moved that
+   visual weight onto each ROW (`.cs-sug.is-free` below) instead, so the
+   wrapper here is now bare spacing — the rows carry their own identity. */
 .cs-freeterm {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin: 6px 10px;
-    border: 1px dashed #c4b5fd;
-    border-radius: 10px;
-    background: #faf7ff;
-    padding: 9px 10px;
+    gap: 5px;
+    margin: 4px 10px 6px;
 }
+/* The "suggest to add" strip on the RANKED view is still pills, not full
+   rows — it is a set of shortcuts, not a results list, so it keeps the
+   dashed-box treatment `.cs-freeterm` used to have everywhere. */
 .cs-freeterm.cs-freeterm-ranked {
-    border-style: solid;
+    border: 1px solid #e6ddfb;
+    border-radius: 10px;
     background: #fff;
+    padding: 9px 10px;
 }
 .cs-freeterm-label {
     font-size: 10.5px;
@@ -2043,6 +2044,62 @@ body.cs-locked-shell {
     overflow-y: auto;
     padding: 6px 10px 4px;
 }
+
+/* §3, 2026-08-24 — "add a show more button on bottom which unlocks the
+   nested scrolling of it." Only applied once `capped` (SuggestionsCard's
+   prop) AND the doctor has actually clicked "Show all" — collapsed, the
+   list is just its `capped` rows and needs no scroll box at all, the same
+   "scroll is off until asked for" rule ConditionsCard's ranked column uses.
+   320px ≈ 5.5 `.cs-sug` rows (a row runs ~56–60px including its hairline),
+   so the list stops mid-row on purpose — a clean edge would say it ends
+   where it does not. */
+.cs-list.is-capped-scroll {
+    max-height: 320px;
+}
+
+/* The "Show more" button at the foot of a capped list — reuses
+   `.cs-card-foot-more`'s colours but needs its own layout: that class was
+   built for an inline pairing beside a count, this is the list's own last
+   row, full width and centred. */
+.cs-sug-cap-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    margin-top: 2px;
+    border-top: 1px solid var(--cs-line);
+    border-radius: 0;
+    padding: 9px 0 2px;
+    font-size: 12px;
+}
+.cs-sug-cap-toggle svg.is-flipped { transform: rotate(180deg); }
+
+/* ── FREE-TEXT rows, shaped like a catalogue hit — §6, 2026-08-24 ─────────
+   `.cs-sug.is-free` reuses every `.cs-sug` layout rule (grid, spacing,
+   hover) and only overrides colour, so a free-text row and a ranked/searched
+   one are visually the SAME OBJECT at a glance — "just another ranked
+   option belonging to the same list" — with violet as the one honest tell
+   it did not come from the catalogue. */
+.cs-sug.is-free { background: #faf8ff; }
+.cs-sug.is-free:hover { background: #f3ecff; }
+.cs-sug.is-free.is-added { background: #faf8ff; }
+.cs-sug-icon.is-free {
+    background: linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%);
+}
+.cs-sug-plus {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+}
+.cs-sug-kind.is-free { color: #8b5cf6; }
+.cs-added.is-free { background: #ede4fd; color: #7c3aed; }
+.cs-added.is-free.is-removable:hover { background: #fee2e2; color: #dc2626; }
+.cs-act.is-free {
+    border-color: #d9c9fb;
+    color: #7c3aed;
+}
+.cs-act.is-free:hover { background: #f3ecff; }
 
 /* ── one ranked medicine ── */
 
@@ -4461,25 +4518,45 @@ body.cs-locked-shell {
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
 }
+/* The Apple-style shell — docs/aren-modal-design.md. Teal is this modal
+   family's accent (medicine: neither green="taken" nor blue="the primary
+   action" elsewhere, both already claimed); the shape itself — card radius,
+   layered shadow, top stripe, header proportions, focus rings — mirrors
+   `.pm-*` (PatientModal, the reference) exactly. The JSX/keyboard logic
+   this sits on is untouched; only how it looks changed. */
 .cs-addmed-panel {
     position: relative;
     display: flex;
     flex-direction: column;
     width: min(520px, 100%);
-    max-height: 100%;
-    border: 1px solid #fff;
-    border-radius: 18px;
-    background: linear-gradient(180deg, #fff, #f7f9fc);
-    box-shadow: 0 32px 64px -28px rgba(11, 23, 51, 0.5);
+    max-height: min(88vh, 700px);
+    border: none;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.10),
+        0 32px 80px rgba(0, 0, 0, 0.20);
     overflow: hidden;
+}
+.cs-addmed-topstripe {
+    height: 4px;
+    flex: none;
+    background: linear-gradient(90deg, #2dd4bf 0%, #0f766e 50%, #115e59 100%);
 }
 .cs-addmed-head {
     display: flex;
     align-items: center;
-    gap: var(--cs-s3);
+    gap: 10px;
     flex: none;
-    border-bottom: 1px solid var(--cs-line);
-    padding: var(--cs-s4);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 16px 20px 12px;
+}
+.cs-addmed-head .cs-glyph {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ccfbf1 0%, #d1fae5 100%);
 }
 .cs-addmed-title {
     display: flex;
@@ -4487,11 +4564,20 @@ body.cs-locked-shell {
     gap: 1px;
     min-width: 0;
 }
+.cs-addmed-eyebrow {
+    margin: 0 0 1px;
+    font-size: 10px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--cs-teal);
+}
 .cs-addmed-title strong {
-    color: var(--cs-ink);
-    font-size: 14.5px;
-    font-weight: 660;
-    letter-spacing: -0.015em;
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
 }
 .cs-addmed-title span {
     color: var(--cs-faint);
@@ -4502,16 +4588,17 @@ body.cs-locked-shell {
     display: grid;
     place-items: center;
     flex: none;
-    width: var(--cs-hit);
-    height: var(--cs-hit);
+    width: 26px;
+    height: 26px;
     margin-left: auto;
-    border: 0;
-    border-radius: 50%;
-    background: none;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04);
     color: var(--cs-faint);
     cursor: pointer;
+    transition: background 0.12s;
 }
-.cs-addmed-x:hover { background: rgba(11, 23, 51, 0.06); color: var(--cs-ink); }
+.cs-addmed-x:hover { background: rgba(15, 118, 110, 0.12); border-color: rgba(15, 118, 110, 0.3); color: var(--cs-teal); }
 .cs-addmed-body {
     flex: 1;
     min-height: 0;
@@ -4536,19 +4623,36 @@ body.cs-locked-shell {
 }
 .cs-addmed-input {
     width: 100%;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: #fff;
-    padding: 9px 11px;
-    color: var(--cs-ink);
-    font-size: 13.5px;
+    height: 40px;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 11px;
+    background: rgba(248, 250, 252, 0.9);
+    padding: 0 12px;
+    color: #0f172a;
+    font-size: 13px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 .cs-addmed-input:focus {
     outline: none;
-    border-color: rgba(18, 104, 232, 0.5);
-    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.09);
+    border-color: var(--cs-teal);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    background: #fff;
+}
+/* The composition/brand search box (`.cs-field`) is shared app-wide with a
+   blue focus ring; scoped teal here only, to match this modal's accent
+   without touching every other search field's colour. */
+.cs-addmed-body .cs-field {
+    height: 40px;
+    border-radius: 11px;
+    background: rgba(248, 250, 252, 0.9);
+}
+.cs-addmed-body .cs-field:focus-within {
+    border-color: var(--cs-teal);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    background: #fff;
 }
 .cs-addmed-brands { display: flex; flex-direction: column; gap: 5px; }
 
@@ -4567,12 +4671,15 @@ body.cs-locked-shell {
    did not already have a shape for. */
 .cs-newmed-panel { width: min(440px, 100%); }
 
+/* One row per chosen salt — a combination brand picks several. */
+.cs-newmed-comp-list { display: flex; flex-direction: column; gap: 6px; }
+
 .cs-newmed-comp-chosen {
     display: flex;
     align-items: center;
     gap: 7px;
     border: 1px solid #b6e6cd;
-    border-radius: var(--cs-radius-sm);
+    border-radius: 11px;
     background: linear-gradient(180deg, #f4fdf8, #e6f8ef);
     padding: 9px 11px;
     color: #15803d;
@@ -4586,12 +4693,12 @@ body.cs-locked-shell {
     border-radius: 6px;
     background: none;
     padding: 3px 7px;
-    color: var(--cs-blue);
+    color: var(--cs-teal);
     font-size: 12px;
     font-weight: 650;
     cursor: pointer;
 }
-.cs-newmed-comp-chosen button:hover { background: rgba(18, 104, 232, 0.08); }
+.cs-newmed-comp-chosen button:hover { background: rgba(15, 118, 110, 0.08); }
 
 .cs-newmed-comp-hits {
     display: flex;
@@ -4599,13 +4706,14 @@ body.cs-locked-shell {
     gap: 3px;
     max-height: 160px;
     overflow-y: auto;
-    border: 1px solid var(--cs-line);
-    border-radius: var(--cs-radius-sm);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 11px;
     padding: 4px;
+    background: rgba(248, 250, 252, 0.6);
 }
 .cs-newmed-comp-hits button {
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: none;
     padding: 7px 9px;
     color: var(--cs-ink);
@@ -4614,7 +4722,7 @@ body.cs-locked-shell {
     text-align: left;
     cursor: pointer;
 }
-.cs-newmed-comp-hits button:hover { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-newmed-comp-hits button:hover { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .cs-newmed-comp-hint {
     padding: 7px 9px;
     color: var(--cs-faint);
@@ -4636,7 +4744,7 @@ body.cs-locked-shell {
     border: 0;
     background: none;
     padding: 4px 2px;
-    color: var(--cs-blue);
+    color: var(--cs-teal);
     font-size: 12.5px;
     font-weight: 600;
     text-decoration: underline;
@@ -4646,9 +4754,10 @@ body.cs-locked-shell {
     display: flex;
     flex-direction: column;
     gap: 7px;
-    border: 1px solid var(--cs-line);
-    border-radius: var(--cs-radius-sm);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 11px;
     padding: 9px;
+    background: rgba(248, 250, 252, 0.6);
 }
 .cs-newmed-request-actions {
     display: flex;
@@ -4665,7 +4774,7 @@ body.cs-locked-shell {
     color: var(--cs-muted);
 }
 .cs-newmed-request-send {
-    background: var(--cs-blue) !important;
+    background: var(--cs-teal) !important;
     color: #fff !important;
 }
 .cs-newmed-request-send:disabled { opacity: 0.6; }
@@ -4715,8 +4824,8 @@ body.cs-locked-shell {
 .cs-addmed-brand.is-strength { display: inline-flex; }
 .cs-addmed-brand:hover { border-color: var(--cs-line-strong); }
 .cs-addmed-brand.is-on {
-    border-color: rgba(18, 104, 232, 0.5);
-    background: var(--cs-blue-soft);
+    border-color: rgba(15, 118, 110, 0.4);
+    background: var(--cs-teal-soft);
 }
 .cs-addmed-brand-name {
     color: var(--cs-ink);
@@ -4757,17 +4866,17 @@ body.cs-locked-shell {
     background: #fff;
     transition: background 0.13s ease, border-color 0.13s ease;
 }
-.cs-addmed-circle:hover .cs-addmed-circle-mark { border-color: var(--cs-blue); }
+.cs-addmed-circle:hover .cs-addmed-circle-mark { border-color: var(--cs-teal); }
 .cs-addmed-circle.is-on .cs-addmed-circle-mark {
-    border-color: var(--cs-blue);
-    background: var(--cs-blue);
+    border-color: var(--cs-teal);
+    background: var(--cs-teal);
 }
 .cs-addmed-circle-label {
     color: var(--cs-muted);
     font-size: 10.5px;
     font-weight: 560;
 }
-.cs-addmed-circle.is-on .cs-addmed-circle-label { color: var(--cs-blue); font-weight: 640; }
+.cs-addmed-circle.is-on .cs-addmed-circle-label { color: var(--cs-teal); font-weight: 640; }
 
 .cs-addmed-slots { display: flex; flex-wrap: wrap; gap: 5px; }
 .cs-addmed-slot {
@@ -4782,55 +4891,65 @@ body.cs-locked-shell {
     transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
 }
 .cs-addmed-slot.is-on {
-    border-color: rgba(18, 104, 232, 0.5);
-    background: var(--cs-blue-soft);
-    color: var(--cs-blue);
+    border-color: rgba(15, 118, 110, 0.4);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
 }
 .cs-addmed-foot {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--cs-s2);
+    gap: 8px;
     flex: none;
-    border-top: 1px solid var(--cs-line);
-    background: #fafbfc;
-    padding: var(--cs-s3) var(--cs-s4);
+    padding: 14px 20px 20px;
 }
 .cs-addmed-cancel {
-    border: 0;
-    border-radius: var(--cs-radius-sm);
-    background: none;
-    padding: 9px 14px;
-    color: var(--cs-muted);
-    font-size: 12.5px;
-    font-weight: 570;
+    height: 42px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 0 16px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
     cursor: pointer;
+    transition: background 0.12s, color 0.12s;
 }
-.cs-addmed-cancel:hover { background: rgba(11, 23, 51, 0.05); }
-/* Blue, not green: the colour law (doctrine §5 / atlas §12.1) reserves green
-   for TAKEN and blue for THE ACTION. Confirming this sheet stages a medicine
-   onto the plan — it has not been taken yet — so it is the action colour,
-   the same one every other primary action in this sheet already uses
-   (`.cs-addmed-brand.is-on`, `.cs-addmed-circle.is-on`, the input focus ring). */
+.cs-addmed-cancel:hover { background: rgba(0, 0, 0, 0.07); color: #334155; }
+/* Teal, this modal family's accent — see docs/aren-modal-design.md. Not
+   blue: that colour is spoken for by every OTHER primary action in the
+   consult (rule: the action colour is generic-app-wide, the accent here is
+   this modal FAMILY's identity, the same way PatientModal's actions are
+   pink/purple rather than the app's default blue). Not green: green still
+   means TAKEN everywhere, and this sheet stages a medicine, it does not
+   mark one taken. */
 .cs-addmed-confirm {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 7px;
+    height: 42px;
+    flex: 1;
     border: 0;
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-blue);
-    padding: 9px 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #2dd4bf 0%, #0f766e 100%);
+    padding: 0 16px;
     color: #fff;
-    font-size: 12.5px;
-    font-weight: 640;
+    font-size: 13px;
+    font-weight: 750;
     cursor: pointer;
+    box-shadow: 0 4px 14px rgba(15, 118, 110, 0.3);
+    transition: opacity 0.15s, transform 0.1s;
 }
-.cs-addmed-confirm:hover:not(:disabled) { background: #2f7ded; }
+.cs-addmed-confirm:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+.cs-addmed-confirm:active { transform: translateY(0); }
 .cs-addmed-confirm:disabled {
-    border: 1px solid var(--cs-line-strong);
-    background: none;
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    background: rgba(0, 0, 0, 0.08);
     color: var(--cs-faint);
-    cursor: default;
 }
 
 /* The overflow row on a capped Attachments card. Deliberately quiet: it is a
@@ -5696,11 +5815,15 @@ body.cs-locked-shell {
 }
 
 .cs-addmed-panel.cx-kbd-surface:focus {
-    /* Layers on top of the panel's own drop shadow instead of replacing it —
-       see `.cs-addmed-panel`'s `box-shadow` above. */
+    /* Layers on top of the panel's own shadow instead of replacing it — see
+       `.cs-addmed-panel`'s `box-shadow` above. Teal, this modal family's
+       accent (docs/aren-modal-design.md), not the generic keyboard-surface
+       blue every other overlay uses. */
     box-shadow:
-        0 0 0 3px var(--cs-blue-soft), 0 0 0 1px var(--cs-blue),
-        0 32px 64px -28px rgba(11, 23, 51, 0.5);
+        0 0 0 3px var(--cs-teal-soft), 0 0 0 1px var(--cs-teal),
+        0 2px 4px rgba(0, 0, 0, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.10),
+        0 32px 80px rgba(0, 0, 0, 0.20);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -6536,11 +6659,23 @@ body.cs-locked-shell {
     box-shadow: none;
     background: transparent;
 }
-.cs-cond-side-sug .cs-card-head { padding: 0 0 8px; }
+/* Was `.cs-card-head` — this card's own head is `.cs-sug-head`, so that
+   selector never matched anything and the compact padding it was meant to
+   apply silently never landed. Found 2026-08-24 chasing item 3/4's report
+   ("overbleeding", "look alien side by side") — a real contributor to both:
+   the head kept its full default padding, adding unaccounted height on top
+   of an already generous list. */
+.cs-cond-side-sug .cs-sug-head { padding: 0 0 8px; }
 .cs-cond-side-sug .cs-rec-search { padding: 0 0 8px; }
-.cs-cond-side-sug .cs-list {
-    padding: 0;
-    max-height: 280px;
+.cs-cond-side-sug .cs-list { padding: 0; }
+/* §4, 2026-08-24: "these two sections... look alien side by side, the
+   icon" — recolours the generic slate tile to match Assessment's violet, so
+   the two panels read as one family. The icon itself already switches to
+   the section's own glyph (FlaskConical) when there is only one section —
+   see SuggestionsCard.tsx's head — this is the colour half of that fix. */
+.cs-cond-side-sug .cs-glyph.is-slate {
+    background: linear-gradient(180deg, #f7f2ff 0%, #ede2fe 100%);
+    color: #6d28d9;
 }
 
 /* ════════════════════════════════════════════════════════════
