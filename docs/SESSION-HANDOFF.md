@@ -2,6 +2,20 @@
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
+## Latest — Design DNA doc split into pocket files (2026-08-25)
+
+`docs/cortex-design-dna/README.md` was a single 322-line file (added the
+same day as the arc below, then left unfinished — its own README existed
+but the topic split it implied never happened). It's now split the same
+way `docs/context/` is: `README.md` is a short router (§0's pre-flight
+checklist, one row per topic) and each topic is its own file —
+`layout-composition.md`, `panel-structure.md`, `typography.md`,
+`colour.md`, `icons.md`, `motion.md`, `progressive-disclosure.md`,
+`responsive-grid.md`, `empty-states.md`, `verification.md`. No rule content
+changed, only where it lives. `docs/README-Cortex.md`'s pointer to
+`cortex-design-dna/README.md` (added the same day) still resolves
+correctly — it now lands on the router instead of the monolith.
+
 ## ⚠ Read this before touching ConditionsCard.tsx / SuggestionsCard.tsx again
 
 Three passes today went at the Assessment/Investigations symmetry problem
