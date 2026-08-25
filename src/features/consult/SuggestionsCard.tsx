@@ -25,6 +25,7 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
     Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
     ShieldAlert, Sparkles, Waves, ActivitySquare, X } from "lucide-react";
@@ -183,6 +184,7 @@ export function SuggestionsCard({
     types, title = "Clinical Suggestions", capped,
 }: Props) {
     const [showAllCapped, setShowAllCapped] = useState(false);
+    const reduce = useReducedMotion();
 
     /**
      * §1 follow-up — the SAME split ConditionsCard's `isFreeLabel` makes:
@@ -526,7 +528,20 @@ export function SuggestionsCard({
     };
 
     return (
-        <section className={`cs-card ${className}`} aria-label="Clinical suggestions">
+        // `layout` — message-3 follow-up, 2026-08-25: "add better fluid
+        // animation to everything, tab changing, show more/less... right
+        // now clicking anything is just repositioning the whole page."
+        // Switching a tab or toggling "Show all" changes how many rows
+        // render, which used to just SNAP this card (and everything below
+        // it) to the new height in one frame. `layout` makes Motion tween
+        // this card's own box between the old and new size instead, so a
+        // tab click reads as the card resizing, not the page jumping.
+        <motion.section
+            layout={!reduce}
+            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 34 }}
+            className={`cs-card ${className}`}
+            aria-label="Clinical suggestions"
+        >
             {/* The title takes a glyph tile so this panel and MEDICINE
                 RECOMMENDATIONS beside it read as the two halves of one row.
                 Before this it was a violet underlined tab — the language of a
@@ -617,7 +632,7 @@ export function SuggestionsCard({
             >
                 {body()}
             </div>
-        </section>
+        </motion.section>
     );
 }
 

@@ -1120,6 +1120,7 @@ function App() {
           <LongitudinalBand
             summary={trendSummary}
             pastVisits={meaningfulPastVisits}
+            loading={pastVisitsLoading}
             carePlan={carePlan.plan}
             sessionNumbers={carePlan.sessionNumbers}
             onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
@@ -1431,6 +1432,16 @@ function App() {
                   <SuggestionsCard
                     types={[specialty.primary]}
                     title={specialty.primaryLabel}
+                    // Message-3 follow-up, 2026-08-25: "apply this [cap +
+                    // show more + THEN nested scroll] to literally every
+                    // section which starts growing over 4-5 cards" —
+                    // switching Clinical Suggestions' own tabs used to
+                    // change how many rows this rendered with nothing
+                    // bounding `.cs-list`'s height, so the card itself grew
+                    // or shrank and shoved the whole page under it. Capped
+                    // like every other instance now; only "Show all"
+                    // actually grows it, and only into its own scroll box.
+                    capped={5}
                     byType={intelligence.byType}
                     topOfType={topOfType}
                     thinkingKey={intelligence.thinkingKey}
@@ -1457,6 +1468,8 @@ function App() {
 
                 <SuggestionsCard
                   types={planSlots.restTypes}
+                  // Same fix, same reason — see the sibling instance above.
+                  capped={5}
                   byType={intelligence.byType}
                   topOfType={topOfType}
                   thinkingKey={intelligence.thinkingKey}

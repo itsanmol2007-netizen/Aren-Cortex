@@ -1,4 +1,4 @@
-# Session handoff — 2026-08-23 (updated same session, seventh pass)
+# Session handoff — 2026-08-25 (Cortex open-bugs arc, third pass)
 
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
@@ -8,6 +8,51 @@ tells you to read this file next) → this file → `docs/context/README.md`
 (routes to one scoped pocket) → `docs/aren-cortex-context.md` (2026-08-24:
 now a short index — it routes further into `docs/context/cortex-*.md`,
 don't read it expecting the full picture in one file any more).
+
+**This pass, 2026-08-25 — layout/motion fixes + one deliberately-punted
+item:**
+
+- Assessment/Investigations restructured so both start on the same grid
+  row with their own scoped header+search, instead of Assessment's search
+  bar spanning full width above Investigations (read as "Investigation is
+  a subsection of Assessment"). Both "Show more" controls now live at the
+  bottom, same class (`cs-card-foot-more cs-sug-cap-toggle`), instead of
+  one top-right and one bottom.
+- `SuggestionsCard`'s two main-body instances (not just the Investigations
+  side-slot) now pass `capped={5}` — switching Clinical Suggestions' own
+  tabs used to change an UNBOUNDED list's height and shove the whole page;
+  every instance is bounded now.
+- `ConditionsCard`/`SuggestionsCard`'s outer sections gained Motion's
+  `layout` prop so a height change (tab switch, show more/less, entering
+  search) tweens instead of snapping — "clicking anything is just
+  repositioning the whole page."
+- `LongitudinalBand` now renders a skeleton (`LongitudinalSkeleton`) while
+  `pastVisitsLoading` is true instead of nothing, so a patient WITH history
+  no longer pops the whole band in a couple of seconds after paint and
+  shoves `.cs-page` down.
+- Medicine-name truncation fixed: `.cs-ident-brand` now wraps instead of
+  squeezing the name span down to a couple of letters when a row carries
+  "Safety" + "Check" + the info button together.
+- `.cs-rec.is-hard`'s full-row red wash softened to a left-edge accent —
+  the row was carrying five separate red signals at once (wash, rank
+  badge, flag pill, reason heading, ack button); nothing is hidden, one
+  redundant layer came off.
+- `CarePlanSheet` (the "Add a longitudinal plan" modal) and the two
+  medicine sheets restyled to `docs/aren-modal-design.md`'s shape with
+  more generous padding — message-3 called both "cramped."
+
+**Deliberately NOT done — flagged, not silently skipped:** the request to
+make a guard respect an ALREADY-CONFIRMED diagnosis (a malaria-confirmed
+patient still sees "confirm with RDT or blood smear before starting an
+antimalarial" on the antimalarial guard, which reads as if malaria were
+still unconfirmed) needs a real link between `diagnoses` (the doctor's
+confirmed Assessment picks, plain strings in `useConsultPlan`) and guard
+evaluation in the Synapse engine — confirmed diagnoses are not fed back
+into `activeSignals`/the ruleset at all today. That is an engine-level,
+clinical-safety-sensitive change and was not attempted as a quick UI
+patch; it needs its own scoped pass (probably: a signal a confirmed
+diagnosis contributes, and a rule-authoring convention for "downgrade/
+suppress this guard once that signal is active").
 
 **Where this arc actually is:** Patients Overview is done and Anmol-confirmed
 against Ekanki's live data. **Anmol has now actually opened the app and

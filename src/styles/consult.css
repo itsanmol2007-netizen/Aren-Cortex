@@ -2151,11 +2151,21 @@ body.cs-locked-shell {
     background: linear-gradient(180deg, #f4fdf7, #ecfbf1);
 }
 
-/* A guarded item stays visible at its real rank, in red, saying
-   why — never hidden, never demoted, never summarised into a
-   banner somewhere else on the screen. */
+/* A guarded item stays visible at its real rank, saying why — never
+   hidden, never demoted, never summarised into a banner somewhere else on
+   the screen.
+   A flat red wash across the whole row USED to carry that on its own; with
+   the red rank badge, the red "Check" flag and the reason block's own red
+   heading all on the same row too, that stacked into "why showing this
+   much red red things" (message-3 follow-up, 2026-08-25) even for a
+   guard that is about to be dismissed with one click. A left edge instead
+   of a fill still marks the row unmistakably at a glance — nothing here
+   is quieter than "not red at all", which rule 8 (never hide a guard)
+   would actually forbid — it just stops repeating the same signal a
+   fourth time. */
 .cs-rec.is-hard {
-    background: var(--cs-red-soft);
+    border-left: 3px solid var(--cs-red);
+    background: linear-gradient(90deg, var(--cs-red-soft) 0%, #fff 5%);
 }
 
 .cs-rank-no {
@@ -2204,8 +2214,9 @@ body.cs-locked-shell {
 
 .cs-ident-brand {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 3px 6px;
     min-width: 0;
     color: var(--cs-ink);
     font-size: 14px;
@@ -2214,7 +2225,17 @@ body.cs-locked-shell {
     line-height: 1.25;
 }
 
+/* The name never shrinks below a legible width — a row carrying "Safety" +
+   "Check" + the info button used to squeeze it down to two letters and an
+   ellipsis, which is the literal bug behind "the actual medicine name is
+   invisible" (§2, then again message-3 follow-up, 2026-08-25: "hard guards
+   like NSAIDs for pregnancy... should also not cover whole medicine
+   name"). `flex-wrap` on the parent is what fixes it: once the badges
+   would push the name under this floor, they wrap to their own line below
+   the name instead of eating its width. */
 .cs-ident-brand > span:first-child {
+    flex: 1 1 auto;
+    min-width: 90px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4605,10 +4626,14 @@ body.cs-locked-shell {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: var(--cs-s4);
-    padding: var(--cs-s4);
+    /* Message-3 follow-up, 2026-08-25: "too much cramped" — `.pm-section`
+       (the Apple-modal reference) runs 20px side padding and a wider
+       between-section gap than `--cs-s4` (12px) gave this body; widened to
+       match rather than eyeballing a new number. */
+    gap: 16px;
+    padding: 16px 20px;
 }
-.cs-addmed-sec { display: flex; flex-direction: column; gap: 6px; }
+.cs-addmed-sec { display: flex; flex-direction: column; gap: 7px; }
 .cs-addmed-label {
     color: var(--cs-faint);
     font-size: 10.5px;
@@ -4619,7 +4644,7 @@ body.cs-locked-shell {
 .cs-addmed-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--cs-s3);
+    gap: 10px;
 }
 .cs-addmed-input {
     width: 100%;
@@ -6028,6 +6053,38 @@ body.cs-locked-shell {
     padding: 6px 9px 5px;
 }
 
+/* The loading skeleton — LongitudinalSkeleton, message-3 follow-up,
+   2026-08-25. Same shell (`.cs-lt`, `.cs-lt-head`, `.cs-lt-row`,
+   `.cs-lt-card`) as the real band, so its footprint is what actually
+   reserves the space; only the content inside becomes shimmer bars. */
+.cs-lt-card.is-skel { gap: 7px; justify-content: center; }
+.cs-lt-skel-bar {
+    display: block;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--cs-line) 25%, var(--cs-line-strong) 50%, var(--cs-line) 75%);
+    background-size: 200% 100%;
+    animation: cs-lt-shimmer 1.4s ease-in-out infinite;
+}
+.cs-lt-skel-block {
+    display: block;
+    height: 26px;
+    width: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--cs-line) 25%, var(--cs-line-strong) 50%, var(--cs-line) 75%);
+    background-size: 200% 100%;
+    animation: cs-lt-shimmer 1.4s ease-in-out infinite;
+}
+.cs-lt-skel-title { width: 150px; height: 12px; }
+.cs-lt-skel-sub { width: 90px; }
+@keyframes cs-lt-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .cs-lt-skel-bar, .cs-lt-skel-block { animation: none; }
+}
+
 /* Clickable, 2026-08-17 — this is a <button> now, not a <div>, when a saved
    visit exists behind it (`TrendCard`'s `visit` prop). Reset the button
    defaults back to matching its non-clickable sibling exactly, then add just
@@ -6370,75 +6427,109 @@ body.cs-locked-shell {
     padding-top: 12vh;
 }
 
+/* Restyled to the Apple-modal shape — docs/aren-modal-design.md — message-3
+   follow-up, 2026-08-25: "Model Ui of Add a longitudinal plan" was named
+   alongside the medicine modals as cramped. Violet is its accent: it was
+   already this sheet's colour (the eyebrow, the session-position badge)
+   before this pass, and violet is not spoken for by patient (pink/purple),
+   medicine (teal), taken (green), the generic action (blue), warning
+   (amber) or danger (red) — it just did not yet have the shape (top
+   stripe, icon tile, 20px radius, wider padding) that colour was riding on. */
 .cs-cpsheet {
     display: flex;
     flex-direction: column;
     width: min(520px, calc(100vw - 32px));
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius);
-    background: #fff;
-    box-shadow: 0 32px 64px -28px rgba(11, 23, 51, 0.5);
+    border: none;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.10),
+        0 32px 80px rgba(0, 0, 0, 0.20);
+    overflow: hidden;
+}
+
+.cs-cpsheet-topstripe {
+    height: 4px;
+    flex: none;
+    background: linear-gradient(90deg, #c4b5fd 0%, #8b5cf6 50%, #6d28d9 100%);
 }
 
 .cs-cpsheet-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--cs-s3);
-    border-bottom: 1px solid var(--cs-line);
-    padding: var(--cs-s4) var(--cs-s4) var(--cs-s3);
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 16px 20px 12px;
+}
+
+.cs-cpsheet-icon {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+    color: var(--cs-violet);
 }
 
 .cs-cpsheet-eyebrow {
     margin: 0;
     color: var(--cs-violet);
     font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.1em;
+    font-weight: 750;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
 }
 
 .cs-cpsheet-title {
-    margin: 2px 0 0;
-    color: var(--cs-ink);
-    font-size: 14px;
+    margin: 1px 0 0;
+    color: #0f172a;
+    font-size: 15px;
     font-weight: 750;
+    line-height: 1.2;
 }
 
 .cs-cpsheet-x {
-    border: 0;
-    border-radius: 7px;
-    background: none;
-    padding: 4px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-left: auto;
+    flex: none;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04);
     color: var(--cs-faint);
+    transition: background 0.12s;
 }
 
-.cs-cpsheet-x:hover { background: var(--cs-page); color: var(--cs-ink); }
+.cs-cpsheet-x:hover { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.3); color: var(--cs-violet); }
 
 .cs-cpsheet-body {
     display: flex;
     flex-direction: column;
-    gap: var(--cs-s3);
-    padding: var(--cs-s4);
+    gap: 14px;
+    padding: 16px 20px;
 }
 
 .cs-cpsheet-pair {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--cs-s3);
+    gap: 10px;
 }
 
 .cs-cpsheet-field {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
 }
 
 .cs-cpsheet-field > span {
-    color: var(--cs-muted);
-    font-size: 11px;
+    color: #374151;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.03em;
 }
 
 /* "optional" is set as ornament rather than as part of the label, so the
@@ -6451,31 +6542,36 @@ body.cs-locked-shell {
 
 .cs-cpsheet-field input,
 .cs-cpsheet-field textarea {
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: #fff;
-    padding: 8px 10px;
-    color: var(--cs-ink);
-    font-size: 12.5px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 11px;
+    background: rgba(248, 250, 252, 0.9);
+    padding: 0 12px;
+    height: 40px;
+    color: #0f172a;
+    font-size: 13px;
     font-weight: 550;
     font-family: inherit;
     resize: vertical;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
+
+.cs-cpsheet-field textarea { height: auto; padding: 9px 12px; }
 
 .cs-cpsheet-field input:focus,
 .cs-cpsheet-field textarea:focus {
     outline: none;
-    border-color: var(--cs-blue);
-    box-shadow: 0 0 0 3px var(--cs-blue-soft);
+    border-color: var(--cs-violet);
+    box-shadow: 0 0 0 3px var(--cs-violet-soft);
+    background: #fff;
 }
 
 .cs-cpsheet-pos {
     margin: 0;
-    border-radius: var(--cs-radius-sm);
+    border-radius: 11px;
     background: var(--cs-violet-soft);
-    padding: 7px 10px;
+    padding: 9px 12px;
     color: var(--cs-muted);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
 }
 
@@ -6485,27 +6581,27 @@ body.cs-locked-shell {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--cs-s3);
-    border-top: 1px solid var(--cs-line);
-    padding: var(--cs-s3) var(--cs-s4);
+    gap: 8px;
+    padding: 14px 20px 20px;
 }
 
 .cs-cpsheet-actions {
     display: flex;
-    gap: var(--cs-s2);
+    gap: 8px;
 }
 
 .cs-cpsheet-close {
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: #fff;
-    padding: 7px 12px;
+    height: 42px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 0 14px;
     color: var(--cs-faint);
-    font-size: 11.5px;
+    font-size: 12.5px;
     font-weight: 650;
 }
 
-.cs-cpsheet-close:hover { border-color: var(--cs-amber); color: var(--cs-amber); }
+.cs-cpsheet-close:hover { border-color: var(--cs-amber); color: var(--cs-amber); background: var(--cs-amber-soft); }
 
 /* Armed is amber, not red: closing a plan is reversible in the sense that
    matters (the record survives and a new plan can be started), so it is a
@@ -6517,26 +6613,32 @@ body.cs-locked-shell {
 }
 
 .cs-cpsheet-cancel {
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: #fff;
-    padding: 7px 14px;
-    color: var(--cs-muted);
-    font-size: 11.5px;
-    font-weight: 650;
-}
-
-.cs-cpsheet-save {
-    border: 0;
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-blue);
-    padding: 7px 16px;
-    color: #fff;
-    font-size: 11.5px;
+    height: 42px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 0 16px;
+    color: #64748b;
+    font-size: 13px;
     font-weight: 700;
 }
+.cs-cpsheet-cancel:hover { background: rgba(0, 0, 0, 0.07); color: #334155; }
 
-.cs-cpsheet-save:disabled { background: var(--cs-line-strong); color: #fff; }
+.cs-cpsheet-save {
+    height: 42px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #c4b5fd 0%, #7c3aed 100%);
+    padding: 0 18px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 750;
+    box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3);
+    transition: opacity 0.15s, transform 0.1s;
+}
+.cs-cpsheet-save:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+
+.cs-cpsheet-save:disabled { background: var(--cs-line-strong); color: #fff; box-shadow: none; }
 
 /* ── "vs last" under a reading (2026-08-16) ───────────────────────────────
    The band above answers "across the course"; this answers "since last

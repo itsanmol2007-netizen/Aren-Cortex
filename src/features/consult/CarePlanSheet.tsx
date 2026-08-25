@@ -26,7 +26,7 @@
 // ---------------------------------------------------------------------------
 
 import { useRef, useState } from "react";
-import { X } from "lucide-react";
+import { CalendarClock, X } from "lucide-react";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 import type { CarePlan } from "../../lib/db";
 
@@ -86,7 +86,9 @@ export function CarePlanSheet({
                     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
                 }}
             >
+                <div className="cs-cpsheet-topstripe" />
                 <header className="cs-cpsheet-head">
+                    <span className="cs-cpsheet-icon"><CalendarClock size={16} /></span>
                     <div>
                         <p className="cs-cpsheet-eyebrow">Care plan</p>
                         <h3 className="cs-cpsheet-title">

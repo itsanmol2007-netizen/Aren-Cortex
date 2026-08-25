@@ -367,13 +367,49 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
     );
 }
 
+/**
+ * Reserves this band's rough shape while `fetchPatientVisits` is still in
+ * flight — message-3 follow-up, 2026-08-25: "the longitudinal record
+ * surfaces on the top... it randomly pulls, shifts everything down" because
+ * this component rendered NOTHING (see the header's "does not exist for a
+ * new patient" rule) until the fetch resolved, so a patient WITH history got
+ * a silent pop-in that shoved `.cs-page` down a couple of seconds into the
+ * consult. Shown for every patient while loading, including one who turns
+ * out to have none — that read (skeleton → nothing) is a smaller, quieter
+ * shift than (nothing → four full cards), and the fetch is normally sub-
+ * second, so it is rarely on screen long enough to matter either way.
+ */
+function LongitudinalSkeleton() {
+    return (
+        <section className="cs-lt is-skel" aria-hidden="true">
+            <header className="cs-lt-head">
+                <span className="cs-lt-skel-bar cs-lt-skel-title" />
+                <span className="cs-lt-skel-bar cs-lt-skel-sub" />
+            </header>
+            <div className="cs-lt-row">
+                {[0, 1, 2].map((i) => (
+                    <div key={i} className="cs-lt-card is-skel">
+                        <span className="cs-lt-skel-bar" style={{ width: "60%" }} />
+                        <span className="cs-lt-skel-bar" style={{ width: "80%", height: 14 }} />
+                        <span className="cs-lt-skel-bar" style={{ width: "45%" }} />
+                        <span className="cs-lt-skel-block" />
+                        <span className="cs-lt-skel-bar" style={{ width: "70%" }} />
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+}
+
 export function LongitudinalBand({
-    summary, pastVisits, carePlan, sessionNumbers,
+    summary, pastVisits, loading, carePlan, sessionNumbers,
     onOpenVisit, onEditCarePlan, onStartCarePlan,
 }: {
     summary: TrendSummary;
     /** newest first, as `fetchPatientVisits` returns them */
     pastVisits: RealVisit[];
+    /** `pastVisitsLoading` from `useConsultSession` — see `LongitudinalSkeleton` */
+    loading?: boolean;
     carePlan: CarePlan | null;
     /** visit id → session number within the active care plan */
     sessionNumbers: Map<string, number>;
@@ -386,6 +422,8 @@ export function LongitudinalBand({
     // doctor must see this on first paint — but collapsible, so it costs
     // nothing once read. See the file header for why this exists.
     const [collapsed, setCollapsed] = useState(false);
+
+    if (loading) return <LongitudinalSkeleton />;
 
     // The whole component, gone, for a patient with no history. See the header.
     if (pastVisits.length === 0) return null;
