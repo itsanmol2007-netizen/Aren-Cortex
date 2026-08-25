@@ -376,6 +376,10 @@ export function MeasurementsCard({
     );
 }
 
+/** Rows shown with nothing typed — the rest are one search away, not a
+ *  second catalogue dumped under the first. See `MeasurementSearch`. */
+const DEFAULT_VISIBLE = 6;
+
 /**
  * ADD MEASUREMENT — a search box, not a menu of every field that exists.
  *
@@ -386,6 +390,14 @@ export function MeasurementsCard({
  * landed, and most facilities will only ever want two or three of them in
  * a given search. A doctor typing "puls" now sees Pulse; they do not have
  * to first find which of six section headings Pulse lives under.
+ *
+ * That fix stopped short of the actual complaint, though: with nothing
+ * typed, this still showed every hidden field at once — 20-30 pill chips,
+ * the same catalogue-dump one layer down. Anmol, 2026-08-25: "show less by
+ * default, search when needed." Nothing typed now shows only the first
+ * `DEFAULT_VISIBLE` (catalogue order, same order the fields already carry
+ * meaning in — see MEASURE_FIELDS), and the rest are exactly one keystroke
+ * away, same as they always were once a query is actually typed.
  *
  * Lives only inside the modal now — the card-head popup this used to also
  * render is gone along with the "+" button that opened it (see the header
@@ -407,7 +419,10 @@ function MeasurementSearch({
     const inputRef = useRef<HTMLInputElement>(null);
 
     const q = query.trim().toLowerCase();
-    const matches = q ? fields.filter((f) => f.label.toLowerCase().includes(q)) : fields;
+    const matches = q
+        ? fields.filter((f) => f.label.toLowerCase().includes(q))
+        : fields.slice(0, DEFAULT_VISIBLE);
+    const restCount = q ? 0 : Math.max(0, fields.length - matches.length);
 
     const roving = useRovingList({
         containerRef: ref,
@@ -449,6 +464,11 @@ function MeasurementSearch({
                     ))
                 )}
             </div>
+            {/* Points at the search box rather than repeating a catalogue
+                underneath it — the whole point of capping `matches` above. */}
+            {restCount > 0 && (
+                <p className="cs-meas-menu-rest">+{restCount} more — search to find them</p>
+            )}
         </div>
     );
 }

@@ -418,10 +418,12 @@ export function LongitudinalBand({
     onStartCarePlan: () => void;
 }) {
     const [timelineOpen, setTimelineOpen] = useState(false);
-    // Open by default — the spec's "before typing anything" promise means the
-    // doctor must see this on first paint — but collapsible, so it costs
-    // nothing once read. See the file header for why this exists.
-    const [collapsed, setCollapsed] = useState(false);
+    // Was open by default — the spec's "before typing anything" promise meant
+    // the doctor had to see this on first paint. Anmol, 2026-08-25: keep it
+    // off by default — the band still exists and is one click away, it just
+    // no longer claims the top of the screen on every consult before the
+    // doctor has asked for it.
+    const [collapsed, setCollapsed] = useState(true);
 
     if (loading) return <LongitudinalSkeleton />;
 

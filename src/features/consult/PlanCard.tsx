@@ -15,12 +15,13 @@
 
 import { useRef, useState } from "react";
 import {
-    Activity, CalendarClock, ClipboardList, FileText, FlaskConical, NotebookPen,
+    Activity, CalendarClock, FileText, FlaskConical, NotebookPen,
     Pill, Printer, Stethoscope, Waves,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
+import { BlankPlanArt } from "./BlankArt";
 import { CompanionLine, MedicineIdentity } from "./parts";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
@@ -281,12 +282,13 @@ export function PlanCard({
             <div className="cs-plan-scroll" ref={scrollRef} onKeyDown={onListKeyDown}>
                 {isEmpty ? (
                     <div className="cs-plan-empty">
-                        <ClipboardList size={18} style={{ margin: "0 auto 4px", opacity: 0.35 }} />
+                        <BlankPlanArt />
                         <strong>Nothing planned yet</strong>
-                        <span>
-                            Everything you take from the recommendations — medicines, tests,
-                            advice — builds the prescription here.
-                        </span>
+                        {/* Was two full lines restating what "Consultation
+                            Plan" and the recommendations beside it already
+                            say — Anmol, 2026-08-25: "too much unnecessary
+                            information/text in the empty state." */}
+                        <span>Taken items land here.</span>
                     </div>
                 ) : (
                     <>

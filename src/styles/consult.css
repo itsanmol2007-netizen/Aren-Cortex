@@ -2068,6 +2068,12 @@ body.cs-locked-shell {
     text-transform: uppercase;
     letter-spacing: 0.09em;
     color: var(--cs-label);
+    /* Carries the explanation that used to be its own line, as a native
+       tooltip (`title` attr) — this is the only visible hint it has one. */
+    cursor: help;
+    text-decoration: underline dotted;
+    text-decoration-color: var(--cs-line-strong);
+    text-underline-offset: 3px;
 }
 .cs-ranked-count {
     margin-left: auto;
@@ -5155,6 +5161,17 @@ body.cs-locked-shell {
     width: 100%;
     margin-bottom: 2px;
 }
+/* Anmol, 2026-08-25: "the search field feels too thin" — this is the ONE
+   way in to the other ~25 fields the default 5-6 no longer show inline
+   (see MeasurementSearch.tsx), so it earns a touch more presence than a
+   generic `.cs-field`. Height and icon only — the field's colours, border
+   and focus ring are untouched, still the shared `.cs-field` look. */
+.cs-meas-menu.is-inline .cs-meas-search.cs-field {
+    height: 44px;
+    padding: 0 13px;
+}
+.cs-meas-menu.is-inline .cs-meas-search.cs-field svg { width: 16px; height: 16px; }
+.cs-meas-menu.is-inline .cs-meas-search.cs-field input { font-size: 14.5px; }
 .cs-meas-menu.is-inline .cs-meas-menu-group {
     flex: 1 1 100%;
     flex-direction: row;
@@ -5172,6 +5189,15 @@ body.cs-locked-shell {
 .cs-meas-menu.is-inline .cs-meas-menu-group .cs-meas-menu-head {
     width: 100%;
     margin: 4px 2px;
+}
+/* "+N more — search to find them" — quiet, same family as `.cs-meas-menu-
+   head`, never competing with the chips it sits under. */
+.cs-meas-menu-rest {
+    width: 100%;
+    margin: 6px 2px 0;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 500;
 }
 
 /* Plain informational text, not a control — the "N of M shown on the main
@@ -6797,14 +6823,38 @@ body.cs-locked-shell {
     box-shadow: none;
     background: transparent;
 }
+/* This card is nested inside `.cs-assess` (it IS the side slot in
+   ConditionsCard's own grid), which means `.cs-assess .cs-list { overflow:
+   visible; }` above (written for ConditionsCard's OWN never-scrolling list)
+   also matches THIS card's `.cs-list` by pure descendant-selector accident —
+   same specificity as `.cs-list.is-list-collapsed { overflow: hidden; }`,
+   later in the file, so it silently won and cancelled the capped list's
+   clip. Root cause of "Show more is not visible" (2026-08-25 handoff): the
+   toggle WAS rendering, in the right DOM position, but the 4th capped row
+   was never actually clipped, so it bled past the box's 232px maxHeight and
+   visually collided with the toggle sibling below it — confirmed by
+   `getBoundingClientRect()` on the live app, not guessed from the CSS.
+   Restore the clip here, scoped tightly enough (3 classes) to beat that
+   rule without touching ConditionsCard's own intentionally-unscrolled list. */
+.cs-cond-side-sug .cs-list.is-list-collapsed { overflow: hidden; }
+.cs-cond-side-sug .cs-list.is-list-expanded { overflow-y: auto; }
 /* Was `.cs-card-head` — this card's own head is `.cs-sug-head`, so that
    selector never matched anything and the compact padding it was meant to
    apply silently never landed. Found 2026-08-24 chasing item 3/4's report
    ("overbleeding", "look alien side by side") — a real contributor to both:
    the head kept its full default padding, adding unaccounted height on top
    of an already generous list. */
-.cs-cond-side-sug .cs-sug-head { padding: 0 0 8px; }
-.cs-cond-side-sug .cs-rec-search { padding: 0 0 8px; }
+/* Anmol, 2026-08-25: "the search bar of assessment and investigation are
+   not aligned vertically." Both columns start at the same y (one shared
+   `pt-3.5` on the grid both live in — ConditionsCard.tsx), so the title
+   rows already lined up; the search BOXES didn't, because the gap
+   underneath them didn't match. Assessment's gap is a 12px margin
+   (ConditionsCard's `mt-3`) plus `.cs-rec-search`'s own default 11px top
+   padding — 23px total. This card's own head/search were cut down to 8px
+   and 0px here instead, 20px short. Same total now: 12 (head) + 11
+   (search's own default, restored) = 23, matching exactly. */
+.cs-cond-side-sug .cs-sug-head { padding: 0 0 12px; }
+.cs-cond-side-sug .cs-rec-search { padding: 11px 0 8px; }
 .cs-cond-side-sug .cs-list { padding: 0; }
 /* §4, 2026-08-24: "these two sections... look alien side by side, the
    icon" — recolours the generic slate tile to match Assessment's violet, so

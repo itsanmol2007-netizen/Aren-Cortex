@@ -14,6 +14,24 @@ import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { CompanionScope, CompanionSuggestion } from "../../lib/synapse/companions";
 
 // ============================================================
+// THE CAPPED/RANKED LIST — one row height, everywhere it caps
+// ============================================================
+
+/**
+ * One collapsed row for a capped ranked list (`ConditionsCard`'s ranked
+ * conditions, `SuggestionsCard`'s ranked suggestions wherever `capped` is
+ * passed). ConditionsCard measured this live 2026-08-13 at 52.9px, rounded
+ * to 53. SuggestionsCard used to keep its OWN separate guess (58, then 79)
+ * — which is exactly why the two panels' capped box and expanded "Show
+ * more" box ended up different heights side by side (Anmol, 2026-08-25:
+ * "when clicking show more, the final height of both panels are
+ * different"). One constant now: both cards animate `maxHeight` off the
+ * SAME number, so `capped * ROW_H` and `4.5 * ROW_H` land on the same pixel
+ * for both, not two numbers that happen to start out close.
+ */
+export const RANKED_ROW_H = 53;
+
+// ============================================================
 // THE THINKING RING — Synapse recomputing, said in motion
 // ============================================================
 

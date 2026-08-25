@@ -11,7 +11,14 @@ explain Aren Cortex itself (that's everything below).
    last session actually did, where the current arc stands, what's next.
    Always read this, every session, even if your task looks unrelated —
    it sometimes says a thing you're about to touch just changed.
-3. **`context/README.md`** — the topic router. Match your task to one row
+3. **Touching any UI — a new page, a new component, or restyling an
+   existing one? Read `cortex-design-dna/README.md` before you write a
+   line of CSS or JSX.** This is not optional and not routed through the
+   table below — it's a pre-flight checklist (layout, spacing, colour,
+   icons, motion, empty states, progressive disclosure), the accumulated
+   cost of getting those things wrong already paid for once (2026-08-25),
+   so the next session doesn't pay it again.
+4. **`context/README.md`** — the topic router. Match your task to one row
    in its table and read *only* the pocket file(s) it names. This is
    where "which of the 15 files in `docs/` do I actually need" gets
    answered — don't open `aren-technical-atlas.md` or

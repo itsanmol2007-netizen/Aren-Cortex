@@ -37,30 +37,22 @@ import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine
 import type { DoctorFreeTerm } from "../../lib/db/synapse";
 import { matchingFreeTerms, topFreeTermMatches } from "./freeTerms";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
-import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
+import { GuardReason, RANKED_ROW_H, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
-import { BlankSelectedArt } from "./BlankArt";
+import { BlankConditionArt, BlankSelectedArt } from "./BlankArt";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
 
 /** Rows shown before the panel asks. */
 const CAP = 4;
 
-/**
- * One collapsed row, measured rather than guessed, so the animated height
- * lands on a row edge instead of slicing the fifth one in half.
- *
- * Re-measured in the browser 2026-08-13: a row is 52.9px, not 46. At 46 the
- * collapsed box came to 184px against 212px of rows, so the FOURTH row was
- * being sliced a quarter of the way through and the panel looked broken
- * rather than bounded — the exact failure the comment above was written to
- * prevent. Rounded up to 53 so four rows end on an edge.
- */
-const ROW_H = 53;
+/** Now `RANKED_ROW_H` in parts.tsx — shared with SuggestionsCard's capped
+ *  list, see that constant's doc comment for why this moved out of here. */
+const ROW_H = RANKED_ROW_H;
 
 interface Props {
     /** the ranked `finding` intents, in engine order */
@@ -281,6 +273,7 @@ export function ConditionsCard({
         if (!hasChart) {
             return (
                 <div className="cs-empty">
+                    <BlankConditionArt />
                     <strong>Nothing to read yet</strong>
                     <span>Conditions appear as you add symptoms and findings.</span>
                 </div>
@@ -297,6 +290,7 @@ export function ConditionsCard({
         if (intents.length === 0 && freeDiagnoses.length === 0) {
             return (
                 <div className="cs-empty">
+                    <BlankConditionArt />
                     <strong>No condition ranks for this chart</strong>
                     <span>Search above to add one.</span>
                 </div>
@@ -348,6 +342,13 @@ export function ConditionsCard({
     // judgement in this workspace that is entirely the doctor's.
     const [primaryDx, ...secondaryDx] = diagnoses;
 
+    // Whether there is anything at all for the ranked column to show — an
+    // engine rank, OR a free-text diagnosis pinned above them (body()'s own
+    // `freeDiagnoses`, recomputed there; same check, just needed a level
+    // higher too, to gate `.cs-ranked-head` below without hiding it over a
+    // free-text-only chart that has real rows to show).
+    const hasAnyConditions = intents.length > 0 || diagnoses.some(isFreeLabel);
+
     return (
         <section
             aria-label="Assessment"
@@ -387,18 +388,28 @@ export function ConditionsCard({
                 {/* left: Assessment's identity, then either search results or
                     the ranked list */}
                 <div className="min-w-0 flex flex-col">
-                    <div className="flex items-center gap-2">
-                        {/* `cs-glyph-live` is the one plain-CSS class on an
-                            otherwise Tailwind icon — it only supplies
-                            `position: relative` for ThinkingRing to anchor
-                            to; see consult.css. */}
-                        <span className="cs-glyph-live grid size-[26px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f7f2ff_0%,#ede2fe_100%)] text-[#6d28d9] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-                            <ThinkingRing pulseKey={thinkingKey} />
-                            <Stethoscope size={14} />
-                        </span>
-                        <h2 className="m-0 text-[13.5px] font-bold uppercase tracking-[0.045em] text-[var(--cs-ink)]">
-                            Assessment
-                        </h2>
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            {/* `cs-glyph-live` is the one plain-CSS class on an
+                                otherwise Tailwind icon — it only supplies
+                                `position: relative` for ThinkingRing to anchor
+                                to; see consult.css. */}
+                            <span className="cs-glyph-live grid size-[26px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f7f2ff_0%,#ede2fe_100%)] text-[#6d28d9] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                                <ThinkingRing pulseKey={thinkingKey} />
+                                <Stethoscope size={14} />
+                            </span>
+                            <h2 className="m-0 text-[13.5px] font-bold uppercase tracking-[0.045em] text-[var(--cs-ink)]">
+                                Assessment
+                            </h2>
+                        </div>
+                        {/* Matches Investigations' `.cs-sort` in its own head
+                            row (SuggestionsCard.tsx) — this panel is ALSO
+                            sorted by relevance, it just never said so, which
+                            was one of the two "still not symmetric" gaps left
+                            after the 2026-08-25 handoff's three blind passes. */}
+                        {!search.isSearching && (
+                            <span className="cs-sort">Sort by: <b>Relevance</b></span>
+                        )}
                     </div>
 
                     <div className="mt-3">
@@ -422,23 +433,48 @@ export function ConditionsCard({
                             {/* `.cs-ranked-*` — shared with SuggestionsCard's
                                 identical row (consult.css), not a one-off
                                 Tailwind string, so the two panels cannot
-                                drift apart again. See that class's comment. */}
-                            <div className="cs-ranked-head">
-                                <span className="cs-ranked-label">Ranked conditions</span>
-                                {intents.length > 0 && (
-                                    <span className="cs-ranked-count">
-                                        {shown.length} of {intents.length}
+                                drift apart again. See that class's comment.
+
+                                Gated on `intents.length > 0` now — matching
+                                SuggestionsCard's identical gate exactly,
+                                which this one never had. Showing "RANKED
+                                CONDITIONS" over an empty-state message that
+                                already says "No condition ranks for this
+                                chart" was saying the same thing twice, AND
+                                it was the actual source of item 2/4's icon
+                                and "Show more" misalignment (Anmol,
+                                2026-08-25): this column carried a header row
+                                Investigations' empty state didn't, so the
+                                two `.cs-empty` blocks centred in two
+                                DIFFERENT amounts of leftover space even
+                                though the cards themselves were the same
+                                height. */}
+                            {hasAnyConditions && (
+                                <div className="cs-ranked-head">
+                                    {/* The honesty line still exists — a doctor
+                                        who assumes this column reads only from
+                                        the symptom chips is reading a list that
+                                        silently includes their BP — it is just
+                                        not a standing line of its own any more.
+                                        Anmol, 2026-08-25: "remove most of the
+                                        useless things... you can simply write
+                                        ranked somewhere else instead of
+                                        assigning one line vertical space to
+                                        it." The label already says "ranked";
+                                        the rest is one hover away. */}
+                                    <span
+                                        className="cs-ranked-label"
+                                        title="Ranked from symptoms, findings and measurements. You decide."
+                                    >
+                                        Ranked conditions
                                     </span>
-                                )}
-                            </div>
-                            {/* The honesty line, and it is content rather than
-                                ornament: a doctor who assumes this column reads
-                                only from the symptom chips is reading a list that
-                                silently includes their BP. It belongs at reading
-                                contrast. */}
-                            <p className="mt-1.5 text-[12px] font-[460] leading-snug text-[var(--cs-muted)]">
-                                Ranked from symptoms, findings and measurements. You decide.
-                            </p>
+                                    {intents.length > 0 && (
+                                        <span className="cs-ranked-count">
+                                            {shown.length} of {intents.length}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                             {/* "Show this to that doctor in future for similar
                                 inputs" — §4, 2026-08-24. A quiet strip, not a
                                 ranked row: these never came from the shared

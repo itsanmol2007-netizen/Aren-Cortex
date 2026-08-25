@@ -56,6 +56,25 @@ export function BlankTestArt() {
     );
 }
 
+/** The empty ranked-conditions list: an unranked card, rows waiting for a
+ *  number. Violet, matching Assessment's own tile colour — distinct from
+ *  `BlankSelectedArt` below, which is the SEPARATE confirmed-diagnosis tray
+ *  further down the same card, not this one. Never had art before
+ *  (2026-08-25 handoff) — this is the missing half. */
+export function BlankConditionArt() {
+    return (
+        <svg width="52" height="46" viewBox="0 0 52 46" fill="none" aria-hidden="true">
+            <rect x="10" y="8" width="32" height="30" rx="5"
+                fill="#fbfaff" stroke="#ddd4f7" strokeWidth="1.6" />
+            <circle cx="18" cy="17" r="3.4" fill="#f2edfd" stroke="#c4b5fd" strokeWidth="1.3" />
+            <path d="M25 17h11" stroke="#e3dbf9" strokeWidth="1.6" strokeLinecap="round" />
+            <circle cx="18" cy="27" r="3.4" fill="#f2edfd" stroke="#ded5f8" strokeWidth="1.3" />
+            <path d="M25 27h8" stroke="#e9e2fa" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M46 6l.8 1.9 1.9.8-1.9.8L46 11.4l-.8-1.9-1.9-.8 1.9-.8z" fill="#c4b5fd" />
+        </svg>
+    );
+}
+
 /** The empty confirmed-diagnosis column: a tray waiting to receive. */
 export function BlankSelectedArt() {
     return (
@@ -65,6 +84,27 @@ export function BlankSelectedArt() {
             <path d="M17 20l3.5-9h11l3.5 9" stroke="#ddd4f7" strokeWidth="1.5" strokeLinejoin="round" />
             <path d="M44 9l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z" fill="#c4b5fd" />
             <path d="M8 13l.6 1.4 1.4.6-1.4.6L8 17.6l-.6-1.4L6 15.6l1.4-.6z" fill="#e0d8fb" />
+        </svg>
+    );
+}
+
+/** The empty consultation plan: a prescription pad, nothing written yet.
+ *  Blue, matching the rail's own accent — was a bare lucide `ClipboardList`
+ *  dropped straight into the markup, the one place in this file's family
+ *  that wasn't inline SVG drawn to the same rules as the rest (Anmol,
+ *  2026-08-25's design-DNA ask: "use the existing SVG/icon system; no
+ *  random decorative icons"). */
+export function BlankPlanArt() {
+    return (
+        <svg width="46" height="46" viewBox="0 0 46 46" fill="none" aria-hidden="true">
+            <rect x="11" y="6" width="24" height="34" rx="4"
+                fill="#fbfcff" stroke="#c9dbf7" strokeWidth="1.6" />
+            <path d="M17 4.5h12a2 2 0 0 1 2 2V8H15V6.5a2 2 0 0 1 2-2z"
+                fill="#eaf1fd" stroke="#c9dbf7" strokeWidth="1.4" />
+            <path d="M16.5 18h13M16.5 24h13M16.5 30h8" stroke="#dbe4f5"
+                strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M38 30l.75 1.75L40.5 32.5l-1.75.75L38 35l-.75-1.75L35.5 32.5l1.75-.75z"
+                fill="#b9d1f7" />
         </svg>
     );
 }

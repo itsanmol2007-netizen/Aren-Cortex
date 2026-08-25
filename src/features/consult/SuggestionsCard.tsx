@@ -32,7 +32,7 @@ import {
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { DoctorFreeTerm, DoctorFreeTermType } from "../../lib/db/synapse";
-import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
+import { GuardReason, RANKED_ROW_H, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -52,15 +52,24 @@ const isFreeTextType = (t: IntentType | null): t is DoctorFreeTermType =>
     !!t && FREE_TEXT_TYPES.has(t);
 
 /**
- * One `.cs-sug` row, for the same capped/"show more" `motion.div` maxHeight
- * math `ConditionsCard.tsx`'s `ROW_H` uses — see that constant's doc
- * comment for why this is measured rather than guessed. `.cs-sug` runs
- * 11px top/bottom padding plus its two-line name+subtitle content; the
- * card's own earlier note on the capped scroll box ("320px ≈ 5.5 rows")
- * already puts a row at ~58px, so that is the number reused here rather
- * than a fresh guess.
+ * `.cs-sug`'s real height depends on whether the kind-label line
+ * ("INVESTIGATION"/"ADVICE"/…) is showing — see `SuggestionRow`'s
+ * `kindLabel` below: hidden for a single-type instance (Investigations
+ * beside Assessment, or a facility's single-type primary slot), shown when
+ * types are genuinely mixed (the "All" Clinical Suggestions view). Two
+ * numbers, not one, or the multi-type box's `maxHeight` caps at a
+ * single-line-row budget while its rows are still three lines tall —
+ * exactly the "fourth row sliced through" failure `RANKED_ROW_H`'s own doc
+ * comment describes, just reintroduced here instead of fixed.
+ *  - No kind label: `RANKED_ROW_H` (parts.tsx) — shared with
+ *    ConditionsCard's numbered rows, which is what makes THOSE two panels'
+ *    capped/expanded boxes land on the same pixel (Anmol, 2026-08-25: "the
+ *    final height of both panels are different").
+ *  - Kind label showing: 79px, measured live before the label was removed
+ *    from the single-type case — the real height of a three-line `.cs-sug`
+ *    row, not a fresh guess.
  */
-const ROW_H = 58;
+const MULTI_TYPE_ROW_H = 79;
 
 /**
  * Section order, labels, glyphs and the verb each type is accepted with.
@@ -230,6 +239,9 @@ export function SuggestionsCard({
         [types]
     );
     const SEARCH_TYPES = useMemo(() => SECTIONS.map((s) => s.type), [SECTIONS]);
+    // See MULTI_TYPE_ROW_H's doc comment — the row is a different real
+    // height depending on whether the kind label is showing.
+    const ROW_H = SECTIONS.length > 1 ? MULTI_TYPE_ROW_H : RANKED_ROW_H;
     /**
      * Which category is in view — §3, 2026-08-24 (was: which category the
      * search box was scoped to, via a `<select>` that had no effect on
@@ -499,7 +511,12 @@ export function SuggestionsCard({
                 <SuggestionRow
                     key={intent.intentId}
                     intent={intent}
-                    kindLabel={section.label}
+                    // Redundant on every single row when this instance only
+                    // ever shows ONE type — the panel's own title already
+                    // says "Investigations"/"Exercise Plans"/etc. Only worth
+                    // repeating per-row when rows of different types are
+                    // actually mixed together (the flat "All" view).
+                    kindLabel={SECTIONS.length > 1 ? section.label : null}
                     verb={section.verb}
                     icon={section.icon}
                     relevance={relevance ? RELEVANCE_TEXT[relevance] : null}
@@ -638,9 +655,26 @@ export function SuggestionsCard({
                 <div className="cs-list" ref={listRef}>{body()}</div>
             ) : (
                 <>
+                    {/* Matches ConditionsCard's identical `.cs-ranked-head`
+                        exactly — same shared classes, and, per Anmol,
+                        2026-08-25 ("remove most of the useless things...
+                        write ranked somewhere else instead of assigning one
+                        line vertical space to it"), the same move of the
+                        explanatory line off its own row and onto a tooltip
+                        on the label. Was a standing `<p>` here for one
+                        round; that was the wrong direction — it made this
+                        card's header TALLER than Assessment's instead of
+                        matching it, which is exactly what was pushing their
+                        "Show more"/"Show less" controls out of alignment
+                        (item 4 of the same message). */}
                     {capped != null && rows.length > 0 && (
                         <div className="cs-ranked-head">
-                            <span className="cs-ranked-label">Ranked suggestions</span>
+                            <span
+                                className="cs-ranked-label"
+                                title="What confirms or rules out what you've ranked above."
+                            >
+                                Ranked suggestions
+                            </span>
                             <span className="cs-ranked-count">
                                 {visibleRows.length} of {rows.length}
                             </span>
@@ -684,7 +718,8 @@ function SuggestionRow({
     onExplain, onAccept, onRemove,
 }: {
     intent: PersonalizedIntent;
-    kindLabel: string;
+    /** null when this instance renders only one type — see the call site */
+    kindLabel: string | null;
     verb: string;
     icon: React.ReactNode;
     relevance: string | null;
@@ -714,7 +749,7 @@ function SuggestionRow({
             <span className={`cs-sug-icon is-${tone}`} aria-hidden="true">{icon}</span>
 
             <div className="cs-sug-main">
-                <span className={`cs-sug-kind is-${tone}`}>{kindLabel}</span>
+                {kindLabel && <span className={`cs-sug-kind is-${tone}`}>{kindLabel}</span>}
                 <div className="cs-sug-name">
                     <span>{intent.label}</span>
                     {intent.isSafetyCritical && (
