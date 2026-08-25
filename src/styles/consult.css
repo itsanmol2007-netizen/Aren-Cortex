@@ -1940,18 +1940,33 @@ body.cs-locked-shell {
     padding: 11px 16px 0;
 }
 
+/* The secondary controls row — sort label + category tabs — BELOW the
+   search field now (2026-08-25 restyle: search stays the prominent
+   control; this row is deliberately quieter and only exists at all when
+   `anyContent` says there is something to filter — see SuggestionsCard's
+   own doc comment on the gate). Horizontal padding lives here now, not on
+   `.cs-sug-filter`, since that's the one thing both children (a `<span>`
+   and a `<div>`) need in common. */
+.cs-sug-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 16px 0;
+}
+
 /* Narrows the list AND the search box to one category — §3, 2026-08-24.
    Replaces the `<select>` this class used to style (`.cs-scope`, removed):
    that control only ever affected an ACTIVE search, so choosing a category
    with nothing typed visibly did nothing, reported as "the Search Filter
    button is not working at all." Tabs now, per the same request ("add
    buttons like tabs for Tests and Advices"), and real: SuggestionsCard's
-   `rows` filters on this too. */
+   `rows` filters on this too. Nested inside `.cs-sug-controls` now, which
+   owns the row's horizontal padding — see that class's own comment. */
 .cs-sug-filter {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 0 16px;
 }
 
 .cs-sug-filter-btn {

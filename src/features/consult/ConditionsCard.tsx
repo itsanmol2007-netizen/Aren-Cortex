@@ -402,13 +402,24 @@ export function ConditionsCard({
                                 Assessment
                             </h2>
                         </div>
-                        {/* Matches Investigations' `.cs-sort` in its own head
-                            row (SuggestionsCard.tsx) — this panel is ALSO
-                            sorted by relevance, it just never said so, which
-                            was one of the two "still not symmetric" gaps left
-                            after the 2026-08-25 handoff's three blind passes. */}
-                        {!search.isSearching && (
-                            <span className="cs-sort">Sort by: <b>Relevance</b></span>
+                        {/* Matches Investigations' `.cs-sort` (SuggestionsCard.tsx)
+                            — this panel is ALSO sorted by relevance, it just
+                            never said so, which was one of the two "still not
+                            symmetric" gaps left after the 2026-08-25 handoff's
+                            three blind passes. Gated on `hasAnyConditions` now
+                            (2026-08-25 follow-up) for the same reason
+                            Investigations' whole controls row is gated on
+                            `anyContent`: a chart with nothing ranked has
+                            nothing for "most relevant first" to describe, and
+                            showing it anyway was the other half of why this
+                            panel's empty state sat in a different amount of
+                            leftover space than its neighbour's. Wording moved
+                            off "Sort by… Relevance" (item 7) — that reads as a
+                            generic list-sorting control; this says what
+                            Cortex is actually doing, without naming the
+                            mechanism. */}
+                        {!search.isSearching && hasAnyConditions && (
+                            <span className="cs-sort">Most relevant first</span>
                         )}
                     </div>
 

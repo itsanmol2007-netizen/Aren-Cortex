@@ -259,6 +259,33 @@ export function SuggestionsCard({
      */
     const [scope, setScope] = useState<IntentType | null>(null);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
+    /**
+     * Which of this instance's categories actually have something ranked
+     * right now — the contextual half of the filter row. A facility whose
+     * chart only ever produced investigations has no business being shown
+     * "Referral"/"Advice"/"Exercise" tabs that lead to nothing; those are
+     * chrome, not a filter. Keeps the CURRENTLY chosen `scope` in the set
+     * even if its category just drained to zero (a doctor un-taking the one
+     * row in "Exercise" should not lose the tab that got them there — that
+     * reads as the filter vanishing, not as "nothing left to filter").
+     */
+    const nonEmptySections = useMemo(() => {
+        const withContent = SECTIONS.filter((s) => (byType[s.type]?.length ?? 0) > 0);
+        if (scope && !withContent.some((s) => s.type === scope)) {
+            const active = SECTIONS.find((s) => s.type === scope);
+            if (active) withContent.push(active);
+        }
+        return withContent;
+    }, [SECTIONS, byType, scope]);
+    /** Anything ranked at all, in ANY category this instance covers — not
+     *  scoped to the current tab. Gates the whole controls row (sort label
+     *  + tabs): a doctor scoped into a category that just emptied out still
+     *  needs the tabs to get back to one that has content, so this can't be
+     *  `rows.length > 0` (which IS scoped). */
+    const anyContent = useMemo(
+        () => SECTIONS.some((s) => (byType[s.type]?.length ?? 0) > 0),
+        [SECTIONS, byType]
+    );
 
     const addFree = (type: DoctorFreeTermType, label: string) => {
         if (!onAddFreeText) return;
@@ -573,50 +600,24 @@ export function SuggestionsCard({
                     </span>
                     {title}
                 </span>
-                {!search.isSearching && <span className="cs-sort">Sort by: <b>Relevance</b></span>}
+                {/* A single-section instance (the Assessment side-slot,
+                    "Investigations") never gets tabs — one section IS "all"
+                    — so its sort label stays right here, inline, exactly
+                    where it always sat: this is the reference pair
+                    (`responsive-grid.md`) with Assessment's own `.cs-sort`,
+                    which is ALSO inline in its head row. Moving only THIS
+                    instance's label onto a new row below the search field
+                    would grow it one row taller than Assessment the moment
+                    either has content — reopening the exact header/row-
+                    height mismatch three blind passes fought on
+                    2026-08-25. The multi-section instance (the standalone
+                    "Clinical Suggestions" panel, which item 6 is actually
+                    about) renders its sort label in `.cs-sug-controls`
+                    below the search box instead — see there. */}
+                {SECTIONS.length === 1 && !search.isSearching && anyContent && (
+                    <span className="cs-sort">Most relevant first</span>
+                )}
             </div>
-
-            {/* §3, 2026-08-24. One button per category — "Tests", "Advice"…
-                — to get straight to that section, replacing a `<select>`
-                that only ever narrowed an active SEARCH and did nothing to
-                the list otherwise (see `scope`'s doc comment above). Tabs
-                because the ask named them specifically, and because a
-                doctor scanning six words reads them faster than opening a
-                dropdown to find the same six.
-
-                Hidden entirely when this instance only ever renders ONE
-                section (item 2, 2026-08-24) — "All" and that one section
-                are the identical filter, so a two-tab row that always says
-                the same thing twice was reading as a stray global search
-                bar rather than a scoped one. */}
-            {SECTIONS.length > 1 && (
-                <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={scope === null}
-                        className={`cs-sug-filter-btn${scope === null ? " is-on" : ""}`}
-                        onClick={() => setScope(null)}
-                    >
-                        All
-                    </button>
-                    {SECTIONS.map((s) => (
-                        <button
-                            key={s.type}
-                            type="button"
-                            role="tab"
-                            aria-selected={scope === s.type}
-                            className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
-                            // A second click on the active tab clears it — the
-                            // fastest way back to "All" without a second control.
-                            onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
-                        >
-                            {s.icon}
-                            {s.label}
-                        </button>
-                    ))}
-                </div>
-            )}
 
             <IntentSearchField
                 state={search}
@@ -633,6 +634,73 @@ export function SuggestionsCard({
                 disabled={disabled}
                 onKeyDown={onSearchKeyDown}
             />
+
+            {/* Sort label + category tabs, together, BELOW the search field —
+                the search stays the prominent control, this is the secondary
+                row under it. Multi-section instances only (the standalone
+                Clinical Suggestions panel, beside Medicine Recommendations —
+                items 5/6, 2026-08-25); the single-section side-slot instance
+                keeps its sort label inline in the head row above, see there.
+                Gated on `anyContent` (something ranked somewhere in this
+                card, in ANY category — not just the one currently scoped
+                to), not merely "did the caller pass more than one type": a
+                chart with only investigations has nothing for a
+                "Referral"/"Advice"/"Exercise" tab to filter, so those are
+                chrome, not a filter, and this whole row disappears with
+                them — the same empty-state alignment `Medicine
+                Recommendations` beside it already gets from having no
+                filter row of its own. See `cortex-design-dna/empty-
+                states.md` and `.../responsive-grid.md`. */}
+            {SECTIONS.length > 1 && !search.isSearching && anyContent && (
+                <div className="cs-sug-controls">
+                    <span className="cs-sort">Most relevant first</span>
+                    {/* §3, 2026-08-24. One button per category — "Tests",
+                        "Advice"… — to get straight to that section,
+                        replacing a `<select>` that only ever narrowed an
+                        active SEARCH and did nothing to the list otherwise
+                        (see `scope`'s doc comment above). Tabs because the
+                        ask named them specifically, and because a doctor
+                        scanning six words reads them faster than opening a
+                        dropdown to find the same six.
+
+                        Built from `nonEmptySections`, not `SECTIONS` — only
+                        categories with something ranked right now get a tab
+                        (item 5, 2026-08-25). Hidden entirely when that
+                        leaves one or none (item 2, 2026-08-24, still
+                        applies): "All" and the one populated section are
+                        the identical filter, so a two-tab row that always
+                        says the same thing twice was reading as a stray
+                        global search bar rather than a scoped one. */}
+                    {nonEmptySections.length > 1 && (
+                        <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={scope === null}
+                                className={`cs-sug-filter-btn${scope === null ? " is-on" : ""}`}
+                                onClick={() => setScope(null)}
+                            >
+                                All
+                            </button>
+                            {nonEmptySections.map((s) => (
+                                <button
+                                    key={s.type}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={scope === s.type}
+                                    className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
+                                    // A second click on the active tab clears it — the
+                                    // fastest way back to "All" without a second control.
+                                    onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
+                                >
+                                    {s.icon}
+                                    {s.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* ── THE SAME TEMPLATE ASSESSMENT'S RANKED COLUMN USES ─────────
                 Message-3 follow-up, 2026-08-25: "why using a lot of brain

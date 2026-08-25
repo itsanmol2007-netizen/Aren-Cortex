@@ -1,9 +1,11 @@
 # Panel / card structure
 
 Part of the Cortex Design DNA set — see `README.md` for the pre-flight
-checklist and how these files fit together. This pocket is §2 of that
-file's original single-document form (2026-08-25), unchanged in content,
-just moved.
+checklist and how these files fit together. This pocket started as §2 of
+that file's original single-document form (2026-08-25, moved unchanged);
+the secondary-controls ordering below was added the same day, once
+`SuggestionsCard`'s actual controls row moved to match it — see that
+file's own doc comments for the concrete change.
 
 ---
 
@@ -12,15 +14,31 @@ border, one radius, one shadow — all three from tokens, never hand-rolled).
 Inside it, the recipe is always:
 
 ```
-.cs-card-head            — icon tile (26px, .cs-glyph) + title, one row
-  [optional tabs / filter row]
-.cs-rec-search            — the search box, IntentSearchField, everywhere
+.cs-card-head            — icon tile (26px, .cs-glyph) + title ONLY, one row
+.cs-rec-search            — the search box, IntentSearchField, everywhere —
+                              the one control that is ALWAYS prominent
+  [optional secondary controls row — sort label / category tabs]
 .cs-ranked-head            — "RANKED X" label + "N of M" count, ONLY when
                               there is something to rank (see empty-states.md)
 .cs-list (motion.div)     — the capped/scrollable body (see progressive-disclosure.md)
 .cs-card-foot-more        — "Show more", a SIBLING below the list, never
                               the list's own last row
 ```
+
+The secondary controls row (sort label, category tabs when a panel covers
+more than one intent type) sits BELOW the search field, not above it —
+search is the one control a doctor always needs; sort/filter is a
+convenience that only earns space once there is something to sort or
+filter. Gate the ENTIRE row on real content (`SuggestionsCard`'s
+`anyContent`: something ranked in ANY category this instance covers, not
+just the one currently in view) — an empty chart has nothing for a sort
+label or a row of category tabs to describe, and showing them anyway is
+exactly what broke this panel's empty-state alignment against its
+neighbour before (2026-08-25, see `responsive-grid.md`). Within that row,
+gate the CATEGORY TABS a second time on which categories actually have
+content (`nonEmptySections`, not the caller's full type list) — a facility
+whose chart only ever produces investigations has no business showing a
+"Referral"/"Advice"/"Exercise" tab that leads nowhere.
 
 This is not four components that happen to look similar — `ConditionsCard`
 and `SuggestionsCard` are required to share the literal CSS classes for

@@ -1,9 +1,9 @@
 # Typography & text density
 
 Part of the Cortex Design DNA set — see `README.md` for the pre-flight
-checklist and how these files fit together. This pocket is §3 of that
-file's original single-document form (2026-08-25), unchanged in content,
-just moved.
+checklist and how these files fit together. This pocket started as §3 of
+that file's original single-document form (2026-08-25, moved unchanged);
+the clinical-language rule below was added the same day.
 
 ---
 
@@ -29,3 +29,10 @@ beats a paragraph; a paragraph never appears.**
   the actual fix is usually a **shorter label plus a tooltip**, not a
   well-written paragraph. Prose that explains the UI is a sign the UI
   itself needs a clearer label.
+- **Clinical language, not implementation language.** Cortex ranks/sorts
+  suggestions internally, but a doctor-facing label should say what that
+  means for THEM, not name the mechanism. "Sort by: Relevance" reads like a
+  generic e-commerce list control; `.cs-sort`'s actual copy is now "Most
+  relevant first" — same fact, no exposed verb like "sort" or "rank" doing
+  the talking. Same test applies to any future label: if it would fit
+  equally well on a shopping filter, it is not clinical language yet.
