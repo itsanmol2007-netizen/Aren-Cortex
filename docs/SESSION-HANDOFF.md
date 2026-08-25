@@ -41,6 +41,37 @@ item:**
   medicine sheets restyled to `docs/aren-modal-design.md`'s shape with
   more generous padding — message-3 called both "cramped."
 
+**Fourth pass, same day — the third pass's `layout` fix was itself a bug,
+and the symmetry fix needed to be a shared class, not shared numbers:**
+
+- Reverted `layout={!reduce}` on `ConditionsCard`'s/`SuggestionsCard`'s
+  outer sections. Motion's `layout` animates a whole subtree via a scale
+  transform, which does not compose with a child that has its OWN
+  `overflow: auto` scroll box — that combination is exactly what was
+  reported as "still overflowing when you are clicking show more."
+  Removed; the fluid feel now comes only from the list's own local
+  `motion.div` height animation (see next point), which is what
+  `ConditionsCard` was already doing correctly before the `layout` prop
+  was added on top of it.
+- `SuggestionsCard`'s capped list rebuilt to be `ConditionsCard`'s ranked-
+  list mechanism verbatim: a `motion.div` animating `maxHeight` between
+  `capped * ROW_H` and a 4.5-row scroll box, "Show more" as a sibling
+  BELOW the box rather than the box's own last row. The old CSS-class
+  toggle (`.is-capped-scroll`) is gone.
+- New shared classes `.cs-ranked-head` / `.cs-ranked-label` /
+  `.cs-ranked-count` (consult.css) replace `ConditionsCard`'s one-off
+  Tailwind string for "RANKED CONDITIONS · 4 of 11" and are now also used
+  by `SuggestionsCard` for the equivalent "RANKED SUGGESTIONS" row it did
+  not have before — Assessment and Investigations were still visually
+  uneven below the search box even after the third pass's alignment fix,
+  because only one of the two panels had this row at all. Literally the
+  same class in both files this time, not matching numbers kept in sync
+  by hand.
+- Empty-state copy shortened across ConditionsCard, SuggestionsCard,
+  RecommendationsCard and CaseSheet's Findings panel — one line each, no
+  em dashes, dropped the sentence that only restated what the heading
+  already said ("Cortex files each entry in the right place" etc).
+
 **Deliberately NOT done — flagged, not silently skipped:** the request to
 make a guard respect an ALREADY-CONFIRMED diagnosis (a malaria-confirmed
 patient still sees "confirm with RDT or blood smear before starting an

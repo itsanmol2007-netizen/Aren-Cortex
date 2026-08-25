@@ -52,6 +52,17 @@ const isFreeTextType = (t: IntentType | null): t is DoctorFreeTermType =>
     !!t && FREE_TEXT_TYPES.has(t);
 
 /**
+ * One `.cs-sug` row, for the same capped/"show more" `motion.div` maxHeight
+ * math `ConditionsCard.tsx`'s `ROW_H` uses — see that constant's doc
+ * comment for why this is measured rather than guessed. `.cs-sug` runs
+ * 11px top/bottom padding plus its two-line name+subtitle content; the
+ * card's own earlier note on the capped scroll box ("320px ≈ 5.5 rows")
+ * already puts a row at ~58px, so that is the number reused here rather
+ * than a fresh guess.
+ */
+const ROW_H = 58;
+
+/**
  * Section order, labels, glyphs and the verb each type is accepted with.
  *
  * `finding` is deliberately absent — see the header comment.
@@ -344,6 +355,20 @@ export function SuggestionsCard({
         return ids;
     }, [byType]);
 
+    // §3, 2026-08-24: "add a show more button... apply this to literally
+    // every section which starts growing over 4-5 cards." Only active when
+    // the caller passed `capped` — every instance does today. Lifted out of
+    // `body()` (single source of truth) so the subheader's count and the
+    // `motion.div` height below can both read it without recomputing.
+    const visibleRows = useMemo(
+        () => (
+            capped != null && !showAllCapped
+                ? rows.filter((r, i) => i < capped || acceptedIntentIds.has(r.intent.intentId))
+                : rows
+        ),
+        [rows, capped, showAllCapped, acceptedIntentIds]
+    );
+
     const body = () => {
         if (search.isSearching) {
             return (
@@ -398,11 +423,8 @@ export function SuggestionsCard({
             return (
                 <div className="cs-empty">
                     <BlankTestArt />
-                    <strong>Start adding observations to activate Synapse</strong>
-                    <span>
-                        Symptoms, findings and measurements all feed the same reading —
-                        suggestions appear here the moment one lands.
-                    </span>
+                    <strong>Nothing to suggest yet</strong>
+                    <span>Add a symptom or finding and suggestions appear here.</span>
                 </div>
             );
         }
@@ -460,22 +482,13 @@ export function SuggestionsCard({
                         <div className="cs-empty">
                             <BlankTestArt />
                             <strong>Nothing else to suggest for this chart</strong>
-                            <span>Search above to order or refer something directly.</span>
+                            <span>Search above to add one directly.</span>
                         </div>
                     )}
                 </>
             );
         }
 
-        // §3, 2026-08-24: "add a show more button... apply this to literally
-        // every section which starts growing over 4-5 cards." Only active
-        // when the caller passed `capped` (the Assessment side-slot) — the
-        // two full-height placements are unaffected, same as before.
-        const visibleRows = capped != null && !showAllCapped
-            ? rows.filter(
-                (r, i) => i < capped || acceptedIntentIds.has(r.intent.intentId)
-              )
-            : rows;
         const rowNodes = visibleRows.map(({ intent, section }) => {
             const list = byType[section.type] ?? [];
             const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
@@ -511,37 +524,15 @@ export function SuggestionsCard({
             );
         });
 
-        return [
-            ...freeRows, freeTermsStrip, ...rowNodes,
-            capped != null && rows.length > capped && (
-                <button
-                    key="cap-toggle"
-                    type="button"
-                    className="cs-card-foot-more cs-sug-cap-toggle"
-                    onClick={() => setShowAllCapped((v) => !v)}
-                >
-                    {showAllCapped ? "Show less" : `Show all ${rows.length}`}
-                    <ChevronDown size={13} className={showAllCapped ? "is-flipped" : undefined} />
-                </button>
-            ),
-        ];
+        // The "Show all" toggle used to live in this array, inside the same
+        // node the caller drops straight into `.cs-list` — which is why it
+        // used to render INSIDE the capped/scrolling box instead of as the
+        // box's own footer. It is a sibling now; see the render below.
+        return [...freeRows, freeTermsStrip, ...rowNodes];
     };
 
     return (
-        // `layout` — message-3 follow-up, 2026-08-25: "add better fluid
-        // animation to everything, tab changing, show more/less... right
-        // now clicking anything is just repositioning the whole page."
-        // Switching a tab or toggling "Show all" changes how many rows
-        // render, which used to just SNAP this card (and everything below
-        // it) to the new height in one frame. `layout` makes Motion tween
-        // this card's own box between the old and new size instead, so a
-        // tab click reads as the card resizing, not the page jumping.
-        <motion.section
-            layout={!reduce}
-            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 34 }}
-            className={`cs-card ${className}`}
-            aria-label="Clinical suggestions"
-        >
+        <section className={`cs-card ${className}`} aria-label="Clinical suggestions">
             {/* The title takes a glyph tile so this panel and MEDICINE
                 RECOMMENDATIONS beside it read as the two halves of one row.
                 Before this it was a violet underlined tab — the language of a
@@ -565,7 +556,7 @@ export function SuggestionsCard({
                     </span>
                     {title}
                 </span>
-                <span className="cs-sort">Sort by: <b>Relevance</b></span>
+                {!search.isSearching && <span className="cs-sort">Sort by: <b>Relevance</b></span>}
             </div>
 
             {/* §3, 2026-08-24. One button per category — "Tests", "Advice"…
@@ -626,13 +617,65 @@ export function SuggestionsCard({
                 onKeyDown={onSearchKeyDown}
             />
 
-            <div
-                className={`cs-list${capped != null && showAllCapped ? " is-capped-scroll" : ""}`}
-                ref={listRef}
-            >
-                {body()}
-            </div>
-        </motion.section>
+            {/* ── THE SAME TEMPLATE ASSESSMENT'S RANKED COLUMN USES ─────────
+                Message-3 follow-up, 2026-08-25: "why using a lot of brain
+                when you can just copy and paste template of these things...
+                it all follow the same template" — this is that copy. A
+                labelled subheader with a count, then a `motion.div` that
+                animates between `capped` rows and a bounded, scrolling
+                view, exactly the mechanism `ConditionsCard`'s own ranked
+                list uses (same CAP-row idea, same "collapsed has no
+                scrollbar, expanded scrolls inside a fixed box" rule, same
+                spring). Copied rather than reinvented so the two panels
+                cannot drift apart again — and so "Show more" resizes a
+                bounded box instead of a `motion.section layout` trying to
+                tween the WHOLE card around content that has its own
+                internal scroll, which is what was overflowing on expand. */}
+            {search.isSearching ? (
+                /* Same ref on both branches: only one of them is mounted at
+                   a time, so the cursor walks whichever list is showing —
+                   ranked suggestions, or search hits. */
+                <div className="cs-list" ref={listRef}>{body()}</div>
+            ) : (
+                <>
+                    {capped != null && rows.length > 0 && (
+                        <div className="cs-ranked-head">
+                            <span className="cs-ranked-label">Ranked suggestions</span>
+                            <span className="cs-ranked-count">
+                                {visibleRows.length} of {rows.length}
+                            </span>
+                        </div>
+                    )}
+                    <motion.div
+                        initial={false}
+                        animate={
+                            capped != null
+                                ? { maxHeight: showAllCapped ? 4.5 * ROW_H : capped * ROW_H }
+                                : { maxHeight: "none" }
+                        }
+                        transition={
+                            reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }
+                        }
+                        className={
+                            "cs-list " + (capped != null && showAllCapped ? "is-list-expanded" : "is-list-collapsed")
+                        }
+                        ref={listRef}
+                    >
+                        {body()}
+                    </motion.div>
+                    {capped != null && rows.length > capped && (
+                        <button
+                            type="button"
+                            onClick={() => setShowAllCapped((v) => !v)}
+                            className="cs-card-foot-more cs-sug-cap-toggle"
+                        >
+                            {showAllCapped ? "Show less" : `Show all ${rows.length}`}
+                            <ChevronDown size={13} className={showAllCapped ? "is-flipped" : undefined} />
+                        </button>
+                    )}
+                </>
+            )}
+        </section>
     );
 }
 

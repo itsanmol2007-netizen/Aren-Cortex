@@ -282,10 +282,7 @@ export function ConditionsCard({
             return (
                 <div className="cs-empty">
                     <strong>Nothing to read yet</strong>
-                    <span>
-                        Conditions appear as you enter symptoms, findings and
-                        measurements — and re-order as you go.
-                    </span>
+                    <span>Conditions appear as you add symptoms and findings.</span>
                 </div>
             );
         }
@@ -301,7 +298,7 @@ export function ConditionsCard({
             return (
                 <div className="cs-empty">
                     <strong>No condition ranks for this chart</strong>
-                    <span>Search above to record one directly.</span>
+                    <span>Search above to add one.</span>
                 </div>
             );
         }
@@ -352,16 +349,7 @@ export function ConditionsCard({
     const [primaryDx, ...secondaryDx] = diagnoses;
 
     return (
-        // `layout` — message-3 follow-up, 2026-08-25: "add better fluid
-        // animation to everything... clicking anything is just repositioning
-        // the whole page." Confirming a condition, toggling "Show all", or
-        // switching in/out of search all change this card's height; Motion
-        // now tweens the card's own box across that change instead of
-        // snapping straight to it. Same fix as `SuggestionsCard`'s outer
-        // section, for the same reason.
-        <motion.section
-            layout={!reduce}
-            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 34 }}
+        <section
             aria-label="Assessment"
             // `cs-assess` carries the one piece of hierarchy this card needs
             // and Tailwind should not own: it is the pivot of the screen —
@@ -431,12 +419,14 @@ export function ConditionsCard({
                         <div className="mt-3" ref={listRef}>{body()}</div>
                     ) : (
                         <>
-                            <div className="mt-3.5 flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
-                                <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-label)]">
-                                    Ranked conditions
-                                </span>
+                            {/* `.cs-ranked-*` — shared with SuggestionsCard's
+                                identical row (consult.css), not a one-off
+                                Tailwind string, so the two panels cannot
+                                drift apart again. See that class's comment. */}
+                            <div className="cs-ranked-head">
+                                <span className="cs-ranked-label">Ranked conditions</span>
                                 {intents.length > 0 && (
-                                    <span className="ml-auto text-[11.5px] font-medium tabular-nums text-[var(--cs-faint)]">
+                                    <span className="cs-ranked-count">
                                         {shown.length} of {intents.length}
                                     </span>
                                 )}
@@ -598,7 +588,7 @@ export function ConditionsCard({
                     )
                 )}
             </div>
-        </motion.section>
+        </section>
     );
 }
 

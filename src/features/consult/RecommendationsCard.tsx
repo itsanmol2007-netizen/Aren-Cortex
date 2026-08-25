@@ -433,10 +433,7 @@ export function RecommendationsCard({
                 <div className="cs-empty">
                     <BlankMedicineArt />
                     <strong>Nothing on the chart yet</strong>
-                    <span>
-                        Add a symptom, a finding or a measurement and recommendations
-                        appear here as you go.
-                    </span>
+                    <span>Add a symptom or finding and medicines appear here.</span>
                 </div>
             );
         }
@@ -446,7 +443,7 @@ export function RecommendationsCard({
                 <div className="cs-empty">
                     <BlankMedicineArt />
                     <strong>No medicine ranked for this chart</strong>
-                    <span>Search above to reach one directly, or add more to the chart.</span>
+                    <span>Search above to reach one directly.</span>
                 </div>
             );
         }

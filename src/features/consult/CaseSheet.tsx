@@ -1165,8 +1165,7 @@ export function CaseSheet({
                         Nothing recorded yet
                     </strong>
                     <p className="max-w-[32ch] text-[12.5px] font-[460] leading-[1.45] text-[var(--cs-muted)]">
-                        Search above for symptoms, findings or history. Cortex files
-                        each entry in the right place.
+                        Search above for symptoms, findings or history.
                     </p>
                 </div>
             )}

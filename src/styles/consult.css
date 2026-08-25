@@ -2045,17 +2045,53 @@ body.cs-locked-shell {
     padding: 6px 10px 4px;
 }
 
-/* §3, 2026-08-24 — "add a show more button on bottom which unlocks the
-   nested scrolling of it." Only applied once `capped` (SuggestionsCard's
-   prop) AND the doctor has actually clicked "Show all" — collapsed, the
-   list is just its `capped` rows and needs no scroll box at all, the same
-   "scroll is off until asked for" rule ConditionsCard's ranked column uses.
-   320px ≈ 5.5 `.cs-sug` rows (a row runs ~56–60px including its hairline),
-   so the list stops mid-row on purpose — a clean edge would say it ends
-   where it does not. */
-.cs-list.is-capped-scroll {
-    max-height: 320px;
+/* The ranked-list subheader — "RANKED CONDITIONS · 4 of 11", "RANKED
+   SUGGESTIONS · 3 of 8" — ONE class family, not one Tailwind string per
+   card. Message-3 follow-up, 2026-08-25: "why using a lot of brain when
+   you can just copy and paste template of these things... it all follow
+   the same template" — `ConditionsCard` used to spell this row out in
+   Tailwind arbitrary values and `SuggestionsCard` had no equivalent row at
+   all, which is a real source of the two panels "looking alien side by
+   side" beyond just the icon. Sharing the class is what makes that
+   impossible to drift apart again, not just matching the numbers once. */
+.cs-ranked-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 14px;
+    border-bottom: 1px solid var(--cs-line);
+    padding-bottom: 6px;
 }
+.cs-ranked-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--cs-label);
+}
+.cs-ranked-count {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+    color: var(--cs-faint);
+}
+
+/* §3, 2026-08-24, rebuilt message-3 follow-up (2026-08-25) to literally be
+   ConditionsCard's own mechanism rather than a parallel one: a `motion.div`
+   animates `maxHeight` between `capped * ROW_H` and a scroll box that stops
+   mid-row (`4.5 * ROW_H`), same numbers, same spring, same "scroll is off
+   until 'Show more' is clicked" rule. These two classes are only the
+   overflow half of that — deliberately their OWN modifiers rather than
+   Tailwind's `overflow-hidden`/`overflow-y-auto` utilities, because `.cs-list`
+   already sets `overflow-y: auto` above and a utility class racing a
+   plain-CSS class for the same property is exactly the kind of silent
+   cascade fight that was letting the expanded list spill out of its card
+   instead of scrolling inside it ("still overflowing... literally"). A
+   two-class selector beats the one-class base rule outright, no ordering
+   luck required. */
+.cs-list.is-list-collapsed { overflow: hidden; }
+.cs-list.is-list-expanded { overflow-y: auto; padding-right: 4px; }
 
 /* The "Show more" button at the foot of a capped list — reuses
    `.cs-card-foot-more`'s colours but needs its own layout: that class was
