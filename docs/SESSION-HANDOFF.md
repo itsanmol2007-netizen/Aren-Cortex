@@ -16,6 +16,57 @@ changed, only where it lives. `docs/README-Cortex.md`'s pointer to
 `cortex-design-dna/README.md` (added the same day) still resolves
 correctly — it now lands on the router instead of the monolith.
 
+## Later the same day — the Assessment/Investigations symmetry problem below is now actually resolved, verified rendered
+
+The warning in the next section is real history (three blind CSS-only
+passes did make things worse), but a later pass this same day fixed the
+concrete items it lists, and — unlike those three — checked them rendered
+before claiming so:
+
+- **"Show more" for Investigations**: was already fixed by the time this
+  pass started (`.cs-sug-cap-toggle`, bottom-of-list, both panels).
+- **Assessment/Investigations symmetry**: `.cs-ranked-head` /
+  `.cs-ranked-label` / `.cs-ranked-count` are the same classes on both
+  panels; row heights come from the shared `RANKED_ROW_H`/`MULTI_TYPE_ROW_H`
+  constants. Confirmed rendered (real components, real compiled CSS, via a
+  throwaway React harness — `preview.html` + `src/preview-main.tsx`,
+  deleted after use, not committed): both empty AND populated, header
+  height, search box, ranked-head row and row starts land on the same y.
+- **Empty states**: icon-required, two-line copy on every ranked panel now
+  (`ConditionsCard`, `SuggestionsCard`, `RecommendationsCard`) — the
+  ConditionsCard gap this section used to flag (no icon on its ranked-list
+  empty state) is closed; it renders `<BlankConditionArt/>` on both
+  branches.
+
+New this pass, on top of that: Clinical Suggestions' category tabs are
+now contextual (only categories with actual ranked content get a tab —
+`nonEmptySections`), the whole sort-label-plus-tabs row moved below the
+search field for the standalone panel and is gated on `anyContent` (so it
+disappears completely on an empty chart — this is what was still causing
+Medicine Recommendations/Clinical Suggestions' empty states to sit at
+different heights beside each other), and "Sort by: Relevance" is now
+"Most relevant first" on both Assessment and Investigations. The
+side-slot Investigations instance deliberately keeps its sort label
+inline in the head row (not moved below search) specifically to protect
+the symmetry above — see `SuggestionsCard.tsx`'s own doc comment on that
+split.
+
+Also fixed this pass, unrelated to the Assessment/Investigations arc:
+`fetchPatientVisits` was silently losing a patient's real completed
+history behind recent `serving`-status test noise (verified live against
+Rohan Malhotra: 6 completed visits existed but 0 ever reached the Patient
+Record page) — see `src/lib/db/patients.ts`'s own doc comment; `.prec-page`
+(Patients section) collapsed to short content on a heightless `.app-shell`
+ancestor, same bug class Communication/Practice/Clinic already had fixed —
+switched to `height: 100dvh`; and Today's Patients' hidden-scrollbar
+carousel gained an edge-fade chevron cue.
+
+**If you're picking up UI work here next**: the render-then-claim
+discipline in the next section is still the right standing rule, it just
+isn't describing an open bug anymore for the items listed above. Re-check
+before trusting this note if enough has changed that it might be stale
+again.
+
 ## ⚠ Read this before touching ConditionsCard.tsx / SuggestionsCard.tsx again
 
 Three passes today went at the Assessment/Investigations symmetry problem
