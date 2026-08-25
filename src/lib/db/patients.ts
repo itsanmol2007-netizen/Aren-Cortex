@@ -550,15 +550,56 @@ export async function fetchPatientVisits(
     // `completedVisits` themselves for anything that must be finished data
     // (trend graphs, frequency counts) — this just stops silently discarding
     // the rest before it even reaches them.
-    const { data: visits, error: visitErr } = await supabase
-        .from("visits")
-        .select("id, created_at, assigned_doctor_id, status, vitals")
-        .eq("patient_id", patientId)
-        .order("created_at", { ascending: false })
-        .limit(20);
+    //
+    // 2026-08-25 regression, found and fixed: the single query above ordered
+    // ALL statuses by recency and capped at `CAP`, so a patient whose most
+    // RECENT visits happen to be stuck `serving` (the same test noise this
+    // file already knows about) had those fill the entire window — real,
+    // completed visits from before the noise started existed in the table
+    // but never made it into `liveVisits` at all. Verified live: Rohan
+    // Malhotra has 34 visits, 6 completed — but the 28 most recent (by
+    // `created_at`) are all `serving`/`discarded`, so the old single-query
+    // top-20 returned zero completed rows and the Patient Record page read
+    // "no visit has been finished for this patient yet" even though 6 real
+    // ones exist. Same shape on the doctor's other test accounts (74 of 80
+    // visits non-completed on "Test", 41 of 47 on "Anmol") — not unique to
+    // Rohan. Fixed by fetching two windows and merging rather than one: the
+    // most-recent `CAP` visits of ANY status (unchanged — this is what the
+    // topbar "past visits"/measurement-carry-forward context wants, recency
+    // regardless of status) UNIONed with the most recent `CAP` visits that
+    // are actually `completed` (guaranteed present no matter how much
+    // in-progress noise sits on top of them chronologically). No data was
+    // touched — the 86 stuck `serving` rows are a separate, documented, not-
+    // yet-authorized cleanup (`cortex-open-physio.md`); this is a query fix.
+    const CAP = 20;
+    const [{ data: recentVisits, error: recentErr }, { data: completedVisits, error: completedErr }] =
+        await Promise.all([
+            supabase
+                .from("visits")
+                .select("id, created_at, assigned_doctor_id, status, vitals")
+                .eq("patient_id", patientId)
+                .order("created_at", { ascending: false })
+                .limit(CAP),
+            supabase
+                .from("visits")
+                .select("id, created_at, assigned_doctor_id, status, vitals")
+                .eq("patient_id", patientId)
+                .eq("status", "completed")
+                .order("created_at", { ascending: false })
+                .limit(CAP),
+        ]);
 
-    if (visitErr) throw new Error(`fetchPatientVisits: ${visitErr.message}`);
-    const liveVisits = (visits ?? [])
+    if (recentErr) throw new Error(`fetchPatientVisits: ${recentErr.message}`);
+    if (completedErr) throw new Error(`fetchPatientVisits (completed): ${completedErr.message}`);
+
+    const byId = new Map<string, { id: string; created_at: string; assigned_doctor_id: string; status: string; vitals: unknown }>();
+    for (const v of recentVisits ?? []) byId.set(v.id, v as any);
+    for (const v of completedVisits ?? []) byId.set(v.id, v as any);
+    const visits = [...byId.values()].sort(
+        (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+    );
+
+    const liveVisits = visits
         .filter((v) => visitStatusKind(v.status) !== "inactive")
         .filter((v) => v.id !== excludeVisitId);
     if (liveVisits.length === 0) return [];
