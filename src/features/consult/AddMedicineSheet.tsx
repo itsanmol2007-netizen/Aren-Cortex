@@ -30,7 +30,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Plus, Search, X } from "lucide-react";
-import { addMedicine } from "../../lib/db/synapse";
+import { addMedicine, requestNewComposition } from "../../lib/db/synapse";
 import { useIntentSearch } from "./IntentSearch";
 import type { AcceptPayload } from "./types";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
@@ -55,15 +55,37 @@ interface Props {
     initialName: string;
     onCancel: () => void;
     onAccept: (payload: AcceptPayload) => void;
+    /**
+     * The composition-adding fallback — same-day follow-up: "there should
+     * be a fallback to composition adding too, if a composition is not
+     * found in our db." Present only under a REAL identity (see
+     * `requestNewComposition`'s doc comment — this is a doctor-attributed
+     * request, not an anonymous one), same as every other identity-gated
+     * write in this app. Absent means the request affordance below simply
+     * does not render, which is what "no real doctor signed in" already
+     * means everywhere else.
+     */
+    identity?: { doctorId: string; hospitalId: string } | null;
 }
 
-export function AddMedicineSheet({ open, initialName, onCancel, onAccept }: Props) {
+export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identity }: Props) {
     const [name, setName] = useState(initialName);
     const [composition, setComposition] = useState<CompositionPick | null>(null);
     const [dosage, setDosage] = useState("");
     const [form, setForm] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // The composition-request fallback — its own small state machine,
+    // separate from the brand form above: requesting a missing SALT and
+    // adding a BRAND are two different asks, and conflating their state
+    // would mean a sent request silently resetting if the doctor then
+    // typed in the brand name field.
+    const [requestOpen, setRequestOpen] = useState(false);
+    const [requestNotes, setRequestNotes] = useState("");
+    const [requestSubmitting, setRequestSubmitting] = useState(false);
+    const [requestSent, setRequestSent] = useState(false);
+    const [requestError, setRequestError] = useState<string | null>(null);
 
     // The composition search reuses the SAME manual search every other
     // category has (rule 7) — a medicine-type hit's `refId`, when it
@@ -79,8 +101,36 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept }: Prop
         setForm("");
         setError(null);
         compSearch.setQuery("");
+        setRequestOpen(false);
+        setRequestNotes("");
+        setRequestSent(false);
+        setRequestError(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, initialName]);
+
+    const submitCompositionRequest = async () => {
+        if (!identity) return;
+        const requestedName = compSearch.query.trim();
+        if (!requestedName) return;
+        setRequestSubmitting(true);
+        setRequestError(null);
+        try {
+            await requestNewComposition({
+                doctorId: identity.doctorId,
+                hospitalId: identity.hospitalId,
+                requestedName,
+                notes: requestNotes,
+            });
+            setRequestSent(true);
+        } catch (e) {
+            // Never claim "sent" on a failed write — the doctor's next
+            // move (try again, or just move on) depends on knowing which
+            // one actually happened.
+            setRequestError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setRequestSubmitting(false);
+        }
+    };
 
     const panelRef = useRef<HTMLDivElement>(null);
     useOverlayFocus(panelRef, open);
@@ -222,6 +272,57 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept }: Prop
                                                             {c.label}
                                                         </button>
                                                     ))
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* The composition-adding fallback — same-day follow-up.
+                                            Deliberately NOT a way to finish adding THIS brand: the
+                                            salt still does not exist, so "Add & continue" below stays
+                                            disabled. This only tells the team it is missing — see
+                                            `requestNewComposition`'s doc comment for why that is a
+                                            request, never a live mint (rule 22). */}
+                                        {identity && compSearch.isSearching && !compSearch.loading && (
+                                            <div className="cs-newmed-request">
+                                                {requestSent ? (
+                                                    <span className="cs-newmed-request-sent">
+                                                        <Check size={13} /> Request sent — the team will review it.
+                                                        This brand can be added once the salt is in our library.
+                                                    </span>
+                                                ) : requestOpen ? (
+                                                    <div className="cs-newmed-request-form">
+                                                        <span className="cs-newmed-comp-hint">
+                                                            Requesting “{compSearch.query.trim()}” be added to our library.
+                                                        </span>
+                                                        <input
+                                                            className="cs-addmed-input"
+                                                            value={requestNotes}
+                                                            placeholder="Strength, form, or anything else — optional"
+                                                            onChange={(e) => setRequestNotes(e.target.value)}
+                                                        />
+                                                        {requestError && <p className="cs-newmed-error">{requestError}</p>}
+                                                        <div className="cs-newmed-request-actions">
+                                                            <button type="button" onClick={() => setRequestOpen(false)}>
+                                                                Cancel
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="cs-newmed-request-send"
+                                                                disabled={requestSubmitting}
+                                                                onClick={submitCompositionRequest}
+                                                            >
+                                                                {requestSubmitting ? "Sending…" : "Send request"}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className="cs-newmed-request-open"
+                                                        onClick={() => setRequestOpen(true)}
+                                                    >
+                                                        Salt not in our library either? Request it be added
+                                                    </button>
                                                 )}
                                             </div>
                                         )}

@@ -30,15 +30,25 @@ import {
     ShieldAlert, Sparkles, Waves, ActivitySquare, X } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
+import type { DoctorFreeTerm, DoctorFreeTermType } from "../../lib/db/synapse";
 import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
+import { matchingFreeTerms, topFreeTermMatches } from "./freeTerms";
 import type { AcceptPayload } from "./types";
 import { BlankTestArt } from "./BlankArt";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
+
+/** The free-text fallback (§4) only covers these three of this card's types
+ *  — `finding` lives in ConditionsCard, `medicine` has its own composition-
+ *  anchored path, and exercise/modality/impairment are out of scope for this
+ *  round (see docs/aren-cortex-context.md §7's note on the same). */
+const FREE_TEXT_TYPES: ReadonlySet<IntentType> = new Set(["test", "referral", "advice"]);
+const isFreeTextType = (t: IntentType | null): t is DoctorFreeTermType =>
+    !!t && FREE_TEXT_TYPES.has(t);
 
 /**
  * Section order, labels, glyphs and the verb each type is accepted with.
@@ -128,11 +138,22 @@ interface Props {
     onToggleExpanded: () => void;
     hasChart: boolean;
     disabled?: boolean;
+    /**
+     * The free-text fallback — §4, 2026-08-24, widened same day past
+     * Assessment to Test/Referral/Advice. `freeTerms` is the doctor's WHOLE
+     * list (every type it covers); this card filters it to whichever
+     * category is currently in view. Only offered once a single category is
+     * in view (one tab picked, or the card only ever renders one section to
+     * begin with — see `effectiveType` below): typing a free term while
+     * looking at "All" would not know which bucket to file it in.
+     */
+    freeTerms?: DoctorFreeTerm[];
+    onAddFreeText?: (label: string, type: DoctorFreeTermType) => void;
 }
 
 export function SuggestionsCard({
     byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept, onRemove,
-    isPinned, onTogglePin,
+    isPinned, onTogglePin, freeTerms = [], onAddFreeText,
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
     types, title = "Clinical Suggestions",
@@ -165,6 +186,38 @@ export function SuggestionsCard({
      */
     const [scope, setScope] = useState<IntentType | null>(null);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
+
+    /**
+     * The one type free text can safely file into right now — the chosen
+     * tab, or (when this instance only ever renders one section, e.g. the
+     * Assessment side-slot's Investigations-only card) that one section
+     * without making the doctor click a tab that would be the only tab.
+     * `null` means "All" is showing, or this card's one section is not one
+     * of the three free text covers — either way, no free-text affordance.
+     */
+    const effectiveType: DoctorFreeTermType | null = (() => {
+        const t = scope ?? (SECTIONS.length === 1 ? SECTIONS[0].type : null);
+        return isFreeTextType(t) ? t : null;
+    })();
+
+    /** the doctor's own terms matching THIS chart, for the ranked view */
+    const suggestedFreeTerms = useMemo(() => {
+        if (!effectiveType || !onAddFreeText || !freeTerms.length) return [];
+        const activeSignalIds = new Set(activeSignals.map((s) => s.signalId));
+        // Not filtered against what is already on the plan (§4 follow-up) —
+        // this card has no direct read of `selectedTests`/`adviceNotes`,
+        // only `acceptedIntentIds` (catalogue intents, which a free term
+        // never has). Re-clicking an already-added free term is harmless:
+        // `addFreeTest`/`addFreeAdvice` (useConsultPlan.ts) both no-op on a
+        // duplicate label.
+        return topFreeTermMatches(freeTerms, effectiveType, activeSignalIds, acceptedIntentIds, new Set());
+    }, [effectiveType, onAddFreeText, freeTerms, activeSignals, acceptedIntentIds]);
+
+    /** the same list, filtered to what is actually typed — for search mode */
+    const matchedFreeTerms = useMemo(
+        () => (effectiveType ? matchingFreeTerms(freeTerms, effectiveType, search.query, new Set()) : []),
+        [effectiveType, freeTerms, search.query]
+    );
 
     /**
      * The same walk-and-take the other two ranked panels have. This card holds
@@ -232,20 +285,53 @@ export function SuggestionsCard({
     const body = () => {
         if (search.isSearching) {
             return (
-                <IntentSearchResults
-                    state={search}
-                    verbOf={(t) => VERB_OF[t] ?? "Add"}
-                    ruleset={ruleset}
-                    activeSignals={activeSignals}
-                    rankedIntentIds={rankedIds}
-                    acceptedIntentIds={acceptedIntentIds}
-                    acknowledged={acknowledged}
-                    onAcknowledge={onAcknowledge}
-                    onAccept={onAccept}
-                    onRemove={onRemove}
-                    isPinned={isPinned}
-                    onTogglePin={onTogglePin}
-                />
+                <>
+                    <IntentSearchResults
+                        state={search}
+                        verbOf={(t) => VERB_OF[t] ?? "Add"}
+                        ruleset={ruleset}
+                        activeSignals={activeSignals}
+                        rankedIntentIds={rankedIds}
+                        acceptedIntentIds={acceptedIntentIds}
+                        acknowledged={acknowledged}
+                        onAcknowledge={onAcknowledge}
+                        onAccept={onAccept}
+                        onRemove={onRemove}
+                        isPinned={isPinned}
+                        onTogglePin={onTogglePin}
+                    />
+                    {/* §4, 2026-08-24. Only reachable with one category in
+                        view (`effectiveType`) — see its own doc comment for
+                        why "All" cannot offer this. */}
+                    {effectiveType && onAddFreeText && !search.loading && (
+                        <div className="cs-freeterm">
+                            {matchedFreeTerms.length > 0 && (
+                                <div className="cs-freeterm-chips">
+                                    <span className="cs-freeterm-label">Your terms</span>
+                                    {matchedFreeTerms.map((f) => (
+                                        <button
+                                            key={f.label}
+                                            type="button"
+                                            className="cs-freeterm-chip"
+                                            onClick={() => { onAddFreeText(f.label, effectiveType); search.setQuery(""); }}
+                                        >
+                                            {f.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {!matchedFreeTerms.some((f) => f.label.toLowerCase() === search.query.trim().toLowerCase()) && (
+                                <button
+                                    type="button"
+                                    className="cs-freeterm-add"
+                                    onClick={() => { onAddFreeText(search.query.trim(), effectiveType); search.setQuery(""); }}
+                                >
+                                    Add “{search.query.trim()}” — not in the catalogue
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </>
             );
         }
 
@@ -262,17 +348,41 @@ export function SuggestionsCard({
             );
         }
 
+        // "Show this to that doctor in future for similar inputs" — §4,
+        // 2026-08-24. Leads the ranked view (not just search) whenever
+        // `effectiveType` is unambiguous, same reasoning as ConditionsCard's
+        // identical strip: this is a doctor-local convenience, visually
+        // apart (dashed border, violet), never a ranked suggestion.
+        const freeTermsStrip = suggestedFreeTerms.length > 0 && effectiveType && onAddFreeText ? (
+            <div className="cs-freeterm cs-freeterm-ranked" key="free-terms">
+                <span className="cs-freeterm-label">Your terms</span>
+                {suggestedFreeTerms.map((f) => (
+                    <button
+                        key={f.label}
+                        type="button"
+                        className="cs-freeterm-chip"
+                        onClick={() => onAddFreeText(f.label, effectiveType)}
+                    >
+                        {f.label}
+                    </button>
+                ))}
+            </div>
+        ) : null;
+
         if (rows.length === 0) {
             return (
-                <div className="cs-empty">
-                    <BlankTestArt />
-                    <strong>Nothing else to suggest for this chart</strong>
-                    <span>Search above to order or refer something directly.</span>
-                </div>
+                <>
+                    {freeTermsStrip}
+                    <div className="cs-empty">
+                        <BlankTestArt />
+                        <strong>Nothing else to suggest for this chart</strong>
+                        <span>Search above to order or refer something directly.</span>
+                    </div>
+                </>
             );
         }
 
-        return rows.map(({ intent, section }) => {
+        return [freeTermsStrip, ...rows.map(({ intent, section }) => {
             const list = byType[section.type] ?? [];
             const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
             // A section of one has no other side to the comparison.
@@ -305,7 +415,7 @@ export function SuggestionsCard({
                     }
                 />
             );
-        });
+        })];
     };
 
     return (

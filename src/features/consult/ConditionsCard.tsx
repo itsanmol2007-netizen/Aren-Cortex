@@ -34,7 +34,8 @@ import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Check, ChevronDown, ShieldAlert, Stethoscope, X } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
-import type { DoctorFreeFinding } from "../../lib/db/synapse";
+import type { DoctorFreeTerm } from "../../lib/db/synapse";
+import { matchingFreeTerms, topFreeTermMatches } from "./freeTerms";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { WhyButton } from "./ContributionSheet";
@@ -92,15 +93,18 @@ interface Props {
     /**
      * The free-text fallback — §4, 2026-08-24. "if I don't get 'Cardio
      * Aquinian' in Assessment, I can simply add it as a new free text" —
-     * Anmol's own example. `freeFindings` is this doctor's own remembered
-     * list (Supabase-backed, `useSynapse`); `onAddFreeText` both puts a label
-     * straight onto `diagnoses` (no catalogue intent behind it — `diagnoses`
-     * has always been a plain string array, see `useConsultPlan.ts`) and
-     * saves/bumps it against today's active signals so a similar chart
+     * Anmol's own example. `freeTerms` is this doctor's WHOLE remembered
+     * list across every type it covers (Supabase-backed, `useSynapse`) —
+     * this card filters it to `type === "finding"` itself, the same way
+     * `SuggestionsCard` filters it to whichever tab is active.
+     * `onAddFreeText` both puts a label straight onto `diagnoses` (no
+     * catalogue intent behind it — `diagnoses` has always been a plain
+     * string array, see `useConsultPlan.ts`) and saves/bumps it against
+     * today's active signals AND accepted intents so a similar chart
      * surfaces it again next time. Optional so this card keeps working
      * unwired anywhere that has no doctor identity to save against.
      */
-    freeFindings?: DoctorFreeFinding[];
+    freeTerms?: DoctorFreeTerm[];
     onAddFreeText?: (label: string) => void;
     disabled?: boolean;
     /** the Assessment Tab stop — see STOPS in useConsultKeyboard.ts */
@@ -138,38 +142,33 @@ interface Props {
 export function ConditionsCard({
     intents, topScore, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept,
     onExplain, ruleset, activeSignals, hasChart,
-    diagnoses, onRemoveDiagnosis, onRemove, freeFindings = [], onAddFreeText,
+    diagnoses, onRemoveDiagnosis, onRemove, freeTerms = [], onAddFreeText,
     disabled = false, searchRef, sideSlot,
 }: Props) {
     const [expanded, setExpanded] = useState(false);
     const reduce = useReducedMotion();
     const search = useIntentSearch(["finding"]);
 
+    /** the labels already confirmed — nothing to suggest re-adding */
+    const takenLabels = useMemo(() => new Set(diagnoses), [diagnoses]);
+
     /**
-     * This doctor's free-text terms whose signals overlap what is active on
-     * THIS chart, best overlap first — the "show this to that doctor in
-     * future for similar inputs" half of §4. Already-confirmed labels are
-     * dropped; there is nothing to suggest re-adding.
+     * This doctor's free-text terms that match THIS chart, best match first
+     * — the "show this to that doctor in future for similar inputs" half of
+     * §4. Scored on signal overlap AND accepted-intent overlap together —
+     * see `scoreFreeTerm` in `freeTerms.ts` for why the second counts more.
      */
-    const suggestedFreeFindings = useMemo(() => {
-        if (!freeFindings.length || !activeSignals.length) return [];
-        const active = new Set(activeSignals.map((s) => s.signalId));
-        return freeFindings
-            .map((f) => ({ f, overlap: f.signalIds.filter((id) => active.has(id)).length }))
-            .filter(({ f, overlap }) => overlap > 0 && !diagnoses.includes(f.label))
-            .sort((a, b) => b.overlap - a.overlap || b.f.useCount - a.f.useCount)
-            .slice(0, 3)
-            .map(({ f }) => f);
-    }, [freeFindings, activeSignals, diagnoses]);
+    const suggestedFreeTerms = useMemo(() => {
+        if (!freeTerms.length) return [];
+        const activeSignalIds = new Set(activeSignals.map((s) => s.signalId));
+        return topFreeTermMatches(freeTerms, "finding", activeSignalIds, acceptedIntentIds, takenLabels);
+    }, [freeTerms, activeSignals, acceptedIntentIds, takenLabels]);
 
     /** The same list, filtered to what is actually typed — for search mode. */
-    const matchingFreeFindings = useMemo(() => {
-        const q = search.query.trim().toLowerCase();
-        if (!q || !freeFindings.length) return [];
-        return freeFindings.filter(
-            (f) => f.label.toLowerCase().includes(q) && !diagnoses.includes(f.label)
-        );
-    }, [freeFindings, search.query, diagnoses]);
+    const matchedFreeTerms = useMemo(
+        () => matchingFreeTerms(freeTerms, "finding", search.query, takenLabels),
+        [freeTerms, search.query, takenLabels]
+    );
 
     /**
      * This card is the second Tab stop, so its search field is where a doctor
@@ -242,7 +241,7 @@ export function ConditionsCard({
                     {onAddFreeText && !search.loading && (
                         <FreeTextFallback
                             query={search.query}
-                            matches={matchingFreeFindings}
+                            matches={matchedFreeTerms}
                             onAdd={(label) => { onAddFreeText(label); search.setQuery(""); }}
                         />
                     )}
@@ -415,12 +414,12 @@ export function ConditionsCard({
                             border, violet-on-white rather than the ranked
                             list's slate badge) — "obviously slightly
                             different color and visual tone" was the ask. */}
-                        {onAddFreeText && suggestedFreeFindings.length > 0 && (
+                        {onAddFreeText && suggestedFreeTerms.length > 0 && (
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                 <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8b5cf6]">
                                     Your terms
                                 </span>
-                                {suggestedFreeFindings.map((f) => (
+                                {suggestedFreeTerms.map((f) => (
                                     <button
                                         key={f.label}
                                         type="button"
@@ -553,7 +552,7 @@ function FreeTextFallback({
 }: {
     query: string;
     /** this doctor's own earlier terms that match what is typed now */
-    matches: DoctorFreeFinding[];
+    matches: DoctorFreeTerm[];
     onAdd: (label: string) => void;
 }) {
     const q = query.trim();

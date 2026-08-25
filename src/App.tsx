@@ -71,7 +71,10 @@ import { BrandSheet } from "./features/synapse/BrandSheet";
 import { profileFor, type ChartKind } from "./features/synapse/specialtyProfile";
 import { useOnline } from "./features/frontdesk/operational/useOnline";
 import type { PersonalizedIntent } from "./lib/synapse/personalize";
-import { type Observable, saveDoctorFreeFinding } from "./lib/db/synapse";
+import {
+  type Observable, saveDoctorFreeTerm, requestNewComposition,
+  type DoctorFreeTermType,
+} from "./lib/db/synapse";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchDoctor, fetchHospital,
@@ -373,7 +376,8 @@ function App() {
     pendingMedicine, setPendingMedicine, inspectorMedicine,
     confirmPendingMedicine, confirmStagedMedicine,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
-    updateMedicine, removeMedicine, removeTest, removeDiagnosis, addFreeDiagnosis, removeAdviceLine,
+    updateMedicine, removeMedicine, removeTest, removeDiagnosis,
+    addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
     removeTherapyLine, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
@@ -844,6 +848,43 @@ function App() {
   );
 
   /**
+   * The free-text fallback, both halves at once — §4, 2026-08-24, widened
+   * same day to Test/Referral/Advice alongside Assessment. The chart-local
+   * half (`addFreeDiagnosis`/`addFreeTest`/`addFreeReferral`/`addFreeAdvice`,
+   * `useConsultPlan.ts`) always runs; the Supabase write only under a REAL
+   * identity, same rule `confirmCondition`'s standing-fact write follows —
+   * an account with no `doctors` row would file this under the fallback
+   * doctor, and it is meant to follow ONE doctor. Non-fatal: a save that
+   * fails costs the doctor a future suggestion, never today's consult.
+   * Reloads Synapse on success so the new term can surface THIS session
+   * too, not only the next one — same pattern `handlePinClinicBrand`
+   * already uses for its own write.
+   */
+  const handleAddFreeTerm = useCallback((label: string, type: DoctorFreeTermType) => {
+    switch (type) {
+      case "finding": addFreeDiagnosis(label); break;
+      case "test": addFreeTest(label); break;
+      case "referral": addFreeReferral(label); break;
+      case "advice": addFreeAdvice(label); break;
+    }
+    if (identity.isReal) {
+      saveDoctorFreeTerm({
+        doctorId: identity.doctorId,
+        hospitalId: identity.hospitalId,
+        label,
+        type,
+        signalIds: (intelligence.result?.activeSignals ?? []).map((s) => s.signalId),
+        acceptedIntentIds: [...acceptedIntentIdSet],
+      })
+        .then(() => synapse.reload())
+        .catch((e) => console.warn("doctor_free_terms save (non-fatal):", e));
+    }
+  }, [
+    addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice,
+    identity, intelligence.result, acceptedIntentIdSet, synapse,
+  ]);
+
+  /**
    * Which measurements the chart has just made worth taking.
    *
    * Derived from the engine's own active signals rather than from the chip
@@ -1232,31 +1273,9 @@ function App() {
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
                 onRemove={removeAcceptedIntent}
-                /* §4, 2026-08-24 — the Assessment free-text fallback. The
-                   chart-local half (`addFreeDiagnosis`) always runs; the
-                   Supabase write only under a REAL identity, same rule
-                   `confirmCondition`'s standing-fact write follows two
-                   panels up — an account with no `doctors` row would file
-                   this under the fallback doctor, and it is meant to follow
-                   ONE doctor. Non-fatal: a save that fails costs the doctor
-                   a future suggestion, never today's consult. Reloads
-                   Synapse on success so the new term can surface THIS
-                   session too, not only the next one — same pattern
-                   `handlePinClinicBrand` already uses for its own write. */
-                onAddFreeText={(label) => {
-                  addFreeDiagnosis(label);
-                  if (identity.isReal) {
-                    saveDoctorFreeFinding({
-                      doctorId: identity.doctorId,
-                      hospitalId: identity.hospitalId,
-                      label,
-                      signalIds: (intelligence.result?.activeSignals ?? []).map((s) => s.signalId),
-                    })
-                      .then(() => synapse.reload())
-                      .catch((e) => console.warn("doctor_free_findings save (non-fatal):", e));
-                  }
-                }}
-                freeFindings={synapse.data?.freeFindings ?? []}
+                /* §4, 2026-08-24 — the Assessment free-text fallback. */
+                onAddFreeText={(label) => handleAddFreeTerm(label, "finding")}
+                freeTerms={synapse.data?.freeTerms ?? []}
                 disabled={!patient}
                 searchRef={assessmentSearchRef}
                 /* ── The Assessment's second column ────────────────────────
@@ -1314,6 +1333,8 @@ function App() {
                       onAcknowledge={handleAcknowledge}
                       onAccept={handleAcceptIntent}
                       onRemove={removeAcceptedIntent}
+                      freeTerms={synapse.data?.freeTerms ?? []}
+                      onAddFreeText={handleAddFreeTerm}
                       onExplain={handleExplain}
                       ruleset={synapse.data?.ruleset ?? null}
                       activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1411,6 +1432,8 @@ function App() {
                     onRemove={removeAcceptedIntent}
                     isPinned={pins.isPinned}
                     onTogglePin={pins.toggle}
+                    freeTerms={synapse.data?.freeTerms ?? []}
+                    onAddFreeText={handleAddFreeTerm}
                     onExplain={handleExplain}
                     ruleset={synapse.data?.ruleset ?? null}
                     activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1433,6 +1456,8 @@ function App() {
                   onRemove={removeAcceptedIntent}
                   isPinned={pins.isPinned}
                   onTogglePin={pins.toggle}
+                  freeTerms={synapse.data?.freeTerms ?? []}
+                  onAddFreeText={handleAddFreeTerm}
                   onExplain={handleExplain}
                   ruleset={synapse.data?.ruleset ?? null}
                   activeSignals={intelligence.result?.activeSignals ?? []}
@@ -1590,6 +1615,9 @@ function App() {
             initialName={addMedicineQuery ?? ""}
             onCancel={() => setAddMedicineQuery(null)}
             onAccept={(payload) => { handleAcceptIntent(payload); setAddMedicineQuery(null); }}
+            // The composition-request fallback is doctor-attributed — same
+            // REAL-identity gate as `confirmCondition`'s standing-fact write.
+            identity={identity.isReal ? { doctorId: identity.doctorId, hospitalId: identity.hospitalId } : null}
           />
 
           {/* The brand picker, anchored to the row that opened it. */}

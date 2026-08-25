@@ -32,11 +32,11 @@ import {
     loadFrequentMedicines,
     loadCompanionEdges,
     loadFindingSuggestionRules,
-    loadDoctorFreeFindings,
+    loadDoctorFreeTerms,
     type ObservableMaps,
     type ClinicBrandDefaults,
     type FrequentMedicine,
-    type DoctorFreeFinding,
+    type DoctorFreeTerm,
 } from "../lib/db/synapse";
 import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
@@ -68,11 +68,11 @@ export interface SynapseData {
     frequent: FrequentMedicine[];
     companionEdges: CompanionEdge[];
     /**
-     * This doctor's Assessment free-text fallback — §4, 2026-08-24. Local to
-     * them, never fed into the shared ruleset — see the
-     * `add_doctor_free_findings` migration's header.
+     * This doctor's free-text fallback (finding/test/referral/advice) —
+     * §4, 2026-08-24. Local to them, never fed into the shared ruleset —
+     * see `widen_doctor_free_findings_to_free_terms`'s migration header.
      */
-    freeFindings: DoctorFreeFinding[];
+    freeTerms: DoctorFreeTerm[];
     /** signals that at least one active rule points at — i.e. can produce output */
     signalsWithRules: Set<string>;
     loadedAt: Date;
@@ -152,7 +152,7 @@ export function useSynapse(): UseSynapse {
                     [clinicBrandDefaults, f3],
                     [frequent, f4],
                     [companionEdges, f5],
-                    [freeFindings, f6],
+                    [freeTerms, f6],
                 ] = await Promise.all([
                     doctorId
                         ? soft(loadPreferences(doctorId), [] as PreferenceRow[])
@@ -168,8 +168,8 @@ export function useSynapse(): UseSynapse {
                         : ([[] as FrequentMedicine[], false] as const),
                     soft(loadCompanionEdges(), [] as CompanionEdge[]),
                     doctorId
-                        ? soft(loadDoctorFreeFindings(doctorId), [] as DoctorFreeFinding[])
-                        : ([[] as DoctorFreeFinding[], false] as [DoctorFreeFinding[], boolean]),
+                        ? soft(loadDoctorFreeTerms(doctorId), [] as DoctorFreeTerm[])
+                        : ([[] as DoctorFreeTerm[], false] as [DoctorFreeTerm[], boolean]),
                 ]);
 
                 if (!mounted.current) return;
@@ -186,7 +186,7 @@ export function useSynapse(): UseSynapse {
                     clinicBrandDefaults,
                     frequent,
                     companionEdges,
-                    freeFindings,
+                    freeTerms,
                     // A chip can be perfectly wired to a signal and still
                     // produce nothing because no rule points at that signal
                     // yet. That is a gap in the knowledge base, not an empty

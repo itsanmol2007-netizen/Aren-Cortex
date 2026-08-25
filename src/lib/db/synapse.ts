@@ -929,77 +929,128 @@ export async function fetchPinnedMedicineDetails(doctorId: string): Promise<Pinn
 }
 
 /**
- * The Assessment free-text fallback — §4, 2026-08-24. See the
- * `add_doctor_free_findings` migration's header for the full reasoning: a
- * doctor-local convenience list, remembered against the signals active when
- * it was typed, never fed into the shared ruleset.
+ * The free-text fallback — §4, 2026-08-24, widened same day to every type a
+ * ranked search can miss on except medicine (which has its own composition-
+ * anchored path — see `addMedicine`/`AddMedicineSheet`). A doctor-local
+ * convenience list, never fed into the shared ruleset — see the
+ * `add_doctor_free_findings` / `widen_doctor_free_findings_to_free_terms`
+ * migrations for the full reasoning.
  */
-export interface DoctorFreeFinding {
+export type DoctorFreeTermType = "finding" | "test" | "referral" | "advice";
+
+export interface DoctorFreeTerm {
     label: string;
+    type: DoctorFreeTermType;
     signalIds: string[];
+    /**
+     * The OTHER intents already accepted in the consult this was typed in —
+     * "record other credentials with it too... best personalization" was
+     * the ask. A future match weighs this alongside `signalIds`: "this term
+     * came up together with these medicines/tests before" is a stronger
+     * signal than the chart's symptoms alone, the same way a doctor's own
+     * brand habit outweighs a generic default. See `scoreFreeTerm` in
+     * `features/consult/freeTerms.ts`.
+     */
+    acceptedIntentIds: number[];
     useCount: number;
 }
 
 /** This doctor's whole free-text list, for matching against a fresh chart. */
-export async function loadDoctorFreeFindings(doctorId: string): Promise<DoctorFreeFinding[]> {
+export async function loadDoctorFreeTerms(doctorId: string): Promise<DoctorFreeTerm[]> {
     const { data, error } = await supabase
-        .from("doctor_free_findings")
-        .select("label, signal_ids, use_count")
+        .from("doctor_free_terms")
+        .select("label, intent_type, signal_ids, accepted_intent_ids, use_count")
         .eq("doctor_id", doctorId);
-    if (error) throw new Error(`doctor_free_findings (load): ${error.message}`);
+    if (error) throw new Error(`doctor_free_terms (load): ${error.message}`);
     return (data ?? []).map((r: any) => ({
         label: r.label,
+        type: r.intent_type as DoctorFreeTermType,
         signalIds: r.signal_ids ?? [],
+        acceptedIntentIds: (r.accepted_intent_ids ?? []).map(Number),
         useCount: Number(r.use_count ?? 1),
     }));
 }
 
 /**
- * Remember one free-text term against this consult's active signals.
+ * Remember one free-text term against this consult's active signals AND the
+ * other intents already accepted in it.
  *
- * Upserts on (doctor_id, lower(label)) — typing the same term again bumps
- * `use_count` and refreshes the signal set to the CURRENT chart rather than
- * the one it was first typed against, so the match keeps tracking how this
- * doctor actually uses the term. Non-fatal by rule 4: a doctor's consult
- * must never break because this convenience write did.
+ * Upserts on (doctor_id, intent_type, lower(label)) — typing the same term
+ * again for the same type bumps `use_count` and refreshes both context
+ * arrays to the CURRENT chart rather than the one it was first typed
+ * against, so the match keeps tracking how this doctor actually uses the
+ * term. Non-fatal by rule 4: a doctor's consult must never break because
+ * this convenience write did.
  */
-export async function saveDoctorFreeFinding(opts: {
+export async function saveDoctorFreeTerm(opts: {
     doctorId: string;
     hospitalId: string;
     label: string;
+    type: DoctorFreeTermType;
     signalIds: string[];
+    acceptedIntentIds: number[];
 }): Promise<void> {
     const label = opts.label.trim();
     if (!label) return;
 
     const { data: existing, error: readErr } = await supabase
-        .from("doctor_free_findings")
+        .from("doctor_free_terms")
         .select("id, use_count")
         .eq("doctor_id", opts.doctorId)
+        .eq("intent_type", opts.type)
         .ilike("label", label)
         .maybeSingle();
-    if (readErr) throw new Error(`doctor_free_findings (read): ${readErr.message}`);
+    if (readErr) throw new Error(`doctor_free_terms (read): ${readErr.message}`);
 
     if (existing) {
         const { error } = await supabase
-            .from("doctor_free_findings")
+            .from("doctor_free_terms")
             .update({
                 signal_ids: opts.signalIds,
+                accepted_intent_ids: opts.acceptedIntentIds,
                 use_count: Number(existing.use_count ?? 1) + 1,
                 last_used_at: new Date().toISOString(),
             })
             .eq("id", existing.id);
-        if (error) throw new Error(`doctor_free_findings (bump): ${error.message}`);
+        if (error) throw new Error(`doctor_free_terms (bump): ${error.message}`);
         return;
     }
 
-    const { error } = await supabase.from("doctor_free_findings").insert({
+    const { error } = await supabase.from("doctor_free_terms").insert({
         doctor_id: opts.doctorId,
         hospital_id: opts.hospitalId,
         label,
+        intent_type: opts.type,
         signal_ids: opts.signalIds,
+        accepted_intent_ids: opts.acceptedIntentIds,
     });
-    if (error) throw new Error(`doctor_free_findings (insert): ${error.message}`);
+    if (error) throw new Error(`doctor_free_terms (insert): ${error.message}`);
+}
+
+/**
+ * The composition-adding fallback — same-day follow-up: "there should be a
+ * fallback to composition adding too, if a composition is not found in our
+ * db." See the `add_composition_requests` migration's header for why this
+ * is a REQUEST, not a mint: rule 22 forbids a self-service path straight to
+ * a rankable/guardable composition, so this logs the ask for a real
+ * clinical review instead of pretending the gates/rules pipeline can be
+ * skipped. Non-fatal by rule 4.
+ */
+export async function requestNewComposition(opts: {
+    doctorId: string;
+    hospitalId: string;
+    requestedName: string;
+    notes?: string | null;
+}): Promise<void> {
+    const requestedName = opts.requestedName.trim();
+    if (!requestedName) return;
+    const { error } = await supabase.from("composition_requests").insert({
+        doctor_id: opts.doctorId,
+        hospital_id: opts.hospitalId,
+        requested_name: requestedName,
+        notes: opts.notes?.trim() || null,
+    });
+    if (error) throw new Error(`composition_requests (insert): ${error.message}`);
 }
 
 /**

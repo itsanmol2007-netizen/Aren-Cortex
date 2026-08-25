@@ -3,8 +3,9 @@
 **Temporary, self-replacing.** Rewrite or delete when the next session ends.
 
 **Read order for a cold start:** this file → `docs/context/README.md` (routes
-to one scoped pocket) → `docs/aren-cortex-context.md` only if the task needs
-the full picture.
+to one scoped pocket) → `docs/aren-cortex-context.md` (2026-08-24: now a
+short index — it routes further into `docs/context/cortex-*.md`, don't read
+it expecting the full picture in one file any more).
 
 **Where this arc actually is:** Patients Overview is done and Anmol-confirmed
 against Ekanki's live data. **Anmol has now actually opened the app and
@@ -130,7 +131,7 @@ screenshots alone:**
   a broken save path (75 OTHER visits completed normally across 17
   patients through the same window). **Not fixed — needs Anmol's go-ahead**
   before any bulk status change on real rows. Full write-up + the exact
-  question to ask him is in `aren-cortex-context.md` §7.
+  question to ask him is in `docs/context/cortex-open-physio.md`.
 - **`fetchPatientVisits` missing physio fields** — RESOLVED this pass (6th).
   `RealVisit` now carries body_sites/exercise_names/impairment_names/
   story_duration/story_mechanism, same tables `buildPatientRecordRows`
@@ -158,7 +159,7 @@ empty state today (Dr Anmol Pandey has never pinned a medicine — 0 rows in
    this pass (Overview, sidebar, Practice).
 3. **Ask Anmol** whether the 86 stuck `serving` visits (5 patients,
    2026-08-12 onward, concentrated in his own "Anmol"/"Test" accounts) are
-   safe to clean up — see the full write-up in `aren-cortex-context.md` §7.
+   safe to clean up — see the full write-up in `docs/context/cortex-open-physio.md`.
    Don't touch the data without his answer. Note: this pass's fix means the
    UI no longer LOOKS broken because of these rows, so this is now purely a
    test-data-hygiene question, not urgent — but still his call, not ours.
@@ -179,8 +180,8 @@ empty state today (Dr Anmol Pandey has never pinned a medicine — 0 rows in
 call from a scripted headless Chromium to `ieimvjprtltancxapuzg.supabase.co`
 resets after ~12.5s regardless of proxy/cert config, while
 `registry.npmjs.org`/`api.anthropic.com` load instantly from the same
-browser. Matches a limitation flagged in `aren-cortex-context.md` §7 from
-an earlier session. All CSS/layout verification this arc used temporary
+browser. Matches a limitation flagged in
+`docs/context/cortex-open-crosscutting.md` from an earlier session. All CSS/layout verification this arc used temporary
 local-only static HTML fixtures over the real CSS, screenshotted over
 loopback only — proves rendering, not product correctness with real data.
 

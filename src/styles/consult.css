@@ -1983,6 +1983,60 @@ body.cs-locked-shell {
 }
 .cs-sug-filter-btn.is-on svg { opacity: 1; }
 
+/* The free-text fallback in SuggestionsCard (§4, 2026-08-24 follow-up) —
+   same violet/dashed visual language as ConditionsCard's Tailwind version
+   of this, translated to this card's plain-CSS convention. Visually apart
+   from a real catalogue row on purpose: this is a doctor's own note, never
+   dressed up as a ranked suggestion. */
+.cs-freeterm {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 6px 10px;
+    border: 1px dashed #c4b5fd;
+    border-radius: 10px;
+    background: #faf7ff;
+    padding: 9px 10px;
+}
+.cs-freeterm.cs-freeterm-ranked {
+    border-style: solid;
+    background: #fff;
+}
+.cs-freeterm-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #8b5cf6;
+}
+.cs-freeterm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.cs-freeterm-chip {
+    border: 1px solid #c4b5fd;
+    border-radius: 999px;
+    background: #fff;
+    padding: 5px 11px;
+    color: #6d28d9;
+    font-size: 12px;
+    font-weight: 650;
+}
+.cs-freeterm-chip:hover { background: #f3ecff; }
+.cs-freeterm-add {
+    align-self: flex-start;
+    border: 0;
+    background: none;
+    padding: 1px;
+    color: #6d28d9;
+    font-size: 12.5px;
+    font-weight: 650;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 .cs-list {
     flex: 1;
     min-height: 0;
@@ -4572,6 +4626,57 @@ body.cs-locked-shell {
     color: #dc2626;
     font-size: 12.5px;
     font-weight: 550;
+}
+
+/* The composition-request fallback, same-day follow-up ask. Sits under the
+   composition search — never inside the "found it" state, since a real hit
+   makes the request moot. */
+.cs-newmed-request { margin-top: 2px; }
+.cs-newmed-request-open {
+    border: 0;
+    background: none;
+    padding: 4px 2px;
+    color: var(--cs-blue);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.cs-newmed-request-form {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius-sm);
+    padding: 9px;
+}
+.cs-newmed-request-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.cs-newmed-request-actions button {
+    border: 0;
+    border-radius: 7px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 650;
+    background: none;
+    color: var(--cs-muted);
+}
+.cs-newmed-request-send {
+    background: var(--cs-blue) !important;
+    color: #fff !important;
+}
+.cs-newmed-request-send:disabled { opacity: 0.6; }
+.cs-newmed-request-sent {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #15803d;
+    font-size: 12.5px;
+    font-weight: 560;
+    line-height: 1.45;
 }
 
 /* The "not found, add it" prompt under a medicine search — §5, 2026-08-24.

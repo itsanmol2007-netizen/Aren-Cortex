@@ -188,6 +188,9 @@ export interface ConsultPlan {
   removeDiagnosis: (label: string) => void;
   /** The chart-local half of the free-text fallback — see the doc comment. */
   addFreeDiagnosis: (label: string) => void;
+  addFreeTest: (label: string) => void;
+  addFreeReferral: (label: string) => void;
+  addFreeAdvice: (label: string) => void;
   removeAdviceLine: (line: string) => void;
   removeTherapyLine: (line: string) => void;
   /** Undo any accept, from the row it was accepted on — see the doc comment. */
@@ -752,22 +755,44 @@ export function useConsultPlan({
   }, [acceptedIntents, releaseIntent, unconfirmCondition]);
 
   /**
-   * The Assessment free-text fallback, chart-local half — §4, 2026-08-24.
-   * `diagnoses` has always been a plain string array with no catalogue
-   * intent behind an entry (see `handleAcceptIntent`'s `finding` case, which
-   * pushes `payload.label` the same way) — that is what makes this safe: a
-   * free label slots in exactly where a ranked confirm already lands, no new
-   * shape, no fake intent id to invent. The Supabase write that lets this
-   * term come back for a similar chart next time is a separate, non-fatal
-   * call the caller makes alongside this — see `lib/db/synapse.ts`'s
-   * `saveDoctorFreeFinding` — because this hook never writes to the
-   * database (header rule).
+   * The free-text fallback, chart-local half — §4, 2026-08-24, widened same
+   * day to Test/Referral/Advice alongside Assessment. Every one of these
+   * four targets was ALREADY a plain string with no catalogue intent behind
+   * an entry (`diagnoses`, `selectedTests`, and advice/referral lines via
+   * `appendAdvice`) — that is what makes this safe across all four: a free
+   * label slots in exactly where a ranked accept already lands, no new
+   * shape, no fake intent id to invent. The Supabase write that lets a term
+   * come back for a similar chart next time is a separate, non-fatal call
+   * the caller makes alongside these — see `lib/db/synapse.ts`'s
+   * `saveDoctorFreeTerm` — because this hook never writes to the database
+   * (header rule). Medicine and exercise are NOT here: medicine has its own
+   * composition-anchored path (`AddMedicineSheet`), and exercise's plan
+   * line is keyed on a real intent id in a way these four never were — see
+   * `freeTerms.ts`'s header for the full scoping note.
    */
   const addFreeDiagnosis = useCallback((label: string) => {
     const trimmed = label.trim();
     if (!trimmed) return;
     setDiagnoses((curr) => (curr.includes(trimmed) ? curr : [...curr, trimmed]));
   }, []);
+
+  const addFreeTest = useCallback((label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setSelectedTests((curr) => (curr.includes(trimmed) ? curr : [...curr, trimmed]));
+  }, []);
+
+  const addFreeReferral = useCallback((label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    appendAdvice(`Refer to ${trimmed}`);
+  }, [appendAdvice]);
+
+  const addFreeAdvice = useCallback((label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    appendAdvice(trimmed);
+  }, [appendAdvice]);
 
   const removeAdviceLine = useCallback((line: string) => {
     setAdviceNotes((curr) =>
@@ -1098,6 +1123,9 @@ export function useConsultPlan({
     removeTest,
     removeDiagnosis,
     addFreeDiagnosis,
+    addFreeTest,
+    addFreeReferral,
+    addFreeAdvice,
     removeAdviceLine,
     removeTherapyLine,
     removeAcceptedIntent,
