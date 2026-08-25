@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+    ChevronLeft,
     ChevronRight,
     Clock,
     Phone,
@@ -47,6 +48,74 @@ function formatLastVisit(iso: string | null): { label: string; sub: string } {
         label: d.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
         sub: d.getFullYear() !== new Date().getFullYear() ? String(d.getFullYear()) : formatTime(iso),
     };
+}
+
+// ── Today's Patients — horizontal scroller ─────────────────────────────────
+// The row itself already scrolls (`.prec-today-scroll`, wheel/trackpad/drag);
+// the native scrollbar is hidden by design (`scrollbar-width: none`) to keep
+// the row visually quiet. That leaves a mouse-only doctor with no cue the row
+// even holds more than what's visible — this wrapper is that cue, nothing
+// else: an edge fade + chevron that appears only on the side there's more to
+// see, and clears itself once scrolled there. Not a second scrollbar, not
+// instructional text — see `cortex-design-dna/typography.md`'s "a label
+// beats a sentence" rule.
+function TodayPatientsScroller({ children }: { children: React.ReactNode }) {
+    const scrollerRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    const updateEdges = () => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        setCanScrollLeft(el.scrollLeft > 4);
+        setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+
+    // Re-checks on mount/data-change too (ref callback fires once the row's
+    // cards are actually in the DOM, so `scrollWidth` is real) — a row that
+    // starts under-filled (few patients today) correctly shows no chevron.
+    const setRef = (el: HTMLDivElement | null) => {
+        scrollerRef.current = el;
+        if (el) requestAnimationFrame(updateEdges);
+    };
+
+    const scrollBy = (dir: 1 | -1) => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
+    };
+
+    return (
+        <div className="prec-today-scroll-wrap">
+            <div
+                ref={setRef}
+                className="prec-today-scroll"
+                onScroll={updateEdges}
+            >
+                {children}
+            </div>
+            {canScrollLeft && (
+                <button
+                    type="button"
+                    className="prec-today-edge prec-today-edge--left"
+                    aria-label="Scroll to earlier patients"
+                    onClick={() => scrollBy(-1)}
+                >
+                    <ChevronLeft size={16} />
+                </button>
+            )}
+            {canScrollRight && (
+                <button
+                    type="button"
+                    className="prec-today-edge prec-today-edge--right"
+                    aria-label="Scroll to more patients"
+                    onClick={() => scrollBy(1)}
+                >
+                    <ChevronRight size={16} />
+                </button>
+            )}
+        </div>
+    );
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
@@ -448,7 +517,7 @@ export function PatientsList({
                         <span className="prec-section-title">Today's Patients</span>
                         <span className="prec-section-count">{todayRows.length}</span>
                     </div>
-                    <div className="prec-today-scroll">
+                    <TodayPatientsScroller>
                         {todayRows.map((row) => (
                             <TodayCard
                                 key={row.visit_id || row.patient_id}
@@ -457,7 +526,7 @@ export function PatientsList({
                                 onClick={() => onSelectPatient(row)}
                             />
                         ))}
-                    </div>
+                    </TodayPatientsScroller>
                 </div>
             )}
 

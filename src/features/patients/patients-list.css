@@ -49,6 +49,10 @@
 
 /* ── Today cards ─────────────────────────────────────────────────────────────── */
 
+.prec-today-scroll-wrap {
+    position: relative;
+}
+
 .prec-today-scroll {
     display: flex;
     gap: 7px;
@@ -59,6 +63,44 @@
 
 .prec-today-scroll::-webkit-scrollbar {
     display: none;
+}
+
+/* Discoverability cue for the hidden-scrollbar row above — a fade into the
+   page ground plus a chevron, on whichever edge still has more cards.
+   Absolutely positioned over the row, never adds its own layout height, and
+   clears itself entirely once scrolled that direction (`.prec-today-edge`
+   only renders while `canScrollLeft`/`canScrollRight` is true). See
+   `cortex-design-dna/icons.md` — lucide-react, same chevron already used
+   elsewhere in this file (`.prec-table-arrow`), no new icon. */
+.prec-today-edge {
+    position: absolute;
+    top: 2px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    width: 40px;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #475569;
+}
+
+.prec-today-edge:hover {
+    color: #1268e8;
+}
+
+.prec-today-edge--right {
+    right: 0;
+    justify-content: flex-end;
+    padding-right: 2px;
+    background: linear-gradient(90deg, rgba(240, 242, 247, 0), #f0f2f7 65%);
+}
+
+.prec-today-edge--left {
+    left: 0;
+    justify-content: flex-start;
+    padding-left: 2px;
+    background: linear-gradient(270deg, rgba(240, 242, 247, 0), #f0f2f7 65%);
 }
 
 /* White card on tinted ground — clear elevation without shadow theatrics */

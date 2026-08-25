@@ -7,7 +7,25 @@
 .prec-page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    /* Not `height: 100%` — this page's parent, `.app-shell` (App.tsx), has
+       no height of its own (sized by its content, same trap documented in
+       practice.css/communication.css), so the percentage silently computed
+       against nothing and `.prec-page-body`'s two independently-scrolling
+       columns never got a bounded box to scroll inside — the page rendered
+       only as tall as its own content, `overflow: hidden` clipping anything
+       past that short height while `.app-shell`'s own unstyled background
+       showed through below as dead grey space. `min-height: 100vh` (the
+       comm/prac/clinic fix) doesn't work HERE specifically, because unlike
+       those single-scroll pages this one needs a real fixed viewport box —
+       `.prec-main-col`/`.prec-right-col` are meant to scroll independently
+       inside it, not the whole page. `100dvh` is a real, ancestor-independent
+       height (the same fix Front Desk's `WorkspaceShell` already uses via
+       Tailwind's `h-dvh`), so it isn't reachable by a heightless parent
+       silently swallowing it. Found + fixed 2026-08-25 — reported on
+       Patient Record specifically ("content cut off at the bottom");
+       Communication/Practice/Clinic already carry their own version of this
+       fix and are unaffected by this change. */
+    height: 100dvh;
     overflow: hidden;
     background: #f0f2f7;
     color: var(--text);
