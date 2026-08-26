@@ -943,7 +943,27 @@ export type PinnedMedicineDetail = {
      *  catalogue; callers title-case for display, never mutate the data. */
     label: string;
     pinnedAt: string;
+    /**
+     * Real brand names carrying this composition, catalogue order, capped
+     * to a handful — added 2026-08-26 so a pinned row reads as "this
+     * molecule, and here's what it actually looks like on a shelf" rather
+     * than a bare string. Not `fetchCompositionBrands`'s full resolution
+     * (doctor preference tier, clinic defaults, paediatric forms, RPC round
+     * trip) — that machinery answers "which ONE brand does THIS doctor get
+     * for THIS patient", a live-consult question. This is a lighter, plain
+     * join for a quiet secondary line: every brand a molecule has, not the
+     * one Cortex would rank first for it.
+     */
+    brandNames: string[];
+    /** every brand in the catalogue for this composition, not just the
+     *  ones in `brandNames` — lets a row say "+N more" honestly. */
+    brandCount: number;
 };
+
+/** Rows over this cap don't cost a round trip they wouldn't already pay:
+ *  the composition list and the brand list are both capped queries, this
+ *  is just how many of the resolved brands actually get shown per row. */
+const PINNED_BRAND_DISPLAY_CAP = 3;
 
 /**
  * The Practice page's read — a doctor's pinned medicines, by name, not just
@@ -951,6 +971,13 @@ export type PinnedMedicineDetail = {
  * every caller reads it out of the full ruleset load" — checked live
  * instead of assumed: `intents.label` already carries the display name
  * directly for a medicine intent, so this is one join, not the ruleset.
+ *
+ * 2026-08-26: widened from `id, label` to also resolve `ref_id`
+ * (`intents.ref_id` is the composition id for a medicine-type intent,
+ * verified live the same way `label` was) and join it through
+ * `medicine_composition_map` → `medicines` for real brand names — see
+ * `PinnedMedicineDetail.brandNames`'s own doc comment for why this is a
+ * plain join rather than the full brand-resolution pipeline.
  */
 export async function fetchPinnedMedicineDetails(doctorId: string): Promise<PinnedMedicineDetail[]> {
     const { data: pins, error: pinErr } = await supabase
@@ -964,19 +991,55 @@ export async function fetchPinnedMedicineDetails(doctorId: string): Promise<Pinn
     const intentIds = pins.map((p: any) => Number(p.intent_id));
     const { data: intents, error: intentErr } = await supabase
         .from("intents")
-        .select("id, label")
+        .select("id, label, ref_id")
         .in("id", intentIds);
     if (intentErr) throw new Error(`fetchPinnedMedicineDetails (intents): ${intentErr.message}`);
 
     const labelById = new Map<number, string>();
-    (intents ?? []).forEach((i: any) => labelById.set(Number(i.id), i.label));
+    const compositionByIntentId = new Map<number, number>();
+    (intents ?? []).forEach((i: any) => {
+        labelById.set(Number(i.id), i.label);
+        if (i.ref_id != null) compositionByIntentId.set(Number(i.id), Number(i.ref_id));
+    });
+
+    const compositionIds = [...new Set(compositionByIntentId.values())];
+    const brandNamesByComposition = new Map<number, string[]>();
+    if (compositionIds.length > 0) {
+        const { data: mapRows, error: mapErr } = await supabase
+            .from("medicine_composition_map")
+            .select("composition_id, medicine_id")
+            .in("composition_id", compositionIds);
+        // Non-fatal: a failed enrichment leaves the row with its molecule
+        // name only, exactly what this page showed before this pass — never
+        // worth losing the pinned list itself over.
+        if (!mapErr && mapRows?.length) {
+            const medicineIds = [...new Set(mapRows.map((r: any) => Number(r.medicine_id)))];
+            const { data: meds } = await supabase.from("medicines").select("id, name").in("id", medicineIds);
+            const nameByMedicineId = new Map<number, string>();
+            (meds ?? []).forEach((m: any) => nameByMedicineId.set(Number(m.id), m.name));
+            for (const r of mapRows as any[]) {
+                const name = nameByMedicineId.get(Number(r.medicine_id));
+                if (!name) continue;
+                const list = brandNamesByComposition.get(Number(r.composition_id)) ?? [];
+                if (!list.includes(name)) list.push(name);
+                brandNamesByComposition.set(Number(r.composition_id), list);
+            }
+        }
+    }
 
     return pins
-        .map((p: any) => ({
-            intentId: Number(p.intent_id),
-            label: labelById.get(Number(p.intent_id)) ?? "",
-            pinnedAt: p.created_at,
-        }))
+        .map((p: any) => {
+            const intentId = Number(p.intent_id);
+            const compositionId = compositionByIntentId.get(intentId);
+            const brands = compositionId != null ? brandNamesByComposition.get(compositionId) ?? [] : [];
+            return {
+                intentId,
+                label: labelById.get(intentId) ?? "",
+                pinnedAt: p.created_at,
+                brandNames: brands.slice(0, PINNED_BRAND_DISPLAY_CAP),
+                brandCount: brands.length,
+            };
+        })
         // An intent that no longer resolves (deactivated/removed from the
         // catalogue since it was pinned) is dropped rather than shown blank.
         .filter((p) => p.label);

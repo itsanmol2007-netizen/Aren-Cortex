@@ -180,6 +180,69 @@
     border-bottom: 0;
 }
 
+/* ── Pinned Medicines' own row shape — icon + two lines, not a bare string.
+   "Don't make it feel like an Excel list" was the ask; a molecule on its
+   own IS a flat list, so this pairs it with the real brands that carry it
+   (fetchPinnedMedicineDetails' join), the same "identity has two lines"
+   rule RecommendationsCard's MedicineIdentity already follows in Consult —
+   not copied verbatim (that component also carries rank bars, guard
+   flags, brand-switching — all consult-only), just the same shape. */
+.prac-row.is-medicine {
+    /* Matches MED_ROW_H in PracticePage.tsx exactly — see that constant's
+       own comment. Keep the two in sync if this ever changes. */
+    min-height: 54px;
+    align-items: center;
+}
+
+.prac-med-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+
+.prac-med-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.prac-med-info .prac-row-label {
+    font-size: 13px;
+    font-weight: 620;
+}
+
+.prac-med-brands {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 470;
+}
+
+/* ── The add-medicine search, integrated into the card ───────────────────
+   `.cs-rec-search` (IntentSearchField's own wrapper) brings 16px of its
+   own horizontal padding, sized for sitting flush in a full-width
+   consult card — `.prac-card-body` already pads the whole card, so
+   without this override the search box would sit double-indented against
+   every other row on it. */
+.prac-card .cs-rec-search {
+    padding: 0 0 var(--cs-s2);
+}
+
+.prac-search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
 .prac-row-label {
     flex: 1;
     min-width: 0;
