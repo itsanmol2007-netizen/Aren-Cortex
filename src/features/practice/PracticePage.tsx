@@ -86,12 +86,23 @@ function CappedRows<T>({
     const [showAll, setShowAll] = useState(false);
     const reduce = useReducedMotion();
     const overflowing = items.length > cap;
+    // Consult's identical mechanism (ConditionsCard/SuggestionsCard) expands
+    // to a FIXED `4.5 * ROW_H`, which only reads as "more" because their own
+    // cap is 4 (4.5 > 4). Copied verbatim here at first, then caught
+    // rendered (verification.md's own rule): with this file's caps of 5/6,
+    // a fixed 4.5 rows is SHORTER than the collapsed view, so "Show all"
+    // visibly shrank the box before scrolling — the opposite of what the
+    // control claims to do. `cap + 0.5` scales with the cap instead, so
+    // expanded is always taller (shows every capped row in full, plus half
+    // of the next one — the same "stops mid-row on purpose" scroll cue,
+    // just anchored to THIS list's own cap rather than a borrowed constant).
+    const expandedRows = cap + 0.5;
 
     return (
         <>
             <motion.div
                 initial={false}
-                animate={{ maxHeight: overflowing && showAll ? 4.5 * ROW_H : cap * ROW_H }}
+                animate={{ maxHeight: overflowing && showAll ? expandedRows * ROW_H : cap * ROW_H }}
                 transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
                 className={"prac-rows" + (overflowing && showAll ? " is-expanded" : "")}
             >
@@ -258,7 +269,7 @@ export function PracticePage({ logoRef, onOpenSidebar, specialty, onNavigate }: 
                                 keyOf={(p) => p.intentId}
                                 renderRow={(p) => (
                                     <>
-                                        <span className="prac-row-label">{p.label}</span>
+                                        <span className="prac-row-label is-catalogue">{p.label}</span>
                                         <RemoveBtn
                                             label={`Unpin ${p.label}`}
                                             onClick={() => unpinMedicine(p.intentId)}
@@ -287,7 +298,7 @@ export function PracticePage({ logoRef, onOpenSidebar, specialty, onNavigate }: 
                                 keyOf={(b) => `${b.compositionId}-${b.medicineId}`}
                                 renderRow={(b) => (
                                     <>
-                                        <span className="prac-row-label">
+                                        <span className="prac-row-label is-catalogue">
                                             <em>{b.compositionName}</em> → {b.medicineName}
                                         </span>
                                         <RemoveBtn

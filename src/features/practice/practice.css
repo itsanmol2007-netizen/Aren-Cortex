@@ -189,6 +189,20 @@
     color: var(--cs-ink);
     font-size: 12.5px;
     font-weight: 560;
+}
+
+/* Medicine and composition names ARE stored lowercase throughout the
+   catalogue (see PinnedMedicineDetail's own doc comment) — title-casing
+   them for display is correct here. A doctor's OWN free-text term is not
+   catalogue data; it is a sentence or phrase they typed themselves ("refer
+   to Dr Mehta, ENT"), and force-capitalising every word of it reads like a
+   book title rather than what they wrote — confirmed rendered before
+   fixing (a real doctor's sentence, "Warm saline gargles thrice daily",
+   became "Warm Saline Gargles Thrice Daily"). Consult's own free-text rows
+   (`FreeConditionRow`/`FreeSuggestionRow`) render the label as-typed, no
+   transform — this now matches. Applied only to Pinned Medicines and
+   Clinic Default Brands' rows, never to Your Clinical Terms. */
+.prac-row-label.is-catalogue {
     text-transform: capitalize;
 }
 
@@ -231,12 +245,20 @@
     flex: none;
     /* Fixed, not content-width — "Investigation" and "Advice" are different
        lengths, and without this every row's label would start at a
-       different x depending on which type it carries. */
-    width: 68px;
+       different x depending on which type it carries. 90px is measured
+       against the actual longest label ("Investigation") at this
+       size/weight/tracking, not guessed — 68px looked reasonable on paper
+       and visibly overlapped the row label next to it once rendered (see
+       cortex-design-dna/verification.md: check the rendered page, not the
+       stylesheet). `overflow: hidden` stays on as a second line of
+       defence, so a future longer label clips instead of colliding. */
+    width: 90px;
+    overflow: hidden;
+    text-overflow: clip;
     font-size: 9.5px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     white-space: nowrap;
 }
 
