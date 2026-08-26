@@ -141,6 +141,40 @@ export function BlankTermArt() {
     );
 }
 
+/** The empty preferred-labs list (Practice page, and its Consult-side
+ *  "order from" prompt when it has nothing to offer yet): a small building,
+ *  not a beaker — a preferred lab is a PLACE the doctor sends a patient to,
+ *  never a test itself (that's `BlankTestArt`'s domain). Amber, matching the
+ *  card glyph and modal accent this list uses elsewhere on Practice — the
+ *  one card on the page not already claimed by blue/teal/violet. */
+export function BlankLabArt() {
+    return (
+        <svg width="50" height="44" viewBox="0 0 50 44" fill="none" aria-hidden="true">
+            <path d="M13 18l11-9 11 9v14a2 2 0 0 1-2 2H15a2 2 0 0 1-2-2z"
+                fill="#fffdf9" stroke="#f0d9ae" strokeWidth="1.6" strokeLinejoin="round" />
+            <rect x="20" y="24" width="8" height="10" fill="#fef3da" stroke="#f0d9ae" strokeWidth="1.4" />
+            <path d="M17 21h4M29 21h4" stroke="#f5e6c2" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M42 8l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="#eec877" />
+        </svg>
+    );
+}
+
+/** The empty prescription-templates list: two cards stacked, one written on
+ *  and one waiting behind it — a template is a saved COMBINATION, and a
+ *  single flat card reads the same as any other empty list on this page.
+ *  Violet, the same "doctor-authored, not the catalogue" family as
+ *  `BlankTermArt`. */
+export function BlankTemplateArt() {
+    return (
+        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" aria-hidden="true">
+            <rect x="12" y="14" width="24" height="20" rx="4" fill="#fbfaff" stroke="#ddd4f7" strokeWidth="1.6" />
+            <rect x="16" y="8" width="24" height="20" rx="4" fill="#fdfcff" stroke="#ded5f8" strokeWidth="1.6" />
+            <path d="M20.5 15h13M20.5 20h9" stroke="#e9e2fa" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M44 9l.8 1.9 1.9.8-1.9.8L44 14.4l-.8-1.9-1.9-.8 1.9-.8z" fill="#c4b5fd" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

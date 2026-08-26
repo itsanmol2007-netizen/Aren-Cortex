@@ -64,6 +64,7 @@ import { CarePlanSheet } from "./features/consult/CarePlanSheet";
 import { PastVisitCard, visitHasContent } from "./components/PastVisitCard";
 import { visitStatusKind } from "./features/patients/visitStatus";
 import { PlanCard } from "./features/consult/PlanCard";
+import { SaveAsTemplateModal } from "./features/practice/SaveAsTemplateModal";
 import { StatusBar } from "./features/consult/StatusBar";
 import { topScoreByType } from "./features/consult/parts";
 import { usePinnedMedicines } from "./features/consult/usePinnedMedicines";
@@ -74,7 +75,13 @@ import type { PersonalizedIntent } from "./lib/synapse/personalize";
 import {
   type Observable, saveDoctorFreeTerm, requestNewComposition,
   type DoctorFreeTermType,
+  type PreferredLab, loadPreferredLabs, loadDefaultPreferredLab,
+  fetchDoctorMeasurePrefs,
+  type PrescriptionTemplateSummary, loadPrescriptionTemplateSummaries,
+  fetchPrescriptionTemplateDetail,
 } from "./lib/db/synapse";
+import { guardIntent } from "./lib/synapse/engine";
+import type { AcceptPayload } from "./features/consult/types";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchDoctor, fetchHospital,
@@ -132,6 +139,48 @@ function App() {
 
   // Presence heartbeat: mark this doctor "online" for reception while Cortex is open.
   useDoctorHeartbeat(identity.ready ? identity.doctorId : null);
+
+  // The doctor's own diagnostic-centre directory — see PlanCard's "Order
+  // from" prompt. Loaded once per identity, same shape as every other
+  // doctor-scoped list on this page.
+  const [preferredLabs, setPreferredLabs] = useState<PreferredLab[]>([]);
+  useEffect(() => {
+    if (!identity.ready) return;
+    let cancelled = false;
+    loadPreferredLabs(identity.doctorId)
+      .then((labs) => { if (!cancelled) setPreferredLabs(labs); })
+      .catch((e) => console.error("loadPreferredLabs:", e));
+    return () => { cancelled = true; };
+  }, [identity.ready, identity.doctorId]);
+
+  // The doctor's override of which measurements Consult opens with — see
+  // Practice's Consultation Defaults card. Null (the common case) means
+  // "use the specialty baseline", exactly what `specialty.measurements`
+  // already was before this existed.
+  const [measurePrefs, setMeasurePrefs] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!identity.ready) return;
+    let cancelled = false;
+    fetchDoctorMeasurePrefs(identity.doctorId)
+      .then((keys) => { if (!cancelled) setMeasurePrefs(keys); })
+      .catch((e) => console.error("fetchDoctorMeasurePrefs:", e));
+    return () => { cancelled = true; };
+  }, [identity.ready, identity.doctorId]);
+
+  // The doctor's reusable prescription templates — see Practice's builder
+  // and the case-sheet search's template matches (§10). Loaded once per
+  // identity, same as preferredLabs; Practice's CRUD writes back through
+  // `onTemplatesChange` so a template built mid-session is immediately
+  // reachable from the case sheet without a reload.
+  const [templates, setTemplates] = useState<PrescriptionTemplateSummary[]>([]);
+  useEffect(() => {
+    if (!identity.ready) return;
+    let cancelled = false;
+    loadPrescriptionTemplateSummaries(identity.doctorId)
+      .then((rows) => { if (!cancelled) setTemplates(rows); })
+      .catch((e) => console.error("loadPrescriptionTemplateSummaries:", e));
+    return () => { cancelled = true; };
+  }, [identity.ready, identity.doctorId]);
 
   const [toast, setToast] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -367,7 +416,8 @@ function App() {
     unconfirmCondition,
   });
   const {
-    prescription, selectedTests, diagnoses, visitNotes, setVisitNotes,
+    prescription, selectedTests, selectedLabName, setSelectedLabName,
+    diagnoses, visitNotes, setVisitNotes,
     followUpDays, setFollowUpDays,
     acceptedIntents, acceptedIntentIdSet, chosenBrands, deliberateBrands,
     searchedAccepts, acknowledgedIntents,
@@ -381,6 +431,92 @@ function App() {
     removeTherapyLine, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
+
+  /**
+   * Applying a template — CaseSheet's own search hands it a template id
+   * (see ClinicalCommandBar's `templates`/`onApplyTemplate` props), never
+   * items directly.
+   *
+   * Every item still runs through `handleAcceptIntent`, the plan's one
+   * entry point (see useConsultPlan's header) — there is no separate bulk
+   * write. Two rules the "always guard-check" answer requires:
+   *
+   *  1. A hard-warned item is never silently added. It is guard-checked
+   *     here, against the SAME ruleset and active signals a live search
+   *     would use, and dropped from the queue (with a toast naming what
+   *     was skipped) rather than pushed through unacknowledged — only a
+   *     doctor reading the warning in the normal search/accept flow can
+   *     acknowledge it.
+   *  2. A medicine never bypasses its dose-confirmation sheet. Calling
+   *     `handleAcceptIntent` on a medicine STAGES it (MedicineAddSheet)
+   *     rather than committing — "every medicine confirms in the sheet" is
+   *     a deliberate rule, not an oversight, and a template is not a
+   *     special case of it. So medicines queue and confirm one at a time;
+   *     the queue effect below advances to the next item only once
+   *     `pendingMedicine` clears (confirmed or dismissed). Non-medicine
+   *     items commit immediately, same as any other accept.
+   */
+  const [templateQueue, setTemplateQueue] = useState<AcceptPayload[]>([]);
+
+  const applyTemplate = useCallback((templateId: number) => {
+    fetchPrescriptionTemplateDetail(templateId)
+      .then((detail) => {
+        if (!detail) return;
+        const ruleset = synapse.data?.ruleset ?? null;
+        const activeSignals = intelligence.result?.activeSignals ?? [];
+        const skipped: string[] = [];
+        const payloads: AcceptPayload[] = [];
+        for (const item of detail.items) {
+          if (acceptedIntentIdSet.has(item.intentId)) continue; // already on the plan
+          const verdict = ruleset
+            ? guardIntent(ruleset, activeSignals, { id: item.intentId, type: item.type })
+            : { status: "ok" as const, reasons: [] };
+          if (verdict.status === "warn_hard") { skipped.push(item.label); continue; }
+          payloads.push({
+            intentId: item.intentId, type: item.type, label: item.label,
+            refTable: item.refTable, refId: item.refId, medicine: null,
+            viaSearch: true, overridden: false,
+          });
+        }
+        if (skipped.length) {
+          showToast(`${skipped.length} item${skipped.length === 1 ? "" : "s"} from "${detail.name}" need a manual look — search to add: ${skipped.join(", ")}`);
+        }
+        if (payloads.length) setTemplateQueue((q) => [...q, ...payloads]);
+      })
+      .catch((e) => {
+        console.error("applyTemplate:", e);
+        showToast("Could not load that template — try again");
+      });
+  }, [synapse.data, intelligence.result, acceptedIntentIdSet, showToast]);
+
+  // One item at a time: a medicine stages into `pendingMedicine` and this
+  // waits for it to clear (confirmed or dismissed) before feeding the next
+  // one in. Non-medicine items commit immediately inside `handleAcceptIntent`
+  // itself, so they never linger in the queue long enough to matter here.
+  useEffect(() => {
+    if (templateQueue.length === 0 || pendingMedicine) return;
+    const [next, ...rest] = templateQueue;
+    setTemplateQueue(rest);
+    handleAcceptIntent(next);
+  }, [templateQueue, pendingMedicine, handleAcceptIntent]);
+
+  // "Save as template" — the Plan rail's own path into Prescription
+  // Templates, see PlanCard's own button and SaveAsTemplateModal.
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+
+  // Seed the "order from" prompt with the doctor's default preferred lab the
+  // moment the first investigation lands on the plan — never overwrite a
+  // choice the doctor already made this consult, and never fire before the
+  // default lab list has actually loaded.
+  const labSeededRef = useRef(false);
+  useEffect(() => {
+    if (selectedTests.length === 0) { labSeededRef.current = false; return; }
+    if (labSeededRef.current || selectedLabName || !identity.ready) return;
+    labSeededRef.current = true;
+    loadDefaultPreferredLab(identity.doctorId)
+      .then((lab) => { if (lab) setSelectedLabName(lab.name); })
+      .catch((e) => console.error("loadDefaultPreferredLab:", e));
+  }, [selectedTests.length, selectedLabName, identity.ready, identity.doctorId, setSelectedLabName]);
 
   /**
    * Alt+1/2/3 — severity, on the symptom the doctor just recorded.
@@ -572,6 +708,19 @@ function App() {
     () => profileFor(hospitalProfile?.specialty_profile),
     [hospitalProfile?.specialty_profile]
   );
+
+  /** The doctor's override, narrowed to keys this specialty actually
+   *  supports — it can only ever trim or reorder the baseline, never
+   *  introduce a field the specialty profile doesn't already carry. Falls
+   *  back to the full baseline when the override is empty or every key in
+   *  it turned out to be specialty-irrelevant (e.g. after a specialty
+   *  switch). */
+  const effectiveMeasureKeys = useMemo(() => {
+    if (!measurePrefs || measurePrefs.length === 0) return specialty.measurements;
+    const allowed = new Set<string>(specialty.measurements);
+    const filtered = measurePrefs.filter((k) => allowed.has(k));
+    return filtered.length > 0 ? (filtered as typeof specialty.measurements) : specialty.measurements;
+  }, [measurePrefs, specialty.measurements]);
 
   // ── What counts as a "past visit" a doctor actually wants to see ───────
   // `pastVisits` (from `useConsultSession`) is every visit `fetchPatientVisits`
@@ -1078,6 +1227,12 @@ function App() {
           onOpenSidebar={handleOpenSidebar}
           specialty={specialty}
           onNavigate={handleSidebarNavigate}
+          preferredLabs={preferredLabs}
+          onPreferredLabsChange={setPreferredLabs}
+          measurePrefs={measurePrefs}
+          onMeasurePrefsChange={setMeasurePrefs}
+          templates={templates}
+          onTemplatesChange={setTemplates}
         />
       ) : activePage === "communication" ? (
         <CommunicationPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
@@ -1172,7 +1327,7 @@ function App() {
                   onBrowseFinding={() => setBrowse("finding")}
                   vitals={vitals}
                   onVitalsChange={setVitals}
-                  defaultMeasureKeys={specialty.measurements}
+                  defaultMeasureKeys={effectiveMeasureKeys}
                   relevantMeasureKeys={measureRelevance.keys}
                   relevantMeasureBecause={measureRelevance.because}
                   anatomicalMeasureKeys={anatomicalMeasureKeys}
@@ -1208,7 +1363,7 @@ function App() {
                   onBrowseFinding={() => setBrowse("finding")}
                   vitals={vitals}
                   onVitalsChange={setVitals}
-                  defaultMeasureKeys={specialty.measurements}
+                  defaultMeasureKeys={effectiveMeasureKeys}
                   relevantMeasureKeys={measureRelevance.keys}
                   relevantMeasureBecause={measureRelevance.because}
                   pastVisits={pastVisits}
@@ -1216,6 +1371,8 @@ function App() {
                   disabled={!patient}
                   searchRef={chartSearchRef}
                   measurementsRef={measurementsRef}
+                  templates={templates}
+                  onApplyTemplate={applyTemplate}
                 />
               ) : (
                 <SoapInputs
@@ -1233,7 +1390,7 @@ function App() {
                   onBrowse={setBrowse}
                   vitals={vitals}
                   onVitalsChange={setVitals}
-                  defaultMeasureKeys={specialty.measurements}
+                  defaultMeasureKeys={effectiveMeasureKeys}
                   relevantMeasureKeys={measureRelevance.keys}
                   relevantMeasureBecause={measureRelevance.because}
                   pastVisits={pastVisits}
@@ -1516,6 +1673,10 @@ function App() {
                 onRemoveMedicine={removeMedicine}
                 tests={selectedTests}
                 onRemoveTest={removeTest}
+                preferredLabs={preferredLabs}
+                selectedLabName={selectedLabName}
+                onSelectLabName={setSelectedLabName}
+                onManageLabs={() => handleSidebarNavigate("practice")}
                 adviceLines={adviceLines}
                 therapyLines={therapyLines}
                 exerciseLines={exercisePlan.map((l) => ({ id: l.id, text: formatLine(l) }))}
@@ -1540,6 +1701,7 @@ function App() {
                 onReviewRx={openReview}
                 onPrint={openReview}
                 panelRef={planRef}
+                onSaveAsTemplate={() => setSaveTemplateOpen(true)}
               />
             </aside>
           </main>
@@ -1719,6 +1881,16 @@ function App() {
       }
 
       {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
+
+      {saveTemplateOpen && (
+        <SaveAsTemplateModal
+          doctorId={identity.doctorId}
+          hospitalId={identity.hospitalId}
+          items={[...acceptedIntents.values()].map((p) => ({ intentId: p.intentId, type: p.type }))}
+          onClose={() => setSaveTemplateOpen(false)}
+          onSaved={setTemplates}
+        />
+      )}
 
       {toast && <div className="toast">{toast}</div>}
 

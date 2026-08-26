@@ -29,7 +29,7 @@ import { ClinicalCommandBar, CaseSheet, type CaseSheetEntry } from "./CaseSheet"
 import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
 import { useRovingList } from "../../hooks/useRovingList";
-import type { Observable } from "../../lib/db/synapse";
+import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
 import type { TrendVisit } from "./trend";
 import type { SelectedSymptom, Vitals } from "../../types";
@@ -61,6 +61,9 @@ interface Props {
     searchRef?: React.RefObject<HTMLInputElement>;
     /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
     measurementsRef?: React.RefObject<HTMLElement | null>;
+    /** this doctor's prescription templates — see ClinicalCommandBar's own doc comment */
+    templates?: PrescriptionTemplateSummary[];
+    onApplyTemplate?: (templateId: number) => void;
 }
 
 export function GeneralOpdInputs({
@@ -69,6 +72,7 @@ export function GeneralOpdInputs({
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, disabled = false, searchRef, measurementsRef,
+    templates, onApplyTemplate,
 }: Props) {
     /**
      * ── Reaching "Related" without a mouse ───────────────────────────────
@@ -107,6 +111,8 @@ export function GeneralOpdInputs({
                 onEmptyDown={() => relatedRoving.move(1)}
                 onEmptyUp={() => relatedRoving.move(-1)}
                 onEmptyEnter={() => relatedRoving.activate()}
+                templates={templates}
+                onApplyTemplate={onApplyTemplate}
             />
 
             {/* One box in place of three (History, Symptoms, Findings): the Case

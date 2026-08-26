@@ -627,6 +627,32 @@ export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promis
         .filter((r) => r.medicineName && r.compositionName);
 }
 
+/**
+ * Every brand carrying one composition, by name — the picker behind "Set a
+ * clinic default" on the Practice page. Deliberately NOT `fetchCompositionBrands`
+ * (that resolves doctor preference + clinic defaults + paediatric forms for
+ * a LIVE consult's ranked list); Practice is choosing the default itself, so
+ * a plain, unranked join is both simpler and more honest here — there is no
+ * "current ranking" to preserve.
+ */
+export async function fetchBrandsForComposition(compositionId: number): Promise<{ medicineId: number; name: string }[]> {
+    const { data: mapRows, error: mapErr } = await supabase
+        .from("medicine_composition_map")
+        .select("medicine_id")
+        .eq("composition_id", compositionId);
+    if (mapErr) throw new Error(`fetchBrandsForComposition (map): ${mapErr.message}`);
+    const medicineIds = [...new Set((mapRows ?? []).map((r: any) => Number(r.medicine_id)))];
+    if (medicineIds.length === 0) return [];
+
+    const { data: meds, error: medErr } = await supabase
+        .from("medicines")
+        .select("id, name")
+        .in("id", medicineIds)
+        .order("name", { ascending: true });
+    if (medErr) throw new Error(`fetchBrandsForComposition (medicines): ${medErr.message}`);
+    return (meds ?? []).map((m: any) => ({ medicineId: Number(m.id), name: m.name }));
+}
+
 // ============================================================
 // BRAND LOOKUP
 // ============================================================
@@ -1529,4 +1555,391 @@ export async function searchIntents(opts: {
         viaLabel: r.via_label,
         score: Number(r.score),
     }));
+}
+
+// ============================================================
+// PREFERRED LABS — a doctor's own diagnostic-centre directory
+// ============================================================
+//
+// NOT a controlled catalogue and NOT the same thing as a test. A test is
+// Synapse's job (intents/observables); a preferred lab is just "which
+// diagnostic centre does this doctor actually send patients to" — freeform,
+// doctor-authored, foundation for a future dedicated Lab Node. See the
+// `add_doctor_preferred_labs` migration for the full reasoning.
+
+export interface PreferredLab {
+    id: number;
+    name: string;
+    contactNote: string | null;
+    isDefault: boolean;
+    sortOrder: number;
+}
+
+export async function loadPreferredLabs(doctorId: string): Promise<PreferredLab[]> {
+    const { data, error } = await supabase
+        .from("doctor_preferred_labs")
+        .select("id, name, contact_note, is_default, sort_order")
+        .eq("doctor_id", doctorId)
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true });
+    if (error) throw new Error(`doctor_preferred_labs (load): ${error.message}`);
+    return (data ?? []).map((r: any) => ({
+        id: Number(r.id),
+        name: r.name,
+        contactNote: r.contact_note ?? null,
+        isDefault: !!r.is_default,
+        sortOrder: Number(r.sort_order ?? 0),
+    }));
+}
+
+/** Just the default, for Consult's plan-rail prompt — one row, not the list. */
+export async function loadDefaultPreferredLab(doctorId: string): Promise<PreferredLab | null> {
+    const { data, error } = await supabase
+        .from("doctor_preferred_labs")
+        .select("id, name, contact_note, is_default, sort_order")
+        .eq("doctor_id", doctorId)
+        .eq("is_default", true)
+        .maybeSingle();
+    if (error) throw new Error(`doctor_preferred_labs (default): ${error.message}`);
+    if (!data) return null;
+    return {
+        id: Number(data.id),
+        name: data.name,
+        contactNote: data.contact_note ?? null,
+        isDefault: true,
+        sortOrder: Number(data.sort_order ?? 0),
+    };
+}
+
+export async function addPreferredLab(opts: {
+    doctorId: string;
+    hospitalId: string;
+    name: string;
+    contactNote?: string | null;
+    /** first lab a doctor adds becomes the default automatically — see call site */
+    makeDefault?: boolean;
+}): Promise<PreferredLab> {
+    const name = opts.name.trim();
+    if (!name) throw new Error("Lab name is required");
+
+    const { data: existing, error: existingErr } = await supabase
+        .from("doctor_preferred_labs")
+        .select("sort_order")
+        .eq("doctor_id", opts.doctorId)
+        .order("sort_order", { ascending: false })
+        .limit(1);
+    if (existingErr) throw new Error(`doctor_preferred_labs (next order): ${existingErr.message}`);
+    const nextOrder = existing && existing.length ? Number(existing[0].sort_order ?? 0) + 1 : 0;
+
+    if (opts.makeDefault) {
+        const { error: clearErr } = await supabase
+            .from("doctor_preferred_labs")
+            .update({ is_default: false })
+            .eq("doctor_id", opts.doctorId)
+            .eq("is_default", true);
+        if (clearErr) throw new Error(`doctor_preferred_labs (clear default): ${clearErr.message}`);
+    }
+
+    const { data, error } = await supabase
+        .from("doctor_preferred_labs")
+        .insert({
+            doctor_id: opts.doctorId,
+            hospital_id: opts.hospitalId,
+            name,
+            contact_note: opts.contactNote?.trim() || null,
+            is_default: !!opts.makeDefault,
+            sort_order: nextOrder,
+        })
+        .select("id, name, contact_note, is_default, sort_order")
+        .single();
+    if (error) throw new Error(`doctor_preferred_labs (add): ${error.message}`);
+    return {
+        id: Number(data.id),
+        name: data.name,
+        contactNote: data.contact_note ?? null,
+        isDefault: !!data.is_default,
+        sortOrder: Number(data.sort_order ?? 0),
+    };
+}
+
+export async function removePreferredLab(id: number): Promise<void> {
+    const { error } = await supabase.from("doctor_preferred_labs").delete().eq("id", id);
+    if (error) throw new Error(`doctor_preferred_labs (remove): ${error.message}`);
+}
+
+/** Clears any existing default first — the partial unique index allows only one. */
+export async function setDefaultPreferredLab(opts: { doctorId: string; id: number }): Promise<void> {
+    const { error: clearErr } = await supabase
+        .from("doctor_preferred_labs")
+        .update({ is_default: false })
+        .eq("doctor_id", opts.doctorId)
+        .eq("is_default", true);
+    if (clearErr) throw new Error(`doctor_preferred_labs (clear default): ${clearErr.message}`);
+    const { error } = await supabase
+        .from("doctor_preferred_labs")
+        .update({ is_default: true })
+        .eq("id", opts.id);
+    if (error) throw new Error(`doctor_preferred_labs (set default): ${error.message}`);
+}
+
+export async function reorderPreferredLabs(order: { id: number; sortOrder: number }[]): Promise<void> {
+    const results = await Promise.all(
+        order.map(({ id, sortOrder }) =>
+            supabase.from("doctor_preferred_labs").update({ sort_order: sortOrder }).eq("id", id)
+        )
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) throw new Error(`doctor_preferred_labs (reorder): ${failed.error.message}`);
+}
+
+// ============================================================
+// PRESCRIPTION TEMPLATES — a doctor's reusable starting point
+// ============================================================
+//
+// A template is proposed by a name/trigger match in the case-sheet search,
+// visually distinct from a plain symptom match, and applying one runs every
+// item through the SAME guarded accept path as any other intent
+// (handleAcceptIntent) — never a raw bulk insert. See the
+// `add_prescription_templates` migration for the schema reasoning.
+
+export interface PrescriptionTemplateSummary {
+    id: number;
+    name: string;
+    triggerLabel: string;
+    itemCount: number;
+    updatedAt: string;
+}
+
+export interface PrescriptionTemplateItemDetail {
+    id: number;
+    intentId: number;
+    type: IntentType;
+    label: string;
+    sortOrder: number;
+    /** the underlying intent's own ref — a medicine item's `refId` is its
+     *  composition id, needed by `handleAcceptIntent` to stage a dose
+     *  confirmation the same way any other medicine accept would. */
+    refTable: string | null;
+    refId: number | null;
+}
+
+export interface PrescriptionTemplateDetail extends PrescriptionTemplateSummary {
+    items: PrescriptionTemplateItemDetail[];
+}
+
+/** The Practice manager's list, and the pool Consult matches trigger words
+ *  against — a doctor's template count is small, so both read this same
+ *  shape rather than needing a separate search RPC. */
+export async function loadPrescriptionTemplateSummaries(doctorId: string): Promise<PrescriptionTemplateSummary[]> {
+    const { data: templates, error } = await supabase
+        .from("prescription_templates")
+        .select("id, name, trigger_label, updated_at")
+        .eq("doctor_id", doctorId)
+        .order("updated_at", { ascending: false });
+    if (error) throw new Error(`prescription_templates (load): ${error.message}`);
+    if (!templates || templates.length === 0) return [];
+
+    const ids = templates.map((t: any) => Number(t.id));
+    const { data: items, error: itemsErr } = await supabase
+        .from("prescription_template_items")
+        .select("template_id")
+        .in("template_id", ids);
+    if (itemsErr) throw new Error(`prescription_template_items (count): ${itemsErr.message}`);
+    const countByTemplate = new Map<number, number>();
+    for (const r of items ?? []) {
+        const id = Number((r as any).template_id);
+        countByTemplate.set(id, (countByTemplate.get(id) ?? 0) + 1);
+    }
+
+    return templates.map((t: any) => ({
+        id: Number(t.id),
+        name: t.name,
+        triggerLabel: t.trigger_label,
+        itemCount: countByTemplate.get(Number(t.id)) ?? 0,
+        updatedAt: t.updated_at,
+    }));
+}
+
+export async function fetchPrescriptionTemplateDetail(id: number): Promise<PrescriptionTemplateDetail | null> {
+    const { data: t, error } = await supabase
+        .from("prescription_templates")
+        .select("id, name, trigger_label, updated_at")
+        .eq("id", id)
+        .maybeSingle();
+    if (error) throw new Error(`prescription_templates (detail): ${error.message}`);
+    if (!t) return null;
+
+    const { data: items, error: itemsErr } = await supabase
+        .from("prescription_template_items")
+        .select("id, intent_id, type, sort_order")
+        .eq("template_id", id)
+        .order("sort_order", { ascending: true });
+    if (itemsErr) throw new Error(`prescription_template_items (detail): ${itemsErr.message}`);
+
+    const intentIds = (items ?? []).map((r: any) => Number(r.intent_id));
+    const labelById = new Map<number, string>();
+    const refById = new Map<number, { refTable: string | null; refId: number | null }>();
+    if (intentIds.length) {
+        const { data: intents } = await supabase
+            .from("intents")
+            .select("id, label, ref_table, ref_id")
+            .in("id", intentIds);
+        (intents ?? []).forEach((i: any) => {
+            labelById.set(Number(i.id), i.label);
+            refById.set(Number(i.id), {
+                refTable: i.ref_table ?? null,
+                refId: i.ref_id == null ? null : Number(i.ref_id),
+            });
+        });
+    }
+
+    return {
+        id: Number(t.id),
+        name: t.name,
+        triggerLabel: t.trigger_label,
+        updatedAt: t.updated_at,
+        itemCount: items?.length ?? 0,
+        items: (items ?? []).map((r: any) => {
+            const intentId = Number(r.intent_id);
+            const ref = refById.get(intentId);
+            return {
+                id: Number(r.id),
+                intentId,
+                type: r.type as IntentType,
+                label: labelById.get(intentId) ?? "",
+                sortOrder: Number(r.sort_order ?? 0),
+                refTable: ref?.refTable ?? null,
+                refId: ref?.refId ?? null,
+            };
+        }),
+    };
+}
+
+export async function createPrescriptionTemplate(opts: {
+    doctorId: string;
+    hospitalId: string;
+    name: string;
+    triggerLabel: string;
+    items: { intentId: number; type: IntentType }[];
+}): Promise<number> {
+    const name = opts.name.trim();
+    const triggerLabel = opts.triggerLabel.trim();
+    if (!name) throw new Error("Template name is required");
+    if (!triggerLabel) throw new Error("A trigger word is required");
+
+    const { data, error } = await supabase
+        .from("prescription_templates")
+        .insert({ doctor_id: opts.doctorId, hospital_id: opts.hospitalId, name, trigger_label: triggerLabel })
+        .select("id")
+        .single();
+    if (error) throw new Error(`prescription_templates (create): ${error.message}`);
+    const templateId = Number(data.id);
+
+    if (opts.items.length) {
+        const { error: itemsErr } = await supabase.from("prescription_template_items").insert(
+            opts.items.map((it, idx) => ({
+                template_id: templateId,
+                intent_id: it.intentId,
+                type: it.type,
+                sort_order: idx,
+            }))
+        );
+        if (itemsErr) throw new Error(`prescription_template_items (create): ${itemsErr.message}`);
+    }
+    return templateId;
+}
+
+export async function updatePrescriptionTemplateMeta(opts: {
+    id: number;
+    name: string;
+    triggerLabel: string;
+}): Promise<void> {
+    const name = opts.name.trim();
+    const triggerLabel = opts.triggerLabel.trim();
+    if (!name) throw new Error("Template name is required");
+    if (!triggerLabel) throw new Error("A trigger word is required");
+    const { error } = await supabase
+        .from("prescription_templates")
+        .update({ name, trigger_label: triggerLabel, updated_at: new Date().toISOString() })
+        .eq("id", opts.id);
+    if (error) throw new Error(`prescription_templates (update): ${error.message}`);
+}
+
+/** Replaces every item wholesale — the simplest correct model for a doctor
+ *  editing a short list inside a modal. Templates cap in the tens of items;
+ *  never worth diffing insert/delete against the previous set. */
+export async function replacePrescriptionTemplateItems(opts: {
+    templateId: number;
+    items: { intentId: number; type: IntentType }[];
+}): Promise<void> {
+    const { error: delErr } = await supabase
+        .from("prescription_template_items")
+        .delete()
+        .eq("template_id", opts.templateId);
+    if (delErr) throw new Error(`prescription_template_items (replace/clear): ${delErr.message}`);
+    if (opts.items.length) {
+        const { error } = await supabase.from("prescription_template_items").insert(
+            opts.items.map((it, idx) => ({
+                template_id: opts.templateId,
+                intent_id: it.intentId,
+                type: it.type,
+                sort_order: idx,
+            }))
+        );
+        if (error) throw new Error(`prescription_template_items (replace/insert): ${error.message}`);
+    }
+    const { error: touchErr } = await supabase
+        .from("prescription_templates")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", opts.templateId);
+    if (touchErr) throw new Error(`prescription_templates (touch): ${touchErr.message}`);
+}
+
+export async function deletePrescriptionTemplate(id: number): Promise<void> {
+    const { error } = await supabase.from("prescription_templates").delete().eq("id", id);
+    if (error) throw new Error(`prescription_templates (delete): ${error.message}`);
+}
+
+export async function duplicatePrescriptionTemplate(opts: {
+    id: number;
+    doctorId: string;
+    hospitalId: string;
+}): Promise<number> {
+    const detail = await fetchPrescriptionTemplateDetail(opts.id);
+    if (!detail) throw new Error("Template not found");
+    return createPrescriptionTemplate({
+        doctorId: opts.doctorId,
+        hospitalId: opts.hospitalId,
+        name: `${detail.name} (copy)`,
+        triggerLabel: detail.triggerLabel,
+        items: detail.items.map((i) => ({ intentId: i.intentId, type: i.type })),
+    });
+}
+
+// ============================================================
+// CONSULTATION DEFAULTS — per-doctor measurement set
+// ============================================================
+//
+// Null = fall back to the specialty's baseline measurements (the vitals
+// strip's existing per-specialty field set). This column only ever narrows
+// or reorders that baseline; it never invents a measurement key the
+// specialty doesn't already support. See `doctors.preferred_measure_keys`.
+
+export async function fetchDoctorMeasurePrefs(doctorId: string): Promise<string[] | null> {
+    const { data, error } = await supabase
+        .from("doctors")
+        .select("preferred_measure_keys")
+        .eq("id", doctorId)
+        .maybeSingle();
+    if (error) throw new Error(`doctors (measure prefs): ${error.message}`);
+    const keys = (data as any)?.preferred_measure_keys as string[] | null | undefined;
+    return keys && keys.length ? keys : null;
+}
+
+export async function setDoctorMeasurePrefs(doctorId: string, keys: string[] | null): Promise<void> {
+    const { error } = await supabase
+        .from("doctors")
+        .update({ preferred_measure_keys: keys && keys.length ? keys : null })
+        .eq("id", doctorId);
+    if (error) throw new Error(`doctors (set measure prefs): ${error.message}`);
 }

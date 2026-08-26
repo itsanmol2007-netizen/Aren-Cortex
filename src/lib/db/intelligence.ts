@@ -63,6 +63,14 @@ export async function saveConsult(opts: {
      * answer the first one per visit. See IntentType in engine.ts.
      */
     therapyNotes?: string | null;
+    /**
+     * The diagnostic centre these tests were ordered from — a doctor-picked
+     * preferred lab, or null when none was selected. One choice for the whole
+     * order, not per test: Consult's plan-rail prompt asks "order from" once,
+     * for whatever investigations are on the plan, the same way a real
+     * referral slip names one destination lab.
+     */
+    labName?: string | null;
 }): Promise<{ prescriptionId: string }> {
     // 1. Save vitals + mark visit completed
     const { error: visitErr } = await supabase
@@ -121,6 +129,7 @@ export async function saveConsult(opts: {
             prescription_id: rx.id,
             test_name: name,
             status: "ordered",
+            lab_name: opts.labName ?? null,
         }));
         const { error: testErr } = await supabase
             .from("diagnostic_orders")

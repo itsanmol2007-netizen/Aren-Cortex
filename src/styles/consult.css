@@ -2884,6 +2884,30 @@ body.cs-locked-shell {
     padding: 15px 16px 13px;
 }
 
+.cs-plan-head-end {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* "Save as template" — Prescription Templates' other entry point, beside
+   the plan's own item count rather than a new row, since it acts on
+   exactly what that count is already summarising. */
+.cs-plan-save-template {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--cs-violet);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.cs-plan-save-template:hover {
+    text-decoration: underline;
+}
+
 .cs-plan-scroll {
     flex: 1;
     min-height: 0;
@@ -3086,6 +3110,78 @@ body.cs-locked-shell {
     margin: 3px 0 4px 4px;
     border-left: 1.5px solid var(--cs-line-strong);
     padding-left: 10px;
+}
+
+/* ── the "order from" prompt — Preferred Labs' Consult-side foundation ──
+   Investigations are blue (see the Group's `tone="blue"`); this prompt
+   picks up the same family so it reads as belonging to that group rather
+   than as a new kind of card. Sits directly under the test rows, only
+   while at least one is on the plan. */
+.cs-lab-prompt {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 8px 9px;
+    border-radius: 9px;
+    background: rgba(18, 104, 232, 0.06);
+    border: 1px solid rgba(18, 104, 232, 0.14);
+}
+
+.cs-lab-prompt.is-set {
+    background: rgba(18, 104, 232, 0.04);
+}
+
+.cs-lab-prompt-head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-blue);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.cs-lab-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cs-lab-chip {
+    border: 1px solid rgba(18, 104, 232, 0.22);
+    border-radius: 999px;
+    background: #fff;
+    padding: 4px 10px;
+    color: var(--cs-blue);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+}
+
+.cs-lab-chip:hover {
+    background: rgba(18, 104, 232, 0.08);
+}
+
+.cs-lab-chip.is-active {
+    background: var(--cs-blue);
+    border-color: var(--cs-blue);
+    color: #fff;
+}
+
+.cs-lab-chip.is-add {
+    border-style: dashed;
+    color: var(--cs-muted);
+    border-color: var(--cs-line-strong);
+}
+
+.cs-lab-chip.is-add:hover {
+    color: var(--cs-blue);
+    border-color: rgba(18, 104, 232, 0.3);
 }
 
 .cs-comp {

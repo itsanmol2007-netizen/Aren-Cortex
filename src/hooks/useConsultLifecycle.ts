@@ -328,6 +328,7 @@ export function useConsultLifecycle({
         followUpDays: plan.followUpDays,
         adviceNotes: plan.reviewAdvice,
         therapyNotes: plan.therapyNotes || null,
+        labName: plan.selectedLabName,
       });
 
       // The home programme, as rows rather than prose.

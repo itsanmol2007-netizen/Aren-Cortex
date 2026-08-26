@@ -1,0 +1,336 @@
+/* ── PRACTICE MODAL — docs/aren-modal-design.md's shape, in `var(--cs-*)`
+   tokens instead of the doc's literal hexes, so it can never drift from
+   the rest of Cortex the way a copy-pasted value eventually would. Four
+   accents, one shape — see PracticeModal.tsx's own header comment. */
+
+.prac-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    padding: var(--cs-s4);
+    background: rgba(8, 16, 35, 0.45);
+    backdrop-filter: blur(10px) saturate(1.4);
+    animation: prac-modal-fade 0.15s ease;
+}
+
+@keyframes prac-modal-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.prac-modal {
+    width: min(480px, 100%);
+    max-height: min(640px, 90vh);
+    display: flex;
+    flex-direction: column;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow:
+        0 2px 4px rgba(16, 28, 46, 0.06),
+        0 8px 24px rgba(16, 28, 46, 0.10),
+        0 32px 80px rgba(16, 28, 46, 0.18);
+    overflow: hidden;
+    animation: prac-modal-rise 0.18s ease;
+}
+
+.prac-modal.is-wide {
+    width: min(560px, 100%);
+}
+
+@keyframes prac-modal-rise {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+}
+
+.prac-modal-stripe {
+    height: 4px;
+    flex: none;
+}
+
+.prac-modal.is-teal .prac-modal-stripe { background: linear-gradient(90deg, #2dd4bf, var(--cs-teal)); }
+.prac-modal.is-blue .prac-modal-stripe { background: linear-gradient(90deg, #60a5fa, var(--cs-blue)); }
+.prac-modal.is-violet .prac-modal-stripe { background: linear-gradient(90deg, #a78bfa, var(--cs-violet)); }
+.prac-modal.is-amber .prac-modal-stripe { background: linear-gradient(90deg, #fbbf24, var(--cs-amber)); }
+
+.prac-modal-head {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--cs-s3);
+    padding: var(--cs-s4) var(--cs-s4) var(--cs-s3);
+}
+
+.prac-modal-headline {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s3);
+    min-width: 0;
+}
+
+.prac-modal-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+}
+
+.prac-modal.is-teal .prac-modal-icon { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.prac-modal.is-blue .prac-modal-icon { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.prac-modal.is-violet .prac-modal-icon { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.prac-modal.is-amber .prac-modal-icon { background: var(--cs-amber-soft); color: var(--cs-amber); }
+
+.prac-modal-eyebrow {
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.prac-modal.is-teal .prac-modal-eyebrow { color: var(--cs-teal); }
+.prac-modal.is-blue .prac-modal-eyebrow { color: var(--cs-blue); }
+.prac-modal.is-violet .prac-modal-eyebrow { color: var(--cs-violet); }
+.prac-modal.is-amber .prac-modal-eyebrow { color: var(--cs-amber); }
+
+.prac-modal-title {
+    margin: 1px 0 0;
+    color: var(--cs-ink);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.prac-modal-close {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--cs-line);
+    border-radius: 999px;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.prac-modal-close:hover {
+    background: #f1f5f9;
+    color: var(--cs-ink);
+}
+
+.prac-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--cs-s4) var(--cs-s4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+}
+
+.prac-modal-foot {
+    flex: none;
+    display: flex;
+    gap: var(--cs-s2);
+    padding: var(--cs-s3) var(--cs-s4);
+    border-top: 1px solid var(--cs-line);
+    background: rgba(248, 250, 252, 0.6);
+}
+
+.prac-modal-btn {
+    flex: 1;
+    height: 42px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: opacity 0.12s, background 0.12s;
+}
+
+.prac-modal-btn.is-ghost {
+    border: 1px solid var(--cs-line);
+    background: rgba(0, 0, 0, 0.03);
+    color: var(--cs-muted);
+}
+
+.prac-modal-btn.is-ghost:hover { background: rgba(0, 0, 0, 0.06); }
+
+.prac-modal-btn.is-primary {
+    border: 0;
+    color: #fff;
+}
+
+.prac-modal-btn.is-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.prac-modal.is-teal .prac-modal-btn.is-primary { background: linear-gradient(135deg, #2dd4bf, var(--cs-teal)); }
+.prac-modal.is-blue .prac-modal-btn.is-primary { background: linear-gradient(135deg, #60a5fa, var(--cs-blue)); }
+.prac-modal.is-violet .prac-modal-btn.is-primary { background: linear-gradient(135deg, #a78bfa, var(--cs-violet)); }
+.prac-modal.is-amber .prac-modal-btn.is-primary { background: linear-gradient(135deg, #fbbf24, var(--cs-amber)); }
+
+/* ── Form fields inside a modal body — `.pm-input`'s shape, in tokens ────── */
+.prac-modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.prac-modal-field label {
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.prac-modal-field input[type="text"],
+.prac-modal-field input:not([type]) {
+    height: 40px;
+    border: 1px solid var(--cs-line);
+    border-radius: 11px;
+    background: rgba(248, 250, 252, 0.9);
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 13px;
+}
+
+.prac-modal.is-teal .prac-modal-field input:focus { border-color: var(--cs-teal); box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12); }
+.prac-modal.is-blue .prac-modal-field input:focus { border-color: var(--cs-blue); box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.12); }
+.prac-modal.is-violet .prac-modal-field input:focus { border-color: var(--cs-violet); box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12); }
+.prac-modal.is-amber .prac-modal-field input:focus { border-color: var(--cs-amber); box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.12); }
+
+.prac-modal-field input:focus { outline: none; }
+
+/* ── The modal's own row list — same shape as `.prac-row`, just living in a
+   taller, natively-scrolling body instead of a capped-and-expanded one. */
+.prac-modal-rows {
+    display: flex;
+    flex-direction: column;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.prac-modal-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    min-height: 38px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--cs-line);
+}
+
+.prac-modal-row:last-child { border-bottom: 0; }
+
+.prac-modal-section-title {
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* A row that IS the action (picking a search hit, choosing a brand) rather
+   than a row something is done TO — full-width button, left-aligned text,
+   same hover language as `.prac-row-remove`. */
+.prac-modal-row.is-pick {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.12s;
+}
+
+.prac-modal-row.is-pick:hover:not(:disabled) { background: #f8fafc; }
+.prac-modal-row.is-pick:disabled { cursor: default; opacity: 0.55; }
+
+.prac-modal-back {
+    align-self: flex-start;
+    border: 0;
+    background: none;
+    padding: 2px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.prac-modal-back:hover { color: var(--cs-ink); }
+
+.prac-modal-error {
+    margin: 0;
+    border-radius: 9px;
+    background: var(--cs-red-soft);
+    padding: 8px 11px;
+    color: var(--cs-red);
+    font-size: 11.5px;
+    font-weight: 550;
+}
+
+/* Preferred Labs' default star, inside the modal's row list. */
+.prac-lab-star {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--cs-line-strong);
+    cursor: pointer;
+}
+
+.prac-lab-star:hover { color: var(--cs-amber); }
+.prac-lab-star.is-default { color: var(--cs-amber); }
+
+/* Up/down reorder, shared by the labs list and a template's item list. */
+.prac-reorder {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.prac-reorder button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 15px;
+    border: 0;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+
+.prac-reorder button:hover:not(:disabled) { color: var(--cs-ink); }
+.prac-reorder button:disabled { opacity: 0.3; cursor: default; }
+
+/* Consultation Defaults' measurement checklist. */
+.prac-measure-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 12px;
+}
+
+.prac-measure-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 2px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 540;
+    cursor: pointer;
+}
+
+.prac-measure-item input {
+    accent-color: var(--cs-blue);
+    width: 15px;
+    height: 15px;
+}

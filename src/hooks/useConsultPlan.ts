@@ -132,6 +132,8 @@ export interface ConsultPlan {
   // ── What has been taken ───────────────────────────────────────────────
   prescription: PrescriptionMedicine[];
   selectedTests: string[];
+  selectedLabName: string | null;
+  setSelectedLabName: React.Dispatch<React.SetStateAction<string | null>>;
   /** Impressions the doctor agreed with — the working diagnosis. */
   diagnoses: string[];
   adviceNotes: string;
@@ -254,6 +256,11 @@ export function useConsultPlan({
   const [prescription, setPrescription] = useState<PrescriptionMedicine[]>([]);
   const [selectedMedicineId, setSelectedMedicineId] = useState<string | null>(null);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
+  /** Which diagnostic centre these tests should be ordered from — the plan
+   *  rail's "order from" prompt, seeded with the doctor's default preferred
+   *  lab and editable per consult. Null until at least one test is on the
+   *  plan; see PlanCard's investigations section. */
+  const [selectedLabName, setSelectedLabName] = useState<string | null>(null);
 
   /** Impressions the doctor agreed with — the working diagnosis. */
   const [diagnoses, setDiagnoses] = useState<string[]>([]);
@@ -1082,6 +1089,8 @@ export function useConsultPlan({
   return {
     prescription,
     selectedTests,
+    selectedLabName,
+    setSelectedLabName,
     diagnoses,
     adviceNotes,
     therapyNotes,

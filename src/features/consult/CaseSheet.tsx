@@ -48,7 +48,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ClipboardList, Plus, Search, X } from "lucide-react";
-import type { Observable } from "../../lib/db/synapse";
+import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
     searchStory, storyClauses, openStoryDimensions, itemsForDimension,
@@ -259,7 +259,10 @@ function useCatalogueSearch(observables: Observable[], query: string) {
 
 type BarResult =
     | { t: "obs"; key: string; o: Observable }
-    | { t: "story"; key: string; it: StorySearchItem };
+    | { t: "story"; key: string; it: StorySearchItem }
+    /** A doctor-authored template, matched by trigger word — never a
+     *  Synapse suggestion. See BarProps.templates and `take()` below. */
+    | { t: "template"; key: string; tpl: PrescriptionTemplateSummary };
 
 interface BarProps {
     observables: Observable[];
@@ -296,6 +299,16 @@ interface BarProps {
     onEmptyDown?: () => void;
     onEmptyUp?: () => void;
     onEmptyEnter?: () => void;
+    /**
+     * This doctor's reusable prescription templates, matched here by
+     * trigger word — "fever" surfaces "Fever — General OPD" as a SEPARATE,
+     * visually distinct row alongside the symptom "fever" itself, never
+     * merged with it. Optional and additive: a caller that omits it (or
+     * `onApplyTemplate`) gets exactly the bar it always had. See `take()`
+     * and the template branch of the results dropdown.
+     */
+    templates?: PrescriptionTemplateSummary[];
+    onApplyTemplate?: (templateId: number) => void;
 }
 
 /**
@@ -305,6 +318,7 @@ interface BarProps {
 export function ClinicalCommandBar({
     observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove, leadComplaint,
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
+    templates, onApplyTemplate,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -467,9 +481,24 @@ export function ClinicalCommandBar({
      * what is typed most of the time; both are always present, and the story
      * block is at most a few rows, so nothing is pushed out of reach.
      */
+    /**
+     * A doctor's own templates, matched by trigger word — case-insensitive
+     * substring, the same generosity `searchStory` and the catalogue search
+     * both use. Lead the list: a template is a bigger decision than any
+     * single chip beneath it, and the row itself is styled distinctly (see
+     * the dropdown's badge below) so it never reads as just another symptom.
+     */
+    const templateMatches = useMemo<BarResult[]>(() => {
+        const q = query.trim().toLowerCase();
+        if (!templates || !onApplyTemplate || q.length < 2) return [];
+        return templates
+            .filter((t) => t.triggerLabel.toLowerCase().includes(q))
+            .map((t) => ({ t: "template" as const, key: `tpl:${t.id}`, tpl: t }));
+    }, [templates, onApplyTemplate, query]);
+
     const results = useMemo<BarResult[]>(() => {
         const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
-        if (!storyOn) return obs;
+        if (!storyOn) return [...templateMatches, ...obs];
         const st = searchStory(query, story!, 6);
 
         /**
@@ -494,8 +523,8 @@ export function ClinicalCommandBar({
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
         const rest: BarResult[] = st.filter((it) => !inSlot(it))
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
-        return [...lead, ...obs, ...rest];
-    }, [obsResults, storyOn, query, story, slot]);
+        return [...templateMatches, ...lead, ...obs, ...rest];
+    }, [obsResults, storyOn, query, story, slot, templateMatches]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
@@ -555,9 +584,14 @@ export function ClinicalCommandBar({
         };
     }, [open, updateRect]);
 
-    /** One entry point for both vocabularies — the routing IS the feature. */
+    /** One entry point for every vocabulary this bar spans — the routing IS
+     *  the feature. A template is neither an observable nor a story answer:
+     *  it never touches the sheet or the step history itself, it hands off
+     *  to `onApplyTemplate`, which runs each of its items through the same
+     *  guarded accept path as everything else (see App.tsx's applyTemplate). */
     const take = (r: BarResult) => {
         if (r.t === "obs") onToggle(r.o);
+        else if (r.t === "template") onApplyTemplate?.(r.tpl.id);
         else {
             onStoryAdd?.(r.it);
             // Only story answers go on the step history. An observable is a
@@ -663,7 +697,7 @@ export function ClinicalCommandBar({
                         // search filters those out at source (`searchStory`),
                         // so only observables can come back ticked.
                         const on = r.t === "obs" && onSheet.has(r.o.label);
-                        const label = r.t === "obs" ? r.o.label : r.it.label;
+                        const label = r.t === "obs" ? r.o.label : r.t === "template" ? r.tpl.name : r.it.label;
                         return (
                             <button
                                 key={r.key}
@@ -679,12 +713,23 @@ export function ClinicalCommandBar({
                                     "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] " +
                                     "font-medium text-[var(--cs-ink)] " +
                                     (i === active ? "bg-[var(--cs-blue-soft)] " : "") +
-                                    (on ? "opacity-55 " : "")
+                                    (on ? "opacity-55 " : "") +
+                                    // A template row is a bigger decision than a
+                                    // chip — a soft violet wash and a left rule
+                                    // keep it visually apart from the symptom it
+                                    // may sit right beside (typing "fever" can
+                                    // return both), never merged into one row.
+                                    (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] bg-[#faf8ff] " : "")
                                 }
                             >
                                 <span className="min-w-0 flex-1 truncate">
                                     {on && <span aria-hidden="true">✓ </span>}
                                     {label}
+                                    {r.t === "template" && (
+                                        <span className="ml-1.5 text-[11px] font-normal text-[var(--cs-faint)]">
+                                            {r.tpl.itemCount} item{r.tpl.itemCount === 1 ? "" : "s"}
+                                        </span>
+                                    )}
                                 </span>
                                 {/* What Cortex is about to call this, stated
                                     BEFORE it is committed, so the doctor sees
@@ -696,12 +741,12 @@ export function ClinicalCommandBar({
                                 <span
                                     className={
                                         "flex-none rounded-[5px] px-[7px] py-[2px] text-[11px] font-semibold " +
-                                        (r.t === "obs"
-                                            ? TONE[r.o.kind].badge
-                                            : "bg-[#eaf0fb] text-[#2c4a7c]")
+                                        (r.t === "obs" ? TONE[r.o.kind].badge
+                                            : r.t === "template" ? "bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
+                                                : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
-                                    {r.t === "obs" ? KIND_BADGE[r.o.kind] : r.it.dimension.toLowerCase()}
+                                    {r.t === "obs" ? KIND_BADGE[r.o.kind] : r.t === "template" ? "Template" : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );

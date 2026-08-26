@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
+import type { PreferredLab } from "../../lib/db/synapse";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
 import { BlankPlanArt } from "./BlankArt";
 import { CompanionLine, MedicineIdentity } from "./parts";
@@ -154,6 +155,14 @@ interface Props {
     onRemoveMedicine: (id: string) => void;
     tests: string[];
     onRemoveTest: (label: string) => void;
+    /** The doctor's own diagnostic-centre directory — see PracticePage's
+     *  Preferred Labs card. Foundation for the future Lab Node: today this
+     *  only records which lab an order is FOR, not the order itself. */
+    preferredLabs: PreferredLab[];
+    selectedLabName: string | null;
+    onSelectLabName: (name: string) => void;
+    /** "+ Add your preferred lab" when the list is empty — jumps to Practice. */
+    onManageLabs: () => void;
     adviceLines: string[];
     therapyLines: string[];
     /** the home programme, already formatted — see exercisePlan.formatLine */
@@ -181,6 +190,10 @@ interface Props {
     onReviewRx: () => void;
     onPrint: () => void;
     panelRef?: React.RefObject<HTMLElement>;
+    /** Turns today's accepted items into a reusable Prescription Template —
+     *  see App.tsx's SaveAsTemplateModal. Absent items list means nothing
+     *  worth saving yet, so the button only renders once the plan isn't empty. */
+    onSaveAsTemplate?: () => void;
 }
 
 export function PlanCard({
@@ -188,13 +201,14 @@ export function PlanCard({
     diagnoses, onRemoveDiagnosis,
     prescription, onSelectMedicine, onUpdateMedicine, onRemoveMedicine,
     tests, onRemoveTest,
+    preferredLabs, selectedLabName, onSelectLabName, onManageLabs,
     adviceLines, onRemoveAdviceLine,
     therapyLines, onRemoveTherapyLine,
     exerciseLines, onRemoveExercise,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
     companionsFor, onAddCompanion, onDismissCompanion,
-    onAddMedicine, onAddTest, onReviewRx, onPrint, panelRef,
+    onAddMedicine, onAddTest, onReviewRx, onPrint, panelRef, onSaveAsTemplate,
 }: Props) {
     const [openId, setOpenId] = useState<string | null>(null);
 
@@ -270,9 +284,16 @@ export function PlanCard({
         <aside className="cs-card cs-plan" aria-label="Consultation plan" ref={panelRef}>
             <div className="cs-plan-head">
                 <h2 className="cs-card-title">Consultation Plan</h2>
-                <span className="cs-count is-quiet">
-                    {itemCount} item{itemCount === 1 ? "" : "s"}
-                </span>
+                <div className="cs-plan-head-end">
+                    {!isEmpty && onSaveAsTemplate && (
+                        <button type="button" className="cs-plan-save-template" onClick={onSaveAsTemplate}>
+                            Save as template
+                        </button>
+                    )}
+                    <span className="cs-count is-quiet">
+                        {itemCount} item{itemCount === 1 ? "" : "s"}
+                    </span>
+                </div>
             </div>
 
             {/* The keydown sits on the scroll container rather than on each
@@ -436,6 +457,35 @@ export function PlanCard({
                                     >×</button>
                                 </div>
                             ))}
+                            {/* The Lab Node foundation: once an investigation
+                                is on the plan, ask which of the doctor's own
+                                diagnostic centres it should go to — defaults
+                                to whichever was picked last time (see
+                                App.tsx's seeding effect), never invented. */}
+                            {tests.length > 0 && (
+                                <div className={`cs-lab-prompt${selectedLabName ? " is-set" : ""}`}>
+                                    <div className="cs-lab-prompt-head">
+                                        <FlaskConical size={11} />
+                                        <span>Order from</span>
+                                    </div>
+                                    {preferredLabs.length > 0 ? (
+                                        <div className="cs-lab-chips">
+                                            {preferredLabs.map((lab) => (
+                                                <button
+                                                    key={lab.id}
+                                                    type="button"
+                                                    className={`cs-lab-chip${selectedLabName === lab.name ? " is-active" : ""}`}
+                                                    onClick={() => onSelectLabName(lab.name)}
+                                                >{lab.name}</button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <button type="button" className="cs-lab-chip is-add" onClick={onManageLabs}>
+                                            + Add your preferred lab
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </Group>
 
                         {/* Delivered in the clinic today, ABOVE advice, because

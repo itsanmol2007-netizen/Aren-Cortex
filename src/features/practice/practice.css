@@ -39,14 +39,19 @@
 
 /* ── Grid rows — the load-bearing layout rule for this page: related cards
    sit SIDE BY SIDE, never a lone full-width strip for something that fits
-   in a column. Two rows today (primary tier, secondary tier); `.prac-grid`
-   is generic so a future card slots into whichever tier it belongs to
-   without a new class. */
+   in a column. `.is-2col` is Clinical Defaults' own shape — four cards in
+   two spatially-paired rows (Pinned Medicines beside Preferred Labs,
+   Prescription Templates beside Clinic Default Brands), never a 4-wide
+   strip or a vertical stack. */
 .prac-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(240px, 1fr));
     gap: var(--cs-s4);
     align-items: start;
+}
+
+.prac-grid.is-2col {
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
 }
 
 .prac-grid + .prac-grid {
@@ -59,6 +64,132 @@
 
 @media (max-width: 640px) {
     .prac-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Groups — the page's three-tier hierarchy (Clinical defaults /
+   Consultation behaviour / Practice vocabulary). A group with only one
+   card is never stretched into a lonely full-width strip with empty air
+   beside it — its card fills the group's own width honestly, and that
+   card is designed to carry enough real content that "full width" reads
+   as composed, not empty (see `.prac-defaults-row` / the term chips). */
+.prac-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+}
+
+.prac-group-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--cs-s2);
+}
+
+.prac-group-title {
+    margin: 0;
+    color: var(--cs-ink);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.prac-group-sub {
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 460;
+}
+
+/* ── Overview strip — two ideas, never a statistics dashboard: one lede
+   sentence and a handful of plain-text counts, not a row of stat cards. */
+.prac-overview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--cs-s3);
+    padding-bottom: var(--cs-s1);
+}
+
+.prac-overview-lede {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.prac-overview-lede strong {
+    color: var(--cs-ink);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.prac-overview-lede span {
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 460;
+}
+
+.prac-overview-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cs-s3);
+}
+
+.prac-overview-counts span {
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.prac-overview-counts b {
+    color: var(--cs-ink);
+    font-weight: 750;
+}
+
+/* ── Related settings — a compact bar of real navigation, not a card grid
+   (these already exist elsewhere; only the deeper Practice pages don't
+   yet — "for now, simply redirect there"). */
+.prac-related {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--cs-s3);
+    margin-top: var(--cs-s2);
+    padding-top: var(--cs-s3);
+    border-top: 1px solid var(--cs-line);
+}
+
+.prac-related-title {
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.prac-related-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cs-s2);
+}
+
+.prac-related-links button {
+    border: 1px solid var(--cs-line);
+    border-radius: 999px;
+    background: none;
+    padding: 5px 12px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 550;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.prac-related-links button:hover {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+    border-color: transparent;
 }
 
 /* ── The card primitive — `.cs-card` verbatim ────────────────────────────── */
@@ -129,9 +260,19 @@
 .prac-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .prac-glyph.is-violet { background: #f5f3ff; color: var(--cs-violet); }
 .prac-glyph.is-slate { background: #f1f5f9; color: #475569; }
+.prac-glyph.is-amber { background: var(--cs-amber-soft); color: var(--cs-amber); }
+
+/* Count + the optional "Manage" trigger travel together, flush right —
+   one auto-margin on the pair, never fighting each other for space. */
+.prac-card-head-end {
+    margin-left: auto;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+}
 
 .prac-count {
-    margin-left: auto;
     flex: none;
     border-radius: 7px;
     background: var(--cs-blue-soft);
@@ -140,6 +281,41 @@
     font-size: 11.5px;
     font-weight: 650;
     letter-spacing: -0.005em;
+}
+
+/* The "Manage" / "+ New" / "+ Set default" trigger that opens a card's
+   deeper modal — sits at the end of the head row, after the count. */
+
+.prac-card-manage {
+    border: 0;
+    background: none;
+    padding: 3px 4px;
+    color: var(--cs-blue);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.prac-card-manage:hover { text-decoration: underline; }
+
+/* The inline call to action inside an empty state — a real button, not a
+   sentence describing where to go. */
+.prac-empty-action {
+    margin-top: 2px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: none;
+    padding: 6px 14px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.prac-empty-action:hover {
+    background: var(--cs-blue-soft);
+    border-color: transparent;
 }
 
 .prac-card-body {
@@ -433,6 +609,141 @@
 
 .prac-quiet-link:hover {
     text-decoration: underline;
+}
+
+/* Consultation Defaults, widened (§13): two configurable pieces side by
+   side rather than one pill and a link alone in a wide card — the specialty
+   chart, and now the measurement set within it. */
+.prac-defaults-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
+    gap: var(--cs-s4);
+}
+
+@media (max-width: 640px) {
+    .prac-defaults-row { grid-template-columns: 1fr; }
+}
+
+.prac-quiet-pill.is-alt {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+/* ── Your Clinical Terms — inline add, then a wrapped chip cloud instead
+   of a single-column row list: a doctor's vocabulary reads better as tags
+   than as an itemised ledger, and chips fill a full-width card's space the
+   list version never did. */
+.prac-term-add {
+    display: flex;
+    gap: var(--cs-s2);
+}
+
+.prac-term-add select {
+    flex: none;
+    width: 116px;
+    height: 34px;
+    border: 1px solid var(--cs-line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 8px;
+    color: var(--cs-ink);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.prac-term-add input {
+    flex: 1;
+    min-width: 0;
+    height: 34px;
+    border: 1px solid var(--cs-line);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.7);
+    padding: 0 10px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+}
+
+.prac-term-add input:focus, .prac-term-add select:focus {
+    outline: none;
+    border-color: var(--cs-violet);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.prac-term-add-btn {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--cs-violet);
+    color: #fff;
+    cursor: pointer;
+}
+
+.prac-term-add-btn:disabled {
+    background: var(--cs-line-strong);
+    cursor: not-allowed;
+}
+
+.prac-term-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 2px;
+}
+
+.prac-term-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    background: #f8fafc;
+    padding: 5px 6px 5px 11px;
+    color: var(--cs-ink);
+    font-size: 11.5px;
+    font-weight: 540;
+    border-left: 2.5px solid transparent;
+}
+
+.prac-term-chip.is-finding { border-left-color: #b45309; }
+.prac-term-chip.is-test { border-left-color: #1d4ed8; }
+.prac-term-chip.is-referral { border-left-color: #6d28d9; }
+.prac-term-chip.is-advice { border-left-color: #047857; }
+
+.prac-term-chip button {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+
+.prac-term-chip button:hover {
+    background: var(--cs-red-soft);
+    color: var(--cs-red);
+}
+
+/* ── Prescription Templates' row — the whole row is the "edit" action. ── */
+.prac-template-row {
+    width: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.prac-lab-default-mark {
+    flex: none;
+    color: var(--cs-amber);
 }
 
 /* ── Loading — the existing shimmer, just given a row rhythm to sit in ──── */
