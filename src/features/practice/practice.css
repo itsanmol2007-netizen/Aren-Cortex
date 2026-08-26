@@ -41,28 +41,14 @@
 
 /* ── Grid rows — the load-bearing layout rule for this page: related cards
    sit SIDE BY SIDE, never a lone full-width strip for something that fits
-   in a column. `.is-2col` is Clinical Defaults' own shape — four cards in
-   two spatially-paired rows (Pinned Medicines beside Preferred Labs,
-   Prescription Templates beside Clinic Default Brands), never a 4-wide
-   strip or a vertical stack. */
+   in a column. Clinical Defaults is two 3-across rows of this same shape:
+   Preferred Medicines / Preferred Labs / Prescription Templates, then
+   Add New Medicine / Clinical Companions / Consultation Defaults. */
 .prac-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(240px, 1fr));
     gap: var(--cs-s4);
     align-items: start;
-}
-
-.prac-grid.is-2col {
-    grid-template-columns: repeat(2, minmax(280px, 1fr));
-}
-
-/* On a real desktop monitor, Clinical Defaults' four cards fit one row
-   with real room to breathe rather than two paired rows with a lot of air
-   beneath each — the pairing (Pinned Medicines beside Preferred Labs,
-   Prescription Templates beside Clinic Default Brands) still holds, it
-   just spreads across a wider row instead of wrapping. */
-@media (min-width: 1500px) {
-    .prac-grid.is-2col { grid-template-columns: repeat(4, minmax(280px, 1fr)); }
 }
 
 .prac-grid + .prac-grid {
@@ -250,17 +236,25 @@
     box-shadow: var(--cs-shadow);
 }
 
-/* ── Stable composition heights (2026-08-26 correction) ────────────────────
+/* ── Stable composition heights ─────────────────────────────────────────────
    Neighbouring cards used to size themselves off their own content — a
    card with one item, a card with four, a card mid-"Show more" all sat in
    the same row at three different heights, which is what actually looked
-   wrong (not any one card in isolation). A card's outer footprint is now
-   set by the GRID, once, for the whole Clinical Defaults tier — content
-   fills or under-fills that footprint, it never resizes it. "Show more"
-   still works; it scrolls inside the space already reserved for it
-   (`.prac-card-body`/`.prac-rows` below), never grows the card. */
-.prac-grid.is-2col .prac-card {
-    height: 360px;
+   wrong (not any one card in isolation). Every "primary" card in Clinical
+   Defaults gets the SAME fixed footprint instead — content fills or
+   under-fills it, it never resizes it. "Show more"/the tree's own scroll
+   still work; they happen inside the space already reserved
+   (`.prac-card-body`/`.prac-rows`/`.prac-tree` below), never grow the card.
+
+   The number itself is derived, not eyeballed: card head (icon row + head
+   padding, ~47px) + the search row (~40px, IntentSearchField + gap) + a
+   4.5-row list window at this tier's own two-line row height (`MED_ROW_H`,
+   54px — the same 4.5×row convention `progressive-disclosure.md` documents
+   for a capped list's expanded box) + the body's own bottom padding
+   (--cs-s4, 12px): 47 + 40 + 243 + 12 ≈ 342px. Slightly under the previous
+   360px — same list capacity, less air around it. */
+.prac-card.is-fixed {
+    height: 342px;
 }
 
 /* Secondary tier — related configuration, quieter by design (the brief:
@@ -820,6 +814,81 @@
 .prac-lab-default-mark {
     flex: none;
     color: var(--cs-blue);
+}
+
+/* ── Preferred Medicines — a restrained composition tree, not a flat list.
+   Composition is the parent (`.prac-tree-group`/`.prac-tree-head`); every
+   preferred concrete medicine under it is a child (`.prac-tree-row`),
+   independently visible once its group is open — never a second interface
+   the doctor has to open to see them. The card's outer footprint is fixed
+   (`.prac-card.is-fixed`); this region alone scrolls, so expanding a
+   composition never grows the card or moves a neighbour. */
+.prac-tree {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.prac-tree-group + .prac-tree-group {
+    border-top: 1px solid var(--cs-line);
+}
+
+.prac-tree-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    min-height: 34px;
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+}
+
+.prac-tree-head svg {
+    flex: none;
+    color: var(--cs-faint);
+    transition: transform 0.15s ease;
+}
+
+.prac-tree-head svg.is-flipped {
+    transform: rotate(180deg);
+}
+
+.prac-tree-count {
+    flex: none;
+    border-radius: 999px;
+    background: var(--cs-teal-soft);
+    padding: 1px 7px;
+    color: var(--cs-teal);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+/* The expand/collapse target — `maxHeight` tweened in JS (motion.div),
+   the same mechanism and spring config `progressive-disclosure.md`/
+   `motion.md` document for a capped list, applied per-group here instead
+   of once for the whole card. */
+.prac-tree-children {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-left: 20px;
+}
+
+.prac-tree-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    min-height: 34px;
+    padding: 0 2px;
+}
+
+.prac-tree-row .prac-row-label {
+    font-size: 12.5px;
 }
 
 /* ── Loading — the existing shimmer, just given a row rhythm to sit in ──── */

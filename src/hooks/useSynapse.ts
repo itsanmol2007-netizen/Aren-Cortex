@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Ruleset } from "../lib/synapse/engine";
 import { buildPreferenceModel, type PreferenceModel, type PreferenceRow } from "../lib/synapse/personalize";
 import { buildBrandModel, type BrandPreferenceModel, type BrandPreference } from "../lib/synapse/brands";
-import type { CompanionEdge } from "../lib/synapse/companions";
+import type { CompanionEdge, CompanionPreferenceMap } from "../lib/synapse/companions";
 import {
     loadSynapseRuleset,
     loadSignalLabels,
@@ -31,6 +31,8 @@ import {
     loadClinicBrandDefaults,
     loadFrequentMedicines,
     loadCompanionEdges,
+    loadHospitalCompanionEdges,
+    loadHospitalCompanionCuration,
     loadFindingSuggestionRules,
     loadDoctorFreeTerms,
     type ObservableMaps,
@@ -66,7 +68,10 @@ export interface SynapseData {
     clinicBrandDefaults: ClinicBrandDefaults;
     /** this doctor's most-prescribed molecules. Not a model, a flat count. */
     frequent: FrequentMedicine[];
+    /** global authored edges + this hospital's own practice-authored ones, unioned */
     companionEdges: CompanionEdge[];
+    /** this hospital's disables of GLOBAL edges only — applied downstream, see companions.ts */
+    companionCuration: CompanionPreferenceMap;
     /**
      * This doctor's free-text fallback (finding/test/referral/advice) —
      * §4, 2026-08-24. Local to them, never fed into the shared ruleset —
@@ -151,8 +156,10 @@ export function useSynapse(): UseSynapse {
                     [brandRows, f2],
                     [clinicBrandDefaults, f3],
                     [frequent, f4],
-                    [companionEdges, f5],
+                    [globalCompanionEdges, f5],
                     [freeTerms, f6],
+                    [hospitalCompanionEdges, f7],
+                    [companionCuration, f8],
                 ] = await Promise.all([
                     doctorId
                         ? soft(loadPreferences(doctorId), [] as PreferenceRow[])
@@ -170,6 +177,10 @@ export function useSynapse(): UseSynapse {
                     doctorId
                         ? soft(loadDoctorFreeTerms(doctorId), [] as DoctorFreeTerm[])
                         : ([[] as DoctorFreeTerm[], false] as [DoctorFreeTerm[], boolean]),
+                    // The practice companion layer — hospital-keyed like the
+                    // clinic brand tier above, loads either way.
+                    soft(loadHospitalCompanionEdges(hospitalId), [] as CompanionEdge[]),
+                    soft(loadHospitalCompanionCuration(hospitalId), new Map() as CompanionPreferenceMap),
                 ]);
 
                 if (!mounted.current) return;
@@ -185,7 +196,14 @@ export function useSynapse(): UseSynapse {
                     brandPreferences: buildBrandModel(brandRows),
                     clinicBrandDefaults,
                     frequent,
-                    companionEdges,
+                    // A practice-authored edge is a real edge, not a filter —
+                    // it is unioned in here so `resolveCompanions` treats it
+                    // exactly like any other authored one. Curated disables
+                    // of GLOBAL edges are applied downstream instead (see
+                    // `applyHospitalCompanionPrefs`), never by dropping rows
+                    // from this list.
+                    companionEdges: [...globalCompanionEdges, ...hospitalCompanionEdges],
+                    companionCuration,
                     freeTerms,
                     // A chip can be perfectly wired to a signal and still
                     // produce nothing because no rule points at that signal
@@ -193,7 +211,7 @@ export function useSynapse(): UseSynapse {
                     // result, and the two must not look the same.
                     signalsWithRules: new Set(ruleset.signalIntentRules.map((r) => r.signalId)),
                     loadedAt: new Date(),
-                    degraded: f1 || f2 || f3 || f4 || f5 || f6,
+                    degraded: f1 || f2 || f3 || f4 || f5 || f6 || f7 || f8,
                 });
                 setStatus("ready");
             } catch (e) {

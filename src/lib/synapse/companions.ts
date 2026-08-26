@@ -24,7 +24,14 @@
 
 import { guardIntent, type Ruleset, type ActiveSignal, type IntentType, type GuardStatus } from './engine'
 
-export type CompanionScope = 'authored' | 'learned'
+/**
+ * 'practice' added alongside the two original scopes — a hospital-scoped
+ * edge a doctor authored themselves from Practice's Clinical Companions
+ * card (`hospital_companion_preference`, source='practice_authored').
+ * Still two existing intents related to each other, never a new one; see
+ * that table's own header comment.
+ */
+export type CompanionScope = 'authored' | 'learned' | 'practice'
 
 /** One row of intent_companions. */
 export interface CompanionEdge {
@@ -121,5 +128,44 @@ export function resolveCompanions(
   }
 
   suggestions.sort((x, y) => y.weight - x.weight)
+  return { suggestions, hardWarned: suggestions.filter((c) => c.status === 'warn_hard') }
+}
+
+// ---------------------------------------------------------------------------
+// Practice-specific curation — the layer Practice's Clinical Companions card
+// configures (`hospital_companion_preference`, source='curated'). This is
+// NOT a second guard: it only ever removes an `ok`-status suggestion whose
+// EVERY triggering edge this practice has explicitly turned off. A
+// suggestion carrying any warn/warn_hard verdict, or one still reachable
+// through at least one edge the practice has NOT disabled, is never touched
+// here — the same "no guard ever hides a suggestion" rule the engine itself
+// follows (see `Guard` in engine.ts). Practice-authored edges
+// (scope='practice') are not filtered here at all; they are unioned into
+// the edge list `resolveCompanions` runs against BEFORE this function ever
+// sees the result (see `useSynapse.ts`), so they behave exactly like any
+// other authored edge once they exist.
+// ---------------------------------------------------------------------------
+
+/** `${intentId}|${companionIntentId}` -> enabled. Absent = enabled (opt-out only). */
+export type CompanionPreferenceMap = Map<string, boolean>
+
+export const companionPrefKey = (intentId: number, companionIntentId: number) =>
+  `${intentId}|${companionIntentId}`
+
+export function applyHospitalCompanionPrefs(
+  result: CompanionResult,
+  prefs: CompanionPreferenceMap,
+): CompanionResult {
+  if (prefs.size === 0) return result
+
+  const keep = (s: CompanionSuggestion): boolean => {
+    if (s.status !== 'ok') return true // a caution/hard warning is never suppressible
+    // Suppressed only when EVERY trigger that reached this companion has
+    // been explicitly disabled — a trigger with no row at all is enabled by
+    // default, so it alone keeps the suggestion alive.
+    return !s.triggeredBy.every((t) => prefs.get(companionPrefKey(t, s.companionIntentId)) === false)
+  }
+
+  const suggestions = result.suggestions.filter(keep)
   return { suggestions, hardWarned: suggestions.filter((c) => c.status === 'warn_hard') }
 }

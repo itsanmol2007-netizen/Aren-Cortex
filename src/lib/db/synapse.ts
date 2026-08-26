@@ -903,6 +903,230 @@ export async function loadCompanionEdges(): Promise<CompanionEdge[]> {
     }));
 }
 
+// ============================================================
+// THE PRACTICE COMPANION LAYER — `hospital_companion_preference`.
+//
+// Two roles in one table (see that table's own migration comment):
+//   * source='curated'           — this hospital turned an EXISTING global
+//     `intent_companions` edge off. Read by `loadHospitalCompanionCuration`,
+//     applied downstream by `applyHospitalCompanionPrefs` (companions.ts) —
+//     never here; suppressing a warn/warn_hard suggestion needs the guard
+//     verdict, which only exists once `resolveCompanions` has run.
+//   * source='practice_authored' — a brand-new hospital-scoped edge between
+//     two EXISTING intents. Read by `loadHospitalCompanionEdges`, unioned
+//     straight into the same edge list `loadCompanionEdges` feeds
+//     `resolveCompanions` (see useSynapse.ts) — it is not a filter, it adds
+//     a real edge, exactly like any authored one, just scoped to one clinic.
+// ============================================================
+
+/** Where a practice-authored edge sits relative to the global 0.5–0.95
+ *  authored range (measured live, 2026-08-26) — the conservative end, so a
+ *  doctor's own pairing never outranks established clinical content by
+ *  default. Never printed (rule 9); only used to order suggestions. */
+const PRACTICE_COMPANION_WEIGHT = 0.5;
+
+export async function loadHospitalCompanionEdges(hospitalId: string): Promise<CompanionEdge[]> {
+    const { data, error } = await supabase
+        .from("hospital_companion_preference")
+        .select("intent_id, companion_intent_id, reason")
+        .eq("hospital_id", hospitalId)
+        .eq("source", "practice_authored");
+    if (error) throw new Error(`hospital companion edges: ${error.message}`);
+    return (data ?? []).map((r: any) => ({
+        intentId: Number(r.intent_id),
+        companionIntentId: Number(r.companion_intent_id),
+        weight: PRACTICE_COMPANION_WEIGHT,
+        reason: r.reason ?? "Configured for this practice",
+        scope: "practice" as const,
+    }));
+}
+
+/** `${intentId}|${companionIntentId}` -> false, for every GLOBAL edge this
+ *  hospital has turned off. Only ever holds `false` — absence means enabled,
+ *  the opt-out-only rule `applyHospitalCompanionPrefs` relies on. */
+export async function loadHospitalCompanionCuration(hospitalId: string): Promise<import("../synapse/companions").CompanionPreferenceMap> {
+    const { data, error } = await supabase
+        .from("hospital_companion_preference")
+        .select("intent_id, companion_intent_id, enabled")
+        .eq("hospital_id", hospitalId)
+        .eq("source", "curated")
+        .eq("enabled", false);
+    if (error) throw new Error(`hospital companion curation: ${error.message}`);
+    const out = new Map<string, boolean>();
+    for (const r of data ?? []) {
+        out.set(`${Number(r.intent_id)}|${Number(r.companion_intent_id)}`, false);
+    }
+    return out;
+}
+
+export type HospitalCompanionDetail = {
+    intentId: number;
+    companionIntentId: number;
+    triggerLabel: string;
+    companionLabel: string;
+    companionType: IntentType;
+    enabled: boolean;
+    reason: string | null;
+    source: "curated" | "practice_authored";
+    updatedAt: string;
+};
+
+/**
+ * The Practice page's read — every row this hospital has on file, curated
+ * disables and practice-authored edges alike, hydrated with both intents'
+ * real labels. Same fetch-then-IN() shape as `fetchClinicBrandDefaultDetails`
+ * — no SQL joins (standing rule: hydration pattern).
+ */
+export async function fetchHospitalCompanionDetails(hospitalId: string): Promise<HospitalCompanionDetail[]> {
+    const { data: rows, error } = await supabase
+        .from("hospital_companion_preference")
+        .select("intent_id, companion_intent_id, enabled, reason, source, updated_at")
+        .eq("hospital_id", hospitalId)
+        .order("updated_at", { ascending: false });
+    if (error) throw new Error(`fetchHospitalCompanionDetails (rows): ${error.message}`);
+    if (!rows || rows.length === 0) return [];
+
+    const intentIds = [...new Set(rows.flatMap((r: any) => [Number(r.intent_id), Number(r.companion_intent_id)]))];
+    const { data: intentRows, error: intentErr } = await supabase
+        .from("intents").select("id, type, label").in("id", intentIds);
+    if (intentErr) throw new Error(`fetchHospitalCompanionDetails (intents): ${intentErr.message}`);
+    const byId = new Map<number, { type: IntentType; label: string }>();
+    (intentRows ?? []).forEach((i: any) => byId.set(Number(i.id), { type: i.type, label: i.label }));
+
+    return rows
+        .map((r: any) => {
+            const trigger = byId.get(Number(r.intent_id));
+            const companion = byId.get(Number(r.companion_intent_id));
+            return {
+                intentId: Number(r.intent_id),
+                companionIntentId: Number(r.companion_intent_id),
+                triggerLabel: trigger?.label ?? "",
+                companionLabel: companion?.label ?? "",
+                companionType: companion?.type ?? "advice",
+                enabled: !!r.enabled,
+                reason: r.reason ?? null,
+                source: r.source,
+                updatedAt: r.updated_at,
+            };
+        })
+        // Same rule as fetchClinicBrandDefaultDetails: a row whose intent no
+        // longer resolves is dropped, not shown blank.
+        .filter((r) => r.triggerLabel && r.companionLabel);
+}
+
+/** Turn a global authored edge off (or back on) for this hospital only. */
+export async function setHospitalCompanionCuration(opts: {
+    hospitalId: string; intentId: number; companionIntentId: number; enabled: boolean; setBy?: string | null;
+}): Promise<void> {
+    const { error } = await supabase.from("hospital_companion_preference").upsert(
+        {
+            hospital_id: opts.hospitalId,
+            intent_id: opts.intentId,
+            companion_intent_id: opts.companionIntentId,
+            enabled: opts.enabled,
+            source: "curated",
+            set_by: opts.setBy ?? null,
+            updated_at: new Date().toISOString(),
+        },
+        { onConflict: "hospital_id,intent_id,companion_intent_id" }
+    );
+    if (error) throw new Error(`set hospital companion curation: ${error.message}`);
+}
+
+/** Revert a curated row — back to "follow the global default (on)". */
+export async function clearHospitalCompanionCuration(opts: {
+    hospitalId: string; intentId: number; companionIntentId: number;
+}): Promise<void> {
+    const { error } = await supabase
+        .from("hospital_companion_preference")
+        .delete()
+        .eq("hospital_id", opts.hospitalId)
+        .eq("intent_id", opts.intentId)
+        .eq("companion_intent_id", opts.companionIntentId)
+        .eq("source", "curated");
+    if (error) throw new Error(`clear hospital companion curation: ${error.message}`);
+}
+
+/** Author a brand-new hospital-scoped edge between two EXISTING intents. */
+export async function createHospitalCompanionEdge(opts: {
+    hospitalId: string; intentId: number; companionIntentId: number; reason: string; setBy?: string | null;
+}): Promise<void> {
+    const { error } = await supabase.from("hospital_companion_preference").upsert(
+        {
+            hospital_id: opts.hospitalId,
+            intent_id: opts.intentId,
+            companion_intent_id: opts.companionIntentId,
+            enabled: true,
+            reason: opts.reason,
+            source: "practice_authored",
+            set_by: opts.setBy ?? null,
+            updated_at: new Date().toISOString(),
+        },
+        { onConflict: "hospital_id,intent_id,companion_intent_id" }
+    );
+    if (error) throw new Error(`create hospital companion edge: ${error.message}`);
+}
+
+export async function deleteHospitalCompanionEdge(opts: {
+    hospitalId: string; intentId: number; companionIntentId: number;
+}): Promise<void> {
+    const { error } = await supabase
+        .from("hospital_companion_preference")
+        .delete()
+        .eq("hospital_id", opts.hospitalId)
+        .eq("intent_id", opts.intentId)
+        .eq("companion_intent_id", opts.companionIntentId)
+        .eq("source", "practice_authored");
+    if (error) throw new Error(`delete hospital companion edge: ${error.message}`);
+}
+
+export type AuthoredCompanionEdgeDetail = {
+    intentId: number;
+    companionIntentId: number;
+    triggerLabel: string;
+    companionLabel: string;
+    companionType: IntentType;
+    reason: string;
+};
+
+/**
+ * Every GLOBALLY authored edge, hydrated with both intents' labels — the
+ * catalogue Practice's Clinical Companions card curates FROM (26 rows,
+ * measured live 2026-08-26 — small enough to fetch whole, no pagination).
+ * Never mutated here; curating one is a `hospital_companion_preference`
+ * write (`setHospitalCompanionCuration`), never a change to this table.
+ */
+export async function fetchAuthoredCompanionCatalogue(): Promise<AuthoredCompanionEdgeDetail[]> {
+    const { data: rows, error } = await supabase
+        .from("intent_companions")
+        .select("intent_id, companion_intent_id, reason")
+        .eq("is_active", true);
+    if (error) throw new Error(`fetchAuthoredCompanionCatalogue (rows): ${error.message}`);
+    if (!rows || rows.length === 0) return [];
+
+    const intentIds = [...new Set(rows.flatMap((r: any) => [Number(r.intent_id), Number(r.companion_intent_id)]))];
+    const { data: intentRows, error: intentErr } = await supabase
+        .from("intents").select("id, type, label").in("id", intentIds);
+    if (intentErr) throw new Error(`fetchAuthoredCompanionCatalogue (intents): ${intentErr.message}`);
+    const byId = new Map<number, { type: IntentType; label: string }>();
+    (intentRows ?? []).forEach((i: any) => byId.set(Number(i.id), { type: i.type, label: i.label }));
+
+    return rows
+        .map((r: any) => {
+            const trigger = byId.get(Number(r.intent_id));
+            const companion = byId.get(Number(r.companion_intent_id));
+            return {
+                intentId: Number(r.intent_id),
+                companionIntentId: Number(r.companion_intent_id),
+                triggerLabel: trigger?.label ?? "",
+                companionLabel: companion?.label ?? "",
+                companionType: companion?.type ?? ("advice" as IntentType),
+                reason: r.reason ?? "",
+            };
+        })
+        .filter((r) => r.triggerLabel && r.companionLabel);
+}
+
 /**
  * signal -> examination-finding-to-check rules. Same shape as loading the
  * main ruleset's `signal_intent_rules`, just a different edge type — see

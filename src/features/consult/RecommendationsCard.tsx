@@ -26,7 +26,7 @@
 import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    AlertTriangle, Check, ChevronDown, Pill, Pin, Plus, ShieldAlert, X,
+    AlertTriangle, Check, ChevronDown, Heart, Pill, Plus, ShieldAlert, X,
 } from "lucide-react";
 import {
     guardCombination, medicineIntentIndex,
@@ -576,8 +576,22 @@ function MedicineRow({
     // label, the identity's brand line), so this one fallback is what makes
     // all of them work for a combination-only molecule with no extra code.
     const primary = all[0] ?? combos[0] ?? null;
-    const alts = all.length > 0 ? all.slice(1, 1 + INLINE_ALTS) : [];
-    const rest = Math.max(0, (composition?.singleTotal ?? 0) - 1 - alts.length);
+    const restAll = all.length > 0 ? all.slice(1) : [];
+    // Every OTHER concrete medicine this practice prefers for this molecule
+    // (Practice's own Preferred Medicines card) — ALWAYS visible, never
+    // gated behind opening the row or the brand sheet. `fetchCompositionBrands`
+    // guarantees every clinic-preferred medicine id is in `all` regardless of
+    // where it would otherwise rank (see its own `keep` array), so this is
+    // never missing one just because it fell outside the fetch window.
+    // Capped at 7 — primary + 7 = 8 rows, this panel's measured comfortable
+    // capacity — a practice with more than that manages the rest from
+    // Practice itself rather than scrolling one Consult row indefinitely.
+    const preferredAlts = restAll.filter((m) => m.isClinicDefault).slice(0, 7);
+    // The ordinary "click to expand" alternates — NON-preferred candidates
+    // only, so a preferred brand is never shown twice on the same row.
+    const nonPreferredRest = restAll.filter((m) => !m.isClinicDefault);
+    const alts = nonPreferredRest.slice(0, INLINE_ALTS);
+    const rest = Math.max(0, (composition?.singleTotal ?? 0) - 1 - preferredAlts.length - alts.length);
     const combinationTotal = composition?.combinationTotal ?? 0;
     // Combinations shown as ALTERNATES, i.e. not already claimed as `primary`
     // above — every one of them when a standalone brand leads the row, all
@@ -630,7 +644,9 @@ function MedicineRow({
                     composition={faceComposition}
                     trailing={
                         <>
-                            {face?.isClinicDefault && <Pin size={10} aria-label="Clinic default" />}
+                            {face?.isClinicDefault && (
+                                <Heart size={10} fill="currentColor" aria-label="Preferred by your practice" />
+                            )}
                             {face && isYours(face) && (
                                 <span className="cs-brand-star" title="Your usual brand">★</span>
                             )}
@@ -706,6 +722,38 @@ function MedicineRow({
                 <PinButton pinned={pinned} label={face?.name ?? intent.label} onToggle={onTogglePin} />
             </div>
 
+            {/* Practice's OTHER preferred concrete medicines for this molecule —
+                ALWAYS visible, never behind opening the row or the brand sheet
+                (Practice's Preferred Medicines card, `clinic_brand_preference`).
+                Zero or one preferred candidate falls through to the ordinary
+                primary + click-to-expand behaviour below, unchanged.
+
+                Flagged, not invented: this block sits AFTER `.cs-rec-side`
+                (where `.cs-prescribe` lives) in DOM order, so an unopened
+                row's Enter-to-activate still finds Prescribe first via
+                `querySelector` (see `useRovingList`'s `activate`) — these
+                chips are click-reachable today, not yet part of the ↑/↓
+                roving walk the way the open row's own `.cs-brand` alternates
+                are. Extending the walk to cover them too is real follow-up
+                work, not done here to keep this change to rendering only. */}
+            {!added && !locked && preferredAlts.length > 0 && (
+                <div className="cs-brands is-preferred">
+                    <span className="cs-brands-or">your practice also prefers</span>
+                    {preferredAlts.map((m) => (
+                        <button
+                            key={m.id}
+                            type="button"
+                            className="cs-brand is-preferred"
+                            onClick={() => onAccept(intent, m, true)}
+                            title={`Prescribe ${m.name} instead`}
+                        >
+                            <Heart size={9} fill="currentColor" />
+                            {m.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* The brand picker is WITHHELD while a hard warning is unread, for
                 the same reason the accept is: a row of pickable brands invites
                 the doctor to click past the reason. */}
@@ -754,6 +802,10 @@ function MedicineRow({
                 >
                     <span className="cs-brands-or">or</span>
                     {alts.map((m) => (
+                        // Never clinic-preferred here — `alts` is
+                        // `nonPreferredRest` on purpose, so a preferred brand
+                        // is never shown twice on the same row (see the
+                        // always-visible block above).
                         <button
                             key={m.id}
                             type="button"
@@ -761,7 +813,6 @@ function MedicineRow({
                             onClick={() => onAccept(intent, m, true)}
                             title={`Prescribe ${m.name} instead`}
                         >
-                            {m.isClinicDefault && <Pin size={9} />}
                             {isYours(m) && <span className="cs-brand-star">★</span>}
                             {m.name}
                         </button>

@@ -2529,6 +2529,25 @@ body.cs-locked-shell {
     font-size: 11.5px;
 }
 
+/* A practice-preferred alternate — always visible, unlike the ordinary
+   `.cs-brand` chips above it which only appear once the row is opened.
+   Teal, the same "medicine" family tone Practice's own Preferred
+   Medicines tree uses, so the two surfaces read as one vocabulary. */
+.cs-brands.is-preferred { margin-top: 4px; }
+
+.cs-brand.is-preferred {
+    border-color: rgba(15, 118, 110, 0.28);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+
+.cs-brand.is-preferred:hover {
+    border-color: var(--cs-teal);
+    color: var(--cs-teal);
+}
+
+.cs-brand.is-preferred svg { opacity: 0.85; }
+
 .cs-brand.is-skeleton {
     width: 62px;
     height: 22px;
@@ -3242,6 +3261,14 @@ body.cs-locked-shell {
     border-color: rgba(124, 58, 237, 0.26);
     background: #f5f3ff;
     color: var(--cs-violet);
+}
+
+/* 'practice' — a standing pairing this hospital configured from Practice's
+   Clinical Companions card, distinct from a globally authored one. */
+.cs-comp-tag.is-practice {
+    border-color: transparent;
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
 }
 
 .cs-comp-why,

@@ -302,22 +302,33 @@ export function GuardReason({
 // habit the database cannot attribute to anyone. The habit branch below is
 // complete and lights up the moment a doctor_id (or a v_doctor_companion view)
 // exists.
+//
+// A third scope, 'practice', IS wired (2026-08-26) — a hospital-scoped edge
+// authored from Practice's Clinical Companions card
+// (`hospital_companion_preference`, source='practice_authored'), unioned
+// into the edge list this consult resolves against (see `useSynapse.ts`).
+// It gets its own tag rather than folding into 'authored' so a doctor can
+// tell "every Cortex clinic sees this" from "this clinic's own standing
+// pairing" at a glance.
 
-export type CompanionSource = "authored" | "habit" | "observed";
+export type CompanionSource = "authored" | "habit" | "observed" | "practice";
 
 const SOURCE_TAG: Record<CompanionSource, string> = {
     authored: "Common pairing",
     habit: "Your pattern",
     observed: "Often co-prescribed",
+    practice: "Your practice",
 };
 
 const SOURCE_TITLE: Record<CompanionSource, string> = {
     authored: "A clinically authored pairing — the same for every doctor",
     habit: "Learned from your own prescribing — not clinical advice",
     observed: "Seen together across prescriptions — not specific to you",
+    practice: "Configured for this practice, from the Practice page",
 };
 
 export function sourceOf(scopes: CompanionScope[]): CompanionSource {
+    if (scopes.includes("practice")) return "practice";
     if (scopes.includes("authored")) return "authored";
     return "observed";
 }

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { runEngine, type EngineResult, type IntentType } from "../lib/synapse/engine";
 import { personalize, type PersonalizedIntent } from "../lib/synapse/personalize";
-import { resolveCompanions, type CompanionResult } from "../lib/synapse/companions";
+import { resolveCompanions, applyHospitalCompanionPrefs, type CompanionResult } from "../lib/synapse/companions";
 import { rankExamSuggestions, type RankedExamSuggestion } from "../lib/synapse/examSuggestions";
 import { buildEngineInput, isPediatricConsult, type MeasurementRow } from "../lib/synapse/consultInput";
 import {
@@ -205,12 +205,16 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
     const acceptedKey = acceptedIntentIds.join(",");
     const companions = useMemo(() => {
         if (!result || !data || !data.companionEdges.length || !acceptedIntentIds.length) return null;
-        return resolveCompanions(
+        const resolved = resolveCompanions(
             acceptedIntentIds,
             data.companionEdges,
             data.ruleset,
             result.activeSignals
         );
+        // The practice curation layer — only ever removes an `ok`-status
+        // suggestion this hospital has fully turned off; see that
+        // function's own doc comment for why it cannot touch a caution.
+        return applyHospitalCompanionPrefs(resolved, data.companionCuration);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [result, data, acceptedKey]);
 

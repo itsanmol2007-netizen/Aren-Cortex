@@ -214,11 +214,85 @@
     font-size: 13px;
 }
 
+.prac-modal-field select {
+    height: 40px;
+    border: 1px solid var(--cs-line);
+    border-radius: 11px;
+    background: rgba(248, 250, 252, 0.9);
+    padding: 0 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+}
+
 /* The one true focus ring, every modal — matches the stripe/button. */
-.prac-modal-field input:focus {
+.prac-modal-field input:focus,
+.prac-modal-field select:focus {
     outline: none;
     border-color: #a855f7;
     box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.14);
+}
+
+/* Two fields side by side (Add New Medicine's form + strength) — same
+   pattern as `.prac-defaults-row`, scoped to a modal body. */
+.prac-modal-field-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--cs-s3);
+}
+
+.prac-modal-required {
+    color: var(--cs-red);
+    font-style: normal;
+    font-weight: 700;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.prac-modal-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+    cursor: pointer;
+}
+
+.prac-modal-check input {
+    accent-color: #a855f7;
+    width: 15px;
+    height: 15px;
+}
+
+/* Clinical Companions' "author a new pairing" form — a quiet inset so it
+   reads as one bounded step, not more rows loose in the modal body. */
+.prac-companion-author {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s3);
+    border: 1px solid var(--cs-line);
+    border-radius: 12px;
+    padding: var(--cs-s3);
+    background: rgba(248, 250, 252, 0.6);
+}
+
+/* The on/off control for a globally authored pairing — a toggle, not the
+   heart: "preferred" isn't the concept here, "does this practice want it
+   suggested" is. */
+.prac-companion-toggle {
+    flex: none;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: none;
+    padding: 2px;
+    color: var(--cs-line-strong);
+    cursor: pointer;
+}
+
+.prac-companion-toggle[aria-pressed="true"] {
+    color: var(--cs-teal);
 }
 
 /* ── The modal's own row list — same shape as `.prac-row`, just living in a

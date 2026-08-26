@@ -180,6 +180,39 @@ export function BlankTemplateArt() {
     );
 }
 
+/** The empty Clinical Companions list (Practice page): two small tiles,
+ *  linked but nothing written on either — a companion IS a pairing between
+ *  two things, so the empty state draws the relationship itself, at rest,
+ *  rather than either. Violet, the same "doctor-authored, not the
+ *  catalogue" family as `BlankTermArt`/`BlankTemplateArt`. */
+export function BlankCompanionArt() {
+    return (
+        <svg width="56" height="42" viewBox="0 0 56 42" fill="none" aria-hidden="true">
+            <rect x="8" y="13" width="16" height="16" rx="5" fill="#fbfaff" stroke="#ddd4f7" strokeWidth="1.6" />
+            <rect x="32" y="13" width="16" height="16" rx="5" fill="#f4effe" stroke="#c7b6f4" strokeWidth="1.6" />
+            <path d="M24 21h8" stroke="#d8cbf8" strokeWidth="1.6" strokeLinecap="round" strokeDasharray="2.4 2.6" />
+            <path d="M46 6l.8 1.9 1.9.8-1.9.8L46 11.4l-.8-1.9-1.9-.8 1.9-.8z" fill="#a78bfa" />
+        </svg>
+    );
+}
+
+/** The Add New Medicine card's own art (Practice page): the same blister
+ *  sheet as `BlankMedicineArt`, with a plus mark instead of the usual
+ *  sparkle — this card's action is CREATING a catalogue entry, not
+ *  searching one that already exists. Same teal family, same recipe. */
+export function BlankAddMedicineArt() {
+    return (
+        <svg width="56" height="46" viewBox="0 0 56 46" fill="none" aria-hidden="true">
+            <rect x="12" y="9" width="32" height="28" rx="5"
+                fill="#fbfdfc" stroke="#cfe4dc" strokeWidth="1.6" />
+            <circle cx="21" cy="19" r="3.6" fill="#e6f5ee" stroke="#bde0d0" strokeWidth="1.3" />
+            <circle cx="32" cy="19" r="3.6" fill="#e6f5ee" stroke="#bde0d0" strokeWidth="1.3" />
+            <circle cx="21" cy="28" r="3.6" fill="#f2f7f5" stroke="#d5e7e0" strokeWidth="1.3" />
+            <path d="M32 25v6M29 28h6" stroke="#4fae87" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (
