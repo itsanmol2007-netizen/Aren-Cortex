@@ -142,19 +142,24 @@ export function BlankTermArt() {
 }
 
 /** The empty preferred-labs list (Practice page, and its Consult-side
- *  "order from" prompt when it has nothing to offer yet): a small building,
- *  not a beaker — a preferred lab is a PLACE the doctor sends a patient to,
- *  never a test itself (that's `BlankTestArt`'s domain). Amber, matching the
- *  card glyph and modal accent this list uses elsewhere on Practice — the
- *  one card on the page not already claimed by blue/teal/violet. */
+ *  "order from" prompt when it has nothing to offer yet).
+ *
+ *  2026-08-26 correction: the first version drew a house — a preferred lab
+ *  IS a place, but a house reads as "add an address", not "diagnostic
+ *  centre", and it disagreed with the card's own header glyph (a flask)
+ *  sitting right above it. Redrawn as the same flask, at rest, so the
+ *  glyph and the empty state say the same thing. Neutral slate, not a
+ *  colour of its own — Preferred Labs isn't a category with its own hue
+ *  (see PracticeCard's `tone="slate"`); this list simply hasn't declared
+ *  anything yet. */
 export function BlankLabArt() {
     return (
-        <svg width="56" height="48" viewBox="0 0 56 48" fill="none" aria-hidden="true">
-            <path d="M14 20l13-10 13 10v16a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 14 36z"
-                fill="#fefaf1" stroke="#dcaf5e" strokeWidth="1.8" strokeLinejoin="round" />
-            <rect x="22.5" y="27" width="9" height="11.5" fill="#fbe8bf" stroke="#dcaf5e" strokeWidth="1.6" />
-            <path d="M19 23.5h4.5M32.5 23.5h4.5" stroke="#e8c284" strokeWidth="1.8" strokeLinecap="round" />
-            <path d="M46 9l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#dba746" />
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+            <path d="M20 8h8v11.5l8.5 15.8A3.5 3.5 0 0 1 33.4 40H14.6a3.5 3.5 0 0 1-3.1-4.7L20 19.5z"
+                fill="#fbfcfd" stroke="#c3cad6" strokeWidth="1.8" strokeLinejoin="round" />
+            <path d="M18.5 8h11" stroke="#aab4c4" strokeWidth="1.9" strokeLinecap="round" />
+            <path d="M15.8 30.5h16.4" stroke="#dbe1ea" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M40 12l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#b7c0cf" />
         </svg>
     );
 }

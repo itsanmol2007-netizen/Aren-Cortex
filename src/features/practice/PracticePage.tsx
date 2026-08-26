@@ -122,18 +122,22 @@ function CappedRows<T>({
     const [showAll, setShowAll] = useState(false);
     const reduce = useReducedMotion();
     const overflowing = items.length > cap;
-    // `cap + 0.5` scales the expand target with THIS list's own cap, so
-    // expanded is always taller than collapsed regardless of which cap a
-    // caller passes — see the git history for the bug this replaced (a
-    // fixed 4.5-row target borrowed from Consult, which only worked by
-    // coincidence for a cap of 4).
-    const expandedRows = cap + 0.5;
+    // Collapsed is measured exactly (`cap * rowH`). Expanded is deliberately
+    // NOT a bigger measured number — it tweens to an arbitrarily large cap
+    // (9999) and lets the CARD's own fixed height be what actually bounds
+    // it (`.prac-card-body`/`.prac-rows` are `flex:1; min-height:0` in
+    // practice.css), so "Show more" reveals the rest by scrolling INSIDE
+    // the card's existing footprint — the footprint itself never grows.
+    // This replaced an earlier version that grew the box on expand, which
+    // was corrected 2026-08-26: a card's outer height must be set by the
+    // grid, never by how many rows happen to be in it.
+    const EXPANDED_CAP = 9999;
 
     return (
         <>
             <motion.div
                 initial={false}
-                animate={{ maxHeight: overflowing && showAll ? expandedRows * rowH : cap * rowH }}
+                animate={{ maxHeight: overflowing && showAll ? EXPANDED_CAP : cap * rowH }}
                 transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
                 className={"prac-rows" + (overflowing && showAll ? " is-expanded" : "")}
             >
@@ -227,7 +231,7 @@ function PracticeCard({
     icon, tone, title, count, quiet, action, children,
 }: {
     icon: ReactNode;
-    tone: "blue" | "teal" | "violet" | "slate" | "amber";
+    tone: "blue" | "teal" | "violet" | "slate";
     title: string;
     count?: number;
     quiet?: boolean;
@@ -429,7 +433,7 @@ function LabsModal({
 
     return (
         <PracticeModal
-            accent="amber"
+            accent="slate"
             icon={<FlaskConical size={15} />}
             eyebrow="Preferred Labs"
             title="Your diagnostic centres"
@@ -849,17 +853,27 @@ export function PracticePage({
             />
 
             <div className="prac-body">
-                {/* ── OVERVIEW — two ideas, not a dashboard ──────────────────── */}
+                {/* ── OVERVIEW — a designed intro, not floating prose. The
+                    3px rule is the SAME pink→violet→indigo gradient every
+                    other surface in this app uses as its signature mark
+                    (`.topbar-stripe`, modal stripes, `vp-stripe`) — the
+                    "subtle Cortex visual anchor," not a new one invented
+                    for this page. Two ideas, never a stats dashboard: one
+                    lede sentence, a handful of plain-text counts. */}
                 <div className="prac-overview">
-                    <div className="prac-overview-lede">
-                        <strong>Customize the clinical defaults Cortex uses, and how it opens.</strong>
-                        <span>Everything below is live the next time you start a consultation.</span>
-                    </div>
-                    <div className="prac-overview-counts">
-                        <span><b>{pinned.length}</b> pinned</span>
-                        <span><b>{brands.length}</b> brand default{brands.length === 1 ? "" : "s"}</span>
-                        <span><b>{preferredLabs.length}</b> lab{preferredLabs.length === 1 ? "" : "s"}</span>
-                        <span><b>{templates.length}</b> template{templates.length === 1 ? "" : "s"}</span>
+                    <div className="prac-overview-mark" aria-hidden="true" />
+                    <div className="prac-overview-body">
+                        <div className="prac-overview-lede">
+                            <span className="prac-overview-eyebrow">Practice workspace</span>
+                            <strong>Customize the clinical defaults Cortex uses, and how it opens.</strong>
+                            <span className="prac-overview-sub">Everything below is live the next time you start a consultation.</span>
+                        </div>
+                        <div className="prac-overview-counts">
+                            <span><b>{pinned.length}</b> pinned</span>
+                            <span><b>{brands.length}</b> brand default{brands.length === 1 ? "" : "s"}</span>
+                            <span><b>{preferredLabs.length}</b> lab{preferredLabs.length === 1 ? "" : "s"}</span>
+                            <span><b>{templates.length}</b> template{templates.length === 1 ? "" : "s"}</span>
+                        </div>
                     </div>
                 </div>
 
@@ -919,7 +933,7 @@ export function PracticePage({
                         </PracticeCard>
 
                         <PracticeCard
-                            icon={<FlaskConical size={14} />} tone="amber" title="Preferred Labs" count={preferredLabs.length}
+                            icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length}
                             action={<button type="button" className="prac-card-manage" onClick={() => setLabsModalOpen(true)}>Manage</button>}
                         >
                             {!identity.ready ? (
@@ -955,7 +969,8 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : templates.length > 0 ? (
                                 <CappedRows
-                                    items={templates} cap={4} showAllLabel="Show all" keyOf={(t) => t.id}
+                                    items={templates} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                    showAllLabel="Show all" keyOf={(t) => t.id}
                                     renderRow={(t) => (
                                         <button type="button" className="prac-template-row" onClick={() => setEditingTemplate(t.id)}>
                                             <div className="prac-med-info">

@@ -25,16 +25,14 @@
 .prac-body {
     flex: 1;
     overflow-y: auto;
-    padding: var(--cs-s5) var(--cs-s5) 40px;
-    /* Widened from 1180px (2026-08-26 feedback: "a lot of white space on
-       all sides") — Consult's own shell runs to within 12px of the
-       viewport edge, and a 1180px cap read as narrow and inconsistent
-       beside it on anything wider than a laptop. 1440px keeps the grid
-       from stretching into unreadably wide rows while actually using a
-       desktop monitor's width instead of leaving two blank columns of air
-       either side of it. */
-    max-width: 1440px;
-    margin: 0 auto;
+    /* 2026-08-26, second correction: the first fix (1180px → 1440px) was
+       still inventing a THIRD container width. `.app-shell` (App.tsx),
+       this page's real parent, already caps the whole workspace at
+       1720px and centres it — that is Cortex's one existing container
+       philosophy. This page does not get its own; it just fills the
+       shell it is already sitting inside, with the same side breathing
+       room Consult's own `.cs-shell` uses (12px). */
+    padding: var(--cs-s5) 12px 40px;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -113,30 +111,66 @@
     font-weight: 460;
 }
 
-/* ── Overview strip — two ideas, never a statistics dashboard: one lede
-   sentence and a handful of plain-text counts, not a row of stat cards. */
+/* ── Overview — a designed workspace intro, not floating prose.
+   2026-08-26 correction: this used to be a bare heading + subtext sitting
+   directly on the page background — no anchor, no hierarchy, indistinguishable
+   from documentation. Two things fix that without becoming a hero:
+     1. `.prac-overview-mark` — a short vertical rule in Cortex's own
+        signature gradient (the same one the modal stripe, `.topbar-stripe`
+        and `.vp-stripe` already use), giving the block a left edge to read
+        FROM, the way a pull-quote or a section intro would.
+     2. A small uppercase eyebrow above the heading, so the block reads as
+        a named section of the workspace rather than a sentence that
+        wandered onto the page.
+   Still two ideas, never a statistics dashboard: one lede sentence and a
+   handful of plain-text counts, not a row of stat cards. */
 .prac-overview {
+    display: flex;
+    align-items: stretch;
+    gap: var(--cs-s4);
+    padding: 2px 0 var(--cs-s2);
+}
+
+.prac-overview-mark {
+    flex: none;
+    width: 3px;
+    align-self: stretch;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+}
+
+.prac-overview-body {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: var(--cs-s3);
-    padding-bottom: var(--cs-s1);
 }
 
 .prac-overview-lede {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
+}
+
+.prac-overview-eyebrow {
+    color: #a855f7;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .prac-overview-lede strong {
     color: var(--cs-ink);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
+    letter-spacing: -0.005em;
 }
 
-.prac-overview-lede span {
+.prac-overview-sub {
     color: var(--cs-muted);
     font-size: 11.5px;
     font-weight: 460;
@@ -216,6 +250,19 @@
     box-shadow: var(--cs-shadow);
 }
 
+/* ── Stable composition heights (2026-08-26 correction) ────────────────────
+   Neighbouring cards used to size themselves off their own content — a
+   card with one item, a card with four, a card mid-"Show more" all sat in
+   the same row at three different heights, which is what actually looked
+   wrong (not any one card in isolation). A card's outer footprint is now
+   set by the GRID, once, for the whole Clinical Defaults tier — content
+   fills or under-fills that footprint, it never resizes it. "Show more"
+   still works; it scrolls inside the space already reserved for it
+   (`.prac-card-body`/`.prac-rows` below), never grows the card. */
+.prac-grid.is-2col .prac-card {
+    height: 360px;
+}
+
 /* Secondary tier — related configuration, quieter by design (the brief:
    "primary visual weight belongs to the defaults that save time; secondary
    configuration can be quieter"). Smaller glyph, lighter title, tighter
@@ -273,7 +320,6 @@
 .prac-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .prac-glyph.is-violet { background: #f5f3ff; color: var(--cs-violet); }
 .prac-glyph.is-slate { background: #f1f5f9; color: #475569; }
-.prac-glyph.is-amber { background: var(--cs-amber-soft); color: var(--cs-amber); }
 
 /* Count + the optional "Manage" trigger travel together, flush right —
    one auto-margin on the pair, never fighting each other for space. */
@@ -340,12 +386,27 @@
     min-height: 0;
 }
 
+/* Every direct child of the body except the row list itself keeps its own
+   natural height — only `.prac-rows`/`.prac-empty` (both `flex:1` below)
+   are meant to absorb the card's remaining fixed space. Without this, a
+   search field or a "Show more" button could get squeezed by a sibling
+   that also tried to grow. */
+.prac-card-body > .cs-rec-search,
+.prac-card-body > .prac-term-add,
+.prac-card-body > .prac-foot-more {
+    flex: none;
+}
+
 /* ── Capped row lists — the same mechanism Consult's ranked panels use
-   (`motion.div` tweening `maxHeight`, see `cortex-design-dna/motion.md`):
-   collapsed shows `cap` rows with no scrollbar, "Show all" unlocks a
-   bounded, scrolling box that stops mid-row on purpose. Rows are a plain
-   list with hairline separators, not boxes-inside-a-box — the brief:
-   "avoid... excessive rounded containers." ─────────────────────────────── */
+   (`motion.div` tweening `maxHeight`), now landing inside a FIXED card
+   footprint rather than growing it (see `.prac-grid.is-2col .prac-card`
+   above). Collapsed shows `cap` rows, measured exactly. "Show more" does
+   not grow the box to fit more rows — it lets the box fill whatever fixed
+   space the card already has (`flex:1`) and scrolls the rest, which is
+   why the JS side tweens to a large, deliberately-uncalibrated maxHeight
+   (see PracticePage.tsx's `CappedRows`) rather than a measured one. Rows
+   are a plain list with hairline separators, not boxes-inside-a-box — the
+   brief: "avoid... excessive rounded containers." ───────────────────────── */
 .prac-rows {
     overflow: hidden;
     display: flex;
@@ -353,6 +414,8 @@
 }
 
 .prac-rows.is-expanded {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
 }
 
@@ -756,7 +819,7 @@
 
 .prac-lab-default-mark {
     flex: none;
-    color: var(--cs-amber);
+    color: var(--cs-blue);
 }
 
 /* ── Loading — the existing shimmer, just given a row rhythm to sit in ──── */

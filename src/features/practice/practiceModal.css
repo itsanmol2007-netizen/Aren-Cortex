@@ -1,7 +1,9 @@
-/* ── PRACTICE MODAL — docs/aren-modal-design.md's shape, in `var(--cs-*)`
-   tokens instead of the doc's literal hexes, so it can never drift from
-   the rest of Cortex the way a copy-pasted value eventually would. Four
-   accents, one shape — see PracticeModal.tsx's own header comment. */
+/* ── PRACTICE MODAL — one Cortex modal, not a theme per feature. See
+   PracticeModal.tsx's header for the 2026-08-26 correction this codifies:
+   the stripe and the primary button are ALWAYS the app's own signature
+   gradient (the same `#f472b6 → #a855f7 → #6366f1` `.topbar-stripe` and
+   `.action-button.primary` already use elsewhere) — `accent` colours
+   nothing but the small header icon tile. */
 
 .prac-modal-overlay {
     position: fixed;
@@ -47,17 +49,9 @@
 .prac-modal-stripe {
     height: 4px;
     flex: none;
+    /* Cortex's own signature mark, every modal, no exceptions. */
+    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
 }
-
-.prac-modal.is-teal .prac-modal-stripe { background: linear-gradient(90deg, #2dd4bf, var(--cs-teal)); }
-.prac-modal.is-blue .prac-modal-stripe { background: linear-gradient(90deg, #60a5fa, var(--cs-blue)); }
-.prac-modal.is-violet .prac-modal-stripe { background: linear-gradient(90deg, #a78bfa, var(--cs-violet)); }
-/* Amber's own bright gold (#fbbf24) read as a warning banner rather than a
-   domain accent once it spanned a full stripe/button rather than a small
-   tag — amber elsewhere in Cortex is always text-on-soft-background, never
-   a saturated fill. Muted to a warm bronze so it reads as "labs", not
-   "caution". */
-.prac-modal.is-amber .prac-modal-stripe { background: linear-gradient(90deg, #c99a5b, var(--cs-amber)); }
 
 .prac-modal-head {
     flex: none;
@@ -84,22 +78,26 @@
     border-radius: 9px;
 }
 
+/* The one place `accent` is allowed to speak — a small, restrained hint on
+   the icon tile alone, reusing the exact tokens `.prac-glyph` already uses
+   for the same domain on the card itself (teal=medicine, blue=declared
+   clinic default, violet=doctor-authored, slate=neutral/no strong meaning
+   — never a colour invented for one feature). */
 .prac-modal.is-teal .prac-modal-icon { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .prac-modal.is-blue .prac-modal-icon { background: var(--cs-blue-soft); color: var(--cs-blue); }
 .prac-modal.is-violet .prac-modal-icon { background: var(--cs-violet-soft); color: var(--cs-violet); }
-.prac-modal.is-amber .prac-modal-icon { background: var(--cs-amber-soft); color: var(--cs-amber); }
+.prac-modal.is-slate .prac-modal-icon { background: #f1f5f9; color: #475569; }
 
 .prac-modal-eyebrow {
     font-size: 10px;
     font-weight: 750;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+    /* Same brand violet as the stripe/button, not a per-accent colour —
+       the eyebrow is chrome (Practice's own label for the section), not
+       the domain hint the icon tile already carries. */
+    color: #a855f7;
 }
-
-.prac-modal.is-teal .prac-modal-eyebrow { color: var(--cs-teal); }
-.prac-modal.is-blue .prac-modal-eyebrow { color: var(--cs-blue); }
-.prac-modal.is-violet .prac-modal-eyebrow { color: var(--cs-violet); }
-.prac-modal.is-amber .prac-modal-eyebrow { color: var(--cs-amber); }
 
 .prac-modal-title {
     margin: 1px 0 0;
@@ -148,6 +146,14 @@
 }
 
 .prac-modal-btn {
+    /* A button whose label carries a leading icon (`<Plus/> Add lab`) was
+       laying the SVG and the text out as two unrelated inline children —
+       the icon floated in the corner instead of sitting next to the word.
+       Real flex centring, fixed 2026-08-26. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     flex: 1;
     height: 42px;
     border-radius: 12px;
@@ -168,17 +174,21 @@
 .prac-modal-btn.is-primary {
     border: 0;
     color: #fff;
+    /* Cortex's own signature gradient, every modal — same reasoning as
+       the stripe above. */
+    background: linear-gradient(135deg, #f472b6 0%, #a855f7 55%, #6366f1 100%);
+    box-shadow: 0 4px 14px rgba(168, 85, 247, 0.28);
+}
+
+.prac-modal-btn.is-primary:hover {
+    opacity: 0.94;
 }
 
 .prac-modal-btn.is-primary:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
+    box-shadow: none;
 }
-
-.prac-modal.is-teal .prac-modal-btn.is-primary { background: linear-gradient(135deg, #2dd4bf, var(--cs-teal)); }
-.prac-modal.is-blue .prac-modal-btn.is-primary { background: linear-gradient(135deg, #60a5fa, var(--cs-blue)); }
-.prac-modal.is-violet .prac-modal-btn.is-primary { background: linear-gradient(135deg, #a78bfa, var(--cs-violet)); }
-.prac-modal.is-amber .prac-modal-btn.is-primary { background: linear-gradient(135deg, #c99a5b, var(--cs-amber)); }
 
 /* ── Form fields inside a modal body — `.pm-input`'s shape, in tokens ────── */
 .prac-modal-field {
@@ -204,12 +214,12 @@
     font-size: 13px;
 }
 
-.prac-modal.is-teal .prac-modal-field input:focus { border-color: var(--cs-teal); box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12); }
-.prac-modal.is-blue .prac-modal-field input:focus { border-color: var(--cs-blue); box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.12); }
-.prac-modal.is-violet .prac-modal-field input:focus { border-color: var(--cs-violet); box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12); }
-.prac-modal.is-amber .prac-modal-field input:focus { border-color: var(--cs-amber); box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.12); }
-
-.prac-modal-field input:focus { outline: none; }
+/* The one true focus ring, every modal — matches the stripe/button. */
+.prac-modal-field input:focus {
+    outline: none;
+    border-color: #a855f7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.14);
+}
 
 /* ── The modal's own row list — same shape as `.prac-row`, just living in a
    taller, natively-scrolling body instead of a capped-and-expanded one. */
@@ -292,8 +302,8 @@
     cursor: pointer;
 }
 
-.prac-lab-star:hover { color: var(--cs-amber); }
-.prac-lab-star.is-default { color: var(--cs-amber); }
+.prac-lab-star:hover { color: var(--cs-blue); }
+.prac-lab-star.is-default { color: var(--cs-blue); }
 
 /* Up/down reorder, shared by the labs list and a template's item list. */
 .prac-reorder {

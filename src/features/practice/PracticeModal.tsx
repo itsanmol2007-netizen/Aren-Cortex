@@ -1,14 +1,20 @@
 // ---------------------------------------------------------------------------
-// PRACTICE MODAL — the one modal shape every "Manage" / "View all" surface
-// on this page uses, per docs/aren-modal-design.md: blurred backdrop, white
-// rounded card, 4px accent stripe, icon+eyebrow+title header, body, and a
-// Cancel + primary-action footer. What changes between call sites is only
-// the accent (`teal` for medicine, `blue` for declared clinic defaults,
-// `violet` for doctor-authored content, `amber` for the labs directory) —
-// never the chrome itself. This is the ONE modal family Practice needs; it
-// does not get a parallel component per card the way `.cs-addmed-*` earned
-// its own class family in Consult — every Practice modal is short list +
-// simple form, which this shape already covers.
+// PRACTICE MODAL — ONE modal family, not a theme per feature.
+//
+// 2026-08-26 correction: the first version let `accent` recolour the whole
+// modal — stripe, primary button, focus rings, all of it — per call site.
+// Four features meant four fully-themed modals (an orange one for Preferred
+// Labs among them), which is exactly the "Christmas tree" mistake the
+// design DNA warns against: every category does not get its own colour.
+//
+// Now the chrome is fixed for every modal: the stripe and the primary
+// button are always Cortex's own signature gradient (`#f472b6 → #a855f7 →
+// #6366f1`, the same one `.topbar-stripe` and `.action-button.primary` use
+// elsewhere in this app) — not invented here, reused. `accent` controls
+// exactly one thing, the small header icon tile, as a restrained semantic
+// hint (teal for medicine, blue for a declared clinic default, violet for
+// doctor-authored content, slate/neutral where nothing more specific
+// applies) — never a second colour system layered on top of the first.
 // ---------------------------------------------------------------------------
 
 import { useEffect } from "react";
@@ -16,7 +22,7 @@ import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import "./practiceModal.css";
 
-export type PracticeModalAccent = "teal" | "blue" | "violet" | "amber";
+export type PracticeModalAccent = "teal" | "blue" | "violet" | "slate";
 
 export function PracticeModal({
     accent, icon, eyebrow, title, onClose, children, footer, wide,
