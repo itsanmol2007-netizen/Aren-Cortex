@@ -149,12 +149,12 @@ export function BlankTermArt() {
  *  one card on the page not already claimed by blue/teal/violet. */
 export function BlankLabArt() {
     return (
-        <svg width="50" height="44" viewBox="0 0 50 44" fill="none" aria-hidden="true">
-            <path d="M13 18l11-9 11 9v14a2 2 0 0 1-2 2H15a2 2 0 0 1-2-2z"
-                fill="#fffdf9" stroke="#f0d9ae" strokeWidth="1.6" strokeLinejoin="round" />
-            <rect x="20" y="24" width="8" height="10" fill="#fef3da" stroke="#f0d9ae" strokeWidth="1.4" />
-            <path d="M17 21h4M29 21h4" stroke="#f5e6c2" strokeWidth="1.6" strokeLinecap="round" />
-            <path d="M42 8l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="#eec877" />
+        <svg width="56" height="48" viewBox="0 0 56 48" fill="none" aria-hidden="true">
+            <path d="M14 20l13-10 13 10v16a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 14 36z"
+                fill="#fefaf1" stroke="#dcaf5e" strokeWidth="1.8" strokeLinejoin="round" />
+            <rect x="22.5" y="27" width="9" height="11.5" fill="#fbe8bf" stroke="#dcaf5e" strokeWidth="1.6" />
+            <path d="M19 23.5h4.5M32.5 23.5h4.5" stroke="#e8c284" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M46 9l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#dba746" />
         </svg>
     );
 }
@@ -166,11 +166,11 @@ export function BlankLabArt() {
  *  `BlankTermArt`. */
 export function BlankTemplateArt() {
     return (
-        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" aria-hidden="true">
-            <rect x="12" y="14" width="24" height="20" rx="4" fill="#fbfaff" stroke="#ddd4f7" strokeWidth="1.6" />
-            <rect x="16" y="8" width="24" height="20" rx="4" fill="#fdfcff" stroke="#ded5f8" strokeWidth="1.6" />
-            <path d="M20.5 15h13M20.5 20h9" stroke="#e9e2fa" strokeWidth="1.6" strokeLinecap="round" />
-            <path d="M44 9l.8 1.9 1.9.8-1.9.8L44 14.4l-.8-1.9-1.9-.8 1.9-.8z" fill="#c4b5fd" />
+        <svg width="56" height="48" viewBox="0 0 56 48" fill="none" aria-hidden="true">
+            <rect x="13" y="16" width="26" height="21" rx="4" fill="#f4effe" stroke="#b8a3ef" strokeWidth="1.8" />
+            <rect x="17" y="9" width="26" height="21" rx="4" fill="#fbf9ff" stroke="#c7b6f4" strokeWidth="1.8" />
+            <path d="M22 16.5h14M22 22h10" stroke="#d8cbf8" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M47 10l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#a78bfa" />
         </svg>
     );
 }

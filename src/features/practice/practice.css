@@ -26,10 +26,14 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--cs-s5) var(--cs-s5) 40px;
-    /* Wide enough for a real 3-column grid — was 640px when this page was
-       one column of full-width cards; a 3-up composition needs the room a
-       single settings-form column never did. */
-    max-width: 1180px;
+    /* Widened from 1180px (2026-08-26 feedback: "a lot of white space on
+       all sides") — Consult's own shell runs to within 12px of the
+       viewport edge, and a 1180px cap read as narrow and inconsistent
+       beside it on anything wider than a laptop. 1440px keeps the grid
+       from stretching into unreadably wide rows while actually using a
+       desktop monitor's width instead of leaving two blank columns of air
+       either side of it. */
+    max-width: 1440px;
     margin: 0 auto;
     width: 100%;
     display: flex;
@@ -52,6 +56,15 @@
 
 .prac-grid.is-2col {
     grid-template-columns: repeat(2, minmax(280px, 1fr));
+}
+
+/* On a real desktop monitor, Clinical Defaults' four cards fit one row
+   with real room to breathe rather than two paired rows with a lot of air
+   beneath each — the pairing (Pinned Medicines beside Preferred Labs,
+   Prescription Templates beside Clinic Default Brands) still holds, it
+   just spreads across a wider row instead of wrapping. */
+@media (min-width: 1500px) {
+    .prac-grid.is-2col { grid-template-columns: repeat(4, minmax(280px, 1fr)); }
 }
 
 .prac-grid + .prac-grid {

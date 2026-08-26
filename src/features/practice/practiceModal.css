@@ -52,7 +52,12 @@
 .prac-modal.is-teal .prac-modal-stripe { background: linear-gradient(90deg, #2dd4bf, var(--cs-teal)); }
 .prac-modal.is-blue .prac-modal-stripe { background: linear-gradient(90deg, #60a5fa, var(--cs-blue)); }
 .prac-modal.is-violet .prac-modal-stripe { background: linear-gradient(90deg, #a78bfa, var(--cs-violet)); }
-.prac-modal.is-amber .prac-modal-stripe { background: linear-gradient(90deg, #fbbf24, var(--cs-amber)); }
+/* Amber's own bright gold (#fbbf24) read as a warning banner rather than a
+   domain accent once it spanned a full stripe/button rather than a small
+   tag — amber elsewhere in Cortex is always text-on-soft-background, never
+   a saturated fill. Muted to a warm bronze so it reads as "labs", not
+   "caution". */
+.prac-modal.is-amber .prac-modal-stripe { background: linear-gradient(90deg, #c99a5b, var(--cs-amber)); }
 
 .prac-modal-head {
     flex: none;
@@ -173,7 +178,7 @@
 .prac-modal.is-teal .prac-modal-btn.is-primary { background: linear-gradient(135deg, #2dd4bf, var(--cs-teal)); }
 .prac-modal.is-blue .prac-modal-btn.is-primary { background: linear-gradient(135deg, #60a5fa, var(--cs-blue)); }
 .prac-modal.is-violet .prac-modal-btn.is-primary { background: linear-gradient(135deg, #a78bfa, var(--cs-violet)); }
-.prac-modal.is-amber .prac-modal-btn.is-primary { background: linear-gradient(135deg, #fbbf24, var(--cs-amber)); }
+.prac-modal.is-amber .prac-modal-btn.is-primary { background: linear-gradient(135deg, #c99a5b, var(--cs-amber)); }
 
 /* ── Form fields inside a modal body — `.pm-input`'s shape, in tokens ────── */
 .prac-modal-field {
