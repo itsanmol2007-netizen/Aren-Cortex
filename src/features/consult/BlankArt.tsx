@@ -109,6 +109,38 @@ export function BlankPlanArt() {
     );
 }
 
+/** The empty clinic-default-brands list (Practice page): a badge with no
+ *  ribbon pinned to it yet — the shape a declared default takes once the
+ *  clinic sets one, at rest before anything has been declared. Blue, the
+ *  same family as `BlankTestArt` — a clinic brand default is a declared
+ *  ACTION (see the seven-colour rule), not a reading. */
+export function BlankBrandArt() {
+    return (
+        <svg width="50" height="46" viewBox="0 0 50 46" fill="none" aria-hidden="true">
+            <circle cx="24" cy="18" r="11" fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" />
+            <path d="M20.5 18l2.4 2.4 5-5" stroke="#dbe4f5" strokeWidth="1.6"
+                strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M19 27l-3 8 8-3.4 8 3.4-3-8" stroke="#cdd9ef" strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M42 8l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="#b9d1f7" />
+        </svg>
+    );
+}
+
+/** The empty doctor's-terms list (Practice page): a tag with nothing
+ *  written on it. Violet, matching every OTHER "your own notes, not the
+ *  catalogue" surface in Cortex (the free-text fallback rows, §4). */
+export function BlankTermArt() {
+    return (
+        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" aria-hidden="true">
+            <path d="M14 12h16l10 10-13 13-13-13z"
+                fill="#fbfaff" stroke="#ddd4f7" strokeWidth="1.6" strokeLinejoin="round" />
+            <circle cx="19" cy="17" r="2.2" fill="#f2edfd" stroke="#c4b5fd" strokeWidth="1.3" />
+            <path d="M44 9l.8 1.9 1.9.8-1.9.8L44 14.4l-.8-1.9-1.9-.8 1.9-.8z" fill="#c4b5fd" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

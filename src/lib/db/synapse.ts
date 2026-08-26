@@ -573,6 +573,60 @@ export async function clearClinicBrandDefault(opts: {
     if (error) throw new Error(`clear clinic brand: ${error.message}`);
 }
 
+export type ClinicBrandDefaultDetail = {
+    compositionId: number;
+    medicineId: number;
+    /** e.g. "Aceto 650" — the brand this clinic dispenses. */
+    medicineName: string;
+    /** e.g. "paracetamol" — the molecule it satisfies, for context. */
+    compositionName: string;
+    form: string | null;
+    note: string | null;
+    updatedAt: string;
+};
+
+/**
+ * The Practice page's read — by name, not just id, same shape and same
+ * reasoning as `fetchPinnedMedicineDetails` above. Set from Consult's
+ * BrandSheet ("Make this the clinic default" — see that file), read back
+ * here so a doctor can see and revoke what the clinic has standing without
+ * reopening a brand picker mid-consult to find it.
+ */
+export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promise<ClinicBrandDefaultDetail[]> {
+    const { data: rows, error } = await supabase
+        .from("clinic_brand_preference")
+        .select("composition_id, medicine_id, form, note, updated_at")
+        .eq("hospital_id", hospitalId)
+        .order("updated_at", { ascending: false });
+    if (error) throw new Error(`fetchClinicBrandDefaultDetails (rows): ${error.message}`);
+    if (!rows || rows.length === 0) return [];
+
+    const medIds = [...new Set(rows.map((r: any) => Number(r.medicine_id)))];
+    const compIds = [...new Set(rows.map((r: any) => Number(r.composition_id)))];
+    const [{ data: meds }, { data: comps }] = await Promise.all([
+        supabase.from("medicines").select("id, name").in("id", medIds),
+        supabase.from("compositions").select("id, name").in("id", compIds),
+    ]);
+    const medNameById = new Map<number, string>();
+    (meds ?? []).forEach((m: any) => medNameById.set(Number(m.id), m.name));
+    const compNameById = new Map<number, string>();
+    (comps ?? []).forEach((c: any) => compNameById.set(Number(c.id), c.name));
+
+    return rows
+        .map((r: any) => ({
+            compositionId: Number(r.composition_id),
+            medicineId: Number(r.medicine_id),
+            medicineName: medNameById.get(Number(r.medicine_id)) ?? "",
+            compositionName: compNameById.get(Number(r.composition_id)) ?? "",
+            form: r.form ?? null,
+            note: r.note ?? null,
+            updatedAt: r.updated_at,
+        }))
+        // Same rule as fetchPinnedMedicineDetails: a row whose medicine or
+        // composition no longer resolves is dropped, not shown blank.
+        .filter((r) => r.medicineName && r.compositionName);
+}
+
 // ============================================================
 // BRAND LOOKUP
 // ============================================================
@@ -1025,6 +1079,45 @@ export async function saveDoctorFreeTerm(opts: {
         accepted_intent_ids: opts.acceptedIntentIds,
     });
     if (error) throw new Error(`doctor_free_terms (insert): ${error.message}`);
+}
+
+export type DoctorFreeTermDetail = {
+    id: number;
+    label: string;
+    type: DoctorFreeTermType;
+    useCount: number;
+};
+
+/**
+ * The Practice page's read — the SAME table `loadDoctorFreeTerms` reads for
+ * Consult's own matching, but with `id` (so a row can be removed from here)
+ * and ordered by `use_count` rather than left in table order, since this
+ * view's whole point is "which few of these does this doctor actually reach
+ * for" — a doctor's own remembered vocabulary, not the ranked-match payload
+ * Consult needs mid-chart.
+ */
+export async function fetchDoctorFreeTermDetails(doctorId: string): Promise<DoctorFreeTermDetail[]> {
+    const { data, error } = await supabase
+        .from("doctor_free_terms")
+        .select("id, label, intent_type, use_count")
+        .eq("doctor_id", doctorId)
+        .order("use_count", { ascending: false });
+    if (error) throw new Error(`fetchDoctorFreeTermDetails: ${error.message}`);
+    return (data ?? []).map((r: any) => ({
+        id: Number(r.id),
+        label: r.label,
+        type: r.intent_type as DoctorFreeTermType,
+        useCount: Number(r.use_count ?? 1),
+    }));
+}
+
+/** Forgetting a term is deliberate and immediate — no soft-delete, nothing
+ *  else in the schema references `doctor_free_terms` by id (it is matched
+ *  by label at read time, see `loadDoctorFreeTerms`/`freeTerms.ts`), so a
+ *  hard delete here cannot orphan anything. */
+export async function deleteDoctorFreeTerm(id: number): Promise<void> {
+    const { error } = await supabase.from("doctor_free_terms").delete().eq("id", id);
+    if (error) throw new Error(`deleteDoctorFreeTerm: ${error.message}`);
 }
 
 /**

@@ -1073,7 +1073,12 @@ function App() {
           }
         />
       ) : activePage === "practice" ? (
-        <PracticePage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
+        <PracticePage
+          logoRef={logoRef}
+          onOpenSidebar={handleOpenSidebar}
+          specialty={specialty}
+          onNavigate={handleSidebarNavigate}
+        />
       ) : activePage === "communication" ? (
         <CommunicationPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : activePage === "clinic" ? (

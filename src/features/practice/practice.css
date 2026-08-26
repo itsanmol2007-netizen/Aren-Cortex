@@ -1,117 +1,361 @@
 /* ── PRACTICE PAGE ─────────────────────────────────────────────────────────
-   Same visual language as the Patients pages (light, white panel cards,
-   the same blue/purple/green token family) — an independent file rather
-   than importing patients.css, so this feature doesn't depend on another
-   feature's stylesheet being loaded.
+   Every colour, spacing and radius value below is `var(--cs-*)` — the SAME
+   tokens Consult's own cards use (defined once, in consult.css's `:root`,
+   already loaded globally by main.tsx). Not a second palette that happens
+   to look similar today; the actual tokens, so this page can never drift
+   from Consult the way a copy-pasted hex value eventually would. See
+   `docs/cortex-design-dna/README.md` — this file exists specifically so
+   that rule holds for a whole page, not just one shared component.
 ──────────────────────────────────────────────────────────────────────────── */
 
 .prac-page {
     display: flex;
     flex-direction: column;
     /* Not `height: 100%` — `.app-shell` (App.tsx), this page's parent, has
-       no height of its own (sized by its content, same as `<body>` above
-       it), so a percentage height here silently computed to `auto` and the
-       page collapsed to fit its own content instead of filling the screen
-       — invisible while Pinned Medicines has rows, but with the empty
-       state (0 rows today) the page was as short as its 3 cards, the rest
-       of the viewport showing whatever sits behind the app. Same fix and
-       reasoning as Communication/Clinic/Support (support.css). Found
-       2026-08-24 — reported as "half rendered... split screen". */
+       no height of its own (sized by its content). Same fix as
+       Communication/Clinic/Support: `min-height` lets the page grow past
+       one viewport on a short window instead of collapsing to fit whatever
+       content happens to be there. This page has ONE scroll region (the
+       whole body), unlike Patients' `.prec-page` — no independently-
+       scrolling columns here that would need a hard `dvh` ceiling instead. */
     min-height: 100vh;
-    background: #f0f2f7;
+    background: var(--cs-page);
 }
 
 .prac-body {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
-    max-width: 640px;
-    /* Was missing on this page only (its 3 sibling pages all centre their
-       column) — on a wide screen the cards sat flush against the left
-       edge instead of in the middle of the page. */
+    padding: var(--cs-s5) var(--cs-s5) 40px;
+    /* Wide enough for a real 3-column grid — was 640px when this page was
+       one column of full-width cards; a 3-up composition needs the room a
+       single settings-form column never did. */
+    max-width: 1180px;
     margin: 0 auto;
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--cs-s4);
 }
 
+/* ── Grid rows — the load-bearing layout rule for this page: related cards
+   sit SIDE BY SIDE, never a lone full-width strip for something that fits
+   in a column. Two rows today (primary tier, secondary tier); `.prac-grid`
+   is generic so a future card slots into whichever tier it belongs to
+   without a new class. */
+.prac-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
+    gap: var(--cs-s4);
+    align-items: start;
+}
+
+.prac-grid + .prac-grid {
+    margin-top: var(--cs-s2);
+}
+
+@media (max-width: 980px) {
+    .prac-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+    .prac-grid { grid-template-columns: 1fr; }
+}
+
+/* ── The card primitive — `.cs-card` verbatim ────────────────────────────── */
 .prac-card {
-    background: #ffffff;
-    border: 1px solid #d0d8e8;
-    border-radius: 10px;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 1px solid var(--cs-line);
+    border-radius: var(--cs-radius);
+    background: var(--cs-card);
+    box-shadow: var(--cs-shadow);
 }
 
-.prac-card--soon {
-    opacity: 0.75;
+/* Secondary tier — related configuration, quieter by design (the brief:
+   "primary visual weight belongs to the defaults that save time; secondary
+   configuration can be quieter"). Smaller glyph, lighter title, tighter
+   body — never hidden, never lower contrast to the point of looking
+   disabled (a doctor should still read it at a glance). */
+.prac-card.is-quiet .prac-card-title {
+    font-weight: 650;
+    color: var(--cs-label);
 }
 
-.prac-card-header {
+.prac-card.is-quiet .prac-card-body {
+    padding-top: var(--cs-s2);
+    padding-bottom: var(--cs-s3);
+}
+
+.prac-card-head {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 11px 14px;
-    border-bottom: 1px solid #edf0f7;
-    background: #f7f9fc;
-}
-
-.prac-card-icon {
-    color: #64748b;
-}
-
-.prac-card-icon--blue {
-    color: #1268e8;
+    gap: var(--cs-s2);
+    flex: none;
+    padding: var(--cs-s3) var(--cs-s4) 0;
 }
 
 .prac-card-title {
-    font-size: 12px;
+    margin: 0;
+    color: var(--cs-ink);
+    font-size: 12.5px;
     font-weight: 700;
+    letter-spacing: 0.045em;
+    line-height: 1.2;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #334155;
 }
 
-.prac-card-count {
-    margin-left: auto;
-    font-size: 10px;
-    font-weight: 700;
-    color: #5b21b6;
-    background: rgba(124, 58, 237, 0.08);
-    border: 1px solid rgba(124, 58, 237, 0.18);
-    border-radius: 10px;
-    padding: 1px 7px;
+/* the tinted glyph tile — `.cs-glyph` verbatim, same four tones the rest
+   of Cortex already uses for the same meanings (blue = the action, teal =
+   medicine's own established tone from RecommendationsCard, violet =
+   "your own notes, not the catalogue" everywhere else it appears, slate =
+   quiet/utility). No fifth tone invented for this page. */
+.prac-glyph {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
 }
 
-.prac-card-body {
-    padding: 14px;
-}
-
-.prac-med-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.prac-med-row {
-    padding: 8px 10px;
-    background: #f7f9fc;
-    border: 1px solid #e2e8f5;
+.prac-card.is-quiet .prac-glyph {
+    width: 22px;
+    height: 22px;
     border-radius: 7px;
 }
 
-.prac-med-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: #1e293b;
+.prac-glyph.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.prac-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.prac-glyph.is-violet { background: #f5f3ff; color: var(--cs-violet); }
+.prac-glyph.is-slate { background: #f1f5f9; color: #475569; }
+
+.prac-count {
+    margin-left: auto;
+    flex: none;
+    border-radius: 7px;
+    background: var(--cs-blue-soft);
+    padding: 3px 9px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+}
+
+.prac-card-body {
+    padding: var(--cs-s4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s2);
+    flex: 1;
+    min-height: 0;
+}
+
+/* ── Capped row lists — the same mechanism Consult's ranked panels use
+   (`motion.div` tweening `maxHeight`, see `cortex-design-dna/motion.md`):
+   collapsed shows `cap` rows with no scrollbar, "Show all" unlocks a
+   bounded, scrolling box that stops mid-row on purpose. Rows are a plain
+   list with hairline separators, not boxes-inside-a-box — the brief:
+   "avoid... excessive rounded containers." ─────────────────────────────── */
+.prac-rows {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.prac-rows.is-expanded {
+    overflow-y: auto;
+}
+
+.prac-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    min-height: 34px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--cs-line);
+}
+
+.prac-row:last-child {
+    border-bottom: 0;
+}
+
+.prac-row-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 560;
     text-transform: capitalize;
 }
 
+/* The composition name in a Clinic Default Brands row ("<em>paracetamol</em>
+   → Aceto 650") — the molecule, muted, so the brand name it resolves to
+   still leads. Same treatment `.cs-card-title em` gives the identical
+   pattern elsewhere in Cortex. */
+.prac-row-label em {
+    color: var(--cs-faint);
+    font-style: normal;
+    font-weight: 500;
+}
+
+.prac-row-remove {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+
+.prac-row-remove:hover {
+    opacity: 1;
+    background: var(--cs-red-soft);
+    color: var(--cs-red);
+}
+
+/* One of four intent-type tags on a term row — the SAME hexes
+   SuggestionsCard's `.cs-sug-kind.is-*` already uses for the identical
+   meaning, so "Investigation" reads as the same shade of blue whether it's
+   a row in Consult or a tag here. */
+.prac-term-kind {
+    flex: none;
+    /* Fixed, not content-width — "Investigation" and "Advice" are different
+       lengths, and without this every row's label would start at a
+       different x depending on which type it carries. */
+    width: 68px;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.prac-term-kind.is-finding { color: #b45309; }
+.prac-term-kind.is-test { color: #1d4ed8; }
+.prac-term-kind.is-referral { color: #6d28d9; }
+.prac-term-kind.is-advice { color: #047857; }
+
+/* ── "Show all N" — `.cs-card-foot-more` verbatim ────────────────────────── */
+.prac-foot-more {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: var(--cs-s1);
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 2px 5px;
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.prac-foot-more:hover { color: var(--cs-blue); }
+
+.prac-foot-more svg {
+    transition: transform 0.15s ease;
+}
+
+.prac-foot-more svg.is-flipped {
+    transform: rotate(180deg);
+}
+
+/* ── Empty states — `.cs-empty` verbatim: one glance, never an essay ────── */
 .prac-empty {
-    font-size: 12px;
-    color: #94a3b8;
-    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cs-s2);
+    padding: var(--cs-s4) var(--cs-s2);
+    text-align: center;
+    flex: 1;
+}
+
+.prac-empty strong {
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 620;
+}
+
+.prac-empty span {
+    max-width: 30ch;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 460;
+    line-height: 1.5;
+}
+
+/* ── The two not-yet-built quiet cards — one honest sentence, the card's
+   own head icon already says what it's about, so no second illustration. */
+.prac-soon {
     margin: 0;
+    padding: 2px 2px 4px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 460;
+    line-height: 1.55;
+}
+
+/* ── Consultation Defaults — read-only summary + a real link out, never a
+   second specialty picker (SettingsPage owns that write). */
+.prac-quiet-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cs-s1);
+    padding: 2px 2px 4px;
+}
+
+.prac-quiet-pill {
+    align-self: flex-start;
+    border-radius: 999px;
+    background: #f1f5f9;
+    padding: 3px 10px;
+    color: var(--cs-ink);
+    font-size: 11.5px;
+    font-weight: 650;
+}
+
+.prac-quiet-sub {
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 460;
+    line-height: 1.5;
+}
+
+.prac-quiet-link {
+    align-self: flex-start;
+    border: 0;
+    background: none;
+    padding: 2px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.prac-quiet-link:hover {
+    text-decoration: underline;
+}
+
+/* ── Loading — the existing shimmer, just given a row rhythm to sit in ──── */
+.prac-skel-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 2px;
 }
 
 .prac-skeleton {
