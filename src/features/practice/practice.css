@@ -34,7 +34,7 @@
        inside that shell — the same 36px Patients' `.prec-page-body` already
        uses for its own dense workspace (`patients-shell.css`), not a new
        number picked for this page alone. */
-    padding: var(--cs-s5) 36px 40px;
+    padding: var(--cs-s5) 56px 44px;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -61,6 +61,14 @@
        A fixed `height` was what produced 295px of measured dead space
        under a one-row Preferred Labs card (2026-08-27, screenshotted). */
     align-items: stretch;
+}
+
+.prac-grid.is-2col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+    .prac-grid.is-2col { grid-template-columns: 1fr; }
 }
 
 .prac-grid + .prac-grid {
@@ -98,7 +106,9 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: var(--cs-s3);
-    padding-bottom: var(--cs-s1);
+    /* Measured 2026-08-27: only 9px sat between this band and the first
+       card, so the page's heading read as glued to the grid. */
+    margin-bottom: 15px;
 }
 
 .prac-group-head-text {
@@ -187,11 +197,10 @@
    yet — "for now, simply redirect there"). */
 .prac-related {
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: var(--cs-s3);
-    margin-top: var(--cs-s2);
-    padding-top: var(--cs-s3);
+    margin-top: var(--cs-s3);
+    padding-top: var(--cs-s4);
     border-top: 1px solid var(--cs-line);
 }
 
@@ -204,21 +213,34 @@
 }
 
 .prac-related-links {
+    flex: 1;
+    min-height: 0;
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--cs-s2);
+    flex-direction: column;
+    gap: 6px;
 }
 
 .prac-related-links button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     border: 1px solid var(--cs-line);
-    border-radius: 999px;
+    border-radius: 10px;
     background: none;
-    padding: 5px 12px;
-    color: var(--cs-muted);
-    font-size: 11.5px;
-    font-weight: 550;
+    padding: 0 14px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
     cursor: pointer;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.prac-related-links button::after {
+    content: "\2192";
+    color: var(--cs-faint);
+    font-weight: 500;
 }
 
 .prac-related-links button:hover {
@@ -260,7 +282,7 @@
    + body bottom padding (12px) ≈ 357px, rounded to 380px. Seven rows is
    the reference image's own visible-row count for this card. */
 .prac-card.is-fixed {
-    max-height: 380px;
+    height: 320px;
 }
 
 /* Secondary tier — related configuration, quieter by design (the brief:
@@ -372,21 +394,27 @@
 
 /* The inline call to action inside an empty state — a real button, not a
    sentence describing where to go. */
+/* 2026-08-27: Add New Medicine had a bordered pill while Companions had a
+   small text link, so two cards in the same row read as two different
+   components ("this symmetry doesn't match"). One style now. */
 .prac-empty-action {
-    margin-top: 2px;
-    border: 1px solid var(--cs-line-strong);
+    margin-top: var(--cs-s2);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1.5px solid var(--cs-blue);
     border-radius: 999px;
-    background: none;
-    padding: 6px 14px;
+    background: #fff;
+    padding: 9px 18px;
     color: var(--cs-blue);
-    font-size: 11.5px;
+    font-size: 12.5px;
     font-weight: 650;
     cursor: pointer;
+    transition: background 0.12s;
 }
 
 .prac-empty-action:hover {
     background: var(--cs-blue-soft);
-    border-color: transparent;
 }
 
 .prac-card-body {
@@ -672,10 +700,11 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--cs-s2);
-    padding: var(--cs-s4) var(--cs-s2);
+    gap: 5px;
+    padding: var(--cs-s3) var(--cs-s2);
     text-align: center;
     flex: 1;
+    min-height: 0;
 }
 
 .prac-empty strong {
@@ -692,43 +721,32 @@
     line-height: 1.5;
 }
 
-/* ── Add New Medicine — an always-on action card, not a conditional empty
-   state (its "fact" line is the card's own subtitle, `.prac-card-sub`),
-   so it doesn't reuse `.prac-empty`'s fact/next/action ordering — the
-   reference puts the caption BELOW the button, not above it. */
-.prac-addmed-cta {
+/* A list that has not filled its card yet ends with a quiet "add another"
+   row rather than trailing off into blank space. It is bottom-anchored
+   (`margin-top: auto`), so the card has a defined foot at any row count —
+   and unlike filler, it is the actual next thing the doctor would do. */
+.prac-ghost-add {
+    margin-top: auto;
+    flex: none;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--cs-s2);
-    flex: 1;
-    text-align: center;
-}
-
-.prac-addmed-btn {
-    display: inline-flex;
-    align-items: center;
     gap: 6px;
-    border: 1.5px solid var(--cs-teal);
-    border-radius: 999px;
-    background: #fff;
-    padding: 9px 18px;
-    color: var(--cs-teal);
-    font-size: 12.5px;
-    font-weight: 650;
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: 10px;
+    background: none;
+    padding: 9px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.12s;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.prac-addmed-btn:hover {
-    background: var(--cs-teal-soft);
-}
-
-.prac-addmed-caption {
-    color: var(--cs-faint);
-    font-size: 11px;
-    font-weight: 460;
+.prac-ghost-add:hover {
+    background: var(--cs-blue-soft);
+    border-color: transparent;
+    color: var(--cs-blue);
 }
 
 /* ── The two not-yet-built quiet cards — one honest sentence, the card's
@@ -786,10 +804,37 @@
 /* Consultation Defaults, widened (§13): two configurable pieces side by
    side rather than one pill and a link alone in a wide card — the specialty
    chart, and now the measurement set within it. */
-.prac-defaults-row {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(200px, 1fr));
-    gap: var(--cs-s4);
+.prac-setting-list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Each row shares the card's remaining height, so two settings fill the
+   card rather than sitting as two short pills with a hole underneath. */
+.prac-setting-row {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s3);
+    border: 0;
+    border-bottom: 1px solid var(--cs-line);
+    background: none;
+    padding: 0 2px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.prac-setting-row:last-child { border-bottom: 0; }
+.prac-setting-row:hover .prac-row-label { color: var(--cs-blue); }
+
+/* `.prac-quiet-pill` sets `align-self: flex-start` for its old inline use;
+   in a tall setting row that floats the value to the top-right, detached
+   from the label it belongs to. */
+.prac-setting-row .prac-quiet-pill {
+    align-self: center;
+    flex: none;
 }
 
 @media (max-width: 640px) {
@@ -825,6 +870,9 @@
 
 .prac-term-add input {
     flex: 1;
+    /* Capped: measured at 1460px on a wide monitor — a text field stretched
+       across most of the screen to hold two or three words. */
+    max-width: 460px;
     min-width: 0;
     height: 34px;
     border: 1px solid var(--cs-line);

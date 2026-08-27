@@ -349,6 +349,7 @@ function PreferredMedicinesCard({
     // opening one composition closes any other, so the bounded scroll area
     // stays predictable rather than growing with every group opened.
     const [expandedId, setExpandedId] = useState<number | null>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
     const reduce = useReducedMotion();
     const headerRefs = useRef(new Map<number, HTMLButtonElement>());
 
@@ -471,7 +472,9 @@ function PreferredMedicinesCard({
             icon={<Pill size={14} />} tone="teal" title="Preferred Medicines" count={brands.length} fixed
             subtitle="Medicines your practice prefers to use, grouped by composition."
         >
-            <IntentSearchField state={search} placeholder="Search medicine or composition…" />
+            <div ref={searchRef as any}>
+                <IntentSearchField state={search} placeholder="Search medicine or composition…" />
+            </div>
             {search.isSearching ? (
                 <div className="prac-search-results">
                     {drill ? (
@@ -564,7 +567,8 @@ function PreferredMedicinesCard({
             ) : brandsLoading ? (
                 <SkelRows count={3} />
             ) : groups.length > 0 ? (
-                <div className="prac-tree">
+                <>
+                    <div className="prac-tree">
                     {groups.map((g) => {
                         const open = expandedId === g.compositionId;
                         return (
@@ -603,7 +607,14 @@ function PreferredMedicinesCard({
                             </div>
                         );
                     })}
-                </div>
+                    </div>
+                    <button
+                        type="button" className="prac-ghost-add"
+                        onClick={() => searchRef.current?.querySelector("input")?.focus()}
+                    >
+                        <Plus size={13} /> Add another medicine
+                    </button>
+                </>
             ) : (
                 <EmptyBlock
                     art={<BlankMedicineArt />} fact="No preferred medicines yet"
@@ -1234,30 +1245,27 @@ function CompanionsModal({
     return (
         <PracticeModal
             accent="violet" icon={<Sparkles size={15} />} eyebrow="Clinical Companions"
-            title="Configure this practice's companions" onClose={onClose} wide
+            title="Companions Cortex may suggest" onClose={onClose} wide
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
-            <p className="prac-soon">
-                Cortex offers these as suggestions during a consult. It never adds one on its own.
-            </p>
-
             {/* The lists come FIRST. Rebuilt 2026-08-27: the add-a-pairing
                 form used to sit above them, which pushed every configured
                 companion below the fold — "there is no any way to see where
-                our already made companions are". */}
-            <div className="prac-modal-section-title">
-                <span>Your practice's own pairings</span>
-                {authoredEntries.length > 0 && (
-                    <span className="prac-section-count">
-                        {Math.min(COMPANION_VISIBLE, authoredEntries.length)} of {authoredEntries.length}
-                        {authoredEntries.length > COMPANION_VISIBLE ? " · scroll for more" : ""}
-                    </span>
-                )}
-            </div>
-            {authoredEntries.length === 0 ? (
-                <p className="prac-soon">None yet. Add one at the bottom of this panel.</p>
-            ) : (
-                <div className="prac-modal-rows is-companion-list">
+                our already made companions are". The header stack was cut
+                the same day: an eyebrow, a title, an explanatory sentence
+                and a section header over the words "None yet" is four
+                headings before any content ("too much text, too much
+                cramped up things"). */}
+            {authoredEntries.length > 0 && (
+                <>
+                    <div className="prac-modal-section-title">
+                        <span>Yours</span>
+                        <span className="prac-section-count">
+                            {Math.min(COMPANION_VISIBLE, authoredEntries.length)} of {authoredEntries.length}
+                            {authoredEntries.length > COMPANION_VISIBLE ? " · scroll for more" : ""}
+                        </span>
+                    </div>
+                    <div className="prac-modal-rows is-companion-list">
                     {authoredEntries.map((e) => (
                         <div key={`${e.intentId}-${e.companionIntentId}`} className="prac-companion-row">
                             <span className="prac-med-icon is-violet" aria-hidden="true"><Sparkles size={13} /></span>
@@ -1268,11 +1276,12 @@ function CompanionsModal({
                             <RemoveBtn label="Remove this pairing" onClick={() => removeAuthored(e)} />
                         </div>
                     ))}
-                </div>
+                    </div>
+                </>
             )}
 
             <div className="prac-modal-section-title">
-                <span>Common pairings, every Cortex clinic</span>
+                <span>Common pairings</span>
                 {catalogue.length > 0 && (
                     <span className="prac-section-count">
                         {Math.min(COMPANION_VISIBLE, catalogue.length)} of {catalogue.length}
@@ -1308,7 +1317,7 @@ function CompanionsModal({
                 </div>
             )}
 
-            <div className="prac-modal-section-title">Add your own pairing</div>
+            <div className="prac-modal-section-title"><span>Add your own</span></div>
             <div className="prac-companion-author">
                 {error && <p className="prac-modal-error">{error}</p>}
                 <div className="prac-modal-field">
@@ -1467,56 +1476,40 @@ export function PracticePage({
                 onOpenSidebar={onOpenSidebar}
                 title="Practice"
                 subtitle="Tune Cortex to the way you practice"
+                rightSlot={
+                    /* On the DARK bar, not on the page. As a light band it
+                       read as an undifferentiated strip of the workspace
+                       ("that's not the part of a normal screen"); the header
+                       is where a count belongs, and `.ws-stat-pill` is the
+                       capsule this header already uses for exactly that. */
+                    <>
+                        <span className="ws-stat-pill">
+                            <span className="ws-stat-value">{brands.length}</span>
+                            <span className="ws-stat-label">Medicines</span>
+                        </span>
+                        <span className="ws-stat-pill">
+                            <span className="ws-stat-value">{preferredLabs.length}</span>
+                            <span className="ws-stat-label">Labs</span>
+                        </span>
+                        <span className="ws-stat-pill">
+                            <span className="ws-stat-value">{templates.length}</span>
+                            <span className="ws-stat-label">Templates</span>
+                        </span>
+                        <span className="ws-stat-pill">
+                            <span className="ws-stat-value">{companions.filter((c) => c.enabled).length}</span>
+                            <span className="ws-stat-label">Companions</span>
+                        </span>
+                    </>
+                }
             />
 
             <div className="prac-body">
-                {/* ── CLINICAL DEFAULTS — what Cortex reaches for first during a
-                    consultation. The dark Cortex header above already says
-                    "Practice — Tune Cortex to the way you practice"; a second
-                    intro block repeating that was redundant floating prose,
-                    cut per the reference layout. The 4 stat tiles that used
-                    to live in that block now sit on THIS group's own header
-                    row instead — one line, title+sub on the left, counts on
-                    the right, not a separate section above everything else.
-                    Two rows of three cards below it: the practice's concrete
-                    preferences, then the surfaces that extend/configure them. */}
+                {/* Two rows of three. No on-page section heading: the dark
+                    header already says "Practice — Tune Cortex to the way you
+                    practice", and the counts now live up there too, so a
+                    repeated "Clinical defaults" line was saying nothing the
+                    top bar had not already said. */}
                 <div className="prac-group">
-                    <div className="prac-group-head">
-                        <div className="prac-group-head-text">
-                            <h2 className="prac-group-title">Clinical defaults</h2>
-                            <p className="prac-group-sub">What Cortex reaches for first during a consultation.</p>
-                        </div>
-                        <div className="prac-stat-row">
-                            <div className="prac-stat">
-                                <span className="prac-stat-icon is-teal"><Link2 size={14} /></span>
-                                <span className="prac-stat-text">
-                                    <b>{brands.length}</b>
-                                    <span>Preferred medicines</span>
-                                </span>
-                            </div>
-                            <div className="prac-stat">
-                                <span className="prac-stat-icon is-slate"><FlaskConical size={14} /></span>
-                                <span className="prac-stat-text">
-                                    <b>{preferredLabs.length}</b>
-                                    <span>Preferred labs</span>
-                                </span>
-                            </div>
-                            <div className="prac-stat">
-                                <span className="prac-stat-icon is-violet"><Layers size={14} /></span>
-                                <span className="prac-stat-text">
-                                    <b>{templates.length}</b>
-                                    <span>Templates</span>
-                                </span>
-                            </div>
-                            <div className="prac-stat">
-                                <span className="prac-stat-icon is-blue"><Package size={14} /></span>
-                                <span className="prac-stat-text">
-                                    <b>{companions.filter((c) => c.enabled).length}</b>
-                                    <span>Companions</span>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
                     <div className="prac-grid">
                         <PreferredMedicinesCard
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
@@ -1532,6 +1525,7 @@ export function PracticePage({
                             {!identity.ready ? (
                                 <SkelRows count={3} />
                             ) : preferredLabs.length > 0 ? (
+                                <>
                                 <CappedRows
                                     items={preferredLabs} cap={4} showAllLabel="Show all" keyOf={(l) => l.id}
                                     renderRow={(l) => (
@@ -1545,6 +1539,10 @@ export function PracticePage({
                                         </>
                                     )}
                                 />
+                                <button type="button" className="prac-ghost-add" onClick={() => setLabsModalOpen(true)}>
+                                    <Plus size={13} /> Add another lab
+                                </button>
+                                </>
                             ) : (
                                 <EmptyBlock
                                     art={<BlankLabArt />} fact="No preferred labs yet"
@@ -1562,6 +1560,7 @@ export function PracticePage({
                             {!identity.ready ? (
                                 <SkelRows count={3} />
                             ) : templates.length > 0 ? (
+                                <>
                                 <CappedRows
                                     items={templates} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
                                     showAllLabel="Show all" keyOf={(t) => t.id}
@@ -1576,6 +1575,10 @@ export function PracticePage({
                                         </button>
                                     )}
                                 />
+                                <button type="button" className="prac-ghost-add" onClick={() => setEditingTemplate("new")}>
+                                    <Plus size={13} /> New template
+                                </button>
+                                </>
                             ) : (
                                 <EmptyBlock
                                     art={<BlankTemplateArt />} fact="No templates yet"
@@ -1591,16 +1594,16 @@ export function PracticePage({
                             icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
                             subtitle="Can't find the medicine you need? Add it to our database."
                         >
-                            <div className="prac-addmed-cta">
-                                <BlankAddMedicineArt />
-                                <button
-                                    type="button" className="prac-addmed-btn"
-                                    onClick={() => setAddMedicineOpen({ initialName: "" })}
-                                >
-                                    <Plus size={14} /> Add new medicine
-                                </button>
-                                <span className="prac-addmed-caption">Submit details for review and approval.</span>
-                            </div>
+                            <EmptyBlock
+                                art={<BlankAddMedicineArt />}
+                                fact="Not in our database yet?"
+                                next="Submit its details and we'll review and add it."
+                                action={
+                                    <button type="button" className="prac-empty-action" onClick={() => setAddMedicineOpen({ initialName: "" })}>
+                                        <Plus size={14} /> Add new medicine
+                                    </button>
+                                }
+                            />
                         </PracticeCard>
 
                         <PracticeCard
@@ -1630,42 +1633,49 @@ export function PracticePage({
                             ) : (
                                 <EmptyBlock
                                     art={<BlankCompanionArt />} fact="No companions configured"
-                                    next="Curate common pairings or add your own. Cortex only ever suggests them."
-                                    action={<button type="button" className="prac-empty-action" onClick={() => setCompanionModalOpen(true)}>Manage companions</button>}
+                                    next="Cortex only ever suggests these, never adds them."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setCompanionModalOpen(true)}>
+                                            <Sparkles size={14} /> Set up companions
+                                        </button>
+                                    }
                                 />
                             )}
                         </PracticeCard>
 
-                        <PracticeCard icon={<SlidersHorizontal size={13} />} tone="slate" title="Consultation Defaults" quiet>
-                            <div className="prac-defaults-row">
-                                <div className="prac-quiet-row">
+                        <PracticeCard
+                            icon={<SlidersHorizontal size={13} />} tone="slate" title="Consultation Defaults" fixed
+                            subtitle="How Cortex opens a consultation."
+                        >
+                            <div className="prac-setting-list">
+                                <button type="button" className="prac-setting-row" onClick={() => onNavigate("settings")}>
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label">Consultation profile</span>
+                                        <span className="prac-med-brands">Which chart Cortex opens with</span>
+                                    </div>
                                     <span className="prac-quiet-pill">{specialty.label}</span>
-                                    <span className="prac-quiet-sub">Which chart Cortex opens with.</span>
-                                    <button type="button" className="prac-quiet-link" onClick={() => onNavigate("settings")}>
-                                        Change specialty in Settings →
-                                    </button>
-                                </div>
-                                <div className="prac-quiet-row">
+                                </button>
+                                <button type="button" className="prac-setting-row" onClick={() => setMeasurementsModalOpen(true)}>
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label">Default measurements</span>
+                                        <span className="prac-med-brands">Shown when a consult opens</span>
+                                    </div>
                                     <span className="prac-quiet-pill is-alt">{measureCount} of {specialty.measurements.length}</span>
-                                    <span className="prac-quiet-sub">Measurements shown by default.</span>
-                                    <button type="button" className="prac-quiet-link" onClick={() => setMeasurementsModalOpen(true)}>
-                                        Configure measurements →
-                                    </button>
-                                </div>
+                                </button>
                             </div>
                         </PracticeCard>
                     </div>
                 </div>
 
-                {/* ── TIER 3: PRACTICE VOCABULARY ─────────────────────────────── */}
-                <div className="prac-group">
-                    <div className="prac-group-head">
-                        <div className="prac-group-head-text">
-                            <h2 className="prac-group-title">Practice vocabulary</h2>
-                            <p className="prac-group-sub">Your own words, remembered for next time.</p>
-                        </div>
-                    </div>
-                    <PracticeCard icon={<BookText size={14} />} tone="violet" title="Your Clinical Terms" count={terms.length}>
+                {/* Paired, never full-width. A single card stretched across the
+                    whole workspace is what made this read as "a very long and
+                    stretched horizontal section"; Related Settings moves up
+                    beside it instead of sitting alone underneath. */}
+                <div className="prac-grid is-2col">
+                    <PracticeCard
+                        icon={<BookText size={14} />} tone="violet" title="Your Clinical Terms" count={terms.length} fixed
+                        subtitle="Your own words, remembered for next time."
+                    >
                         <div className="prac-term-add">
                             <select value={newTermType} onChange={(e) => setNewTermType(e.target.value as DoctorFreeTermType)}>
                                 {(Object.keys(TERM_TYPE_LABEL) as DoctorFreeTermType[]).map((t) => (
@@ -1706,18 +1716,18 @@ export function PracticePage({
                             <EmptyBlock art={<BlankTermArt />} fact="Nothing added yet" next="Add one above, or type it during a consult. Either way it is remembered here." />
                         )}
                     </PracticeCard>
-                </div>
 
-                {/* ── RELATED SETTINGS — real navigation today, dedicated pages
-                    to come. Never a dead card: each of these already exists. */}
-                <div className="prac-related">
-                    <span className="prac-related-title">Related settings</span>
-                    <div className="prac-related-links">
-                        <button type="button" onClick={() => onNavigate("clinic")}>Clinic Settings</button>
-                        <button type="button" onClick={() => onNavigate("settings")}>Doctor Profile</button>
-                        <button type="button" onClick={() => onNavigate("communication")}>Communication</button>
-                        <button type="button" onClick={() => onNavigate("settings")}>Account &amp; Security</button>
-                    </div>
+                    <PracticeCard
+                        icon={<SlidersHorizontal size={13} />} tone="slate" title="Related Settings" fixed
+                        subtitle="Other settings that are often used alongside these."
+                    >
+                        <div className="prac-related-links">
+                            <button type="button" onClick={() => onNavigate("clinic")}>Clinic Settings</button>
+                            <button type="button" onClick={() => onNavigate("settings")}>Doctor Profile</button>
+                            <button type="button" onClick={() => onNavigate("communication")}>Communication</button>
+                            <button type="button" onClick={() => onNavigate("settings")}>Account &amp; Security</button>
+                        </div>
+                    </PracticeCard>
                 </div>
             </div>
 
