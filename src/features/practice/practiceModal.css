@@ -378,6 +378,18 @@
 
 .prac-modal-row:last-child { border-bottom: 0; }
 
+/* Timestamp trailing a read-only row (Add New Medicine's "View added"
+   history) — same tabular-numeric, muted treatment as `.prac-section-count`
+   so a date reads as metadata, not as content competing with the name. */
+.prac-modal-row-time {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .prac-modal-section-title {
     display: flex;
     align-items: baseline;

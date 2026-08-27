@@ -58,7 +58,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    ArrowDown, ArrowUp, BookText, Check, ChevronDown, FlaskConical, Layers,
+    ArrowDown, ArrowUp, BookText, Check, ChevronDown, Clock, FlaskConical, Layers,
     Link2, Package, Pill, Plus, SlidersHorizontal, Sparkles, Star,
     ToggleLeft, ToggleRight, X,
 } from "lucide-react";
@@ -69,14 +69,15 @@ import {
     createHospitalCompanionEdge, createPrescriptionTemplate, deleteDoctorFreeTerm,
     deleteHospitalCompanionEdge, deletePrescriptionTemplate, duplicatePrescriptionTemplate,
     fetchAuthoredCompanionCatalogue, fetchBrandsForComposition, fetchClinicBrandDefaultDetails,
-    fetchDoctorFreeTermDetails, fetchHospitalCompanionDetails, fetchPrescriptionTemplateDetail,
+    fetchDoctorFreeTermDetails, fetchHospitalAddedMedicines, fetchHospitalCompanionDetails,
+    fetchPrescriptionTemplateDetail,
     loadPreferredLabs, loadPrescriptionTemplateSummaries, removePreferredLab,
     replacePrescriptionTemplateItems, reorderPreferredLabs, saveDoctorFreeTerm,
     setClinicBrandDefault, setDefaultPreferredLab, setDoctorMeasurePrefs,
     setHospitalCompanionCuration, updatePrescriptionTemplateMeta,
     type AuthoredCompanionEdgeDetail, type ClinicBrandDefaultDetail, type DoctorFreeTermDetail,
-    type DoctorFreeTermType, type HospitalCompanionDetail, type PreferredLab,
-    type PrescriptionTemplateSummary,
+    type DoctorFreeTermType, type HospitalAddedMedicine, type HospitalCompanionDetail,
+    type PreferredLab, type PrescriptionTemplateSummary,
 } from "../../lib/db/synapse";
 import type { IntentSearchHit } from "../../lib/db/synapse";
 import type { IntentType } from "../../lib/synapse/engine";
@@ -1158,6 +1159,55 @@ function AddMedicineModal({
     );
 }
 
+/** Read-only history for "Add New Medicine" — every brand this practice has
+ *  ever submitted, newest first, each with the salt it was filed under and
+ *  when it was added. Nothing here is editable; Preferred Medicines is
+ *  where a doctor manages what Consult actually shows. */
+function AddedMedicinesModal({ hospitalId, onClose }: { hospitalId: string; onClose: () => void }) {
+    const [rows, setRows] = useState<HospitalAddedMedicine[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetchHospitalAddedMedicines(hospitalId)
+            .then(setRows)
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    }, [hospitalId]);
+
+    return (
+        <PracticeModal
+            accent="teal" icon={<Clock size={15} />} eyebrow="Add New Medicine"
+            title="Medicines you've added" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {loading ? (
+                <SkelRows count={4} />
+            ) : rows.length === 0 ? (
+                <p className="prac-soon">Nothing added yet. New brands you create show up here with a timestamp.</p>
+            ) : (
+                <div className="prac-modal-rows">
+                    {rows.map((m) => (
+                        <div key={m.id} className="prac-modal-row">
+                            <div className="prac-med-info">
+                                <span className="prac-row-label">{m.name}</span>
+                                <span className="prac-med-brands">
+                                    {m.compositionNames.length > 0 ? m.compositionNames.join(" + ") : "No salt on file"}
+                                    {m.manufacturer ? ` · ${m.manufacturer}` : ""}
+                                </span>
+                            </div>
+                            <span className="prac-modal-row-time">
+                                {new Date(m.createdAt).toLocaleString("en-IN", {
+                                    day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
+                                })}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
 /**
  * CLINICAL COMPANIONS — the practice-specific layer over Synapse's
  * ALREADY-authored `intent_companions` edges (§17/§18 of the brief: reuse
@@ -1416,6 +1466,7 @@ export function PracticePage({
 
     const [labsModalOpen, setLabsModalOpen] = useState(false);
     const [addMedicineOpen, setAddMedicineOpen] = useState<{ initialName: string } | null>(null);
+    const [addedMedicinesOpen, setAddedMedicinesOpen] = useState(false);
     const [companionModalOpen, setCompanionModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<number | "new" | null>(null);
     const [measurementsModalOpen, setMeasurementsModalOpen] = useState(false);
@@ -1593,6 +1644,7 @@ export function PracticePage({
                         <PracticeCard
                             icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
                             subtitle="Can't find the medicine you need? Add it to our database."
+                            action={<button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>View added</button>}
                         >
                             <EmptyBlock
                                 art={<BlankAddMedicineArt />}
@@ -1674,7 +1726,7 @@ export function PracticePage({
                 <div className="prac-grid is-2col">
                     <PracticeCard
                         icon={<BookText size={14} />} tone="violet" title="Your Clinical Terms" count={terms.length} fixed
-                        subtitle="Your own words, remembered for next time."
+                        subtitle="Your terms, in your words — Synapse remembers them for next time."
                     >
                         <div className="prac-term-add">
                             <select value={newTermType} onChange={(e) => setNewTermType(e.target.value as DoctorFreeTermType)}>
@@ -1744,6 +1796,12 @@ export function PracticePage({
                     initialName={addMedicineOpen.initialName}
                     onClose={() => setAddMedicineOpen(null)}
                     onCreated={(row) => setBrands((curr) => [row, ...curr.filter((b) => b.medicineId !== row.medicineId)])}
+                />
+            )}
+            {addedMedicinesOpen && (
+                <AddedMedicinesModal
+                    hospitalId={identity.hospitalId}
+                    onClose={() => setAddedMedicinesOpen(false)}
                 />
             )}
             {companionModalOpen && (

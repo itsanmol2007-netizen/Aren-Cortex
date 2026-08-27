@@ -162,9 +162,9 @@
 }
 
 .ws-header-title {
-    font-size: 15px;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.97);
+    font-size: 16.5px;
+    font-weight: 750;
+    color: rgba(255, 255, 255, 0.98);
     letter-spacing: -0.015em;
     white-space: nowrap;
     /* Multi-layer text shadow — helps punch through the nebula
@@ -176,9 +176,9 @@
 }
 
 .ws-header-subtitle {
-    font-size: 12px;
-    font-weight: 400;
-    color: rgba(255, 255, 255, 0.42);
+    font-size: 12.5px;
+    font-weight: 450;
+    color: rgba(255, 255, 255, 0.52);
     white-space: nowrap;
     text-shadow:
         0 1px 8px rgba(5, 9, 22, 0.85),
@@ -200,16 +200,20 @@
 .ws-stat-pill {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 13px;
+    gap: 7px;
+    padding: 6px 14px;
     border-radius: 20px;
     background: rgba(5, 9, 22, 0.68);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.17);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     white-space: nowrap;
-    /* Small shadow to ensure readability even on nebula fringe */
-    box-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+    /* Small shadow to ensure readability even on nebula fringe, plus a
+       faint inset top highlight so the capsule reads as raised glass
+       rather than a flat tag — "visually better", not a new colour. */
+    box-shadow:
+        0 1px 8px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .ws-stat-pill--active {
@@ -221,9 +225,9 @@
 }
 
 .ws-stat-value {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 800;
-    color: rgba(255, 255, 255, 0.95);
+    color: rgba(255, 255, 255, 0.96);
     letter-spacing: -0.01em;
     line-height: 1;
 }
@@ -233,9 +237,9 @@
 }
 
 .ws-stat-label {
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.44);
+    color: rgba(255, 255, 255, 0.50);
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }

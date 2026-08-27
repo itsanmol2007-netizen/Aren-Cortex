@@ -80,3 +80,17 @@ So:
 A card is allowed to be short when its content is short. That is honest,
 and `empty-states.md` has forbidden the alternative since 2026-08-25:
 *"a 62px illustration in a 300px well reads as an accident."*
+
+## Resting shadow gets a hover state (added 2026-08-27)
+
+`--cs-shadow` alone (`0 1px 1px rgba(16,28,46,.03)`) is correct at rest —
+but a page of otherwise-identical cards asked for "visual weight" reads as
+flat, not calm, until something responds to the pointer. `.prac-card`
+(and any card built on this recipe) gets a `transition` on
+`box-shadow`/`border-color`/`transform`, and a `:hover` state: a 1px lift
+plus a soft shadow tinted with `--cs-blue` at low opacity (the action
+colour, not a new one — colour.md's rule for every accent applies to a
+hover glow too). Guard it with `@media (prefers-reduced-motion: reduce)`
+same as every other transform on this page (motion.md). Do not invent a
+heavier lift or a stronger tint "to make sure it reads" — the resting
+shadow was 0.03 opacity; 0.08 on hover is already a large relative jump.

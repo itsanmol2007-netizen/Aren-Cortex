@@ -55,3 +55,12 @@ title, 12.5px for the sub, and 22px numerals in the stat tiles — roughly
 
 The rest of this file still holds: it is a *scale* change, not a licence
 for a hero. Still one title, still one line under it, still no paragraph.
+
+**Follow-up (2026-08-27):** the individual card titles inside the page
+(`.prac-card-title`) still read light against that bigger page header —
+bumped 12.5px → 13.5px, one step, not a rescale of the whole card. The
+`WorkspaceHeader` title/subtitle these numbers describe is **shared by
+every page** that mounts it (Patients, Communication, Clinic, Support,
+Practice, not just this one) — a future bump there is a whole-app decision,
+not a Practice-page tweak, so keep it small and justify it against more
+than one page before touching `workspace-header.css` again.

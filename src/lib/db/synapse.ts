@@ -918,6 +918,67 @@ export async function addMedicine(opts: {
     }));
 }
 
+export type HospitalAddedMedicine = {
+    id: number;
+    name: string;
+    manufacturer: string | null;
+    strengthMg: number | null;
+    createdAt: string;
+    /** every composition this product was linked to on creation */
+    compositionNames: string[];
+};
+
+/**
+ * Every medicine THIS hospital has added via `addMedicine` — the read side
+ * of "Add New Medicine", so a doctor can see what the practice has already
+ * submitted rather than only ever seeing the create form. `medicines.
+ * hospital_id` is exactly the marker `addMedicine`'s own doc comment
+ * describes ("hospital-scoped on creation, never global"), so filtering on
+ * it is already the correct "added here" set — no separate log table.
+ */
+export async function fetchHospitalAddedMedicines(hospitalId: string): Promise<HospitalAddedMedicine[]> {
+    const { data: meds, error } = await supabase
+        .from("medicines")
+        .select("id, name, manufacturer, strength_mg, created_at")
+        .eq("hospital_id", hospitalId)
+        .order("created_at", { ascending: false });
+    if (error) throw new Error(`fetchHospitalAddedMedicines (medicines): ${error.message}`);
+    if (!meds || meds.length === 0) return [];
+
+    const medIds = meds.map((m: any) => Number(m.id));
+    const { data: maps, error: mapErr } = await supabase
+        .from("medicine_composition_map")
+        .select("medicine_id, composition_id")
+        .in("medicine_id", medIds);
+    if (mapErr) throw new Error(`fetchHospitalAddedMedicines (map): ${mapErr.message}`);
+
+    const compIds = [...new Set((maps ?? []).map((m: any) => Number(m.composition_id)))];
+    const { data: comps, error: compErr } = compIds.length
+        ? await supabase.from("compositions").select("id, name").in("id", compIds)
+        : { data: [], error: null };
+    if (compErr) throw new Error(`fetchHospitalAddedMedicines (compositions): ${compErr.message}`);
+    const compNameById = new Map<number, string>();
+    (comps ?? []).forEach((c: any) => compNameById.set(Number(c.id), c.name));
+
+    const compNamesByMed = new Map<number, string[]>();
+    (maps ?? []).forEach((m: any) => {
+        const medId = Number(m.medicine_id);
+        const name = compNameById.get(Number(m.composition_id));
+        if (!name) return;
+        const list = compNamesByMed.get(medId);
+        if (list) list.push(name); else compNamesByMed.set(medId, [name]);
+    });
+
+    return meds.map((m: any) => ({
+        id: Number(m.id),
+        name: m.name,
+        manufacturer: m.manufacturer ?? null,
+        strengthMg: m.strength_mg == null ? null : Number(m.strength_mg),
+        createdAt: m.created_at,
+        compositionNames: compNamesByMed.get(Number(m.id)) ?? [],
+    }));
+}
+
 // ============================================================
 // COMPANIONS
 // ============================================================

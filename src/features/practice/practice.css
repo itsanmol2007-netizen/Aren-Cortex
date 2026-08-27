@@ -258,6 +258,23 @@
     border-radius: var(--cs-radius);
     background: var(--cs-card);
     box-shadow: var(--cs-shadow);
+    transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+/* A resting shadow of 1px was doing nothing to separate seven cards from
+   the page under them — "add some visual weight". Lift is small on
+   purpose (1px, not a card that jumps at you) and the glow borrows
+   `--cs-blue` (the action colour) at low opacity rather than inventing an
+   eighth colour, same rule colour.md already states for every accent. */
+.prac-card:hover {
+    border-color: var(--cs-line-strong);
+    box-shadow: 0 6px 20px rgba(18, 104, 232, 0.08), 0 1px 2px rgba(16, 28, 46, 0.06);
+    transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .prac-card { transition: none; }
+    .prac-card:hover { transform: none; }
 }
 
 /* ── Bounded, not fixed — corrected 2026-08-27 after actually rendering it ──
@@ -311,9 +328,9 @@
 .prac-card-title {
     margin: 0;
     color: var(--cs-ink);
-    font-size: 12.5px;
+    font-size: 13.5px;
     font-weight: 700;
-    letter-spacing: 0.045em;
+    letter-spacing: 0.04em;
     line-height: 1.2;
     text-transform: uppercase;
 }
