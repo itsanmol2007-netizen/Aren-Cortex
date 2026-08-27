@@ -580,7 +580,19 @@ export type ClinicBrandDefaultDetail = {
     medicineName: string;
     /** e.g. "paracetamol" — the molecule it satisfies, for context. */
     compositionName: string;
+    /** The FILTER this preference is scoped to ("only when the form
+     *  matches") — `clinic_brand_preference.form`, unchanged meaning, used
+     *  by `fetchCompositionBrands`'s `isClinicDefault` computation. NOT the
+     *  product's own dosage form — see `productForm` for that. */
     form: string | null;
+    /** The product's own dosage form ("tablet", "syrup") —
+     *  `medicine_composition_map.route` for this exact (medicine,
+     *  composition) pair, for DISPLAY only. Null when the map has no row
+     *  for the pair (rare — every catalogue brand should carry one). */
+    productForm: string | null;
+    /** e.g. "GlaxoSmithKline" — `medicines.manufacturer`, for DISPLAY only,
+     *  same secondary-metadata role the reference row layout gives it. */
+    manufacturer: string | null;
     note: string | null;
     updatedAt: string;
 };
@@ -603,25 +615,37 @@ export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promis
 
     const medIds = [...new Set(rows.map((r: any) => Number(r.medicine_id)))];
     const compIds = [...new Set(rows.map((r: any) => Number(r.composition_id)))];
-    const [{ data: meds }, { data: comps }] = await Promise.all([
-        supabase.from("medicines").select("id, name").in("id", medIds),
+    const [{ data: meds }, { data: comps }, { data: maps }] = await Promise.all([
+        supabase.from("medicines").select("id, name, manufacturer").in("id", medIds),
         supabase.from("compositions").select("id, name").in("id", compIds),
+        // The product's own dosage form, for DISPLAY — see `productForm`'s
+        // doc comment on why this is a separate lookup from `form` above.
+        supabase.from("medicine_composition_map").select("medicine_id, composition_id, route").in("medicine_id", medIds),
     ]);
-    const medNameById = new Map<number, string>();
-    (meds ?? []).forEach((m: any) => medNameById.set(Number(m.id), m.name));
+    const medById = new Map<number, { name: string; manufacturer: string | null }>();
+    (meds ?? []).forEach((m: any) => medById.set(Number(m.id), { name: m.name, manufacturer: m.manufacturer ?? null }));
     const compNameById = new Map<number, string>();
     (comps ?? []).forEach((c: any) => compNameById.set(Number(c.id), c.name));
+    const routeByPair = new Map<string, string | null>();
+    (maps ?? []).forEach((m: any) => routeByPair.set(`${Number(m.medicine_id)}|${Number(m.composition_id)}`, m.route ?? null));
 
     return rows
-        .map((r: any) => ({
-            compositionId: Number(r.composition_id),
-            medicineId: Number(r.medicine_id),
-            medicineName: medNameById.get(Number(r.medicine_id)) ?? "",
-            compositionName: compNameById.get(Number(r.composition_id)) ?? "",
-            form: r.form ?? null,
-            note: r.note ?? null,
-            updatedAt: r.updated_at,
-        }))
+        .map((r: any) => {
+            const medicineId = Number(r.medicine_id);
+            const compositionId = Number(r.composition_id);
+            const med = medById.get(medicineId);
+            return {
+                compositionId,
+                medicineId,
+                medicineName: med?.name ?? "",
+                compositionName: compNameById.get(compositionId) ?? "",
+                form: r.form ?? null,
+                productForm: routeByPair.get(`${medicineId}|${compositionId}`) ?? null,
+                manufacturer: med?.manufacturer ?? null,
+                note: r.note ?? null,
+                updatedAt: r.updated_at,
+            };
+        })
         // Same rule as fetchPinnedMedicineDetails: a row whose medicine or
         // composition no longer resolves is dropped, not shown blank.
         .filter((r) => r.medicineName && r.compositionName);
@@ -635,11 +659,20 @@ export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promis
  * a plain, unranked join is both simpler and more honest here — there is no
  * "current ranking" to preserve.
  */
+/** Common molecules (paracetamol, azithromycin…) carry hundreds to
+ *  thousands of catalogue brands — "not thousands of database results" —
+ *  so this is a starting slice for browsing, not the exhaustive list. A
+ *  doctor who already knows the brand name should search it directly
+ *  instead (resolved in one step — see `PreferredMedicinesCard.pickHit`);
+ *  this cap is for the "I only know the molecule" fallback. */
+const BRANDS_FOR_COMPOSITION_LIMIT = 60;
+
 export async function fetchBrandsForComposition(compositionId: number): Promise<{ medicineId: number; name: string }[]> {
     const { data: mapRows, error: mapErr } = await supabase
         .from("medicine_composition_map")
         .select("medicine_id")
-        .eq("composition_id", compositionId);
+        .eq("composition_id", compositionId)
+        .limit(BRANDS_FOR_COMPOSITION_LIMIT);
     if (mapErr) throw new Error(`fetchBrandsForComposition (map): ${mapErr.message}`);
     const medicineIds = [...new Set((mapRows ?? []).map((r: any) => Number(r.medicine_id)))];
     if (medicineIds.length === 0) return [];
@@ -648,7 +681,8 @@ export async function fetchBrandsForComposition(compositionId: number): Promise<
         .from("medicines")
         .select("id, name")
         .in("id", medicineIds)
-        .order("name", { ascending: true });
+        .order("name", { ascending: true })
+        .limit(BRANDS_FOR_COMPOSITION_LIMIT);
     if (medErr) throw new Error(`fetchBrandsForComposition (medicines): ${medErr.message}`);
     return (meds ?? []).map((m: any) => ({ medicineId: Number(m.id), name: m.name }));
 }

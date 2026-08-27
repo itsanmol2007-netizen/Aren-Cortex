@@ -1,5 +1,4 @@
-# Session handoff — 2026-08-26 (Practice: Preferred Medicines / Add New
-Medicine / Clinical Companions, built against a literal reference screenshot)
+# Session handoff — 2026-08-26 (Practice: visual correction pass, second round)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE, not append a new dated
 section.** `cortex-design-dna/*.md` and `context/*.md` are stable reference
@@ -8,110 +7,112 @@ never as a place to log a session's history. History lives in git.
 
 ## Where this arc actually stands
 
-The previous entry in this file (same day, earlier) recorded three straight
-visual rejections of a rebuilt Practice page and asked whoever picked it up
-to get a human looking at the real page before another full visual pass —
-guessing from a local harness had twice produced a page that "verified
-rendered" but read wrong to the person who had to look at it.
+Two rounds this session, both against the Practice page:
 
-**This session was different in kind, not just another guess**: it arrived
-with a literal reference screenshot (the approved visual baseline) and a
-29-point functional spec, not a vague "make it not ugly." The work done is
-real and functional, not a fourth visual guess:
+**Round 1** built the functional depth: composition-grouped Preferred
+Medicines (reframing `clinic_brand_preference`, unchanged table), a new
+Add New Medicine modal, and a genuinely new `hospital_companion_preference`
+backend layer for Clinical Companions. That work was pushed to `master`
+directly (user's explicit instruction) — see git history for the full
+account, still accurate.
 
-1. **Preferred Medicines** — "Clinic Default Brands" reframed into a
-   composition-grouped tree (single-expand accordion, bounded card height,
-   internal scroll, `scrollIntoView` focus-follow on expand). Reuses
-   `clinic_brand_preference` unchanged — its primary key was already
-   `(hospital_id, composition_id, medicine_id)`, so multiple preferred
-   brands per composition were already representable; only the UI and
-   Consult's rendering were flat before. The heart marker reuses
-   `PinButton` (Consult's own component, not a copy) throughout.
-2. **Add New Medicine** — a new Practice-local modal (`AddMedicineModal`)
-   built from the same composition-anchored primitives Consult's
-   `AddMedicineSheet` already uses (`addMedicine` RPC — never mints a
-   composition, standing rule 22), with an optional "mark as preferred"
-   step on success.
-3. **Clinical Companions** — a genuinely new backend layer,
-   `hospital_companion_preference` (hospital-scoped; curates existing
-   `intent_companions` edges off, or authors new ones between two EXISTING
-   intents — never a new intent/signal). Read by `applyHospitalCompanionPrefs`
-   in `lib/synapse/companions.ts`, called from `useConsultIntelligence.ts`
-   right after `resolveCompanions` — the engine itself is untouched. Safety
-   rule: a suggestion carrying any warn/warn_hard guard verdict can never be
-   suppressed by a practice's curation, only an `ok`-status one.
-4. **Consult surfacing** — `RecommendationsCard.tsx`'s `MedicineRow` now
-   renders every OTHER clinic-preferred brand for a composition
-   ALWAYS-visible (capped at 7, so primary + 7 = 8 rows), not gated behind
-   opening the row — verified this does not disturb the existing keyboard
-   roving-list (`useRovingList`): the new block sits in the DOM AFTER
-   `.cs-prescribe`, so Enter-to-activate on an unopened row still finds
-   Prescribe first via `querySelector`. Zero/one preferred candidate is
-   byte-identical to the old behaviour (no fallback invented).
-5. **Layout** — Pinned Medicines' Practice-page card was removed (confirmed
-   with the user; the feature itself — `doctor_pinned_intent`, the personal
-   pin — is untouched and still lives inline in Consult). Clinical Defaults
-   is now two 3-across rows matching the reference screenshot's card count
-   exactly; the three "primary" cards in each row share one derived fixed
-   height (`  .prac-card.is-fixed`, 342px — see that rule's own comment for
-   the derivation) instead of the old 360px content-driven one.
+**Round 2** (this entry) was a visual correction pass against three
+reference images the user attached directly (an Add Lab modal mock, a
+Clinical Companions modal mock, and the same Practice-page reference from
+round 1) plus 9 numbered, specific complaints. Fixed:
 
-**Files touched:** `src/features/practice/PracticePage.tsx` (+ `practice.css`,
-`practiceModal.css`), `src/features/consult/RecommendationsCard.tsx`,
-`src/features/consult/parts.tsx` (a third `CompanionScope`, `'practice'`),
-`src/features/consult/BlankArt.tsx` (`BlankCompanionArt`,
-`BlankAddMedicineArt`), `src/lib/db/synapse.ts` (every new
-`*HospitalCompanion*`/`fetchAuthoredCompanionCatalogue` function),
-`src/lib/synapse/companions.ts` (`applyHospitalCompanionPrefs`,
-`CompanionPreferenceMap`), `src/hooks/useSynapse.ts` (loads + unions the
-practice companion layer), `src/hooks/useConsultIntelligence.ts` (applies
-the curation filter). New table: `hospital_companion_preference` (applied
-live via Supabase MCP, project `ieimvjprtltancxapuzg`).
+1. **Outer margins** — `.prac-body` was using Consult's own 12px gutter
+   (`--cs-shadow` shell padding), which read as content touching the
+   browser bezels on a comparatively airy page. Now 36px, matching
+   Patients' own dense-workspace convention (`patients-shell.css`), not a
+   new number invented for this page.
+2. **Removed the "Practice workspace" intro block** — redundant with the
+   dark Cortex header already saying "Practice — Tune Cortex to the way
+   you practice". The 4 stat tiles that lived in that block now sit on
+   Clinical Defaults' own group-header row instead (title+sub left, stats
+   right, one line).
+3. **Card proportions** — added the subtitle line every card in the
+   reference carries (`PracticeCard`'s new `subtitle` prop) and recomputed
+   `.prac-card.is-fixed`'s shared height (342px → 396px) to give the
+   Preferred Medicines tree real room for ~7-8 rows before its own
+   internal scroll takes over, per the reference.
+4. **Row hierarchy** — Preferred Medicines' tree rows now show the
+   product's own dosage form and manufacturer as secondary/tertiary
+   metadata (`ClinicBrandDefaultDetail` gained `productForm`/
+   `manufacturer`, hydrated in `fetchClinicBrandDefaultDetails`), not a
+   bare brand name. Add New Medicine's card was rebuilt to match the
+   reference's illustration → button → caption order (it doesn't reuse
+   `EmptyBlock`'s fixed ordering, which put caption text before the
+   button).
+5. **Preferred Medicines search is brand-first** — a real gap, not just
+   cosmetic: `IntentSearchHit.label` is always the COMPOSITION name (even
+   when the doctor's query matched a brand), and the search-hit row was
+   rendering that label unconditionally, so typing "Dolo" surfaced a row
+   that said "paracetamol". Fixed: a brand-matched hit now shows the brand
+   name primary / composition secondary, and resolves + marks that exact
+   product preferred in one click (`pickHit`, new) — no more forcing every
+   search through the composition-drill step. The drill step still exists
+   for a genuine molecule-name search, now capped at 60 results
+   (`fetchBrandsForComposition` had no limit at all before — a common
+   molecule can carry 1,000+ catalogue brands) with a hint to search the
+   brand directly instead.
+6. **Preferred Labs modal** — widened to `wide` (was the default 480px,
+   notably narrower than the reference's ~560-692px), gave the footer
+   "Done" button more visual weight than the in-body "Add lab" action
+   (`.prac-modal-foot .prac-modal-btn` taller/48px; new `.is-compact`
+   modifier, 38px, for in-body contextual actions) so the two stop reading
+   as equal-weight, competing buttons.
+7. **Clinical Companions modal** — removed the "+ Author a new pairing"
+   click-gate; the reference shows the pairing form always visible, not
+   behind a toggle. The "Common pairings" catalogue list now caps at ~4
+   rows visible (`is-companion-list`, 168px) before scrolling, down from
+   the generic ~7-row window.
+8. **Colour** — audited; no yellow/orange found outside the one
+   pre-existing, semantically-justified amber term-tag (matches
+   `SuggestionsCard`'s own hex for the same "finding/condition" meaning).
+9. Verified `tsc -b` and `npm run build` clean after every change in this
+   pass, same as round 1.
+
+**Files touched this round:** `src/features/practice/PracticePage.tsx`,
+`practice.css`, `practiceModal.css`, `src/lib/db/synapse.ts`
+(`ClinicBrandDefaultDetail`, `fetchClinicBrandDefaultDetails`,
+`fetchBrandsForComposition`).
 
 ## What was actually verified, and what was not
 
-Verified, directly:
-- `tsc -b` and `npm run build` clean after every slice, not just at the end.
-- `hospital_companion_preference`'s RLS policy and constraints, read back
-  from `pg_policies`/`pg_constraint` after creation — matches the exact
-  `hospital_isolation` shape `doctor_preferred_labs`/`prescription_templates`
-  already use.
-- The composition-grouping claim (req. "Paracetamol" and "Aceclofenac +
-  Paracetamol" must land in separate tree branches) against real rows:
-  Acenac-P Tablet maps to `composition_ids [21 (aceclofenac), 2
-  (paracetamol)]` — genuinely separate composition identities, confirming
-  the tree's plain groupBy-on-`compositionId` is correct without any extra
-  ingredient-matching logic.
-- The roving-list DOM-order argument above, by reading `useRovingList.ts`'s
-  actual `activate()` implementation, not by assumption.
-
-**NOT verified: the live, rendered page.** Per this file's own previous
-entry and `cortex-design-dna/verification.md`, "tsc is clean" and "the SQL
-checks out" are not the same claim as "it looks right" — and this session
-did not open the app in a browser (the sandbox's browser-to-Supabase
-connectivity is the same as previously documented; login-gated pages can't
-be driven end-to-end here) or take a screenshot. **Whoever looks at this
-next: check the live Practice page yourself before treating this as done**,
-specifically:
-- the composition tree's expand/collapse motion and focus-follow scroll
-  feel (described in code comments, never seen rendered);
-- the two-row Clinical Defaults grid at the derived 342px height — confirm
-  no card clips its own content, especially Prescription Templates and
-  Clinical Companions rows at `MED_ROW_H` (54px) with real (potentially
-  longer) trigger/companion label text;
-- Consult's always-visible preferred-brand chips on a row that also has
-  several ordinary alternates — confirm the wrapped chip row doesn't crowd
-  the identity line above it on a narrower viewport.
+Same caveat as round 1, worth repeating because it's the load-bearing one:
+**the live rendered page was not opened in a browser this session.**
+Everything above is `tsc`/build-clean and was reasoned through against the
+three attached reference images pixel-by-pixel (proportions, spacing,
+button sizes, row layout) as carefully as a static image allows — but that
+is not the same claim as "confirmed by looking at it," and this exact page
+has a documented history of "verified rendered" not matching what a person
+saw when they actually looked (see git log around 2026-08-25/26 for the
+full account of three earlier rejections before round 1's rebuild).
+**Whoever looks at this next: open the live Practice page and the three
+modals (Preferred Labs, Clinical Companions, Add New Medicine) yourself**
+before treating this round as done, specifically:
+- the stat-tile row on Clinical Defaults' header — does it actually align
+  with the title/sub block at a comfortable baseline, or does the flex-wrap
+  kick in awkwardly on a real laptop width;
+- the Preferred Medicines tree row's 3-column layout (name / form /
+  manufacturer / heart) at real data — does a long manufacturer name
+  collide with anything, does the 110px truncation width feel right;
+- Preferred Labs and Clinical Companions modals at `wide` — actually
+  compare against the two reference images side by side.
 
 ## Environment
 
 - No `supabase/migrations/`; schema changes apply live via Supabase MCP.
   Project `ieimvjprtltancxapuzg` (org `arenod`, `ap-south-1`).
-- Dev server `npm run dev` → `http://127.0.0.1:5173`. `node_modules` was not
-  installed at the start of this session — `npm install` first if it's
-  missing again.
+- Dev server `npm run dev` → `http://127.0.0.1:5173`. `node_modules` was
+  not installed at the start of round 1 this session — `npm install` first
+  if it's missing again.
 - Ekanki Solo Clinic (`hospital_id 64c26e24-3668-49c6-8b99-6ddb8c14883e`),
   doctor **Dr Anmol Pandey** (`40aa12a6-54f2-4b49-9100-8a2f8de0254d`) is the
   real test account.
-- `main` and `master` are unrelated histories in the original repo. This
-  session's work is on `claude/cortex-practice-implementation-knrjcj`.
+- `main` and `master` are unrelated histories in the original repo. Round 1
+  of this session's work was pushed directly to `master` on explicit
+  instruction; this branch (`claude/cortex-practice-implementation-knrjcj`)
+  and `master` should be checked for whether round 2 has been fast-forwarded
+  there too before assuming they match.

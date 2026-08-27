@@ -25,18 +25,24 @@
 .prac-body {
     flex: 1;
     overflow-y: auto;
-    /* 2026-08-26, second correction: the first fix (1180px → 1440px) was
-       still inventing a THIRD container width. `.app-shell` (App.tsx),
-       this page's real parent, already caps the whole workspace at
-       1720px and centres it — that is Cortex's one existing container
-       philosophy. This page does not get its own; it just fills the
-       shell it is already sitting inside, with the same side breathing
-       room Consult's own `.cs-shell` uses (12px). */
-    padding: var(--cs-s5) 12px 40px;
+    /* 2026-08-26, third correction: 12px (Consult's own `.cs-shell` gutter,
+       meant for a screen that is ALREADY dense with panels) read as content
+       touching the browser bezels on this page — a comparatively airy
+       workspace needs a comparatively generous margin. `.app-shell`
+       (App.tsx) still owns the one container width (1720px, centred); this
+       page still doesn't invent a second one. It just takes a wider gutter
+       inside that shell — the same 36px Patients' `.prec-page-body` already
+       uses for its own dense workspace (`patients-shell.css`), not a new
+       number picked for this page alone. */
+    padding: var(--cs-s5) 36px 40px;
     width: 100%;
     display: flex;
     flex-direction: column;
     gap: var(--cs-s4);
+}
+
+@media (max-width: 900px) {
+    .prac-body { padding-left: var(--cs-s4); padding-right: var(--cs-s4); }
 }
 
 /* ── Grid rows — the load-bearing layout rule for this page: related cards
@@ -75,10 +81,24 @@
     gap: var(--cs-s3);
 }
 
+/* The group header now carries the page's ONLY summary — the dark Cortex
+   header above already states "Practice — Tune Cortex to the way you
+   practice", so a second floating-prose intro block was redundant (cut
+   2026-08-26, third correction). Title+sub on the left, the 4 stat tiles
+   on the right, one row — not a separate section stacked above this one. */
 .prac-group-head {
     display: flex;
-    align-items: baseline;
-    gap: var(--cs-s2);
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--cs-s3);
+}
+
+.prac-group-head-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
 }
 
 .prac-group-title {
@@ -97,87 +117,56 @@
     font-weight: 460;
 }
 
-/* ── Overview — a designed workspace intro, not floating prose.
-   2026-08-26 correction: this used to be a bare heading + subtext sitting
-   directly on the page background — no anchor, no hierarchy, indistinguishable
-   from documentation. Two things fix that without becoming a hero:
-     1. `.prac-overview-mark` — a short vertical rule in Cortex's own
-        signature gradient (the same one the modal stripe, `.topbar-stripe`
-        and `.vp-stripe` already use), giving the block a left edge to read
-        FROM, the way a pull-quote or a section intro would.
-     2. A small uppercase eyebrow above the heading, so the block reads as
-        a named section of the workspace rather than a sentence that
-        wandered onto the page.
-   Still two ideas, never a statistics dashboard: one lede sentence and a
-   handful of plain-text counts, not a row of stat cards. */
-.prac-overview {
+/* ── The 4 stat tiles — Clinical Defaults' own header row only, never
+   repeated elsewhere. Icon tone matches the tone of the card the stat
+   summarises (teal=Preferred Medicines, slate=Preferred Labs,
+   violet=Templates), the 4th reusing blue (Companions' card is violet too
+   — the icon-tile family has exactly 4 tones, same as `.prac-glyph`, no
+   5th invented) so all four read as distinct at a glance. */
+.prac-stat-row {
     display: flex;
-    align-items: stretch;
-    gap: var(--cs-s4);
-    padding: 2px 0 var(--cs-s2);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 22px;
 }
 
-.prac-overview-mark {
-    flex: none;
-    width: 3px;
-    align-self: stretch;
-    border-radius: 999px;
-    background: linear-gradient(180deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
-}
-
-.prac-overview-body {
-    flex: 1;
-    min-width: 0;
+.prac-stat {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--cs-s3);
+    gap: 8px;
 }
 
-.prac-overview-lede {
+.prac-stat-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+}
+
+.prac-stat-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.prac-stat-icon.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.prac-stat-icon.is-violet { background: #f5f3ff; color: var(--cs-violet); }
+.prac-stat-icon.is-slate { background: #f1f5f9; color: #475569; }
+
+.prac-stat-text {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    line-height: 1.2;
 }
 
-.prac-overview-eyebrow {
-    color: #a855f7;
-    font-size: 10px;
-    font-weight: 750;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.prac-overview-lede strong {
+.prac-stat-text b {
     color: var(--cs-ink);
     font-size: 15px;
-    font-weight: 700;
-    letter-spacing: -0.005em;
-}
-
-.prac-overview-sub {
-    color: var(--cs-muted);
-    font-size: 11.5px;
-    font-weight: 460;
-}
-
-.prac-overview-counts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--cs-s3);
-}
-
-.prac-overview-counts span {
-    color: var(--cs-muted);
-    font-size: 11.5px;
-    font-weight: 500;
-    white-space: nowrap;
-}
-
-.prac-overview-counts b {
-    color: var(--cs-ink);
     font-weight: 750;
+}
+
+.prac-stat-text span {
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 550;
+    white-space: nowrap;
 }
 
 /* ── Related settings — a compact bar of real navigation, not a card grid
@@ -247,14 +236,17 @@
    (`.prac-card-body`/`.prac-rows`/`.prac-tree` below), never grow the card.
 
    The number itself is derived, not eyeballed: card head (icon row + head
-   padding, ~47px) + the search row (~40px, IntentSearchField + gap) + a
-   4.5-row list window at this tier's own two-line row height (`MED_ROW_H`,
-   54px — the same 4.5×row convention `progressive-disclosure.md` documents
-   for a capped list's expanded box) + the body's own bottom padding
-   (--cs-s4, 12px): 47 + 40 + 243 + 12 ≈ 342px. Slightly under the previous
-   360px — same list capacity, less air around it. */
+   padding, ~47px) + the new subtitle line (~20px, `.prac-card-sub`) + the
+   search/manage row (~40px) + a 4.5-row list window at this tier's own
+   two-line row height (`MED_ROW_H`, 54px — the same 4.5×row convention
+   `progressive-disclosure.md` documents for a capped list's expanded box)
+   + the body's own bottom padding (--cs-s4, 12px):
+   47 + 20 + 40 + 243 + 12 ≈ 362px, rounded to 396px so Preferred Medicines'
+   composition tree — which needs to show more like 7-8 rows at a time per
+   the reference, not 4.5 — gets real headroom before its own internal
+   scroll takes over, rather than scrolling almost immediately. */
 .prac-card.is-fixed {
-    height: 342px;
+    height: 396px;
 }
 
 /* Secondary tier — related configuration, quieter by design (the brief:
@@ -288,6 +280,18 @@
     letter-spacing: 0.045em;
     line-height: 1.2;
     text-transform: uppercase;
+}
+
+/* The one descriptive line every card in the reference carries — what the
+   card IS, sitting between the head row and the body, full width, never
+   competing with the title for attention. */
+.prac-card-sub {
+    margin: 3px 0 0;
+    padding: 0 var(--cs-s4);
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 460;
+    line-height: 1.4;
 }
 
 /* the tinted glyph tile — `.cs-glyph` verbatim, same four tones the rest
@@ -629,6 +633,45 @@
     line-height: 1.5;
 }
 
+/* ── Add New Medicine — an always-on action card, not a conditional empty
+   state (its "fact" line is the card's own subtitle, `.prac-card-sub`),
+   so it doesn't reuse `.prac-empty`'s fact/next/action ordering — the
+   reference puts the caption BELOW the button, not above it. */
+.prac-addmed-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cs-s2);
+    flex: 1;
+    text-align: center;
+}
+
+.prac-addmed-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1.5px solid var(--cs-teal);
+    border-radius: 999px;
+    background: #fff;
+    padding: 9px 18px;
+    color: var(--cs-teal);
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.prac-addmed-btn:hover {
+    background: var(--cs-teal-soft);
+}
+
+.prac-addmed-caption {
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 460;
+}
+
 /* ── The two not-yet-built quiet cards — one honest sentence, the card's
    own head icon already says what it's about, so no second illustration. */
 .prac-soon {
@@ -889,6 +932,38 @@
 
 .prac-tree-row .prac-row-label {
     font-size: 12.5px;
+    font-weight: 600;
+}
+
+/* The product's own dosage form ("Tablet") — secondary metadata, a fixed
+   narrow column so it lines up down the tree rather than drifting with
+   each brand name's length. */
+.prac-tree-form {
+    flex: none;
+    width: 56px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+/* The manufacturer — tertiary metadata, right-aligned before the heart. */
+.prac-tree-mfr {
+    flex: none;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 460;
+}
+
+@media (max-width: 1180px) {
+    .prac-tree-mfr { display: none; }
 }
 
 /* ── Loading — the existing shimmer, just given a row rhythm to sit in ──── */

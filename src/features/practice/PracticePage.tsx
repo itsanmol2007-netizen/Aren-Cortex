@@ -59,7 +59,8 @@ import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
     ArrowDown, ArrowUp, BookText, Check, ChevronDown, FlaskConical, Layers,
-    Pill, Plus, SlidersHorizontal, Sparkles, Star, ToggleLeft, ToggleRight, X,
+    Link2, Package, Pill, Plus, SlidersHorizontal, Sparkles, Star,
+    ToggleLeft, ToggleRight, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
@@ -216,11 +217,15 @@ function EmptyBlock({ art, fact, next, action }: { art: ReactNode; fact: string;
 //    recipe so it reads as one system, not several. `action` is the
 //    optional "Manage" / "+ New" trigger that opens a modal. ─────────────
 function PracticeCard({
-    icon, tone, title, count, quiet, fixed, action, children,
+    icon, tone, title, subtitle, count, quiet, fixed, action, children,
 }: {
     icon: ReactNode;
     tone: "blue" | "teal" | "violet" | "slate";
     title: string;
+    /** The one line under the title every card in the reference layout
+     *  carries — what this card IS, not restated content ("Medicines your
+     *  practice prefers to use, grouped by composition."). */
+    subtitle?: string;
     count?: number;
     quiet?: boolean;
     /** Gives this card the shared, derived fixed footprint — every
@@ -242,6 +247,7 @@ function PracticeCard({
                     </div>
                 )}
             </div>
+            {subtitle && <p className="prac-card-sub">{subtitle}</p>}
             <div className="prac-card-body">{children}</div>
         </section>
     );
@@ -362,23 +368,74 @@ function PreferredMedicinesCard({
         fetchBrandsForComposition(hit.refId).then(setDrillBrands).catch(console.error).finally(() => setDrillLoading(false));
     };
 
+    /**
+     * Search resolves to a MEDICINE first, not a composition — "when a
+     * medicine is selected, brand name is primary" — even though
+     * `search_intents` (`IntentSearchHit`) only ever names the composition
+     * a hit resolves through, never a concrete medicine id. A brand-matched
+     * hit (the doctor typed "Dolo", not "paracetamol") is resolved and
+     * marked preferred in ONE click: fetch that composition's brands,
+     * find the one whose name matches what was actually typed, done — no
+     * second screen. A composition/molecule-name hit still opens the drill
+     * (real ambiguity: "paracetamol" names no single brand).
+     */
+    const pickHit = (hit: IntentSearchHit) => {
+        if (hit.refId == null) return;
+        if (hit.matchKind !== "brand" || !hit.viaLabel) {
+            openDrill(hit);
+            return;
+        }
+        const compositionId = hit.refId;
+        const compositionName = hit.label;
+        const brandName = hit.viaLabel;
+        fetchBrandsForComposition(compositionId)
+            .then((list) => {
+                const match = list.find((b) => b.name.toLowerCase() === brandName.toLowerCase());
+                if (match) {
+                    if (!isPreferred(compositionId, match.medicineId)) {
+                        togglePreferred(compositionId, compositionName, match.medicineId, match.name);
+                    }
+                    search.setQuery("");
+                } else {
+                    // Matched by brand in search, but the composition's own
+                    // brand list (a stricter, live lookup) disagrees —
+                    // fall back to the drill so the doctor can still pick
+                    // manually rather than silently doing nothing.
+                    setDrill({ id: compositionId, name: compositionName });
+                    setDrillBrands(list);
+                }
+            })
+            .catch(console.error);
+    };
+
     const togglePreferred = (compositionId: number, compositionName: string, medicineId: number, medicineName: string) => {
         if (isPreferred(compositionId, medicineId)) {
             onBrandsChange(brands.filter((b) => !(b.compositionId === compositionId && b.medicineId === medicineId)));
             clearClinicBrandDefault({ hospitalId, compositionId, medicineId }).catch(console.error);
         } else {
+            // A thin optimistic row first (instant heart feedback), then a
+            // real refetch — `productForm`/`manufacturer` are hydrated
+            // reads, not something this call site has to hand; a refetch
+            // is the same "optimistic, then reconcile" pattern `pinMedicine`
+            // already used for the equivalent Pinned Medicines flow.
             const optimistic: ClinicBrandDefaultDetail = {
                 compositionId, medicineId, medicineName, compositionName,
-                form: null, note: null, updatedAt: new Date().toISOString(),
+                form: null, productForm: null, manufacturer: null, note: null,
+                updatedAt: new Date().toISOString(),
             };
             onBrandsChange([optimistic, ...brands]);
             setExpandedId(compositionId);
-            setClinicBrandDefault({ hospitalId, compositionId, medicineId }).catch(console.error);
+            setClinicBrandDefault({ hospitalId, compositionId, medicineId })
+                .then(() => fetchClinicBrandDefaultDetails(hospitalId).then(onBrandsChange).catch(() => {}))
+                .catch(console.error);
         }
     };
 
     return (
-        <PracticeCard icon={<Pill size={14} />} tone="teal" title="Preferred Medicines" count={brands.length} fixed>
+        <PracticeCard
+            icon={<Pill size={14} />} tone="teal" title="Preferred Medicines" count={brands.length} fixed
+            subtitle="Medicines your practice prefers to use, grouped by composition."
+        >
             <IntentSearchField state={search} placeholder="Search medicine or composition…" />
             {search.isSearching ? (
                 <div className="prac-search-results">
@@ -396,18 +453,26 @@ function PreferredMedicinesCard({
                                     action={<button type="button" className="prac-empty-action" onClick={() => onOpenAddNew(drill.name)}>+ Add new medicine</button>}
                                 />
                             ) : (
-                                drillBrands.map((b) => {
-                                    const pinned = isPreferred(drill.id, b.medicineId);
-                                    return (
-                                        <div key={b.medicineId} className="prac-modal-row">
-                                            <span className="prac-row-label">{b.name}</span>
-                                            <PinButton
-                                                pinned={pinned} label={b.name}
-                                                onToggle={() => togglePreferred(drill.id, drill.name, b.medicineId, b.name)}
-                                            />
-                                        </div>
-                                    );
-                                })
+                                <>
+                                    {drillBrands.length >= 60 && (
+                                        <p className="prac-soon">
+                                            Showing the first {drillBrands.length} — know the brand name?
+                                            Search it directly for a faster match.
+                                        </p>
+                                    )}
+                                    {drillBrands.map((b) => {
+                                        const pinned = isPreferred(drill.id, b.medicineId);
+                                        return (
+                                            <div key={b.medicineId} className="prac-modal-row">
+                                                <span className="prac-row-label">{b.name}</span>
+                                                <PinButton
+                                                    pinned={pinned} label={b.name}
+                                                    onToggle={() => togglePreferred(drill.id, drill.name, b.medicineId, b.name)}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </>
                             )}
                         </>
                     ) : search.hits.length === 0 ? (
@@ -421,14 +486,25 @@ function PreferredMedicinesCard({
                             ) : undefined}
                         />
                     ) : (
-                        search.hits.map((hit) => (
-                            <button
-                                key={hit.intentId} type="button" className="prac-modal-row is-pick"
-                                onClick={() => openDrill(hit)}
-                            >
-                                <span className="prac-row-label is-catalogue">{hit.label}</span>
-                            </button>
-                        ))
+                        search.hits.map((hit) => {
+                            // Brand-first: the doctor searched "Dolo", the
+                            // row leads with "Dolo 650" — the composition
+                            // it satisfies is secondary context underneath,
+                            // never the primary line (req: "medicine/brand
+                            // name is primary, composition is secondary").
+                            const isBrandHit = hit.matchKind === "brand" && !!hit.viaLabel;
+                            return (
+                                <button
+                                    key={hit.intentId} type="button" className="prac-modal-row is-pick"
+                                    onClick={() => pickHit(hit)}
+                                >
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label is-catalogue">{isBrandHit ? hit.viaLabel : hit.label}</span>
+                                        {isBrandHit && <span className="prac-med-brands">{hit.label}</span>}
+                                    </div>
+                                </button>
+                            );
+                        })
                     )}
                 </div>
             ) : brandsLoading ? (
@@ -460,7 +536,9 @@ function PreferredMedicinesCard({
                                 >
                                     {g.rows.map((r) => (
                                         <div key={r.medicineId} className="prac-tree-row">
-                                            <span className="prac-row-label">{r.medicineName}</span>
+                                            <span className="prac-row-label is-catalogue">{r.medicineName}</span>
+                                            {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
+                                            {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
                                             <PinButton
                                                 pinned label={r.medicineName}
                                                 onToggle={() => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName)}
@@ -538,6 +616,7 @@ function LabsModal({
             eyebrow="Preferred Labs"
             title="Your diagnostic centres"
             onClose={onClose}
+            wide
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
             <div className="prac-modal-field">
@@ -556,7 +635,7 @@ function LabsModal({
                     onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
                 />
             </div>
-            <button type="button" className="prac-modal-btn is-primary" disabled={!name.trim() || busy} onClick={submitAdd}>
+            <button type="button" className="prac-modal-btn is-primary is-compact" disabled={!name.trim() || busy} onClick={submitAdd}>
                 <Plus size={14} /> Add lab
             </button>
 
@@ -922,6 +1001,8 @@ function AddMedicineModal({
                         medicineName: created.name,
                         compositionName: primary.label,
                         form: created.form,
+                        productForm: created.form,
+                        manufacturer: null,
                         note: null,
                         updatedAt: new Date().toISOString(),
                     }));
@@ -1036,7 +1117,6 @@ function CompanionsModal({
 }) {
     const [catalogue, setCatalogue] = useState<AuthoredCompanionEdgeDetail[]>([]);
     const [catalogueLoading, setCatalogueLoading] = useState(true);
-    const [authoring, setAuthoring] = useState(false);
     const [trigger, setTrigger] = useState<{ intentId: number; label: string } | null>(null);
     const [companion, setCompanion] = useState<{ intentId: number; label: string } | null>(null);
     const [reason, setReason] = useState("");
@@ -1088,7 +1168,7 @@ function CompanionsModal({
         })
             .then(() => fetchHospitalCompanionDetails(hospitalId).then(onChange).catch(() => {}))
             .then(() => {
-                setAuthoring(false); setTrigger(null); setCompanion(null); setReason("");
+                setTrigger(null); setCompanion(null); setReason("");
                 triggerSearch.setQuery(""); companionSearch.setQuery("");
             })
             .catch((e) => setError(e instanceof Error ? e.message : String(e)))
@@ -1123,87 +1203,81 @@ function CompanionsModal({
                 </div>
             )}
 
-            {authoring ? (
-                <div className="prac-companion-author">
-                    {error && <p className="prac-modal-error">{error}</p>}
-                    <div className="prac-modal-field">
-                        <label>When prescribing…</label>
-                        {trigger ? (
-                            <div className="prac-modal-row">
-                                <span className="prac-row-label">{trigger.label}</span>
-                                <RemoveBtn label="Change" onClick={() => setTrigger(null)} />
-                            </div>
-                        ) : (
-                            <>
-                                <IntentSearchField state={triggerSearch} placeholder="Search a medicine, test, advice…" />
-                                {triggerSearch.isSearching && (
-                                    <div className="prac-modal-rows">
-                                        {triggerSearch.hits.map((hit) => (
-                                            <button
-                                                key={hit.intentId} type="button" className="prac-modal-row is-pick"
-                                                onClick={() => { setTrigger({ intentId: hit.intentId, label: hit.label }); triggerSearch.setQuery(""); }}
-                                            >
-                                                <span className={`prac-term-kind is-${hit.type}`}>{intentTypeLabel(hit.type)}</span>
-                                                <span className="prac-row-label">{hit.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
-                    <div className="prac-modal-field">
-                        <label>Consider…</label>
-                        {companion ? (
-                            <div className="prac-modal-row">
-                                <span className="prac-row-label">{companion.label}</span>
-                                <RemoveBtn label="Change" onClick={() => setCompanion(null)} />
-                            </div>
-                        ) : (
-                            <>
-                                <IntentSearchField state={companionSearch} placeholder="Search a medicine, test, advice…" />
-                                {companionSearch.isSearching && (
-                                    <div className="prac-modal-rows">
-                                        {companionSearch.hits.map((hit) => (
-                                            <button
-                                                key={hit.intentId} type="button" className="prac-modal-row is-pick"
-                                                onClick={() => { setCompanion({ intentId: hit.intentId, label: hit.label }); companionSearch.setQuery(""); }}
-                                            >
-                                                <span className={`prac-term-kind is-${hit.type}`}>{intentTypeLabel(hit.type)}</span>
-                                                <span className="prac-row-label">{hit.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
-                    <div className="prac-modal-field">
-                        <label>Why — shown to the doctor as the reason</label>
-                        <input
-                            type="text" value={reason} placeholder="e.g. Gastric cover"
-                            onChange={(e) => setReason(e.target.value)}
-                        />
-                    </div>
-                    <button
-                        type="button" className="prac-modal-btn is-primary"
-                        disabled={!trigger || !companion || !reason.trim() || busy}
-                        onClick={submitAuthored}
-                    >
-                        <Plus size={14} /> Add pairing
-                    </button>
+            <div className="prac-companion-author">
+                {error && <p className="prac-modal-error">{error}</p>}
+                <div className="prac-modal-field">
+                    <label>When prescribing…</label>
+                    {trigger ? (
+                        <div className="prac-modal-row">
+                            <span className="prac-row-label">{trigger.label}</span>
+                            <RemoveBtn label="Change" onClick={() => setTrigger(null)} />
+                        </div>
+                    ) : (
+                        <>
+                            <IntentSearchField state={triggerSearch} placeholder="Search a medicine, test, advice…" />
+                            {triggerSearch.isSearching && (
+                                <div className="prac-modal-rows">
+                                    {triggerSearch.hits.map((hit) => (
+                                        <button
+                                            key={hit.intentId} type="button" className="prac-modal-row is-pick"
+                                            onClick={() => { setTrigger({ intentId: hit.intentId, label: hit.label }); triggerSearch.setQuery(""); }}
+                                        >
+                                            <span className={`prac-term-kind is-${hit.type}`}>{intentTypeLabel(hit.type)}</span>
+                                            <span className="prac-row-label">{hit.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
-            ) : (
-                <button type="button" className="prac-modal-back" onClick={() => setAuthoring(true)}>
-                    + Author a new pairing
+                <div className="prac-modal-field">
+                    <label>Consider…</label>
+                    {companion ? (
+                        <div className="prac-modal-row">
+                            <span className="prac-row-label">{companion.label}</span>
+                            <RemoveBtn label="Change" onClick={() => setCompanion(null)} />
+                        </div>
+                    ) : (
+                        <>
+                            <IntentSearchField state={companionSearch} placeholder="Search a medicine, test, advice…" />
+                            {companionSearch.isSearching && (
+                                <div className="prac-modal-rows">
+                                    {companionSearch.hits.map((hit) => (
+                                        <button
+                                            key={hit.intentId} type="button" className="prac-modal-row is-pick"
+                                            onClick={() => { setCompanion({ intentId: hit.intentId, label: hit.label }); companionSearch.setQuery(""); }}
+                                        >
+                                            <span className={`prac-term-kind is-${hit.type}`}>{intentTypeLabel(hit.type)}</span>
+                                            <span className="prac-row-label">{hit.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+                <div className="prac-modal-field">
+                    <label>Why — shown to the doctor as the reason</label>
+                    <input
+                        type="text" value={reason} placeholder="e.g. Gastric cover"
+                        onChange={(e) => setReason(e.target.value)}
+                    />
+                </div>
+                <button
+                    type="button" className="prac-modal-btn is-primary is-compact"
+                    disabled={!trigger || !companion || !reason.trim() || busy}
+                    onClick={submitAuthored}
+                >
+                    <Plus size={14} /> Add pairing
                 </button>
-            )}
+            </div>
 
             <div className="prac-modal-section-title">Common pairings — every Cortex clinic</div>
             {catalogueLoading ? (
                 <SkelRows count={4} />
             ) : (
-                <div className="prac-modal-rows">
+                <div className="prac-modal-rows is-companion-list">
                     {catalogue.map((edge) => {
                         const key = curatedKey(edge.intentId, edge.companionIntentId);
                         const override = curated.get(key);
@@ -1315,38 +1389,52 @@ export function PracticePage({
             />
 
             <div className="prac-body">
-                {/* ── OVERVIEW — a designed intro, not floating prose. The
-                    3px rule is the SAME pink→violet→indigo gradient every
-                    other surface in this app uses as its signature mark
-                    (`.topbar-stripe`, modal stripes, `vp-stripe`) — the
-                    "subtle Cortex visual anchor," not a new one invented
-                    for this page. Two ideas, never a stats dashboard: one
-                    lede sentence, a handful of plain-text counts. */}
-                <div className="prac-overview">
-                    <div className="prac-overview-mark" aria-hidden="true" />
-                    <div className="prac-overview-body">
-                        <div className="prac-overview-lede">
-                            <span className="prac-overview-eyebrow">Practice workspace</span>
-                            <strong>Customize the clinical defaults Cortex uses, and how it opens.</strong>
-                            <span className="prac-overview-sub">Everything below is live the next time you start a consultation.</span>
-                        </div>
-                        <div className="prac-overview-counts">
-                            <span><b>{brands.length}</b> preferred medicine{brands.length === 1 ? "" : "s"}</span>
-                            <span><b>{preferredLabs.length}</b> preferred lab{preferredLabs.length === 1 ? "" : "s"}</span>
-                            <span><b>{templates.length}</b> template{templates.length === 1 ? "" : "s"}</span>
-                            <span><b>{companions.filter((c) => c.enabled).length}</b> companion{companions.filter((c) => c.enabled).length === 1 ? "" : "s"}</span>
-                        </div>
-                    </div>
-                </div>
-
                 {/* ── CLINICAL DEFAULTS — what Cortex reaches for first during a
-                    consultation. Two rows of three, same `.prac-grid` shape:
-                    the practice's concrete preferences, then the surfaces that
-                    extend or configure them. */}
+                    consultation. The dark Cortex header above already says
+                    "Practice — Tune Cortex to the way you practice"; a second
+                    intro block repeating that was redundant floating prose,
+                    cut per the reference layout. The 4 stat tiles that used
+                    to live in that block now sit on THIS group's own header
+                    row instead — one line, title+sub on the left, counts on
+                    the right, not a separate section above everything else.
+                    Two rows of three cards below it: the practice's concrete
+                    preferences, then the surfaces that extend/configure them. */}
                 <div className="prac-group">
                     <div className="prac-group-head">
-                        <h2 className="prac-group-title">Clinical defaults</h2>
-                        <p className="prac-group-sub">What Cortex reaches for first during a consultation.</p>
+                        <div className="prac-group-head-text">
+                            <h2 className="prac-group-title">Clinical defaults</h2>
+                            <p className="prac-group-sub">What Cortex reaches for first during a consultation.</p>
+                        </div>
+                        <div className="prac-stat-row">
+                            <div className="prac-stat">
+                                <span className="prac-stat-icon is-teal"><Link2 size={14} /></span>
+                                <span className="prac-stat-text">
+                                    <b>{brands.length}</b>
+                                    <span>Preferred medicines</span>
+                                </span>
+                            </div>
+                            <div className="prac-stat">
+                                <span className="prac-stat-icon is-slate"><FlaskConical size={14} /></span>
+                                <span className="prac-stat-text">
+                                    <b>{preferredLabs.length}</b>
+                                    <span>Preferred labs</span>
+                                </span>
+                            </div>
+                            <div className="prac-stat">
+                                <span className="prac-stat-icon is-violet"><Layers size={14} /></span>
+                                <span className="prac-stat-text">
+                                    <b>{templates.length}</b>
+                                    <span>Templates</span>
+                                </span>
+                            </div>
+                            <div className="prac-stat">
+                                <span className="prac-stat-icon is-blue"><Package size={14} /></span>
+                                <span className="prac-stat-text">
+                                    <b>{companions.filter((c) => c.enabled).length}</b>
+                                    <span>Companions</span>
+                                </span>
+                            </div>
+                        </div>
                     </div>
                     <div className="prac-grid">
                         <PreferredMedicinesCard
@@ -1357,6 +1445,7 @@ export function PracticePage({
 
                         <PracticeCard
                             icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length} fixed
+                            subtitle="Labs Cortex should suggest first for investigations."
                             action={<button type="button" className="prac-card-manage" onClick={() => setLabsModalOpen(true)}>Manage</button>}
                         >
                             {!identity.ready ? (
@@ -1386,6 +1475,7 @@ export function PracticePage({
 
                         <PracticeCard
                             icon={<Layers size={14} />} tone="violet" title="Prescription Templates" count={templates.length} fixed
+                            subtitle="Saved prescription setups for quick reuse."
                             action={<button type="button" className="prac-card-manage" onClick={() => setEditingTemplate("new")}>+ New</button>}
                         >
                             {!identity.ready ? (
@@ -1416,17 +1506,25 @@ export function PracticePage({
                     </div>
 
                     <div className="prac-grid">
-                        <PracticeCard icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed>
-                            <EmptyBlock
-                                art={<BlankAddMedicineArt />}
-                                fact="Can't find the medicine you need?"
-                                next="Add it to our database — we'll check it isn't already there first."
-                                action={<button type="button" className="prac-empty-action" onClick={() => setAddMedicineOpen({ initialName: "" })}>+ Add new medicine</button>}
-                            />
+                        <PracticeCard
+                            icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
+                            subtitle="Can't find the medicine you need? Add it to our database."
+                        >
+                            <div className="prac-addmed-cta">
+                                <BlankAddMedicineArt />
+                                <button
+                                    type="button" className="prac-addmed-btn"
+                                    onClick={() => setAddMedicineOpen({ initialName: "" })}
+                                >
+                                    <Plus size={14} /> Add new medicine
+                                </button>
+                                <span className="prac-addmed-caption">Submit details for review and approval.</span>
+                            </div>
                         </PracticeCard>
 
                         <PracticeCard
                             icon={<Sparkles size={14} />} tone="violet" title="Clinical Companions" fixed
+                            subtitle="Medicines you commonly consider alongside others."
                             count={companions.filter((c) => c.enabled).length}
                             action={<button type="button" className="prac-card-manage" onClick={() => setCompanionModalOpen(true)}>Manage</button>}
                         >

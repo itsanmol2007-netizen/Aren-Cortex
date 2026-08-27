@@ -133,7 +133,7 @@
     padding: 0 var(--cs-s4) var(--cs-s4);
     display: flex;
     flex-direction: column;
-    gap: var(--cs-s3);
+    gap: var(--cs-s4);
 }
 
 .prac-modal-foot {
@@ -187,6 +187,25 @@
 .prac-modal-btn.is-primary:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* The footer's own button reads as the modal's ONE clear primary action —
+   taller and more prominent than any in-body button, so "Done" never
+   competes for weight with a contextual action like "Add lab" above it. */
+.prac-modal-foot .prac-modal-btn {
+    height: 48px;
+    font-size: 13.5px;
+}
+
+/* A compact, in-body action tied to the fields directly above it (e.g.
+   "Add lab", "Add pairing") — smaller and quieter than the footer's
+   primary, so the two read as "the form's own submit" vs. "I'm done here"
+   rather than two equal-weight buttons stacked close together. */
+.prac-modal-btn.is-compact {
+    height: 38px;
+    border-radius: 10px;
+    font-size: 12.5px;
     box-shadow: none;
 }
 
@@ -302,6 +321,15 @@
     flex-direction: column;
     max-height: 260px;
     overflow-y: auto;
+}
+
+/* Clinical Companions' "common pairings" catalogue — ~4 rows visible at
+   this row height (38px × 4 ≈ 152px, a little breathing room added) before
+   scrolling, rather than the generic 260px window (~6-7 rows), which read
+   as too many competing for attention at once in a modal that also has a
+   real form above it. */
+.prac-modal-rows.is-companion-list {
+    max-height: 168px;
 }
 
 .prac-modal-row {
