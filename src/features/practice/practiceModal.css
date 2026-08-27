@@ -38,7 +38,12 @@
 }
 
 .prac-modal.is-wide {
-    width: min(560px, 100%);
+    width: min(600px, 100%);
+    /* Tall enough that each list shows a few real rows, short enough that
+       the panel is not a full-height wall. 800px was over-corrected
+       (reported "too tall now"); the lists themselves cap and scroll, so
+       the modal does not need to grow to hold them. */
+    max-height: min(660px, 88vh);
 }
 
 @keyframes prac-modal-rise {
@@ -199,14 +204,22 @@
 }
 
 /* A compact, in-body action tied to the fields directly above it (e.g.
-   "Add lab", "Add pairing") — smaller and quieter than the footer's
-   primary, so the two read as "the form's own submit" vs. "I'm done here"
-   rather than two equal-weight buttons stacked close together. */
+   "Add lab", "Add pairing").
+   2026-08-27: this was a FULL-WIDTH light-gradient bar, and full width at
+   38px tall is what reads as "an extra thin, completely horizontal, stress
+   type of button" — the reported complaint, in both this modal and Labs.
+   It is now a real button: auto width, left-aligned, sized by its own
+   label. The footer keeps the one full-width primary, which is the only
+   place that treatment belongs. */
 .prac-modal-btn.is-compact {
-    height: 38px;
-    border-radius: 10px;
+    flex: 0 0 auto;
+    align-self: flex-start;
+    width: auto;
+    min-width: 0;
+    height: 40px;
+    padding: 0 20px;
+    border-radius: 11px;
     font-size: 12.5px;
-    box-shadow: none;
 }
 
 /* ── Form fields inside a modal body — `.pm-input`'s shape, in tokens ────── */
@@ -319,17 +332,39 @@
 .prac-modal-rows {
     display: flex;
     flex-direction: column;
+    /* `flex: none` is load-bearing: this is a flex ITEM inside the column
+       `.prac-modal-body`, and without it the row list is the thing that
+       shrinks when the body runs out of room — measured 2026-08-27 at 45px
+       tall while holding 26 rows, i.e. a scrollbar sliver and nothing
+       readable. The body itself is what scrolls; these keep their size. */
+    flex: none;
     max-height: 260px;
     overflow-y: auto;
 }
 
-/* Clinical Companions' "common pairings" catalogue — ~4 rows visible at
-   this row height (38px × 4 ≈ 152px, a little breathing room added) before
-   scrolling, rather than the generic 260px window (~6-7 rows), which read
-   as too many competing for attention at once in a modal that also has a
-   real form above it. */
+/* Clinical Companions' lists — a two-line row (pairing + its state) at
+   46px, showing ~5 before this window scrolls. 2026-08-27: this was 168px
+   of single-line rows sitting BELOW the add-form, which rendered as a
+   sliver of scrollbar and nothing else. */
 .prac-modal-rows.is-companion-list {
-    max-height: 168px;
+    max-height: 232px;
+}
+
+.prac-companion-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    flex: none;
+    min-height: 46px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--cs-line);
+}
+
+.prac-companion-row:last-child { border-bottom: 0; }
+
+.prac-med-icon.is-violet {
+    background: #f5f3ff;
+    color: var(--cs-violet);
 }
 
 .prac-modal-row {
@@ -344,11 +379,29 @@
 .prac-modal-row:last-child { border-bottom: 0; }
 
 .prac-modal-section-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--cs-s2);
     color: var(--cs-muted);
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+/* "5 of 26" — a capped, internally-scrolling list has to SAY how much it
+   is holding, or the rows below the fold simply look missing ("it's just
+   showing 5, where are the others?"). Same job `.cs-ranked-count` does for
+   Consult's ranked panels; same shape, so the two read alike. */
+.prac-section-count {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    font-variant-numeric: tabular-nums;
 }
 
 /* A row that IS the action (picking a search hit, choosing a brand) rather

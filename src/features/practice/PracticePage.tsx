@@ -84,6 +84,7 @@ import { MEASURE_FIELDS, type MeasureFieldKey } from "../consult/measures";
 import {
     BlankAddMedicineArt, BlankCompanionArt, BlankLabArt, BlankMedicineArt, BlankTemplateArt, BlankTermArt,
 } from "../consult/BlankArt";
+import { resolveProductByName } from "../../lib/db/medicines";
 import { IntentSearchField, useIntentSearch } from "../consult/IntentSearch";
 import { PinButton } from "../consult/parts";
 import { PracticeModal } from "./PracticeModal";
@@ -283,6 +284,12 @@ const ALL_INTENT_TYPES: IntentType[] = [
     "medicine", "test", "exercise", "modality", "referral", "finding", "advice", "impairment",
 ];
 
+/** How many companion rows fit the list window before it scrolls — must
+ *  match `.prac-modal-rows.is-companion-list`'s max-height divided by the
+ *  46px row (232 / 46 ≈ 5). Declared once so the "5 of 26" count cannot
+ *  drift from what is actually visible. */
+const COMPANION_VISIBLE = 5;
+
 const TERM_CHIP_CAP = 16;
 
 // ===========================================================================
@@ -347,6 +354,20 @@ function PreferredMedicinesCard({
 
     const groups = useMemo(() => groupByComposition(brands), [brands]);
 
+    /** The first group opens on its own. A card whose entire body is one
+     *  collapsed row reads as empty (rendered and checked 2026-08-27), and
+     *  the reference layout shows the leading composition already expanded
+     *  with its concrete medicines under it. Only ever sets the INITIAL
+     *  group — collapsing it stays collapsed, and it never fights a group
+     *  the doctor opened themselves. */
+    const firstGroupId = groups[0]?.compositionId;
+    const autoExpanded = useRef(false);
+    useEffect(() => {
+        if (autoExpanded.current || firstGroupId == null) return;
+        autoExpanded.current = true;
+        setExpandedId(firstGroupId);
+    }, [firstGroupId]);
+
     useEffect(() => {
         if (!search.isSearching) { setDrill(null); setDrillBrands([]); }
     }, [search.isSearching]);
@@ -361,6 +382,15 @@ function PreferredMedicinesCard({
     const isPreferred = (compositionId: number, medicineId: number) =>
         brands.some((b) => b.compositionId === compositionId && b.medicineId === medicineId);
 
+    /** A search hit names a product but carries no medicine id (see
+     *  `pickHit`), so "is this one already preferred?" can only be answered
+     *  by name — enough to draw the heart filled, and the toggle itself
+     *  still resolves the real id before writing anything. */
+    const preferredBrandNames = useMemo(
+        () => new Set(brands.map((b) => b.medicineName.toLowerCase())),
+        [brands]
+    );
+
     const openDrill = (hit: IntentSearchHit) => {
         if (hit.refId == null) return;
         setDrill({ id: hit.refId, name: hit.label });
@@ -369,15 +399,23 @@ function PreferredMedicinesCard({
     };
 
     /**
-     * Search resolves to a MEDICINE first, not a composition — "when a
-     * medicine is selected, brand name is primary" — even though
-     * `search_intents` (`IntentSearchHit`) only ever names the composition
-     * a hit resolves through, never a concrete medicine id. A brand-matched
-     * hit (the doctor typed "Dolo", not "paracetamol") is resolved and
-     * marked preferred in ONE click: fetch that composition's brands,
-     * find the one whose name matches what was actually typed, done — no
-     * second screen. A composition/molecule-name hit still opens the drill
-     * (real ambiguity: "paracetamol" names no single brand).
+     * Search resolves to a MEDICINE first, not a composition ("brand name is
+     * primary, composition is secondary"), even though `search_intents`
+     * (`IntentSearchHit`) only ever names the composition a hit resolves
+     * through, never a concrete medicine id. A brand-matched hit (the
+     * doctor typed "Dolo", not "paracetamol") is resolved and marked
+     * preferred in ONE click. A molecule-name hit still opens the drill:
+     * "paracetamol" names no single product, so there is a real choice to
+     * make there.
+     *
+     * Resolution goes through `resolveProductByName` — the existing exact
+     * `.eq("name", …)` lookup Consult already uses for the identical
+     * "the doctor named this exact product" job. A first attempt matched
+     * `hit.viaLabel` against `fetchBrandsForComposition`'s list instead,
+     * which silently did nothing for any common molecule: that list is
+     * capped, and paracetamol alone carries thousands of brands, so
+     * "Dolo 650 Tablet" was simply not in the window. Caught by clicking
+     * the heart in the real app and watching the count stay at 1.
      */
     const pickHit = (hit: IntentSearchHit) => {
         if (hit.refId == null) return;
@@ -388,22 +426,19 @@ function PreferredMedicinesCard({
         const compositionId = hit.refId;
         const compositionName = hit.label;
         const brandName = hit.viaLabel;
-        fetchBrandsForComposition(compositionId)
-            .then((list) => {
-                const match = list.find((b) => b.name.toLowerCase() === brandName.toLowerCase());
-                if (match) {
-                    if (!isPreferred(compositionId, match.medicineId)) {
-                        togglePreferred(compositionId, compositionName, match.medicineId, match.name);
-                    }
-                    search.setQuery("");
-                } else {
-                    // Matched by brand in search, but the composition's own
-                    // brand list (a stricter, live lookup) disagrees —
-                    // fall back to the drill so the doctor can still pick
-                    // manually rather than silently doing nothing.
-                    setDrill({ id: compositionId, name: compositionName });
-                    setDrillBrands(list);
+        resolveProductByName(brandName)
+            .then((product) => {
+                if (!product) {
+                    // Named in search but not resolvable as a row: fall back
+                    // to the molecule's own brand list rather than doing
+                    // nothing the doctor can see.
+                    openDrill(hit);
+                    return;
                 }
+                if (!isPreferred(compositionId, product.id)) {
+                    togglePreferred(compositionId, compositionName, product.id, product.name);
+                }
+                search.setQuery("");
             })
             .catch(console.error);
     };
@@ -456,8 +491,7 @@ function PreferredMedicinesCard({
                                 <>
                                     {drillBrands.length >= 60 && (
                                         <p className="prac-soon">
-                                            Showing the first {drillBrands.length} — know the brand name?
-                                            Search it directly for a faster match.
+                                            Showing the first {drillBrands.length}. Know the brand name? Search it directly.
                                         </p>
                                     )}
                                     {drillBrands.map((b) => {
@@ -493,16 +527,36 @@ function PreferredMedicinesCard({
                             // never the primary line (req: "medicine/brand
                             // name is primary, composition is secondary").
                             const isBrandHit = hit.matchKind === "brand" && !!hit.viaLabel;
+                            const already = isBrandHit && preferredBrandNames.has((hit.viaLabel ?? "").toLowerCase());
+                            // EVERY row carries a visible way to act. Before
+                            // 2026-08-27 the whole row was one click target
+                            // with no affordance drawn on it at all, so a
+                            // doctor who searched a medicine saw a list and
+                            // no button — "there is no any way to add it".
                             return (
-                                <button
-                                    key={hit.intentId} type="button" className="prac-modal-row is-pick"
-                                    onClick={() => pickHit(hit)}
-                                >
+                                <div key={hit.intentId} className="prac-hit-row">
+                                    <span className="prac-med-icon" aria-hidden="true"><Pill size={13} /></span>
                                     <div className="prac-med-info">
                                         <span className="prac-row-label is-catalogue">{isBrandHit ? hit.viaLabel : hit.label}</span>
-                                        {isBrandHit && <span className="prac-med-brands">{hit.label}</span>}
+                                        <span className="prac-med-brands">
+                                            {isBrandHit ? hit.label : "Molecule. Pick a brand."}
+                                        </span>
                                     </div>
-                                </button>
+                                    {isBrandHit ? (
+                                        <PinButton
+                                            pinned={!!already}
+                                            label={hit.viaLabel ?? hit.label}
+                                            onToggle={() => pickHit(hit)}
+                                        />
+                                    ) : (
+                                        <button
+                                            type="button" className="prac-hit-drill"
+                                            onClick={() => openDrill(hit)}
+                                        >
+                                            Brands <ChevronDown size={12} />
+                                        </button>
+                                    )}
+                                </div>
                             );
                         })
                     )}
@@ -553,7 +607,7 @@ function PreferredMedicinesCard({
             ) : (
                 <EmptyBlock
                     art={<BlankMedicineArt />} fact="No preferred medicines yet"
-                    next="Search above and mark the concrete brands your practice reaches for — Consult will surface them first."
+                    next="Search above and mark the brands your practice reaches for. Consult surfaces them first."
                 />
             )}
         </PracticeCard>
@@ -641,7 +695,7 @@ function LabsModal({
 
             <div className="prac-modal-section-title">Your labs, in order</div>
             {labs.length === 0 ? (
-                <p className="prac-soon">Nothing added yet — the first one becomes your default.</p>
+                <p className="prac-soon">Nothing added yet. The first one becomes your default.</p>
             ) : (
                 <div className="prac-modal-rows">
                     {labs.map((lab, i) => (
@@ -796,7 +850,7 @@ function TemplateBuilderModal({
                             onChange={(e) => setName(e.target.value)} />
                     </div>
                     <div className="prac-modal-field">
-                        <label>Trigger word — what you'll type in the case sheet to find it</label>
+                        <label>Trigger word, typed in the case sheet to find it</label>
                         <input type="text" value={triggerLabel} placeholder="e.g. fever"
                             onChange={(e) => setTriggerLabel(e.target.value)} />
                     </div>
@@ -1184,25 +1238,77 @@ function CompanionsModal({
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
             <p className="prac-soon">
-                Companions are suggestions, never automatic — the doctor always chooses whether to
-                add one. Turn a common pairing off if this practice never wants it suggested, or add
-                your own from things Cortex already knows.
+                Cortex offers these as suggestions during a consult. It never adds one on its own.
             </p>
 
-            <div className="prac-modal-section-title">Your practice's own pairings ({authoredEntries.length})</div>
+            {/* The lists come FIRST. Rebuilt 2026-08-27: the add-a-pairing
+                form used to sit above them, which pushed every configured
+                companion below the fold — "there is no any way to see where
+                our already made companions are". */}
+            <div className="prac-modal-section-title">
+                <span>Your practice's own pairings</span>
+                {authoredEntries.length > 0 && (
+                    <span className="prac-section-count">
+                        {Math.min(COMPANION_VISIBLE, authoredEntries.length)} of {authoredEntries.length}
+                        {authoredEntries.length > COMPANION_VISIBLE ? " · scroll for more" : ""}
+                    </span>
+                )}
+            </div>
             {authoredEntries.length === 0 ? (
-                <p className="prac-soon">None yet — add one below.</p>
+                <p className="prac-soon">None yet. Add one at the bottom of this panel.</p>
             ) : (
-                <div className="prac-modal-rows">
+                <div className="prac-modal-rows is-companion-list">
                     {authoredEntries.map((e) => (
-                        <div key={`${e.intentId}-${e.companionIntentId}`} className="prac-modal-row">
-                            <span className="prac-row-label">When prescribing {e.triggerLabel} → consider {e.companionLabel}</span>
+                        <div key={`${e.intentId}-${e.companionIntentId}`} className="prac-companion-row">
+                            <span className="prac-med-icon is-violet" aria-hidden="true"><Sparkles size={13} /></span>
+                            <div className="prac-med-info">
+                                <span className="prac-row-label">{e.triggerLabel} → {e.companionLabel}</span>
+                                <span className="prac-med-brands">{e.reason || "Your practice"}</span>
+                            </div>
                             <RemoveBtn label="Remove this pairing" onClick={() => removeAuthored(e)} />
                         </div>
                     ))}
                 </div>
             )}
 
+            <div className="prac-modal-section-title">
+                <span>Common pairings, every Cortex clinic</span>
+                {catalogue.length > 0 && (
+                    <span className="prac-section-count">
+                        {Math.min(COMPANION_VISIBLE, catalogue.length)} of {catalogue.length}
+                        {catalogue.length > COMPANION_VISIBLE ? " · scroll for more" : ""}
+                    </span>
+                )}
+            </div>
+            {catalogueLoading ? (
+                <SkelRows count={5} />
+            ) : (
+                <div className="prac-modal-rows is-companion-list">
+                    {catalogue.map((edge) => {
+                        const key = curatedKey(edge.intentId, edge.companionIntentId);
+                        const override = curated.get(key);
+                        const on = override ? override.enabled : true;
+                        return (
+                            <div key={key} className="prac-companion-row">
+                                <span className="prac-med-icon is-violet" aria-hidden="true"><Sparkles size={13} /></span>
+                                <div className="prac-med-info">
+                                    <span className="prac-row-label">{edge.triggerLabel} → {edge.companionLabel}</span>
+                                    <span className="prac-med-brands">{on ? "Suggested here" : "Turned off for this practice"}</span>
+                                </div>
+                                <button
+                                    type="button" className="prac-companion-toggle" aria-pressed={on}
+                                    title={on ? "Turn off for this practice" : "Turn back on"}
+                                    onClick={() => toggleGlobal(edge, on)}
+                                >
+                                    {on ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            <div className="prac-modal-section-title">Add your own pairing</div>
             <div className="prac-companion-author">
                 {error && <p className="prac-modal-error">{error}</p>}
                 <div className="prac-modal-field">
@@ -1258,7 +1364,7 @@ function CompanionsModal({
                     )}
                 </div>
                 <div className="prac-modal-field">
-                    <label>Why — shown to the doctor as the reason</label>
+                    <label>Why, shown to the doctor as the reason</label>
                     <input
                         type="text" value={reason} placeholder="e.g. Gastric cover"
                         onChange={(e) => setReason(e.target.value)}
@@ -1272,31 +1378,6 @@ function CompanionsModal({
                     <Plus size={14} /> Add pairing
                 </button>
             </div>
-
-            <div className="prac-modal-section-title">Common pairings — every Cortex clinic</div>
-            {catalogueLoading ? (
-                <SkelRows count={4} />
-            ) : (
-                <div className="prac-modal-rows is-companion-list">
-                    {catalogue.map((edge) => {
-                        const key = curatedKey(edge.intentId, edge.companionIntentId);
-                        const override = curated.get(key);
-                        const on = override ? override.enabled : true;
-                        return (
-                            <div key={key} className="prac-modal-row">
-                                <span className="prac-row-label">When prescribing {edge.triggerLabel} → consider {edge.companionLabel}</span>
-                                <button
-                                    type="button" className="prac-companion-toggle" aria-pressed={on}
-                                    title={on ? "Turn off for this practice" : "Turn back on"}
-                                    onClick={() => toggleGlobal(edge, on)}
-                                >
-                                    {on ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                                </button>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
         </PracticeModal>
     );
 }
@@ -1467,7 +1548,7 @@ export function PracticePage({
                             ) : (
                                 <EmptyBlock
                                     art={<BlankLabArt />} fact="No preferred labs yet"
-                                    next="Add the diagnostic centres you actually send patients to — Consult will prompt for one whenever a test is on the plan."
+                                    next="Add the centres you actually send patients to. Consult prompts for one when a test is on the plan."
                                     action={<button type="button" className="prac-empty-action" onClick={() => setLabsModalOpen(true)}>+ Add a lab</button>}
                                 />
                             )}
@@ -1498,7 +1579,7 @@ export function PracticePage({
                             ) : (
                                 <EmptyBlock
                                     art={<BlankTemplateArt />} fact="No templates yet"
-                                    next="Build a reusable starting point — a name, a trigger word, and the items it pre-selects."
+                                    next="A name, a trigger word, and the items it pre-selects."
                                     action={<button type="button" className="prac-empty-action" onClick={() => setEditingTemplate("new")}>+ New template</button>}
                                 />
                             )}
@@ -1549,7 +1630,7 @@ export function PracticePage({
                             ) : (
                                 <EmptyBlock
                                     art={<BlankCompanionArt />} fact="No companions configured"
-                                    next="Curate existing pairings or author your own — Consult offers them as suggestions, never automatically."
+                                    next="Curate common pairings or add your own. Cortex only ever suggests them."
                                     action={<button type="button" className="prac-empty-action" onClick={() => setCompanionModalOpen(true)}>Manage companions</button>}
                                 />
                             )}
@@ -1579,8 +1660,10 @@ export function PracticePage({
                 {/* ── TIER 3: PRACTICE VOCABULARY ─────────────────────────────── */}
                 <div className="prac-group">
                     <div className="prac-group-head">
-                        <h2 className="prac-group-title">Practice vocabulary</h2>
-                        <p className="prac-group-sub">Your own words, remembered for next time.</p>
+                        <div className="prac-group-head-text">
+                            <h2 className="prac-group-title">Practice vocabulary</h2>
+                            <p className="prac-group-sub">Your own words, remembered for next time.</p>
+                        </div>
                     </div>
                     <PracticeCard icon={<BookText size={14} />} tone="violet" title="Your Clinical Terms" count={terms.length}>
                         <div className="prac-term-add">
@@ -1620,7 +1703,7 @@ export function PracticePage({
                                 )}
                             </>
                         ) : (
-                            <EmptyBlock art={<BlankTermArt />} fact="Nothing added yet" next="Add a term above, or type one Cortex doesn't have during a consult — it's remembered here either way." />
+                            <EmptyBlock art={<BlankTermArt />} fact="Nothing added yet" next="Add one above, or type it during a consult. Either way it is remembered here." />
                         )}
                     </PracticeCard>
                 </div>

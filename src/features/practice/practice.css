@@ -54,7 +54,13 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(240px, 1fr));
     gap: var(--cs-s4);
-    align-items: start;
+    /* `stretch`, not `start` — cards in one row share the row's height, so
+       they line up (responsive-grid.md's parity rule) WITHOUT any card
+       declaring a height of its own. The row is as tall as its tallest
+       card's real content, capped by `.prac-card.is-fixed`'s max-height.
+       A fixed `height` was what produced 295px of measured dead space
+       under a one-row Preferred Labs card (2026-08-27, screenshotted). */
+    align-items: stretch;
 }
 
 .prac-grid + .prac-grid {
@@ -92,28 +98,33 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: var(--cs-s3);
+    padding-bottom: var(--cs-s1);
 }
 
 .prac-group-head-text {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 3px;
     min-width: 0;
 }
 
+/* Sized up 2026-08-27: at 11px this heading and its stat row read as a
+   caption floating above a page of much larger cards ("visually terrible
+   compared to how big the page is below"). It is the page's primary
+   heading — it carries the weight to match. */
 .prac-group-title {
     margin: 0;
     color: var(--cs-ink);
-    font-size: 11px;
-    font-weight: 750;
-    letter-spacing: 0.05em;
+    font-size: 14px;
+    font-weight: 780;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
 }
 
 .prac-group-sub {
     margin: 0;
-    color: var(--cs-faint);
-    font-size: 11px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
     font-weight: 460;
 }
 
@@ -127,22 +138,22 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 22px;
+    gap: 30px;
 }
 
 .prac-stat {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
 .prac-stat-icon {
     flex: none;
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
 }
 
 .prac-stat-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
@@ -158,13 +169,15 @@
 
 .prac-stat-text b {
     color: var(--cs-ink);
-    font-size: 15px;
-    font-weight: 750;
+    font-size: 22px;
+    font-weight: 760;
+    letter-spacing: -0.015em;
+    line-height: 1.05;
 }
 
 .prac-stat-text span {
-    color: var(--cs-faint);
-    font-size: 10.5px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
     font-weight: 550;
     white-space: nowrap;
 }
@@ -225,28 +238,29 @@
     box-shadow: var(--cs-shadow);
 }
 
-/* ── Stable composition heights ─────────────────────────────────────────────
-   Neighbouring cards used to size themselves off their own content — a
-   card with one item, a card with four, a card mid-"Show more" all sat in
-   the same row at three different heights, which is what actually looked
-   wrong (not any one card in isolation). Every "primary" card in Clinical
-   Defaults gets the SAME fixed footprint instead — content fills or
-   under-fills it, it never resizes it. "Show more"/the tree's own scroll
-   still work; they happen inside the space already reserved
-   (`.prac-card-body`/`.prac-rows`/`.prac-tree` below), never grow the card.
+/* ── Bounded, not fixed — corrected 2026-08-27 after actually rendering it ──
+   This used to be a hard `height` (360px, then 396px). Rendered against
+   the real account, that produced exactly the failure
+   `empty-states.md` warns about: Preferred Labs with one lab measured
+   295px of dead space below its content, Prescription Templates 275px,
+   while Consultation Defaults sat at 121px in the same row — a jagged row
+   of giant empty rectangles. "A 62px illustration in a 300px well reads as
+   an accident."
 
-   The number itself is derived, not eyeballed: card head (icon row + head
-   padding, ~47px) + the new subtitle line (~20px, `.prac-card-sub`) + the
-   search/manage row (~40px) + a 4.5-row list window at this tier's own
-   two-line row height (`MED_ROW_H`, 54px — the same 4.5×row convention
-   `progressive-disclosure.md` documents for a capped list's expanded box)
-   + the body's own bottom padding (--cs-s4, 12px):
-   47 + 20 + 40 + 243 + 12 ≈ 362px, rounded to 396px so Preferred Medicines'
-   composition tree — which needs to show more like 7-8 rows at a time per
-   the reference, not 4.5 — gets real headroom before its own internal
-   scroll takes over, rather than scrolling almost immediately. */
+   `max-height` instead. The grid row (`align-items: stretch` above) makes
+   side-by-side cards share a height, so parity still holds — but that
+   height is now the tallest card's REAL content, not a constant nobody's
+   data matches. Sparse content gives a short row; full content grows to
+   this ceiling and then scrolls internally (`.prac-tree`/`.prac-rows`/
+   `.prac-search-results` are all `flex:1; min-height:0; overflow-y:auto`),
+   so the page still never grows without bound.
+
+   The ceiling is derived: head (~47px) + subtitle (~20px) + search row
+   (~40px) + a 7-row list window at the tree's own row height (34px = 238px)
+   + body bottom padding (12px) ≈ 357px, rounded to 380px. Seven rows is
+   the reference image's own visible-row count for this card. */
 .prac-card.is-fixed {
-    height: 396px;
+    max-height: 380px;
 }
 
 /* Secondary tier — related configuration, quieter by design (the brief:
@@ -487,10 +501,55 @@
     padding: 0 0 var(--cs-s2);
 }
 
+/* Search results scroll INSIDE the card, exactly like the composition tree
+   they replace. Before 2026-08-27 this had no bound at all, so typing a
+   query that matched a few dozen products grew the card and pushed the
+   whole page down — the "it's still growing endlessly, there is no nested
+   scrolling" report. */
 .prac-search-results {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
+}
+
+/* A search-result row — the same two-line identity as a tree row, plus a
+   visible action (heart for a product, "Brands" for a molecule). Never a
+   bare click target with nothing drawn on it. */
+.prac-hit-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+    flex: none;
+    min-height: 46px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--cs-line);
+}
+
+.prac-hit-row:last-child { border-bottom: 0; }
+
+.prac-hit-drill {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: none;
+    padding: 4px 10px;
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.prac-hit-drill:hover {
+    background: var(--cs-teal-soft);
+    border-color: transparent;
+    color: var(--cs-teal);
 }
 
 .prac-row-label {
