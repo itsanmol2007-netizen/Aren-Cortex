@@ -50,3 +50,33 @@ invent a new one that merely looks the same today.**
 
 Spacing inside a card comes from `--cs-s1`…`--cs-s5` (3/6/9/12/15px), never
 a bespoke pixel value chosen by eye.
+
+---
+
+## A card declares `max-height`, never `height` (added 2026-08-27)
+
+Cards in a row must line up (`responsive-grid.md`) — but the way to get
+that is **`align-items: stretch` on the grid**, so the row is as tall as
+its tallest card's REAL content. It is never a constant height written
+onto the cards themselves.
+
+A hard `height` looks fine the day you pick it, against the data you
+happened to have. Measured on the Practice page with a real (sparse)
+account: 396px cards holding one row each, **295px of dead space** under
+Preferred Labs, 275px under Templates, and a 121px Consultation Defaults
+sitting in the same row — a jagged row of empty rectangles. Switching to
+`max-height` plus grid `stretch` produced 163px cards with 42–62px of
+slack from the identical markup.
+
+So:
+
+- **`max-height`** on the card, derived from its own parts (head +
+  subtitle + search row + N rows at the list's measured row height +
+  padding), written down in the comment next to it.
+- **`align-items: stretch`** on the grid for row parity.
+- Growth past the ceiling is the list's problem, not the card's — it
+  scrolls internally (`layout-composition.md`).
+
+A card is allowed to be short when its content is short. That is honest,
+and `empty-states.md` has forbidden the alternative since 2026-08-25:
+*"a 62px illustration in a 300px well reads as an accident."*

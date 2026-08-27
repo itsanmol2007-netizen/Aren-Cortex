@@ -30,3 +30,19 @@ catalogue dump.** This applies uniformly:
   instances show), compute a *second*, still-measured constant for that
   case (`MULTI_TYPE_ROW_H`) — don't reuse the shared one for a visibly
   different row shape, and don't invent a third number without measuring.
+
+---
+
+## A capped list must say how much it is holding (added 2026-08-27)
+
+Capping without a count is indistinguishable from data loss. A companions
+modal showing 5 of 26 pairings, with the rest behind an internal scroll
+and nothing on screen saying so, was read as *"it's just showing 5, where
+are the others?"* — a reasonable reading, because nothing contradicted it.
+
+Every capped or internally-scrolling list carries its total, in the
+section header, in the same `.cs-ranked-count` / `.prac-section-count`
+shape Consult's ranked panels already use: **"5 of 26 · scroll for
+more"**. Derive the visible number from a named constant that matches the
+CSS window (`COMPANION_VISIBLE = 5` against a 232px box of 46px rows), so
+the count cannot drift from what is actually on screen.

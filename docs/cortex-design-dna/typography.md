@@ -36,3 +36,22 @@ beats a paragraph; a paragraph never appears.**
   relevant first" — same fact, no exposed verb like "sort" or "rank" doing
   the talking. Same test applies to any future label: if it would fit
   equally well on a shopping filter, it is not clinical language yet.
+
+---
+
+## Scale the heading to the page it heads (added 2026-08-27)
+
+The type scale in this file is Consult's — a dense workspace of small
+panels. Reused verbatim on a page of large cards, an 11px uppercase
+section title reads as a caption that wandered in, not as the page's
+heading. Reported on Practice as *"the main page heading and this section
+should have more weightage and more bigger size"*.
+
+A page-level section header (its title, its one-line description, and any
+summary tiles beside it) is sized against the largest thing below it, not
+copied from a denser screen. On Practice that landed at 14px/780 for the
+title, 12.5px for the sub, and 22px numerals in the stat tiles — roughly
++3px on each step versus the Consult scale.
+
+The rest of this file still holds: it is a *scale* change, not a licence
+for a hero. Still one title, still one line under it, still no paragraph.

@@ -47,12 +47,25 @@ one, go read the matching file — don't guess.
 | 7 | If a list can grow past ~5 rows, is it capped with "Show more" rather than dumped in full? | `progressive-disclosure.md` |
 | 8 | If two panels sit side by side, will their header height, row height and "Show more" controls land on the same pixel when both are populated — and both empty? | `responsive-grid.md` |
 | 9 | Does the empty state say the minimum true thing, once, with the family's SVG — not a fresh icon, not three sentences? | `empty-states.md` |
-| 10 | Have you actually looked at this rendered, not just read the CSS? Getting this backwards is documented at length in `../SESSION-HANDOFF.md`'s 2026-08-25 entry. | `verification.md` |
+| 10 | Does every region fed by data you don't control declare a bound — a capped fetch, a scrolling box, and `flex: none` on the siblings that must not shrink? | `layout-composition.md` |
+| 11 | Is any card carrying a hard `height`? It should be `max-height` + grid `align-items: stretch`. | `panel-structure.md` |
+| 12 | Is this page's own section heading sized against THIS page, or copied from Consult's denser scale? | `typography.md` |
+| 13 | **Have you rendered it in a browser, measured it, and clicked the thing?** Not "does it build" — a screenshot and a `getBoundingClientRect()`. This is the one that keeps getting skipped, and it is the one that keeps costing whole sessions. | `verification.md` |
 
 Each pocket file is self-contained (the concrete rule, the real bug or
 complaint it traces to, pointers to the actual files it governs) — read
 only the one(s) your task needs, the same way `../context/README.md`
 routes the rest of `docs/`.
+
+**Rule 13 is not optional, and it is not last because it is least.** Every
+other row on this list has been satisfied by a page that was then rejected
+on sight. On 2026-08-27 one screenshot of a page that passed rows 1–12
+showed 295px of dead space, a list squashed to a 45px sliver, and a search
+with no add button on any row. `empty-states.md` had already forbidden the
+first of those since 2026-08-25 — the rule was written, and shipped
+against anyway, because nobody looked. Reading these files is how you
+avoid the mistake; rendering the page is how you find out whether you
+did.
 
 ---
 
