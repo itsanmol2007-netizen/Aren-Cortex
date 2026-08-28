@@ -122,3 +122,35 @@ takeaway isn't "always keep a heading" or "always cut it", it's that a
 literal reference image overrides a prior round's own reasoning, even
 reasoning that was sound in isolation and is still recorded in this file.
 Check the CURRENT reference before repeating an old argument.
+
+## A binary-toggle row's whole surface is the button (added 2026-08-28)
+
+If a row exists to represent ONE clear yes/no state a click flips (a
+composition's brand marked preferred or not, a search hit added or not),
+the icon that shows the state is not the only place that click should
+land — "clicking anywhere on the medicine row should toggle it... the
+heart should remain as a visual state indicator, not the only clickable
+target." Wrap the ROW in the interactive element (`<button
+className="prac-tree-row">`, not a `<div>` with a nested `<button>`
+heart) and give the heart's own `onClick` an `e.stopPropagation()` (the
+reused `PinButton` already has one) so clicking the heart directly still
+fires exactly once, not twice. This is NOT a licence to make every row
+a giant click target regardless of what's on it — a row with several
+independent actions (Preferred Labs: star-default, remove, reorder) keeps
+each its own control; this only applies where the row really does
+represent one single toggle.
+
+## A modal doesn't lose a draft to a stray click (added 2026-08-28)
+
+Click-outside-to-close is right for a modal that's just a list (nothing
+to lose) and wrong for one mid-form (a name half-typed, a composition
+picked, a pairing half-built) — a stray click on the backdrop shouldn't
+silently discard it. `PracticeModal`'s new `dirty` prop is the switch:
+omit it and a modal closes on outside-click same as always (`LabsModal`'s
+own list, `CompanionsModal`'s curated toggles — both save/act instantly,
+nothing to lose); pass `dirty={true}` once the modal's OWN state has
+something a click would throw away, computed locally by each modal
+(`AddMedicineModal`: `!!name.trim() || compositions.length > 0 || …`;
+`MeasurementsModal`: the checked set differs from what it opened with).
+Escape and the × close button always work regardless — both are an
+explicit "I want to leave", never a stray click.

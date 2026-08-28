@@ -46,3 +46,30 @@ shape Consult's ranked panels already use: **"5 of 26 · scroll for
 more"**. Derive the visible number from a named constant that matches the
 CSS window (`COMPANION_VISIBLE = 5` against a 232px box of 46px rows), so
 the count cannot drift from what is actually on screen.
+
+## An affordance gated behind another affordance can gate itself shut (added 2026-08-28)
+
+`SuggestionsCard`'s free-text "add your own" row was, correctly, gated on
+`effectiveType` — file a typed line under the wrong intent type and it's
+wrong data, so the code refuses to guess which of Test/Referral/Advice a
+line belongs to until a doctor has picked one via the category tabs.
+Reasonable in isolation. But those SAME tabs are, also correctly, gated on
+`nonEmptySections` — no tab for a category with nothing ranked in it yet
+(`panel-structure.md`'s "chrome, not a filter" rule). On a fresh chart
+both rules are individually right and their combination is a dead end: no
+tab exists to pick a type, so `effectiveType` can never become non-null,
+so the free-text row can never appear — a doctor typing their own advice
+line before anything ranked got "Nothing matches… Try the name, or the
+symptom you are treating" with zero action available. Reproduced live,
+not spotted by reading either rule alone.
+
+The fix doesn't touch either gate — the tab-visibility rule is still
+exactly what `panel-structure.md` documents. It adds a THIRD state
+alongside "type chosen" (pick from THAT type's matches) and "nothing typed
+yet": when a query has NO catalogue hits and no type is in view, offer an
+explicit "Add '<query>' as: [Referral] [Advice]" choice — one button per
+free-text-capable type this instance actually covers — so the doctor
+supplies the type by hand instead of the UI inferring nothing. When you
+add a second gate to something that already has one, check what happens
+when BOTH are simultaneously in their most-restrictive state, not just
+each alone.

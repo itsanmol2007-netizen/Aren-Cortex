@@ -1097,12 +1097,21 @@ interface SheetProps {
     /** the story itself, for the sentence — see the Story row */
     story?: Story;
     onStoryRemove?: (it: StorySearchItem) => void;
+    /**
+     * Lands focus in the command bar's search input — the empty sheet's own
+     * "+" (2026-08-28). `ClinicalCommandBar` and `CaseSheet` are siblings on
+     * purpose (neither shared component should need to know the other
+     * exists — see `relatedRef`'s doc comment above), so this is a plain
+     * callback rather than a shared ref, wired by whichever profile layout
+     * renders both (`GeneralOpdInputs.tsx`, `PhysioInputs.tsx`).
+     */
+    onFocusSearch?: () => void;
 }
 
 export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
-    storyChips = [], story: storyOf, onStoryRemove,
+    storyChips = [], story: storyOf, onStoryRemove, onFocusSearch,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
@@ -1200,7 +1209,25 @@ export function CaseSheet({
                 should look like nothing has been recorded. */}
             {entries.length === 0 && storyChips.length === 0 && (
                 <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-4 text-center">
-                    <EmptySheetArt />
+                    {/* The drawing stays exactly as it was — only a small "+"
+                        rides its corner now (2026-08-28), a real affordance
+                        rather than just a picture: click it and the command
+                        bar's own search field takes focus, the same field
+                        the line below already points at. */}
+                    <div className="relative inline-flex">
+                        <EmptySheetArt />
+                        {onFocusSearch && (
+                            <button
+                                type="button"
+                                onClick={onFocusSearch}
+                                aria-label="Add a symptom, finding or history"
+                                title="Add a symptom, finding or history"
+                                className="absolute -bottom-0.5 -right-0.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-white bg-[var(--cs-blue)] text-white shadow-[0_2px_6px_rgba(18,104,232,0.35)] transition-transform hover:scale-110"
+                            >
+                                <Plus size={13} strokeWidth={2.5} />
+                            </button>
+                        )}
+                    </div>
                     {/* A heading in ink, then the line. The card previously
                         held a single sentence of grey, which is what an
                         unfinished screen looks like — nothing on it was at

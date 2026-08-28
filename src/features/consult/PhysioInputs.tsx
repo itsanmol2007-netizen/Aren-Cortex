@@ -165,6 +165,7 @@ export function PhysioInputs({
                     storyChips={storyChips}
                     story={story}
                     onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
+                    onFocusSearch={() => searchRef?.current?.focus()}
                 />
 
                 <div className="cs-rowone-right">

@@ -454,6 +454,44 @@ export function SuggestionsCard({
                             )}
                         </div>
                     )}
+                    {/*
+                     * The gap the block above can't close: `effectiveType` is
+                     * null whenever "All" is showing — which, on a FRESH
+                     * chart, is EVERY time, because the tabs that would let a
+                     * doctor pick "Advice" are themselves gated on something
+                     * already being ranked (`nonEmptySections`). A doctor
+                     * typing their own advice line before anything ranks hit
+                     * a dead end: "Nothing matches… Try the name, or the
+                     * symptom you are treating" with no action at all —
+                     * reproduced live 2026-08-28, the exact ask being closed
+                     * here ("already ranked advice and a thing below it with
+                     * option to add doctor's own advice").
+                     *
+                     * Only when the catalogue itself came up empty (never
+                     * instead of a real hit) and only offering the types
+                     * this instance actually covers AND that free text can
+                     * safely file into (`FREE_TEXT_TYPES ∩ SECTIONS`) — a
+                     * doctor typing a medicine name still gets medicine
+                     * results, never a spurious "Add as Advice" beside them.
+                     */}
+                    {!effectiveType && onAddFreeText && !search.loading
+                        && search.hits.length === 0 && search.query.trim() && (
+                        <div className="cs-freeterm cs-freeterm-pick">
+                            <span className="cs-freeterm-label">Add "{search.query.trim()}" as…</span>
+                            <div className="cs-freeterm-pick-row">
+                                {SECTIONS.filter((s) => FREE_TEXT_TYPES.has(s.type)).map((s) => (
+                                    <button
+                                        key={s.type}
+                                        type="button"
+                                        className="cs-freeterm-pick-btn"
+                                        onClick={() => addFree(s.type as DoctorFreeTermType, search.query.trim())}
+                                    >
+                                        {s.icon} {s.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </>
             );
         }

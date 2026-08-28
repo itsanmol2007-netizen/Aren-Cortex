@@ -2058,6 +2058,42 @@ body.cs-locked-shell {
     text-underline-offset: 2px;
 }
 
+/* "Add [query] as…" — the fallback for a query typed while "All" is
+   showing, so there is no single `effectiveType` to file it under (added
+   2026-08-28). Same dashed-box family as `.cs-freeterm-ranked`, since this
+   is also a set of shortcuts rather than a results list. */
+.cs-freeterm.cs-freeterm-pick {
+    border: 1px solid #e6ddfb;
+    border-radius: 10px;
+    background: #fff;
+    padding: 9px 10px;
+}
+
+.cs-freeterm-pick-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 5px;
+}
+
+.cs-freeterm-pick-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid #c4b5fd;
+    border-radius: 999px;
+    background: #fff;
+    padding: 5px 12px;
+    color: #6d28d9;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.cs-freeterm-pick-btn:hover { background: #f3ecff; }
+.cs-freeterm-pick-btn svg { flex: none; }
+
 .cs-list {
     flex: 1;
     min-height: 0;

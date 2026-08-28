@@ -116,19 +116,40 @@ export async function loadIdentity(authUserId: string): Promise<IdentityResult> 
 
     // The clinical profile is display data, not a gate condition — a doctor
     // whose profile row is momentarily unreadable can still work.
+    //
+    // "still work" used to mean silently: `useClinicalIdentity` falls back to
+    // the hardcoded MVP `DOCTOR_ID` constant the instant `doctor` is null
+    // here — and that constant names a doctor at a COMPLETELY DIFFERENT,
+    // unrelated hospital. One dropped request (this sandbox's proxy resets
+    // connections often enough to hit it in practice) used to silently
+    // write a stranger's name onto a real clinic's visits and prescriptions
+    // — caught 2026-08-28 when a live account's Prescription Pad printed
+    // "Dr SK Pandey" for a doctor who has never worked there. A single
+    // retry after a short pause absorbs exactly that class of transient
+    // blip; only a genuinely missing/unreadable row still falls through to
+    // `null` (and from there to the caller's fallback — a separate, lower-
+    // priority correctness gap the fallback itself still has).
     let doctor: AppDoctorProfile | null = null;
     if (user.role === "doctor") {
-        try {
-            const { data } = await withTimeout(
+        const fetchDoctorRow = () =>
+            withTimeout(
                 supabase
                     .from("doctors")
                     .select("id, user_id, name, specialization, qualification, registration_number, avatar_url, signature_image_url")
                     .eq("user_id", authUserId)
                     .maybeSingle()
             );
+        try {
+            const { data } = await fetchDoctorRow();
             doctor = (data as AppDoctorProfile | null) ?? null;
         } catch {
-            doctor = null;
+            try {
+                await new Promise((r) => setTimeout(r, 400));
+                const { data } = await fetchDoctorRow();
+                doctor = (data as AppDoctorProfile | null) ?? null;
+            } catch {
+                doctor = null;
+            }
         }
     }
 

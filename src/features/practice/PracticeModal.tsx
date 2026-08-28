@@ -1,20 +1,27 @@
 // ---------------------------------------------------------------------------
-// PRACTICE MODAL — ONE modal family, not a theme per feature.
+// PRACTICE MODAL — ONE modal family, four restrained variations, never a
+// theme per feature.
 //
 // 2026-08-26 correction: the first version let `accent` recolour the whole
-// modal — stripe, primary button, focus rings, all of it — per call site.
-// Four features meant four fully-themed modals (an orange one for Preferred
-// Labs among them), which is exactly the "Christmas tree" mistake the
-// design DNA warns against: every category does not get its own colour.
+// modal with whatever hue a call site picked — Four features meant four
+// fully-themed modals (an orange one for Preferred Labs among them), which
+// is exactly the "Christmas tree" mistake the design DNA warns against:
+// every category does not get its own invented colour. That correction
+// pinned the stripe/button/eyebrow to ONE fixed gradient for every modal,
+// `accent` touching only the small header icon tile.
 //
-// Now the chrome is fixed for every modal: the stripe and the primary
-// button are always Cortex's own signature gradient (`#f472b6 → #a855f7 →
-// #6366f1`, the same one `.topbar-stripe` and `.action-button.primary` use
-// elsewhere in this app) — not invented here, reused. `accent` controls
-// exactly one thing, the small header icon tile, as a restrained semantic
-// hint (teal for medicine, blue for a declared clinic default, violet for
+// 2026-08-28 correction: fixed everywhere on ONE hue read as "still
+// overwhelmingly pink/blue" once seven modals sat side by side. The fix is
+// not a colour per feature again — `accent` is still exactly the same four
+// values (teal for medicine, blue for a declared clinic default, violet for
 // doctor-authored content, slate/neutral where nothing more specific
-// applies) — never a second colour system layered on top of the first.
+// applies), the same domain hint the icon tile already carried. What
+// changed is that the stripe, the primary button, and the eyebrow now
+// pick up THAT SAME tone too (`.prac-modal.is-{accent} .prac-modal-stripe`
+// etc. in practiceModal.css), so a modal reads as one coherent tone
+// top-to-bottom instead of a tone-hinted icon sitting on otherwise-neutral
+// chrome. Four gradients total, all built from colour.md's existing seven
+// tokens — never an eighth colour, never a fifth accent value.
 // ---------------------------------------------------------------------------
 
 import { useEffect } from "react";
@@ -25,7 +32,7 @@ import "./practiceModal.css";
 export type PracticeModalAccent = "teal" | "blue" | "violet" | "slate";
 
 export function PracticeModal({
-    accent, icon, eyebrow, title, onClose, children, footer, wide,
+    accent, icon, eyebrow, title, onClose, children, footer, wide, dirty,
 }: {
     accent: PracticeModalAccent;
     icon: ReactNode;
@@ -36,6 +43,19 @@ export function PracticeModal({
     footer?: ReactNode;
     /** the wider card width, for a modal whose body is a form rather than a list */
     wide?: boolean;
+    /**
+     * True once the doctor has typed or picked something a click outside
+     * would silently throw away. A click on the backdrop stops closing the
+     * modal the instant this is true (2026-08-28: "do not close the modal
+     * by outside-click when the user has already entered information") —
+     * Escape and the × still always work, since both are an explicit "I
+     * want to leave", not a stray click. Each stateful modal computes its
+     * own `dirty` (a name typed, a composition picked, a pairing half-
+     * built…); a modal that's just a list with nothing to lose (LabsModal,
+     * CompanionsModal's curate list) never sets this and keeps the
+     * original click-outside-to-close behaviour.
+     */
+    dirty?: boolean;
 }) {
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -46,7 +66,7 @@ export function PracticeModal({
     return (
         <div
             className="prac-modal-overlay"
-            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+            onMouseDown={(e) => { if (e.target === e.currentTarget && !dirty) onClose(); }}
         >
             <div
                 className={`prac-modal is-${accent}${wide ? " is-wide" : ""}`}

@@ -224,6 +224,24 @@ function EmptyBlock({ art, fact, next, action }: { art: ReactNode; fact: string;
     );
 }
 
+/** The page's own section heading gets a little presence beside it — never
+ *  a mascot, never a chart. Three quiet sparks on a dashed thread, the SAME
+ *  spark glyph BlankArt.tsx already draws in every card's own empty state
+ *  (a diamond, one line weight), just arranged once here rather than
+ *  invented as a new motif. Sits behind/beside the title, low-opacity, so
+ *  it reads as texture the section head carries, not a fourth thing
+ *  competing with "Clinical Defaults" for attention. */
+function GroupHeadMark() {
+    return (
+        <svg width="108" height="28" viewBox="0 0 108 28" fill="none" aria-hidden="true" className="prac-group-mark">
+            <path d="M2 14h30M78 14h28" stroke="var(--cs-line-strong)" strokeWidth="1.4" strokeLinecap="round" strokeDasharray="1 5" />
+            <path d="M46 4l1.6 3.8 3.8 1.6-3.8 1.6L46 15l-1.6-3.8L40.6 9.4l3.8-1.6z" fill="var(--cs-blue-soft)" stroke="var(--cs-blue)" strokeWidth="1.1" />
+            <path d="M60 16l1.1 2.6 2.6 1.1-2.6 1.1L60 23.4l-1.1-2.6-2.6-1.1 2.6-1.1z" fill="var(--cs-violet-soft)" stroke="var(--cs-violet)" strokeWidth="1" />
+            <path d="M68 6l.8 1.9 1.9.8-1.9.8L68 11.4l-.8-1.9-1.9-.8 1.9-.8z" fill="var(--cs-teal-soft)" stroke="var(--cs-teal)" strokeWidth="0.9" />
+        </svg>
+    );
+}
+
 // ── The card primitive — every card on the page shares this head/body
 //    recipe so it reads as one system, not several. `action` is the
 //    optional "Manage" / "+ New" trigger that opens a modal. ─────────────
@@ -394,7 +412,7 @@ function PreferredMedicinesCard({
     // opening one composition closes any other, so the bounded scroll area
     // stays predictable rather than growing with every group opened.
     const [expandedId, setExpandedId] = useState<number | null>(null);
-    const searchRef = useRef<HTMLInputElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
     const reduce = useReducedMotion();
     const headerRefs = useRef(new Map<number, HTMLButtonElement>());
 
@@ -521,16 +539,26 @@ function PreferredMedicinesCard({
             foot={brands.length > 0 ? (
                 <FootLink
                     label="Manage all preferred medicines"
-                    onClick={() => searchRef.current?.querySelector("input")?.focus()}
+                    onClick={() => searchInputRef.current?.focus()}
                 />
             ) : undefined}
         >
-            <div ref={searchRef as any}>
+            <div>
                 <IntentSearchField
                     state={search} placeholder="Search medicine (brand or generic)…"
+                    inputRef={searchInputRef}
                     trailing={
-                        <button type="button" className="prac-search-add" onClick={() => onOpenAddNew("")}>
-                            <Plus size={13} /> Add medicine
+                        // "Add Preferred" — NOT "Add New Medicine" (a
+                        // completely different action, §15/16: one marks an
+                        // EXISTING catalogue brand preferred, the other
+                        // creates a brand that doesn't exist yet). This
+                        // button used to open the create-a-brand modal by
+                        // mistake. The search field immediately below IS
+                        // the preferred-medicine picker — every hit already
+                        // carries a heart — so this button's whole job is
+                        // to land focus there.
+                        <button type="button" className="prac-search-add" onClick={() => searchInputRef.current?.focus()}>
+                            <Plus size={13} /> Add Preferred
                         </button>
                     }
                 />
@@ -559,14 +587,16 @@ function PreferredMedicinesCard({
                                     )}
                                     {drillBrands.map((b) => {
                                         const pinned = isPreferred(drill.id, b.medicineId);
+                                        const toggle = () => togglePreferred(drill.id, drill.name, b.medicineId, b.name);
                                         return (
-                                            <div key={b.medicineId} className="prac-modal-row">
+                                            <button
+                                                key={b.medicineId} type="button"
+                                                className="prac-modal-row is-pick"
+                                                onClick={toggle}
+                                            >
                                                 <span className="prac-row-label">{b.name}</span>
-                                                <PinButton
-                                                    pinned={pinned} label={b.name}
-                                                    onToggle={() => togglePreferred(drill.id, drill.name, b.medicineId, b.name)}
-                                                />
-                                            </div>
+                                                <PinButton pinned={pinned} label={b.name} onToggle={toggle} />
+                                            </button>
                                         );
                                     })}
                                 </>
@@ -591,13 +621,17 @@ function PreferredMedicinesCard({
                             // name is primary, composition is secondary").
                             const isBrandHit = hit.matchKind === "brand" && !!hit.viaLabel;
                             const already = isBrandHit && preferredBrandNames.has((hit.viaLabel ?? "").toLowerCase());
-                            // EVERY row carries a visible way to act. Before
-                            // 2026-08-27 the whole row was one click target
-                            // with no affordance drawn on it at all, so a
-                            // doctor who searched a medicine saw a list and
-                            // no button — "there is no any way to add it".
+                            // EVERY row carries a visible way to act — a
+                            // heart for a resolved product, a "Brands"
+                            // drill for a molecule name — AND the row
+                            // itself now does the same thing on click
+                            // (2026-08-28: "clicking anywhere on the row
+                            // should toggle it", not just the tiny heart).
                             return (
-                                <div key={hit.intentId} className="prac-hit-row">
+                                <button
+                                    key={hit.intentId} type="button" className="prac-hit-row"
+                                    onClick={() => (isBrandHit ? pickHit(hit) : openDrill(hit))}
+                                >
                                     <span className="prac-med-icon" aria-hidden="true"><Pill size={13} /></span>
                                     <div className="prac-med-info">
                                         <span className="prac-row-label is-catalogue">{isBrandHit ? hit.viaLabel : hit.label}</span>
@@ -612,14 +646,11 @@ function PreferredMedicinesCard({
                                             onToggle={() => pickHit(hit)}
                                         />
                                     ) : (
-                                        <button
-                                            type="button" className="prac-hit-drill"
-                                            onClick={() => openDrill(hit)}
-                                        >
+                                        <span className="prac-hit-drill">
                                             Brands <ChevronDown size={12} />
-                                        </button>
+                                        </span>
                                     )}
-                                </div>
+                                </button>
                             );
                         })
                     )}
@@ -651,17 +682,17 @@ function PreferredMedicinesCard({
                                     transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
                                     className="prac-tree-children"
                                 >
-                                    {g.rows.map((r) => (
-                                        <div key={r.medicineId} className="prac-tree-row">
-                                            <span className="prac-row-label is-catalogue">{r.medicineName}</span>
-                                            {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
-                                            {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
-                                            <PinButton
-                                                pinned label={r.medicineName}
-                                                onToggle={() => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName)}
-                                            />
-                                        </div>
-                                    ))}
+                                    {g.rows.map((r) => {
+                                        const toggle = () => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName);
+                                        return (
+                                            <button key={r.medicineId} type="button" className="prac-tree-row" onClick={toggle}>
+                                                <span className="prac-row-label is-catalogue">{r.medicineName}</span>
+                                                {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
+                                                {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
+                                                <PinButton pinned label={r.medicineName} onToggle={toggle} />
+                                            </button>
+                                        );
+                                    })}
                                 </motion.div>
                             </div>
                         );
@@ -734,6 +765,7 @@ function LabsModal({
             title="Your diagnostic centres"
             onClose={onClose}
             wide
+            dirty={!!name.trim() || !!contactNote.trim()}
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
             <div className="prac-modal-field">
@@ -886,6 +918,7 @@ function TemplateBuilderModal({
             title={templateId === "new" ? "New template" : "Edit template"}
             onClose={onClose}
             wide
+            dirty={!loading && (!!name.trim() || !!triggerLabel.trim() || items.length > 0)}
             footer={
                 <>
                     {templateId !== "new" && (
@@ -985,11 +1018,29 @@ function MeasurementsModal({
     onClose: () => void;
     onSaved: (keys: string[] | null) => void;
 }) {
-    const fields = MEASURE_FIELDS.filter((f) => (specialtyKeys as string[]).includes(f.key));
-    const [selected, setSelected] = useState<Set<string>>(
-        () => new Set(currentPrefs && currentPrefs.length ? currentPrefs : specialtyKeys)
+    // Was `MEASURE_FIELDS.filter(...specialtyKeys)` — only the specialty's OWN
+    // curated set was ever offered, so "5 of 5" read as a hard ceiling on how
+    // many measurements a doctor could have Cortex open with ("doctors should
+    // be able to configure more than five"). The specialty's set is still
+    // what's on BY DEFAULT (a real clinical curation, kept); the doctor can
+    // now add any other field from the full catalogue on top of it. Specialty
+    // fields sort first, so the ones already checked stay above the fold.
+    const fields = useMemo(
+        () => [...MEASURE_FIELDS].sort((a, b) => {
+            const ai = (specialtyKeys as string[]).includes(a.key) ? 0 : 1;
+            const bi = (specialtyKeys as string[]).includes(b.key) ? 0 : 1;
+            return ai - bi;
+        }),
+        [specialtyKeys]
     );
+    const initialKeys = useMemo(
+        () => new Set(currentPrefs && currentPrefs.length ? currentPrefs : specialtyKeys),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        []
+    );
+    const [selected, setSelected] = useState<Set<string>>(() => new Set(initialKeys));
     const [busy, setBusy] = useState(false);
+    const changed = selected.size !== initialKeys.size || [...selected].some((k) => !initialKeys.has(k));
 
     const toggle = (key: string) => {
         setSelected((curr) => {
@@ -1017,11 +1068,13 @@ function MeasurementsModal({
             eyebrow="Consultation Defaults"
             title="Measurements Cortex opens with"
             onClose={onClose}
+            dirty={changed}
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={save} disabled={busy}>Save</button>}
         >
             <p className="prac-soon">
-                On by default for {specialtyLabel}. Uncheck the ones you rarely use — every field
-                stays one tap away from "+ Add" in Consult regardless.
+                On by default for {specialtyLabel}. Uncheck the ones you rarely use, or add any
+                other field from the full catalogue below — every field stays one tap away from
+                "+ Add" in Consult regardless of whether it's checked here.
             </p>
             <div className="prac-measure-grid">
                 {fields.map((f) => (
@@ -1134,6 +1187,7 @@ function AddMedicineModal({
         <PracticeModal
             accent="teal" icon={<Plus size={15} />} eyebrow="Add New Medicine"
             title="Create a medicine record" onClose={onClose} wide
+            dirty={!!name.trim() || compositions.length > 0 || !!dosage.trim()}
             footer={
                 <button type="button" className="prac-modal-btn is-primary" disabled={!canSubmit} onClick={submit}>
                     {submitting ? "Creating…" : "Create medicine"}
@@ -1259,6 +1313,55 @@ function AddedMedicinesModal({ hospitalId, onClose }: { hospitalId: string; onCl
     );
 }
 
+/** "Manage clinical terms" used to be wired ONLY to the chip cloud's own
+ *  16-term overflow toggle — for any doctor with fewer than 16 terms
+ *  (nearly everyone) it was a link that visibly did nothing when clicked.
+ *  A real destination: every term, searchable, removable, one modal —
+ *  the same "Manage" surface every other populated card on this page
+ *  already has. */
+function ManageTermsModal({
+    terms, onForget, onClose,
+}: {
+    terms: DoctorFreeTermDetail[];
+    onForget: (id: number) => void;
+    onClose: () => void;
+}) {
+    const [query, setQuery] = useState("");
+    const q = query.trim().toLowerCase();
+    const filtered = q ? terms.filter((t) => t.label.toLowerCase().includes(q)) : terms;
+
+    return (
+        <PracticeModal
+            accent="violet" icon={<BookText size={15} />} eyebrow="Your Clinical Terms"
+            title="All your terms" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            <div className="prac-modal-field">
+                <input
+                    type="text" value={query} placeholder="Filter your terms…"
+                    onChange={(e) => setQuery(e.target.value)} autoFocus
+                />
+            </div>
+            {terms.length === 0 ? (
+                <p className="prac-soon">Nothing added yet.</p>
+            ) : filtered.length === 0 ? (
+                <p className="prac-soon">Nothing matches "{query.trim()}".</p>
+            ) : (
+                <div className="prac-modal-rows">
+                    {filtered.map((t) => (
+                        <div key={t.id} className="prac-modal-row">
+                            <span className={`prac-term-kind is-${t.type}`}>{TERM_TYPE_LABEL[t.type]}</span>
+                            <span className="prac-row-label">{t.label}</span>
+                            <span className="prac-modal-row-time">{t.useCount} use{t.useCount === 1 ? "" : "s"}</span>
+                            <RemoveBtn label={`Forget "${t.label}"`} onClick={() => onForget(t.id)} />
+                        </div>
+                    ))}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
 /**
  * CLINICAL COMPANIONS — the practice-specific layer over Synapse's
  * ALREADY-authored `intent_companions` edges (§17/§18 of the brief: reuse
@@ -1347,6 +1450,10 @@ function CompanionsModal({
         <PracticeModal
             accent="violet" icon={<Sparkles size={15} />} eyebrow="Clinical Companions"
             title="Companions Cortex may suggest" onClose={onClose} wide
+            // Only the "author your own" form is a DRAFT that outside-click
+            // could lose — every curated toggle above it saves the instant
+            // it's clicked, so there's nothing there to protect.
+            dirty={!!trigger || !!companion || !!reason.trim()}
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
             {/* The lists come FIRST. Rebuilt 2026-08-27: the add-a-pairing
@@ -1521,6 +1628,7 @@ export function PracticePage({
     const [companionModalOpen, setCompanionModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<number | "new" | null>(null);
     const [measurementsModalOpen, setMeasurementsModalOpen] = useState(false);
+    const [manageTermsOpen, setManageTermsOpen] = useState(false);
 
     useEffect(() => {
         if (!identity.ready) return;
@@ -1643,10 +1751,12 @@ export function PracticePage({
                     sub, no counts (those stayed in the header, no repeat). */}
                 <div className="prac-group">
                     <div className="prac-group-head">
+                        <span className="prac-group-icon" aria-hidden="true"><SlidersHorizontal size={17} /></span>
                         <div className="prac-group-head-text">
                             <h2 className="prac-group-title">Clinical Defaults</h2>
                             <p className="prac-group-sub">What Cortex reaches for first during a consultation.</p>
                         </div>
+                        <GroupHeadMark />
                     </div>
                     <div className="prac-grid">
                         <PreferredMedicinesCard
@@ -1666,13 +1776,27 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : preferredLabs.length > 0 ? (
                                 <div className="prac-fill">
-                                    {preferredLabs.length <= 3 && <div className="prac-fill-art"><BlankLabArt /></div>}
+                                    {preferredLabs.length <= 2 && <div className="prac-fill-art"><BlankLabArt /></div>}
+                                    {/* Two-line rows (icon + name + a real subtitle), same
+                                        shape Templates/Companions already use — a bare
+                                        34px name-and-remove line was reading as
+                                        "tiny, cramped rows" next to those. */}
                                     <CappedRows
-                                        items={preferredLabs} cap={4} showAllLabel="View all labs" hideTrigger keyOf={(l) => l.id}
+                                        items={preferredLabs} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                        showAllLabel="View all labs" hideTrigger keyOf={(l) => l.id}
                                         renderRow={(l) => (
                                             <>
-                                                {l.isDefault && <Star size={12} className="prac-lab-default-mark" fill="currentColor" />}
-                                                <span className="prac-row-label">{l.name}</span>
+                                                <span className="prac-med-icon is-slate" aria-hidden="true">
+                                                    {l.isDefault
+                                                        ? <Star size={13} fill="currentColor" />
+                                                        : <FlaskConical size={13} />}
+                                                </span>
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{l.name}</span>
+                                                    <span className="prac-med-brands">
+                                                        {l.isDefault ? "Preferred" : l.contactNote || "Diagnostic centre"}
+                                                    </span>
+                                                </div>
                                                 <RemoveBtn label={`Remove ${l.name}`} onClick={() => {
                                                     onPreferredLabsChange(preferredLabs.filter((x) => x.id !== l.id));
                                                     removePreferredLab(l.id).catch(console.error);
@@ -1766,7 +1890,7 @@ export function PracticePage({
                                                 type="button" className="prac-template-row"
                                                 onClick={() => setCompanionModalOpen(true)}
                                             >
-                                                <span className="prac-med-icon" aria-hidden="true"><Sparkles size={13} /></span>
+                                                <span className="prac-med-icon is-violet" aria-hidden="true"><Sparkles size={13} /></span>
                                                 <div className="prac-med-info">
                                                     <span className="prac-row-label">When prescribing {c.triggerLabel} → consider {c.companionLabel}</span>
                                                     <span className="prac-med-brands">
@@ -1828,12 +1952,7 @@ export function PracticePage({
                         icon={<BookText size={14} />} tone="violet" title="Your Clinical Terms" count={terms.length} fixed
                         subtitle="Your terms, in your words — Synapse remembers them for next time."
                         foot={terms.length > 0 ? (
-                            <FootLink
-                                label="Manage clinical terms"
-                                onClick={() => {
-                                    if (terms.length > TERM_CHIP_CAP) setShowAllTerms((v) => !v);
-                                }}
-                            />
+                            <FootLink label="Manage clinical terms" onClick={() => setManageTermsOpen(true)} />
                         ) : undefined}
                     >
                         <div className="prac-term-add">
@@ -1854,18 +1973,21 @@ export function PracticePage({
                         {termsLoading ? (
                             <SkelRows count={3} />
                         ) : terms.length > 0 ? (
-                            <div className="prac-term-chips">
-                                {shownTerms.map((t) => (
-                                    <span key={t.id} className={`prac-term-chip is-${t.type}`}>
-                                        {t.label}
-                                        <button type="button" aria-label={`Forget "${t.label}"`} onClick={() => forgetTerm(t.id)}>
-                                            <X size={10} />
-                                        </button>
-                                    </span>
-                                ))}
-                                {terms.length > TERM_CHIP_CAP && !showAllTerms && (
-                                    <span className="prac-term-chip is-more">+{terms.length - TERM_CHIP_CAP} more</span>
-                                )}
+                            <div className="prac-fill">
+                                {terms.length <= 3 && <div className="prac-fill-art"><BlankTermArt /></div>}
+                                <div className="prac-term-chips">
+                                    {shownTerms.map((t) => (
+                                        <span key={t.id} className={`prac-term-chip is-${t.type}`}>
+                                            {t.label}
+                                            <button type="button" aria-label={`Forget "${t.label}"`} onClick={() => forgetTerm(t.id)}>
+                                                <X size={10} />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    {terms.length > TERM_CHIP_CAP && !showAllTerms && (
+                                        <span className="prac-term-chip is-more">+{terms.length - TERM_CHIP_CAP} more</span>
+                                    )}
+                                </div>
                             </div>
                         ) : (
                             <EmptyBlock art={<BlankTermArt />} fact="Nothing added yet" next="Add one above, or type it during a consult. Either way it is remembered here." />
@@ -1958,6 +2080,13 @@ export function PracticePage({
                     currentPrefs={measurePrefs}
                     onClose={() => setMeasurementsModalOpen(false)}
                     onSaved={onMeasurePrefsChange}
+                />
+            )}
+            {manageTermsOpen && (
+                <ManageTermsModal
+                    terms={terms}
+                    onForget={forgetTerm}
+                    onClose={() => setManageTermsOpen(false)}
                 />
             )}
         </div>

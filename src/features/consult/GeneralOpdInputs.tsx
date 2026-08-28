@@ -132,6 +132,7 @@ export function GeneralOpdInputs({
                     onBrowse={onBrowseFinding}
                     disabled={disabled}
                     relatedRef={relatedRef}
+                    onFocusSearch={() => searchRef?.current?.focus()}
                 />
 
                 {/* Same fixed height as the Case Sheet beside it — see

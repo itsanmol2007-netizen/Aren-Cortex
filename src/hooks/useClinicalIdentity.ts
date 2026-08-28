@@ -53,6 +53,24 @@ export function useClinicalIdentity(): ClinicalIdentity {
         const doctorId = identity.doctor?.id ?? DOCTOR_ID;
         const hospitalId = identity.user.hospital_id ?? HOSPITAL_ID;
 
+        // `DOCTOR_ID` names a doctor at `HOSPITAL_ID`'s clinic specifically —
+        // falling back to it while signed into a DIFFERENT real hospital
+        // writes that stranger's id onto THIS clinic's data (caught
+        // 2026-08-28: a live account's Prescription Pad printed "Dr SK
+        // Pandey" for a doctor who never worked there — root cause was a
+        // dropped `doctors` row fetch in `loadIdentity`, now retried once).
+        // The retry closes the common transient case; this stays as a loud
+        // signal for the rest, since a silent one is exactly how that bug
+        // went unnoticed until a doctor's name showed up wrong on paper.
+        if (!identity.doctor && identity.user.hospital_id && identity.user.hospital_id !== HOSPITAL_ID) {
+            console.error(
+                "[useClinicalIdentity] No doctors row for the signed-in user at hospital",
+                identity.user.hospital_id,
+                "— falling back to the MVP DOCTOR_ID constant, which belongs to a DIFFERENT hospital.",
+                "Any consult started or data saved right now will be misattributed. This should self-heal on next load if it was a transient network blip."
+            );
+        }
+
         return {
             doctorId,
             hospitalId,

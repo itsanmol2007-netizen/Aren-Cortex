@@ -54,9 +54,26 @@
 .prac-modal-stripe {
     height: 4px;
     flex: none;
-    /* Cortex's own signature mark, every modal, no exceptions. */
+    /* Cortex's own signature mark, every modal, no exceptions — but see the
+       tone-scoped overrides right below: the SAME mark now tilts toward
+       whichever of the four existing accent tones this modal carries,
+       rather than being byte-identical everywhere. */
     background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
 }
+
+/* 2026-08-28: "modals are still overwhelmingly using the same pink/blue
+   treatment... introduce subtle Cortex accent variations." The prior rule
+   here (2026-08-26) was that `accent` touches ONLY the icon tile, because
+   re-colouring the stripe+button per FEATURE was the "Christmas tree"
+   mistake — seven fully different modal themes. This is not that: it's
+   four gradients, built from the same four tones `.prac-modal-icon`
+   already uses (teal/blue/violet/slate — colour.md's existing set, no
+   eighth colour), so every modal still reads as ONE family wearing four
+   restrained variations, not a theme per feature. */
+.prac-modal.is-teal .prac-modal-stripe { background: linear-gradient(90deg, #0f766e 0%, #16a34a 100%); }
+.prac-modal.is-blue .prac-modal-stripe { background: linear-gradient(90deg, #1268e8 0%, #7c3aed 100%); }
+.prac-modal.is-violet .prac-modal-stripe { background: linear-gradient(90deg, #7c3aed 0%, #f472b6 100%); }
+.prac-modal.is-slate .prac-modal-stripe { background: linear-gradient(90deg, #475569 0%, #1268e8 100%); }
 
 .prac-modal-head {
     flex: none;
@@ -98,11 +115,17 @@
     font-weight: 750;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    /* Same brand violet as the stripe/button, not a per-accent colour —
-       the eyebrow is chrome (Practice's own label for the section), not
-       the domain hint the icon tile already carries. */
+    /* Brand violet fallback; tone-scoped below alongside the stripe/button
+       (2026-08-28) so the eyebrow reads as part of the same gradient
+       family rather than a fixed violet sitting next to three other
+       tones. */
     color: #a855f7;
 }
+
+.prac-modal.is-teal .prac-modal-eyebrow { color: var(--cs-teal); }
+.prac-modal.is-blue .prac-modal-eyebrow { color: var(--cs-blue); }
+.prac-modal.is-violet .prac-modal-eyebrow { color: var(--cs-violet); }
+.prac-modal.is-slate .prac-modal-eyebrow { color: #475569; }
 
 .prac-modal-title {
     margin: 1px 0 0;
@@ -179,11 +202,18 @@
 .prac-modal-btn.is-primary {
     border: 0;
     color: #fff;
-    /* Cortex's own signature gradient, every modal — same reasoning as
-       the stripe above. */
+    /* Cortex's own signature gradient — fallback for any button rendered
+       outside a `.prac-modal.is-*` ancestor. Every modal's own primary
+       button below overrides this with its stripe's matching gradient
+       (same 2026-08-28 change, same four tones — see the stripe rule). */
     background: linear-gradient(135deg, #f472b6 0%, #a855f7 55%, #6366f1 100%);
     box-shadow: 0 4px 14px rgba(168, 85, 247, 0.28);
 }
+
+.prac-modal.is-teal .prac-modal-btn.is-primary { background: linear-gradient(135deg, #0f766e 0%, #16a34a 100%); box-shadow: 0 4px 14px rgba(15, 118, 110, 0.28); }
+.prac-modal.is-blue .prac-modal-btn.is-primary { background: linear-gradient(135deg, #1268e8 0%, #7c3aed 100%); box-shadow: 0 4px 14px rgba(18, 104, 232, 0.28); }
+.prac-modal.is-violet .prac-modal-btn.is-primary { background: linear-gradient(135deg, #7c3aed 0%, #f472b6 100%); box-shadow: 0 4px 14px rgba(124, 58, 237, 0.28); }
+.prac-modal.is-slate .prac-modal-btn.is-primary { background: linear-gradient(135deg, #475569 0%, #1268e8 100%); box-shadow: 0 4px 14px rgba(71, 85, 105, 0.24); }
 
 .prac-modal-btn.is-primary:hover {
     opacity: 0.94;
@@ -494,11 +524,29 @@
 .prac-reorder button:disabled { opacity: 0.3; cursor: default; }
 
 /* Consultation Defaults' measurement checklist. */
+/* Bounded, scrolling — the full measurement catalogue (35 fields) used to
+   render as one flat grid with no ceiling, so opening this once the picker
+   grew past the specialty's own 5-8 fields made the WHOLE MODAL grow with
+   it (2026-08-28: "use the same controlled-list/nested-scroll behaviour
+   established elsewhere rather than expanding the entire page"). 320px is
+   ~8 rows at this grid's own row height — enough to show every field a
+   specialty ships with by default without scrolling, so scrolling only
+   ever appears once the doctor is browsing past their own baseline. */
 .prac-measure-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: min-content;
     gap: 4px 12px;
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cs-line-strong) transparent;
 }
+
+.prac-measure-grid::-webkit-scrollbar { width: 6px; }
+.prac-measure-grid::-webkit-scrollbar-track { background: transparent; }
+.prac-measure-grid::-webkit-scrollbar-thumb { background: var(--cs-line-strong); border-radius: 999px; }
+.prac-measure-grid::-webkit-scrollbar-thumb:hover { background: #c7ced9; }
 
 .prac-measure-item {
     display: flex;
