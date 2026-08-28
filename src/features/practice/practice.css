@@ -9,6 +9,7 @@
 ──────────────────────────────────────────────────────────────────────────── */
 
 .prac-page {
+    position: relative;
     display: flex;
     flex-direction: column;
     /* Not `height: 100%` — `.app-shell` (App.tsx), this page's parent, has
@@ -20,9 +21,34 @@
        scrolling columns here that would need a hard `dvh` ceiling instead. */
     min-height: 100vh;
     background: var(--cs-page);
+    /* Every card/section sits above the watermark below, regardless of
+       DOM/paint order. */
+    overflow: hidden;
+}
+
+/* The AREN mark, huge and almost invisible — canvas texture, not content.
+   Anchored to the PAGE (fixed relative to the viewport as the doctor
+   scrolls `.prac-body`'s own internal region), bleeding off the top-right
+   corner on purpose so it reads as a corner flourish, not a centred logo
+   competing with anything. `pointer-events: none` — it is never a click
+   target, and `aria-hidden` (already on `ArenMark` itself) keeps it out of
+   the accessibility tree. */
+.prac-bg-mark {
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    z-index: 0;
+    opacity: 0.05;
+    pointer-events: none;
+}
+
+@media (max-width: 900px) {
+    .prac-bg-mark { display: none; }
 }
 
 .prac-body {
+    position: relative;
+    z-index: 1;
     flex: 1;
     overflow-y: auto;
     /* 2026-08-26, third correction: 12px (Consult's own `.cs-shell` gutter,
@@ -1351,6 +1377,38 @@
 
 @media (max-width: 1180px) {
     .prac-tree-mfr { display: none; }
+}
+
+/* A plain state indicator now (2026-08-29) — every row in this tree is
+   already preferred, so the heart no longer needs to be a click target;
+   removal moved to its own `.prac-row-remove` beside it (see
+   panel-structure.md's "one click adds, a separate control removes"
+   note). Same rose colour `.cs-pin.is-on` already uses for "preferred". */
+.prac-tree-heart {
+    flex: none;
+    color: var(--cs-rose);
+}
+
+/* A group whose brands carry 2+ active ingredients (a combination
+   product) reads differently from a plain single-salt group — same idea
+   as `.prac-term-kind`'s tags, a quiet label rather than a new colour. */
+.prac-tree-head.is-combo .prac-tree-count {
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+
+.prac-tree-combo-tag {
+    margin-left: 6px;
+    border-radius: 999px;
+    background: var(--cs-violet-soft);
+    padding: 1px 7px;
+    color: var(--cs-violet);
+    font-size: 9px;
+    font-weight: 700;
+    font-style: normal;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    vertical-align: middle;
 }
 
 /* ── Loading — the existing shimmer, just given a row rhythm to sit in ──── */

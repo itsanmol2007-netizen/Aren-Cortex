@@ -24,6 +24,17 @@ export interface ClinicalIdentity {
     doctorName: string;
     specialization: string;
     /**
+     * The signed-in `users.id` — NOT `doctorId` (`doctors.id`), a different
+     * row entirely. Every `set_by`/`created_by`/audit-style column across
+     * this schema (`clinic_brand_preference.set_by` among them) has its FK
+     * pointed at `users`, so passing `doctorId` into one of those throws
+     * `violates foreign key constraint …_set_by_fkey` — caught 2026-08-29
+     * when `AddMedicineModal`'s "mark as preferred" step did exactly that.
+     * `null` only while unauthenticated (no MVP constant stands in for this
+     * one; every such write already treats a missing `setBy` as optional).
+     */
+    userId: string | null;
+    /**
      * True when both ids came from the signed-in session. False means the MVP
      * constants are standing in — fine for a single-doctor clinic, and the
      * reason the learning loop must not be trusted across doctors until every
@@ -44,6 +55,7 @@ export function useClinicalIdentity(): ClinicalIdentity {
                 hospitalId: HOSPITAL_ID,
                 doctorName: DOCTOR_NAME,
                 specialization: DOCTOR_SPECIALIZATION,
+                userId: null,
                 isReal: false,
                 ready: false,
             };
@@ -76,6 +88,7 @@ export function useClinicalIdentity(): ClinicalIdentity {
             hospitalId,
             doctorName: identity.doctor?.name ?? identity.user.full_name ?? DOCTOR_NAME,
             specialization: identity.doctor?.specialization ?? DOCTOR_SPECIALIZATION,
+            userId: identity.user.id,
             isReal: !!identity.doctor?.id && !!identity.user.hospital_id,
             ready: true,
         };

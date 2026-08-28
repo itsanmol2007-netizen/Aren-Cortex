@@ -58,11 +58,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Layers,
+    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart, Layers,
     MessageCircle, MoreHorizontal, Pill, Plus, Settings, Shield, SlidersHorizontal, Sparkles, Star,
     ToggleLeft, ToggleRight, User, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
+import { ArenMark } from "../auth/ArenMark";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import {
     addMedicine, addPreferredLab, clearClinicBrandDefault, clearHospitalCompanionCuration,
@@ -368,22 +369,50 @@ const TERM_CHIP_CAP = 16;
 // ===========================================================================
 
 interface CompositionGroup {
-    compositionId: number;
+    /** A single composition's real id for a plain group; a synthesized
+     *  string (never collides with a numeric id) for a combination group —
+     *  see `isCombo`. Only used as this group's React key / expand-id. */
+    compositionId: number | string;
     compositionName: string;
+    /** True when every brand in this group carries 2+ active ingredients.
+     *  A combination brand is never merged into a single-ingredient
+     *  group of the same name — "paracetamol + aceclofenac" is not the
+     *  same clinical thing as "paracetamol" alone, even though one of its
+     *  two `clinic_brand_preference` candidate keys happens to be plain
+     *  paracetamol. See `allCompositionNames`'s doc comment in
+     *  `lib/db/synapse.ts`. */
+    isCombo: boolean;
     rows: ClinicBrandDefaultDetail[];
 }
 
 /** Groups already arrive ordered by `updated_at desc` (the fetch's own
  *  order) — a plain single pass preserves that as "most recently touched
- *  composition first", both across groups and within one. */
+ *  composition first", both across groups and within one.
+ *
+ * The group KEY is the medicine's full, sorted ingredient list when it has
+ * more than one (`"aceclofenac + paracetamol"`), never the single
+ * `compositionId` the preference row happens to be written against — that
+ * id only ever names ONE of a combination brand's ingredients (whichever
+ * one the doctor searched through), and grouping by it was silently filing
+ * combination brands into a plain single-salt group ("A Clo SP Tablet"
+ * reading as just another paracetamol product). Single-ingredient brands
+ * still group by the real `compositionId`, unchanged. */
 function groupByComposition(rows: ClinicBrandDefaultDetail[]): CompositionGroup[] {
-    const byId = new Map<number, CompositionGroup>();
+    const byKey = new Map<string, CompositionGroup>();
     for (const r of rows) {
-        const g = byId.get(r.compositionId);
+        const names = r.allCompositionNames.length > 0 ? r.allCompositionNames : [r.compositionName];
+        const isCombo = names.length > 1;
+        const key = isCombo ? `combo:${names.join("+")}` : `single:${r.compositionId}`;
+        const g = byKey.get(key);
         if (g) g.rows.push(r);
-        else byId.set(r.compositionId, { compositionId: r.compositionId, compositionName: r.compositionName, rows: [r] });
+        else byKey.set(key, {
+            compositionId: isCombo ? key : r.compositionId,
+            compositionName: isCombo ? names.join(" + ") : r.compositionName,
+            isCombo,
+            rows: [r],
+        });
     }
-    return [...byId.values()];
+    return [...byKey.values()];
 }
 
 /** One tree row's height, collapsed or a child — same measured 34px as
@@ -411,10 +440,10 @@ function PreferredMedicinesCard({
     // Single-expand accordion — req. "focus the expanded composition":
     // opening one composition closes any other, so the bounded scroll area
     // stays predictable rather than growing with every group opened.
-    const [expandedId, setExpandedId] = useState<number | null>(null);
+    const [expandedId, setExpandedId] = useState<number | string | null>(null);
     const searchInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
     const reduce = useReducedMotion();
-    const headerRefs = useRef(new Map<number, HTMLButtonElement>());
+    const headerRefs = useRef(new Map<number | string, HTMLButtonElement>());
 
     const groups = useMemo(() => groupByComposition(brands), [brands]);
 
@@ -521,6 +550,9 @@ function PreferredMedicinesCard({
                 compositionId, medicineId, medicineName, compositionName,
                 form: null, productForm: null, manufacturer: null, note: null,
                 updatedAt: new Date().toISOString(),
+                // Corrected the instant the refetch below lands — this is
+                // just what's known before that round trip returns.
+                allCompositionNames: [compositionName],
             };
             onBrandsChange([optimistic, ...brands]);
             setExpandedId(compositionId);
@@ -536,12 +568,12 @@ function PreferredMedicinesCard({
             icon={<Pill size={14} />} tone="teal" title="Preferred Medicines"
             count={brands.length} countTone="green" fixed
             subtitle="Medicines your practice prefers to use, grouped by composition."
-            foot={brands.length > 0 ? (
-                <FootLink
-                    label="Manage all preferred medicines"
-                    onClick={() => searchInputRef.current?.focus()}
-                />
-            ) : undefined}
+            // No footer link here (removed 2026-08-29 — "it does nothing,
+            // really nothing"): unlike Labs/Companions, this card has no
+            // separate management modal to open, and "focus the search
+            // field" didn't read as an action worth a whole link. The
+            // search field + tree ARE the full management surface,
+            // already in view with nothing further to jump to.
         >
             <div>
                 <IntentSearchField
@@ -587,15 +619,18 @@ function PreferredMedicinesCard({
                                     )}
                                     {drillBrands.map((b) => {
                                         const pinned = isPreferred(drill.id, b.medicineId);
-                                        const toggle = () => togglePreferred(drill.id, drill.name, b.medicineId, b.name);
+                                        // Add-only here too — this is a search surface, not
+                                        // the preferred-medicines list itself, so a click never
+                                        // removes (see the tree's own X for that).
+                                        const add = () => { if (!pinned) togglePreferred(drill.id, drill.name, b.medicineId, b.name); };
                                         return (
                                             <button
                                                 key={b.medicineId} type="button"
                                                 className="prac-modal-row is-pick"
-                                                onClick={toggle}
+                                                onClick={add}
                                             >
                                                 <span className="prac-row-label">{b.name}</span>
-                                                <PinButton pinned={pinned} label={b.name} onToggle={toggle} />
+                                                <PinButton pinned={pinned} label={b.name} onToggle={add} />
                                             </button>
                                         );
                                     })}
@@ -669,11 +704,18 @@ function PreferredMedicinesCard({
                                         if (el) headerRefs.current.set(g.compositionId, el);
                                         else headerRefs.current.delete(g.compositionId);
                                     }}
-                                    className="prac-tree-head"
+                                    className={"prac-tree-head" + (g.isCombo ? " is-combo" : "")}
                                     onClick={() => setExpandedId(open ? null : g.compositionId)}
                                 >
                                     <ChevronDown size={12} className={open ? "is-flipped" : undefined} />
-                                    <span className="prac-row-label is-catalogue">{g.compositionName}</span>
+                                    <span className="prac-row-label is-catalogue">
+                                        {g.compositionName}
+                                        {/* A combination brand's group is never mistaken for
+                                            a plain single-salt one — see groupByComposition's
+                                            doc comment for why this is a real, separate group,
+                                            not a display trick. */}
+                                        {g.isCombo && <em className="prac-tree-combo-tag">combination</em>}
+                                    </span>
                                     <span className="prac-tree-count">{g.rows.length}</span>
                                 </button>
                                 <motion.div
@@ -682,17 +724,27 @@ function PreferredMedicinesCard({
                                     transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
                                     className="prac-tree-children"
                                 >
-                                    {g.rows.map((r) => {
-                                        const toggle = () => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName);
-                                        return (
-                                            <button key={r.medicineId} type="button" className="prac-tree-row" onClick={toggle}>
-                                                <span className="prac-row-label is-catalogue">{r.medicineName}</span>
-                                                {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
-                                                {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
-                                                <PinButton pinned label={r.medicineName} onToggle={toggle} />
-                                            </button>
-                                        );
-                                    })}
+                                    {/* Every row here is ALREADY preferred — there is
+                                        nothing left to "add" by clicking it, only
+                                        something to remove, and removal is
+                                        deliberately NOT a click-anywhere gesture
+                                        (2026-08-29: "clicking on it should add it,
+                                        but for removing there should be a...
+                                        cross button... not anywhere"). The heart
+                                        is a plain indicator now; only the ✕
+                                        actually removes. */}
+                                    {g.rows.map((r) => (
+                                        <div key={r.medicineId} className="prac-tree-row">
+                                            <span className="prac-row-label is-catalogue">{r.medicineName}</span>
+                                            {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
+                                            {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
+                                            <Heart size={14} className="prac-tree-heart" fill="currentColor" aria-hidden="true" />
+                                            <RemoveBtn
+                                                label={`Remove ${r.medicineName} from preferred medicines`}
+                                                onClick={() => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName)}
+                                            />
+                                        </div>
+                                    ))}
                                 </motion.div>
                             </div>
                         );
@@ -1116,13 +1168,25 @@ interface CompositionPick {
  * now exists", optionally followed by marking it preferred.
  */
 function AddMedicineModal({
-    hospitalId, doctorId, initialName, onClose, onCreated,
+    hospitalId, userId, initialName, onClose, onCreated, onMedicineAdded,
 }: {
     hospitalId: string;
-    doctorId: string;
+    /** `users.id` — `clinic_brand_preference.set_by`'s FK points at `users`,
+     *  NOT `doctors` (a different row `hospital_companion_preference.set_by`
+     *  happens to use instead — two tables, two conventions). Passing the
+     *  wrong one throws `violates foreign key constraint
+     *  clinic_brand_preference_set_by_fkey` — caught 2026-08-29 on a live
+     *  account: the medicine WAS created (that RPC succeeded), but "mark as
+     *  preferred" then failed silently into an error with no success
+     *  shown, because it was passed `doctorId` here. */
+    userId: string | null;
     initialName: string;
     onClose: () => void;
     onCreated: (row: ClinicBrandDefaultDetail) => void;
+    /** Fires the instant the brand itself is created — independent of
+     *  "mark as preferred" — so the "View added (N)" count updates whether
+     *  or not the checkbox was on. */
+    onMedicineAdded: (m: HospitalAddedMedicine) => void;
 }) {
     const [name, setName] = useState(initialName);
     const [compositions, setCompositions] = useState<CompositionPick[]>([]);
@@ -1161,10 +1225,23 @@ function AddMedicineModal({
         })
             .then((results) => {
                 const created = results[0]?.medicine;
-                if (markPreferred && created) {
+                if (!created) return;
+                // Always — this fires regardless of "mark as preferred"
+                // (the brand exists in the catalogue either way, and the
+                // "View added" count next to this card needs to reflect
+                // that immediately, not only when the checkbox was on).
+                onMedicineAdded({
+                    id: created.id,
+                    name: created.name,
+                    manufacturer: null,
+                    strengthMg: strengthMg != null && Number.isFinite(strengthMg) ? strengthMg : null,
+                    createdAt: new Date().toISOString(),
+                    compositionNames: [...new Set(compositions.map((c) => c.label))].sort(),
+                });
+                if (markPreferred) {
                     const primary = compositions[0];
                     return setClinicBrandDefault({
-                        hospitalId, compositionId: primary.compositionId, medicineId: created.id, setBy: doctorId,
+                        hospitalId, compositionId: primary.compositionId, medicineId: created.id, setBy: userId,
                     }).then(() => onCreated({
                         compositionId: primary.compositionId,
                         medicineId: created.id,
@@ -1175,6 +1252,10 @@ function AddMedicineModal({
                         manufacturer: null,
                         note: null,
                         updatedAt: new Date().toISOString(),
+                        // Every salt the doctor actually picked in this
+                        // form, not just the first — a combination brand
+                        // created here is a combination from the start.
+                        allCompositionNames: [...new Set(compositions.map((c) => c.label))].sort(),
                     }));
                 }
             })
@@ -1267,18 +1348,20 @@ function AddMedicineModal({
 /** Read-only history for "Add New Medicine" — every brand this practice has
  *  ever submitted, newest first, each with the salt it was filed under and
  *  when it was added. Nothing here is editable; Preferred Medicines is
- *  where a doctor manages what Consult actually shows. */
-function AddedMedicinesModal({ hospitalId, onClose }: { hospitalId: string; onClose: () => void }) {
-    const [rows, setRows] = useState<HospitalAddedMedicine[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        fetchHospitalAddedMedicines(hospitalId)
-            .then(setRows)
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, [hospitalId]);
-
+ *  where a doctor manages what Consult actually shows.
+ *
+ *  `rows`/`loading` are lifted to `PracticePage` now (2026-08-29) rather
+ *  than fetched inside this modal — the head action next to "Add New
+ *  Medicine" needs the same count for its "(N)" badge, and fetching it
+ *  twice (once for the badge, once when the modal opens) for data this
+ *  small isn't worth two round trips or two sources of truth. */
+function AddedMedicinesModal({
+    rows, loading, onClose,
+}: {
+    rows: HospitalAddedMedicine[];
+    loading: boolean;
+    onClose: () => void;
+}) {
     return (
         <PracticeModal
             accent="teal" icon={<Clock size={15} />} eyebrow="Add New Medicine"
@@ -1613,6 +1696,9 @@ export function PracticePage({
     const [brands, setBrands] = useState<ClinicBrandDefaultDetail[]>([]);
     const [brandsLoading, setBrandsLoading] = useState(true);
 
+    const [addedMedicines, setAddedMedicines] = useState<HospitalAddedMedicine[]>([]);
+    const [addedMedicinesLoading, setAddedMedicinesLoading] = useState(true);
+
     const [companions, setCompanions] = useState<HospitalCompanionDetail[]>([]);
     const [companionsLoading, setCompanionsLoading] = useState(true);
 
@@ -1637,6 +1723,12 @@ export function PracticePage({
             .then(setBrands)
             .catch(console.error)
             .finally(() => setBrandsLoading(false));
+
+        setAddedMedicinesLoading(true);
+        fetchHospitalAddedMedicines(identity.hospitalId)
+            .then(setAddedMedicines)
+            .catch(console.error)
+            .finally(() => setAddedMedicinesLoading(false));
 
         setCompanionsLoading(true);
         fetchHospitalCompanionDetails(identity.hospitalId)
@@ -1689,6 +1781,14 @@ export function PracticePage({
 
     return (
         <div className="prac-page">
+            {/* A faint watermark of the AREN mark itself (2026-08-29) — the
+                same node-drawn "A" the login screen and sidebar already
+                use (`ArenMark`), not a new shape invented for this page.
+                Sits behind every card (`.prac-body` gets `z-index:1` for
+                exactly this), fixed to the page rather than scrolling with
+                `.prac-body`'s own internal scroll, so it reads as the
+                canvas's own texture. */}
+            <ArenMark size={520} accent="#7c3aed" ink="#7c3aed" className="prac-bg-mark" />
             <WorkspaceHeader
                 logoRef={logoRef}
                 onOpenSidebar={onOpenSidebar}
@@ -1854,7 +1954,11 @@ export function PracticePage({
                         <PracticeCard
                             icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
                             subtitle="Can't find the medicine you need? Add it to our database."
-                            action={<button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>View added</button>}
+                            action={
+                                <button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>
+                                    View added{addedMedicines.length > 0 ? ` (${addedMedicines.length})` : ""}
+                                </button>
+                            }
                         >
                             <EmptyBlock
                                 art={<BlankAddMedicineArt />}
@@ -2045,15 +2149,16 @@ export function PracticePage({
             )}
             {addMedicineOpen && (
                 <AddMedicineModal
-                    hospitalId={identity.hospitalId} doctorId={identity.doctorId}
+                    hospitalId={identity.hospitalId} userId={identity.userId}
                     initialName={addMedicineOpen.initialName}
                     onClose={() => setAddMedicineOpen(null)}
                     onCreated={(row) => setBrands((curr) => [row, ...curr.filter((b) => b.medicineId !== row.medicineId)])}
+                    onMedicineAdded={(m) => setAddedMedicines((curr) => [m, ...curr])}
                 />
             )}
             {addedMedicinesOpen && (
                 <AddedMedicinesModal
-                    hospitalId={identity.hospitalId}
+                    rows={addedMedicines} loading={addedMedicinesLoading}
                     onClose={() => setAddedMedicinesOpen(false)}
                 />
             )}

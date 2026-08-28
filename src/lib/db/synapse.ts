@@ -595,6 +595,20 @@ export type ClinicBrandDefaultDetail = {
     manufacturer: string | null;
     note: string | null;
     updatedAt: string;
+    /**
+     * EVERY composition this medicine actually contains, sorted — not just
+     * `compositionName` above (the one molecule the preference happens to
+     * be keyed through). A combination brand like "A Clo SP Tablet"
+     * (paracetamol + aceclofenac) carries TWO rows in
+     * `medicine_composition_map`; marking it preferred only ever writes
+     * ONE `clinic_brand_preference` row, keyed to whichever composition the
+     * doctor searched through, so without this the brand silently read as
+     * "just another plain paracetamol product" once filed into that
+     * molecule's group. Lets the UI tell a single-ingredient product from a
+     * combination one and group them separately — see `groupByComposition`
+     * in PracticePage.tsx. Length 1 for an ordinary single-salt brand.
+     */
+    allCompositionNames: string[];
 };
 
 /**
@@ -614,20 +628,46 @@ export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promis
     if (!rows || rows.length === 0) return [];
 
     const medIds = [...new Set(rows.map((r: any) => Number(r.medicine_id)))];
-    const compIds = [...new Set(rows.map((r: any) => Number(r.composition_id)))];
-    const [{ data: meds }, { data: comps }, { data: maps }] = await Promise.all([
+    // `maps` has to land BEFORE the `compositions` fetch below, not
+    // alongside it — it names every composition a medicine actually
+    // contains, which for a combination brand is more ids than
+    // `clinic_brand_preference` alone ever mentions (that table only ever
+    // stores the ONE composition each preference is keyed through). Fetching
+    // `compositions` for just the preference rows' ids used to leave a
+    // combination brand's OTHER ingredient with no name at all, silently
+    // dropped from `allCompositionNames` — the exact bug that made
+    // "Pantocoat DSR" (pantoprazole + domperidone) read as a plain
+    // single-salt pantoprazole product.
+    const [{ data: meds }, { data: maps }] = await Promise.all([
         supabase.from("medicines").select("id, name, manufacturer").in("id", medIds),
-        supabase.from("compositions").select("id, name").in("id", compIds),
         // The product's own dosage form, for DISPLAY — see `productForm`'s
         // doc comment on why this is a separate lookup from `form` above.
         supabase.from("medicine_composition_map").select("medicine_id, composition_id, route").in("medicine_id", medIds),
     ]);
+    const compIds = [...new Set([
+        ...rows.map((r: any) => Number(r.composition_id)),
+        ...(maps ?? []).map((m: any) => Number(m.composition_id)),
+    ])];
+    const { data: comps } = await supabase.from("compositions").select("id, name").in("id", compIds);
     const medById = new Map<number, { name: string; manufacturer: string | null }>();
     (meds ?? []).forEach((m: any) => medById.set(Number(m.id), { name: m.name, manufacturer: m.manufacturer ?? null }));
     const compNameById = new Map<number, string>();
     (comps ?? []).forEach((c: any) => compNameById.set(Number(c.id), c.name));
     const routeByPair = new Map<string, string | null>();
-    (maps ?? []).forEach((m: any) => routeByPair.set(`${Number(m.medicine_id)}|${Number(m.composition_id)}`, m.route ?? null));
+    // Every composition a medicine actually contains — `maps` already holds
+    // ALL of it (fetched by medicine_id, not filtered to the one composition
+    // each preference row is keyed on), just not grouped yet.
+    const allCompNamesByMed = new Map<number, string[]>();
+    (maps ?? []).forEach((m: any) => {
+        const medicineId = Number(m.medicine_id);
+        const compositionId = Number(m.composition_id);
+        routeByPair.set(`${medicineId}|${compositionId}`, m.route ?? null);
+        const name = compNameById.get(compositionId);
+        if (!name) return;
+        const list = allCompNamesByMed.get(medicineId);
+        if (list) { if (!list.includes(name)) list.push(name); } else allCompNamesByMed.set(medicineId, [name]);
+    });
+    allCompNamesByMed.forEach((list) => list.sort());
 
     return rows
         .map((r: any) => {
@@ -644,6 +684,7 @@ export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promis
                 manufacturer: med?.manufacturer ?? null,
                 note: r.note ?? null,
                 updatedAt: r.updated_at,
+                allCompositionNames: allCompNamesByMed.get(medicineId) ?? [compNameById.get(compositionId) ?? ""],
             };
         })
         // Same rule as fetchPinnedMedicineDetails: a row whose medicine or

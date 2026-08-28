@@ -140,6 +140,103 @@ independent actions (Preferred Labs: star-default, remove, reorder) keeps
 each its own control; this only applies where the row really does
 represent one single toggle.
 
+## Correction: a toggle row is not symmetric once removal has weight (added 2026-08-29)
+
+The rule directly above ("wrap the ROW in the interactive element… clicking
+anywhere toggles it") was right for what it was tested against — a search
+hit or catalogue row where "add" and "remove" are the same low-stakes
+action. It is wrong once the row being clicked represents something
+already committed (a medicine already marked preferred, sitting in the
+tree): *"clicking on it should add it, but for removing there should be a
+button, a cross button… removing it should not be that much easy because
+you randomly click on it and that it is removed."* Same visual row, two
+different real-world stakes — adding costs nothing to undo, removing
+quietly drops a clinical default a doctor was relying on.
+
+The fix keeps the row a plain, non-interactive container once it's already
+preferred (`<div className="prac-tree-row">`, no onClick, no
+`stopPropagation` needed because there's nothing to propagate past) and
+moves removal to `RemoveBtn` — the same small X control every other
+card already uses for delete (`LabsModal`'s rows, `CompanionsModal`'s
+authored edges) — with a static heart glyph (`fill="currentColor"`, no
+`PinButton`) as a pure state indicator, no longer a control. The
+"whole-row-click adds" half of the original rule still holds, and still
+matters, but only on rows that AREN'T yet committed: a search hit, or a
+catalogue drill-down row under a composition group — `const add = () => {
+if (!pinned) togglePreferred(...) }`, deliberately a no-op once already
+pinned rather than a second path back to instant removal. **The dividing
+line is "does this click undo something the doctor already chose", not
+"is this conceptually a toggle"** — a row can look identical before and
+after crossing that line and still need a different interaction contract
+on each side of it.
+
+## A capped-preference table hides a second column until you query for it (added 2026-08-29)
+
+`clinic_brand_preference`'s primary key is `(hospital_id, composition_id,
+medicine_id)` — one row per medicine, keyed to exactly ONE composition,
+even when the medicine actually contains several (a combination product
+like "Pantocoat DSR" = pantoprazole + domperidone has two rows in
+`medicine_composition_map` but only ever gets ONE `clinic_brand_preference`
+row, keyed to whichever ingredient the doctor searched through to find it).
+Grouping the UI by that table's own `composition_id` silently merges a
+combination brand into its plain single-salt neighbour's group — exactly
+the bug reported three times in a row: *"paracetamol and a medicine
+containing paracetamol and aceclofenac is not necessarily the same
+thing… that should be separated."* The fix is client-side: fetch each
+preferred medicine's FULL ingredient list from `medicine_composition_map`
+(keyed by `medicine_id`, not filtered to the one composition the
+preference row happens to reference), and group by that full sorted list —
+a synthetic `combo:${names.join("+")}` key when there's more than one
+ingredient, the real `compositionId` otherwise — tagging the combo group
+visibly (`COMBINATION` pill) so it reads as its own category, not a
+sub-item of either ingredient alone.
+
+The trap on the FIRST attempt at this fix: fetching composition *names*
+only for the ids that `clinic_brand_preference` itself mentions (still too
+narrow — that's the same one-composition-per-row limit, one join away)
+silently drops a combo medicine's second ingredient's name, which a
+`if (!name) return` guard then quietly excludes from the grouping key —
+so the combo tag never appears and nothing errors. Caught only by
+screenshotting the live result and seeing "Pantoprazole (1)" where
+"Domperidone + Pantoprazole · COMBINATION" was expected — reading the code
+back gave no reason to suspect it was wrong. When a fetch is scoped to
+"the ids this table mentions", check whether a downstream JOIN table can
+reference MORE ids than that — fetch the union, not the seed set.
+
+## Two tables, two different FK conventions for a column named the same thing (added 2026-08-29)
+
+`clinic_brand_preference.set_by` and `hospital_companion_preference.set_by`
+read as the same field (who set this preference) and are NOT the same FK
+target: the former references `users.id`, the latter `doctors.id` —
+confirmed via `information_schema`, not assumption, after a doctor-facing
+`AddMedicineModal` passed a `doctors.id` into the former and got `insert or
+update on table "clinic_brand_preference" violates foreign key constraint
+"clinic_brand_preference_set_by_fkey"`. `useClinicalIdentity()` now
+resolves both — `doctorId` (a `doctors.id`, for anything keyed like
+`hospital_companion_preference`) and `userId` (a `users.id`, nullable
+until the session is ready, for anything keyed like
+`clinic_brand_preference`) — so a call site picks the one its OWN table's
+FK actually points at, rather than reaching for whichever id happens to be
+in scope. **A same-named column on two tables is not evidence they share a
+convention** — check the actual constraint before wiring a new write path
+to one, especially when copying a pattern from a sibling table that looks
+identical.
+
+## A silent write can still leave the doctor asking "did that work?" (added 2026-08-29)
+
+The FK violation above surfaced a second, independent gap: the medicine
+record itself was created successfully (the `add_medicine` RPC call that
+doesn't touch `clinic_brand_preference` had already committed) before the
+*second*, preference-setting call threw — so the doctor's medicine was
+real and searchable, but the UI never told them so, only surfaced the
+stack trace from the failed second step. **A multi-step submit needs to
+report success for the steps that succeeded, not just failure for the one
+that didn't.** `AddMedicineModal` now fires `onMedicineAdded(...)`
+unconditionally the moment the medicine record exists, before branching on
+whether "mark as preferred" was also requested — so a doctor sees their
+new medicine land in "View added" and the running counter beside it even
+on a run where the preference step separately fails.
+
 ## A modal doesn't lose a draft to a stray click (added 2026-08-28)
 
 Click-outside-to-close is right for a modal that's just a list (nothing
