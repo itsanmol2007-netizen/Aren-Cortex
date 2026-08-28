@@ -45,6 +45,21 @@ overlay that binds an un-modified key **must** take focus when it opens
 (`useOverlayFocus`) and must be in `isAnyModalOpen`, or the binding is dead
 on arrival (keystroke goes to whatever's behind the scrim).
 
+Not Consult-only: the `"practice"` scope (2026-08-29) extends the same
+table to the Practice page's Preferred Medicines card — Ctrl+K/"/" to
+focus its search, ↑↓+Enter to walk results, via the same `useRovingList`
+mechanism `ConditionsCard` uses. `App.tsx`'s `useConsultKeyboard` stays
+Consult-only (its `STOPS`/refs are all consult panels and it runs
+unconditionally regardless of which page is showing, so its own bindings
+mostly no-op harmlessly while Practice is up); Practice's own listener is
+a small `useEffect` local to `PreferredMedicinesCard`, scoped for free by
+only existing in the DOM while that card is mounted, gated on a
+Practice-local `anyModalOpen` the same way `isAnyModalOpen` gates Consult's.
+Adding the same treatment to another Practice card (Labs, Companions) is
+the same three pieces: a scope entry + bindings in `keymap.ts`, a
+`useRovingList` wired to that card's own result rows, and the
+`practiceFocusSearch`-style effect if it needs its own focus shortcut.
+
 ## Shared chart shell
 
 `ChartSurface.tsx` — the modal every specialty chart (odontogram, body map,

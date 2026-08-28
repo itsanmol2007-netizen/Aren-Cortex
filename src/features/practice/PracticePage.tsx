@@ -91,6 +91,8 @@ import { resolveProductByName } from "../../lib/db/medicines";
 import { IntentSearchField, useIntentSearch } from "../consult/IntentSearch";
 import { PinButton } from "../consult/parts";
 import { PracticeModal } from "./PracticeModal";
+import { useRovingList } from "../../hooks/useRovingList";
+import { firedChord, matches } from "../../lib/keyboard/keymap";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import "./practice.css";
@@ -420,7 +422,7 @@ function groupByComposition(rows: ClinicBrandDefaultDetail[]): CompositionGroup[
 const TREE_ROW_H = ROW_H;
 
 function PreferredMedicinesCard({
-    hospitalId, brands, brandsLoading, onBrandsChange, onOpenAddNew,
+    hospitalId, brands, brandsLoading, onBrandsChange, onOpenAddNew, anyModalOpen,
 }: {
     hospitalId: string;
     brands: ClinicBrandDefaultDetail[];
@@ -429,6 +431,12 @@ function PreferredMedicinesCard({
     /** Opens the Add New Medicine modal with this query pre-filled — the
      *  "not found here either? add it" tail of the search. */
     onOpenAddNew: (initialName: string) => void;
+    /** True while any of Practice's OWN modals (Add New Medicine, Labs,
+     *  Companions, …) is open — gates `practiceFocusSearch` the same way
+     *  `useConsultKeyboard`'s `isAnyModalOpen` gates `focusChart`: an overlay
+     *  owns the keyboard for as long as it is up, so Ctrl+K must not steal
+     *  focus out of a modal's own field mid-type. */
+    anyModalOpen: boolean;
 }) {
     const search = useIntentSearch(["medicine"]);
     // Search resolves to a COMPOSITION (an intent's `refId`), never a
@@ -444,6 +452,55 @@ function PreferredMedicinesCard({
     const searchInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
     const reduce = useReducedMotion();
     const headerRefs = useRef(new Map<number | string, HTMLButtonElement>());
+
+    // ── Keyboard — same settings as the consult workspace ──────────────────
+    // Ctrl+K / "/" jumps here from anywhere on the page, mirroring
+    // `focusChart`; ↑ ↓ + Enter walk the search results exactly like
+    // `ConditionsCard`'s `conditionMove`/`conditionTake` does over its own
+    // list — same `useRovingList` mechanism, same reason (a re-ranking DOM
+    // list, cursor read back rather than kept in React state). This effect
+    // is scoped to Practice for free: it only exists in the DOM while this
+    // card is mounted, unlike `useConsultKeyboard`'s window-level listener
+    // which runs unconditionally regardless of which page is showing.
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (anyModalOpen) return;
+            if (matches(e, "practiceFocusSearch")) {
+                e.preventDefault();
+                e.stopPropagation();
+                searchInputRef.current?.focus();
+            }
+        };
+        window.addEventListener("keydown", handler, true);
+        return () => window.removeEventListener("keydown", handler, true);
+    }, [anyModalOpen]);
+
+    const resultsRef = useRef<HTMLDivElement>(null);
+    // One cursor over BOTH the flat hit list and the composition drill-down
+    // — a doctor mid-search doesn't think of those as two different lists,
+    // and only one of the two branches is ever mounted under `resultsRef`
+    // at a time (see `search.isSearching`'s render below), same as
+    // `ConditionsCard`'s ranked-list/search-hit split.
+    const roving = useRovingList({
+        containerRef: resultsRef,
+        rowSelector: ".prac-hit-row, .prac-modal-row.is-pick",
+        actionSelector: ".prac-hit-row, .prac-modal-row.is-pick",
+        enabled: search.isSearching,
+    });
+    const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const move = firedChord(e, "practiceMove");
+        if (move) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.move(move.key === "ArrowUp" ? -1 : 1);
+            return;
+        }
+        if (matches(e, "practiceTake")) {
+            e.preventDefault();
+            e.stopPropagation();
+            roving.activate();
+        }
+    };
 
     const groups = useMemo(() => groupByComposition(brands), [brands]);
 
@@ -579,6 +636,7 @@ function PreferredMedicinesCard({
                 <IntentSearchField
                     state={search} placeholder="Search medicine (brand or generic)…"
                     inputRef={searchInputRef}
+                    onKeyDown={onSearchKeyDown}
                     trailing={
                         // "Add Preferred" — NOT "Add New Medicine" (a
                         // completely different action, §15/16: one marks an
@@ -596,7 +654,7 @@ function PreferredMedicinesCard({
                 />
             </div>
             {search.isSearching ? (
-                <div className="prac-search-results">
+                <div className="prac-search-results" ref={resultsRef}>
                     {drill ? (
                         <>
                             <button type="button" className="prac-modal-back" onClick={() => setDrill(null)}>
@@ -1197,6 +1255,37 @@ function AddMedicineModal({
     const [error, setError] = useState<string | null>(null);
     const compSearch = useIntentSearch(["medicine"]);
 
+    // Duplicate check — "why isn't adding a new medicine triggering a
+    // search to verify it isn't already there?" (2026-08-29). A free-typed
+    // brand name never touched search before this; now every keystroke here
+    // runs the SAME `search_intents` RPC the composition field below uses,
+    // via a second independent `useIntentSearch` instance kept in sync with
+    // `name`. This deliberately does NOT go through `medicines.name ilike`
+    // — `resolveProductByName`'s doc comment measured that against the live
+    // 213k-row catalogue and it is cancelled by the statement timeout with
+    // no supporting index, every time. `search_intents` already has to
+    // answer this same question fast for every OTHER search box on this
+    // page, so it is reused rather than a second, slower path invented here.
+    const nameSearch = useIntentSearch(["medicine"]);
+    useEffect(() => { nameSearch.setQuery(name); }, [name]);
+    // Only `matchKind === "brand"` hits — a hit that only matched the
+    // MOLECULE name (typing "Paracetamol" as a brand name, say) isn't
+    // evidence this exact brand already exists, and would just make the
+    // warning fire on every plain-composition name typed here.
+    const duplicateBrands = useMemo(() => {
+        if (name.trim().length < 2) return [];
+        const seen = new Set<string>();
+        const out: { brand: string; composition: string }[] = [];
+        for (const h of nameSearch.hits) {
+            if (h.matchKind !== "brand" || !h.viaLabel) continue;
+            const key = h.viaLabel.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ brand: h.viaLabel, composition: h.label });
+        }
+        return out;
+    }, [nameSearch.hits, name]);
+
     const chosenIds = new Set(compositions.map((c) => c.compositionId));
     const compositionHits = (() => {
         const seen = new Set<number>();
@@ -1284,6 +1373,17 @@ function AddMedicineModal({
             <div className="prac-modal-field">
                 <label>Brand name</label>
                 <input type="text" value={name} placeholder="e.g. Acenac-XT" onChange={(e) => setName(e.target.value)} autoFocus />
+                {duplicateBrands.length > 0 && (
+                    <div className="prac-modal-dupe-warn" role="status">
+                        <strong>Already in our library:</strong>
+                        <ul>
+                            {duplicateBrands.slice(0, 5).map((m) => (
+                                <li key={m.brand}>{m.brand} <span>— {m.composition}</span></li>
+                            ))}
+                        </ul>
+                        <p>Search Preferred Medicines above instead of creating a duplicate.</p>
+                    </div>
+                )}
             </div>
 
             <div className="prac-modal-field">
@@ -1716,6 +1816,16 @@ export function PracticePage({
     const [measurementsModalOpen, setMeasurementsModalOpen] = useState(false);
     const [manageTermsOpen, setManageTermsOpen] = useState(false);
 
+    // Every Practice-local overlay, ORed together — the same job
+    // `App.tsx`'s `isAnyModalOpen` does for the consult workspace, scoped to
+    // this page's own modals. `PreferredMedicinesCard` gates its Ctrl+K /
+    // "/" binding on this so it can't steal focus out of, say, Add New
+    // Medicine's brand-name field mid-type.
+    const anyModalOpen =
+        labsModalOpen || addMedicineOpen != null || addedMedicinesOpen ||
+        companionModalOpen || editingTemplate != null || measurementsModalOpen ||
+        manageTermsOpen;
+
     useEffect(() => {
         if (!identity.ready) return;
         setBrandsLoading(true);
@@ -1863,6 +1973,7 @@ export function PracticePage({
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
                             onBrandsChange={setBrands}
                             onOpenAddNew={(initialName) => setAddMedicineOpen({ initialName })}
+                            anyModalOpen={anyModalOpen}
                         />
 
                         <PracticeCard

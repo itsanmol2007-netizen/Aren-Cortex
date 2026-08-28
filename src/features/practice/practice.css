@@ -813,6 +813,18 @@
 
 .prac-hit-row:last-child { border-bottom: 0; }
 
+/* The keyboard cursor — same shape as consult.css's `[data-cx-cursor]`
+ * rows (`.cs-rec`/`.cs-sug`/`.cx-cond-row`: a tint plus a left bar, never
+ * the browser's own focus ring, since focus stays up in the search field
+ * while the doctor walks this list with the arrow keys). Teal, not blue,
+ * to match this card's own tone rather than borrowing Consult's action
+ * colour verbatim — see colour.md's "thread the tone through" note. */
+.prac-hit-row[data-cx-cursor],
+.prac-modal-row.is-pick[data-cx-cursor] {
+    background: var(--cs-teal-soft);
+    box-shadow: inset 2px 0 0 var(--cs-teal);
+}
+
 .prac-hit-drill {
     flex: none;
     display: inline-flex;

@@ -77,7 +77,8 @@ export type Scope =
     | "medicines"
     | "addsheet"
     | "plan"
-    | "review";
+    | "review"
+    | "practice";
 
 export const SCOPE_TITLE: Record<Scope, string> = {
     global: "Anywhere",
@@ -89,12 +90,16 @@ export const SCOPE_TITLE: Record<Scope, string> = {
     addsheet: "The add-medicine sheet",
     plan: "The consultation plan",
     review: "Review, print and finish",
+    practice: "Practice — Preferred Medicines",
 };
 
-/** The order the sheet prints the groups in — the order a consult happens in. */
+/** The order the sheet prints the groups in — the order a consult happens in.
+ *  "practice" sits last: it's a separate page, not a stop in the consult
+ *  itself (`useConsultKeyboard`'s `STOPS`), so it prints after the flow it
+ *  otherwise mirrors the shape of. */
 export const SCOPE_ORDER: Scope[] = [
     "global", "patient", "chart", "measurements", "assessment",
-    "medicines", "addsheet", "plan", "review",
+    "medicines", "addsheet", "plan", "review", "practice",
 ];
 
 export type BindingId =
@@ -117,7 +122,9 @@ export type BindingId =
     // the plan
     | "planMove" | "planOpen" | "planRemove"
     // review
-    | "reviewSave" | "reviewPrint" | "reviewBack";
+    | "reviewSave" | "reviewPrint" | "reviewBack"
+    // practice — Preferred Medicines
+    | "practiceFocusSearch" | "practiceMove" | "practiceTake";
 
 export interface Binding {
     id: BindingId;
@@ -450,6 +457,33 @@ export const BINDINGS: Binding[] = [
         keys: [k("Escape")],
         scope: "review",
         what: "Back to editing",
+        whileTyping: true,
+    },
+
+    // ── practice — Preferred Medicines ─────────────────────────────────────
+    // Same shape as `focusChart`/`chartMove`/`chartTake` — a different page,
+    // not a different keyboard. Escape-to-clear needs no entry of its own:
+    // `IntentSearchField` already clears its query on Escape for every card
+    // that uses it, Practice's medicine search included.
+    {
+        id: "practiceFocusSearch",
+        keys: [ctrl("k"), { key: "/", whileTyping: false }],
+        scope: "practice",
+        what: "Jump to Preferred Medicines search",
+        whileTyping: true,
+    },
+    {
+        id: "practiceMove",
+        keys: [k("ArrowDown"), k("ArrowUp")],
+        scope: "practice",
+        what: "Move through the search results",
+        whileTyping: true,
+    },
+    {
+        id: "practiceTake",
+        keys: [k("Enter")],
+        scope: "practice",
+        what: "Add the highlighted medicine as preferred",
         whileTyping: true,
     },
 ];

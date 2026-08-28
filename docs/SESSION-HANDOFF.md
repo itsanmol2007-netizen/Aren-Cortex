@@ -1,85 +1,59 @@
-# Session handoff — 2026-08-29 (Preferred Medicines: FK bug, combo grouping, add/remove pattern)
+# Session handoff — 2026-08-29 (Add New Medicine duplicate check + Practice keyboard)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE, not append a new dated
 section.** `cortex-design-dna/*.md` and `context/*.md` are stable reference
 material — touch them only when a rule or fact in them is actually wrong.
 
-## The real bugs this round found (not design polish)
+## What this round did
 
-1. **`clinic_brand_preference_set_by_fkey` violation when adding a new
-   medicine and marking it preferred.** `AddMedicineModal` passed
-   `doctorId` (a `doctors.id`) into `setClinicBrandDefault`'s `setBy`, but
-   that column's FK targets `users.id` — a DIFFERENT convention from the
-   superficially identical `hospital_companion_preference.set_by`, which
-   really does target `doctors.id`. Confirmed via `information_schema`,
-   not assumption. Fixed by adding `userId: string | null` to
-   `useClinicalIdentity()`'s returned `ClinicalIdentity` and threading it
-   into `AddMedicineModal` in place of `doctorId`. See
-   panel-structure.md's new "two tables, two different FK conventions"
-   note — check the actual constraint before reusing a same-named column's
-   pattern from a sibling table.
-2. **A failed second step hid a successful first one.** The medicine
-   record itself was created (that RPC call succeeded) before the
-   *separate* preference-setting call threw the FK error above — so the
-   doctor's new medicine was real and searchable, but the UI only ever
-   surfaced the second call's stack trace, never confirming the first
-   call's success. `AddMedicineModal` now calls `onMedicineAdded(...)`
-   the moment the medicine record exists, unconditionally, before
-   branching on whether "mark as preferred" was also requested.
-3. **Combination medicines were silently merged into a single-ingredient
-   composition's group.** `clinic_brand_preference` stores exactly ONE
-   `composition_id` per medicine even when the medicine has several (e.g.
-   "Pantocoat DSR" = pantoprazole + domperidone) — grouping the Preferred
-   Medicines tree by that one id merged the combo product into the plain
-   "Pantoprazole" group with no way to tell them apart. Reported three
-   times by name before being fixed: *"a medicine containing paracetamol
-   and a medicine containing paracetamol and aceclofenac is not
-   necessarily the same thing."* Fixed by fetching each medicine's FULL
-   ingredient list from `medicine_composition_map` (by `medicine_id`, not
-   filtered to the one composition the preference row references) and
-   grouping by the full sorted list, tagging 2+-ingredient groups
-   `COMBINATION`. See panel-structure.md's new note, including the
-   narrower first attempt that silently dropped a second ingredient's name
-   and was only caught by screenshotting the live result.
+1. **Add New Medicine now actually verifies the brand isn't already in the
+   library.** The "Brand name" field never triggered any search before this
+   — a doctor could type "Dolo 650" and create a duplicate with zero
+   warning, the only guard being a static sentence of instructional text.
+   A second `useIntentSearch(["medicine"])` instance is now kept in sync
+   with the typed name (`useEffect` → `nameSearch.setQuery(name)`) and its
+   `matchKind === "brand"` hits render as an amber "Already in our
+   library:" block naming every match and its composition. Deliberately
+   NOT wired through `medicines.name ilike` — `resolveProductByName`'s own
+   doc comment already measured that against the live 213k-row catalogue
+   and it's cancelled by the statement timeout every time, no supporting
+   index. `search_intents` is the fast path every other search box on this
+   page already uses, reused rather than inventing a second, slower one.
+   Advisory only — `canSubmit` is untouched, since a same-name different
+   pack/strength is a legitimate reason to still create it.
+2. **The Practice page now has real keyboard bindings, same system as
+   Consult.** New `"practice"` scope in `src/lib/keyboard/keymap.ts`
+   (`practiceFocusSearch`, `practiceMove`, `practiceTake`) — Ctrl+K or "/"
+   jumps to Preferred Medicines' search from anywhere on the page, ↑↓ walks
+   the search results (the same `useRovingList` mechanism
+   `ConditionsCard`/`RecommendationsCard` already use — a DOM-attribute
+   cursor, not React state, because these lists can re-rank), Enter takes
+   the highlighted one. Escape-to-clear needed no new binding —
+   `IntentSearchField` already clears its query on Escape for every card
+   that uses it. The Practice group shows up in the SAME "?"/Ctrl+/
+   shortcuts sheet Consult uses — that sheet renders straight off the
+   shared table, so a new scope's bindings appear there automatically.
+   See `docs/context/consult-ui.md`'s "keyboard system" note for how this
+   sits beside (not inside) `useConsultKeyboard`/`App.tsx`'s global hook.
 
-## Everything else this round — verified live
+## Verified live (Ekanki Solo Clinic account)
 
-All in `src/features/practice/{PracticePage.tsx,practice.css}`,
-`src/lib/db/synapse.ts`, `src/hooks/useClinicalIdentity.ts`. Verified
-end-to-end against the live Ekanki account. Test data created/found during
-verification: two synthetic medicines from earlier rounds' testing,
-**"Test (New Med)"** (paracetamol+fluconazole+methotrexate — clinically
-incoherent, unambiguous test data) was deleted outright (no prescription
-referenced it). **"Nxvom-4"** (ondansetron) was left in the catalogue —
-it IS referenced by a real `prescription_medicines` row, so deleting it
-risked corrupting that record; its `clinic_brand_preference` row was
-toggled on then off again during this round's add/remove verification,
-ending in its original (not-preferred) state. **"Pantocoat DSR" is real
-user data — untouched.**
-
-- **Preferred Medicines now groups combination products separately**, with
-  a violet `COMBINATION` tag, per bug #3 above.
-- **Add-only click, dedicated remove button — corrects Round B's
-  "whole-row click toggles" rule.** A row that's already preferred is a
-  plain non-interactive container (heart is now a static state glyph, no
-  `PinButton`); removal is only the small `RemoveBtn` (X) already used
-  elsewhere (Labs, Companions). Rows NOT yet preferred (search hits, a
-  composition's catalogue drill-down) keep whole-row-click-to-add, now
-  explicitly a no-op if already pinned rather than a second path back to
-  instant removal. See panel-structure.md's correction note — the
-  dividing line is whether the click undoes something already committed.
-- **"Manage all preferred medicines" removed.** It had no destination — no
-  separate management surface exists for this card (the search field + tree
-  already are the full surface) — so the link was cut rather than pointed
-  at a fake destination.
-- **"View added (N)" counter** beside the Add New Medicine card's "View
-  added" link — state lifted out of the modal (`addedMedicines` now lives
-  on `PracticePage`, fetched once, updated optimistically by
-  `onMedicineAdded`) so the count is visible without opening the modal.
-- **Faint background watermark** — the existing `ArenMark` brand-mark
-  component (already used elsewhere, not a new SVG) rendered at low
-  opacity (0.05) behind the page, top-right, decorative only
-  (`pointer-events: none`, hidden under 900px).
+- Ctrl+K from an arbitrary point on the Practice page focused Preferred
+  Medicines' search input (`document.activeElement`'s placeholder
+  confirmed).
+- Typing "Dolo" and pressing ↓ landed the roving cursor on the first hit,
+  a second ↓ moved it without duplicating the cursor (`[data-cx-cursor]`
+  count stayed exactly 1).
+- Pressing Enter on the highlighted hit ("Dolo Drops") actually added it
+  as preferred (count 7→8, confirmed after reload); removed again via its
+  own X button, count back to 7 after a reload — no residue left on the
+  live account.
+- "?" opened the shortcuts sheet with a new "PRACTICE — PREFERRED
+  MEDICINES" group listing all three bindings correctly.
+- Typing "Dolo 650" into Add New Medicine's brand-name field surfaced
+  "Already in our library: Dolo 650 Tablet — paracetamol" within about a
+  second, screenshotted.
+- Zero page errors across every check. `tsc -b` and `npm run build` clean.
 
 ## Environment / recipe (unchanged from prior rounds)
 
@@ -89,30 +63,31 @@ user data — untouched.**
    --proxy-bypass-list=127.0.0.1;localhost --ignore-certificate-errors`.
 2. Chromium cannot CONNECT to `*.supabase.co` directly here — relay
    through the dev server: a temporary `vite.preview.config.ts` copying
-   `vite.config.ts`'s `@` alias + `tailwindcss()` plugin (skip either and
-   every `@/...` import breaks) plus `server.proxy['/sb']` to the real
-   Supabase URL via `HttpsProxyAgent`, and `.env.local` setting
-   `VITE_SUPABASE_URL=http://127.0.0.1:5173/sb`. Run the dev server via
-   the harness's `run_in_background` tool, not a bare `&` (has died
-   silently between tool calls before). Delete both files (and any
-   `scratch-*.mjs` verification scripts) before committing — never
-   tracked.
+   `vite.config.ts`'s `@` alias + `tailwindcss()` plugin plus
+   `server.proxy['/sb']` to the real Supabase URL via `HttpsProxyAgent`,
+   and `.env.local` setting `VITE_SUPABASE_URL=http://127.0.0.1:5173/sb`.
+   Delete both (and any `scratch-*.mjs` scripts) before committing — never
+   tracked. **Check for a stray dev server left running from an earlier
+   session before starting a new one** (`ps aux | grep vite`) — one was
+   found still bound to :5173 from a prior round this session; killing it
+   is safe, it's disposable.
 3. Log in with the real test account: phone `9999999999` /
    `Gigabyte@Test` (Ekanki Solo Clinic, Dr Anmol Pandey,
-   `hospital_id 64c26e24-3668-49c6-8b99-6ddb8c14883e`,
-   `doctor_id 40aa12a6-54f2-4b49-9100-8a2f8de0254d`,
-   `user_id f567b621-a168-4417-a03e-1cbf8331f3a7`). Landing sometimes opens
-   a "Find or create patient" modal first — `Escape` it before navigating
-   elsewhere.
+   `hospital_id 64c26e24-3668-49c6-8b99-6ddb8c14883e`).
 4. Sidebar nav buttons are off-viewport — `.dispatchEvent('click')`, not
    `.click()`.
-5. Any write made while testing is REAL data on a REAL account — verify
+5. **`page.keyboard.press(...)` sends to whatever has OS-level page focus
+   and is unreliable right after `locator.fill()`** in this harness — two
+   verification scripts in this round showed a `[data-cx-cursor]` count of
+   0 after an `ArrowDown` that should have worked, purely because of this.
+   `locator.press(...)` (e.g. `searchBox.press("ArrowDown")`) explicitly
+   focuses the element via CDP first and is reliable — prefer it over
+   `page.keyboard.press` whenever the previous step was a `.fill()`, not a
+   real click.
+6. Any write made while testing is REAL data on a REAL account — verify
    with `mcp__Supabase__execute_sql` before deleting anything, and check
    for downstream FK references (`prescription_medicines`, etc.) before
-   deleting a `medicines` row — a reference there means the row is load-
-   bearing for a real record even if the medicine itself looks synthetic;
-   leave it and just correct/toggle its preference state back instead of
-   force-deleting through the FK.
+   deleting a `medicines` row.
 
 ## Environment
 

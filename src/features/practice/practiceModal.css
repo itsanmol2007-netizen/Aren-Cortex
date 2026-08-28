@@ -485,6 +485,39 @@
     font-weight: 550;
 }
 
+/* Add New Medicine's live duplicate check — "why isn't adding a new
+ * medicine triggering a search to verify it isn't already there?"
+ * (2026-08-29). Amber, not red: this is advisory (the doctor may well be
+ * adding a genuinely different strength/pack of the same brand name), never
+ * a hard stop — `canSubmit` is untouched by it, on purpose. */
+.prac-modal-dupe-warn {
+    margin-top: 6px;
+    border: 1px solid var(--cs-amber-soft);
+    border-radius: 9px;
+    background: var(--cs-amber-soft);
+    padding: 8px 11px;
+    color: var(--cs-amber);
+    font-size: 11.5px;
+}
+
+.prac-modal-dupe-warn strong { font-weight: 700; }
+
+.prac-modal-dupe-warn ul {
+    margin: 4px 0;
+    padding-left: 16px;
+    list-style: disc;
+}
+
+.prac-modal-dupe-warn li { font-weight: 600; }
+
+.prac-modal-dupe-warn li span { font-weight: 500; opacity: 0.85; }
+
+.prac-modal-dupe-warn p {
+    margin: 4px 0 0;
+    font-weight: 500;
+    opacity: 0.9;
+}
+
 /* Preferred Labs' default star, inside the modal's row list. */
 .prac-lab-star {
     flex: none;
