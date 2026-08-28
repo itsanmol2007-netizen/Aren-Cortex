@@ -347,33 +347,51 @@
 .prac-card:hover .prac-glyph { transform: translateY(-1px) scale(1.05); }
 
 @media (prefers-reduced-motion: reduce) {
-    .prac-card, .prac-glyph { transition: none; }
-    .prac-card:hover, .prac-card:hover .prac-glyph { transform: none; }
+    .prac-card, .prac-glyph,
+    .prac-row, .prac-tree-row, .prac-tree-head, .prac-hit-row {
+        transition: none;
+    }
+    .prac-card:hover, .prac-card:hover .prac-glyph,
+    .prac-row:hover, .prac-tree-row:hover, .prac-tree-head:hover, .prac-hit-row:hover {
+        transform: none;
+    }
 }
 
 /* ── Bounded, not fixed — corrected 2026-08-27 after actually rendering it ──
-   This used to be a hard `height` (360px, then 396px). Rendered against
-   the real account, that produced exactly the failure
-   `empty-states.md` warns about: Preferred Labs with one lab measured
-   295px of dead space below its content, Prescription Templates 275px,
-   while Consultation Defaults sat at 121px in the same row — a jagged row
-   of giant empty rectangles. "A 62px illustration in a 300px well reads as
-   an accident."
+   This used to be a hard `height` (360px, then 396px), cut down to 320px
+   once the grid's `align-items: stretch` (below) made side-by-side cards
+   share a height regardless of a big constant. Sparse content gives a
+   short row; full content grows to this ceiling and then scrolls
+   internally (`.prac-tree`/`.prac-rows`/`.prac-search-results` are all
+   `flex:1; min-height:0; overflow-y:auto`), so the page still never grows
+   without bound. See `empty-states.md`'s "a 62px illustration in a 300px
+   well reads as an accident" for why this is never picked by eye.
 
-   `max-height` instead. The grid row (`align-items: stretch` above) makes
-   side-by-side cards share a height, so parity still holds — but that
-   height is now the tallest card's REAL content, not a constant nobody's
-   data matches. Sparse content gives a short row; full content grows to
-   this ceiling and then scrolls internally (`.prac-tree`/`.prac-rows`/
-   `.prac-search-results` are all `flex:1; min-height:0; overflow-y:auto`),
-   so the page still never grows without bound.
-
-   The ceiling is derived: head (~47px) + subtitle (~20px) + search row
-   (~40px) + a 7-row list window at the tree's own row height (34px = 238px)
-   + body bottom padding (12px) ≈ 357px, rounded to 380px. Seven rows is
-   the reference image's own visible-row count for this card. */
+   Re-derived 2026-08-29, MEASURED not estimated: Preferred Labs' cap
+   going 3→4 rows plus a visible "Show more" trigger (previously hidden
+   behind `hideTrigger`) — "not more than 3 labs are being shown right now
+   even though there is a clear space for it... try to accommodate 4". At
+   320px, `.prac-fill`'s flex-shrink was silently squeezing the 4-row list
+   below its own 216px (4×54 `MED_ROW_H`) target to fit the "Show more"
+   button into the space left over — the 4th row rendered CUT OFF mid-line,
+   caught by comparing a row's own `getBoundingClientRect()` height against
+   `.prac-rows`' actual rendered height (176.6px, well under its own 216px
+   `max-height`). Component budget at 360px: head 35.5 + subtitle 15.4 +
+   body padding 24 + rows 216 + "Show more" button incl. margin 23.5 + card
+   foot 40 ≈ 354.4, rounded up for a hair of breathing room. Raises every
+   card sharing `.is-fixed` via grid stretch, not just Labs — harmless
+   slack for the others (Templates/Companions still cap at 3, Preferred
+   Medicines scrolls its own way, see `.prac-tree`), never a squeeze. */
 .prac-card.is-fixed {
-    height: 320px;
+    height: 360px;
+    /* Defensive, not decorative: a card's content is meant to size itself
+     * to this ceiling (`.prac-card-body`/`.prac-fill` are `flex:1;
+     * min-height:0`), but nothing before this clipped the case where it
+     * doesn't — real data can be one row taller than the math accounted
+     * for. Clips cleanly at the border rather than bleeding out past it;
+     * does not clip the card's own `:hover` box-shadow (that's the box's
+     * own paint, not overflowing content). */
+    overflow: hidden;
 }
 
 /* Secondary tier — related configuration, quieter by design (the brief:
@@ -698,10 +716,23 @@
     min-height: 34px;
     padding: 0 2px;
     border-bottom: 1px solid var(--cs-line);
+    border-radius: 6px;
+    transition: background 0.12s, transform 0.12s;
 }
 
 .prac-row:last-child {
     border-bottom: 0;
+}
+
+/* Preferred Labs / Prescription Templates / Clinical Companions rows had
+ * NO hover feedback at all before this — the card around them lifts and
+ * glows on hover (`.prac-card:hover`), but a doctor's cursor landing on the
+ * actual row inside it changed nothing (2026-08-29: "the individual items
+ * inside it, they still need some animation"). Same small tint+lift every
+ * other row on this page now carries, not a bespoke treatment. */
+.prac-row:hover {
+    background: var(--cs-page);
+    transform: translateY(-1px);
 }
 
 /* ── Pinned Medicines' own row shape — icon + two lines, not a bare string.
@@ -806,10 +837,10 @@
     color: inherit;
     cursor: pointer;
     border-radius: 6px;
-    transition: background 0.12s;
+    transition: background 0.12s, transform 0.12s;
 }
 
-.prac-hit-row:hover { background: var(--cs-teal-soft); }
+.prac-hit-row:hover { background: var(--cs-teal-soft); transform: translateY(-1px); }
 
 .prac-hit-row:last-child { border-bottom: 0; }
 
@@ -1298,9 +1329,20 @@
     min-height: 34px;
     padding: 0 2px;
     border: 0;
+    border-radius: 6px;
     background: none;
     cursor: pointer;
     text-align: left;
+    transition: background 0.12s, transform 0.12s;
+}
+
+/* Group header row gets the same hover treatment as its own children
+ * (`.prac-tree-row:hover` below) — every clickable row on this page reads
+ * as clickable on hover, group headers included (2026-08-29: "the
+ * individual items inside it, they still need some animation"). */
+.prac-tree-head:hover {
+    background: var(--cs-teal-soft);
+    transform: translateY(-1px);
 }
 
 .prac-tree-head svg {
@@ -1334,8 +1376,14 @@
     padding-left: 20px;
 }
 
-/* `<button>`, whole row clickable (2026-08-28) — same "the whole meaningful
-   item is the action, not just its icon" rule as `.prac-hit-row`. */
+/* A plain `<div>`, NOT a button (corrected 2026-08-29 — see
+   panel-structure.md's "a toggle row is not symmetric once removal has
+   weight" note): a row here is ALREADY preferred, so there is nothing left
+   to "add" by clicking it, only something to remove via its own `RemoveBtn`
+   — whole-row-click stays a `.prac-hit-row`/drill-row thing, add-only. The
+   hover tint still applies (it's still the row the heart/✕ live on), just
+   with `cursor: default` rather than `pointer` since the row body itself
+   does nothing on click. */
 .prac-tree-row {
     display: flex;
     align-items: center;
@@ -1348,16 +1396,31 @@
     font: inherit;
     text-align: left;
     color: inherit;
-    cursor: pointer;
+    cursor: default;
     border-radius: 6px;
-    transition: background 0.12s;
+    transition: background 0.12s, transform 0.12s;
 }
 
-.prac-tree-row:hover { background: var(--cs-teal-soft); }
+.prac-tree-row:hover { background: var(--cs-teal-soft); transform: translateY(-1px); }
 
+/* Medicine name — the actual content, bold and full-ink — reads distinctly
+   heavier than its composition group header above it (`.prac-tree-head
+   .prac-row-label`, muted/lighter): "literally the same font, same size and
+   same color... change it" (2026-08-29). Composition is the category label;
+   the brand underneath it is what the doctor is actually scanning for. */
 .prac-tree-row .prac-row-label {
-    font-size: 12.5px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--cs-ink);
+}
+
+/* The composition group header's own name — deliberately lighter than the
+ * medicine rows it contains (see above), so the two never read as the same
+ * weight of information. */
+.prac-tree-head .prac-row-label {
+    font-size: 12px;
+    font-weight: 620;
+    color: var(--cs-label);
 }
 
 /* The product's own dosage form ("Tablet") — secondary metadata, a fixed

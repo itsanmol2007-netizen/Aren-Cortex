@@ -1208,6 +1208,7 @@ function App() {
           logoRef={logoRef}
           onOpenSidebar={handleOpenSidebar}
           specialty={specialty}
+          onNavigate={handleSidebarNavigate}
         />
       ) : activePage === "settings" ? (
         <SettingsPage

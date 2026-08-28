@@ -421,6 +421,16 @@ function groupByComposition(rows: ClinicBrandDefaultDetail[]): CompositionGroup[
  *  every other single-line row on this page (`ROW_H`). */
 const TREE_ROW_H = ROW_H;
 
+/** How many concrete medicines an OPEN composition group shows before
+ *  "Show more" — a group used to reveal every row it had at once, the tree
+ *  just growing (and, past the card's fixed height, quietly scrolling with
+ *  no signal that there was more): "There is no Show more button (if the
+ *  list exceeds the box height), it directly go for scrolling" (2026-08-29).
+ *  Same 4-row number Preferred Labs' cap was bumped to the same round, for
+ *  one consistent "how much before you have to ask for more" across the
+ *  page rather than each list picking its own. */
+const GROUP_ROW_CAP = 4;
+
 function PreferredMedicinesCard({
     hospitalId, brands, brandsLoading, onBrandsChange, onOpenAddNew, anyModalOpen,
 }: {
@@ -449,6 +459,13 @@ function PreferredMedicinesCard({
     // opening one composition closes any other, so the bounded scroll area
     // stays predictable rather than growing with every group opened.
     const [expandedId, setExpandedId] = useState<number | string | null>(null);
+    // A single flag, not a Set keyed by group — only one group is ever open
+    // at a time (the accordion above), so only one group's "Show more" can
+    // ever be relevant. Resets on every group switch so opening a
+    // DIFFERENT composition always starts capped again, never inheriting
+    // the last group's "show all" state.
+    const [childrenExpanded, setChildrenExpanded] = useState(false);
+    useEffect(() => { setChildrenExpanded(false); }, [expandedId]);
     const searchInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
     const reduce = useReducedMotion();
     const headerRefs = useRef(new Map<number | string, HTMLButtonElement>());
@@ -776,34 +793,67 @@ function PreferredMedicinesCard({
                                     </span>
                                     <span className="prac-tree-count">{g.rows.length}</span>
                                 </button>
-                                <motion.div
-                                    initial={false}
-                                    animate={{ maxHeight: open ? g.rows.length * TREE_ROW_H : 0 }}
-                                    transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
-                                    className="prac-tree-children"
-                                >
-                                    {/* Every row here is ALREADY preferred — there is
-                                        nothing left to "add" by clicking it, only
-                                        something to remove, and removal is
-                                        deliberately NOT a click-anywhere gesture
-                                        (2026-08-29: "clicking on it should add it,
-                                        but for removing there should be a...
-                                        cross button... not anywhere"). The heart
-                                        is a plain indicator now; only the ✕
-                                        actually removes. */}
-                                    {g.rows.map((r) => (
-                                        <div key={r.medicineId} className="prac-tree-row">
-                                            <span className="prac-row-label is-catalogue">{r.medicineName}</span>
-                                            {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
-                                            {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
-                                            <Heart size={14} className="prac-tree-heart" fill="currentColor" aria-hidden="true" />
-                                            <RemoveBtn
-                                                label={`Remove ${r.medicineName} from preferred medicines`}
-                                                onClick={() => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName)}
-                                            />
-                                        </div>
-                                    ))}
-                                </motion.div>
+                                {(() => {
+                                    const overflowingChildren = g.rows.length > GROUP_ROW_CAP;
+                                    const showingAll = childrenExpanded && open;
+                                    const visibleRows = overflowingChildren && !showingAll ? g.rows.slice(0, GROUP_ROW_CAP) : g.rows;
+                                    return (
+                                        <motion.div
+                                            initial={false}
+                                            // A large flat target rather than a number computed
+                                            // from `visibleRows.length` — the same "expanded is
+                                            // deliberately not a bigger measured number" trick
+                                            // `CappedRows` already uses (its own doc comment
+                                            // explains why): the actual rendered content, not
+                                            // this ceiling, is what bounds the visible height,
+                                            // so it stays correct whether the group is capped,
+                                            // fully shown, or anywhere between — one animation
+                                            // instead of retuning the target on every click.
+                                            animate={{ maxHeight: open ? 9999 : 0 }}
+                                            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
+                                            className="prac-tree-children"
+                                        >
+                                            {/* Every row here is ALREADY preferred — there is
+                                                nothing left to "add" by clicking it, only
+                                                something to remove, and removal is
+                                                deliberately NOT a click-anywhere gesture
+                                                (2026-08-29: "clicking on it should add it,
+                                                but for removing there should be a...
+                                                cross button... not anywhere"). The heart
+                                                is a plain indicator now; only the ✕
+                                                actually removes. */}
+                                            {visibleRows.map((r) => (
+                                                <div key={r.medicineId} className="prac-tree-row">
+                                                    <span className="prac-row-label is-catalogue">{r.medicineName}</span>
+                                                    {r.productForm && <span className="prac-tree-form">{r.productForm}</span>}
+                                                    {r.manufacturer && <span className="prac-tree-mfr">{r.manufacturer}</span>}
+                                                    <Heart size={14} className="prac-tree-heart" fill="currentColor" aria-hidden="true" />
+                                                    <RemoveBtn
+                                                        label={`Remove ${r.medicineName} from preferred medicines`}
+                                                        onClick={() => togglePreferred(r.compositionId, r.compositionName, r.medicineId, r.medicineName)}
+                                                    />
+                                                </div>
+                                            ))}
+                                            {/* Only appears once a group's own list actually
+                                                exceeds the cap — "There is no Show more button
+                                                (if the list exceeds the box height), it directly
+                                                go for scrolling" (2026-08-29). Unlocks the rest
+                                                in place, same spring the group itself opened
+                                                with, rather than silently handing the doctor a
+                                                scrollbar with no signal there was more to see. */}
+                                            {overflowingChildren && (
+                                                <button
+                                                    type="button"
+                                                    className="prac-foot-more prac-tree-more"
+                                                    onClick={() => setChildrenExpanded((v) => !v)}
+                                                >
+                                                    {showingAll ? "Show less" : "Show more"}
+                                                    <ChevronDown size={12} className={showingAll ? "is-flipped" : undefined} />
+                                                </button>
+                                            )}
+                                        </motion.div>
+                                    );
+                                })()}
                             </div>
                         );
                     })}
@@ -1993,8 +2043,8 @@ export function PracticePage({
                                         34px name-and-remove line was reading as
                                         "tiny, cramped rows" next to those. */}
                                     <CappedRows
-                                        items={preferredLabs} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
-                                        showAllLabel="View all labs" hideTrigger keyOf={(l) => l.id}
+                                        items={preferredLabs} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                        showAllLabel="Show more" keyOf={(l) => l.id}
                                         renderRow={(l) => (
                                             <>
                                                 <span className="prac-med-icon is-slate" aria-hidden="true">

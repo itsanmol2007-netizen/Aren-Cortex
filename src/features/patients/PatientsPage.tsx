@@ -24,6 +24,7 @@ import {
 } from "../../lib/db";
 import type { Patient } from "../../types";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
+import type { SidebarPage } from "../sidebar/SidebarNav";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { PatientRecord } from "./PatientRecord";
@@ -41,6 +42,13 @@ interface Props {
     logoRef: RefObject<HTMLDivElement>;
     onOpenSidebar: () => void;
     specialty: SpecialtyProfile;
+    /** Same nav handler `PracticePage`/`SidebarNav` already use — "Manage
+     *  Templates" in Quick Actions routes through it to `"practice"`, the
+     *  page that actually owns Prescription Templates (`PracticePage`'s
+     *  own Prescription Templates card), rather than the no-op it opened
+     *  before (2026-08-29: "it should now redirect to this page,
+     *  Practice"). */
+    onNavigate: (page: SidebarPage) => void;
 }
 
 /**
@@ -478,7 +486,7 @@ function RightPanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty }: Props) {
+export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty, onNavigate }: Props) {
     const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
@@ -660,7 +668,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
                         activeFilter={filter}
                         onSetFilter={setFilter}
                         onNewPatient={() => { /* wire in next session */ }}
-                        onManageTemplates={() => { /* wire in next session */ }}
+                        onManageTemplates={() => onNavigate("practice")}
                     />
                 )}
             </div>

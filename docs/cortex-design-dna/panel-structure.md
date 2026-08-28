@@ -251,3 +251,77 @@ something a click would throw away, computed locally by each modal
 `MeasurementsModal`: the checked set differs from what it opened with).
 Escape and the × close button always work regardless — both are an
 explicit "I want to leave", never a stray click.
+
+## A collapsed list's own trigger was suppressed everywhere it existed (added 2026-08-29)
+
+`CappedRows` (this file's own row-list primitive) always had a working
+"Show more" — cap N rows, grow into a bounded scroll on click. Every real
+call site (Preferred Labs, Prescription Templates, Clinical Companions)
+passed `hideTrigger` anyway, on the reasoning that a persistent `FootLink`
+("View all labs →") already opened a full management modal, and showing
+both would be "two controls doing the same job". That reasoning held right
+up until a doctor actually hit the cap: *"Not more than 3 labs are being
+shown right now even though there is a clear space for it... show it with
+overflow protection... a 'show more' button... unlocks the nested scroll
+with smooth animation"* — the exact mechanism `hideTrigger` was hiding,
+requested back almost verbatim. The two controls are not actually
+redundant: "Show more" answers "let me glance at the rest right here",
+"View all" answers "let me go edit/reorder/manage them" — different jobs,
+both worth keeping. Preferred Labs' cap went 3→4 and `hideTrigger` came
+off; Templates/Companions were left as-is (not reported, no reason to
+guess their own right cap without the same complaint).
+
+Preferred Medicines' composition tree had the identical gap one level
+down: a GROUP's own children (`.prac-tree-children`) rendered every row it
+had, uncapped — sparse groups never noticed, a group with many preferred
+brands just grew until `.prac-tree`'s own outer scroll caught it, with
+nothing on screen saying there was more. Same fix, same shape, one level
+lower: `GROUP_ROW_CAP` rows visible per open group, a `.prac-tree-more`
+button (styled as `.prac-foot-more`, not a bespoke control) appears only
+when a group's `rows.length > GROUP_ROW_CAP`, and a single `childrenExpanded`
+flag (reset whenever the accordion switches to a different group) tracks
+whether the currently-open group is capped or fully shown — one flag, not
+a Set, because only one group is ever open at a time.
+
+**The trap this surfaced**: bumping Preferred Labs to 4 rows + a visible
+button did not just need a CSS number changed — at the existing 320px
+card height, `.prac-fill`'s flex-shrink (default `flex: 0 1 auto` on
+`.prac-rows` in its collapsed state) was silently squeezing the row list
+BELOW its own `216px` (4×54) `max-height` target to make room for the
+button, and the 4th row rendered visibly cut off mid-line. `max-height`
+on a flex item is a ceiling, not a guarantee — a flex container that's
+genuinely out of room will shrink a child past it if that child hasn't
+been told `flex-shrink: 0`. Caught by comparing a row's own
+`getBoundingClientRect()` height against `.prac-rows`' actual rendered
+height (176.6px, well under its own 216px ceiling), not by eye — a
+partially-clipped row at this font size reads as "slightly tight
+line-height", not "obviously broken". Fixed by re-deriving `.prac-card.is-
+fixed`'s height from the real component budget (360px, replacing a stale
+320px whose own derivation comment hadn't matched the applied value for
+at least one prior round — check the comment against the actual CSS value
+before trusting either).
+
+## A parent group and its children need visibly different weight (added 2026-08-29)
+
+Preferred Medicines' composition-group header (`.prac-tree-head`, e.g.
+"Paracetamol") and the concrete medicine rows under it (`.prac-tree-row`,
+e.g. "Dolo 650 Tablet") shared the exact same `.prac-row-label` size,
+weight, and color — *"literally the same font, same size and same color
+and even same horizontal placing"*. A composition name is a category
+label; the brand underneath it is the actual content a doctor is scanning
+for, and the two need to read as different levels of a hierarchy on
+sight, not merely be told apart by which line happens to have a chevron
+next to it. Fixed with the same weight/color tokens this design system
+already uses for exactly this contrast elsewhere (never a second font
+family — `typography.md`'s scale is size/weight/color, not typeface):
+the group header stepped down to `--cs-label` (muted) at 620 weight, the
+medicine row stepped up to `--cs-ink` (full dark) at 700 weight. Every row
+that shares this recipe now ALSO gets its own hover feedback
+(`translateY(-1px)` + a tone-tinted background, the same small lift
+`.prac-card:hover` already gives the whole card, scaled down to row size)
+— rows across Preferred Medicines, Preferred Labs/Templates/Companions,
+and every modal's own pick-row previously had either a flat background
+swap or nothing at all: *"There is a hover animation when going on a
+card but the individual items inside it, they still need some
+animation."* Guarded by `prefers-reduced-motion` alongside the card-level
+transform this mirrors.
