@@ -81,16 +81,44 @@ A card is allowed to be short when its content is short. That is honest,
 and `empty-states.md` has forbidden the alternative since 2026-08-25:
 *"a 62px illustration in a 300px well reads as an accident."*
 
-## Resting shadow gets a hover state (added 2026-08-27)
+## Resting shadow gets a hover state (added 2026-08-27, tone-matched 2026-08-28)
 
 `--cs-shadow` alone (`0 1px 1px rgba(16,28,46,.03)`) is correct at rest —
 but a page of otherwise-identical cards asked for "visual weight" reads as
 flat, not calm, until something responds to the pointer. `.prac-card`
 (and any card built on this recipe) gets a `transition` on
 `box-shadow`/`border-color`/`transform`, and a `:hover` state: a 1px lift
-plus a soft shadow tinted with `--cs-blue` at low opacity (the action
-colour, not a new one — colour.md's rule for every accent applies to a
-hover glow too). Guard it with `@media (prefers-reduced-motion: reduce)`
-same as every other transform on this page (motion.md). Do not invent a
-heavier lift or a stronger tint "to make sure it reads" — the resting
-shadow was 0.03 opacity; 0.08 on hover is already a large relative jump.
+plus a soft glow at low opacity. The glow was one flat `--cs-blue` tint
+for every card at first (2026-08-27) — corrected the next round to match
+each card's OWN tone (`.prac-card--teal:hover`, `--violet:hover`, …, see
+colour.md's "thread the tone through" note), so seven cards glow in (up
+to) four different colours instead of one. Guard it with
+`@media (prefers-reduced-motion: reduce)` same as every other transform on
+this page (motion.md), and the `.prac-glyph` icon riding along with a
+slightly faster lift+scale is the same guard. Do not invent a heavier lift
+or a stronger tint "to make sure it reads" — the resting shadow was 0.03
+opacity; ~0.08–0.10 on hover is already a large relative jump.
+
+## The footer link — one shape, tone-coloured, for every populated card (added 2026-08-28)
+
+Every primary card that has a fuller management surface elsewhere (a
+modal, or simply "focus the search field") carries ONE persistent link at
+its foot: `PracticeCard`'s `foot` prop, rendered as `FootLink` (label +
+`ChevronRight`, `.prac-card-foot` — its own bordered-top row, outside
+`.prac-card-body`, never a fifth row inside the list). Never per-card
+bespoke — a "Manage" text link on one card and a dashed "+ Add another"
+box on its neighbour is the exact "this symmetry doesn't match" complaint
+from 2026-08-27, just relocated to the card's foot. Gate it on the card
+actually having content (`items.length > 0`) — an empty state already
+carries its own call to action, a second one below it is noise.
+
+Also: the page's own section heading (`.prac-group-head`/`-title`/`-sub`,
+"Clinical Defaults / What Cortex reaches for first…") was CUT on
+2026-08-27 on the reasoning that the dark `WorkspaceHeader` above it
+already said enough, then REINSTATED on 2026-08-28 once an actual
+reference image was given as the explicit source of truth and it drew the
+heading back in. Neither round was wrong given what it knew — the
+takeaway isn't "always keep a heading" or "always cut it", it's that a
+literal reference image overrides a prior round's own reasoning, even
+reasoning that was sound in isolation and is still recorded in this file.
+Check the CURRENT reference before repeating an old argument.

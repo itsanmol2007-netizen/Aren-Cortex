@@ -25,3 +25,24 @@ just moved.
   drawing floating in a large empty well reads as a bug, not restraint
   (ui-doctrine §5: *"a 62px illustration in a 300px well reads as an
   accident"*).
+
+## The state between empty and full also needs to be designed (added 2026-08-28)
+
+Zero items gets `BlankXArt` centred, front and large. A FULL list has no
+dead space to fill. The state in between — 1-3 items in a card whose fixed
+height (`.prac-card.is-fixed`) has room for 4+ — was landing as a short
+list of rows followed by flat, undesigned air, which reads as unfinished
+even though the empty-state rule technically doesn't apply (there IS
+content). Fixed on Practice with `.prac-fill-art`: the SAME small mark
+(`BlankLabArt`, `BlankTemplateArt`, …) the card's own zero-state already
+uses, reused (not duplicated) at low opacity in the corner, behind the
+real rows (`z-index:0` under `.prac-rows`/`.prac-tree`/`.prac-setting-
+list`'s `z-index:1`). It only appears below the card's own "still sparse"
+threshold (Labs/Templates: ≤3 of a 4-row cap; Companions: ≤2 of 3) — once
+a list is at or past its cap there is no dead space left for it to
+answer, and showing it anyway would read as clutter, not polish.
+
+The art must belong to what the card DOES, not be a generic decoration —
+reusing the card's own empty-state drawing guarantees that for free; never
+reach for a new illustration or a different one than the zero-state
+already committed to for the same card.

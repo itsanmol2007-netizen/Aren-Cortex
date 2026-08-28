@@ -192,61 +192,67 @@
     white-space: nowrap;
 }
 
-/* ── Related settings — a compact bar of real navigation, not a card grid
-   (these already exist elsewhere; only the deeper Practice pages don't
-   yet — "for now, simply redirect there"). */
-.prac-related {
-    display: flex;
-    flex-direction: column;
-    gap: var(--cs-s3);
-    margin-top: var(--cs-s3);
-    padding-top: var(--cs-s4);
-    border-top: 1px solid var(--cs-line);
-}
-
-.prac-related-title {
-    color: var(--cs-faint);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.prac-related-links {
+/* ── Related settings — a 2x2 grid of icon tiles (added 2026-08-28, against
+   a literal reference image), replacing a plain stacked list of text
+   buttons. Each tile carries its own icon so the grid reads as a small set
+   of destinations, not a bare navigation list — same recipe the rest of
+   this page already uses (`.prac-med-icon` + `.prac-med-info`), just 2x2
+   instead of 1-per-row. */
+.prac-settings-grid {
     flex: 1;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: var(--cs-s2);
 }
 
-.prac-related-links button {
-    flex: 1;
+.prac-settings-tile {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--cs-s2);
+    min-width: 0;
     border: 1px solid var(--cs-line);
     border-radius: 10px;
     background: none;
-    padding: 0 14px;
-    color: var(--cs-ink);
-    font-size: 12.5px;
-    font-weight: 600;
+    padding: 0 var(--cs-s3);
     text-align: left;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    transition: background 0.12s, border-color 0.12s, transform 0.12s;
 }
 
-.prac-related-links button::after {
-    content: "\2192";
+.prac-settings-tile:hover {
+    background: var(--cs-page);
+    border-color: var(--cs-line-strong);
+    transform: translateY(-1px);
+}
+
+.prac-settings-tile .prac-med-info { gap: 1px; }
+.prac-settings-tile .prac-row-label { font-size: 12px; font-weight: 640; }
+.prac-settings-tile .prac-med-brands { font-size: 10.5px; }
+
+.prac-settings-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+}
+
+.prac-settings-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.prac-settings-icon.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.prac-settings-icon.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
+
+.prac-settings-chevron {
+    flex: none;
     color: var(--cs-faint);
-    font-weight: 500;
+    transition: transform 0.12s ease;
 }
 
-.prac-related-links button:hover {
-    background: var(--cs-blue-soft);
-    color: var(--cs-blue);
-    border-color: transparent;
+.prac-settings-tile:hover .prac-settings-chevron {
+    transform: translateX(2px);
+    color: var(--cs-muted);
 }
 
 /* ── The card primitive — `.cs-card` verbatim ────────────────────────────── */
@@ -263,18 +269,31 @@
 
 /* A resting shadow of 1px was doing nothing to separate seven cards from
    the page under them — "add some visual weight". Lift is small on
-   purpose (1px, not a card that jumps at you) and the glow borrows
-   `--cs-blue` (the action colour) at low opacity rather than inventing an
-   eighth colour, same rule colour.md already states for every accent. */
+   purpose (1px, not a card that jumps at you). The glow is now tinted by
+   the CARD's OWN tone (`.prac-card--teal`/`--violet`/`--slate`/`--blue`,
+   set alongside its `.prac-glyph`) rather than one blue for all seven —
+   "do not use the same pink/purple link accent for every model or
+   action" — never an eighth colour, just the existing four read at low
+   opacity. Slate has no colour of its own (`.prac-glyph.is-slate` isn't
+   tinted either), so it keeps the original neutral-ink glow. */
 .prac-card:hover {
     border-color: var(--cs-line-strong);
-    box-shadow: 0 6px 20px rgba(18, 104, 232, 0.08), 0 1px 2px rgba(16, 28, 46, 0.06);
+    box-shadow: 0 6px 20px rgba(16, 28, 46, 0.07), 0 1px 2px rgba(16, 28, 46, 0.06);
     transform: translateY(-1px);
 }
 
+.prac-card--teal:hover { box-shadow: 0 6px 20px rgba(15, 118, 110, 0.10), 0 1px 2px rgba(16, 28, 46, 0.06); }
+.prac-card--violet:hover { box-shadow: 0 6px 20px rgba(124, 58, 237, 0.09), 0 1px 2px rgba(16, 28, 46, 0.06); }
+.prac-card--blue:hover { box-shadow: 0 6px 20px rgba(18, 104, 232, 0.09), 0 1px 2px rgba(16, 28, 46, 0.06); }
+
+/* Icon movement — the glyph tile lifts a hair faster than the card around
+   it, "restrained... not flashy". */
+.prac-glyph { transition: transform 0.18s ease; }
+.prac-card:hover .prac-glyph { transform: translateY(-1px) scale(1.05); }
+
 @media (prefers-reduced-motion: reduce) {
-    .prac-card { transition: none; }
-    .prac-card:hover { transform: none; }
+    .prac-card, .prac-glyph { transition: none; }
+    .prac-card:hover, .prac-card:hover .prac-glyph { transform: none; }
 }
 
 /* ── Bounded, not fixed — corrected 2026-08-27 after actually rendering it ──
@@ -369,7 +388,7 @@
 
 .prac-glyph.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 .prac-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
-.prac-glyph.is-violet { background: #f5f3ff; color: var(--cs-violet); }
+.prac-glyph.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
 .prac-glyph.is-slate { background: #f1f5f9; color: #475569; }
 
 /* Count + the optional "Manage" trigger travel together, flush right —
@@ -382,19 +401,32 @@
     gap: var(--cs-s2);
 }
 
+/* One badge shape, five tones — a card's count reads in ITS OWN colour
+   (`.is-${tone}`, `PracticeCard`'s `countTone` prop) instead of every
+   count on the page sharing one blue regardless of what card it's on.
+   Green is the one deliberate exception to "matches the card's tone":
+   Preferred Medicines passes `countTone="green"` because every unit in it
+   is a medicine the practice actively marked preferred — colour.md's
+   "taken/added to the plan", not a re-statement of the card's own teal
+   icon. */
 .prac-count {
     flex: none;
     border-radius: 7px;
-    background: var(--cs-blue-soft);
     padding: 3px 9px;
-    color: var(--cs-blue);
     font-size: 11.5px;
     font-weight: 650;
     letter-spacing: -0.005em;
 }
 
-/* The "Manage" / "+ New" / "+ Set default" trigger that opens a card's
-   deeper modal — sits at the end of the head row, after the count. */
+.prac-count.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.prac-count.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.prac-count.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.prac-count.is-slate { background: #f1f5f9; color: #475569; }
+.prac-count.is-green { background: var(--cs-green-soft); color: var(--cs-green); }
+
+/* The "Manage" text trigger that opens a card's deeper modal — sits at the
+   end of the head row, after the count, tone-matched to the card it's on
+   (see `.prac-card--*` below) rather than a blanket blue. */
 
 .prac-card-manage {
     border: 0;
@@ -408,6 +440,39 @@
 }
 
 .prac-card-manage:hover { text-decoration: underline; }
+
+.prac-card--teal .prac-card-manage { color: var(--cs-teal); }
+.prac-card--violet .prac-card-manage { color: var(--cs-violet); }
+
+/* The bordered "+ Add lab" / "+ New" pill — a real button (not a text
+   link) for the head's PRIMARY create action, distinct from `.prac-card-
+   manage`'s quieter text-link treatment. Tone-matched border/text. */
+.prac-card-add {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: none;
+    padding: 4px 10px;
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.prac-card--slate .prac-card-add:hover {
+    background: #f1f5f9; border-color: transparent; color: #334155;
+}
+.prac-card--violet .prac-card-add {
+    border-color: rgba(124, 58, 237, 0.35); color: var(--cs-violet);
+}
+.prac-card--violet .prac-card-add:hover {
+    background: var(--cs-violet-soft); border-color: transparent;
+}
 
 /* The inline call to action inside an empty state — a real button, not a
    sentence describing where to go. */
@@ -433,6 +498,34 @@
 .prac-empty-action:hover {
     background: var(--cs-blue-soft);
 }
+
+.prac-card--teal .prac-empty-action { border-color: var(--cs-teal); color: var(--cs-teal); }
+.prac-card--teal .prac-empty-action:hover { background: var(--cs-teal-soft); }
+.prac-card--violet .prac-empty-action { border-color: var(--cs-violet); color: var(--cs-violet); }
+.prac-card--violet .prac-empty-action:hover { background: var(--cs-violet-soft); }
+
+/* The trailing "+ Add medicine" button beside Preferred Medicines' own
+   search field (`IntentSearchField`'s `trailing` slot) — same compact
+   bordered-pill language as `.prac-card-add`, sized to sit inline next to
+   `.cs-field` rather than stacking under it. */
+.prac-search-add {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--cs-teal);
+    border-radius: 999px;
+    background: none;
+    padding: 7px 12px;
+    color: var(--cs-teal);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s;
+}
+
+.prac-search-add:hover { background: var(--cs-teal-soft); }
 
 .prac-card-body {
     padding: var(--cs-s4);
@@ -464,7 +557,37 @@
    (see PracticePage.tsx's `CappedRows`) rather than a measured one. Rows
    are a plain list with hairline separators, not boxes-inside-a-box — the
    brief: "avoid... excessive rounded containers." ───────────────────────── */
+/* ── The partial-fill illustration — added 2026-08-28. A card with 1-3 of
+   its possible rows used to leave the rest of `.prac-card.is-fixed`'s
+   height as flat dead air below the last row. `.prac-fill-art` is the
+   SAME small mark that card's OWN empty state already draws (`BlankLabArt`
+   for Preferred Labs, `BlankTemplateArt` for Templates, …) — reused, not
+   duplicated — sat low-opacity in the corner behind the real rows, so a
+   sparse card still reads as designed rather than unfinished. `.prac-rows`
+   / `.prac-tree` / `.prac-setting-list` get `position:relative; z-index:1`
+   so the real content always paints above the art regardless of DOM
+   order. Never shown once a card is at or past its row cap — at that point
+   there is no dead space left for it to fill. */
+.prac-fill {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.prac-fill-art {
+    position: absolute;
+    right: 6px;
+    bottom: 2px;
+    z-index: 0;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
 .prac-rows {
+    position: relative;
+    z-index: 1;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -474,6 +597,43 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+}
+
+/* A subtle, Cortex-toned scrollbar for every nested-scroll region on this
+   page — the default browser scrollbar reads as a dense stock document
+   ("not... a dominant default browser scrollbar"). Firefox via
+   `scrollbar-width`, WebKit via the pseudo-elements; both thin, both a
+   faint neutral thumb that only darkens on hover, no track chrome at all. */
+.prac-rows.is-expanded,
+.prac-tree,
+.prac-search-results {
+    scrollbar-width: thin;
+    scrollbar-color: var(--cs-line-strong) transparent;
+}
+
+.prac-rows.is-expanded::-webkit-scrollbar,
+.prac-tree::-webkit-scrollbar,
+.prac-search-results::-webkit-scrollbar {
+    width: 6px;
+}
+
+.prac-rows.is-expanded::-webkit-scrollbar-track,
+.prac-tree::-webkit-scrollbar-track,
+.prac-search-results::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.prac-rows.is-expanded::-webkit-scrollbar-thumb,
+.prac-tree::-webkit-scrollbar-thumb,
+.prac-search-results::-webkit-scrollbar-thumb {
+    background: var(--cs-line-strong);
+    border-radius: 999px;
+}
+
+.prac-rows.is-expanded::-webkit-scrollbar-thumb:hover,
+.prac-tree::-webkit-scrollbar-thumb:hover,
+.prac-search-results::-webkit-scrollbar-thumb:hover {
+    background: #c7ced9;
 }
 
 .prac-row {
@@ -702,6 +862,7 @@
 }
 
 .prac-foot-more:hover { color: var(--cs-blue); }
+.prac-card--violet .prac-foot-more:hover { color: var(--cs-violet); }
 
 .prac-foot-more svg {
     transition: transform 0.15s ease;
@@ -738,33 +899,39 @@
     line-height: 1.5;
 }
 
-/* A list that has not filled its card yet ends with a quiet "add another"
-   row rather than trailing off into blank space. It is bottom-anchored
-   (`margin-top: auto`), so the card has a defined foot at any row count —
-   and unlike filler, it is the actual next thing the doctor would do. */
-.prac-ghost-add {
-    margin-top: auto;
+/* ── The card foot — `PracticeCard`'s `foot` prop, one shape (`FootLink`)
+   for the persistent "Manage all X →" / "View all X →" link every
+   populated primary card carries, replacing the dashed "add another" row
+   this page used to grow at the bottom of an under-filled list. Sits
+   OUTSIDE `.prac-card-body` (its own row, top-bordered) so it reads as
+   the card's one settled exit, not another list row. */
+.prac-card-foot {
     flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border: 1px dashed var(--cs-line-strong);
-    border-radius: 10px;
-    background: none;
-    padding: 9px;
-    color: var(--cs-muted);
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    padding: var(--cs-s2) var(--cs-s4) var(--cs-s3);
+    border-top: 1px solid var(--cs-line);
 }
 
-.prac-ghost-add:hover {
-    background: var(--cs-blue-soft);
-    border-color: transparent;
+.prac-foot-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 0;
+    background: none;
+    padding: 0;
     color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: gap 0.12s ease;
 }
+
+.prac-foot-link:hover { gap: 5px; }
+.prac-foot-link svg { transition: transform 0.12s ease; }
+.prac-foot-link:hover svg { transform: translateX(1px); }
+
+.prac-card--teal .prac-foot-link { color: var(--cs-teal); }
+.prac-card--violet .prac-foot-link { color: var(--cs-violet); }
+.prac-card--slate .prac-foot-link { color: #475569; }
 
 /* ── The two not-yet-built quiet cards — one honest sentence, the card's
    own head icon already says what it's about, so no second illustration. */
@@ -822,6 +989,8 @@
    side rather than one pill and a link alone in a wide card — the specialty
    chart, and now the measurement set within it. */
 .prac-setting-list {
+    position: relative;
+    z-index: 1;
     flex: 1;
     min-height: 0;
     display: flex;
@@ -845,6 +1014,23 @@
 
 .prac-setting-row:last-child { border-bottom: 0; }
 .prac-setting-row:hover .prac-row-label { color: var(--cs-blue); }
+
+/* The small "Change profile →" / "Configure measurements →" line under
+   each setting's description — its own row, not appended text, so it can
+   wrap independently and carry its own hover-move without disturbing the
+   label above it. */
+.prac-setting-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 1px;
+    color: var(--cs-blue);
+    font-size: 10.5px;
+    font-weight: 650;
+}
+
+.prac-setting-link svg { transition: transform 0.12s ease; }
+.prac-setting-row:hover .prac-setting-link svg { transform: translateX(2px); }
 
 /* `.prac-quiet-pill` sets `align-self: flex-start` for its old inline use;
    in a tall setting row that floats the value to the top-right, detached
@@ -942,6 +1128,15 @@
     font-size: 11.5px;
     font-weight: 540;
     border-left: 2.5px solid transparent;
+}
+
+/* The "+12 more" tail chip — a count, not a fifth intent type, so it gets
+   no left accent bar and reads a touch quieter than a real term. */
+.prac-term-chip.is-more {
+    background: none;
+    border: 1px dashed var(--cs-line-strong);
+    color: var(--cs-faint);
+    padding: 5px 11px;
 }
 
 .prac-term-chip.is-finding { border-left-color: #b45309; }

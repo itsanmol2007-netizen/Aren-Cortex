@@ -133,6 +133,11 @@
     --cs-orange: #c2410c;
     --cs-orange-soft: #fff7ed;
     --cs-green: #16a34a;
+    /* colour.md promises every one of the seven semantic colours a soft
+       pair; green's was never actually added until Practice needed one
+       (2026-08-28) for its "already preferred" badges — filling a gap the
+       doc already committed to, not inventing an eighth colour. */
+    --cs-green-soft: #f0fdf4;
     /* Moderate radius. Enough to read as a considered surface, not enough to
        become "bubble UI" — a clinical workstation, not a consumer app.
        Down a notch 2026-08-20 with the density pass: a radius that read as

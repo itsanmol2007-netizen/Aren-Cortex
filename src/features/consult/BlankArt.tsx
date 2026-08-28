@@ -213,6 +213,22 @@ export function BlankAddMedicineArt() {
     );
 }
 
+/** Consultation Defaults' own mark (Practice page): the chart Cortex opens
+ *  with, at rest — a monitor, unwritten. Neutral slate, the same "hasn't
+ *  declared anything of its own" family as `BlankLabArt` — Consultation
+ *  Defaults isn't a category with its own hue either (`tone="slate"`). */
+export function BlankConsultDefaultsArt() {
+    return (
+        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" aria-hidden="true">
+            <rect x="10" y="7" width="30" height="21" rx="3.5"
+                fill="#fbfcfd" stroke="#c3cad6" strokeWidth="1.7" />
+            <path d="M16.5 13.5h17M16.5 18.5h11" stroke="#dbe1ea" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M25 28v5M19 37h12" stroke="#c3cad6" strokeWidth="1.7" strokeLinecap="round" />
+            <path d="M44 10l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#b7c0cf" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

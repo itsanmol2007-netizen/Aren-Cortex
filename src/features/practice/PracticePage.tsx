@@ -58,9 +58,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    ArrowDown, ArrowUp, BookText, Check, ChevronDown, Clock, FlaskConical, Layers,
-    Link2, Package, Pill, Plus, SlidersHorizontal, Sparkles, Star,
-    ToggleLeft, ToggleRight, X,
+    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Layers,
+    MessageCircle, MoreHorizontal, Pill, Plus, Settings, Shield, SlidersHorizontal, Sparkles, Star,
+    ToggleLeft, ToggleRight, User, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
@@ -83,7 +83,8 @@ import type { IntentSearchHit } from "../../lib/db/synapse";
 import type { IntentType } from "../../lib/synapse/engine";
 import { MEASURE_FIELDS, type MeasureFieldKey } from "../consult/measures";
 import {
-    BlankAddMedicineArt, BlankCompanionArt, BlankLabArt, BlankMedicineArt, BlankTemplateArt, BlankTermArt,
+    BlankAddMedicineArt, BlankCompanionArt, BlankConsultDefaultsArt, BlankLabArt, BlankMedicineArt,
+    BlankTemplateArt, BlankTermArt,
 } from "../consult/BlankArt";
 import { resolveProductByName } from "../../lib/db/medicines";
 import { IntentSearchField, useIntentSearch } from "../consult/IntentSearch";
@@ -134,7 +135,7 @@ const ROW_H = 34;
 const MED_ROW_H = 54;
 
 function CappedRows<T>({
-    items, cap, rowH = ROW_H, rowClassName, renderRow, keyOf, showAllLabel,
+    items, cap, rowH = ROW_H, rowClassName, renderRow, keyOf, showAllLabel, hideTrigger,
 }: {
     items: T[];
     cap: number;
@@ -142,7 +143,15 @@ function CappedRows<T>({
     rowClassName?: string;
     renderRow: (item: T) => ReactNode;
     keyOf: (item: T) => string | number;
+    /** The FULL collapsed-state label ("View all templates"), not a prefix
+     *  the count gets appended to — every card phrases this in its own
+     *  words now, rather than sharing one generic "Show all N". */
     showAllLabel: string;
+    /** Suppresses the built-in expand trigger — set when the card already
+     *  carries its own persistent "Manage/View all →" link (`FootLink`)
+     *  that opens a full management modal instead of expanding this list
+     *  in place; showing both would be two controls doing the same job. */
+    hideTrigger?: boolean;
 }) {
     const [showAll, setShowAll] = useState(false);
     const reduce = useReducedMotion();
@@ -172,13 +181,13 @@ function CappedRows<T>({
                     </div>
                 ))}
             </motion.div>
-            {overflowing && (
+            {overflowing && !hideTrigger && (
                 <button
                     type="button"
                     className="prac-foot-more"
                     onClick={() => setShowAll((v) => !v)}
                 >
-                    {showAll ? "Show less" : `${showAllLabel} ${items.length}`}
+                    {showAll ? "Show less" : showAllLabel}
                     <ChevronDown size={12} className={showAll ? "is-flipped" : undefined} />
                 </button>
             )}
@@ -219,8 +228,12 @@ function EmptyBlock({ art, fact, next, action }: { art: ReactNode; fact: string;
 //    recipe so it reads as one system, not several. `action` is the
 //    optional "Manage" / "+ New" trigger that opens a modal. ─────────────
 function PracticeCard({
-    icon, tone, title, subtitle, count, quiet, fixed, action, children,
+    id, icon, tone, title, subtitle, count, countTone, quiet, fixed, action, foot, children,
 }: {
+    /** `prac-card-${id}` on the section — the header stat pills' scroll
+     *  target (`scrollToCard`). Only the four cards a pill points at need
+     *  one. */
+    id?: string;
     icon: ReactNode;
     tone: "blue" | "teal" | "violet" | "slate";
     title: string;
@@ -229,29 +242,60 @@ function PracticeCard({
      *  practice prefers to use, grouped by composition."). */
     subtitle?: string;
     count?: number;
+    /** Overrides the count badge's colour away from this card's own `tone`
+     *  — Preferred Medicines' count reads GREEN (colour.md: "taken/added to
+     *  the plan"), because every unit in it is a medicine the practice has
+     *  actively marked preferred, not merely a teal-tinted echo of the
+     *  card's icon. Every other count still follows its card's tone. */
+    countTone?: "blue" | "teal" | "violet" | "slate" | "green";
     quiet?: boolean;
     /** Gives this card the shared, derived fixed footprint — every
      *  "primary" card in Clinical Defaults except the content-driven
      *  quiet ones (Consultation Defaults). See `.prac-card.is-fixed`. */
     fixed?: boolean;
     action?: ReactNode;
+    /** The persistent "Manage X →" / "View all X →" link every populated
+     *  card in the reference carries at its foot — a real navigation (opens
+     *  that card's own modal, or focuses its search) never a decoration.
+     *  Sits below `children`, tone-coloured to match the card. */
+    foot?: ReactNode;
     children: ReactNode;
 }) {
     return (
-        <section className={"prac-card" + (quiet ? " is-quiet" : "") + (fixed ? " is-fixed" : "")} aria-label={title}>
+        <section
+            id={id ? `prac-card-${id}` : undefined}
+            className={"prac-card" + ` prac-card--${tone}` + (quiet ? " is-quiet" : "") + (fixed ? " is-fixed" : "")}
+            aria-label={title}
+        >
             <div className="prac-card-head">
                 <span className={`prac-glyph is-${tone}`}>{icon}</span>
                 <h2 className="prac-card-title">{title}</h2>
                 {(count != null || action) && (
                     <div className="prac-card-head-end">
-                        {count != null && count > 0 && <span className="prac-count">{count}</span>}
+                        {count != null && count > 0 && (
+                            <span className={`prac-count is-${countTone ?? tone}`}>{count}</span>
+                        )}
                         {action}
                     </div>
                 )}
             </div>
             {subtitle && <p className="prac-card-sub">{subtitle}</p>}
             <div className="prac-card-body">{children}</div>
+            {foot && <div className="prac-card-foot">{foot}</div>}
         </section>
+    );
+}
+
+/** The "Manage all X →" / "View all X →" link — one shape, tone-coloured by
+ *  its enclosing `.prac-card--{tone}`, used at the foot of every populated
+ *  primary card instead of a second, differently-styled affordance per
+ *  card ("this symmetry doesn't match" was the exact complaint the LAST
+ *  time two cards in the same row grew two different footer treatments). */
+function FootLink({ label, onClick }: { label: string; onClick: () => void }) {
+    return (
+        <button type="button" className="prac-foot-link" onClick={onClick}>
+            {label} <ChevronRight size={12} />
+        </button>
     );
 }
 
@@ -470,11 +514,26 @@ function PreferredMedicinesCard({
 
     return (
         <PracticeCard
-            icon={<Pill size={14} />} tone="teal" title="Preferred Medicines" count={brands.length} fixed
+            id="medicines"
+            icon={<Pill size={14} />} tone="teal" title="Preferred Medicines"
+            count={brands.length} countTone="green" fixed
             subtitle="Medicines your practice prefers to use, grouped by composition."
+            foot={brands.length > 0 ? (
+                <FootLink
+                    label="Manage all preferred medicines"
+                    onClick={() => searchRef.current?.querySelector("input")?.focus()}
+                />
+            ) : undefined}
         >
             <div ref={searchRef as any}>
-                <IntentSearchField state={search} placeholder="Search medicine or composition…" />
+                <IntentSearchField
+                    state={search} placeholder="Search medicine (brand or generic)…"
+                    trailing={
+                        <button type="button" className="prac-search-add" onClick={() => onOpenAddNew("")}>
+                            <Plus size={13} /> Add medicine
+                        </button>
+                    }
+                />
             </div>
             {search.isSearching ? (
                 <div className="prac-search-results">
@@ -568,8 +627,7 @@ function PreferredMedicinesCard({
             ) : brandsLoading ? (
                 <SkelRows count={3} />
             ) : groups.length > 0 ? (
-                <>
-                    <div className="prac-tree">
+                <div className="prac-tree">
                     {groups.map((g) => {
                         const open = expandedId === g.compositionId;
                         return (
@@ -608,14 +666,7 @@ function PreferredMedicinesCard({
                             </div>
                         );
                     })}
-                    </div>
-                    <button
-                        type="button" className="prac-ghost-add"
-                        onClick={() => searchRef.current?.querySelector("input")?.focus()}
-                    >
-                        <Plus size={13} /> Add another medicine
-                    </button>
-                </>
+                </div>
             ) : (
                 <EmptyBlock
                     art={<BlankMedicineArt />} fact="No preferred medicines yet"
@@ -1520,6 +1571,14 @@ export function PracticePage({
         ? measurePrefs.filter((k) => (specialty.measurements as string[]).includes(k)).length
         : specialty.measurements.length;
 
+    const reduceMotionForScroll = useReducedMotion();
+    /** Every header stat pill is a real jump to the card it summarises, not
+     *  a static readout — `id` on `PracticeCard` is the landing target. */
+    const scrollToCard = (key: string) => {
+        document.getElementById(`prac-card-${key}`)
+            ?.scrollIntoView({ block: "center", behavior: reduceMotionForScroll ? "auto" : "smooth" });
+    };
+
     return (
         <div className="prac-page">
             <WorkspaceHeader
@@ -1532,35 +1591,63 @@ export function PracticePage({
                        read as an undifferentiated strip of the workspace
                        ("that's not the part of a normal screen"); the header
                        is where a count belongs, and `.ws-stat-pill` is the
-                       capsule this header already uses for exactly that. */
+                       capsule this header already uses for exactly that.
+                       Each pill now carries the SAME glyph as the card it
+                       summarises (Pill/FlaskConical/Layers/Sparkles) so the
+                       header and the page below read as one vocabulary, not
+                       four bare numbers — plus a chevron, since every pill
+                       is a real jump to that card, not a static readout. */
                     <>
-                        <span className="ws-stat-pill">
-                            <span className="ws-stat-value">{brands.length}</span>
-                            <span className="ws-stat-label">Medicines</span>
-                        </span>
-                        <span className="ws-stat-pill">
-                            <span className="ws-stat-value">{preferredLabs.length}</span>
-                            <span className="ws-stat-label">Labs</span>
-                        </span>
-                        <span className="ws-stat-pill">
-                            <span className="ws-stat-value">{templates.length}</span>
-                            <span className="ws-stat-label">Templates</span>
-                        </span>
-                        <span className="ws-stat-pill">
-                            <span className="ws-stat-value">{companions.filter((c) => c.enabled).length}</span>
-                            <span className="ws-stat-label">Companions</span>
-                        </span>
+                        <button type="button" className="ws-stat-pill" onClick={() => scrollToCard("medicines")}>
+                            <span className="ws-stat-icon"><Pill size={12} /></span>
+                            <span className="ws-stat-text">
+                                <span className="ws-stat-value">{brands.length}</span>
+                                <span className="ws-stat-label">Medicines</span>
+                            </span>
+                            <ChevronRight size={12} className="ws-stat-chevron" />
+                        </button>
+                        <button type="button" className="ws-stat-pill" onClick={() => scrollToCard("labs")}>
+                            <span className="ws-stat-icon"><FlaskConical size={12} /></span>
+                            <span className="ws-stat-text">
+                                <span className="ws-stat-value">{preferredLabs.length}</span>
+                                <span className="ws-stat-label">Labs</span>
+                            </span>
+                            <ChevronRight size={12} className="ws-stat-chevron" />
+                        </button>
+                        <button type="button" className="ws-stat-pill" onClick={() => scrollToCard("templates")}>
+                            <span className="ws-stat-icon"><Layers size={12} /></span>
+                            <span className="ws-stat-text">
+                                <span className="ws-stat-value">{templates.length}</span>
+                                <span className="ws-stat-label">Templates</span>
+                            </span>
+                            <ChevronRight size={12} className="ws-stat-chevron" />
+                        </button>
+                        <button type="button" className="ws-stat-pill" onClick={() => scrollToCard("companions")}>
+                            <span className="ws-stat-icon"><Sparkles size={12} /></span>
+                            <span className="ws-stat-text">
+                                <span className="ws-stat-value">{companions.filter((c) => c.enabled).length}</span>
+                                <span className="ws-stat-label">Companions</span>
+                            </span>
+                            <ChevronRight size={12} className="ws-stat-chevron" />
+                        </button>
                     </>
                 }
             />
 
             <div className="prac-body">
-                {/* Two rows of three. No on-page section heading: the dark
-                    header already says "Practice — Tune Cortex to the way you
-                    practice", and the counts now live up there too, so a
-                    repeated "Clinical defaults" line was saying nothing the
-                    top bar had not already said. */}
+                {/* Reinstated 2026-08-28 against a literal reference image
+                    (a prior round's argument for cutting it — the dark
+                    header already carries the page title — held for one
+                    round, but the reference is now the explicit source of
+                    truth and it draws this heading). Kept to one line + one
+                    sub, no counts (those stayed in the header, no repeat). */}
                 <div className="prac-group">
+                    <div className="prac-group-head">
+                        <div className="prac-group-head-text">
+                            <h2 className="prac-group-title">Clinical Defaults</h2>
+                            <p className="prac-group-sub">What Cortex reaches for first during a consultation.</p>
+                        </div>
+                    </div>
                     <div className="prac-grid">
                         <PreferredMedicinesCard
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
@@ -1569,31 +1656,31 @@ export function PracticePage({
                         />
 
                         <PracticeCard
+                            id="labs"
                             icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length} fixed
                             subtitle="Labs Cortex should suggest first for investigations."
-                            action={<button type="button" className="prac-card-manage" onClick={() => setLabsModalOpen(true)}>Manage</button>}
+                            action={<button type="button" className="prac-card-add" onClick={() => setLabsModalOpen(true)}><Plus size={12} /> Add lab</button>}
+                            foot={preferredLabs.length > 0 ? <FootLink label="View all labs" onClick={() => setLabsModalOpen(true)} /> : undefined}
                         >
                             {!identity.ready ? (
                                 <SkelRows count={3} />
                             ) : preferredLabs.length > 0 ? (
-                                <>
-                                <CappedRows
-                                    items={preferredLabs} cap={4} showAllLabel="Show all" keyOf={(l) => l.id}
-                                    renderRow={(l) => (
-                                        <>
-                                            {l.isDefault && <Star size={12} className="prac-lab-default-mark" fill="currentColor" />}
-                                            <span className="prac-row-label">{l.name}</span>
-                                            <RemoveBtn label={`Remove ${l.name}`} onClick={() => {
-                                                onPreferredLabsChange(preferredLabs.filter((x) => x.id !== l.id));
-                                                removePreferredLab(l.id).catch(console.error);
-                                            }} />
-                                        </>
-                                    )}
-                                />
-                                <button type="button" className="prac-ghost-add" onClick={() => setLabsModalOpen(true)}>
-                                    <Plus size={13} /> Add another lab
-                                </button>
-                                </>
+                                <div className="prac-fill">
+                                    {preferredLabs.length <= 3 && <div className="prac-fill-art"><BlankLabArt /></div>}
+                                    <CappedRows
+                                        items={preferredLabs} cap={4} showAllLabel="View all labs" hideTrigger keyOf={(l) => l.id}
+                                        renderRow={(l) => (
+                                            <>
+                                                {l.isDefault && <Star size={12} className="prac-lab-default-mark" fill="currentColor" />}
+                                                <span className="prac-row-label">{l.name}</span>
+                                                <RemoveBtn label={`Remove ${l.name}`} onClick={() => {
+                                                    onPreferredLabsChange(preferredLabs.filter((x) => x.id !== l.id));
+                                                    removePreferredLab(l.id).catch(console.error);
+                                                }} />
+                                            </>
+                                        )}
+                                    />
+                                </div>
                             ) : (
                                 <EmptyBlock
                                     art={<BlankLabArt />} fact="No preferred labs yet"
@@ -1604,32 +1691,31 @@ export function PracticePage({
                         </PracticeCard>
 
                         <PracticeCard
+                            id="templates"
                             icon={<Layers size={14} />} tone="violet" title="Prescription Templates" count={templates.length} fixed
                             subtitle="Saved prescription setups for quick reuse."
-                            action={<button type="button" className="prac-card-manage" onClick={() => setEditingTemplate("new")}>+ New</button>}
+                            action={<button type="button" className="prac-card-add" onClick={() => setEditingTemplate("new")}><Plus size={12} /> New</button>}
                         >
                             {!identity.ready ? (
                                 <SkelRows count={3} />
                             ) : templates.length > 0 ? (
-                                <>
-                                <CappedRows
-                                    items={templates} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
-                                    showAllLabel="Show all" keyOf={(t) => t.id}
-                                    renderRow={(t) => (
-                                        <button type="button" className="prac-template-row" onClick={() => setEditingTemplate(t.id)}>
-                                            <div className="prac-med-info">
-                                                <span className="prac-row-label">{t.name}</span>
-                                                <span className="prac-med-brands">
-                                                    {t.itemCount} item{t.itemCount === 1 ? "" : "s"} · triggers on "{t.triggerLabel}"
-                                                </span>
-                                            </div>
-                                        </button>
-                                    )}
-                                />
-                                <button type="button" className="prac-ghost-add" onClick={() => setEditingTemplate("new")}>
-                                    <Plus size={13} /> New template
-                                </button>
-                                </>
+                                <div className="prac-fill">
+                                    {templates.length <= 3 && <div className="prac-fill-art"><BlankTemplateArt /></div>}
+                                    <CappedRows
+                                        items={templates} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                        showAllLabel="View all templates" keyOf={(t) => t.id}
+                                        renderRow={(t) => (
+                                            <button type="button" className="prac-template-row" onClick={() => setEditingTemplate(t.id)}>
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{t.name}</span>
+                                                    <span className="prac-med-brands">
+                                                        {t.itemCount} item{t.itemCount === 1 ? "" : "s"} · triggers on "{t.triggerLabel}"
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        )}
+                                    />
+                                </div>
                             ) : (
                                 <EmptyBlock
                                     art={<BlankTemplateArt />} fact="No templates yet"
@@ -1659,29 +1745,38 @@ export function PracticePage({
                         </PracticeCard>
 
                         <PracticeCard
+                            id="companions"
                             icon={<Sparkles size={14} />} tone="violet" title="Clinical Companions" fixed
                             subtitle="Medicines you commonly consider alongside others."
                             count={companions.filter((c) => c.enabled).length}
                             action={<button type="button" className="prac-card-manage" onClick={() => setCompanionModalOpen(true)}>Manage</button>}
+                            foot={companions.length > 0 ? <FootLink label="Manage companions" onClick={() => setCompanionModalOpen(true)} /> : undefined}
                         >
                             {companionsLoading ? (
                                 <SkelRows count={3} />
                             ) : companions.length > 0 ? (
-                                <CappedRows
-                                    items={companions} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
-                                    showAllLabel="Show all" keyOf={(c) => `${c.intentId}-${c.companionIntentId}`}
-                                    renderRow={(c) => (
-                                        <>
-                                            <span className="prac-med-icon" aria-hidden="true"><Sparkles size={13} /></span>
-                                            <div className="prac-med-info">
-                                                <span className="prac-row-label">When prescribing {c.triggerLabel} → consider {c.companionLabel}</span>
-                                                <span className="prac-med-brands">
-                                                    {!c.enabled ? "Turned off for this practice" : c.source === "practice_authored" ? "Your practice" : "Common pairing"}
-                                                </span>
-                                            </div>
-                                        </>
-                                    )}
-                                />
+                                <div className="prac-fill">
+                                    {companions.length <= 2 && <div className="prac-fill-art"><BlankCompanionArt /></div>}
+                                    <CappedRows
+                                        items={companions} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                        showAllLabel="View all companions" hideTrigger
+                                        keyOf={(c) => `${c.intentId}-${c.companionIntentId}`}
+                                        renderRow={(c) => (
+                                            <button
+                                                type="button" className="prac-template-row"
+                                                onClick={() => setCompanionModalOpen(true)}
+                                            >
+                                                <span className="prac-med-icon" aria-hidden="true"><Sparkles size={13} /></span>
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">When prescribing {c.triggerLabel} → consider {c.companionLabel}</span>
+                                                    <span className="prac-med-brands">
+                                                        {!c.enabled ? "Turned off for this practice" : c.source === "practice_authored" ? "Your practice" : "Common pairing"}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        )}
+                                    />
+                                </div>
                             ) : (
                                 <EmptyBlock
                                     art={<BlankCompanionArt />} fact="No companions configured"
@@ -1699,21 +1794,26 @@ export function PracticePage({
                             icon={<SlidersHorizontal size={13} />} tone="slate" title="Consultation Defaults" fixed
                             subtitle="How Cortex opens a consultation."
                         >
-                            <div className="prac-setting-list">
-                                <button type="button" className="prac-setting-row" onClick={() => onNavigate("settings")}>
-                                    <div className="prac-med-info">
-                                        <span className="prac-row-label">Consultation profile</span>
-                                        <span className="prac-med-brands">Which chart Cortex opens with</span>
-                                    </div>
-                                    <span className="prac-quiet-pill">{specialty.label}</span>
-                                </button>
-                                <button type="button" className="prac-setting-row" onClick={() => setMeasurementsModalOpen(true)}>
-                                    <div className="prac-med-info">
-                                        <span className="prac-row-label">Default measurements</span>
-                                        <span className="prac-med-brands">Shown when a consult opens</span>
-                                    </div>
-                                    <span className="prac-quiet-pill is-alt">{measureCount} of {specialty.measurements.length}</span>
-                                </button>
+                            <div className="prac-fill">
+                                <div className="prac-fill-art"><BlankConsultDefaultsArt /></div>
+                                <div className="prac-setting-list">
+                                    <button type="button" className="prac-setting-row" onClick={() => onNavigate("settings")}>
+                                        <div className="prac-med-info">
+                                            <span className="prac-row-label">Consultation profile</span>
+                                            <span className="prac-med-brands">Which chart Cortex opens with</span>
+                                            <span className="prac-setting-link">Change profile <ChevronRight size={11} /></span>
+                                        </div>
+                                        <span className="prac-quiet-pill">{specialty.label}</span>
+                                    </button>
+                                    <button type="button" className="prac-setting-row" onClick={() => setMeasurementsModalOpen(true)}>
+                                        <div className="prac-med-info">
+                                            <span className="prac-row-label">Default measurements</span>
+                                            <span className="prac-med-brands">Shown when a consult opens</span>
+                                            <span className="prac-setting-link">Configure measurements <ChevronRight size={11} /></span>
+                                        </div>
+                                        <span className="prac-quiet-pill is-alt">{measureCount} of {specialty.measurements.length}</span>
+                                    </button>
+                                </div>
                             </div>
                         </PracticeCard>
                     </div>
@@ -1727,6 +1827,14 @@ export function PracticePage({
                     <PracticeCard
                         icon={<BookText size={14} />} tone="violet" title="Your Clinical Terms" count={terms.length} fixed
                         subtitle="Your terms, in your words — Synapse remembers them for next time."
+                        foot={terms.length > 0 ? (
+                            <FootLink
+                                label="Manage clinical terms"
+                                onClick={() => {
+                                    if (terms.length > TERM_CHIP_CAP) setShowAllTerms((v) => !v);
+                                }}
+                            />
+                        ) : undefined}
                     >
                         <div className="prac-term-add">
                             <select value={newTermType} onChange={(e) => setNewTermType(e.target.value as DoctorFreeTermType)}>
@@ -1746,24 +1854,19 @@ export function PracticePage({
                         {termsLoading ? (
                             <SkelRows count={3} />
                         ) : terms.length > 0 ? (
-                            <>
-                                <div className="prac-term-chips">
-                                    {shownTerms.map((t) => (
-                                        <span key={t.id} className={`prac-term-chip is-${t.type}`}>
-                                            {t.label}
-                                            <button type="button" aria-label={`Forget "${t.label}"`} onClick={() => forgetTerm(t.id)}>
-                                                <X size={10} />
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                                {terms.length > TERM_CHIP_CAP && (
-                                    <button type="button" className="prac-foot-more" onClick={() => setShowAllTerms((v) => !v)}>
-                                        {showAllTerms ? "Show less" : `Show all ${terms.length}`}
-                                        <ChevronDown size={12} className={showAllTerms ? "is-flipped" : undefined} />
-                                    </button>
+                            <div className="prac-term-chips">
+                                {shownTerms.map((t) => (
+                                    <span key={t.id} className={`prac-term-chip is-${t.type}`}>
+                                        {t.label}
+                                        <button type="button" aria-label={`Forget "${t.label}"`} onClick={() => forgetTerm(t.id)}>
+                                            <X size={10} />
+                                        </button>
+                                    </span>
+                                ))}
+                                {terms.length > TERM_CHIP_CAP && !showAllTerms && (
+                                    <span className="prac-term-chip is-more">+{terms.length - TERM_CHIP_CAP} more</span>
                                 )}
-                            </>
+                            </div>
                         ) : (
                             <EmptyBlock art={<BlankTermArt />} fact="Nothing added yet" next="Add one above, or type it during a consult. Either way it is remembered here." />
                         )}
@@ -1773,11 +1876,39 @@ export function PracticePage({
                         icon={<SlidersHorizontal size={13} />} tone="slate" title="Related Settings" fixed
                         subtitle="Other settings that are often used alongside these."
                     >
-                        <div className="prac-related-links">
-                            <button type="button" onClick={() => onNavigate("clinic")}>Clinic Settings</button>
-                            <button type="button" onClick={() => onNavigate("settings")}>Doctor Profile</button>
-                            <button type="button" onClick={() => onNavigate("communication")}>Communication</button>
-                            <button type="button" onClick={() => onNavigate("settings")}>Account &amp; Security</button>
+                        <div className="prac-settings-grid">
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("clinic")}>
+                                <span className="prac-settings-icon is-violet"><Settings size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Clinic Settings</span>
+                                    <span className="prac-med-brands">Manage clinic details</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("settings")}>
+                                <span className="prac-settings-icon is-blue"><User size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Doctor Profile</span>
+                                    <span className="prac-med-brands">Manage your profile</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("communication")}>
+                                <span className="prac-settings-icon is-teal"><MessageCircle size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Communication</span>
+                                    <span className="prac-med-brands">Patient communication</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("settings")}>
+                                <span className="prac-settings-icon is-violet"><Shield size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Account &amp; Security</span>
+                                    <span className="prac-med-brands">Access &amp; security</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
                         </div>
                     </PracticeCard>
                 </div>

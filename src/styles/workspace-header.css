@@ -197,23 +197,42 @@
 
 /* ── Stat pills — dark-outlined capsules ───────────────────── */
 
+/* `<button>`, not a bare `<span>` — every pill on Practice is a real jump
+   to the card it summarises (`scrollToCard`), so it earns a real
+   interactive element: focus ring, hover state, keyboard reachability.
+   The icon avatar + chevron read the pill as "go here", not a static
+   readout (2026-08-28, against a literal reference image). */
 .ws-stat-pill {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 6px 14px;
+    gap: 8px;
+    padding: 5px 10px 5px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.17);
     border-radius: 20px;
     background: rgba(5, 9, 22, 0.68);
-    border: 1px solid rgba(255, 255, 255, 0.17);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     white-space: nowrap;
+    cursor: pointer;
+    font: inherit;
+    transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
     /* Small shadow to ensure readability even on nebula fringe, plus a
        faint inset top highlight so the capsule reads as raised glass
        rather than a flat tag — "visually better", not a new colour. */
     box-shadow:
         0 1px 8px rgba(0, 0, 0, 0.35),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.ws-stat-pill:hover {
+    background: rgba(14, 20, 38, 0.82);
+    border-color: rgba(255, 255, 255, 0.28);
+    transform: translateY(-1px);
+}
+
+.ws-stat-pill:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.45);
 }
 
 .ws-stat-pill--active {
@@ -224,8 +243,29 @@
         0 0 14px rgba(74, 222, 128, 0.10);
 }
 
+/* The pill's own small icon avatar — the SAME glyph as the card it points
+   at (Pill/FlaskConical/Layers/Sparkles), so the header and the page below
+   read as one vocabulary rather than four bare numbers. */
+.ws-stat-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    color: rgba(255, 255, 255, 0.80);
+}
+
+.ws-stat-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+    gap: 1px;
+}
+
 .ws-stat-value {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
     color: rgba(255, 255, 255, 0.96);
     letter-spacing: -0.01em;
@@ -237,11 +277,27 @@
 }
 
 .ws-stat-label {
-    font-size: 10.5px;
+    font-size: 9.5px;
     font-weight: 600;
     color: rgba(255, 255, 255, 0.50);
     text-transform: uppercase;
     letter-spacing: 0.06em;
+}
+
+.ws-stat-chevron {
+    flex: none;
+    color: rgba(255, 255, 255, 0.32);
+    transition: transform 0.14s ease, color 0.14s ease;
+}
+
+.ws-stat-pill:hover .ws-stat-chevron {
+    transform: translateX(2px);
+    color: rgba(255, 255, 255, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ws-stat-pill, .ws-stat-chevron { transition: none; }
+    .ws-stat-pill:hover { transform: none; }
 }
 
 .ws-stat-pill--active .ws-stat-label {
