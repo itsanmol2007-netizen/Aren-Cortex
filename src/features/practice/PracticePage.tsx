@@ -59,11 +59,10 @@ import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
     ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart, Layers,
-    MessageCircle, MoreHorizontal, Pill, Plus, Settings, Shield, SlidersHorizontal, Sparkles, Star,
+    MessageCircle, MoreHorizontal, Pill, Plus, Printer, Settings, Shield, SlidersHorizontal, Sparkles, Star,
     ToggleLeft, ToggleRight, User, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
-import { ArenMark } from "../auth/ArenMark";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import {
     addMedicine, addPreferredLab, clearClinicBrandDefault, clearHospitalCompanionCuration,
@@ -89,7 +88,6 @@ import {
 } from "../consult/BlankArt";
 import { resolveProductByName } from "../../lib/db/medicines";
 import { IntentSearchField, useIntentSearch } from "../consult/IntentSearch";
-import { PinButton } from "../consult/parts";
 import { PracticeModal } from "./PracticeModal";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
@@ -159,22 +157,32 @@ function CappedRows<T>({
     const [showAll, setShowAll] = useState(false);
     const reduce = useReducedMotion();
     const overflowing = items.length > cap;
-    // Collapsed is measured exactly (`cap * rowH`). Expanded is deliberately
-    // NOT a bigger measured number — it tweens to an arbitrarily large cap
-    // (9999) and lets the CARD's own fixed height be what actually bounds
-    // it (`.prac-card-body`/`.prac-rows` are `flex:1; min-height:0` in
-    // practice.css), so "Show more" reveals the rest by scrolling INSIDE
-    // the card's existing footprint — the footprint itself never grows.
-    // This replaced an earlier version that grew the box on expand, which
-    // was corrected 2026-08-26: a card's outer height must be set by the
-    // grid, never by how many rows happen to be in it.
-    const EXPANDED_CAP = 9999;
+    // Collapsed is measured exactly (`cap * rowH`). Expanded USED to tween
+    // to an arbitrarily large flat number (9999) on the reasoning that the
+    // CARD's own fixed height would bound it visually either way — true for
+    // the FINAL rendered frame, but not for how the spring gets there: a
+    // spring easing toward 9999 covers a real collapsed→expanded distance
+    // of maybe 50-150px in well under a tenth of its nominal travel, so it
+    // "arrives" (visually) almost the instant it starts, reading as a snap
+    // rather than an animation ("the animation of... show more and then
+    // nested scroll bar appearing... should feel smooth, not direct",
+    // 2026-08-29). A REAL, bounded target fixes this the same way it fixed
+    // the composition tree's own open/close spring (see that `motion.div`'s
+    // comment in this file): `EXPANDED_ROW_WINDOW` rows' worth of real
+    // height, same "peek window, then scroll" shape
+    // `progressive-disclosure.md` already documents for a capped list
+    // ("expanding into a bounded, scrolling box... stopping mid-row on
+    // purpose so it visibly reads as a scroll box") — this just makes
+    // `CappedRows` actually follow its own doctrine instead of a flat
+    // constant that happened to look identical at rest.
+    const EXPANDED_ROW_WINDOW = 8;
+    const expandedHeight = Math.min(items.length, EXPANDED_ROW_WINDOW) * rowH;
 
     return (
         <>
             <motion.div
                 initial={false}
-                animate={{ maxHeight: overflowing && showAll ? EXPANDED_CAP : cap * rowH }}
+                animate={{ maxHeight: overflowing && showAll ? expandedHeight : cap * rowH }}
                 transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
                 className={"prac-rows" + (overflowing && showAll ? " is-expanded" : "")}
             >
@@ -203,6 +211,29 @@ function RemoveBtn({ label, onClick }: { label: string; onClick: () => void }) {
         <button type="button" className="prac-row-remove" aria-label={label} title={label} onClick={onClick}>
             <X size={12} />
         </button>
+    );
+}
+
+/** A pinned-state heart with no click of its own — `PinButton` verbatim in
+ *  everything but interactivity. Every row that used it here (`.prac-hit-
+ *  row`, `.prac-modal-row.is-pick`) is ALREADY a `<button>` whose own
+ *  onClick does the exact same thing `PinButton`'s `onToggle` did, so
+ *  nesting a second, real `<button>` inside it was never adding a
+ *  reachable action — only an invalid `<button>`-in-`<button>` DOM
+ *  (React: "cannot be a descendant of a button... hydration error"),
+ *  caught live once the catalogue got deep enough to render one. The
+ *  heart still shows the same two states (`is-on` filled rose vs. plain
+ *  grey outline) purely as information now, same as the tree's own static
+ *  heart already does for rows that are unambiguously preferred. */
+function StaticPin({ pinned, label }: { pinned: boolean; label: string }) {
+    return (
+        <span
+            className={`prac-static-pin${pinned ? " is-on" : ""}`}
+            aria-hidden="true"
+            title={pinned ? `${label} is already preferred` : undefined}
+        >
+            <Heart size={15} fill={pinned ? "currentColor" : "none"} />
+        </span>
     );
 }
 
@@ -241,6 +272,82 @@ function GroupHeadMark() {
             <path d="M46 4l1.6 3.8 3.8 1.6-3.8 1.6L46 15l-1.6-3.8L40.6 9.4l3.8-1.6z" fill="var(--cs-blue-soft)" stroke="var(--cs-blue)" strokeWidth="1.1" />
             <path d="M60 16l1.1 2.6 2.6 1.1-2.6 1.1L60 23.4l-1.1-2.6-2.6-1.1 2.6-1.1z" fill="var(--cs-violet-soft)" stroke="var(--cs-violet)" strokeWidth="1" />
             <path d="M68 6l.8 1.9 1.9.8-1.9.8L68 11.4l-.8-1.9-1.9-.8 1.9-.8z" fill="var(--cs-teal-soft)" stroke="var(--cs-teal)" strokeWidth="0.9" />
+        </svg>
+    );
+}
+
+// A 4-pointed sparkle/star — the SAME shape `GroupHeadMark`'s three spark
+// diamonds above already draw by hand, just computed so `PracticeCanvasArt`
+// below can place a dozen of them without hand-typing each one's path.
+function sparklePath(cx: number, cy: number, r: number): string {
+    const inner = r * 0.34;
+    const pts: [number, number][] = [
+        [cx, cy - r], [cx + inner, cy - inner], [cx + r, cy], [cx + inner, cy + inner],
+        [cx, cy + r], [cx - inner, cy + inner], [cx - r, cy], [cx - inner, cy - inner],
+    ];
+    return `M${pts.map((p) => p.join(" ")).join("L")}Z`;
+}
+
+/**
+ * The page's own background texture (2026-08-29, replacing an earlier
+ * attempt that blew the login screen's `ArenMark` letterform up to 520px
+ * and cropped it at the corner — "the SVG is trash... on the corner it
+ * could act as a slight decorative element, a node diagram or astronomy
+ * and healthcare blend of neurons and stars"). A geometric letterform
+ * doesn't survive being scaled 9× and cropped: its straight strokes read as
+ * arbitrary diagonal lines once the "A" it spells is no longer legible at
+ * that scale. This is built for the crop instead of despite it — a loose
+ * scatter of nodes (the "neurons" half) with a few starred ones (the
+ * "astronomy" half), thinned by hand-picked opacity so it fades outward
+ * from the corner it's anchored to rather than reading as one hard-edged
+ * shape. No letterform, no single "correct" viewing angle — a scatter
+ * still reads as a scatter no matter where the crop falls.
+ */
+function PracticeCanvasArt({ accent = "#7c3aed" }: { accent?: string }) {
+    // Hand-placed, weighted toward the top-right (the corner this bleeds
+    // off of via `.prac-bg-mark`'s CSS position) and thinning toward the
+    // bottom-left so the density itself reads as "anchored to a corner",
+    // the same reasoning as the AREN mark's own "quiet satellite" node.
+    const nodes: { x: number; y: number; r: number; star?: boolean }[] = [
+        { x: 356, y: 26, r: 3.2, star: true },
+        { x: 318, y: 12, r: 1.6 },
+        { x: 384, y: 58, r: 2 },
+        { x: 296, y: 52, r: 1.4 },
+        { x: 340, y: 82, r: 1.7 },
+        { x: 262, y: 20, r: 1.2 },
+        { x: 372, y: 116, r: 2.6, star: true },
+        { x: 244, y: 62, r: 1.4 },
+        { x: 306, y: 122, r: 1.2 },
+        { x: 216, y: 30, r: 1 },
+        { x: 348, y: 156, r: 1.6 },
+        { x: 200, y: 86, r: 1.2 },
+        { x: 274, y: 168, r: 1.9, star: true },
+        { x: 160, y: 50, r: 0.9 },
+        { x: 240, y: 132, r: 0.9 },
+        { x: 146, y: 106, r: 0.8 },
+        { x: 194, y: 158, r: 1 },
+        { x: 120, y: 74, r: 0.7 },
+    ];
+    const edges: [number, number, number][] = [
+        [0, 1, 0.42], [0, 2, 0.42], [0, 3, 0.32], [1, 5, 0.28],
+        [3, 4, 0.32], [3, 7, 0.24], [4, 6, 0.32], [4, 8, 0.28],
+        [2, 6, 0.32], [5, 9, 0.24], [7, 11, 0.24], [7, 13, 0.2],
+        [8, 10, 0.28], [8, 12, 0.24], [11, 14, 0.2], [11, 15, 0.16],
+        [12, 16, 0.2], [13, 17, 0.16], [14, 16, 0.16], [15, 17, 0.16],
+    ];
+    return (
+        <svg width="400" height="200" viewBox="0 0 400 200" fill="none" aria-hidden="true" className="prac-bg-mark">
+            {edges.map(([a, b, o], i) => (
+                <line
+                    key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y}
+                    stroke={accent} strokeWidth="1" opacity={o}
+                />
+            ))}
+            {nodes.map((n, i) => (
+                n.star
+                    ? <path key={i} d={sparklePath(n.x, n.y, n.r * 2.3)} fill={accent} opacity={0.65} />
+                    : <circle key={i} cx={n.x} cy={n.y} r={n.r} fill={accent} opacity={0.55} />
+            ))}
         </svg>
     );
 }
@@ -430,6 +537,13 @@ const TREE_ROW_H = ROW_H;
  *  one consistent "how much before you have to ask for more" across the
  *  page rather than each list picking its own. */
 const GROUP_ROW_CAP = 4;
+
+/** `.prac-tree-more`'s own rendered height (`.prac-foot-more`: 3px
+ *  margin-top + ~2px vertical padding either side + an 11px line at
+ *  ~1.3 line-height), measured live rather than guessed — see the note
+ *  by its `animate` target below for why a precise number matters here
+ *  and didn't for `CappedRows`' own "arbitrarily large" trick. */
+const SHOW_MORE_H = 21;
 
 function PreferredMedicinesCard({
     hospitalId, brands, brandsLoading, onBrandsChange, onOpenAddNew, anyModalOpen,
@@ -705,7 +819,7 @@ function PreferredMedicinesCard({
                                                 onClick={add}
                                             >
                                                 <span className="prac-row-label">{b.name}</span>
-                                                <PinButton pinned={pinned} label={b.name} onToggle={add} />
+                                                <StaticPin pinned={pinned} label={b.name} />
                                             </button>
                                         );
                                     })}
@@ -750,11 +864,7 @@ function PreferredMedicinesCard({
                                         </span>
                                     </div>
                                     {isBrandHit ? (
-                                        <PinButton
-                                            pinned={!!already}
-                                            label={hit.viaLabel ?? hit.label}
-                                            onToggle={() => pickHit(hit)}
-                                        />
+                                        <StaticPin pinned={!!already} label={hit.viaLabel ?? hit.label} />
                                     ) : (
                                         <span className="prac-hit-drill">
                                             Brands <ChevronDown size={12} />
@@ -797,19 +907,30 @@ function PreferredMedicinesCard({
                                     const overflowingChildren = g.rows.length > GROUP_ROW_CAP;
                                     const showingAll = childrenExpanded && open;
                                     const visibleRows = overflowingChildren && !showingAll ? g.rows.slice(0, GROUP_ROW_CAP) : g.rows;
+                                    // The PRECISE target height, not `CappedRows`' own
+                                    // "animate to an arbitrarily large flat number" trick —
+                                    // that trick only reads as smooth when the real content
+                                    // height is a meaningful fraction of the spring's actual
+                                    // travel, which `CappedRows` gets for free from its
+                                    // `flex:1; overflow-y:auto` expanded state bounding growth
+                                    // against the CARD's remaining space. This box has no such
+                                    // bound — animating toward 9999 from a real height of
+                                    // 34-190px meant the spring "arrived" (visually) after
+                                    // covering under 2% of its nominal travel, so it read as a
+                                    // snap, not an animation ("the animation of closing and
+                                    // opening a composition is rigged", 2026-08-29). A real
+                                    // number gives the spring a real distance to ease across,
+                                    // in both directions, and doubles as the correct target
+                                    // the moment "Show more"/"Show less" changes how many rows
+                                    // are actually in view — no retuning on every click needed,
+                                    // it's just computed fresh each render.
+                                    const targetHeight = open
+                                        ? visibleRows.length * TREE_ROW_H + (overflowingChildren ? SHOW_MORE_H : 0)
+                                        : 0;
                                     return (
                                         <motion.div
                                             initial={false}
-                                            // A large flat target rather than a number computed
-                                            // from `visibleRows.length` — the same "expanded is
-                                            // deliberately not a bigger measured number" trick
-                                            // `CappedRows` already uses (its own doc comment
-                                            // explains why): the actual rendered content, not
-                                            // this ceiling, is what bounds the visible height,
-                                            // so it stays correct whether the group is capped,
-                                            // fully shown, or anywhere between — one animation
-                                            // instead of retuning the target on every click.
-                                            animate={{ maxHeight: open ? 9999 : 0 }}
+                                            animate={{ maxHeight: targetHeight }}
                                             transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }}
                                             className="prac-tree-children"
                                         >
@@ -1941,14 +2062,13 @@ export function PracticePage({
 
     return (
         <div className="prac-page">
-            {/* A faint watermark of the AREN mark itself (2026-08-29) — the
-                same node-drawn "A" the login screen and sidebar already
-                use (`ArenMark`), not a new shape invented for this page.
-                Sits behind every card (`.prac-body` gets `z-index:1` for
-                exactly this), fixed to the page rather than scrolling with
-                `.prac-body`'s own internal scroll, so it reads as the
-                canvas's own texture. */}
-            <ArenMark size={520} accent="#7c3aed" ink="#7c3aed" className="prac-bg-mark" />
+            {/* A faint node-diagram/constellation texture, not a blown-up
+                logo — see `PracticeCanvasArt`'s own doc comment for why
+                the earlier attempt (the AREN mark's letterform at 520px)
+                didn't survive being cropped at the corner. Sits behind
+                every card (`.prac-body` gets `z-index:1` for exactly
+                this). */}
+            <PracticeCanvasArt />
             <WorkspaceHeader
                 logoRef={logoRef}
                 onOpenSidebar={onOpenSidebar}
@@ -2293,6 +2413,18 @@ export function PracticePage({
                                 <span className="prac-med-info">
                                     <span className="prac-row-label">Account &amp; Security</span>
                                     <span className="prac-med-brands">Access &amp; security</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
+                            {/* Lives on Clinic, not here — this tile is a doorway, not a
+                                promise the customiser itself is built yet ("keep it open
+                                for now, but it should redirect to Clinic page, which we
+                                are building now", 2026-08-29). */}
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("clinic")}>
+                                <span className="prac-settings-icon is-teal"><Printer size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Prescription Pad</span>
+                                    <span className="prac-med-brands">Customise the printed layout</span>
                                 </span>
                                 <ChevronRight size={13} className="prac-settings-chevron" />
                             </button>

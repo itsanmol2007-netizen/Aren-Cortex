@@ -148,6 +148,30 @@ export async function reassignVisitDoctor(visitId: string, doctorId: string): Pr
     if (error) throw new Error(`reassignVisitDoctor: ${error.message}`);
 }
 
+/**
+ * A quick status flip from Today's Patients' own ⋮ menu — "change its
+ * status from active to completed or maybe from pending to completed or
+ * referred or rejected" (2026-08-29). Scoped to the two statuses
+ * `visitStatus.ts` already recognises as real terminal states
+ * (`completed`/`discarded` — see that file's header comment for the full
+ * verified-live set) rather than minting new ones ("referred"/"rejected")
+ * that `visitStatusKind`'s categoriser, the status-pill colours, and every
+ * sidebar count derived from it (Active Care, Reassessment Due, …) would
+ * all need teaching about first — a much bigger change than "a simple 3
+ * dot thing" asked for. `saveConsult` (intelligence.ts) already writes
+ * `status: "completed"` as ONE step of finishing a whole consult
+ * (vitals + prescription together); this is the standalone version for
+ * when there is no consult to save, same shape as `markVisitServing`
+ * right above it (status + one timestamp, nothing else).
+ */
+export async function setVisitStatus(visitId: string, status: "completed" | "discarded"): Promise<void> {
+    const { error } = await supabase
+        .from("visits")
+        .update({ status, completed_at: new Date().toISOString() })
+        .eq("id", visitId);
+    if (error) throw new Error(`setVisitStatus: ${error.message}`);
+}
+
 // Front Desk may already have this patient queued today. Cortex used to ignore
 // that entirely and mint a fresh visit + token for every consult start, so a
 // patient checked in at the counter got a second, disconnected visit the
@@ -841,163 +865,182 @@ async function buildPatientRecordRows(
     const patientIds = [...new Set(visits.map((v) => v.patient_id))];
     const visitIds = visits.map((v) => v.id);
 
-    const { data: patients } = await supabase
-        .from("patients")
-        .select("id, name, age, gender, phone, date_of_birth")
-        .in("id", patientIds);
-    const patMap = new Map<string, any>();
-    (patients ?? []).forEach((p: any) => patMap.set(p.id, p));
+    // Care-plan session label — real ONLY when this visit is actually
+    // linked. Started here rather than after Waves 1-3 below: it only
+    // needs `visits` (the function's own parameter, already in hand), not
+    // any of THEIR results, so there is no real reason to make it wait its
+    // turn behind them — awaited later, right before
+    // `progressByCarePlanAndPatient` is actually read. "0-1 plans in
+    // practice" (the assumption this loop's query count used to lean on)
+    // does not hold for every account — 5 distinct plans measured live on
+    // Ekanki's own data — so the two extra sequential waves this used to
+    // add AFTER Waves 1-3 were a real, measured cost, not a rounding error
+    // ("why is Patient Page so slow", 2026-08-29).
+    const carePlanIds = [...new Set(visits.map((v) => v.care_plan_id).filter((id): id is string => !!id))];
+    // Keyed `${carePlanId}:${patientId}`, structured rather than pre-formatted
+    // — patientSnapshot.ts renders the label, the sidebar computes on the
+    // number, neither should have to parse the other's string back apart.
+    const progressByCarePlanAndPatient = new Map<string, { sessionsCompleted: number; targetSessions: number }>();
+    // Each plan's own two lookups still chain (the second needs the
+    // first's `target_visit_count`), but DIFFERENT plans' lookups run
+    // together rather than one plan fully finishing before the next starts.
+    const carePlanProgressPromise = Promise.all(carePlanIds.map(async (planId) => {
+        const { data: plan } = await supabase
+            .from("care_plans")
+            .select("id, patient_id, target_visit_count, status")
+            .eq("id", planId)
+            .maybeSingle();
+        if (!plan || !plan.target_visit_count) return;
+        const { count } = await supabase
+            .from("visits")
+            .select("id", { count: "exact", head: true })
+            .eq("care_plan_id", planId)
+            .eq("status", "completed");
+        if (count == null) return;
+        progressByCarePlanAndPatient.set(`${planId}:${plan.patient_id}`, {
+            sessionsCompleted: count,
+            targetSessions: plan.target_visit_count,
+        });
+    }));
 
-    const { data: allVisitCounts } = await supabase
-        .from("visits")
-        .select("patient_id, started_at")
-        .in("patient_id", patientIds)
-        .eq("assigned_doctor_id", doctorId)
-        .order("started_at", { ascending: false });
+    // ── Wave 1 — every query below reads only `patientIds`/`visitIds`/
+    // `doctorId`, all already known before any of them runs, so none of
+    // them actually depends on another's result. They used to run one
+    // `await` at a time, back to back — ~10 sequential round trips before
+    // a single row could render, measured at 4-5s on this page ("why is
+    // Patient Page so slow... instead of loading and trying to show
+    // everything at once, you can do it sequentially" — the actual fix is
+    // the opposite of literal sequential awaiting: run the INDEPENDENT
+    // ones together, so the whole batch costs one round trip's worth of
+    // latency instead of ten). `Promise.all` fires them together; a
+    // `.catch` per query would be overkill here since a real failure
+    // already `throw`s upstream via the `error` check on the network
+    // response Supabase's client resolves with, not a rejected promise. */
+    const [
+        patientsRes, allVisitCountsRes, vsRes, obsNamesByVisit, vfRes,
+        rxRes, doRes, bsRes, impRes, storyRes,
+    ] = await Promise.all([
+        supabase.from("patients")
+            .select("id, name, age, gender, phone, date_of_birth")
+            .in("id", patientIds),
+        supabase.from("visits")
+            .select("patient_id, started_at")
+            .in("patient_id", patientIds)
+            .eq("assigned_doctor_id", doctorId)
+            .order("started_at", { ascending: false }),
+        supabase.from("visit_symptoms").select("visit_id, symptom_id").in("visit_id", visitIds),
+        // The canonical intake record, which the v1 join above cannot
+        // represent in full — its own two queries chain internally but
+        // don't depend on anything else in this wave.
+        observationNamesByVisit(visitIds),
+        supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds),
+        supabase.from("prescriptions").select("id, visit_id").in("visit_id", visitIds),
+        supabase.from("diagnostic_orders").select("visit_id, test_name").in("visit_id", visitIds),
+        supabase.from("visit_body_sites").select("visit_id, region, aspect, side").in("visit_id", visitIds),
+        supabase.from("visit_impairments").select("visit_id, label").in("visit_id", visitIds),
+        supabase.from("visit_story").select("visit_id, duration_text, mechanism").in("visit_id", visitIds),
+    ]);
+
+    const patMap = new Map<string, any>();
+    (patientsRes.data ?? []).forEach((p: any) => patMap.set(p.id, p));
+
     const visitCountMap = new Map<string, number>();
     const lastVisitMap = new Map<string, string>();
-    (allVisitCounts ?? []).forEach((v: any) => {
+    (allVisitCountsRes.data ?? []).forEach((v: any) => {
         visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
         if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.started_at);
     });
 
-    const { data: vsRows } = await supabase
-        .from("visit_symptoms")
-        .select("visit_id, symptom_id")
-        .in("visit_id", visitIds);
+    const vsRows = vsRes.data;
     const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
-    const symptomById = new Map<number, string>();
-    if (allSymptomIds.length) {
-        const { data: symps } = await supabase
-            .from("symptoms").select("id, name").in("id", allSymptomIds);
-        (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
-    }
 
-    // The canonical intake record, which the v1 join above cannot represent in full.
-    const obsNamesByVisit = await observationNamesByVisit(visitIds);
-
-    const { data: vfRows } = await supabase
-        .from("visit_findings")
-        .select("visit_id, finding_id")
-        .in("visit_id", visitIds);
+    const vfRows = vfRes.data;
     const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
-    const findingById = new Map<number, string>();
-    if (allFindingIds.length) {
-        const { data: finds } = await supabase
-            .from("findings").select("id, name").in("id", allFindingIds);
-        (finds ?? []).forEach((f: any) => findingById.set(f.id, f.name));
-    }
 
-    const { data: rxRows } = await supabase
-        .from("prescriptions")
-        .select("id, visit_id")
-        .in("visit_id", visitIds);
+    const rxRows = rxRes.data;
     const rxByVisitId = new Map<string, string>();
     (rxRows ?? []).forEach((r: any) => rxByVisitId.set(r.visit_id, r.id));
     const rxIds = (rxRows ?? []).map((r: any) => r.id);
 
-    const pmByVisitId = new Map<string, number[]>();
+    // ── Wave 2 — each of these needs a Wave-1 result (symptom/finding ids,
+    // prescription ids) to know WHAT to ask for, but the three lookups
+    // don't depend on EACH OTHER, so they still go together rather than
+    // one after another.
+    const [sympsRes, findsRes, pmRes, peRes] = await Promise.all([
+        allSymptomIds.length
+            ? supabase.from("symptoms").select("id, name").in("id", allSymptomIds)
+            : Promise.resolve({ data: [] as any[] }),
+        allFindingIds.length
+            ? supabase.from("findings").select("id, name").in("id", allFindingIds)
+            : Promise.resolve({ data: [] as any[] }),
+        rxIds.length
+            ? supabase.from("prescription_medicines").select("prescription_id, medicine_id").in("prescription_id", rxIds)
+            : Promise.resolve({ data: [] as any[] }),
+        rxIds.length
+            ? supabase.from("prescription_exercises").select("prescription_id, label, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true })
+            : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const symptomById = new Map<number, string>();
+    (sympsRes.data ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
+
+    const findingById = new Map<number, string>();
+    (findsRes.data ?? []).forEach((f: any) => findingById.set(f.id, f.name));
+
+    const pmRows = pmRes.data;
+    const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
     const medById = new Map<number, string>();
+    if (allMedIds.length) {
+        // Wave 3 — needs the medicine ids Wave 2 just resolved.
+        const { data: meds } = await supabase.from("medicines").select("id, name").in("id", allMedIds);
+        (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
+    }
+
+    const pmByVisitId = new Map<string, number[]>();
+    for (const pm of (pmRows ?? [])) {
+        const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
+        if (!visitId) continue;
+        const list = pmByVisitId.get(visitId) ?? [];
+        list.push(Number(pm.medicine_id));
+        pmByVisitId.set(visitId, list);
+    }
+
     // Exercise labels are already text on prescription_exercises — no id
     // lookup needed, unlike medicines.
     const exByVisitId = new Map<string, string[]>();
-    if (rxIds.length) {
-        const { data: pmRows } = await supabase
-            .from("prescription_medicines")
-            .select("prescription_id, medicine_id")
-            .in("prescription_id", rxIds);
-        const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
-        if (allMedIds.length) {
-            const { data: meds } = await supabase
-                .from("medicines").select("id, name").in("id", allMedIds);
-            (meds ?? []).forEach((m: any) => medById.set(m.id, m.name));
-        }
-        for (const pm of (pmRows ?? [])) {
-            const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pm.prescription_id)?.[0];
-            if (!visitId) continue;
-            const list = pmByVisitId.get(visitId) ?? [];
-            list.push(Number(pm.medicine_id));
-            pmByVisitId.set(visitId, list);
-        }
-
-        const { data: peRows } = await supabase
-            .from("prescription_exercises")
-            .select("prescription_id, label, sort_order")
-            .in("prescription_id", rxIds)
-            .order("sort_order", { ascending: true });
-        for (const pe of (peRows ?? [])) {
-            const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pe.prescription_id)?.[0];
-            if (!visitId) continue;
-            const list = exByVisitId.get(visitId) ?? [];
-            list.push(pe.label);
-            exByVisitId.set(visitId, list);
-        }
+    for (const pe of (peRes.data ?? [])) {
+        const visitId = [...rxByVisitId.entries()].find(([, rxId]) => rxId === pe.prescription_id)?.[0];
+        if (!visitId) continue;
+        const list = exByVisitId.get(visitId) ?? [];
+        list.push(pe.label);
+        exByVisitId.set(visitId, list);
     }
 
-    const { data: doRows } = await supabase
-        .from("diagnostic_orders")
-        .select("visit_id, test_name")
-        .in("visit_id", visitIds);
-
-    const { data: bsRows } = await supabase
-        .from("visit_body_sites")
-        .select("visit_id, region, aspect, side")
-        .in("visit_id", visitIds);
     const bodySitesByVisit = new Map<string, string[]>();
-    for (const r of (bsRows ?? []) as { visit_id: string; region: BodyRegion; aspect: BodyAspect; side: BodySide | null }[]) {
+    for (const r of (bsRes.data ?? []) as { visit_id: string; region: BodyRegion; aspect: BodyAspect; side: BodySide | null }[]) {
         const list = bodySitesByVisit.get(r.visit_id) ?? [];
         const label = siteLabel(r.region, r.aspect, r.side);
         if (!list.includes(label)) list.push(label);
         bodySitesByVisit.set(r.visit_id, list);
     }
 
-    const { data: impRows } = await supabase
-        .from("visit_impairments")
-        .select("visit_id, label")
-        .in("visit_id", visitIds);
     const impairmentsByVisit = new Map<string, string[]>();
-    for (const r of (impRows ?? []) as { visit_id: string; label: string }[]) {
+    for (const r of (impRes.data ?? []) as { visit_id: string; label: string }[]) {
         const list = impairmentsByVisit.get(r.visit_id) ?? [];
         list.push(r.label);
         impairmentsByVisit.set(r.visit_id, list);
     }
 
-    const { data: storyRows } = await supabase
-        .from("visit_story")
-        .select("visit_id, duration_text, mechanism")
-        .in("visit_id", visitIds);
     const storyByVisit = new Map<string, { duration: string | null; mechanism: string | null }>();
-    for (const r of (storyRows ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
+    for (const r of (storyRes.data ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
         storyByVisit.set(r.visit_id, { duration: r.duration_text, mechanism: r.mechanism });
     }
 
-    // Care-plan session label — real ONLY when this visit is actually linked.
-    // Bounded query count: one per DISTINCT care_plan_id in this batch, not
-    // per visit or per patient. Today that is almost always zero rows (see
-    // aren-cortex-context.md §7), so this loop runs 0-1 times in practice.
-    const carePlanIds = [...new Set(visits.map((v) => v.care_plan_id).filter((id): id is string => !!id))];
-    // Keyed `${carePlanId}:${patientId}`, structured rather than pre-formatted
-    // — patientSnapshot.ts renders the label, the sidebar computes on the
-    // number, neither should have to parse the other's string back apart.
-    const progressByCarePlanAndPatient = new Map<string, { sessionsCompleted: number; targetSessions: number }>();
-    for (const planId of carePlanIds) {
-        const { data: plan } = await supabase
-            .from("care_plans")
-            .select("id, patient_id, target_visit_count, status")
-            .eq("id", planId)
-            .maybeSingle();
-        if (!plan || !plan.target_visit_count) continue;
-        const { count } = await supabase
-            .from("visits")
-            .select("id", { count: "exact", head: true })
-            .eq("care_plan_id", planId)
-            .eq("status", "completed");
-        if (count == null) continue;
-        progressByCarePlanAndPatient.set(`${planId}:${plan.patient_id}`, {
-            sessionsCompleted: count,
-            targetSessions: plan.target_visit_count,
-        });
-    }
+    // Kicked off back at the top of this function (alongside computing
+    // `carePlanIds`) — awaited here, right before `progressByCarePlanAndPatient`
+    // is actually read below, so it had this whole function's Waves 1-3 to
+    // run concurrently against instead of costing its own sequential turn.
+    await carePlanProgressPromise;
 
     const rows: PatientRecordRow[] = [];
     const seenPatients = new Set<string>();
@@ -1026,7 +1069,7 @@ async function buildPatientRecordRows(
         const medicineNames = (pmByVisitId.get(v.id) ?? [])
             .map((medId) => medById.get(medId))
             .filter(Boolean) as string[];
-        const testNames = (doRows ?? [])
+        const testNames = (doRes.data ?? [])
             .filter((r: any) => r.visit_id === v.id)
             .map((r: any) => r.test_name)
             .filter(Boolean) as string[];

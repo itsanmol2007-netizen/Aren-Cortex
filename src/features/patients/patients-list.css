@@ -131,6 +131,80 @@
     box-shadow: 0 0 0 2px rgba(18, 104, 232, 0.15);
 }
 
+/* The ⋮ status-change trigger — "add some option to do with their status...
+ * a simple 3 dot thing" (2026-08-29). Corner-anchored, muted at rest so it
+ * doesn't compete with the name/chief-complaint for a first glance, dark
+ * on hover/open the same way `.prec-row-remove` and every other quiet
+ * corner control on this page already reads. `z-index` clears the card's
+ * own topbar strip; sits above `.prec-today-card-top`'s avatar without
+ * overlapping it (144px card, avatar starts flush left). */
+.prec-today-menu-btn {
+    position: absolute;
+    top: 6px;
+    right: 5px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.prec-today-menu-btn:hover,
+.prec-today-menu-btn[aria-expanded="true"] {
+    background: #eef2f7;
+    color: #334155;
+}
+
+/* The menu itself is a `createPortal` into `document.body` (see
+ * `TodayCardMenu`'s own doc comment for why — the horizontal scroller this
+ * card lives in would otherwise clip it), so its OWN styling lives here
+ * unscoped to `.prec-today-card`, positioned by inline `style` from the
+ * trigger's measured `getBoundingClientRect()`. */
+.prec-menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 119;
+}
+
+.prec-today-menu {
+    position: fixed;
+    z-index: 120;
+    min-width: 178px;
+    border: 1px solid #e4e7ee;
+    border-radius: 9px;
+    background: #fff;
+    padding: 5px;
+    box-shadow: 0 18px 44px rgba(16, 24, 40, 0.20);
+}
+
+.prec-today-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 7px 9px;
+    color: #334155;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.prec-today-menu-item:hover { background: #f1f5f9; }
+
+.prec-today-menu-item.is-danger { color: #b91c1c; }
+.prec-today-menu-item.is-danger:hover { background: #fef2f2; }
+
 .prec-today-card-top {
     display: flex;
     align-items: flex-start;

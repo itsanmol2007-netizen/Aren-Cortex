@@ -26,19 +26,24 @@
     overflow: hidden;
 }
 
-/* The AREN mark, huge and almost invisible — canvas texture, not content.
+/* `PracticeCanvasArt`'s node scatter — canvas texture, not content.
    Anchored to the PAGE (fixed relative to the viewport as the doctor
    scrolls `.prac-body`'s own internal region), bleeding off the top-right
-   corner on purpose so it reads as a corner flourish, not a centred logo
-   competing with anything. `pointer-events: none` — it is never a click
-   target, and `aria-hidden` (already on `ArenMark` itself) keeps it out of
-   the accessibility tree. */
+   corner on purpose so it reads as a corner flourish, not a centred motif
+   competing with anything. Re-tuned 2026-08-29 alongside the shape itself:
+   smaller (400×200, was 520×520 — "on the corner it could act as a
+   SLIGHT decorative element") and a hair more visible (0.09, was 0.05) —
+   the old opacity was tuned for a solid letterform; this shape's own
+   per-node opacity (0.55-0.65) already thins it down, so the container
+   no longer needs to do all the fading alone. `pointer-events: none` — it
+   is never a click target, and `aria-hidden` (already on the SVG itself)
+   keeps it out of the accessibility tree. */
 .prac-bg-mark {
     position: absolute;
-    top: -80px;
-    right: -60px;
+    top: -20px;
+    right: -20px;
     z-index: 0;
-    opacity: 0.05;
+    opacity: 0.09;
     pointer-events: none;
 }
 
@@ -253,12 +258,16 @@
    of destinations, not a bare navigation list — same recipe the rest of
    this page already uses (`.prac-med-icon` + `.prac-med-info`), just 2x2
    instead of 1-per-row. */
+/* 5 tiles now (Prescription Pad added 2026-08-29), 2 columns × 3 rows —
+ * the 6th slot just sits empty rather than the grid guessing a span. Rows
+ * stay `minmax(0, 1fr)` so the extra row divides the SAME fixed card
+ * height three ways instead of growing the card. */
 .prac-settings-grid {
     flex: 1;
     min-height: 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
     gap: var(--cs-s2);
 }
 
@@ -876,6 +885,24 @@
     background: var(--cs-teal-soft);
     border-color: transparent;
     color: var(--cs-teal);
+}
+
+/* `StaticPin` — `.cs-pin`'s exact two states (plain grey outline / filled
+ * rose "already preferred"), just a `<span>` instead of a second `<button>`
+ * nested inside a row that's already one (see `StaticPin`'s own doc
+ * comment in PracticePage.tsx for the hydration error this replaced). No
+ * hover state of its own — the row it lives inside already gets one. */
+.prac-static-pin {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 29px;
+    height: 29px;
+    color: #cbd5e1;
+}
+
+.prac-static-pin.is-on {
+    color: var(--cs-rose);
 }
 
 .prac-row-label {

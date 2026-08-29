@@ -20,6 +20,7 @@ import {
     fetchTodayPatients,
     fetchRecentPatients,
     searchPatients,
+    setVisitStatus,
     type PatientRecordRow,
 } from "../../lib/db";
 import type { Patient } from "../../types";
@@ -494,7 +495,8 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
     const [todayRows, setTodayRows] = useState<PatientRecordRow[]>([]);
     const [recentRows, setRecentRows] = useState<PatientRecordRow[]>([]);
     const [searchResults, setSearchResults] = useState<PatientRecordRow[] | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [todayLoading, setTodayLoading] = useState(true);
+    const [recentLoading, setRecentLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [filter, setFilter] = useState<PatientFilter | null>(null);
 
@@ -503,19 +505,28 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
     // Both queries are scoped to the signed-in doctor. Until identity resolves
     // there is no id to ask for, and asking with the wrong one is what used to
     // render another clinic's records — so this waits rather than guessing.
+    //
+    // Fired together (still one round trip's worth of wait, not two back to
+    // back) but resolved INDEPENDENTLY — each `.then` clears only its own
+    // loading flag the moment its own query lands, instead of one combined
+    // `Promise.all().finally()` holding the whole page (Today's carousel
+    // included) hostage to whichever of the two happens to be slower this
+    // load. "Why is Patient Page so slow... instead of loading and trying
+    // to show everything at once" (2026-08-29) — see `buildPatientRecordRows`
+    // in `lib/db/patients.ts` for the bigger half of this fix: each of
+    // these two calls used to run its OWN ~10 queries one at a time too.
     useEffect(() => {
         if (!identity.ready) return;
-        setLoading(true);
-        Promise.all([
-            fetchTodayPatients(identity.doctorId),
-            fetchRecentPatients(identity.doctorId),
-        ])
-            .then(([today, recent]) => {
-                setTodayRows(today);
-                setRecentRows(recent);
-            })
+        setTodayLoading(true);
+        setRecentLoading(true);
+        fetchTodayPatients(identity.doctorId)
+            .then(setTodayRows)
             .catch(console.error)
-            .finally(() => setLoading(false));
+            .finally(() => setTodayLoading(false));
+        fetchRecentPatients(identity.doctorId)
+            .then(setRecentRows)
+            .catch(console.error)
+            .finally(() => setRecentLoading(false));
     }, [identity.ready, identity.doctorId]);
 
     useEffect(() => {
@@ -564,6 +575,26 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
     const openRecord = useCallback((row: PatientRecordRow) => {
         setSelectedRow(row);
         setView("record");
+    }, []);
+
+    // Today's Patients' own ⋮ menu — a quick status flip without opening the
+    // full record. Optimistic (the card's pill/tint updates immediately);
+    // reverted with the row's PREVIOUS status, not a blind re-fetch, if the
+    // write fails, so a flaky connection can't leave the card silently
+    // claiming a status the database never actually recorded.
+    const changeVisitStatus = useCallback((row: PatientRecordRow, status: "completed" | "discarded") => {
+        const previousStatus = row.visit_status;
+        const patch = (rows: PatientRecordRow[]) =>
+            rows.map((r) => (r.visit_id === row.visit_id ? { ...r, visit_status: status } : r));
+        setTodayRows(patch);
+        setRecentRows(patch);
+        setVisitStatus(row.visit_id, status).catch((e) => {
+            console.error(e);
+            const revert = (rows: PatientRecordRow[]) =>
+                rows.map((r) => (r.visit_id === row.visit_id ? { ...r, visit_status: previousStatus } : r));
+            setTodayRows(revert);
+            setRecentRows(revert);
+        });
     }, []);
 
     const goBack = useCallback(() => {
@@ -653,9 +684,11 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
                         recentRows={filteredRecent}
                         searchResults={searchResults}
                         searchQuery={searchQuery}
-                        loading={loading}
+                        todayLoading={todayLoading}
+                        recentLoading={recentLoading}
                         specialty={specialty}
                         onSelectPatient={openRecord}
+                        onChangeStatus={changeVisitStatus}
                     />
                 </div>
 
@@ -664,7 +697,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
                         todayRows={todayRows}
                         recentRows={recentRows}
                         specialty={specialty}
-                        loading={loading}
+                        loading={todayLoading || recentLoading}
                         activeFilter={filter}
                         onSetFilter={setFilter}
                         onNewPatient={() => { /* wire in next session */ }}

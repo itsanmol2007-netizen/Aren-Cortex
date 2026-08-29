@@ -1,12 +1,16 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
+    CheckCircle2,
     ChevronLeft,
     ChevronRight,
     Clock,
+    MoreHorizontal,
     Phone,
     Search,
     User,
     X,
+    XCircle,
 } from "lucide-react";
 import { type PatientRecordRow } from "../../lib/db";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
@@ -214,57 +218,164 @@ function SkeletonTableRow() {
     );
 }
 
-function PatientsSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
+/** Split from one combined `PatientsSkeleton` (2026-08-29) so each section
+ *  can clear ITS OWN skeleton the moment its own fetch resolves — Today and
+ *  Recent are two independent queries now (see `fetchTodayPatients`/
+ *  `fetchRecentPatients`'s callers in `PatientsPage`), so a page that
+ *  waited for the slower of the two before showing either was the "loading
+ *  everything at once" complaint made real: whichever finished first sat
+ *  fully built, invisible, behind a single shared flag. */
+function TodaySkeleton() {
     return (
-        <>
-            {/* Today's Patients Skeleton */}
-            <div className="prec-list-section">
-                <div className="prec-section-header">
-                    <SkeletonBlock width={130} height={18} />
-                    <SkeletonBlock width={28} height={20} style={{ borderRadius: 10 }} />
-                </div>
-                <div className="prec-today-scroll">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                        <SkeletonTodayCard key={i} />
-                    ))}
-                </div>
+        <div className="prec-list-section">
+            <div className="prec-section-header">
+                <SkeletonBlock width={130} height={18} />
+                <SkeletonBlock width={28} height={20} style={{ borderRadius: 10 }} />
             </div>
+            <div className="prec-today-scroll">
+                {Array.from({ length: 4 }).map((_, i) => (
+                    <SkeletonTodayCard key={i} />
+                ))}
+            </div>
+        </div>
+    );
+}
 
-            {/* All Patients Table Skeleton */}
-            <div className="prec-list-section">
-                <div className="prec-section-header">
-                    <SkeletonBlock width={100} height={18} />
-                    <SkeletonBlock width={28} height={20} style={{ borderRadius: 10 }} />
-                </div>
-                <div className="prec-table-wrap">
-                    <table className="prec-table">
-                        <PatientsTableHead specialty={specialty} />
-                        <tbody>
-                            {Array.from({ length: 8 }).map((_, i) => (
-                                <SkeletonTableRow key={i} />
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+function RecentSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
+    return (
+        <div className="prec-list-section">
+            <div className="prec-section-header">
+                <SkeletonBlock width={100} height={18} />
+                <SkeletonBlock width={28} height={20} style={{ borderRadius: 10 }} />
             </div>
-        </>
+            <div className="prec-table-wrap">
+                <table className="prec-table">
+                    <PatientsTableHead specialty={specialty} />
+                    <tbody>
+                        {Array.from({ length: 8 }).map((_, i) => (
+                            <SkeletonTableRow key={i} />
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     );
 }
 
 // ── Today Card ────────────────────────────────────────────────────────────────
 
-function TodayCard({ row, specialty, onClick }: { row: PatientRecordRow; specialty: SpecialtyProfile; onClick: () => void }) {
+/** The ⋮ menu itself — a portal so it draws above every other card in the
+ *  scroller instead of being clipped by `TodayPatientsScroller`'s own
+ *  `overflow-x: auto` (a dropdown that is a normal-flow child of a
+ *  horizontally-scrolling strip gets cut at that strip's own edge the
+ *  moment it would open past it). Same open/position/backdrop-close shape
+ *  as frontdesk's `VisitRow` menu — not copied verbatim (different data,
+ *  different actions), just the same mechanism for the same kind of
+ *  problem. */
+function TodayCardMenu({
+    anchorRef, onClose, kind, onMarkCompleted, onDiscard,
+}: {
+    anchorRef: React.RefObject<HTMLButtonElement | null>;
+    onClose: () => void;
+    kind: ReturnType<typeof visitStatusKind>;
+    onMarkCompleted: () => void;
+    onDiscard: () => void;
+}) {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    // Right-aligned to the trigger, flipped left of the viewport edge on a
+    // narrow screen — the same clamp `VisitRow`'s menu uses. Also floored
+    // at 8px: `VisitRow`'s own clamp only ever guards the RIGHT edge (its
+    // rows span the full page width, so a card near the LEFT edge never
+    // came up) — this card lives in a horizontal scroller, so the FIRST
+    // card's trigger sits close to the viewport's left edge, and
+    // `rect.right - 178` alone went negative there, pushing the menu
+    // half off-screen (caught live, screenshotted: "...leted" was all
+    // that was visible of "Mark as completed").
+    const left = Math.max(8, Math.min(rect.right - 178, window.innerWidth - 190));
+
+    return createPortal(
+        <>
+            <div className="prec-menu-scrim" onClick={onClose} />
+            <div className="prec-today-menu" style={{ top: rect.bottom + 4, left }}>
+                {kind !== "done" && (
+                    <button type="button" className="prec-today-menu-item" onClick={() => { onMarkCompleted(); onClose(); }}>
+                        <CheckCircle2 size={14} /> Mark as completed
+                    </button>
+                )}
+                {kind !== "inactive" && (
+                    <button type="button" className="prec-today-menu-item is-danger" onClick={() => { onDiscard(); onClose(); }}>
+                        <XCircle size={14} /> Discard visit
+                    </button>
+                )}
+            </div>
+        </>,
+        document.body
+    );
+}
+
+function TodayCard({
+    row, specialty, onClick, onChangeStatus,
+}: {
+    row: PatientRecordRow;
+    specialty: SpecialtyProfile;
+    onClick: () => void;
+    /** "Mark completed" / "Discard visit" from the card's own ⋮ menu — see
+     *  `setVisitStatus`'s doc comment for why exactly these two statuses. */
+    onChangeStatus: (status: "completed" | "discarded") => void;
+}) {
     const kind = visitStatusKind(row.visit_status);
     const time = row.started_at ? formatTime(row.started_at) : "";
     const chief = snapshotFor(specialty, row).chips[0]?.label;
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuBtnRef = useRef<HTMLButtonElement>(null);
 
     return (
-        <button
-            type="button"
+        // A `<div role="button">`, not a real `<button>` — the ⋮ trigger
+        // below is its OWN real button, and a button can never contain
+        // another (React: "<button> cannot be a descendant of <button>...
+        // hydration error", hit live once a search turned up a card whose
+        // heart was a nested button of the same shape — see `StaticPin`'s
+        // doc comment in PracticePage.tsx for that fix). `data-today-menu-
+        // btn` lets the card's own click handler tell "the doctor meant to
+        // open this patient" apart from "the doctor meant the ⋮ menu",
+        // same as `VisitRow`'s `data-row-menu-btn`.
+        <div
+            role="button"
+            tabIndex={0}
             className={`prec-today-card is-${kind}`}
-            onClick={onClick}
+            onClick={(e) => {
+                if ((e.target as HTMLElement).closest("[data-today-menu-btn]")) return;
+                onClick();
+            }}
+            onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); }
+            }}
         >
             <div className="prec-today-card-topbar" aria-hidden="true" />
+
+            <button
+                type="button"
+                ref={menuBtnRef}
+                data-today-menu-btn
+                className="prec-today-menu-btn"
+                aria-label={`Change status for ${row.patient_name}`}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
+            >
+                <MoreHorizontal size={14} />
+            </button>
+            {menuOpen && (
+                <TodayCardMenu
+                    anchorRef={menuBtnRef}
+                    kind={kind}
+                    onClose={() => setMenuOpen(false)}
+                    onMarkCompleted={() => onChangeStatus("completed")}
+                    onDiscard={() => onChangeStatus("discarded")}
+                />
+            )}
 
             <div className="prec-today-card-top">
                 <AvatarCircle name={row.patient_name} size={34} />
@@ -290,7 +401,7 @@ function TodayCard({ row, specialty, onClick }: { row: PatientRecordRow; special
                     {kind === "active" ? "In Session" : kind === "waiting" ? "Waiting" : kind === "inactive" ? "Inactive" : "Done"}
                 </span>
             </div>
-        </button>
+        </div>
     );
 }
 
@@ -453,9 +564,18 @@ interface PatientsListProps {
     recentRows: PatientRecordRow[];
     searchResults: PatientRecordRow[] | null;
     searchQuery: string;
-    loading: boolean;
+    /** Independent flags, not one shared `loading` — `fetchTodayPatients`
+     *  and `fetchRecentPatients` are two separate queries at different
+     *  speeds; each section clears its own skeleton the moment ITS OWN
+     *  data lands rather than both waiting on the slower one. */
+    todayLoading: boolean;
+    recentLoading: boolean;
     specialty: SpecialtyProfile;
     onSelectPatient: (row: PatientRecordRow) => void;
+    /** Today's Patients' own ⋮ menu — "Mark completed"/"Discard visit",
+     *  scoped to the two real terminal statuses (see `setVisitStatus`'s
+     *  own doc comment for why not more). */
+    onChangeStatus: (row: PatientRecordRow, status: "completed" | "discarded") => void;
 }
 
 export function PatientsList({
@@ -463,16 +583,17 @@ export function PatientsList({
     recentRows,
     searchResults,
     searchQuery,
-    loading,
+    todayLoading,
+    recentLoading,
     specialty,
+    onChangeStatus,
     onSelectPatient,
 }: PatientsListProps) {
     const isSearching = searchQuery.trim().length > 0;
 
-    if (loading) {
-        return <PatientsSkeleton specialty={specialty} />;
-    }
-
+    // A search in progress is its own view, unrelated to whether the
+    // Today/Recent lists underneath have finished loading — no reason to
+    // block it behind either.
     if (isSearching) {
         return (
             <div className="prec-list-section">
@@ -511,7 +632,9 @@ export function PatientsList({
 
     return (
         <>
-            {todayRows.length > 0 && (
+            {todayLoading ? (
+                <TodaySkeleton />
+            ) : todayRows.length > 0 && (
                 <div className="prec-list-section">
                     <div className="prec-section-header">
                         <span className="prec-section-title">Today's Patients</span>
@@ -524,40 +647,45 @@ export function PatientsList({
                                 row={row}
                                 specialty={specialty}
                                 onClick={() => onSelectPatient(row)}
+                                onChangeStatus={(status) => onChangeStatus(row, status)}
                             />
                         ))}
                     </TodayPatientsScroller>
                 </div>
             )}
 
-            <div className="prec-list-section">
-                <div className="prec-section-header">
-                    <span className="prec-section-title">All Patients</span>
-                    <span className="prec-section-count">{recentRows.length}</span>
+            {recentLoading ? (
+                <RecentSkeleton specialty={specialty} />
+            ) : (
+                <div className="prec-list-section">
+                    <div className="prec-section-header">
+                        <span className="prec-section-title">All Patients</span>
+                        <span className="prec-section-count">{recentRows.length}</span>
+                    </div>
+                    {recentRows.length > 0 ? (
+                        <div className="prec-table-wrap">
+                            <table className="prec-table">
+                                <PatientsTableHead specialty={specialty} />
+                                <tbody>
+                                    {recentRows.map((row) => (
+                                        <PatientTableRow
+                                            key={row.patient_id}
+                                            row={row}
+                                            specialty={specialty}
+                                            onClick={() => onSelectPatient(row)}
+                                        />
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="prec-empty-section">
+                            <User size={22} />
+                            <p>No past patients found.</p>
+                        </div>
+                    )}
                 </div>
-                {recentRows.length > 0 ? (
-                    <div className="prec-table-wrap">
-                        <table className="prec-table">
-                            <PatientsTableHead specialty={specialty} />
-                            <tbody>
-                                {recentRows.map((row) => (
-                                    <PatientTableRow
-                                        key={row.patient_id}
-                                        row={row}
-                                        specialty={specialty}
-                                        onClick={() => onSelectPatient(row)}
-                                    />
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <div className="prec-empty-section">
-                        <User size={22} />
-                        <p>No past patients found.</p>
-                    </div>
-                )}
-            </div>
+            )}
         </>
     );
 }

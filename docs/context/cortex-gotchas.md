@@ -67,3 +67,30 @@ that file, unchanged in content, just moved.
   boolean. Name the predicate for what it actually means
   (`usesRebuiltSurface = inputLayout !== "soap"`), not for the one case that was
   true when it was written.
+- A `<button>` wrapping a status/pin indicator that is ALSO its own `<button>`
+  (e.g. a heart/pin icon reused from a component built to be independently
+  clickable) is invalid HTML — React logs "`<button>` cannot be a descendant
+  of a `<button>`... hydration error" — and it can pass `tsc`/`npm run build`
+  clean and only surface once a real render actually nests them (a live
+  catalogue search hit, not a hand-typed test fixture). If the outer row's
+  own click already does the same thing the inner control's `onClick` would,
+  the inner one isn't a second real action — replace it with a plain
+  non-interactive `<span>`/`<div>` carrying the same visual state (`StaticPin`
+  in `PracticePage.tsx` is the pattern: same classes, same fill/no-fill, zero
+  `onClick`). If it IS a second real action, the OUTER element has to stop
+  being a `<button>` (a `<div role="button" tabIndex={0}>` with its own
+  onClick/onKeyDown, checking `e.target.closest('[data-…-btn]')` to let the
+  inner button's own click through untouched — `VisitRow.tsx`/`TodayCard` in
+  `PatientsList.tsx` both do this for their own ⋮ menu triggers).
+- `Promise.all`-ing N independent Supabase queries only pays off up to the
+  browser's per-origin connection cap (Chrome: ~6 concurrent over HTTP/1.1) —
+  firing 20-30 "concurrent" requests through `Promise.all` still queues most
+  of them, so a loop whose OWN comment says "0-1 iterations in practice" is
+  worth checking against real data before trusting that assumption still
+  holds (`buildPatientRecordRows`'s care-plan loop: written for "almost
+  always zero", measured live at 5 distinct plans on Ekanki's own account).
+  Sequential-vs-parallel restructuring is also easy to verify wrong in dev
+  mode: `<StrictMode>` (`main.tsx`) double-invokes effects, roughly doubling
+  every request count in a `page.on("request")` trace taken against `vite`
+  dev — build + `vite preview` for a trace that reflects what a real user's
+  browser actually sends.
