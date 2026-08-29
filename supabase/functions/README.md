@@ -13,22 +13,48 @@ one `supabase functions delete` away from being gone. Now they are in git.
 | `attachment-configure-cors` | ✅ | One-time (or re-run-if-needed) infra action — sets the bucket's CORS policy. See below. |
 | `rank-compositions` | ❌ | Pre-existing, not part of this pipeline, **not** mirrored here yet |
 
-## Bucket CORS (fixed 2026-08-11)
+## Storage provider: AWS S3 (migrated 2026-08-29, was Backblaze B2)
 
-The browser PUTs/GETs straight against B2's presigned URLs — that traffic never
-touches Supabase, so it's the *bucket's* CORS policy that decides whether the
-browser is allowed to see the response, independent of whether the presigned
-URL itself is valid. A new B2 bucket ships with no CORS rule at all, and
-`aren-packets-attachment` never had one set, so every upload failed at the
-preflight stage (`No 'Access-Control-Allow-Origin' header`) — a browser-only
-failure; `curl` against the same presigned URL would have worked fine, which
-is why this was easy to miss.
+Every function that touches object storage now talks to real AWS S3 —
+bucket `arenode-patient-orbit-uploads`, region `ap-south-1` — the same
+bucket the new patient-phone gateway upload (separate arenode.com codebase)
+writes into, so clinical attachments and patient-uploaded documents share
+one bucket, one region, one set of credentials. Two things changed in the
+CODE, not just the secrets, because a real AWS account isn't just "another
+S3-compatible endpoint":
 
-Fixed by `attachment-configure-cors`, invoked once (`AllowedOrigins: ['*']` —
-the bucket is already private and every request still needs a real 5-minute
-presigned URL, so a wide-open origin list costs nothing and avoids re-editing
-this every time dev runs on a different port). Re-invoke it any time this
-error resurfaces; it's idempotent.
+- `region` is the bucket's real region (`ap-south-1`), never `'auto'` — AWS
+  SigV4 signing is region-specific, and `'auto'` is a Cloudflare
+  R2/Backblaze-S3-compat convenience real AWS rejects.
+- No `endpoint` override. B2/R2 needed one (they're other companies'
+  servers speaking the S3 protocol); AWS derives the right host from
+  `region` alone, so passing a custom endpoint would silently misroute
+  every request.
+
+`visit_attachments.storage_provider` now records `aws_s3` for new uploads.
+**14 pre-migration rows still say `b2`** — their `storage_path` points at
+the old Backblaze bucket, which has NOT been touched by this migration and
+still holds those files. Migrating those specific historical files is a
+separate, deliberate task for whenever it's wanted — not attempted silently
+here.
+
+## Bucket CORS (fixed 2026-08-11 for B2, re-run 2026-08-29 for the new bucket)
+
+The browser PUTs/GETs straight against the presigned URLs — that traffic
+never touches Supabase, so it's the *bucket's* CORS policy that decides
+whether the browser is allowed to see the response, independent of whether
+the presigned URL itself is valid. A fresh bucket ships with no CORS rule at
+all regardless of provider — true of the original B2 bucket
+(`aren-packets-attachment`, 2026-08-11: every upload failed at the preflight
+stage, `No 'Access-Control-Allow-Origin' header`) and equally true of the
+new AWS bucket, which needed the same fix re-run against it during the
+migration.
+
+Fixed by `attachment-configure-cors`, invoked once per bucket
+(`AllowedOrigins: ['*']` — the bucket is already private and every request
+still needs a real 5-minute presigned URL, so a wide-open origin list costs
+nothing and avoids re-editing this every time dev runs on a different port).
+Re-invoke it any time this error resurfaces; it's idempotent.
 
 ## The authorization pattern, and why it looks like nothing
 
@@ -69,26 +95,28 @@ publishable anon key).
 
 | Variable | Holds |
 |---|---|
-| `ATTACHMENTS_S3_ENDPOINT` | S3-compatible endpoint URL |
-| `ATTACHMENTS_S3_ACCESS_KEY_ID` | key id |
-| `ATTACHMENTS_S3_SECRET_ACCESS_KEY` | **the real secret** |
-| `ATTACHMENTS_S3_BUCKET` | bucket name |
+| `AWS_ACCESS_KEY_ID` | key id |
+| `AWS_SECRET_ACCESS_KEY` | **the real secret** |
+| `AWS_REGION` | `ap-south-1` |
+| `AWS_BUCKET_NAME` | `arenode-patient-orbit-uploads` |
 
 ```bash
-supabase secrets set ATTACHMENTS_S3_ENDPOINT=... --project-ref ieimvjprtltancxapuzg
+supabase secrets set AWS_ACCESS_KEY_ID=... --project-ref ieimvjprtltancxapuzg
 # ...and so on. `supabase secrets list` shows names and digests, never values.
 ```
 
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` are injected by the platform; do not set
 them.
 
-The names are deliberately generic rather than `B2_*`. Every S3-compatible
-provider — Backblaze B2, Cloudflare R2, AWS itself — is reachable through the
-identical AWS SDK v3 calls in these files, so **changing provider is a secrets
-change, not a code change**. `visit_attachments.storage_provider` records where
-each file actually landed, so a future migration can be partial without
-anything breaking.
+**Pre-migration secrets, no longer read by any function here** (safe to
+delete — `supabase secrets unset ATTACHMENTS_S3_ENDPOINT
+ATTACHMENTS_S3_ACCESS_KEY_ID ATTACHMENTS_S3_SECRET_ACCESS_KEY
+ATTACHMENTS_S3_BUCKET`): `ATTACHMENTS_S3_ENDPOINT`, `ATTACHMENTS_S3_ACCESS_KEY_ID`,
+`ATTACHMENTS_S3_SECRET_ACCESS_KEY`, `ATTACHMENTS_S3_BUCKET`. These named the
+generic S3-compatible client this project used against Backblaze B2 before
+the 2026-08-29 AWS S3 migration — the code that read them no longer exists,
+so leaving the secrets set is inert, not a live fallback path.
 
-If the secret ever leaks, rotate it in the provider console and re-set it here;
-no redeploy of the functions is needed, and no already-issued presigned URL
-outlives its 5-minute TTL.
+If the AWS secret ever leaks, rotate it in the AWS console and re-set it
+here; no redeploy of the functions is needed, and no already-issued
+presigned URL outlives its 5-minute TTL.

@@ -2,6 +2,7 @@ import { FileText, Image as ImageIcon, X } from "lucide-react";
 import type { AttachmentType } from "@/lib/attachments/types";
 import { useT } from "../i18n/i18n";
 import { AttachmentDropzone, inferAttachmentType } from "./AttachmentDropzone";
+import { UploadFromPhoneButton } from "./gateway/UploadFromPhoneButton";
 
 // Staged, not uploaded. A visit_attachments row needs a real visit_id, and
 // none exists until CreateVisitModal's Save actually creates the visit — so
@@ -29,9 +30,14 @@ function formatBytes(n: number): string {
 type Props = {
     files: StagedAttachment[];
     onChange: (next: StagedAttachment[]) => void;
+    /** "Upload from phone" during intake can't create a visit_gateways row
+     *  directly — no visit_id exists until Save does (see this file's own
+     *  header). CreateVisitModal owns the whole save-then-open-QR sequence;
+     *  this field only ever forwards the click. */
+    onUploadFromPhone: () => void;
 };
 
-export function IntakeAttachmentsField({ files, onChange }: Props) {
+export function IntakeAttachmentsField({ files, onChange, onUploadFromPhone }: Props) {
     const t = useT();
 
     const addFiles = (picked: File[]) => {
@@ -73,7 +79,10 @@ export function IntakeAttachmentsField({ files, onChange }: Props) {
                 </div>
             )}
 
-            <AttachmentDropzone onFiles={addFiles} />
+            <div className="grid grid-cols-2 gap-[8px]">
+                <AttachmentDropzone onFiles={addFiles} />
+                <UploadFromPhoneButton onClick={onUploadFromPhone} />
+            </div>
         </div>
     );
 }

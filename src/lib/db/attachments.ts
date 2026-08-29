@@ -206,7 +206,12 @@ export async function uploadAttachment(
             label: opts.label ?? null,
             attachment_type: opts.attachmentType,
             size_bytes: toUpload.size,
-            storage_provider: "b2",
+            // Migrated to AWS S3 2026-08-29 — see supabase/functions/README.md.
+            // The 14 pre-migration rows still reading "b2" are untouched
+            // historical data (their storage_path lives on the old Backblaze
+            // bucket), not a bug — see the migration note for why those are
+            // deliberately not backfilled here.
+            storage_provider: "aws_s3",
             uploaded_by_doctor_id: uploadedByDoctorId,
             laterality: opts.laterality ?? null,
             body_region: opts.bodyRegion ?? null,

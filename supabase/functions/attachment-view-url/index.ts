@@ -3,10 +3,9 @@
 // URLs), so every view goes through this, the same way every upload goes
 // through attachment-upload-url.
 //
-// PROVIDER-NEUTRAL — see attachment-upload-url's header for the full
-// reasoning. Same ATTACHMENTS_S3_* env vars, same AWS SDK v3 calls, works
-// unchanged against Backblaze B2, Cloudflare R2, or any other S3-compatible
-// provider.
+// MIGRATED 2026-08-29 to real AWS S3 — see attachment-upload-url's header for
+// the full reasoning (region must be real, no endpoint override). Same
+// AWS_* env vars as every other function here.
 //
 // Authorization: ask the CALLER's own RLS-scoped client whether a
 // visit_attachments row with this path exists at all.
@@ -59,17 +58,16 @@ serve(async (req: Request) => {
     if (!row) return jsonResponse({ error: 'attachment not found, or not yours' }, 404);
 
     const s3 = new S3Client({
-      region: 'auto',
-      endpoint: Deno.env.get('ATTACHMENTS_S3_ENDPOINT')!,
+      region: Deno.env.get('AWS_REGION')!.trim(),
       credentials: {
-        accessKeyId: Deno.env.get('ATTACHMENTS_S3_ACCESS_KEY_ID')!,
-        secretAccessKey: Deno.env.get('ATTACHMENTS_S3_SECRET_ACCESS_KEY')!,
+        accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID')!.trim(),
+        secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY')!.trim(),
       },
     });
 
     const viewUrl = await getSignedUrl(
       s3,
-      new GetObjectCommand({ Bucket: Deno.env.get('ATTACHMENTS_S3_BUCKET')!, Key: storagePath }),
+      new GetObjectCommand({ Bucket: Deno.env.get('AWS_BUCKET_NAME')!.trim(), Key: storagePath }),
       { expiresIn: URL_TTL_SECONDS }
     );
 

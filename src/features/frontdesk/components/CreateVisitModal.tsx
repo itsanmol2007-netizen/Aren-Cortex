@@ -9,6 +9,7 @@ import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
 import { AgeInput, Field, PhoneInput, SectionLabel } from "./fields";
 import { IntakeAttachmentsField, type StagedAttachment } from "./IntakeAttachmentsField";
+import { useGatewaySessions } from "./gateway/GatewaySessionsProvider";
 import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 
 type Props = {
@@ -37,6 +38,11 @@ type Props = {
         doctorId: string;
         doctorName: string;
         attachments: { file: File; attachmentType: AttachmentType }[];
+        // Not used by the normal Save flow (createNewVisit's own fire-and-
+        // forget close makes anyone awaiting it pointless there) — only by
+        // "Upload from phone", which needs the REAL visit id the instant it
+        // exists to open the QR modal against. See handleUploadFromPhone.
+        onSuccess?: (result: { patientName: string; patientId: string; visitId: string }) => void;
     }) => void;
 };
 
@@ -151,6 +157,47 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         return Object.keys(nextErrors).length === 0;
     };
 
+    // The QR modal a click here opens lives above this modal entirely (see
+    // GatewaySessionsProvider, mounted by WorkspaceShell) — this component
+    // only ever tells it to start, never renders any of it.
+    const gateway = useGatewaySessions();
+
+    // Shared by both Save and "Upload from phone": same validation, same
+    // duplicate guard. Returns null (and has already set the right error
+    // state / banner) when the form isn't ready to submit — neither caller
+    // proceeds past that.
+    const resolveExisting = (): DBPatient | null | undefined => {
+        if (!validate()) return undefined;
+        // Duplicate guard: same phone + same name = that IS this patient —
+        // create the visit for them instead of minting a twin record. Same
+        // phone under a different name is ambiguous, so block and let the
+        // banner's button resolve it explicitly.
+        if (dupExact) return dup;
+        if (dupPhoneHit) {
+            setErrors((e) => ({ ...e, phone: true }));
+            return undefined;
+        }
+        return existingPatient;
+    };
+
+    const buildCreateOpts = (
+        asExisting: DBPatient | null,
+        onSuccess?: (r: { patientName: string; patientId: string; visitId: string }) => void
+    ) => ({
+        existingPatient: asExisting,
+        name,
+        phone,
+        age,
+        dateOfBirth,
+        gender,
+        observableIds: selectedSymptoms.map((s) => s.observableId),
+        symptomNames: selectedSymptoms.map((s) => s.label),
+        doctorId,
+        doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
+        attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
+        onSuccess,
+    });
+
     // Synchronous and instant on purpose (2026-08-24): registering used to
     // block on 2-3 sequential network round trips (find/create patient,
     // create visit) with the modal sitting open the whole time — reported as
@@ -159,31 +206,32 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     // and hands everything to onCreate, which inserts an optimistic row and
     // does the real work in the background — see useVisitActions.createNewVisit.
     const handleSave = () => {
-        if (!validate()) return;
-        // Duplicate guard: same phone + same name = that IS this patient —
-        // create the visit for them instead of minting a twin record. Same
-        // phone under a different name is ambiguous, so block and let the
-        // banner's button resolve it explicitly.
-        let asExisting = existingPatient;
-        if (dupExact) {
-            asExisting = dup;
-        } else if (dupPhoneHit) {
-            setErrors((e) => ({ ...e, phone: true }));
-            return;
-        }
-        onCreate({
-            existingPatient: asExisting,
-            name,
-            phone,
-            age,
-            dateOfBirth,
-            gender,
-            observableIds: selectedSymptoms.map((s) => s.observableId),
-            symptomNames: selectedSymptoms.map((s) => s.label),
-            doctorId,
-            doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
-            attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
-        });
+        const asExisting = resolveExisting();
+        if (asExisting === undefined) return;
+        onCreate(buildCreateOpts(asExisting));
+        onClose();
+    };
+
+    // "Upload from phone" during intake is the one case that CANNOT be
+    // fire-and-forget the way Save is: a visit_gateways row needs a real
+    // visit_id, and none exists until the background create actually lands.
+    // So this closes the intake form immediately (same as Save) but opens
+    // the QR modal in its own "creating the visit" loading state right away
+    // — `gateway.beginCreatingVisit` — and only swaps that for the real QR
+    // once `onSuccess` fires with the visit createNewVisit just made. The
+    // validation and duplicate-guard rules are IDENTICAL to Save's; this
+    // never skips a required field just because the door out is a QR
+    // code instead of a toast.
+    const handleUploadFromPhone = () => {
+        const asExisting = resolveExisting();
+        if (asExisting === undefined) return;
+        const patientLabel = asExisting?.name ?? name.trim();
+        gateway.beginCreatingVisit(patientLabel);
+        onCreate(
+            buildCreateOpts(asExisting, ({ patientId, visitId }) => {
+                gateway.openForVisit({ visitId, patientId, patientLabel, visitLabel: "" });
+            })
+        );
         onClose();
     };
 
@@ -417,7 +465,11 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     (same label weight as Symptoms/Doctor above it, "(Optional)"
                     tag, no section hairline). */}
                 <Field className="mt-[10px]" icon={<Paperclip size={13} />} label={t("attachAdd")} optional>
-                    <IntakeAttachmentsField files={stagedAttachments} onChange={setStagedAttachments} />
+                    <IntakeAttachmentsField
+                        files={stagedAttachments}
+                        onChange={setStagedAttachments}
+                        onUploadFromPhone={handleUploadFromPhone}
+                    />
                 </Field>
             </div>
         </ModalShell>

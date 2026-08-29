@@ -8,6 +8,9 @@ import { initials } from "../utils";
 import { useAuth } from "../../auth/AuthProvider";
 import { useI18n, useT } from "../i18n/i18n";
 import { LANGS } from "../i18n/strings";
+import { GatewaySessionsProvider } from "./gateway/GatewaySessionsProvider";
+import { GatewaySessionsBadge } from "./gateway/GatewaySessionsBadge";
+import { GatewayQrModal } from "./gateway/GatewayQrModal";
 import arenLogo from "@/assets/aren-logo.png";
 
 const NAV_STORAGE_KEY = "aren.frontdesk.nav";
@@ -69,41 +72,50 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <div
-            className="flex h-dvh flex-col overflow-hidden bg-[#f4f4f8] font-[Inter,system-ui,sans-serif] text-[#161d29]"
-            style={{
-                // Dawn residue (§3.4): three faint washes bleeding down from the
-                // horizon, over the ratified dot grid. Static, near-invisible.
-                backgroundImage:
-                    "radial-gradient(900px 240px at 12% 0%, rgba(139,92,246,0.05), transparent 70%)," +
-                    "radial-gradient(760px 220px at 55% 0%, rgba(244,114,182,0.04), transparent 70%)," +
-                    "radial-gradient(640px 200px at 92% 0%, rgba(242,169,134,0.05), transparent 70%)," +
-                    "radial-gradient(rgba(20,30,50,0.045) 1px, transparent 1px)",
-                backgroundSize: "auto, auto, auto, 22px 22px",
-                backgroundRepeat: "no-repeat, no-repeat, no-repeat, repeat",
-            }}
-        >
-            <FrontDeskStyles />
-            <Header
-                hospitalName={hospitalName}
-                now={now}
-                navOpen={navOpen}
-                onToggleNav={toggleNav}
-                userName={userName}
-                userInitials={userInitials}
-            />
-            {/* Proactive operational voice: a slim band that speaks up when
-                connectivity (or, later, another operational signal) changes —
-                spans every reception page, clears itself on recovery. */}
-            <OperationalBanner />
-            {/* The rail and the workspace share a flex row: as the rail's width
-                interpolates the content shifts right naturally — one continuous
-                transformation, not a drawer sliding on top. */}
-            <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
-                <NavRail expanded={navOpen} userName={userName} userInitials={userInitials} />
-                <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
+        <GatewaySessionsProvider>
+            <div
+                className="flex h-dvh flex-col overflow-hidden bg-[#f4f4f8] font-[Inter,system-ui,sans-serif] text-[#161d29]"
+                style={{
+                    // Dawn residue (§3.4): three faint washes bleeding down from the
+                    // horizon, over the ratified dot grid. Static, near-invisible.
+                    backgroundImage:
+                        "radial-gradient(900px 240px at 12% 0%, rgba(139,92,246,0.05), transparent 70%)," +
+                        "radial-gradient(760px 220px at 55% 0%, rgba(244,114,182,0.04), transparent 70%)," +
+                        "radial-gradient(640px 200px at 92% 0%, rgba(242,169,134,0.05), transparent 70%)," +
+                        "radial-gradient(rgba(20,30,50,0.045) 1px, transparent 1px)",
+                    backgroundSize: "auto, auto, auto, 22px 22px",
+                    backgroundRepeat: "no-repeat, no-repeat, no-repeat, repeat",
+                }}
+            >
+                <FrontDeskStyles />
+                <Header
+                    hospitalName={hospitalName}
+                    now={now}
+                    navOpen={navOpen}
+                    onToggleNav={toggleNav}
+                    userName={userName}
+                    userInitials={userInitials}
+                />
+                {/* Proactive operational voice: a slim band that speaks up when
+                    connectivity (or, later, another operational signal) changes —
+                    spans every reception page, clears itself on recovery. */}
+                <OperationalBanner />
+                {/* The rail and the workspace share a flex row: as the rail's width
+                    interpolates the content shifts right naturally — one continuous
+                    transformation, not a drawer sliding on top. */}
+                <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
+                    <NavRail expanded={navOpen} userName={userName} userInitials={userInitials} />
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
+                </div>
+
+                {/* Rendered ONCE here, a sibling of every page's own modals — not
+                    inside CreateVisitModal/VisitAttachmentsModal, which is where
+                    the two "Upload from phone" BUTTONS live. See
+                    GatewaySessionsProvider's header for why minimizing needs a
+                    home above whichever modal launched it. */}
+                <GatewayQrModal />
             </div>
-        </div>
+        </GatewaySessionsProvider>
     );
 }
 
@@ -194,6 +206,7 @@ function Header({
                         <span className="tabular-nums">{time}</span>
                     </div>
                     <div className="h-6 w-px bg-white/10" />
+                    <GatewaySessionsBadge />
                     <LanguageDropdown />
                     <div
                         title={userName || t("navUser")}

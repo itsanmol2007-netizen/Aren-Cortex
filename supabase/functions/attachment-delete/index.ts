@@ -1,7 +1,8 @@
 // attachment-delete — removes an attachment from both object storage and the
-// visit_attachments metadata row. Same provider-neutral, RLS-scoped pattern
-// as attachment-upload-url and attachment-view-url (see that file's header
-// for the full reasoning) — repeated here only where it differs.
+// visit_attachments metadata row. Same RLS-scoped pattern and same AWS S3
+// migration (2026-08-29) as attachment-upload-url and attachment-view-url
+// (see that file's header for the full reasoning) — repeated here only
+// where it differs.
 //
 // Order matters: delete the METADATA row first, through the caller's own
 // RLS-scoped client. That IS the authorization check — if the row isn't
@@ -61,17 +62,16 @@ serve(async (req: Request) => {
     }
 
     const s3 = new S3Client({
-      region: 'auto',
-      endpoint: Deno.env.get('ATTACHMENTS_S3_ENDPOINT')!,
+      region: Deno.env.get('AWS_REGION')!.trim(),
       credentials: {
-        accessKeyId: Deno.env.get('ATTACHMENTS_S3_ACCESS_KEY_ID')!,
-        secretAccessKey: Deno.env.get('ATTACHMENTS_S3_SECRET_ACCESS_KEY')!,
+        accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID')!.trim(),
+        secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY')!.trim(),
       },
     });
 
     try {
       await s3.send(new DeleteObjectCommand({
-        Bucket: Deno.env.get('ATTACHMENTS_S3_BUCKET')!,
+        Bucket: Deno.env.get('AWS_BUCKET_NAME')!.trim(),
         Key: storagePath,
       }));
     } catch (storageErr) {

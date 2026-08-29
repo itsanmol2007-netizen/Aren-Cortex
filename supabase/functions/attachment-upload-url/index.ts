@@ -3,17 +3,18 @@
 // directly to object storage, without the storage secret key ever reaching
 // the browser.
 //
-// PROVIDER-NEUTRAL ON PURPOSE. Every real S3-compatible provider (Backblaze
-// B2, Cloudflare R2, Supabase Storage's S3 mode, AWS itself) is reachable
-// through the exact same AWS SDK v3 calls below — only four settings differ
-// between them (endpoint, access key id, secret key, bucket name), read from
-// ATTACHMENTS_S3_* env vars. Switching provider is a secrets change, never a
-// code change. Chosen 2026-08-08: Backblaze B2 first (no card required to
-// start, ~$0.006/GB vs R2's ~$0.015/GB, still a 10GB free tier — 10x
-// Supabase Storage's 1GB, which is the whole reason this isn't just a
-// Supabase Storage bucket). visit_attachments.storage_provider records which
-// one a given file actually landed on, so a future migration or split
-// between providers costs a data note, not a rewrite.
+// MIGRATED 2026-08-29 from Backblaze B2 to real AWS S3 (bucket
+// `arenode-patient-orbit-uploads`, region `ap-south-1`; the same bucket the
+// new patient-phone gateway upload uses). Reads AWS_ACCESS_KEY_ID /
+// AWS_SECRET_ACCESS_KEY / AWS_REGION / AWS_BUCKET_NAME — the AWS SDK's own
+// standard env var names, already set as Supabase function secrets. Real AWS
+// needs the bucket's ACTUAL region (never `'auto'`, which is a Cloudflare
+// R2/Backblaze-S3-compat convenience real AWS rejects) and no custom
+// `endpoint` override (AWS derives the right host from `region` alone; B2/R2
+// needed an override because they are other companies' servers speaking the
+// S3 protocol, not AWS itself). visit_attachments.storage_provider now
+// records `aws_s3` for new uploads — existing `b2` rows are untouched
+// historical data, not migrated by this change. See README.md.
 //
 // Authorization works through the CALLER'S OWN Supabase session (the
 // Authorization header this function is invoked with), not a body-supplied
@@ -101,19 +102,24 @@ serve(async (req: Request) => {
     const ext = (String(fileName).split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
     const storagePath = `visits/${visitId}/${crypto.randomUUID()}.${ext}`;
 
+    // `.trim()` on every one of these: the real AWS_REGION secret in this
+    // project carries a leading tab character (a copy-paste artifact from
+    // however it was set) — `region="\tap-south-1"` fails AWS's hostname
+    // validation with an error that gives no hint the problem is whitespace,
+    // not a wrong value. Trimming defends against that class of secret-store
+    // artifact without needing write access to fix the secret itself.
     const s3 = new S3Client({
-      region: 'auto',
-      endpoint: Deno.env.get('ATTACHMENTS_S3_ENDPOINT')!,
+      region: Deno.env.get('AWS_REGION')!.trim(),
       credentials: {
-        accessKeyId: Deno.env.get('ATTACHMENTS_S3_ACCESS_KEY_ID')!,
-        secretAccessKey: Deno.env.get('ATTACHMENTS_S3_SECRET_ACCESS_KEY')!,
+        accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID')!.trim(),
+        secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY')!.trim(),
       },
     });
 
     const uploadUrl = await getSignedUrl(
       s3,
       new PutObjectCommand({
-        Bucket: Deno.env.get('ATTACHMENTS_S3_BUCKET')!,
+        Bucket: Deno.env.get('AWS_BUCKET_NAME')!.trim(),
         Key: storagePath,
         ContentType: mimeType,
       }),

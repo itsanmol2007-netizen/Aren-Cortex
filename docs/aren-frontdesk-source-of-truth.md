@@ -872,9 +872,228 @@ resting Front Desk dashboard this session scoped to.
 
 ---
 
+# PART L — SESSION 2026-08-29 (visit-gateway QR pipeline + AWS S3 migration)
+
+Scope: the patient-phone document-upload QR handoff, end to end on this
+app's side (token+QR generation/management, live status back to staff) —
+never the upload interface itself, which is the separate arenode.com
+landing-page codebase. Plus, as an explicit prerequisite the same session
+asked for: migrating this app's existing attachment storage from Backblaze
+B2 to real AWS S3, since the new gateway feature and the existing
+attachment pipeline now share one bucket.
+
+## Storage migration: Backblaze B2 → AWS S3
+
+The attachment edge functions (`supabase/functions/attachment-{upload-url,
+view-url,delete,configure-cors}`) were already provider-neutral by design
+(generic `ATTACHMENTS_S3_*` secret names, plain AWS SDK v3 calls — see the
+functions' own README) — migrating was a secrets-and-two-lines change, not
+a rewrite:
+- Read `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION`/
+  `AWS_BUCKET_NAME` (the AWS SDK's own standard names) instead of
+  `ATTACHMENTS_S3_*`.
+- `region` is the bucket's real region (`ap-south-1`), never `'auto'` (a
+  Cloudflare R2/Backblaze-S3-compat convenience real AWS rejects — signing
+  fails with an opaque error, not an auth error).
+- No `endpoint` override — AWS derives its own host from `region`; B2/R2
+  needed one because they're other companies' servers speaking S3.
+- Every `Deno.env.get('AWS_*')!` call is `.trim()`ed — **the real
+  `AWS_REGION` secret in this project carries a leading tab character**
+  (a copy-paste artifact), which fails AWS hostname validation with an
+  error that gives zero indication the problem is whitespace. Found live,
+  fixed defensively rather than by editing the secret (no tool access to
+  secret values here).
+- `visit_attachments.storage_provider` now records `aws_s3` for new
+  uploads. **14 pre-migration rows still say `b2`** — untouched, per
+  explicit instruction not to migrate historical files silently.
+- All four functions redeployed (see git history / Supabase function
+  versions). Old `ATTACHMENTS_S3_*` secrets are no longer read by any
+  function — safe to delete, not done here (no secret-management tool
+  access).
+
+**Not completed — real external blocker, needs the AWS account owner**:
+`attachment-configure-cors` (needed once per bucket — a fresh bucket ships
+with no CORS rule, so the browser's preflight blocks every PUT/GET even
+with a valid presigned URL) fails with `User:
+arn:aws:iam::941399479350:user/arenode-storage-service is not authorized
+to perform: s3:PutBucketCORS`. Confirmed live: an actual file upload
+through `VisitAttachmentsModal` hangs indefinitely at "Uploading…" (the
+browser silently blocks the PUT at its own CORS preflight) — the same
+failure class the original B2 bucket had on 2026-08-11, now against the
+new bucket. **Needs**: add `s3:PutBucketCORS` + `s3:GetBucketCORS` to the
+`arenode-storage-service` IAM user's policy (bucket
+`arenode-patient-orbit-uploads`), then re-invoke
+`attachment-configure-cors` once. Until that happens, **no attachment
+upload works in this app at all** — not just the new gateway feature, the
+pre-existing "upload from this computer" path too, since both go through
+the same bucket now. Worth also confirming that IAM user's object-level
+permissions (`s3:PutObject`/`GetObject`/`DeleteObject`) once CORS is fixed
+and a real upload can actually reach AWS to test against.
+
+## The visit-gateway feature
+
+New table `visit_gateways` (migration `add_visit_gateways`) — one row per
+VISIT for its whole lifecycle (`visit_id` is UNIQUE; expiring or
+cancelling never inserts a second row, it reactivates the same one).
+Columns roughly as specced: `token` (256-bit, `crypto.getRandomValues`,
+base64url, generated client-side — never derived from patient/visit id),
+`status` (`active`/`expired`/`discarded`), `expires_at`, `extension_count`
+(capped at 2 in the app layer, not a DB constraint — see below),
+`documents_uploaded_count`, `patient_marked_done`, `revoked`. Denormalized
+`hospital_id` (not in the original sketch, added deliberately — every
+other reception-scoped table here, `doctor_requests`/`doctors`, is scoped
+this same direct-column way, and the clinic-wide badge needs to filter/
+subscribe on it without a join). RLS: `hospital_isolation_{select,insert,
+update}` scoped to `current_user_hospital_id()`, same shape as
+`doctor_requests` — no delete policy, "discarded" is the soft-delete
+state. Added to the `supabase_realtime` publication (same as
+`doctor_requests`; `doctors.last_seen` presence is polling-only, not
+actually realtime, despite reading like a precedent for it).
+
+**"Expired" is a computed fact, not a column a cron flips.** Nothing here
+runs a scheduled job. `isEffectivelyExpired(g)` (`lib/db/gateways.ts`) is
+`status==='active' && expires_at <= now()` — every reader (the badge list,
+the open QR modal) treats that as expired regardless of what `status`
+literally says, the same way a JWT is dead the instant its `exp` passes,
+not when something gets around to revoking it. The badge/list refetches on
+Realtime + a 30s poll (mirroring `doctor_requests`'s pattern exactly) so a
+session that just quietly timed out with nothing else happening still
+drops off the list within 30s, "silently, no toast" per the brief. An open
+QR modal additionally re-checks its OWN session's expiry every 5s
+(`useIsExpired` in `GatewayQrModal.tsx`) for snappier feedback on the one
+session someone is actually looking at.
+
+**`ensureActiveGatewaySession` does NOT auto-resume.** First implementation
+did (silently reactivating an expired/discarded row and returning a live
+one) — caught live in testing: the brief's flow is explicitly two steps
+("show 'This QR session expired. Resume?' ... on click, flip status back
+to active"), so an expired/discarded row is now returned to the UI AS-IS,
+and only the explicit "Resume"/"Start a new session" button (wired to
+`resumeGatewaySession`) ever reactivates it. Get this backwards again and
+the resume prompt silently never shows.
+
+**Extension cap (2), verified live**: each resume increments
+`extension_count`; `canResume(g)` is `extensionCount < 2`. Past the cap,
+the modal offers "Start a new session" instead of "Resume" — same
+underlying reactivation, but resets `extension_count` back to 0 (a
+deliberate product decision made here, not in the brief: the alternative
+of a hard dead-end past 2 resumes had no described fallback, and
+"one row per visit forever" rules out ever inserting a fresh one).
+`resumeGatewaySession` deliberately does NOT reset `documents_uploaded_count`
+(real files already there under a now-dead token shouldn't have their count
+zeroed) but DOES reset `patient_marked_done` to false (resuming means "more
+to upload").
+
+### Entry points
+
+1. **Queue row → kebab menu → Attachments** (`VisitAttachmentsModal.tsx`) —
+   the fully-turnkey entry point: a visit already exists, so "Upload from
+   phone" calls `openForVisit` directly. Shows "An upload link is already
+   active for this visit" beneath the button when
+   `sessionForVisit(visit.visit_id)` finds one — the live proof the two
+   entry points share state, not two competing sessions.
+2. **Create/Edit Patient modal** (`CreateVisitModal.tsx` →
+   `IntakeAttachmentsField.tsx`) — genuinely harder: `IntakeAttachmentsField`
+   only ever runs pre-Save, no `visit_id` exists yet. Decided live with
+   Anmol (asked rather than guessed): clicking "Upload from phone" runs the
+   IDENTICAL validation/dedupe `handleSave` does, then calls
+   `gateway.beginCreatingVisit(patientLabel)` (shows the QR modal
+   immediately in a loading state — spinner + a rotating word picked from
+   `useCachedIntakeChips()`, the SAME cached symptom catalogue already in
+   memory, per "use hardcoded medical-friendly words during loading" — see
+   `gateway/loadingWords.ts`) and passes an `onSuccess` callback through
+   `onCreate` (widened `useVisitActions.createNewVisit`'s existing
+   `onSuccess` hook — previously `{patientName, visitId}`, now also
+   `patientId`, needed for `ensureActiveGatewaySession`) that calls
+   `gateway.openForVisit(...)` with the real visit id the instant
+   `createNewVisit`'s background attempt lands. The intake modal itself
+   closes immediately, same as a normal Save.
+
+### Where the state actually lives
+
+`GatewaySessionsProvider` (`components/gateway/`) is mounted ONCE by
+`WorkspaceShell` — every reception page (`FrontDeskPage`, `PatientsPage`,
+…) renders its own `WorkspaceShell`, so the provider remounts per page
+navigation, but that's fine: the active-sessions LIST is a straight
+Supabase read (refetched on mount), and "minimized" just means nothing is
+rendered — there's no client state to lose, reopening from the badge
+re-reads the DB-backed truth regardless of which page you're on. The
+actual `GatewayQrModal` renders once at the `WorkspaceShell` level, a
+sibling of `{children}` — NOT inside `CreateVisitModal`/
+`VisitAttachmentsModal`, which is where the two buttons live — specifically
+so minimizing survives whichever modal launched it closing.
+
+`ModalShell` gained a `preventDismiss` prop (default false, every existing
+modal unaffected) — disables backdrop-click and Escape entirely, leaving
+only the header X wired to `onClose`. First and so-far-only use:
+`GatewayQrModal`, per the brief's "closeable only via an explicit X
+button — clicking outside the modal does nothing." X calls `minimize()`,
+never touches the DB (verified live: `updated_at` unchanged after
+minimize/reopen).
+
+Header badge (`GatewaySessionsBadge.tsx`, in `WorkspaceShell`'s `Header`,
+next to the language dropdown): violet, not semantic-colored (§7.1 — this
+counts sessions clinic-wide, it isn't one patient's status) and NOT
+animated. The brief says "pulse", but the one ambient "needs attention"
+animation this feature already has (`.aren-pulse`) is hardcoded amber
+(the "waiting" status color) — reusing it here would borrow that meaning
+for an unrelated structural badge, and the frozen motion doctrine (§9)
+caps ambient animation at the two loops that already exist, not a third.
+Used a static violet glow instead (same treatment the header logo button
+already wears for "important"). Flag this trade-off if a real pulse is
+wanted — it would need a new keyframe and a §9 amendment, not something to
+add unilaterally.
+
+### Verified live (Ekanki Solo Clinic hospital, temporary reception test
+account — created via direct `auth.users`/`public.users` SQL insert with
+`crypt()`/pgcrypto since no reception login existed for that hospital and
+resetting a real user's password wasn't an option; deleted after)
+
+Full state machine exercised end to end with real screenshots: none→create
+(QR renders, encodes `https://arenode.com/portal/gateway/<token>`)→badge
+shows 1→reopen from popover (same token)→backdrop click & Escape both
+no-op→X minimizes (DB untouched)→kebab-menu entry point shows the
+"already active" hint and reopens the SAME session→Cancel this link
+(`discarded`+`revoked`, same row)→reopening a discarded row shows "This QR
+session expired. Resume?" (not an auto-resumed QR — this is what caught
+the auto-resume bug above)→Resume (fresh token, extension_count 1→2)→cap
+reached shows "Start a new session" (extension_count resets to 0)→a raw
+SQL write to `documents_uploaded_count`/`patient_marked_done` while the
+modal sat open propagated live via Realtime with no reload, and
+`patient_marked_done` correctly reset to false on the resume that
+happened to land around the same time (confirms the "resume resets
+done, keeps count" rule live, not just in code). `tsc -b`/`npm run build`
+clean throughout. Real file upload could NOT be verified end-to-end — see
+the AWS IAM blocker above.
+
+**One live discovery worth flagging**: while cleaning up test data, a
+SECOND `visit_gateways` row was found for a different `hospital_id`, with
+a token in a different format (plain lowercase hex, not this app's
+base64url) — almost certainly the arenode.com team already exercising the
+shared table independently and concurrently. Left untouched (not this
+session's data to delete) — a good sign the two sides are already
+converging on the same schema in practice, worth a direct conversation
+with that team to confirm the column shapes actually match before either
+side relies on it further.
+
+### Files touched
+
+New: `src/lib/db/gateways.ts`; `src/features/frontdesk/components/gateway/`
+(`GatewaySessionsProvider.tsx`, `GatewayQrModal.tsx`,
+`GatewaySessionsBadge.tsx`, `UploadFromPhoneButton.tsx`,
+`loadingWords.ts`). Changed: `ModalShell.tsx` (`preventDismiss`),
+`WorkspaceShell.tsx` (provider + badge + modal mount), `CreateVisitModal.tsx`
++ `IntakeAttachmentsField.tsx` (entry point 1), `VisitAttachmentsModal.tsx`
+(entry point 2), `useVisitActions.ts` (`onSuccess` gained `patientId`),
+`i18n/strings.ts` (`en`+`hinglish` — ~28 new `gw*`/`uploadFrom*` keys),
+`lib/db/attachments.ts` + all four `supabase/functions/attachment-*`
+(the S3 migration).
+
+---
+
 *This document supersedes the styling guidance in sessions 33–34 and the
 modal guidance in the design direction §10.2. Architecture and creative
-direction are frozen. Tie-breaker order when in doubt: **Part K** (today's
-resting-state visuals) → **Part G** (identity/tenancy + everything it folds
-in) → this doc → session 36 → session 35 → design direction → brief →
-architecture.*
+direction are frozen. Tie-breaker order when in doubt: **Part L** (today's
+gateway feature + storage migration) → **Part K** (resting-state visuals)
+→ **Part G** (identity/tenancy + everything it folds in) → this doc →
+session 36 → session 35 → design direction → brief → architecture.*

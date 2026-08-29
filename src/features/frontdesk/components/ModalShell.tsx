@@ -31,9 +31,16 @@ type Props = {
     // Panel width cap. 580 is the Bhor default; exploration surfaces (the
     // visit-timeline modal) may go a touch wider without leaving the family.
     maxWidth?: number;
+    // Backdrop click and Escape are disabled entirely; only the header X
+    // (still wired to `onClose`) can dismiss. For a surface where an
+    // accidental outside click must never lose state a patient is actively
+    // using — the gateway QR modal is the first (2026-08-29): "closeable
+    // only via an explicit X button". Every other modal leaves this false
+    // and keeps the normal backdrop/Escape behavior.
+    preventDismiss?: boolean;
 };
 
-export function ModalShell({ eyebrow, title, icon, onClose, footer, children, maxWidth = 580 }: Props) {
+export function ModalShell({ eyebrow, title, icon, onClose, footer, children, maxWidth = 580, preventDismiss = false }: Props) {
     const t = useT();
     // A backdrop click only counts if the press ALSO started on the backdrop.
     // Without this, any in-panel interaction that reflows the layout between
@@ -55,6 +62,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
     }, []);
 
     useEffect(() => {
+        if (preventDismiss) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== "Escape") return;
             // Only the topmost modal answers Escape — a nested one (e.g. the
@@ -65,7 +73,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
         };
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
-    }, [onClose]);
+    }, [onClose, preventDismiss]);
 
     return createPortal(
         <div
@@ -79,7 +87,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     "rgba(15,18,32,0.46)",
             }}
             onMouseDown={(e) => { pressedOnBackdrop.current = e.target === e.currentTarget; }}
-            onClick={(e) => { if (e.target === e.currentTarget && pressedOnBackdrop.current) onClose(); }}
+            onClick={(e) => { if (!preventDismiss && e.target === e.currentTarget && pressedOnBackdrop.current) onClose(); }}
         >
             <div
                 role="dialog"

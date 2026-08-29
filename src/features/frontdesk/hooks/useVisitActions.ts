@@ -119,7 +119,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         // depends on the visit actually existing (PatientsPage refreshing
         // its directory/history aggregates) can hook the real success, once
         // the background attempt lands, without going back to awaiting it.
-        onSuccess?: (result: { patientName: string; visitId: string }) => void;
+        onSuccess?: (result: { patientName: string; patientId: string; visitId: string }) => void;
     }): void => {
         if (!hospitalId) {
             toast.error("Not signed in to a clinic — cannot register a visit.");
@@ -210,7 +210,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
                 refetch();
 
                 const patientName = patient.name;
-                opts.onSuccess?.({ patientName, visitId: visit.id });
+                opts.onSuccess?.({ patientName, patientId: patient.id, visitId: visit.id });
                 toast.success(t("toastCreated", { name: patientName, t: padToken(visit.token_number ?? null) }), {
                     action: {
                         label: t("undo"),

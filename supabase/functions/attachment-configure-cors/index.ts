@@ -4,19 +4,21 @@
 //
 // WHY THIS HAS TO EXIST AT ALL. attachment-upload-url and attachment-view-url
 // only mint presigned URLs; the actual PUT/GET the browser performs against
-// those URLs goes straight from the browser to the S3-compatible endpoint,
-// never through Supabase (see lib/db/attachments.ts — "PUT directly to
-// storage"). A presigned URL authorizes the request; it says nothing about
-// whether the browser's CORS preflight is allowed to happen at all. That's a
-// bucket-level setting, off by default on a new Backblaze B2 bucket, and it
-// was never set for `aren-packets-attachment` — hence every upload failing
-// preflight with "No 'Access-Control-Allow-Origin' header is present",
-// 2026-08-11.
+// those URLs goes straight from the browser to storage, never through
+// Supabase (see lib/db/attachments.ts — "PUT directly to storage"). A
+// presigned URL authorizes the request; it says nothing about whether the
+// browser's CORS preflight is allowed to happen at all. That's a
+// bucket-level setting, off by default on a fresh bucket — the original
+// Backblaze bucket needed exactly this fix on 2026-08-11
+// ("No 'Access-Control-Allow-Origin' header is present"), and the new AWS S3
+// bucket (`arenode-patient-orbit-uploads`, migrated 2026-08-29) needs it
+// re-run for the same reason: a new bucket, new CORS state, regardless of
+// provider.
 //
 // This is a one-time (or re-run-if-ever-needed) infrastructure action, not
-// part of the per-visit attachment flow. It reuses the same
-// ATTACHMENTS_S3_* secrets as the other three functions rather than asking
-// anyone to click through the B2 web console by hand.
+// part of the per-visit attachment flow. It reuses the same AWS_* secrets as
+// the other three functions rather than asking anyone to click through the
+// AWS console by hand.
 //
 // Authorization: verify_jwt only — any signed-in account, no doctor-row or
 // hospital check. There is nothing hospital-scoped here (CORS is a
@@ -47,14 +49,13 @@ serve(async (req: Request) => {
     if (!authHeader) return jsonResponse({ error: 'not authenticated' }, 401);
 
     const s3 = new S3Client({
-      region: 'auto',
-      endpoint: Deno.env.get('ATTACHMENTS_S3_ENDPOINT')!,
+      region: Deno.env.get('AWS_REGION')!.trim(),
       credentials: {
-        accessKeyId: Deno.env.get('ATTACHMENTS_S3_ACCESS_KEY_ID')!,
-        secretAccessKey: Deno.env.get('ATTACHMENTS_S3_SECRET_ACCESS_KEY')!,
+        accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID')!.trim(),
+        secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY')!.trim(),
       },
     });
-    const Bucket = Deno.env.get('ATTACHMENTS_S3_BUCKET')!;
+    const Bucket = Deno.env.get('AWS_BUCKET_NAME')!.trim();
 
     // Origin left wide open ("*"), matching this function's own CORS header
     // above. This does not weaken access control: a browser still needs a

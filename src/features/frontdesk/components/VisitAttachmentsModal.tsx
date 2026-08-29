@@ -4,9 +4,12 @@ import { deleteAttachment, listAttachments, uploadAttachment } from "@/lib/db/at
 import { ATTACHMENT_TYPE_LABEL, type Attachment } from "@/lib/attachments/types";
 import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
+import { padToken } from "../utils";
 import { ModalShell } from "./ModalShell";
 import { AttachmentDropzone, inferAttachmentType } from "./AttachmentDropzone";
 import { AttachmentPreviewModal } from "./AttachmentPreviewModal";
+import { UploadFromPhoneButton } from "./gateway/UploadFromPhoneButton";
+import { useGatewaySessions } from "./gateway/GatewaySessionsProvider";
 
 // Visit-level attachments, reached from a queue row's ⋮ menu. Shows what's
 // already on this visit and lets reception add more — the exact same
@@ -34,6 +37,8 @@ function formatBytes(n: number | null): string {
 
 export function VisitAttachmentsModal({ visit, onClose }: Props) {
     const t = useT();
+    const gateway = useGatewaySessions();
+    const activeSession = gateway.sessionForVisit(visit.visit_id);
     const [items, setItems] = useState<Attachment[]>([]);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<string | null>(null); // status text while uploading
@@ -97,7 +102,20 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
                 )}
             </div>
 
-            <AttachmentDropzone onFiles={uploadFiles} disabled={!!busy} />
+            <div className="grid grid-cols-2 gap-[8px]">
+                <AttachmentDropzone onFiles={uploadFiles} disabled={!!busy} />
+                <UploadFromPhoneButton
+                    onClick={() =>
+                        gateway.openForVisit({
+                            visitId: visit.visit_id,
+                            patientId: visit.patient_id,
+                            patientLabel: visit.patient_name,
+                            visitLabel: `#${padToken(visit.token_number)}`,
+                        })
+                    }
+                    sessionHint={activeSession ? t("gwSessionActiveHint") : undefined}
+                />
+            </div>
 
             {loading ? (
                 <div className="py-8 text-center">
