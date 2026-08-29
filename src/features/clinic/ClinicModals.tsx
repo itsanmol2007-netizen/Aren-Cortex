@@ -15,12 +15,14 @@
 // indistinguishable side by side.
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, Clock, Plus, Stethoscope } from "lucide-react";
 import { PracticeModal } from "../practice/PracticeModal";
-import { Field, FieldRow, FormError, FormNote, RemoveButton } from "./ui";
+import { Field, FieldRow, FormError, FormNote, ImagePicker, RemoveButton } from "./ui";
+import type { CompressedImage } from "../../lib/image/compress";
 import {
     WEEKDAYS, replaceClinicHours, updateClinicProfile, updateDoctorProfile,
+    uploadClinicLogo, uploadDoctorAvatar,
     type ClinicDayHours, type ClinicProfilePatch, type DoctorProfilePatch,
 } from "../../lib/db/clinic";
 import type { DBDoctor, DBHospital } from "../../lib/db";
@@ -75,8 +77,16 @@ export function EditClinicModal({
     const [phone, setPhone] = useState(hospital?.phone ?? "");
     const [email, setEmail] = useState(hospital?.email ?? "");
     const [website, setWebsite] = useState(hospital?.website ?? "");
+    const [logoPick, setLogoPick] = useState<CompressedImage | null>(null);
+    const [logoRemoved, setLogoRemoved] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // The staged pick's object URL is only ever referenced by THIS modal —
+    // revoke it on unmount (cancel, or a save that navigates away) so a
+    // logo picked and then abandoned doesn't leak a blob for the rest of the
+    // tab's life.
+    useEffect(() => () => { if (logoPick) URL.revokeObjectURL(logoPick.previewUrl); }, [logoPick]);
 
     const dirty =
         name !== (hospital?.name ?? "") ||
@@ -88,25 +98,33 @@ export function EditClinicModal({
         state !== (hospital?.state ?? "") ||
         phone !== (hospital?.phone ?? "") ||
         email !== (hospital?.email ?? "") ||
-        website !== (hospital?.website ?? "");
+        website !== (hospital?.website ?? "") ||
+        logoPick != null || logoRemoved;
 
     const submit = async () => {
         if (!name.trim() || busy) return;
-        const patch: ClinicProfilePatch = {
-            name: name.trim(),
-            clinic_type: orNull(clinicType),
-            facility_type: orNull(facilityType),
-            tagline: orNull(tagline),
-            address: orNull(address),
-            city: orNull(city),
-            state: orNull(state),
-            phone: orNull(phone),
-            email: orNull(email),
-            website: orNull(website),
-        };
         setBusy(true);
         setError(null);
         try {
+            // Upload happens on Save, alongside every other field — cancelling
+            // out of this modal after picking a logo must never leave an
+            // orphaned file in storage.
+            const logoUrl = logoPick
+                ? await uploadClinicLogo(hospitalId, logoPick)
+                : logoRemoved ? null : undefined;
+            const patch: ClinicProfilePatch = {
+                name: name.trim(),
+                clinic_type: orNull(clinicType),
+                facility_type: orNull(facilityType),
+                tagline: orNull(tagline),
+                address: orNull(address),
+                city: orNull(city),
+                state: orNull(state),
+                phone: orNull(phone),
+                email: orNull(email),
+                website: orNull(website),
+                ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
+            };
             await updateClinicProfile(hospitalId, patch);
             onSaved(patch);
             onClose();
@@ -134,6 +152,17 @@ export function EditClinicModal({
             }
         >
             <div className="flex flex-col gap-[9px]">
+                <div className="flex flex-col gap-[5px]">
+                    <label className="text-[11px] font-semibold text-[var(--cs-muted)]">Clinic logo</label>
+                    <ImagePicker
+                        tone="blue"
+                        currentUrl={logoRemoved ? null : hospital?.logo_url}
+                        picked={logoPick}
+                        fallbackIcon={<Building2 size={22} />}
+                        onPick={(img) => { setLogoPick(img); setLogoRemoved(false); }}
+                        onClear={() => { setLogoPick(null); setLogoRemoved(true); }}
+                    />
+                </div>
                 <Field id="clin-name" label="Clinic name" value={name} onChange={setName} />
                 <FieldRow>
                     <Field
@@ -175,8 +204,12 @@ export function EditClinicModal({
 // ── DOCTOR PROFILE ─────────────────────────────────────────────────────────
 
 export function EditDoctorModal({
-    doctorId, doctor, onClose, onSaved,
+    hospitalId, doctorId, doctor, onClose, onSaved,
 }: {
+    /** Only for the storage path (`{hospitalId}/{doctorId}-…`) the upload
+     *  policy scopes on — see the `clinic_and_doctor_asset_storage_policies`
+     *  migration. Never written to `doctors` itself. */
+    hospitalId: string;
     doctorId: string;
     doctor: DBDoctor | null;
     onClose: () => void;
@@ -187,28 +220,37 @@ export function EditDoctorModal({
     const [specialization, setSpecialization] = useState(doctor?.specialization ?? "");
     const [registration, setRegistration] = useState(doctor?.registration_number ?? "");
     const [phone, setPhone] = useState(doctor?.phone ?? "");
+    const [photoPick, setPhotoPick] = useState<CompressedImage | null>(null);
+    const [photoRemoved, setPhotoRemoved] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => () => { if (photoPick) URL.revokeObjectURL(photoPick.previewUrl); }, [photoPick]);
 
     const dirty =
         name !== (doctor?.name ?? "") ||
         qualification !== (doctor?.qualification ?? "") ||
         specialization !== (doctor?.specialization ?? "") ||
         registration !== (doctor?.registration_number ?? "") ||
-        phone !== (doctor?.phone ?? "");
+        phone !== (doctor?.phone ?? "") ||
+        photoPick != null || photoRemoved;
 
     const submit = async () => {
         if (!name.trim() || busy) return;
-        const patch: DoctorProfilePatch = {
-            name: name.trim(),
-            qualification: orNull(qualification),
-            specialization: orNull(specialization),
-            registration_number: orNull(registration),
-            phone: orNull(phone),
-        };
         setBusy(true);
         setError(null);
         try {
+            const avatarUrl = photoPick
+                ? await uploadDoctorAvatar(hospitalId, doctorId, photoPick)
+                : photoRemoved ? null : undefined;
+            const patch: DoctorProfilePatch = {
+                name: name.trim(),
+                qualification: orNull(qualification),
+                specialization: orNull(specialization),
+                registration_number: orNull(registration),
+                phone: orNull(phone),
+                ...(avatarUrl !== undefined ? { avatar_url: avatarUrl } : {}),
+            };
             await updateDoctorProfile(doctorId, patch);
             onSaved(patch);
             onClose();
@@ -235,6 +277,17 @@ export function EditDoctorModal({
             }
         >
             <div className="flex flex-col gap-[9px]">
+                <div className="flex flex-col gap-[5px]">
+                    <label className="text-[11px] font-semibold text-[var(--cs-muted)]">Doctor photo</label>
+                    <ImagePicker
+                        tone="violet"
+                        currentUrl={photoRemoved ? null : doctor?.avatar_url}
+                        picked={photoPick}
+                        fallbackIcon={<Stethoscope size={22} />}
+                        onPick={(img) => { setPhotoPick(img); setPhotoRemoved(false); }}
+                        onClear={() => { setPhotoPick(null); setPhotoRemoved(true); }}
+                    />
+                </div>
                 <Field id="clin-doc-name" label="Name" value={name} onChange={setName} />
                 <Field
                     id="clin-doc-qual" label="Qualification" value={qualification}

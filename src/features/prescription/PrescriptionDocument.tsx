@@ -1,12 +1,28 @@
 import { useEffect, useState } from "react";
-import { accentPalette } from "../../lib/brand/accent";
-import { RxWatermark, RxMonogram } from "../../components/RxMarks";
+import { accentPalette, type AccentPalette } from "../../lib/brand/accent";
+import { RxWatermark, RxMonogram, RxRule } from "../../components/RxMarks";
 import { freqLabelToSlot, freqSlotToLabel } from "../../lib/db";
 import type { DBDoctor, DBHospital } from "../../lib/db";
 import type { PrescriptionMedicine, Vitals } from "../../types";
 import { MEASURE_FIELDS } from "../consult/measures";
 import type { PrintFormat } from "./usePrintFormat";
 import { DEFAULT_PRESCRIPTION_CONFIG, type PrescriptionConfig } from "../../lib/db/clinic";
+import arenLogo from "../../assets/aren-logo.png";
+
+/**
+ * A fixed, deliberately hue-less ramp for `config.printMode === "monochrome"`
+ * — NOT `accentPalette("#000000")`. That function's saturation floor
+ * (`Math.max(0.35, …)`, there to stop a genuinely near-grey BRAND colour from
+ * producing a "boring" ramp) reads pure black as hue 0 at 35% saturation and
+ * hands back a dusty ROSE-grey, not neutral — the opposite of what a
+ * black-and-white printer needs. Every accent usage in `StandardDocument`
+ * reads through `rx`/`accentColor`, so swapping the source here is the whole
+ * fix — no per-usage edits below.
+ */
+const MONOCHROME_PALETTE: AccentPalette = {
+    base: "#171717", ink: "#171717", mid: "#4b5563",
+    tint: "#f3f4f6", veil: "#fafafa", onBase: "#ffffff",
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,7 +126,8 @@ function StandardDocument({
     config = DEFAULT_PRESCRIPTION_CONFIG,
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-    const accentColor = hospital?.accent_color ?? "#1268e8";
+    const monochrome = config.printMode === "monochrome";
+    const accentColor = monochrome ? MONOCHROME_PALETTE.base : (hospital?.accent_color ?? "#1268e8");
     /**
      * The clinic's colour as a usable ramp. THIS is the document the patient
      * actually receives: it renders off-screen and feeds print, PDF and
@@ -120,8 +137,13 @@ function StandardDocument({
      * `ink` is contrast-clamped against white, because this lands on cheap
      * stock out of a clinic laser printer and a pale brand colour must not
      * produce unreadable headings. See lib/brand/accent.ts.
+     *
+     * In `monochrome` mode the whole ramp is swapped for a fixed neutral one
+     * (see `MONOCHROME_PALETTE`'s own comment for why that isn't simply
+     * `accentPalette("#000000")`) — every render below reads the colour
+     * through `rx`/`accentColor`, so this one swap is the entire effect.
      */
-    const rx = accentPalette(hospital?.accent_color);
+    const rx = monochrome ? MONOCHROME_PALETTE : accentPalette(hospital?.accent_color);
     const today = formatDate(date);
 
     const doctorName = doctor?.name ?? "Doctor";
@@ -144,8 +166,13 @@ function StandardDocument({
     const showDoctorIdentity = config.identityMode !== "clinic";
     // The letterhead image is a SELECTION between two images the clinic and
     // doctor profiles already own — never an upload or a crop surface here.
-    const headerImage =
-        config.profileImage === "clinic_logo" ? clinicLogo
+    // In `monochrome` mode the actual photo/logo is forced OFF regardless of
+    // that selection: a detailed colour image halftones badly on a plain
+    // black-and-white printer, so the initials crest below (already the
+    // "missing image" fallback) becomes the letterhead mark instead — never
+    // silently, only ever when the clinic explicitly chose monochrome.
+    const headerImage = monochrome ? null
+        : config.profileImage === "clinic_logo" ? clinicLogo
             : config.profileImage === "doctor_photo" ? doctorAvatar
                 : null;
     // The initials crest still stands in when the chosen image is missing,
@@ -154,12 +181,35 @@ function StandardDocument({
     const clinicEmail = hospital?.email ?? "";
     const clinicWebsite = hospital?.website ?? "";
 
+    // ── Neutral-safe colour picks ──────────────────────────────────────────
+    // Everything above (`rx`, `accentColor`) already swaps for monochrome
+    // because every OTHER usage in this file reads through those two. These
+    // five spots don't — they were hardcoded brand-ish hues (a pale lilac
+    // investigations pill, an amber follow-up badge, a light-blue table
+    // header/patient strip, a hardcoded blue dosage dot) that were never
+    // driven by the clinic's own accent in the first place, so the top-level
+    // swap above can't reach them. A pale fill like `#d8b4fe` or `#fcd34d`
+    // converts to a barely-visible near-white grey on a real monochrome
+    // laser — legible on a colour screen, close to invisible once actually
+    // printed — so monochrome gets its own well-tested neutral values here
+    // rather than trusting the printer to convert them well.
+    const tableHeadBg = monochrome ? "#f3f4f6" : "#f0f4ff";
+    const stripBg = monochrome ? "#f7f7f7" : "#f5f8ff";
+    const stripBorder = monochrome ? "#dddddd" : "#dce8ff";
+    const pillBorder = monochrome ? "#999999" : "#d8b4fe";
+    const pillText = monochrome ? "#111111" : "#6d28d9";
+    const pillBg = monochrome ? "#f2f2f2" : "#f5f3ff";
+    const followUpText = monochrome ? "#111111" : "#92400e";
+    const followUpBg = monochrome ? "#f2f2f2" : "#fffbeb";
+    const followUpBorder = monochrome ? "#999999" : "#fcd34d";
+    const dotColor = monochrome ? "#171717" : "#1268e8";
+
     const pageStyle: React.CSSProperties =
         format === "a4"
             ? { width: "210mm", minHeight: "297mm", padding: "16mm 18mm" }
             : { width: "148mm", minHeight: "210mm", padding: "10mm 12mm" };
 
-    const headingSize = format === "a4" ? "18px" : "15px";
+    const headingSize = format === "a4" ? "22px" : "18px";
     const bodySize = format === "a4" ? "11px" : "9.5px";
     const smallSize = format === "a4" ? "9px" : "8px";
 
@@ -255,8 +305,20 @@ function StandardDocument({
                 {/* Clinic info */}
                 {showClinicIdentity && (
                     <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: headingSize, fontWeight: 900, color: "#0d1b35", lineHeight: 1.2 }}>
+                        <div style={{ fontSize: headingSize, fontWeight: 900, letterSpacing: "-0.01em", color: "#0d1b35", lineHeight: 1.15 }}>
                             {clinicName}
+                        </div>
+                        {/* The one deliberate SVG flourish on the page: a
+                            short accent rule fading to nothing, the same
+                            `RxRule` mark every clinic-coloured section divider
+                            elsewhere in this codebase already uses (never a
+                            new mark invented for this one spot). Fixed narrow
+                            width so it reads as an underline accent under the
+                            NAME specifically, not a full-width bar competing
+                            with the 3px accent border the whole letterhead
+                            already has. */}
+                        <div style={{ width: 46, marginTop: 3 }}>
+                            <RxRule color={rx.mid} />
                         </div>
                         {config.showClinicAddress && clinicAddress && (
                             <div style={{ fontSize: smallSize, color: "#555", marginTop: 3 }}>{clinicAddress}</div>
@@ -317,7 +379,7 @@ function StandardDocument({
             {/* ── Patient strip ── */}
             <div style={{
                 display: "flex", flexWrap: "wrap", gap: "14px",
-                background: "#f5f8ff", border: "1px solid #dce8ff",
+                background: stripBg, border: `1px solid ${stripBorder}`,
                 borderRadius: 8, padding: "8px 12px", marginBottom: 10,
             }}>
                 <PatientCell label="Patient" value={patient.name} bold />
@@ -339,7 +401,7 @@ function StandardDocument({
                     {MEASURE_FIELDS.map((f) => {
                         const value = vitals[f.key];
                         return value ? (
-                            <VitalItem key={f.key} label={f.rxLabel} value={value} unit={f.unit} />
+                            <VitalItem key={f.key} label={f.rxLabel} value={value} unit={f.unit} labelColor={rx.ink} />
                         ) : null;
                     })}
                 </div>
@@ -385,7 +447,7 @@ function StandardDocument({
                     {/* Medicine table */}
                     <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 10, fontSize: bodySize }}>
                         <thead>
-                            <tr style={{ background: "#f0f4ff" }}>
+                            <tr style={{ background: tableHeadBg }}>
                                 <th style={thStyle}>#</th>
                                 <th style={{ ...thStyle, textAlign: "left" }}>Medicine</th>
                                 <th style={thStyle}>M</th>
@@ -410,10 +472,10 @@ function StandardDocument({
                                                 </div>
                                             )}
                                         </td>
-                                        <td style={dotTd}><Dot active={m} /></td>
-                                        <td style={dotTd}><Dot active={a} /></td>
-                                        <td style={dotTd}><Dot active={e} /></td>
-                                        <td style={dotTd}><Dot active={n} /></td>
+                                        <td style={dotTd}><Dot active={m} color={dotColor} /></td>
+                                        <td style={dotTd}><Dot active={a} color={dotColor} /></td>
+                                        <td style={dotTd}><Dot active={e} color={dotColor} /></td>
+                                        <td style={dotTd}><Dot active={n} color={dotColor} /></td>
                                         <td style={{ ...tdStyle, textAlign: "center", whiteSpace: "nowrap" }}>{med.duration}</td>
                                         <td style={tdStyle}>
                                             <span style={{ color: "#555", fontStyle: "italic" }}>{med.instructions}</span>
@@ -440,7 +502,7 @@ function StandardDocument({
                         {tests.map((t) => (
                             <span key={t} style={{
                                 fontSize: bodySize, padding: "2px 10px", borderRadius: 999,
-                                border: "1px solid #d8b4fe", color: "#6d28d9", background: "#f5f3ff",
+                                border: `1px solid ${pillBorder}`, color: pillText, background: pillBg,
                             }}>
                                 {t}
                             </span>
@@ -472,22 +534,40 @@ function StandardDocument({
                     {config.showRegistration && doctorReg && <div style={{ fontSize: smallSize, color: "#999" }}>Reg. {doctorReg}</div>}
                 </div>
 
-                {/* QR + Follow-up */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                    {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR" style={{ width: 72, height: 72 }} />
-                    ) : (
-                        <div style={{
-                            width: 72, height: 72, border: "1.5px dashed #ccc",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: "8px", color: "#aaa", borderRadius: 4,
-                        }}>QR</div>
-                    )}
-                    <div style={{ fontSize: "8px", color: "#aaa", textAlign: "center" }}>Scan to view</div>
+                {/* QR + Follow-up. The QR itself is a bordered box now,
+                    rather than floating loose — a bordered frame is what
+                    reads as "this is meant to be scanned" rather than "an
+                    image that happened to render here". The QR's own pixels
+                    are already pure black/white regardless of `monochrome` —
+                    that is how the format works — so only the frame's
+                    border/caption need the neutral-safe colour. */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+                    <div style={{
+                        padding: 5, border: `1px solid ${rx.mid}`, borderRadius: 6,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                        {qrDataUrl ? (
+                            <img src={qrDataUrl} alt="QR" style={{ width: 66, height: 66, display: "block" }} />
+                        ) : (
+                            <div style={{
+                                width: 66, height: 66,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: "8px", color: "#aaa",
+                            }}>QR</div>
+                        )}
+                    </div>
+                    {/* This QR encodes the prescription's own details for a
+                        pharmacist/records check, NOT a link to a live web
+                        page — there is no public per-prescription profile
+                        page in this product yet, so the caption says only
+                        what actually happens when it's scanned. */}
+                    <div style={{ fontSize: "7.5px", color: "#999", textAlign: "center", lineHeight: 1.35 }}>
+                        Scan to verify this prescription
+                    </div>
                     {followUpDays && (
                         <div style={{
-                            fontSize: smallSize, fontWeight: 700, color: "#92400e",
-                            background: "#fffbeb", border: "1px solid #fcd34d",
+                            fontSize: smallSize, fontWeight: 700, color: followUpText,
+                            background: followUpBg, border: `1px solid ${followUpBorder}`,
                             borderRadius: 999, padding: "2px 10px", marginTop: 2,
                         }}>
                             Follow-up in {followUpDays} days
@@ -555,15 +635,22 @@ function StandardDocument({
                     {config.footerNote.trim()}
                 </div>
             )}
+            {/* One small line, bottom-right, above one clean closing rule —
+                replacing the old two-column "Generated: {date} / Powered by
+                AREN CORTEX" strip. Deliberately just this: no date, no
+                second line, nothing else sharing the space with it. */}
             {isBranded && (
-                <div style={{
-                    marginTop: 12, paddingTop: 8, borderTop: "1px solid #f0f0f0",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                }}>
-                    <div style={{ fontSize: "8px", color: "#bbb" }}>Generated: {today}</div>
-                    <div style={{ fontSize: "8px", color: "#bbb", fontWeight: 700, letterSpacing: "0.1em" }}>
-                        Powered by AREN CORTEX
+                <div style={{ marginTop: 12 }}>
+                    <div style={{
+                        display: "flex", justifyContent: "flex-end", alignItems: "center",
+                        gap: 5, marginBottom: 6,
+                    }}>
+                        <img src={arenLogo} alt="" style={{ width: 11, height: 11, objectFit: "contain", borderRadius: 2 }} />
+                        <span style={{ fontSize: "7.5px", color: "#aaa", fontWeight: 600, letterSpacing: "0.01em" }}>
+                            Generated with care, through Arenode
+                        </span>
                     </div>
+                    <div style={{ borderTop: "1px solid #eee" }} />
                 </div>
             )}
         </div>
@@ -789,12 +876,12 @@ const dotTd: React.CSSProperties = {
     textAlign: "center",
 };
 
-function Dot({ active }: { active: boolean }) {
+function Dot({ active, color = "#1268e8" }: { active: boolean; color?: string }) {
     return (
         <div style={{
             width: 10, height: 10, borderRadius: "50%", margin: "0 auto",
-            background: active ? "#1268e8" : "transparent",
-            border: `1.5px solid ${active ? "#1268e8" : "#ccc"}`,
+            background: active ? color : "transparent",
+            border: `1.5px solid ${active ? color : "#ccc"}`,
         }} />
     );
 }
@@ -817,10 +904,10 @@ function PatientCell({ label, value, bold, mono }: { label: string; value: strin
     );
 }
 
-function VitalItem({ label, value, unit }: { label: string; value: string; unit: string }) {
+function VitalItem({ label, value, unit, labelColor = "#1268e8" }: { label: string; value: string; unit: string; labelColor?: string }) {
     return (
         <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-            <span style={{ fontSize: "8px", fontWeight: 700, color: "#1268e8", textTransform: "uppercase" }}>{label}</span>
+            <span style={{ fontSize: "8px", fontWeight: 700, color: labelColor, textTransform: "uppercase" }}>{label}</span>
             <span style={{ fontSize: "11px", fontWeight: 700, color: "#111" }}>{value}</span>
             <span style={{ fontSize: "8px", color: "#999" }}>{unit}</span>
         </div>

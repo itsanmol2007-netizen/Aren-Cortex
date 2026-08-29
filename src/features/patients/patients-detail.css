@@ -10,27 +10,11 @@
 ──────────────────────────────────────────────────────────────────────────── */
 
 /* ── Topbar buttons (sit inside the reused .prec-page-header) ──────────────── */
-
-.prec-back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 12px;
-    background: none;
-    border: 1px solid #d0d8e8;
-    border-radius: 8px;
-    color: #475569;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: border-color 0.12s, background 0.12s, color 0.12s;
-}
-
-.prec-back-btn:hover {
-    background: #f4f7ff;
-    border-color: #b8c8f0;
-    color: #1268e8;
-}
+/* The back button itself moved to `components/BackButton.tsx` (Tailwind) —
+   this page's copy is now a plain wrapper around that shared component. The
+   values here (border/hover colours, padding, radius) live on IN that
+   component, unchanged; nothing else in this codebase referenced
+   `.prec-back-btn`, so the rule is gone rather than left dead. */
 
 .prec-start-consult-btn--topbar {
     display: inline-flex;

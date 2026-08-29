@@ -564,6 +564,7 @@ export function ClinicPage({
             )}
             {doctorModalOpen && (
                 <EditDoctorModal
+                    hospitalId={identity.hospitalId}
                     doctorId={identity.doctorId}
                     doctor={doctor}
                     onClose={() => setDoctorModalOpen(false)}

@@ -30,10 +30,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
-    Check, ChevronLeft, FileSignature, Image as ImageIcon, MessageSquareQuote,
-    Plus, ToggleLeft, ToggleRight, UserSquare,
+    Check, FileSignature, Image as ImageIcon, MessageSquareQuote,
+    Palette, Plus, ToggleLeft, ToggleRight, UserSquare,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
+import { BackButton } from "../../components/BackButton";
 import { RxPreview } from "./RxPreview";
 import { Heading, INPUT_CLASS, RemoveButton, RowText, TONE } from "./ui";
 import type { PrintFormat } from "../prescription/usePrintFormat";
@@ -240,34 +241,31 @@ export function PrescriptionEditorPage({
                 onOpenSidebar={onOpenSidebar}
                 title="Prescription Pad"
                 subtitle="Everything that appears on your printed prescription"
-                rightSlot={
-                    <>
-                        {/* Not a toast and not a Save button — the page saves
-                            as you change it, and this says so quietly. */}
-                        <span
-                            className={
-                                "whitespace-nowrap text-[11px] font-semibold " +
-                                (saveState === "error"
-                                    ? "text-[#fda4af]"
-                                    : saveState === "saving"
-                                        ? "text-white/70"
-                                        : "text-white/55")
-                            }
-                        >
-                            {saveState === "saving" ? "Saving…"
-                                : saveState === "error" ? "Not saved"
-                                    : "Saved automatically"}
-                        </span>
-                        <button type="button" className="ws-stat-pill" onClick={onBack}>
-                            <span className="ws-stat-icon"><ChevronLeft size={12} /></span>
-                            <span className="ws-stat-text">
-                                <span className="ws-stat-label">Back to</span>
-                                <span className="ws-stat-value">Clinic</span>
-                            </span>
-                        </button>
-                    </>
-                }
             />
+
+            {/* The one "back to my parent page" position in Cortex — light
+                body, top-left, below the dark header, never inside it. Same
+                row shape `PatientRecord.tsx` uses (back-left, one action
+                right): the save-state readout takes the action slot here,
+                since this page has no separate primary action to put there. */}
+            <div className="flex items-center gap-[9px] border-b border-[#d0d8e8] bg-white px-[56px] py-[10px] max-[900px]:px-[12px]">
+                <BackButton label="Back to Clinic" onClick={onBack} />
+                <div className="flex-1" />
+                {/* Not a toast and not a Save button — the page saves as you
+                    change it, and this says so quietly. */}
+                <span
+                    className={
+                        "whitespace-nowrap text-[11px] font-semibold " +
+                        (saveState === "error" ? "text-[var(--cs-red)]"
+                            : saveState === "saving" ? "text-[var(--cs-label)]"
+                                : "text-[var(--cs-faint)]")
+                    }
+                >
+                    {saveState === "saving" ? "Saving…"
+                        : saveState === "error" ? "Not saved"
+                            : "Saved automatically"}
+                </span>
+            </div>
 
             <div className="flex w-full flex-1 flex-col overflow-y-auto px-[56px] pb-[44px] pt-[15px] max-[900px]:px-[12px]">
                 {/* Asymmetric on purpose: the prescription is the subject of
@@ -353,7 +351,11 @@ export function PrescriptionEditorPage({
                                 changed where they belong. */}
                             <SegmentedChoice
                                 label="Profile image"
-                                hint="Managed from the clinic and doctor profiles."
+                                hint={
+                                    config.printMode === "monochrome"
+                                        ? "Not shown while printing black & white — see Print colour below."
+                                        : "Managed from the clinic and doctor profiles."
+                                }
                                 value={config.profileImage}
                                 options={[
                                     { value: "clinic_logo", label: "Clinic logo" },
@@ -361,6 +363,23 @@ export function PrescriptionEditorPage({
                                     { value: "none", label: "None" },
                                 ]}
                                 onChange={(v) => set("profileImage", v)}
+                            />
+                        </ControlGroup>
+
+                        <ControlGroup
+                            icon={<Palette size={14} />}
+                            title="Print colour"
+                            subtitle="For a plain A5/A4 printer with no colour ink."
+                        >
+                            <SegmentedChoice
+                                label="Colour"
+                                hint="Black & white uses your clinic's initials instead of a logo or photo — a detailed image doesn't print cleanly without colour. Need a receipt-style slip instead? Switch the preview above to Thermal — it's already black & white."
+                                value={config.printMode}
+                                options={[
+                                    { value: "color", label: "Colour" },
+                                    { value: "monochrome", label: "Black & white" },
+                                ]}
+                                onChange={(v) => set("printMode", v)}
                             />
                         </ControlGroup>
 

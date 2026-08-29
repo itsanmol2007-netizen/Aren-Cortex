@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
+import type { CompressedImage } from "../image/compress";
 
 // ── CLINIC IDENTITY ────────────────────────────────────────────────────────────
 
@@ -40,6 +41,14 @@ export type ClinicProfilePatch = {
     email: string | null;
     website: string | null;
     tagline: string | null;
+    /**
+     * Present ONLY on a save that actually changed the logo (a new upload, or
+     * an explicit remove) — see `EditClinicModal`. Omitted (not merely
+     * `undefined`-valued; the key itself absent) on every other save, so a
+     * doctor editing their phone number can never accidentally null out a
+     * logo they never touched.
+     */
+    logo_url?: string | null;
 };
 
 export async function updateClinicProfile(
@@ -62,6 +71,9 @@ export type DoctorProfilePatch = {
     specialization: string | null;
     registration_number: string | null;
     phone: string | null;
+    /** Same rule as `ClinicProfilePatch.logo_url` — present only when this
+     *  save actually changed the photo. */
+    avatar_url?: string | null;
 };
 
 export async function updateDoctorProfile(
@@ -73,6 +85,50 @@ export async function updateDoctorProfile(
         .update(patch)
         .eq("id", doctorId);
     if (error) throw new Error(`updateDoctorProfile: ${error.message}`);
+}
+
+// ── LOGO / PHOTO UPLOAD ─────────────────────────────────────────────────────────
+//
+// The compression itself lives in `lib/image/compress.ts` — a pure browser
+// concern, not a DB one. This is only the upload half: hand it an already-
+// compressed image and get back the public URL to write onto `hospitals` /
+// `doctors`. Both buckets are `public: true` (no signed-URL dance to read
+// back) and RLS-scoped by a `{hospital_id}/...` path prefix, reusing the same
+// `current_user_hospital_id()` every other `hospital_isolation` policy in
+// this schema already calls — see the `clinic_and_doctor_asset_storage_
+// policies` migration.
+//
+// `upsert: true` + a fresh timestamp in the key rather than a fixed
+// `logo`/`avatar` filename: overwriting the SAME key would leave old copies
+// unreachable but not deleted (Supabase Storage doesn't garbage-collect a
+// replaced object on its own), so an ever-changing key at least makes each
+// upload independently inspectable/removable later, at the cost of the old
+// object lingering in the bucket until something cleans it up — no such
+// cleanup exists yet, flagged rather than built speculatively here.
+
+export async function uploadClinicLogo(
+    hospitalId: string,
+    image: CompressedImage
+): Promise<string> {
+    const path = `${hospitalId}/logo-${Date.now()}.${image.ext}`;
+    const { error } = await supabase.storage
+        .from("clinic-assets")
+        .upload(path, image.blob, { contentType: image.blob.type, upsert: true });
+    if (error) throw new Error(`uploadClinicLogo: ${error.message}`);
+    return supabase.storage.from("clinic-assets").getPublicUrl(path).data.publicUrl;
+}
+
+export async function uploadDoctorAvatar(
+    hospitalId: string,
+    doctorId: string,
+    image: CompressedImage
+): Promise<string> {
+    const path = `${hospitalId}/${doctorId}-${Date.now()}.${image.ext}`;
+    const { error } = await supabase.storage
+        .from("doctor-assets")
+        .upload(path, image.blob, { contentType: image.blob.type, upsert: true });
+    if (error) throw new Error(`uploadDoctorAvatar: ${error.message}`);
+    return supabase.storage.from("doctor-assets").getPublicUrl(path).data.publicUrl;
 }
 
 // ── CLINIC HOURS ───────────────────────────────────────────────────────────────
@@ -178,6 +234,16 @@ export async function replaceClinicHours(
 export type PrescriptionConfig = {
     identityMode: "clinic" | "doctor" | "both";
     profileImage: "clinic_logo" | "doctor_photo" | "none";
+    /**
+     * NOT a fourth `PrintFormat` alongside a5/a4/thermal — format is paper
+     * geometry, colour is a separate axis a clinic sets once. `"monochrome"`
+     * forces the a5/a4 renderer onto a fixed neutral grey/black palette and
+     * drops the letterhead photo/logo for the initials crest (a detailed
+     * colour image halftones badly on a plain black-and-white printer).
+     * Thermal is unaffected — it was already monochrome by construction, and
+     * stays the answer for a receipt-style slip rather than a full sheet.
+     */
+    printMode: "color" | "monochrome";
     showQualification: boolean;
     showSpecialty: boolean;
     showRegistration: boolean;
@@ -200,6 +266,7 @@ export type PrescriptionConfig = {
 export const DEFAULT_PRESCRIPTION_CONFIG: PrescriptionConfig = {
     identityMode: "both",
     profileImage: "clinic_logo",
+    printMode: "color",
     showQualification: true,
     showSpecialty: true,
     showRegistration: true,
@@ -222,7 +289,7 @@ export async function fetchPrescriptionConfig(hospitalId: string): Promise<Presc
         // One string literal, never a concatenation: supabase-js infers the
         // row's type from the literal itself, and `a + b` erases that back to
         // `GenericStringError` (every field then reads as a type error).
-        .select("identity_mode, profile_image, show_qualification, show_specialty, show_registration, show_clinic_address, show_clinic_phone, show_clinic_email, show_website, show_signature, footer_note, default_advice")
+        .select("identity_mode, profile_image, print_mode, show_qualification, show_specialty, show_registration, show_clinic_address, show_clinic_phone, show_clinic_email, show_website, show_signature, footer_note, default_advice")
         .eq("hospital_id", hospitalId)
         .maybeSingle();
     if (error) throw new Error(`fetchPrescriptionConfig: ${error.message}`);
@@ -231,6 +298,7 @@ export async function fetchPrescriptionConfig(hospitalId: string): Promise<Presc
     return {
         identityMode: data.identity_mode as PrescriptionConfig["identityMode"],
         profileImage: data.profile_image as PrescriptionConfig["profileImage"],
+        printMode: data.print_mode as PrescriptionConfig["printMode"],
         showQualification: data.show_qualification,
         showSpecialty: data.show_specialty,
         showRegistration: data.show_registration,
@@ -255,6 +323,7 @@ export async function savePrescriptionConfig(
                 hospital_id: hospitalId,
                 identity_mode: config.identityMode,
                 profile_image: config.profileImage,
+                print_mode: config.printMode,
                 show_qualification: config.showQualification,
                 show_specialty: config.showSpecialty,
                 show_registration: config.showRegistration,

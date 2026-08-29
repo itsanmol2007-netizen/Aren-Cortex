@@ -26,7 +26,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import {
     AlertCircle,
-    ArrowLeft,
     ArrowDown,
     ArrowLeftRight,
     ArrowRight,
@@ -56,6 +55,7 @@ import {
 } from "../../lib/db";
 import type { Patient } from "../../types";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
+import { BackButton } from "../../components/BackButton";
 import { PastVisitCard } from "../../components/PastVisitCard";
 import ReviewModal from "../../components/ReviewModal";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
@@ -560,10 +560,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
             />
 
             <div className="prec-page-header">
-                <button type="button" className="prec-back-btn" onClick={onBack}>
-                    <ArrowLeft size={13} />
-                    <span>All Patients</span>
-                </button>
+                <BackButton label="All Patients" onClick={onBack} />
                 <div style={{ flex: 1 }} />
                 <button type="button" className="prec-start-consult-btn--topbar" onClick={handleStartConsult}>
                     <Plus size={12} />

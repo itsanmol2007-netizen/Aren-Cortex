@@ -23,8 +23,10 @@
 // by concatenation.
 // ---------------------------------------------------------------------------
 
+import { useId, useRef } from "react";
 import type { ReactNode } from "react";
-import { X } from "lucide-react";
+import { Upload, X } from "lucide-react";
+import { compressImage, formatBytes, type CompressedImage } from "../../lib/image/compress";
 
 // ── The one cascade trap on this codebase, and how these files dodge it ────
 // `src/styles/base.css` is UNLAYERED and styles bare elements:
@@ -354,5 +356,121 @@ export function FormError({ message }: { message: string }) {
 export function FormNote({ children }: { children: ReactNode }) {
     return (
         <p className="m-0 text-[11px] font-normal leading-[1.5] text-[var(--cs-faint)]">{children}</p>
+    );
+}
+
+// ── Logo / photo picker ─────────────────────────────────────────────────────
+//
+// One component, used by both `EditClinicModal` (the logo) and
+// `EditDoctorModal` (the photo) — the two need the identical shape (a square
+// preview, a "Change photo" trigger, a size readout, a Remove link), so this
+// is written once rather than as two near-identical blocks.
+//
+// It owns PICKING and COMPRESSING (`compressImage`, `lib/image/compress.ts`)
+// but never uploads anything itself — the actual upload happens on the
+// modal's own Save, alongside every other field on the form, so cancelling
+// the modal can never leave an orphaned file in storage from a pick nobody
+// committed. The parent holds the resulting `CompressedImage` in state and
+// passes it back in here as `picked`.
+export function ImagePicker({
+    tone, currentUrl, picked, busy, error, fallbackIcon, onPick, onClear,
+}: {
+    tone: Tone;
+    /** The already-stored image (`hospitals.logo_url` / `doctors.avatar_url`),
+     *  shown until a new one is picked. */
+    currentUrl: string | null | undefined;
+    /** A freshly compressed, not-yet-uploaded pick. Takes over the preview
+     *  and shows its own size — the whole point of doing this client-side is
+     *  a number the doctor can actually see before it ever leaves the
+     *  device. */
+    picked: CompressedImage | null;
+    busy?: boolean;
+    error?: string | null;
+    /** What shows in the square when there is neither `currentUrl` nor
+     *  `picked` — an icon in this card's own tone, never a generic blank box. */
+    fallbackIcon: ReactNode;
+    onPick: (image: CompressedImage) => void;
+    /** Clears a staged pick, or — if there was no pick — marks the EXISTING
+     *  image for removal. The caller can't tell these apart from its own
+     *  state alone, so this fires unconditionally whenever there is
+     *  something to clear (`currentUrl || picked`). */
+    onClear: () => void;
+}) {
+    const inputId = useId();
+    // Revoked on every new pick and on unmount — an object URL nobody revokes
+    // is a blob the tab never frees for the rest of the session.
+    const lastPreviewUrl = useRef<string | null>(null);
+
+    const handleFile = async (file: File) => {
+        try {
+            const image = await compressImage(file);
+            if (lastPreviewUrl.current) URL.revokeObjectURL(lastPreviewUrl.current);
+            lastPreviewUrl.current = image.previewUrl;
+            onPick(image);
+        } catch (e) {
+            // The modal surfaces this through its own `error` prop — this
+            // component only forwards the file, the parent owns error state
+            // alongside the rest of its form.
+            console.error("ImagePicker:", e);
+        }
+    };
+
+    const previewUrl = picked?.previewUrl ?? currentUrl ?? null;
+    const clearable = !!(picked || currentUrl);
+
+    return (
+        <div className="flex items-center gap-[12px]">
+            <div className={`grid h-[64px] w-[64px] flex-none place-items-center overflow-hidden rounded-[12px] border ${TONE[tone].border} bg-[var(--cs-page)] ${TONE[tone].text}`}>
+                {previewUrl ? (
+                    <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+                ) : fallbackIcon}
+            </div>
+            <div className="flex min-w-0 flex-col gap-[4px]">
+                <div className="flex items-center gap-[10px]">
+                    <label
+                        htmlFor={inputId}
+                        className={
+                            "inline-flex cursor-pointer items-center gap-[5px] rounded-full border bg-transparent " +
+                            `px-[12px] py-[6px] text-[11.5px] font-semibold transition-colors ` +
+                            `${TONE[tone].border} ${TONE[tone].text} ${TONE[tone].softHover}`
+                        }
+                    >
+                        <Upload size={12} /> {busy ? "Compressing…" : previewUrl ? "Change photo" : "Upload photo"}
+                    </label>
+                    <input
+                        id={inputId}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={busy}
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = ""; // lets the same file be re-picked later
+                            if (file) void handleFile(file);
+                        }}
+                    />
+                    {clearable && !busy && (
+                        <button
+                            type="button"
+                            onClick={onClear}
+                            className="cursor-pointer border-0 bg-transparent p-0 text-[11px] font-semibold text-[var(--cs-faint)] hover:text-[var(--cs-red)]"
+                        >
+                            Remove
+                        </button>
+                    )}
+                </div>
+                {error ? (
+                    <span className="text-[10.5px] font-medium text-[var(--cs-red)]">{error}</span>
+                ) : picked ? (
+                    <span className="text-[10.5px] text-[var(--cs-green)]">
+                        {formatBytes(picked.blob.size)} · ready to save
+                    </span>
+                ) : (
+                    <span className="text-[10.5px] text-[var(--cs-faint)]">
+                        Compressed automatically, under ~180 KB
+                    </span>
+                )}
+            </div>
+        </div>
     );
 }

@@ -40,6 +40,10 @@ free-text and composition-request fallbacks.
 | Clinic information / doctor profile / opening hours forms | `src/features/clinic/ClinicModals.tsx` |
 | The specimen patient + medicines both Rx previews show | `src/features/clinic/samplePrescription.ts` — one file, both surfaces |
 | How the config reaches a REAL printed prescription | `features/prescription/usePrescriptionConfig.ts`, loaded inside `ReviewModal` (the one door Consult / Patient Record / Print RX all print through) |
+| Logo/photo compression before upload | `lib/image/compress.ts` — the one place |
+| The shared logo/photo picker UI | `features/clinic/ui.tsx` → `ImagePicker` |
+| Black & white printing | `PrescriptionConfig.printMode`, read in `PrescriptionDocument.tsx`'s `StandardDocument` (thermal is unaffected — already monochrome) |
+| The one "back to parent page" button | `components/BackButton.tsx` — the one place, Cortex app only (not `frontdesk/`) |
 | Undo/remove an accepted row in place | `useConsultPlan.ts` → `removeAcceptedIntent` (dispatches to the per-type remover) |
 | A confirmed condition's silent Case-Sheet chip, and taking it back off | `useLongitudinalRecord.ts` → `confirmCondition` / `unconfirmCondition` |
 | The free-text fallback (finding/test/referral/advice) — matching/scoring | `src/features/consult/freeTerms.ts` |
