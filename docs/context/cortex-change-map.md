@@ -33,7 +33,13 @@ free-text and composition-request fallbacks.
 | What saving a consult writes | `lib/db/intelligence.ts` → `saveConsult` |
 | The learning write | `lib/db/synapse.ts` → `commitConsultation` |
 | Body-system order/labels | `lib/synapse/systems.ts` — the one place |
-| A DB query | `lib/db/{reference,patients,intelligence,prescriptions,synapse}.ts` — never `lib/db.ts` |
+| A DB query | `lib/db/{reference,patients,intelligence,prescriptions,synapse,clinic}.ts` — never `lib/db.ts` |
+| The Clinic page — cards, identity surface, layout | `src/features/clinic/ClinicPage.tsx` (Tailwind, no stylesheet) |
+| A Clinic/Prescription-Editor visual primitive (card, toggle, field, tone) | `src/features/clinic/ui.tsx` — the one place |
+| What a prescription PRINTS (letterhead, footer, standing advice) | `src/features/clinic/PrescriptionEditorPage.tsx` writes the config; `features/prescription/PrescriptionDocument.tsx` renders it. Never the other way round. |
+| Clinic information / doctor profile / opening hours forms | `src/features/clinic/ClinicModals.tsx` |
+| The specimen patient + medicines both Rx previews show | `src/features/clinic/samplePrescription.ts` — one file, both surfaces |
+| How the config reaches a REAL printed prescription | `features/prescription/usePrescriptionConfig.ts`, loaded inside `ReviewModal` (the one door Consult / Patient Record / Print RX all print through) |
 | Undo/remove an accepted row in place | `useConsultPlan.ts` → `removeAcceptedIntent` (dispatches to the per-type remover) |
 | A confirmed condition's silent Case-Sheet chip, and taking it back off | `useLongitudinalRecord.ts` → `confirmCondition` / `unconfirmCondition` |
 | The free-text fallback (finding/test/referral/advice) — matching/scoring | `src/features/consult/freeTerms.ts` |

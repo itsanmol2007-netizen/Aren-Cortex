@@ -7,3 +7,4 @@ export * from "./db/patients";
 export * from "./db/intelligence";
 export * from "./db/prescriptions";
 export * from "./db/carePlans";
+export * from "./db/clinic";

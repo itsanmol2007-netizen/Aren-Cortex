@@ -94,3 +94,28 @@ that file, unchanged in content, just moved.
   every request count in a `page.on("request")` trace taken against `vite`
   dev — build + `vite preview` for a trace that reflects what a real user's
   browser actually sends.
+
+- **Tailwind utilities lose to `src/styles/base.css`.** That file is
+  UNLAYERED and styles bare elements (`h2 { font-size:12px; text-transform:
+  uppercase }`, `input, select { height:31px; padding:0 9px; font-size:13px }`,
+  `textarea { min-height:70px }`). Tailwind's utilities live in the
+  `utilities` cascade layer, and unlayered CSS beats every layer regardless of
+  specificity — so `text-[17px]` on an `<h2>` silently renders at 12px, in
+  caps. Caught 2026-08-29 by measuring `getComputedStyle`, not by looking:
+  the page read as "slightly small headings", not as broken. Two dodges, both
+  used by `features/clinic/`: render headings as
+  `<div role="heading" aria-level>` (`ui.tsx`'s `Heading`), and mark form-
+  control declarations with Tailwind v4's trailing `!`. **The real fix is to
+  move base.css's bare-element block into `@layer base`** — that changes the
+  cascade on every legacy screen at once, so it is flagged here rather than
+  done in passing.
+- **A Tailwind class assembled at runtime is never generated.** Tailwind finds
+  classes by scanning source TEXT, so `` `hover:${tone.soft}` `` produces
+  nothing — the literal string appears nowhere. Write every class whole,
+  variants included, and interpolate only complete entries (see the `TONE`
+  table in `features/clinic/ui.tsx`).
+- **Scaling a preview on width alone blows up the row it sits in.** An A5
+  page rendered at a 700px column's full width is 994px tall, and
+  `items-stretch` then hands that height to every card beside it (measured
+  2026-08-29: a 519px Clinic Hours card wrapped around a 200px empty state).
+  `RxPreview` takes a `maxHeight` and scales on whichever axis binds first.

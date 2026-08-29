@@ -16,6 +16,7 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { PracticePage } from "./features/practice/PracticePage";
 import { CommunicationPage } from "./features/communication/CommunicationPage";
 import { ClinicPage } from "./features/clinic/ClinicPage";
+import { PrescriptionEditorPage } from "./features/clinic/PrescriptionEditorPage";
 import { SupportPage } from "./features/support/SupportPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
@@ -185,6 +186,15 @@ function App() {
   const [toast, setToast] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
+  /**
+   * The Prescription Editor is a full PAGE, but a page UNDER Clinic — it has
+   * no sidebar entry, because a doctor reaches it by asking "what does my
+   * prescription look like", never by navigating to it cold. So it is a view
+   * flag on Clinic rather than a sixth `SidebarPage`: leaving Clinic by any
+   * route (the sidebar, a Consult) puts it away, which `handleSidebarNavigate`
+   * below does in one line.
+   */
+  const [prescriptionEditorOpen, setPrescriptionEditorOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
@@ -685,6 +695,7 @@ function App() {
     }
     setActivePage(page);
     setSidebarOpen(false);
+    setPrescriptionEditorOpen(false);
     // Any consult-only overlay must die the moment we leave the consult screen —
     // it has no business surviving on Patients/Prescriptions/etc.
     setPatientModalOpen(false);
@@ -1238,7 +1249,34 @@ function App() {
       ) : activePage === "communication" ? (
         <CommunicationPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : activePage === "clinic" ? (
-        <ClinicPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
+        prescriptionEditorOpen ? (
+          <PrescriptionEditorPage
+            logoRef={logoRef}
+            onOpenSidebar={handleOpenSidebar}
+            hospitalId={identity.hospitalId}
+            hospital={hospitalProfile}
+            doctor={doctorProfile}
+            onBack={() => setPrescriptionEditorOpen(false)}
+          />
+        ) : (
+          <ClinicPage
+            logoRef={logoRef}
+            onOpenSidebar={handleOpenSidebar}
+            hospital={hospitalProfile}
+            doctor={doctorProfile}
+            /* Clinic EDITS the same two rows every other surface reads —
+               the prescription renderer among them — so a save updates the
+               one cached copy here rather than minting a second. */
+            onHospitalChange={(patch) =>
+              setHospitalProfile((prev) => (prev ? { ...prev, ...patch } : prev))
+            }
+            onDoctorChange={(patch) =>
+              setDoctorProfile((prev) => (prev ? { ...prev, ...patch } : prev))
+            }
+            onNavigate={handleSidebarNavigate}
+            onOpenPrescriptionEditor={() => setPrescriptionEditorOpen(true)}
+          />
+        )
       ) : activePage === "support" ? (
         <SupportPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : isFeaturePage && comingSoonMeta ? (

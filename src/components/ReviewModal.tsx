@@ -17,6 +17,7 @@ import { accentPalette } from "../lib/brand/accent";
 import { RxMonogram, RxWatermark } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
+import { usePrescriptionConfig } from "../features/prescription/usePrescriptionConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -198,6 +199,16 @@ export default function ReviewModal({
   const [showFormatPicker, setShowFormatPicker] = useState(false);
 
   const { format, remembered, choose } = usePrintFormat();
+  /**
+   * The clinic's own prescription configuration, loaded here rather than
+   * passed in — this modal is the ONE door Consult, Patient Record and Print
+   * RX all print through (standing rule 6), so loading it once here is what
+   * makes "customise your prescription" reach every one of them without three
+   * separate call sites remembering to plumb a prop. Until it resolves it is
+   * `DEFAULT_PRESCRIPTION_CONFIG`, which is this document's pre-existing
+   * behaviour exactly; printing is always a later, explicit click.
+   */
+  const prescriptionConfig = usePrescriptionConfig(hospital?.id);
   const instructions = pickInstructions(visitId);
   const accentColor = hospital?.accent_color ?? "#1268e8";
   /**
@@ -375,6 +386,7 @@ export default function ReviewModal({
             vitals={vitals}
             format={format}
             date={date}
+            config={prescriptionConfig}
           />
         </div>
       </div>

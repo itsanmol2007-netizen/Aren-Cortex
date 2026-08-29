@@ -445,12 +445,19 @@ export type DBHospital = {
     is_branded: boolean;
     /** The onboarding choice — see features/synapse/specialtyProfile.ts. Null means General OPD. */
     specialty_profile: string | null;
+    /** The three the Clinic page's identity card introduced (2026-08-29).
+     *  `facility_type` is the doctor's own words for what they practise
+     *  ("Dermatology & Aesthetic Medicine") and is NOT `specialty_profile`,
+     *  which configures the engine and must stay a controlled value. */
+    website: string | null;
+    clinic_type: string | null;
+    facility_type: string | null;
 };
 
 export async function fetchHospital(hospitalId: string): Promise<DBHospital | null> {
     const { data, error } = await supabase
         .from("hospitals")
-        .select("id, name, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded, specialty_profile")
+        .select("id, name, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded, specialty_profile, website, clinic_type, facility_type")
         .eq("id", hospitalId)
         .maybeSingle();
     if (error) throw new Error(`fetchHospital: ${error.message}`);

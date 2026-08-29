@@ -31,6 +31,32 @@ back to the doctrine file if you need the reasoning behind it.
 
 ---
 
+## 0a. New pages are Tailwind (added 2026-08-29)
+
+**A new Cortex page or feature is written in Tailwind utilities, not a new
+per-feature `.css` file.** Anmol, twice: *"anytime you guys write new code,
+make new pages, write it in tailwind, it'll be more better to handle the code
+base."* `features/frontdesk/` and `features/clinic/` are the worked examples;
+`features/clinic/ui.tsx` holds that feature's shared primitives.
+
+This does not weaken a single rule below. Everything in this set governs the
+VALUES — the token scale, the seven colours, the empty-state shape, the row
+heights — and a Tailwind page reads those same tokens through arbitrary
+values (`bg-[var(--cs-card)]`, `gap-[var(--cs-s3)]`). What changed is where
+the declaration lives, not what it is allowed to say. Rule 4 (no eighth
+colour) and rule 2 (shared spacing tokens) apply to a `className` exactly as
+they applied to a stylesheet.
+
+Existing stylesheets (`consult.css`, `practice.css`, `patients-*.css`) are
+NOT being converted. Leave them alone; this applies to new work.
+
+Two Tailwind-specific traps, both real and both documented in
+`../context/cortex-gotchas.md`: utilities LOSE to `styles/base.css`'s
+unlayered bare-element rules, and a class assembled at runtime is never
+generated at all.
+
+---
+
 ## 0. Pre-flight checklist — match your task, read that file
 
 Before shipping any Cortex UI change, answer these. If you can't answer
