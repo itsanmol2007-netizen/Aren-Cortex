@@ -94,7 +94,10 @@ const KIND_ORDER: Record<Observable["kind"], number> = {
     history: 2,
 };
 
-const KIND_BADGE: Record<Observable["kind"], string> = {
+/** Exported alongside `useCatalogueSearch` — the same badge word an observable
+ *  gets in the case sheet's own search, reused so a template's observable
+ *  item reads the same everywhere it shows up. */
+export const KIND_BADGE: Record<Observable["kind"], string> = {
     symptom: "reported",
     finding: "examined",
     history: "history",
@@ -217,7 +220,11 @@ const TONE_CARRIED: Record<Observable["kind"], string> = {
 
 // ── shared search ──────────────────────────────────────────────────────────
 
-function useCatalogueSearch(observables: Observable[], query: string) {
+/** Exported for `PracticePage`'s template builder — the same client-side
+ *  rank-and-filter over the observable catalogue, so a doctor can add a
+ *  symptom/finding/history item to a template through the identical search
+ *  the case sheet itself uses, rather than a second implementation of it. */
+export function useCatalogueSearch(observables: Observable[], query: string) {
     return useMemo(() => {
         const q = query.trim().toLowerCase();
         if (!q) return [];

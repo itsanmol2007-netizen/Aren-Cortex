@@ -79,7 +79,8 @@ import {
   type PreferredLab, loadPreferredLabs, loadDefaultPreferredLab,
   fetchDoctorMeasurePrefs,
   type PrescriptionTemplateSummary, loadPrescriptionTemplateSummaries,
-  fetchPrescriptionTemplateDetail,
+  fetchPrescriptionTemplateDetail, type PrescriptionTemplateItemDetail,
+  type PrescriptionTemplateItemInput,
 } from "./lib/db/synapse";
 import { guardIntent } from "./lib/synapse/engine";
 import type { AcceptPayload } from "./features/consult/types";
@@ -249,9 +250,22 @@ function App() {
   // Every hook below takes this, so it is stable rather than rebuilt each
   // render — an unstable one would churn the identity of every handler that
   // depends on it, all the way down into the ranked panels.
+  //
+  // `toastTimerRef` clears any still-pending auto-dismiss before arming a
+  // new one. Without it, two `showToast` calls close together (as
+  // `applyTemplate` below now does — an immediate "Applying…" toast, then
+  // a summary once the fetch resolves) raced: the FIRST call's timeout
+  // still fired 2.4s after ITS OWN dispatch and blanked the toast early,
+  // regardless of a second message having replaced it since. Invisible
+  // before because nothing called `showToast` twice in quick succession.
+  const toastTimerRef = useRef<number | null>(null);
   const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     setToast(msg);
-    window.setTimeout(() => setToast(""), 2400);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast("");
+      toastTimerRef.current = null;
+    }, 2400);
   }, []);
 
   // Where a consult actually begins. Passed to the lifecycle hook rather than
@@ -447,9 +461,30 @@ function App() {
    * (see ClinicalCommandBar's `templates`/`onApplyTemplate` props), never
    * items directly.
    *
-   * Every item still runs through `handleAcceptIntent`, the plan's one
-   * entry point (see useConsultPlan's header) — there is no separate bulk
-   * write. Two rules the "always guard-check" answer requires:
+   * A template item is one of two kinds now (`add_template_observable_items`):
+   * an OBSERVABLE (a symptom/finding/history item — the chart INPUT that
+   * justifies the rest) or an INTENT (a treatment decision). They are
+   * applied in two passes, in that order, for a reason that is not just
+   * "observables first, treatments second":
+   *
+   *  1. Every observable item is charted via `handleObservableToggle` —
+   *     the EXACT function the case-sheet search's own "obs" row calls —
+   *     skipping anything already charted (toggling twice would remove it).
+   *     Never guarded: charting a fact is not a treatment decision, and
+   *     nothing else in this app guards an observable either.
+   *  2. Every intent item still runs through `handleAcceptIntent`, the
+   *     plan's one entry point (see useConsultPlan's header) — there is no
+   *     separate bulk write. But the guard check against it needs the
+   *     engine to have RE-RANKED against whatever pass 1 just charted —
+   *     applying "Fever" (symptom) + aceclofenac (medicine) must guard the
+   *     medicine against a chart that now includes the fever, not the one
+   *     from before the click. React batches pass 1's state updates with
+   *     `setPendingTemplateApply` below into one render, so the effect that
+   *     reads `intelligence.result` for pass 2 sees the POST-chart engine
+   *     output, not a stale one — no ref workaround needed, just the extra
+   *     tick a real state update (not a synchronous local variable) forces.
+   *
+   * Two rules the "always guard-check" answer requires, on pass 2:
    *
    *  1. A hard-warned item is never silently added. It is guard-checked
    *     here, against the SAME ruleset and active signals a live search
@@ -465,39 +500,107 @@ function App() {
    *     the queue effect below advances to the next item only once
    *     `pendingMedicine` clears (confirmed or dismissed). Non-medicine
    *     items commit immediately, same as any other accept.
+   *
+   * None of that changes the fact that a doctor clicking a template saw
+   * NOTHING for the ~1-2s `fetchPrescriptionTemplateDetail` round trip plus
+   * guard checks, then had a non-medicine item (a test, an advice line, a
+   * referral) land straight in the sidebar Plan with no confirmation
+   * anywhere in the main content — the ONLY visible sign a template had
+   * done anything was a medicine's dose sheet, if the template happened to
+   * contain one, or a newly-charted symptom chip if it happened to carry
+   * one. Fixed with two toasts around the logic above: one the instant the
+   * template is picked (bridging the silent fetch), one once the outcome
+   * is known, naming what was charted, what landed on the plan, and how
+   * many medicines are queued for their dose sheet.
    */
   const [templateQueue, setTemplateQueue] = useState<AcceptPayload[]>([]);
+  const observableById = useMemo(() => new Map(observables.map((o) => [o.id, o])), [observables]);
+  const [pendingTemplateApply, setPendingTemplateApply] = useState<{
+    templateName: string;
+    chartedLabels: string[];
+    intentItems: Extract<PrescriptionTemplateItemDetail, { kind: "intent" }>[];
+  } | null>(null);
 
   const applyTemplate = useCallback((templateId: number) => {
+    const applying = templates.find((t) => t.id === templateId);
+    showToast(applying ? `Applying "${applying.name}" template…` : "Applying template…");
+
     fetchPrescriptionTemplateDetail(templateId)
       .then((detail) => {
         if (!detail) return;
-        const ruleset = synapse.data?.ruleset ?? null;
-        const activeSignals = intelligence.result?.activeSignals ?? [];
-        const skipped: string[] = [];
-        const payloads: AcceptPayload[] = [];
+
+        // Pass 1 — chart every observable this template carries, skipping
+        // anything already on the chart (this visit's own pick, or an
+        // earlier item in this same template). `handleObservableToggle`
+        // TOGGLES, so calling it on an already-charted item would remove it.
+        const chartedLabels: string[] = [];
+        const seenObservableIds = new Set(chartObservableIds);
         for (const item of detail.items) {
-          if (acceptedIntentIdSet.has(item.intentId)) continue; // already on the plan
-          const verdict = ruleset
-            ? guardIntent(ruleset, activeSignals, { id: item.intentId, type: item.type })
-            : { status: "ok" as const, reasons: [] };
-          if (verdict.status === "warn_hard") { skipped.push(item.label); continue; }
-          payloads.push({
-            intentId: item.intentId, type: item.type, label: item.label,
-            refTable: item.refTable, refId: item.refId, medicine: null,
-            viaSearch: true, overridden: false,
-          });
+          if (item.kind !== "observable") continue;
+          if (seenObservableIds.has(item.observableId)) continue;
+          const obs = observableById.get(item.observableId);
+          if (!obs) continue;
+          handleObservableToggle(obs);
+          seenObservableIds.add(item.observableId);
+          chartedLabels.push(item.label);
         }
-        if (skipped.length) {
-          showToast(`${skipped.length} item${skipped.length === 1 ? "" : "s"} from "${detail.name}" need a manual look — search to add: ${skipped.join(", ")}`);
-        }
-        if (payloads.length) setTemplateQueue((q) => [...q, ...payloads]);
+
+        const intentItems = detail.items.filter(
+          (item): item is Extract<PrescriptionTemplateItemDetail, { kind: "intent" }> => item.kind === "intent"
+        );
+        // Pass 2 waits for the render the charting above triggers — see this
+        // block's own doc comment for why that render, not this callback,
+        // is what the guard check below needs to run against.
+        setPendingTemplateApply({ templateName: detail.name, chartedLabels, intentItems });
       })
       .catch((e) => {
         console.error("applyTemplate:", e);
         showToast("Could not load that template — try again");
       });
-  }, [synapse.data, intelligence.result, acceptedIntentIdSet, showToast]);
+  }, [templates, chartObservableIds, observableById, handleObservableToggle, showToast]);
+
+  useEffect(() => {
+    if (!pendingTemplateApply) return;
+    const { templateName, chartedLabels, intentItems } = pendingTemplateApply;
+    setPendingTemplateApply(null);
+
+    const ruleset = synapse.data?.ruleset ?? null;
+    const activeSignals = intelligence.result?.activeSignals ?? [];
+    const skipped: string[] = [];
+    const payloads: AcceptPayload[] = [];
+    for (const item of intentItems) {
+      if (acceptedIntentIdSet.has(item.intentId)) continue; // already on the plan
+      const verdict = ruleset
+        ? guardIntent(ruleset, activeSignals, { id: item.intentId, type: item.type })
+        : { status: "ok" as const, reasons: [] };
+      if (verdict.status === "warn_hard") { skipped.push(item.label); continue; }
+      payloads.push({
+        intentId: item.intentId, type: item.type, label: item.label,
+        refTable: item.refTable, refId: item.refId, medicine: null,
+        viaSearch: true, overridden: false,
+      });
+    }
+
+    // Medicines still confirm one at a time in their own dose sheet — that
+    // IS their visible confirmation, so they're only counted here, never
+    // named individually (the sheet names them). Everything else commits
+    // the moment `handleAcceptIntent` runs below with no sheet of its own,
+    // so THIS toast is the only place its name ever surfaces.
+    const addedNow = payloads.filter((p) => p.type !== "medicine").map((p) => p.label);
+    const medicineCount = payloads.length - addedNow.length;
+
+    const parts: string[] = [];
+    if (chartedLabels.length) parts.push(`charted ${chartedLabels.join(", ")}`);
+    if (addedNow.length) parts.push(`added ${addedNow.join(", ")} to the plan`);
+    if (medicineCount) parts.push(`${medicineCount} medicine${medicineCount === 1 ? "" : "s"} awaiting dose confirmation`);
+    if (skipped.length) parts.push(`skipped (needs a manual look): ${skipped.join(", ")}`);
+
+    showToast(parts.length
+      ? `"${templateName}" — ${parts.join("; ")}`
+      : `"${templateName}" — everything was already on the plan`);
+
+    if (payloads.length) setTemplateQueue((q) => [...q, ...payloads]);
+  }, [pendingTemplateApply, synapse.data, intelligence.result, acceptedIntentIdSet, showToast]);
 
   // One item at a time: a medicine stages into `pendingMedicine` and this
   // waits for it to clear (confirmed or dismissed) before feeding the next
@@ -1237,6 +1340,7 @@ function App() {
         <PracticePage
           logoRef={logoRef}
           onOpenSidebar={handleOpenSidebar}
+          observables={observables}
           specialty={specialty}
           onNavigate={handleSidebarNavigate}
           preferredLabs={preferredLabs}
@@ -1925,7 +2029,22 @@ function App() {
         <SaveAsTemplateModal
           doctorId={identity.doctorId}
           hospitalId={identity.hospitalId}
-          items={[...acceptedIntents.values()].map((p) => ({ intentId: p.intentId, type: p.type }))}
+          items={[
+            // The chart's own inputs first — plain chips only (`!origin`):
+            // a 'confirmed'/'carried' one is THIS patient's standing history,
+            // not something a reusable template should reintroduce for
+            // every future patient it's applied to. See `applyTemplate`'s
+            // own doc comment for the other half of this — charting these
+            // back on apply is the whole reason they're captured here.
+            ...caseSheetEntries
+              .filter((e) => !e.origin)
+              .map((e): PrescriptionTemplateItemInput | null => {
+                const observableId = observableByLabel.get(e.label);
+                return observableId == null ? null : { observableId, observableKind: e.kind };
+              })
+              .filter((it): it is PrescriptionTemplateItemInput => it != null),
+            ...[...acceptedIntents.values()].map((p): PrescriptionTemplateItemInput => ({ intentId: p.intentId, type: p.type })),
+          ]}
           onClose={() => setSaveTemplateOpen(false)}
           onSaved={setTemplates}
         />

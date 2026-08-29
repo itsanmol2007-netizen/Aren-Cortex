@@ -2070,18 +2070,48 @@ export interface PrescriptionTemplateSummary {
     updatedAt: string;
 }
 
-export interface PrescriptionTemplateItemDetail {
-    id: number;
-    intentId: number;
-    type: IntentType;
-    label: string;
-    sortOrder: number;
-    /** the underlying intent's own ref — a medicine item's `refId` is its
-     *  composition id, needed by `handleAcceptIntent` to stage a dose
-     *  confirmation the same way any other medicine accept would. */
-    refTable: string | null;
-    refId: number | null;
-}
+/**
+ * A template item is one of two, never both — `add_template_observable_items`.
+ * An "intent" item is the original shape: a treatment decision
+ * (medicine/test/referral/…) that runs through `handleAcceptIntent`. An
+ * "observable" item is a chart INPUT (a symptom, an examination finding, a
+ * history item) that gets charted the same way the case-sheet search's own
+ * `onToggle` does — never guarded, never a plan line of its own, but what
+ * makes the engine rank the rest of the template's items for real instead of
+ * landing them on a chart with nothing to score them against.
+ */
+export type PrescriptionTemplateItemDetail =
+    | {
+        kind: "intent";
+        id: number;
+        intentId: number;
+        type: IntentType;
+        label: string;
+        sortOrder: number;
+        /** the underlying intent's own ref — a medicine item's `refId` is its
+         *  composition id, needed by `handleAcceptIntent` to stage a dose
+         *  confirmation the same way any other medicine accept would. */
+        refTable: string | null;
+        refId: number | null;
+    }
+    | {
+        kind: "observable";
+        id: number;
+        observableId: number;
+        /** the Observable's own `kind` — 'symptom' | 'finding' | 'history'.
+         *  Stored in the same `type` column an intent item uses; see the
+         *  migration for why that string collision never reaches here. */
+        observableKind: Observable["kind"];
+        label: string;
+        sortOrder: number;
+    };
+
+/** What `createPrescriptionTemplate`/`replacePrescriptionTemplateItems` take
+ *  in — the same two shapes as `PrescriptionTemplateItemDetail`, minus the
+ *  fields only a already-saved row has (`id`, `label`, ref info). */
+export type PrescriptionTemplateItemInput =
+    | { intentId: number; type: IntentType }
+    | { observableId: number; observableKind: Observable["kind"] };
 
 export interface PrescriptionTemplateDetail extends PrescriptionTemplateSummary {
     items: PrescriptionTemplateItemDetail[];
@@ -2131,13 +2161,16 @@ export async function fetchPrescriptionTemplateDetail(id: number): Promise<Presc
 
     const { data: items, error: itemsErr } = await supabase
         .from("prescription_template_items")
-        .select("id, intent_id, type, sort_order")
+        .select("id, intent_id, observable_id, type, sort_order")
         .eq("template_id", id)
         .order("sort_order", { ascending: true });
     if (itemsErr) throw new Error(`prescription_template_items (detail): ${itemsErr.message}`);
 
-    const intentIds = (items ?? []).map((r: any) => Number(r.intent_id));
-    const labelById = new Map<number, string>();
+    // Two disjoint id spaces on the same rows — see `add_template_observable_items`.
+    const intentIds = (items ?? []).filter((r: any) => r.intent_id != null).map((r: any) => Number(r.intent_id));
+    const observableIds = (items ?? []).filter((r: any) => r.observable_id != null).map((r: any) => Number(r.observable_id));
+
+    const intentLabelById = new Map<number, string>();
     const refById = new Map<number, { refTable: string | null; refId: number | null }>();
     if (intentIds.length) {
         const { data: intents } = await supabase
@@ -2145,12 +2178,21 @@ export async function fetchPrescriptionTemplateDetail(id: number): Promise<Presc
             .select("id, label, ref_table, ref_id")
             .in("id", intentIds);
         (intents ?? []).forEach((i: any) => {
-            labelById.set(Number(i.id), i.label);
+            intentLabelById.set(Number(i.id), i.label);
             refById.set(Number(i.id), {
                 refTable: i.ref_table ?? null,
                 refId: i.ref_id == null ? null : Number(i.ref_id),
             });
         });
+    }
+
+    const observableLabelById = new Map<number, string>();
+    if (observableIds.length) {
+        const { data: obs } = await supabase
+            .from("observables")
+            .select("id, label")
+            .in("id", observableIds);
+        (obs ?? []).forEach((o: any) => observableLabelById.set(Number(o.id), o.label));
     }
 
     return {
@@ -2159,14 +2201,26 @@ export async function fetchPrescriptionTemplateDetail(id: number): Promise<Presc
         triggerLabel: t.trigger_label,
         updatedAt: t.updated_at,
         itemCount: items?.length ?? 0,
-        items: (items ?? []).map((r: any) => {
+        items: (items ?? []).map((r: any): PrescriptionTemplateItemDetail => {
+            if (r.observable_id != null) {
+                const observableId = Number(r.observable_id);
+                return {
+                    kind: "observable",
+                    id: Number(r.id),
+                    observableId,
+                    observableKind: r.type as Observable["kind"],
+                    label: observableLabelById.get(observableId) ?? "",
+                    sortOrder: Number(r.sort_order ?? 0),
+                };
+            }
             const intentId = Number(r.intent_id);
             const ref = refById.get(intentId);
             return {
+                kind: "intent",
                 id: Number(r.id),
                 intentId,
                 type: r.type as IntentType,
-                label: labelById.get(intentId) ?? "",
+                label: intentLabelById.get(intentId) ?? "",
                 sortOrder: Number(r.sort_order ?? 0),
                 refTable: ref?.refTable ?? null,
                 refId: ref?.refId ?? null,
@@ -2180,7 +2234,7 @@ export async function createPrescriptionTemplate(opts: {
     hospitalId: string;
     name: string;
     triggerLabel: string;
-    items: { intentId: number; type: IntentType }[];
+    items: PrescriptionTemplateItemInput[];
 }): Promise<number> {
     const name = opts.name.trim();
     const triggerLabel = opts.triggerLabel.trim();
@@ -2197,12 +2251,10 @@ export async function createPrescriptionTemplate(opts: {
 
     if (opts.items.length) {
         const { error: itemsErr } = await supabase.from("prescription_template_items").insert(
-            opts.items.map((it, idx) => ({
-                template_id: templateId,
-                intent_id: it.intentId,
-                type: it.type,
-                sort_order: idx,
-            }))
+            opts.items.map((it, idx) => ("intentId" in it
+                ? { template_id: templateId, intent_id: it.intentId, observable_id: null, type: it.type, sort_order: idx }
+                : { template_id: templateId, intent_id: null, observable_id: it.observableId, type: it.observableKind, sort_order: idx }
+            ))
         );
         if (itemsErr) throw new Error(`prescription_template_items (create): ${itemsErr.message}`);
     }
@@ -2230,7 +2282,7 @@ export async function updatePrescriptionTemplateMeta(opts: {
  *  never worth diffing insert/delete against the previous set. */
 export async function replacePrescriptionTemplateItems(opts: {
     templateId: number;
-    items: { intentId: number; type: IntentType }[];
+    items: PrescriptionTemplateItemInput[];
 }): Promise<void> {
     const { error: delErr } = await supabase
         .from("prescription_template_items")
@@ -2239,12 +2291,10 @@ export async function replacePrescriptionTemplateItems(opts: {
     if (delErr) throw new Error(`prescription_template_items (replace/clear): ${delErr.message}`);
     if (opts.items.length) {
         const { error } = await supabase.from("prescription_template_items").insert(
-            opts.items.map((it, idx) => ({
-                template_id: opts.templateId,
-                intent_id: it.intentId,
-                type: it.type,
-                sort_order: idx,
-            }))
+            opts.items.map((it, idx) => ("intentId" in it
+                ? { template_id: opts.templateId, intent_id: it.intentId, observable_id: null, type: it.type, sort_order: idx }
+                : { template_id: opts.templateId, intent_id: null, observable_id: it.observableId, type: it.observableKind, sort_order: idx }
+            ))
         );
         if (error) throw new Error(`prescription_template_items (replace/insert): ${error.message}`);
     }
@@ -2272,7 +2322,10 @@ export async function duplicatePrescriptionTemplate(opts: {
         hospitalId: opts.hospitalId,
         name: `${detail.name} (copy)`,
         triggerLabel: detail.triggerLabel,
-        items: detail.items.map((i) => ({ intentId: i.intentId, type: i.type })),
+        items: detail.items.map((i): PrescriptionTemplateItemInput => (i.kind === "intent"
+            ? { intentId: i.intentId, type: i.type }
+            : { observableId: i.observableId, observableKind: i.observableKind }
+        )),
     });
 }
 

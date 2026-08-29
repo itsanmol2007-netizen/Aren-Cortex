@@ -1,17 +1,17 @@
 // ---------------------------------------------------------------------------
 // SAVE AS TEMPLATE — the Plan rail's own path into Prescription Templates.
-// Turns whatever is currently accepted in a live consult into a reusable
-// `prescription_templates` row, using the SAME item shape (`intentId`+
-// `type`) the Practice builder writes — one table, two ways to reach it.
+// Turns whatever is currently accepted in a live consult — plus the plain
+// chart entries that justified it (`add_template_observable_items`) — into
+// a reusable `prescription_templates` row, using the SAME item shapes the
+// Practice builder writes — one table, two ways to reach it.
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
 import { Layers } from "lucide-react";
 import {
     createPrescriptionTemplate, loadPrescriptionTemplateSummaries,
-    type PrescriptionTemplateSummary,
+    type PrescriptionTemplateSummary, type PrescriptionTemplateItemInput,
 } from "../../lib/db/synapse";
-import type { IntentType } from "../../lib/synapse/engine";
 import { PracticeModal } from "./PracticeModal";
 import "./practiceModal.css";
 
@@ -20,8 +20,9 @@ export function SaveAsTemplateModal({
 }: {
     doctorId: string;
     hospitalId: string;
-    /** the plan's own accepted items, already deduped by `acceptedIntents` */
-    items: { intentId: number; type: IntentType }[];
+    /** the plan's accepted items (deduped by `acceptedIntents`) plus this
+     *  visit's own plain chart entries — see App.tsx's call site */
+    items: PrescriptionTemplateItemInput[];
     onClose: () => void;
     /** the doctor's refreshed template list — see App.tsx's `templates` state */
     onSaved: (templates: PrescriptionTemplateSummary[]) => void;
@@ -60,8 +61,9 @@ export function SaveAsTemplateModal({
         >
             {error && <p className="prac-modal-error">{error}</p>}
             <p className="prac-soon">
-                {items.length} item{items.length === 1 ? "" : "s"} on today's plan will become this
-                template's starting point. Edit or trim them later from Practice.
+                {items.length} item{items.length === 1 ? "" : "s"} from this visit — what's on the
+                plan, and what you charted to get there — will become this template's starting
+                point. Edit or trim them later from Practice.
             </p>
             <div className="prac-modal-field">
                 <label>Template name</label>

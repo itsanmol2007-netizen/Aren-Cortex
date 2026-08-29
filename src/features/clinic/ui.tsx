@@ -429,8 +429,16 @@ export function ImagePicker({
                 <div className="flex items-center gap-[10px]">
                     <label
                         htmlFor={inputId}
+                        /* `inline-flex!`/`gap-[5px]!`: base.css's bare
+                           `label { display: grid; gap: 3px }` is unlayered and
+                           beats Tailwind's utility layer regardless of
+                           specificity (see ui.tsx's cascade note up top) — a
+                           1-column grid stacked the icon over the text instead
+                           of beside it. Every OTHER `<label>` in this file
+                           wraps a single text node, where grid vs. flex is
+                           invisible, which is why this one spot was missed. */
                         className={
-                            "inline-flex cursor-pointer items-center gap-[5px] rounded-full border bg-transparent " +
+                            "inline-flex! cursor-pointer items-center gap-[5px]! rounded-full border bg-transparent " +
                             `px-[12px] py-[6px] text-[11.5px] font-semibold transition-colors ` +
                             `${TONE[tone].border} ${TONE[tone].text} ${TONE[tone].softHover}`
                         }

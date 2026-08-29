@@ -77,11 +77,13 @@ import {
     setHospitalCompanionCuration, updatePrescriptionTemplateMeta,
     type AuthoredCompanionEdgeDetail, type ClinicBrandDefaultDetail, type DoctorFreeTermDetail,
     type DoctorFreeTermType, type HospitalAddedMedicine, type HospitalCompanionDetail,
-    type PreferredLab, type PrescriptionTemplateSummary,
+    type PreferredLab, type PrescriptionTemplateSummary, type PrescriptionTemplateItemInput,
+    type Observable,
 } from "../../lib/db/synapse";
 import type { IntentSearchHit } from "../../lib/db/synapse";
 import type { IntentType } from "../../lib/synapse/engine";
 import { MEASURE_FIELDS, type MeasureFieldKey } from "../consult/measures";
+import { useCatalogueSearch, KIND_BADGE } from "../consult/CaseSheet";
 import {
     BlankAddMedicineArt, BlankCompanionArt, BlankConsultDefaultsArt, BlankLabArt, BlankMedicineArt,
     BlankTemplateArt, BlankTermArt,
@@ -119,6 +121,10 @@ interface Props {
      *  this same list) — see `loadPrescriptionTemplateSummaries`. */
     templates: PrescriptionTemplateSummary[];
     onTemplatesChange: (templates: PrescriptionTemplateSummary[]) => void;
+    /** The same catalogue App.tsx already loads (`synapse.data.observables`)
+     *  — the template builder's "add a symptom/finding/history item" search
+     *  runs client-side over this, exactly like the case sheet's own bar. */
+    observables: Observable[];
 }
 
 // ── The row-list primitive every real card below shares ────────────────────
@@ -1101,22 +1107,41 @@ function LabsModal({
     );
 }
 
+/** A row in the builder, before it's saved — the same two kinds
+ *  `PrescriptionTemplateItemDetail` carries (`add_template_observable_items`),
+ *  plus the display label every row needs regardless of which kind it is. */
+type BuilderItem =
+    | { kind: "intent"; intentId: number; type: IntentType; label: string }
+    | { kind: "observable"; observableId: number; observableKind: Observable["kind"]; label: string };
+
+/** Both id spaces are independent `bigint` columns — an intent id and an
+ *  observable id can collide numerically — so React's key (and every
+ *  same-item check below) is keyed on kind+id together, never id alone. */
+const builderItemKey = (it: BuilderItem) =>
+    it.kind === "intent" ? `intent:${it.intentId}` : `obs:${it.observableId}`;
+
 function TemplateBuilderModal({
-    doctorId, hospitalId, templateId, onClose, onSaved,
+    doctorId, hospitalId, templateId, observables, onClose, onSaved,
 }: {
     doctorId: string;
     hospitalId: string;
     templateId: number | "new";
+    observables: Observable[];
     onClose: () => void;
     onSaved: (templates: PrescriptionTemplateSummary[]) => void;
 }) {
     const [loading, setLoading] = useState(templateId !== "new");
     const [name, setName] = useState("");
     const [triggerLabel, setTriggerLabel] = useState("");
-    const [items, setItems] = useState<{ intentId: number; type: IntentType; label: string }[]>([]);
+    const [items, setItems] = useState<BuilderItem[]>([]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const itemSearch = useIntentSearch(["medicine", "test", "referral", "advice"]);
+    // A second, independent search over the observable catalogue — see
+    // `useCatalogueSearch`'s own doc comment for why this isn't a second
+    // implementation of the case sheet's search, just a reuse of it.
+    const [obsQuery, setObsQuery] = useState("");
+    const obsHits = useCatalogueSearch(observables, obsQuery);
 
     useEffect(() => {
         if (templateId === "new") return;
@@ -1126,7 +1151,10 @@ function TemplateBuilderModal({
                 if (cancelled || !detail) return;
                 setName(detail.name);
                 setTriggerLabel(detail.triggerLabel);
-                setItems(detail.items.map((i) => ({ intentId: i.intentId, type: i.type, label: i.label })));
+                setItems(detail.items.map((i): BuilderItem => (i.kind === "intent"
+                    ? { kind: "intent", intentId: i.intentId, type: i.type, label: i.label }
+                    : { kind: "observable", observableId: i.observableId, observableKind: i.observableKind, label: i.label }
+                )));
             })
             .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
             .finally(() => { if (!cancelled) setLoading(false); });
@@ -1134,13 +1162,19 @@ function TemplateBuilderModal({
     }, [templateId]);
 
     const addItem = (hit: IntentSearchHit) => {
-        if (items.some((i) => i.intentId === hit.intentId)) return;
+        if (items.some((i) => i.kind === "intent" && i.intentId === hit.intentId)) return;
         const label = hit.matchKind === "brand" && hit.viaLabel ? hit.viaLabel : hit.label;
-        setItems((curr) => [...curr, { intentId: hit.intentId, type: hit.type, label }]);
+        setItems((curr) => [...curr, { kind: "intent", intentId: hit.intentId, type: hit.type, label }]);
         itemSearch.setQuery("");
     };
 
-    const removeItem = (intentId: number) => setItems((curr) => curr.filter((i) => i.intentId !== intentId));
+    const addObservableItem = (o: Observable) => {
+        if (items.some((i) => i.kind === "observable" && i.observableId === o.id)) return;
+        setItems((curr) => [...curr, { kind: "observable", observableId: o.id, observableKind: o.kind, label: o.label }]);
+        setObsQuery("");
+    };
+
+    const removeItem = (key: string) => setItems((curr) => curr.filter((i) => builderItemKey(i) !== key));
 
     const move = (index: number, dir: -1 | 1) => {
         const target = index + dir;
@@ -1159,7 +1193,10 @@ function TemplateBuilderModal({
         if (!name.trim() || !triggerLabel.trim() || busy) return;
         setBusy(true);
         setError(null);
-        const payloadItems = items.map((i) => ({ intentId: i.intentId, type: i.type }));
+        const payloadItems: PrescriptionTemplateItemInput[] = items.map((i) => (i.kind === "intent"
+            ? { intentId: i.intentId, type: i.type }
+            : { observableId: i.observableId, observableKind: i.observableKind }
+        ));
         const op = templateId === "new"
             ? createPrescriptionTemplate({ doctorId, hospitalId, name, triggerLabel, items: payloadItems })
             : Promise.all([
@@ -1240,23 +1277,34 @@ function TemplateBuilderModal({
                     <div className="prac-modal-section-title">Items ({items.length})</div>
                     {items.length === 0 ? (
                         <p className="prac-soon">
-                            Add medicines, investigations, referrals or advice below. Every item still
-                            passes the normal safety check when the template is applied — this is a
-                            starting point, never a bypass.
+                            Add medicines, investigations, referrals or advice below — and, if this
+                            template should chart its own trigger symptom (so applying it ranks
+                            Assessment/Medicine Recommendations for real instead of landing items on
+                            an empty chart), a symptom, finding or history item too. Every treatment
+                            item still passes the normal safety check when the template is applied —
+                            this is a starting point, never a bypass.
                         </p>
                     ) : (
                         <div className="prac-modal-rows">
-                            {items.map((it, i) => (
-                                <div key={it.intentId} className="prac-modal-row">
-                                    <span className={`prac-term-kind is-${it.type}`}>{intentTypeLabel(it.type)}</span>
-                                    <span className="prac-row-label">{it.label}</span>
-                                    <div className="prac-reorder">
-                                        <button type="button" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp size={12} /></button>
-                                        <button type="button" disabled={i === items.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown size={12} /></button>
+                            {items.map((it, i) => {
+                                const key = builderItemKey(it);
+                                return (
+                                    <div key={key} className="prac-modal-row">
+                                        <span className={it.kind === "intent"
+                                            ? `prac-term-kind is-${it.type}`
+                                            : `prac-term-kind is-obs-${it.observableKind}`
+                                        }>
+                                            {it.kind === "intent" ? intentTypeLabel(it.type) : KIND_BADGE[it.observableKind]}
+                                        </span>
+                                        <span className="prac-row-label">{it.label}</span>
+                                        <div className="prac-reorder">
+                                            <button type="button" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp size={12} /></button>
+                                            <button type="button" disabled={i === items.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown size={12} /></button>
+                                        </div>
+                                        <RemoveBtn label={`Remove ${it.label}`} onClick={() => removeItem(key)} />
                                     </div>
-                                    <RemoveBtn label={`Remove ${it.label}`} onClick={() => removeItem(it.intentId)} />
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
 
@@ -1267,7 +1315,7 @@ function TemplateBuilderModal({
                                 <p className="prac-soon">{itemSearch.loading ? "Searching…" : "Nothing matches."}</p>
                             ) : (
                                 itemSearch.hits.map((hit) => {
-                                    const already = items.some((i) => i.intentId === hit.intentId);
+                                    const already = items.some((i) => i.kind === "intent" && i.intentId === hit.intentId);
                                     const label = hit.matchKind === "brand" && hit.viaLabel ? hit.viaLabel : hit.label;
                                     return (
                                         <button
@@ -1276,6 +1324,34 @@ function TemplateBuilderModal({
                                         >
                                             <span className={`prac-term-kind is-${hit.type}`}>{intentTypeLabel(hit.type)}</span>
                                             <span className="prac-row-label">{label}</span>
+                                            {already && <Check size={13} />}
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+                    )}
+
+                    <div className="prac-modal-field">
+                        <input
+                            type="text" value={obsQuery} placeholder="Add a symptom, finding or history item…"
+                            onChange={(e) => setObsQuery(e.target.value)}
+                        />
+                    </div>
+                    {obsQuery.trim() && (
+                        <div className="prac-modal-rows">
+                            {obsHits.length === 0 ? (
+                                <p className="prac-soon">Nothing matches.</p>
+                            ) : (
+                                obsHits.map((o) => {
+                                    const already = items.some((i) => i.kind === "observable" && i.observableId === o.id);
+                                    return (
+                                        <button
+                                            key={o.id} type="button" className="prac-modal-row is-pick"
+                                            disabled={already} onClick={() => addObservableItem(o)}
+                                        >
+                                            <span className={`prac-term-kind is-obs-${o.kind}`}>{KIND_BADGE[o.kind]}</span>
+                                            <span className="prac-row-label">{o.label}</span>
                                             {already && <Check size={13} />}
                                         </button>
                                     );
@@ -1960,7 +2036,7 @@ function CompanionsModal({
 export function PracticePage({
     logoRef, onOpenSidebar, specialty, onNavigate,
     preferredLabs, onPreferredLabsChange, measurePrefs, onMeasurePrefsChange,
-    templates, onTemplatesChange,
+    templates, onTemplatesChange, observables,
 }: Props) {
     const identity = useClinicalIdentity();
 
@@ -2465,7 +2541,7 @@ export function PracticePage({
             {editingTemplate !== null && (
                 <TemplateBuilderModal
                     doctorId={identity.doctorId} hospitalId={identity.hospitalId}
-                    templateId={editingTemplate}
+                    templateId={editingTemplate} observables={observables}
                     onClose={() => setEditingTemplate(null)}
                     onSaved={onTemplatesChange}
                 />

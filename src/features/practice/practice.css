@@ -992,6 +992,17 @@
 .prac-term-kind.is-referral { color: #6d28d9; }
 .prac-term-kind.is-advice { color: #047857; }
 
+/* A template's OBSERVABLE items (chart inputs, not treatments) — the `-obs-`
+   prefix is deliberate: `is-finding` above already means "diagnosis intent",
+   and an examination-finding OBSERVABLE is a different thing wearing the
+   same word (see `add_template_observable_items`). Sharing a prefix with it
+   would visually conflate the two. Hues match the case sheet's own chip
+   colours (`CaseSheet.tsx`'s `TONE_CARRIED`) so a symptom reads the same
+   shade everywhere it appears. */
+.prac-term-kind.is-obs-symptom { color: #b5697f; }
+.prac-term-kind.is-obs-finding { color: #4a8b84; }
+.prac-term-kind.is-obs-history { color: #7c60b8; }
+
 /* ── "Show all N" — `.cs-card-foot-more` verbatim ────────────────────────── */
 .prac-foot-more {
     align-self: flex-start;

@@ -18,6 +18,7 @@ import { RxMonogram, RxWatermark } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import { usePrescriptionConfig } from "../features/prescription/usePrescriptionConfig";
+import arenLogo from "../assets/aren-logo.png";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,20 +102,15 @@ function initials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
-const INSTRUCTION_GROUPS = {
-  A: ["Take medicines exactly as prescribed.", "Complete the full course of medication.", "Do not stop medicines without consulting your doctor.", "Follow the prescribed dosage carefully."],
-  B: ["Consult if symptoms worsen or persist.", "Seek attention if new symptoms develop.", "Attend your recommended follow-up visit.", "Contact your doctor if you miss multiple doses."],
-  C: ["Stay adequately hydrated.", "Get adequate rest and sleep.", "Maintain a healthy and balanced diet.", "Avoid tobacco, alcohol, and harmful substances."],
-  D: ["Keep this prescription for future reference.", "Carry previous prescriptions during follow-ups.", "Scan the QR code to access your visit summary.", "Share this with healthcare providers when required."],
-};
-
-function pickInstructions(visitId?: string): string[] {
-  const seed = visitId
-    ? visitId.replace(/-/g, "").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0)
-    : Math.floor(Date.now() / 1000);
-  const groups = Object.values(INSTRUCTION_GROUPS);
-  return groups.map((g, i) => g[(seed + i * 7) % g.length]);
-}
+// `INSTRUCTION_GROUPS`/`pickInstructions` used to live here: four lines of
+// canned text, pseudo-randomly selected from a fixed pool by hashing
+// `visitId`. They never printed — `PrescriptionDocument` has no equivalent
+// and never called them — so a doctor reviewing a prescription on screen saw
+// four sentences that were never going to reach the patient, while their
+// ACTUAL standing advice (`prescriptionConfig.defaultAdvice`, configured in
+// the Prescription Editor) appeared only on the print they hadn't seen yet.
+// Removed in favour of reading the same config the print output reads —
+// see the "Instructions" block below.
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -196,6 +192,11 @@ export default function ReviewModal({
   useOverlayFocus(bodyRef);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
+  // Separate from `logoError` — that one tracks the CLINIC's own logo/photo
+  // failing to load; this tracks the unrelated AREN wordmark in the footer.
+  // The two used to share one flag, so a clinic whose own logo 404'd also
+  // silently lost its footer attribution for no connected reason.
+  const [arenLogoError, setArenLogoError] = useState(false);
   const [showFormatPicker, setShowFormatPicker] = useState(false);
 
   const { format, remembered, choose } = usePrintFormat();
@@ -209,7 +210,6 @@ export default function ReviewModal({
    * behaviour exactly; printing is always a later, explicit click.
    */
   const prescriptionConfig = usePrescriptionConfig(hospital?.id);
-  const instructions = pickInstructions(visitId);
   const accentColor = hospital?.accent_color ?? "#1268e8";
   /**
    * The clinic's colour, as a usable ramp. One stored hex cannot serve a
@@ -233,6 +233,31 @@ export default function ReviewModal({
   const doctorAvatar = doctor?.avatar_url;
   const signatureUrl = doctor?.signature_image_url;
   const isBranded = hospital?.is_branded !== false;
+  const clinicEmail = hospital?.email ?? "";
+  const clinicWebsite = hospital?.website ?? "";
+
+  /**
+   * This on-screen review is a SEPARATE hand-styled surface from
+   * `PrescriptionDocument` (standing rule 6) — it never pixel-matches the
+   * print output and isn't meant to. But it went further than that: it
+   * NEVER read `prescriptionConfig` at all, so a doctor who customised their
+   * prescription (hid a field, chose "doctor only", switched off a photo)
+   * saw an unchanged review screen every time, then a DIFFERENT-looking
+   * print output. These mirror the exact same flags `PrescriptionDocument`
+   * computes from the same config, applied to this component's own layout —
+   * not a second copy of the print doc, but no longer blind to the config
+   * either. `monochrome` is NOT mirrored here: this screen's dark gradient
+   * header and colour-coded sections are an on-screen reviewing aid, not a
+   * simulation of paper output, and forcing them to grey would not actually
+   * tell a doctor anything true about how a black-and-white printer will
+   * render the real document.
+   */
+  const showClinicIdentity = prescriptionConfig.identityMode !== "doctor";
+  const showDoctorIdentity = prescriptionConfig.identityMode !== "clinic";
+  const headerImage = prescriptionConfig.profileImage === "clinic_logo" ? clinicLogo
+    : prescriptionConfig.profileImage === "doctor_photo" ? doctorAvatar
+      : null;
+  const showHeaderImage = prescriptionConfig.profileImage !== "none";
 
   // QR generation
   useEffect(() => {
@@ -442,82 +467,112 @@ export default function ReviewModal({
                   style={{ background: "radial-gradient(circle, #1268e8 0%, transparent 60%)" }} />
 
                 <div className="relative flex items-center gap-6">
-                  {/* Logo */}
-                  <div className="shrink-0">
-                    {clinicLogo && !logoError ? (
-                      <img src={clinicLogo} alt={clinicName} onError={() => setLogoError(true)}
-                        className="w-16 h-16 rounded-xl object-cover border-2 shadow-xl"
-                        style={{ borderColor: "rgba(255,255,255,0.2)" }} />
-                    ) : doctorAvatar ? (
-                      <img src={doctorAvatar} alt={doctorName}
-                        className="w-16 h-16 rounded-xl object-cover border-2 shadow-xl"
-                        style={{ borderColor: "rgba(255,255,255,0.2)" }} />
-                    ) : (
-                      /* The fallback crest. Initials over the clinic's own
-                         colour, with the monogram behind them, so a clinic
-                         that has not uploaded a logo still gets a mark that is
-                         theirs rather than a coloured square. */
-                      <div className="w-16 h-16 rounded-xl flex items-center justify-center relative overflow-hidden shadow-xl"
-                        style={{ background: rx.base }}>
-                        <RxMonogram
-                          color={rx.onBase}
-                          className="absolute inset-0 w-full h-full opacity-20"
+                  {/* Logo — a SELECTION between the clinic logo and the
+                      doctor photo (`prescriptionConfig.profileImage`), same
+                      choice the print output honours; "none" drops the image
+                      entirely rather than falling back to one anyway. */}
+                  {showHeaderImage && (
+                    <div className="shrink-0">
+                      {headerImage && !logoError ? (
+                        <img
+                          src={headerImage}
+                          alt={prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName}
+                          onError={() => setLogoError(true)}
+                          className="w-16 h-16 rounded-xl object-cover border-2 shadow-xl"
+                          style={{ borderColor: "rgba(255,255,255,0.2)" }}
                         />
-                        <span className="relative text-xl font-black" style={{ color: rx.onBase }}>
-                          {initials(clinicName)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        /* The fallback crest. Initials over the clinic's own
+                           colour, with the monogram behind them, so a clinic
+                           that has not uploaded a logo still gets a mark that is
+                           theirs rather than a coloured square. */
+                        <div className="w-16 h-16 rounded-xl flex items-center justify-center relative overflow-hidden shadow-xl"
+                          style={{ background: rx.base }}>
+                          <RxMonogram
+                            color={rx.onBase}
+                            className="absolute inset-0 w-full h-full opacity-20"
+                          />
+                          <span className="relative text-xl font-black" style={{ color: rx.onBase }}>
+                            {initials(prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Clinic info */}
-                  <div className="flex-1 min-w-0">
-                    <h1 className="text-[22px] font-black text-white leading-tight tracking-tight">
-                      {clinicName}
-                    </h1>
-                    {clinicAddress && (
-                      <div className="flex items-start gap-1.5 mt-2">
-                        <MapPin className="w-3 h-3 mt-0.5 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                        <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  {showClinicIdentity && (
+                    <div className="flex-1 min-w-0">
+                      <h1 className="text-[22px] font-black text-white leading-tight tracking-tight">
+                        {clinicName}
+                      </h1>
+                      {prescriptionConfig.showClinicAddress && clinicAddress && (
+                        <div className="flex items-start gap-1.5 mt-2">
+                          <MapPin className="w-3 h-3 mt-0.5 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
+                          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+                            {clinicAddress}
+                          </p>
+                        </div>
+                      )}
+                      {prescriptionConfig.showClinicPhone && clinicPhone && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Phone className="w-3 h-3 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
+                          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicPhone}</p>
+                        </div>
+                      )}
+                      {prescriptionConfig.showClinicEmail && clinicEmail && (
+                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicEmail}</p>
+                      )}
+                      {prescriptionConfig.showWebsite && clinicWebsite && (
+                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicWebsite}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Divider — only ever between two identities. */}
+                  {showClinicIdentity && showDoctorIdentity && (
+                    <div className="w-px self-stretch mx-2 shrink-0" style={{ background: "rgba(255,255,255,0.12)" }} />
+                  )}
+
+                  {/* Doctor info — right-aligned beside the clinic, filling
+                      the row and left-aligned when it IS the letterhead. */}
+                  {showDoctorIdentity && (
+                    <div className={showClinicIdentity ? "shrink-0 text-right min-w-[155px]" : "flex-1 min-w-0 text-left"}>
+                      <p className="text-[21px] font-black text-white leading-tight tracking-tight">{doctorName}</p>
+                      {prescriptionConfig.showQualification && doctorQual && (
+                        <p className="text-[14px] font-bold mt-1" style={{ color: accentColor }}>{doctorQual}</p>
+                      )}
+                      {prescriptionConfig.showRegistration && doctorReg && (
+                        <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.50)" }}>
+                          Reg. No. {doctorReg}
+                        </p>
+                      )}
+                      {prescriptionConfig.showSpecialty && doctorSpec && (
+                        /* Was hardcoded pink, on every clinic's sheet. It takes
+                           the clinic's own colour now. */
+                        <span className="inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-black tracking-wide"
+                          style={{
+                            color: rx.tint,
+                            background: `${rx.base}2e`,
+                            border: `1px solid ${rx.base}66`,
+                          }}>
+                          {doctorSpec}
+                        </span>
+                      )}
+                      {/* A doctor-only letterhead still has to say where this
+                          was prescribed from — folds the clinic's own enabled
+                          contact lines in here rather than losing them along
+                          with the clinic's name. */}
+                      {!showClinicIdentity && prescriptionConfig.showClinicAddress && clinicAddress && (
+                        <p className="text-[11px] leading-relaxed mt-2" style={{ color: "rgba(255,255,255,0.55)" }}>
                           {clinicAddress}
                         </p>
-                      </div>
-                    )}
-                    {clinicPhone && (
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <Phone className="w-3 h-3 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                        <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicPhone}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Divider */}
-                  <div className="w-px self-stretch mx-2 shrink-0" style={{ background: "rgba(255,255,255,0.12)" }} />
-
-                  {/* Doctor info */}
-                  <div className="shrink-0 text-right min-w-[155px]">
-                    <p className="text-[21px] font-black text-white leading-tight tracking-tight">{doctorName}</p>
-                    {doctorQual && (
-                      <p className="text-[14px] font-bold mt-1" style={{ color: accentColor }}>{doctorQual}</p>
-                    )}
-                    {doctorReg && (
-                      <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.50)" }}>
-                        Reg. No. {doctorReg}
-                      </p>
-                    )}
-                    {doctorSpec && (
-                      /* Was hardcoded pink, on every clinic's sheet. It takes
-                         the clinic's own colour now. */
-                      <span className="inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-black tracking-wide"
-                        style={{
-                          color: rx.tint,
-                          background: `${rx.base}2e`,
-                          border: `1px solid ${rx.base}66`,
-                        }}>
-                        {doctorSpec}
-                      </span>
-                    )}
-                  </div>
+                      )}
+                      {!showClinicIdentity && prescriptionConfig.showClinicPhone && clinicPhone && (
+                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicPhone}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* ── The accent line ──────────────────────────────────────
@@ -776,37 +831,46 @@ export default function ReviewModal({
               {/* ══ Bottom: Signature | QR | Instructions ══ */}
               <div className="px-8 py-6 grid grid-cols-3 gap-6 border-b border-gray-100 items-end">
 
-                {/* Signature block */}
+                {/* Signature block. `showSignature: false` drops the image
+                    AND the ruled line, never the prescriber's name. */}
                 <div>
                   <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 pt-4 pb-3">
-                    {signatureUrl ? (
-                      <img src={signatureUrl} alt="Signature"
-                        className="h-14 w-full object-contain object-left mb-3" />
-                    ) : (
-                      <div className="h-14 border-b-2 border-gray-300 mb-3" />
+                    {prescriptionConfig.showSignature && (
+                      signatureUrl ? (
+                        <img src={signatureUrl} alt="Signature"
+                          className="h-14 w-full object-contain object-left mb-3" />
+                      ) : (
+                        <div className="h-14 border-b-2 border-gray-300 mb-3" />
+                      )
                     )}
                     <div className="border-t border-gray-100 pt-2.5">
                       <p className="text-[14px] font-black text-gray-900 leading-tight">{doctorName}</p>
-                      {doctorQual && (
+                      {prescriptionConfig.showQualification && doctorQual && (
                         <p className="text-[12px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
                       )}
-                      {doctorReg && (
+                      {prescriptionConfig.showRegistration && doctorReg && (
                         <p className="text-[10px] text-gray-400 leading-tight mt-0.5">Reg. {doctorReg}</p>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* QR + follow-up */}
+                {/* QR + follow-up. Bordered, matching the print output's own
+                    treatment, and the SAME caption — this QR encodes the
+                    prescription's own details for verification, not a link
+                    to a live page, so the caption says only what actually
+                    happens on scan. */}
                 <div className="flex flex-col items-center gap-2 self-center">
-                  {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 rounded-lg" />
-                  ) : (
-                    <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
-                      <span className="text-[8px] text-gray-300 text-center leading-tight">QR</span>
-                    </div>
-                  )}
-                  <p className="text-[9px] text-gray-400 text-center leading-tight">Scan to view<br />visit summary</p>
+                  <div className="p-1.5 rounded-lg border border-gray-200">
+                    {qrDataUrl ? (
+                      <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 rounded" />
+                    ) : (
+                      <div className="w-20 h-20 rounded flex items-center justify-center">
+                        <span className="text-[8px] text-gray-300 text-center leading-tight">QR</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-gray-400 text-center leading-tight">Scan to verify<br />this prescription</p>
                   {followUpDays && (
                     <div className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-700">
                       Follow-up in {followUpDays} days
@@ -865,15 +929,30 @@ export default function ReviewModal({
                       ))}
                     </div>
                   )}
+                  {/* The doctor's own STANDING advice (Prescription Editor →
+                      Default advice) — the actual config-driven content that
+                      prints, replacing the four pseudo-random canned lines
+                      this block used to show instead (see the removed
+                      `pickInstructions` comment above). */}
                   <div className="space-y-1.5">
-                    {instructions.map((ins, i) => (
+                    {prescriptionConfig.defaultAdvice.filter(Boolean).map((line, i) => (
                       <p key={i} className="flex items-start gap-1.5 text-[10px] text-gray-500 leading-relaxed">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-1.5 shrink-0" />{ins}
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-1.5 shrink-0" />{line}
                       </p>
                     ))}
                   </div>
                 </div>
               </div>
+
+              {/* The clinic's own closing line (Prescription Editor → Footer
+                  note) — an emergency number, a timing note. Sits above the
+                  branding strip because it is the clinic speaking, not the
+                  product; same placement PrescriptionDocument uses. */}
+              {prescriptionConfig.footerNote.trim() && (
+                <div className="px-8 pt-4 text-[10px] text-gray-500 leading-relaxed border-t border-gray-100 whitespace-pre-line">
+                  {prescriptionConfig.footerNote.trim()}
+                </div>
+              )}
 
               {/* ══ Footer ══ */}
               <div className="px-8 py-4 bg-gradient-to-r from-gray-50 via-white to-gray-50 flex items-center justify-between border-t border-gray-100">
@@ -886,22 +965,24 @@ export default function ReviewModal({
                   </span>
                 </div>
                 <p className="text-[9px] text-gray-400">Generated: {today}</p>
+                {/* One small line, matching PrescriptionDocument's own
+                    redesign — no more "Powered by AREN CORTEX" wordmark.
+                    Was sharing `logoError` (the CLINIC logo's own load-failure
+                    flag) for this completely unrelated image, so a clinic
+                    whose OWN logo failed to load also lost this one for no
+                    reason — split into its own state. Was also loading
+                    `/src/assets/aren-logo-w.png`, a dev-server-only path that
+                    404s in a production build; now the same Vite-processed
+                    import PrescriptionDocument itself uses. */}
                 {isBranded && (
-                  <div className="flex items-center gap-2">
-                    {!logoError ? (
-                      <img src="/src/assets/aren-logo-w.png" alt="AREN"
-                        className="w-6 h-6 object-contain" onError={() => setLogoError(true)} />
-                    ) : (
-                      <div className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-black"
-                        style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>A</div>
-                    )}
-                    <div className="text-right">
-                      <p className="text-[11px] font-black text-gray-800 leading-none tracking-tight">AREN</p>
-                      <p className="text-[8px] font-black leading-none tracking-widest uppercase"
-                        style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                        CORTEX
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-[5px]">
+                    {!arenLogoError ? (
+                      <img src={arenLogo} alt="" onError={() => setArenLogoError(true)}
+                        className="w-[13px] h-[13px] object-contain rounded-[3px]" />
+                    ) : null}
+                    <span className="text-[8px] font-semibold text-gray-400 tracking-[0.01em]">
+                      Generated with care, through Arenode
+                    </span>
                   </div>
                 )}
               </div>
