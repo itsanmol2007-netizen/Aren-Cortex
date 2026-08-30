@@ -32,6 +32,7 @@ import { useCarePlan } from "./hooks/useCarePlan";
 import { useConsultPlan } from "./hooks/useConsultPlan";
 import { useConsultLifecycle } from "./hooks/useConsultLifecycle";
 import { useVisitStory } from "./hooks/useVisitStory";
+import { useConsultDraftPersistence } from "./hooks/useConsultDraftPersistence";
 import { useExamination } from "./hooks/useExamination";
 import { REGION_BY_KEY } from "./features/consult/examination";
 import { listBodySites } from "./lib/db/bodySites";
@@ -308,10 +309,7 @@ function App() {
   // the flags for where in the consultation we are. Layer 1 like the chart and
   // the ledger: it holds facts, and the transitions ON those facts live in
   // useConsultLifecycle below. See useConsultSession.ts for the layering.
-  const session = useConsultSession({
-    chart, data: synapse.data,
-    doctorId: identity.isReal ? identity.doctorId : null,
-  });
+  const session = useConsultSession({ chart, data: synapse.data });
   const {
     patient, visitId,
     pastVisits, pastVisitsLoading,
@@ -458,6 +456,15 @@ function App() {
     removeTherapyLine, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
+
+  // ★ Reload/crash recovery — see useConsultDraftPersistence.ts and
+  // lib/consultDraft.ts for the full reasoning. Called here, after session/
+  // chart/plan/visitStory all exist, because it is the one thing in the
+  // consult that genuinely needs all four at once.
+  useConsultDraftPersistence({
+    doctorId: identity.isReal ? identity.doctorId : null,
+    session, chart, plan, visitStory,
+  });
 
   /**
    * Applying a template — CaseSheet's own search hands it a template id

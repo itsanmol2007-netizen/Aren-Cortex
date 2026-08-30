@@ -32,21 +32,12 @@ import {
   fetchPatientVisits,
   type RealVisit,
 } from "../lib/db";
-import { saveConsultDraft, loadConsultDraft, clearConsultDraft } from "../lib/consultDraft";
 import type { SynapseData } from "./useSynapse";
 import type { ConsultChart } from "./useConsultChart";
 
 export interface ConsultSessionArgs {
   chart: ConsultChart;
   data: SynapseData | null;
-  /**
-   * Real-identity-gated (`identity.isReal ? identity.doctorId : null`, same
-   * rule App.tsx already applies to `hospitalId` elsewhere) — `null` while
-   * identity hasn't resolved yet, or resolved to a demo/unauthenticated
-   * fallback, so a draft is never read or written under a placeholder id.
-   * See `lib/consultDraft.ts` for what this is and isn't.
-   */
-  doctorId: string | null;
 }
 
 export interface ConsultSession {
@@ -95,7 +86,7 @@ export interface ConsultSession {
   reset: () => void;
 }
 
-export function useConsultSession({ chart, data, doctorId }: ConsultSessionArgs): ConsultSession {
+export function useConsultSession({ chart, data }: ConsultSessionArgs): ConsultSession {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
   const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
@@ -108,40 +99,10 @@ export function useConsultSession({ chart, data, doctorId }: ConsultSessionArgs)
 
   const rankTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Surviving a reload / dropped connection mid-consult ──────────────────
-  // See lib/consultDraft.ts's own header for the full reasoning. One effect,
-  // not two: it has to both restore FROM and persist TO the same draft, and
-  // running those as separate effects races (the persist one would fire on
-  // the very same pass as the restore, while `patient` is still the stale
-  // `null` closed over before the restore's `setPatient` has flushed, and
-  // wipe out the draft it was about to restore). `restoredRef` makes the
-  // FIRST run-per-doctor a restore-only pass — it returns before persisting
-  // anything — and every run after that a plain persist-or-clear, the same
-  // shape `useDismiss`'s own doc comment elsewhere in this app calls out for
-  // event ordering: get the one-time thing to happen strictly before the
-  // steady-state thing, don't let them interleave.
-  const restoredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!doctorId) return;
-    if (restoredRef.current !== doctorId) {
-      restoredRef.current = doctorId;
-      if (!patient) {
-        const draft = loadConsultDraft(doctorId);
-        if (draft) {
-          setPatient(draft.patient);
-          setVisitId(draft.visitId);
-          // The intake modal defaults open (see its own `useState(true)`
-          // below) — without this, a resumed consult would render correctly
-          // underneath a "who is this for" prompt that has no reason to be
-          // there, since who it's for is exactly what was just restored.
-          setPatientModalOpen(false);
-        }
-      }
-      return;
-    }
-    if (patient) saveConsultDraft(doctorId, patient, visitId);
-    else clearConsultDraft(doctorId);
-  }, [doctorId, patient, visitId]);
+  // Reload/crash recovery (lib/consultDraft.ts) reads and writes patient/
+  // visitId from OUTSIDE this hook now — App.tsx, which is the one place
+  // that can also see the chart/plan/story state a resumed consult needs to
+  // restore alongside them. See useConsultDraftPersistence in App.tsx.
 
   const ageYears = useMemo(() => {
     const n = Number.parseInt(String(patient?.age ?? ""), 10);

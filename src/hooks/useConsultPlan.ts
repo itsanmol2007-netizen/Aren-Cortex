@@ -51,6 +51,7 @@ import {
 import type { SynapseData } from "./useSynapse";
 import type { ConsultIntelligence } from "./useConsultIntelligence";
 import type { AcceptLedger } from "./useAcceptLedger";
+import type { PlanDraft } from "../lib/consultDraft";
 
 /**
  * A ranked molecule plus the brand chosen for it, as a prescription line.
@@ -209,6 +210,11 @@ export interface ConsultPlan {
   // ── Lifecycle ─────────────────────────────────────────────────────────
   /** Back to an empty plan. */
   reset: () => void;
+  /** Reload/crash recovery (lib/consultDraft.ts) — restores everything
+   *  `reset()` above clears, from a snapshot instead of to empty. Leaves the
+   *  ledger and the transient pick/staging state untouched — see
+   *  `PlanDraft`'s own doc comment for why those aren't part of the draft. */
+  restorePlan: (draft: PlanDraft) => void;
   /** Replace the prescription wholesale, for Repeat Rx. */
   loadRepeatRx: (medicines: PrescriptionMedicine[]) => void;
 }
@@ -1080,6 +1086,18 @@ export function useConsultPlan({
     resetLedger();
   }, [resetLedger]);
 
+  const restorePlan = useCallback((draft: PlanDraft) => {
+    setPrescription(draft.prescription);
+    setSelectedTests(draft.selectedTests);
+    setSelectedLabName(draft.selectedLabName);
+    setDiagnoses(draft.diagnoses);
+    setFollowUpDays(draft.followUpDays);
+    setAdviceNotes(draft.adviceNotes);
+    setTherapyNotes(draft.therapyNotes);
+    setExercisePlan(draft.exercisePlan);
+    setVisitNotes(draft.visitNotes);
+  }, []);
+
   const loadRepeatRx = useCallback((medicines: PrescriptionMedicine[]) => {
     setPrescription(medicines);
     setSelectedMedicineId(null);
@@ -1147,6 +1165,7 @@ export function useConsultPlan({
     dismissCompanion,
 
     reset,
+    restorePlan,
     loadRepeatRx,
   };
 }

@@ -1,37 +1,48 @@
 // ---------------------------------------------------------------------------
 // CONSULT DRAFT — surviving a reload or a dropped connection mid-consult.
 //
-// Anmol: "the problem of loosing a patient if connection drops or reloaded
-// the page, you literally loose the last visit, and then forced to start a
-// new one... preserve the last consult, maybe locally cache what was
-// selected and all, and show that screen automatically, resume from there."
+// Anmol, first pass: "preserve the last consult, maybe locally cache what
+// was selected and all, and show that screen automatically, resume from
+// there." Then, once that first pass turned out to only restore WHICH
+// patient/visit, not what had actually been typed or ticked: "measurement,
+// prescribed medicine, notes and everything... those populated things also
+// should be saved... the whole page should survive how it was before."
 //
-// What this is NOT: a general offline-drafting or auto-save system for
-// everything typed on the chart. Every real finding/symptom/medicine is
-// already written straight to the DB as it's entered (that's how the
-// longitudinal record, the prescription and everything else on this screen
-// works today) — the ONE thing that used to vanish on a reload was which
-// PATIENT and which VISIT the doctor was even looking at, since that lived
-// only in `useConsultSession`'s React state. This persists exactly those two
-// facts — the patient (small, already-shaped `Patient` object) and the
-// visit id — to `localStorage`, keyed per doctor so a shared clinic computer
-// never resumes doctor A's consult into doctor B's session.
+// So this now snapshots the three pieces of consult state that live ONLY in
+// React memory until the doctor hits Save (`commitConsultation`/`saveConsult`
+// write them all at once, at the end — see useConsultLifecycle's
+// `handleConfirmAndSave`): the chart, the prescription plan, and the story.
+// Debounced-persisted from App.tsx (`useConsultDraftPersistence`) on every
+// change, restored the same way on the next mount for the same doctor.
+//
+// Deliberately NOT in here — because it's already safe without this file:
+//   - Examination readings (ROM/MMT/special tests) and marked body sites.
+//     `useExamination`/App.tsx's `markedExam` effect both re-fetch from the
+//     DB keyed on `visitId` alone, because those writes go straight to
+//     `visit_body_sites`/exam tables AS THEY'RE ENTERED (see
+//     useExamination.ts's own header) — restoring the correct `visitId`
+//     (which this file's `patient`/`visitId` fields still do) is the whole
+//     fix for those; snapshotting them a second time here would just be a
+//     second, staler copy of what the DB already has.
+//   - The accept-ledger (which brand was chosen, which suggestion was
+//     dismissed) — recommendation-engine bookkeeping, not clinical content;
+//     losing it means a suggestion might reappear that was already acted on,
+//     not that any recorded data disappears.
 //
 // "Done, discarded, or referred — don't worry about that" (Anmol): a consult
-// that ends normally already flows through `useConsultSession.reset()` (a
-// new patient picked, the encounter closed, etc.), which clears this draft
-// as a side effect of `patient` going back to `null` — see the effect at
-// this file's one call site (`App.tsx`). There's no separate "is this really
-// done" flag to keep in sync; "no active patient in session state" already
-// means the same thing here that it means everywhere else in this hook.
+// that ends normally already flows through `useConsultLifecycle
+// .resetConsultState()` (Save & Close, a new patient picked, etc.), which
+// clears this draft as a side effect of `patient` going back to `null`.
 //
 // Logging out is the one INTENTIONAL exit this must not survive (Anmol:
 // "except literally logging out... means intentional") — `useLogout.ts`
-// calls `clearAllConsultDrafts` for exactly that, since it doesn't know
-// which doctor (if any) was signed in by the time it runs.
+// calls `clearAllConsultDrafts` for exactly that.
 // ---------------------------------------------------------------------------
 
-import type { Patient } from "../types";
+import type { Patient, PrescriptionMedicine, SelectedSymptom, Vitals } from "../types";
+import type { ChipOrigin } from "../hooks/useConsultChart";
+import type { ExerciseLine } from "../features/consult/exercisePlan";
+import type { Story } from "../features/consult/story";
 
 const PREFIX = "aren-cortex:consult-draft:";
 /** A draft older than this is more likely stale than useful — a doctor who
@@ -40,20 +51,63 @@ const PREFIX = "aren-cortex:consult-draft:";
  *  surprising than helpful. */
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** `useConsultChart`'s raw state, everything `replaceChart` (Repeat Rx)
+ *  deliberately does NOT touch plus everything it does — a resume is not a
+ *  repeat, it needs all of it back exactly as it was. `chipOrigins`, a Map
+ *  in memory, travels here as entries (`JSON.stringify` drops a Map's
+ *  contents silently — it serializes to `{}`). */
+export interface ChartDraft {
+    vitals: Vitals;
+    selectedSymptoms: string[];
+    selectedSymptomsWithIntensity: SelectedSymptom[];
+    selectedFindings: string[];
+    chipOrigins: [string, ChipOrigin][];
+}
+
+/** `useConsultPlan`'s own in-progress-only fields — the ones its `reset()`
+ *  clears. `selectedMedicineId`/`stagedMedicine`/`pendingMedicine` are
+ *  deliberately excluded: transient mid-pick UI state (a medicine search
+ *  result highlighted, a dose being configured before "Accept"), not
+ *  recorded content — losing them costs re-opening one picker, not a
+ *  recorded reading. */
+export interface PlanDraft {
+    prescription: PrescriptionMedicine[];
+    selectedTests: string[];
+    selectedLabName: string | null;
+    diagnoses: string[];
+    followUpDays: number | null;
+    adviceNotes: string;
+    therapyNotes: string;
+    exercisePlan: ExerciseLine[];
+    visitNotes: string;
+}
+
+/** `useVisitStory`'s own draft fields. `goals`/`scoreHistory` aren't here —
+ *  those are the PATIENT's standing goals, fetched fresh by patient id
+ *  regardless of which visit is open, not this visit's own unsaved work. */
+export interface StoryDraft {
+    story: Story;
+    /** goalId -> today's score, entries (see `chipOrigins` above for why) */
+    todayScores: [number, number][];
+}
+
 export interface ConsultDraft {
     patient: Patient;
     visitId: string | null;
     savedAt: string;
+    chart: ChartDraft;
+    plan: PlanDraft;
+    story: StoryDraft;
 }
 
 function key(doctorId: string): string {
     return `${PREFIX}${doctorId}`;
 }
 
-export function saveConsultDraft(doctorId: string, patient: Patient, visitId: string | null): void {
+export function saveConsultDraft(doctorId: string, draft: Omit<ConsultDraft, "savedAt">): void {
     try {
-        const draft: ConsultDraft = { patient, visitId, savedAt: new Date().toISOString() };
-        localStorage.setItem(key(doctorId), JSON.stringify(draft));
+        const full: ConsultDraft = { ...draft, savedAt: new Date().toISOString() };
+        localStorage.setItem(key(doctorId), JSON.stringify(full));
     } catch {
         // Private browsing / storage full / disabled — resuming is a nicety,
         // never something the consult itself depends on.

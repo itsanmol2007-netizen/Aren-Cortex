@@ -31,6 +31,7 @@ import type { Observable } from "../lib/db/synapse";
 import type { DBFinding } from "../lib/db";
 import type { SelectedSymptom, Vitals } from "../types";
 import type { CaseSheetEntry } from "../features/consult/CaseSheet";
+import type { ChartDraft } from "../lib/consultDraft";
 
 export const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
 
@@ -114,6 +115,13 @@ export interface ConsultChart {
    * previous visit's blood pressure.
    */
   replaceChart: (symptoms: string[], findings: string[]) => void;
+  /**
+   * Reload/crash recovery (lib/consultDraft.ts) — restores the RAW state
+   * wholesale, unlike `replaceChart` above: a resume is not a repeat, so
+   * vitals, intensities and provenance all come back too, not just the two
+   * label lists a fresh Repeat Rx cares about.
+   */
+  restoreChart: (draft: ChartDraft) => void;
 }
 
 /**
@@ -353,6 +361,14 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setChipOrigins(new Map());
   }, []);
 
+  const restoreChart = useCallback((draft: ChartDraft) => {
+    setVitals(draft.vitals);
+    setSelectedSymptoms(draft.selectedSymptoms);
+    setSelectedSymptomsWithIntensity(draft.selectedSymptomsWithIntensity);
+    setSelectedFindings(draft.selectedFindings);
+    setChipOrigins(new Map(draft.chipOrigins));
+  }, []);
+
   return {
     vitals,
     setVitals,
@@ -384,5 +400,6 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
 
     reset,
     replaceChart,
+    restoreChart,
   };
 }
