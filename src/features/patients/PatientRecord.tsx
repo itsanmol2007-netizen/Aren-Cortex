@@ -34,7 +34,6 @@ import {
     ChevronDown,
     Clock,
     FileText,
-    FlaskConical,
     MessageCircle,
     Phone,
     Pill,
@@ -73,6 +72,7 @@ import {
     type TrendVerdict,
 } from "../consult/trend";
 import { Sparkline, visitForLastReading, formatSpan } from "../consult/LongitudinalBand";
+import { BlankTimelineArt } from "../consult/BlankArt";
 import { toast } from "sonner";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -136,6 +136,19 @@ function SkelBlock({ width, height = 12, style }: { width: string | number; heig
     return <div className="prec-skeleton" style={{ width, height, borderRadius: 4, ...style }} />;
 }
 
+/**
+ * Reuses the REAL cards' own classes (`.prec-trend-grid`/`.prec-trend-card`,
+ * `.prec-tl-row`/`.prec-tl-spine`/`.prec-tl-card`, `.prec-panel-card--grow`)
+ * with `SkelBlock`s standing in for content, rather than a generic stack of
+ * boxes — Anmol: "the skeleton screen should mimic what content is actually
+ * going to be there, literally." A side effect worth having on its own: any
+ * future change to those cards' real shape changes this skeleton's shape
+ * for free, so the two can't drift the way a hand-guessed one eventually
+ * does. The last card also carries `--grow`, same as its loaded counterpart
+ * (see that card's own comment) — the skeleton used to stop at its own
+ * short content height and leave the page looking cut off for however long
+ * the fetch took, which read as its own bug independent of the real card.
+ */
 function DetailSkeleton() {
     return (
         <>
@@ -156,14 +169,68 @@ function DetailSkeleton() {
                     ))}
                 </div>
             </div>
+
+            {/* Clinical Snapshot's own shape — a row of chips, one detail line */}
             <div className="prec-panel-card">
-                <div className="prec-panel-card-body" style={{ display: "flex", gap: 10 }}>
-                    {[0, 1, 2].map((i) => <SkelBlock key={i} width={150} height={110} />)}
+                <div className="prec-panel-card-header">
+                    <SkelBlock width={13} height={13} style={{ borderRadius: 4 }} />
+                    <SkelBlock width={120} height={11} />
+                </div>
+                <div className="prec-panel-card-body">
+                    <div className="prec-snapshot-chips">
+                        {[68, 54, 46].map((w, i) => (
+                            <SkelBlock key={i} width={w} height={19} style={{ borderRadius: 10 }} />
+                        ))}
+                    </div>
+                    <SkelBlock width="55%" height={11} style={{ marginTop: 8 }} />
                 </div>
             </div>
+
+            {/* Progress Trend's own grid of mini cards */}
             <div className="prec-panel-card">
-                <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {[0, 1, 2, 3].map((i) => <SkelBlock key={i} width="100%" height={48} />)}
+                <div className="prec-panel-card-header">
+                    <SkelBlock width={13} height={13} style={{ borderRadius: 4 }} />
+                    <SkelBlock width={110} height={11} />
+                </div>
+                <div className="prec-panel-card-body">
+                    <div className="prec-trend-grid">
+                        {[0, 1, 2].map((i) => (
+                            <div key={i} className="prec-trend-card">
+                                <SkelBlock width="50%" height={9} />
+                                <SkelBlock width="70%" height={15} style={{ marginTop: 6 }} />
+                                <SkelBlock width="60%" height={9} style={{ marginTop: 6 }} />
+                                <SkelBlock width="100%" height={26} style={{ marginTop: 8, borderRadius: 6 }} />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Visit Timeline's own row shape — dot+line spine, a date/type
+                header per row — and `--grow` so this card alone fills
+                whatever height the three above didn't use. */}
+            <div className="prec-panel-card prec-panel-card--grow">
+                <div className="prec-panel-card-header">
+                    <SkelBlock width={13} height={13} style={{ borderRadius: 4 }} />
+                    <SkelBlock width={100} height={11} />
+                </div>
+                <div className="prec-panel-card-body prec-panel-card-body--grow" style={{ gap: 0 }}>
+                    {[0, 1, 2, 3].map((i) => (
+                        <div key={i} className="prec-tl-row">
+                            <div className="prec-tl-spine">
+                                <div className="prec-tl-dot" />
+                                <div className="prec-tl-line" />
+                            </div>
+                            <div className="prec-tl-card">
+                                <div className="prec-tl-header" style={{ cursor: "default" }}>
+                                    <SkelBlock width={58} height={11} />
+                                    <SkelBlock width={64} height={17} style={{ borderRadius: 9, marginLeft: 10 }} />
+                                    <div style={{ flex: 1 }} />
+                                    <SkelBlock width={46} height={10} />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         </>
@@ -557,10 +624,10 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                 onOpenSidebar={onOpenSidebar}
                 title="Patient Record"
                 subtitle="Clinical History & Continuity"
+                rightSlot={<BackButton label="All Patients" onClick={onBack} />}
             />
 
             <div className="prec-page-header">
-                <BackButton label="All Patients" onClick={onBack} />
                 <div style={{ flex: 1 }} />
                 <button type="button" className="prec-start-consult-btn--topbar" onClick={handleStartConsult}>
                     <Plus size={12} />
@@ -690,7 +757,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                 </div>
                             </div>
 
-                            <div className="prec-panel-card">
+                            <div className="prec-panel-card prec-panel-card--grow">
                                 <div className="prec-panel-card-header">
                                     <Calendar size={13} className="prec-panel-card-icon" />
                                     <span className="prec-panel-card-title">Visit Timeline</span>
@@ -708,7 +775,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                         </button>
                                     )}
                                 </div>
-                                <div className="prec-panel-card-body">
+                                <div className="prec-panel-card-body prec-panel-card-body--grow">
                                     {inProgressVisits.length > 0 && (
                                         <div className="prec-tl-inprogress-notice">
                                             <Clock size={12} />
@@ -721,13 +788,33 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                         </div>
                                     )}
                                     {completedVisits.length === 0 ? (
-                                        <div className="prec-empty-section">
-                                            <FlaskConical size={22} />
-                                            <p>
+                                        // Its own class rather than reusing the shared
+                                        // `.prec-empty-section` (Overview's search-empty
+                                        // states use that one too) — Anmol: "the empty
+                                        // state is looking so much terrible right now
+                                        // here... put some more things, beautiful things
+                                        // here." Drawn illustration instead of a bare
+                                        // lucide icon, plus a real next action rather than
+                                        // just a sentence, since this page already knows
+                                        // how to start one.
+                                        <div className="prec-timeline-empty">
+                                            <BlankTimelineArt />
+                                            <p className="prec-timeline-empty-title">
                                                 {inProgressVisits.length > 0
-                                                    ? "No visit has been finished for this patient yet."
-                                                    : "No completed visits on record."}
+                                                    ? "No visit has been finished for this patient yet"
+                                                    : "No completed visits on record"}
                                             </p>
+                                            <p className="prec-timeline-empty-sub">
+                                                {inProgressVisits.length > 0
+                                                    ? "It'll appear here the moment it's completed in Consult."
+                                                    : "Once a consult is completed, it'll build the timeline here."}
+                                            </p>
+                                            {inProgressVisits.length === 0 && (
+                                                <button type="button" className="prec-timeline-empty-cta" onClick={handleStartConsult}>
+                                                    <Plus size={13} />
+                                                    Start a consult
+                                                </button>
+                                            )}
                                         </div>
                                     ) : (
                                         <>

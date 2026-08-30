@@ -135,6 +135,33 @@ export async function listAttachments(visitId: string): Promise<Attachment[]> {
     return (data ?? []).map(attachmentFromRow);
 }
 
+/**
+ * Realtime subscription to one visit's attachments. Added 2026-08-30: a
+ * patient uploading from their phone (the visit-gateway QR flow — see
+ * `lib/db/gateways.ts`) writes this row directly through arenode.com's own
+ * upload interface, entirely outside this app. `AttachmentsCard` used to
+ * only ever fetch once per mount, so that upload was invisible in Cortex
+ * until the doctor switched screens and back and the effect re-ran — same
+ * `postgres_changes` pattern as `subscribeDoctorRequests`/
+ * `subscribeGatewaySessions`, filtered to this one visit rather than a whole
+ * hospital. `onChange` fires on any insert/update/delete; the caller
+ * refetches. Channel names must be unique per subscription, hence the
+ * timestamp suffix.
+ */
+export function subscribeAttachments(visitId: string, onChange: () => void): () => void {
+    const channel = supabase
+        .channel(`visit_attachments:${visitId}:${Date.now()}`)
+        .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "visit_attachments", filter: `visit_id=eq.${visitId}` },
+            () => onChange()
+        )
+        .subscribe();
+    return () => {
+        void supabase.removeChannel(channel);
+    };
+}
+
 export interface UploadAttachmentProgress {
     stage: "compressing" | "uploading" | "recording";
 }

@@ -5,8 +5,9 @@ import {
     ChevronLeft,
     ChevronRight,
     Clock,
-    MoreHorizontal,
+    MoreVertical,
     Phone,
+    Play,
     Search,
     User,
     X,
@@ -273,11 +274,14 @@ function RecentSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
  *  different actions), just the same mechanism for the same kind of
  *  problem. */
 function TodayCardMenu({
-    anchorRef, onClose, kind, onMarkCompleted, onDiscard,
+    anchorRef, onClose, kind, onResume, onMarkCompleted, onDiscard,
 }: {
     anchorRef: React.RefObject<HTMLButtonElement | null>;
     onClose: () => void;
     kind: ReturnType<typeof visitStatusKind>;
+    /** "Resume consult" — active visits only. See `useConsultLifecycle
+     *  .resumeConsult`'s own doc comment for what this can and can't restore. */
+    onResume: () => void;
     onMarkCompleted: () => void;
     onDiscard: () => void;
 }) {
@@ -294,10 +298,27 @@ function TodayCardMenu({
     // that was visible of "Mark as completed").
     const left = Math.max(8, Math.min(rect.right - 178, window.innerWidth - 190));
 
+    // `stopPropagation` on every click inside this portal is load-bearing,
+    // not defensive. `createPortal` moves the DOM node to `document.body`,
+    // but React's synthetic events bubble through the REACT tree — this
+    // component is still a JSX child of `TodayCard` — so without this, a
+    // click ANYWHERE in here (a menu item, or the scrim while just closing
+    // it) bubbles up to `TodayCard`'s own `onClick` and opens the patient,
+    // regardless of where in the DOM it visually landed. Anmol: "whenever
+    // you click on the three dot and you do whatever action... or even if
+    // you don't do anything, you click outside of it and try to close the
+    // three dot, automatically that patient page will open." The existing
+    // `closest("[data-today-menu-btn]")` guard on `TodayCard` only ever
+    // caught a click on the TRIGGER itself, never one on this portaled menu.
     return createPortal(
-        <>
+        <div onClick={(e) => e.stopPropagation()}>
             <div className="prec-menu-scrim" onClick={onClose} />
             <div className="prec-today-menu" style={{ top: rect.bottom + 4, left }}>
+                {kind === "active" && (
+                    <button type="button" className="prec-today-menu-item" onClick={() => { onResume(); onClose(); }}>
+                        <Play size={14} /> Resume consult
+                    </button>
+                )}
                 {kind !== "done" && (
                     <button type="button" className="prec-today-menu-item" onClick={() => { onMarkCompleted(); onClose(); }}>
                         <CheckCircle2 size={14} /> Mark as completed
@@ -309,13 +330,13 @@ function TodayCardMenu({
                     </button>
                 )}
             </div>
-        </>,
+        </div>,
         document.body
     );
 }
 
 function TodayCard({
-    row, specialty, onClick, onChangeStatus,
+    row, specialty, onClick, onChangeStatus, onResumeConsult,
 }: {
     row: PatientRecordRow;
     specialty: SpecialtyProfile;
@@ -323,6 +344,8 @@ function TodayCard({
     /** "Mark completed" / "Discard visit" from the card's own ⋮ menu — see
      *  `setVisitStatus`'s doc comment for why exactly these two statuses. */
     onChangeStatus: (status: "completed" | "discarded") => void;
+    /** "Resume consult" — active visits only, from the same ⋮ menu. */
+    onResumeConsult: (row: PatientRecordRow) => void;
 }) {
     const kind = visitStatusKind(row.visit_status);
     const time = row.started_at ? formatTime(row.started_at) : "";
@@ -365,13 +388,21 @@ function TodayCard({
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((v) => !v)}
             >
-                <MoreHorizontal size={14} />
+                <MoreVertical size={14} />
             </button>
+            {/* Stacked directly below the ⋮ button now, both anchored to the
+                CARD itself — it used to sit on the avatar's corner instead,
+                the same corner the ⋮ button occupies, so an active patient's
+                dot could sit flush against (and read as swallowing) the menu
+                trigger. Anmol: "there is a dot, green dot there for active
+                patients which can hide it again." */}
+            {kind === "active" && <span className="prec-active-dot prec-active-dot--card" />}
             {menuOpen && (
                 <TodayCardMenu
                     anchorRef={menuBtnRef}
                     kind={kind}
                     onClose={() => setMenuOpen(false)}
+                    onResume={() => onResumeConsult(row)}
                     onMarkCompleted={() => onChangeStatus("completed")}
                     onDiscard={() => onChangeStatus("discarded")}
                 />
@@ -379,7 +410,6 @@ function TodayCard({
 
             <div className="prec-today-card-top">
                 <AvatarCircle name={row.patient_name} size={34} />
-                {kind === "active" && <span className="prec-active-dot prec-active-dot--card" />}
             </div>
             <div className="prec-today-name">{row.patient_name}</div>
             <div className="prec-today-sub">
@@ -576,6 +606,8 @@ interface PatientsListProps {
      *  scoped to the two real terminal statuses (see `setVisitStatus`'s
      *  own doc comment for why not more). */
     onChangeStatus: (row: PatientRecordRow, status: "completed" | "discarded") => void;
+    /** Today's Patients' own ⋮ menu — "Resume consult", active visits only. */
+    onResumeConsult: (row: PatientRecordRow) => void;
 }
 
 export function PatientsList({
@@ -587,6 +619,7 @@ export function PatientsList({
     recentLoading,
     specialty,
     onChangeStatus,
+    onResumeConsult,
     onSelectPatient,
 }: PatientsListProps) {
     const isSearching = searchQuery.trim().length > 0;
@@ -648,6 +681,7 @@ export function PatientsList({
                                 specialty={specialty}
                                 onClick={() => onSelectPatient(row)}
                                 onChangeStatus={(status) => onChangeStatus(row, status)}
+                                onResumeConsult={onResumeConsult}
                             />
                         ))}
                     </TodayPatientsScroller>

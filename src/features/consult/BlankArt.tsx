@@ -229,6 +229,27 @@ export function BlankConsultDefaultsArt() {
     );
 }
 
+/** The empty Visit Timeline (Patient Record page): the timeline's own dot-
+ *  and-line vocabulary (`.prec-tl-dot`/`.prec-tl-line`), at rest — two open
+ *  circles waiting for a first entry, rather than a generic icon unrelated
+ *  to the thing that will actually render here. Neutral slate, matching
+ *  that card's own un-tinted header glyph (`Calendar`, no colour class) —
+ *  Visit Timeline isn't a category with its own hue, same reasoning as
+ *  `BlankLabArt`/`BlankConsultDefaultsArt`. */
+export function BlankTimelineArt() {
+    return (
+        <svg width="52" height="56" viewBox="0 0 52 56" fill="none" aria-hidden="true">
+            <line x1="16" y1="10" x2="16" y2="46" stroke="#dbe1ea" strokeWidth="1.6" strokeDasharray="1 5" strokeLinecap="round" />
+            <circle cx="16" cy="10" r="4" fill="#fbfcfd" stroke="#aab4c4" strokeWidth="1.7" />
+            <path d="M24 9h16" stroke="#e4e8ef" strokeWidth="1.6" strokeLinecap="round" />
+            <circle cx="16" cy="28" r="4" fill="#fbfcfd" stroke="#c3cad6" strokeWidth="1.7" />
+            <path d="M24 27h12" stroke="#eaedf2" strokeWidth="1.6" strokeLinecap="round" />
+            <circle cx="16" cy="46" r="4" fill="#fbfcfd" stroke="#dbe1ea" strokeWidth="1.6" strokeDasharray="1.5 2.5" />
+            <path d="M44 4l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#b7c0cf" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

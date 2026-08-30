@@ -374,29 +374,26 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
  * this component rendered NOTHING (see the header's "does not exist for a
  * new patient" rule) until the fetch resolved, so a patient WITH history got
  * a silent pop-in that shoved `.cs-page` down a couple of seconds into the
- * consult. Shown for every patient while loading, including one who turns
- * out to have none — that read (skeleton → nothing) is a smaller, quieter
- * shift than (nothing → four full cards), and the fetch is normally sub-
- * second, so it is rarely on screen long enough to matter either way.
+ * consult.
+ *
+ * Shaped to match the band's actual DEFAULT state now, not its expanded one.
+ * This used to render the full open row of three card skeletons — correct
+ * back when the band opened by default, wrong since `collapsed` started
+ * defaulting to `true` (2026-08-25, same day, see that comment on
+ * `LongitudinalBand`): a patient with history would flash the whole
+ * three-card row open and then have it visibly SNAP SHUT the instant real
+ * data arrived, which read as a bug of its own — Anmol, later: "I still see
+ * a skeleton loading screen and then it automatically closes... remove this
+ * automatic open." Header-only now, exactly what the loaded band shows
+ * collapsed, so there is nothing left to snap shut.
  */
 function LongitudinalSkeleton() {
     return (
-        <section className="cs-lt is-skel" aria-hidden="true">
+        <section className="cs-lt is-skel is-collapsed" aria-hidden="true">
             <header className="cs-lt-head">
                 <span className="cs-lt-skel-bar cs-lt-skel-title" />
                 <span className="cs-lt-skel-bar cs-lt-skel-sub" />
             </header>
-            <div className="cs-lt-row">
-                {[0, 1, 2].map((i) => (
-                    <div key={i} className="cs-lt-card is-skel">
-                        <span className="cs-lt-skel-bar" style={{ width: "60%" }} />
-                        <span className="cs-lt-skel-bar" style={{ width: "80%", height: 14 }} />
-                        <span className="cs-lt-skel-bar" style={{ width: "45%" }} />
-                        <span className="cs-lt-skel-block" />
-                        <span className="cs-lt-skel-bar" style={{ width: "70%" }} />
-                    </div>
-                ))}
-            </div>
         </section>
     );
 }

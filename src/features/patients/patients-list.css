@@ -132,33 +132,34 @@
 }
 
 /* The ⋮ status-change trigger — "add some option to do with their status...
- * a simple 3 dot thing" (2026-08-29). Corner-anchored, muted at rest so it
- * doesn't compete with the name/chief-complaint for a first glance, dark
- * on hover/open the same way `.prec-row-remove` and every other quiet
- * corner control on this page already reads. `z-index` clears the card's
- * own topbar strip; sits above `.prec-today-card-top`'s avatar without
- * overlapping it (144px card, avatar starts flush left). */
+ * a simple 3 dot thing" (2026-08-29). Corner-anchored, vertical dots now
+ * (was `MoreHorizontal`) with a real border and a darker resting color —
+ * Anmol: "the three dot is barely visible... increase the contrast of these
+ * three dots so that they will be more better visible." `z-index` clears the
+ * card's own topbar strip and sits above `.prec-today-card-top`'s avatar
+ * without overlapping it (144px card, avatar starts flush left). */
 .prec-today-menu-btn {
     position: absolute;
     top: 6px;
     right: 5px;
-    z-index: 2;
+    z-index: 3;
     display: grid;
     place-items: center;
     width: 20px;
     height: 20px;
-    border: 0;
+    border: 1px solid rgba(15, 23, 42, 0.14);
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.85);
-    color: #94a3b8;
+    background: #ffffff;
+    color: #475569;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .prec-today-menu-btn:hover,
 .prec-today-menu-btn[aria-expanded="true"] {
     background: #eef2f7;
-    color: #334155;
+    color: #1e293b;
+    border-color: rgba(15, 23, 42, 0.26);
 }
 
 /* The menu itself is a `createPortal` into `document.body` (see
@@ -426,10 +427,15 @@
     flex-shrink: 0;
 }
 
+/* Anchored to the CARD now, not `.prec-today-card-top` — stacked directly
+ * below the ⋮ button (top:6px, 20px tall) in the same top-right corner
+ * instead of sharing the avatar's corner, where it used to sit flush
+ * against the menu trigger and could read as swallowing it. */
 .prec-active-dot--card {
     position: absolute;
-    top: 1px;
-    right: 1px;
+    top: 29px;
+    right: 8px;
+    z-index: 2;
 }
 
 @keyframes prec-pulse {
@@ -556,6 +562,57 @@
     color: #94a3b8;
     font-size: 12px;
 }
+
+/* Visit Timeline's own empty state (Patient Record) — see the JSX comment
+   at its one call site for why this doesn't just reuse `.prec-empty-section`
+   above. Also the panel this page's "make it full to the screen size"
+   complaint landed on hardest: a bare one-line `.prec-empty-section` inside
+   a tall card left most of the card (and the column below it) as dead grey
+   space — this fills that same space with a real illustration, two lines of
+   copy and a genuine next action instead of stretching a sentence to fit. */
+.prec-timeline-empty {
+    display: flex;
+    flex: 1;
+    min-height: 220px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px 20px;
+    text-align: center;
+}
+
+.prec-timeline-empty-title {
+    color: #334155;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.prec-timeline-empty-sub {
+    max-width: 300px;
+    margin-top: -4px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.prec-timeline-empty-cta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    border: 0;
+    border-radius: 9px;
+    background: #1268e8;
+    padding: 8px 16px;
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 700;
+    box-shadow: 0 3px 10px rgba(18, 104, 232, 0.28);
+    transition: background 0.13s ease;
+}
+
+.prec-timeline-empty-cta:hover { background: #0e56c4; }
 
 /* ── PATIENTS LIST — TABLE + TODAY CARD ATMOSPHERIC TREATMENT ─────────────────
    Add this block to the BOTTOM of patients-list.css
@@ -1017,15 +1074,18 @@
     transform: translateY(-1px);
 }
 
-/* The atmospheric top bar — 3px gradient stripe */
+/* The atmospheric top bar — a gradient stripe, slightly shortened (was a
+ * full-bleed 3px band) — Anmol: "slightly shorten it" — both thinner and
+ * pulled in from the right edge so it reads as an accent behind the ⋮
+ * button's corner rather than running underneath it. */
 .prec-today-card-topbar {
     position: absolute;
     top: 0;
     left: 0;
-    right: 0;
-    height: 3px;
+    right: 30px;
+    height: 2px;
     background: linear-gradient(90deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%);
-    border-radius: 10px 10px 0 0;
+    border-radius: 10px 0 0 0;
 }
 
 /* Active card — warm pink dominant */

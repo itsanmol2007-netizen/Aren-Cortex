@@ -1329,6 +1329,32 @@ body.cs-locked-shell {
     color: var(--cs-blue);
 }
 
+/* AttachmentsCard's two-step menu — computer/phone first, the clinical type
+   list only once "This computer" is picked (see `AttachmentsCard.tsx`'s own
+   `MenuStep` comment). `.cs-meas-menu button` above already sets this
+   element's box (border/radius/padding), one class short of the specificity
+   this needs to override its font-size/weight/color, hence the doubled-up
+   selector rather than a bare `.cs-meas-menu-back`. */
+.cs-meas-menu button.cs-meas-menu-back {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid var(--cs-line);
+    border-radius: 0;
+    padding: 6px 10px 8px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.cs-meas-menu button.cs-meas-menu-back:hover {
+    background: none;
+    color: var(--cs-blue);
+}
+
 /* Layers on top of the popup's own drop shadow instead of replacing it,
    same reason as `.cs-addmed-panel.cx-kbd-surface:focus` above — this is the
    POPUP variant only; `.is-inline` already zeroes its box-shadow, so the
@@ -1855,6 +1881,76 @@ body.cs-locked-shell {
     margin: 2px 0 0;
     color: #b23a2c;
     font-size: 12.5px;
+}
+
+/* ATTACHMENT PREVIEW — see `AttachmentPreviewModal.tsx`'s own header. Inline
+   inside ChartSurface instead of a new browser tab. */
+.cs-attach-preview {
+    display: flex;
+    min-height: 30vh;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid var(--cs-line);
+    border-radius: 12px;
+    background: var(--cs-page);
+}
+
+.cs-attach-preview-frame {
+    position: relative;
+    width: 100%;
+    max-height: 62vh;
+    margin: 0 auto;
+}
+
+.cs-attach-preview-skel {
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    background: linear-gradient(90deg, #eef0f4 25%, #e4e7ee 37%, #eef0f4 63%);
+    background-size: 200% 100%;
+    animation: cs-attach-preview-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes cs-attach-preview-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-attach-preview-skel { animation: none; }
+}
+
+.cs-attach-preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transition: opacity 0.2s ease;
+}
+
+.cs-attach-preview-pdf {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    transition: opacity 0.2s ease;
+}
+
+.cs-attach-preview-other {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 40px 24px;
+    color: var(--cs-faint);
+    text-align: center;
+}
+
+.cs-attach-preview-other a {
+    color: var(--cs-blue);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 /* UPLOAD FROM PHONE — Cortex's copy of Front Desk's gateway QR modal, see
@@ -4387,7 +4483,14 @@ body.cs-locked-shell {
     position: relative;
     display: flex;
     flex-direction: column;
-    width: min(920px, 100%);
+    /* Narrowed 920px -> 800px (Anmol: "models are too much horizontally
+       stretched, reduce its width slightly") — most triggered now by
+       `UploadFromPhoneModal`'s single centered QR code, which looked lost in
+       the old width, but every ChartSurface consumer (odontogram, body map,
+       the Attachments "More" list) shares this shell and gets the same
+       trim; both charts already scale to their container (`max-width:100%`
+       on their SVGs), so nothing in them gets cramped by this. */
+    width: min(800px, 100%);
     max-height: 100%;
     border: 1px solid rgba(255, 255, 255, 0.85);
     border-radius: 22px;

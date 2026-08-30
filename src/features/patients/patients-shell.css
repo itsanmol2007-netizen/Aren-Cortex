@@ -122,15 +122,45 @@
     gap: 0;
 }
 
-/* Left column — main content, scrollable */
+/* Left column — main content, scrollable. Flex column (added alongside
+   `.prec-panel-card--grow` below) so ONE card can be told to take whatever
+   vertical space its siblings don't use, rather than every card stopping at
+   its own content height and leaving the column short of the viewport —
+   default block stacking behaved identically for every child that doesn't
+   opt into `--grow`, so this is safe for every page that reuses this shell
+   (Patients Overview's list included). */
 .prec-main-col {
     flex: 1;
     min-width: 0;
-    overflow-y: scroll;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
     padding: 16px 20px 36px;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: #c0cce0 transparent;
+}
+
+/* Anmol, on Patient Record specifically: "the visit timeline section is
+   just half cut... make it full to the screen size." Visit Timeline is the
+   last card in the column and the one most likely to be short (a new
+   patient, or one with few visits) — `flex: 1` lets IT absorb the column's
+   remaining height instead of the column ending early and showing the page
+   background underneath. `min-height: 0` is required on both: a flex item
+   refuses to shrink below its content's natural height otherwise, which
+   here would defeat the point of `overflow-y: auto` on `.prec-main-col`. */
+.prec-panel-card--grow {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.prec-panel-card-body--grow {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
 }
 
 .prec-main-col::-webkit-scrollbar {

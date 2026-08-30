@@ -241,16 +241,15 @@ export function PrescriptionEditorPage({
                 onOpenSidebar={onOpenSidebar}
                 title="Prescription Pad"
                 subtitle="Everything that appears on your printed prescription"
+                rightSlot={<BackButton label="Back to Clinic" onClick={onBack} />}
             />
 
-            {/* The one "back to my parent page" position in Cortex — light
-                body, top-left, below the dark header, never inside it. Same
-                row shape `PatientRecord.tsx` uses (back-left, one action
-                right): the save-state readout takes the action slot here,
-                since this page has no separate primary action to put there. */}
-            <div className="flex items-center gap-[9px] border-b border-[#d0d8e8] bg-white px-[56px] py-[10px] max-[900px]:px-[12px]">
-                <BackButton label="Back to Clinic" onClick={onBack} />
-                <div className="flex-1" />
+            {/* Used to also carry the back button (top-left, light body) —
+                see `BackButton.tsx`'s own header for why that moved into the
+                dark header's rightSlot above. This row is now just the
+                save-state readout, right-aligned since it has the row to
+                itself. */}
+            <div className="flex items-center justify-end gap-[9px] border-b border-[#d0d8e8] bg-white px-[56px] py-[10px] max-[900px]:px-[12px]">
                 {/* Not a toast and not a Save button — the page saves as you
                     change it, and this says so quietly. */}
                 <span

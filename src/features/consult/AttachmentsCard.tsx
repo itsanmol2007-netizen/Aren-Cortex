@@ -21,14 +21,15 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, ExternalLink, Tag, Plus, ChevronDown, QrCode } from "lucide-react";
-import { listAttachments, uploadAttachment, getViewUrl, deleteAttachment, updateAttachmentTags } from "../../lib/db/attachments";
+import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, Eye, Tag, Plus, ChevronDown, ChevronLeft, QrCode, Monitor } from "lucide-react";
+import { listAttachments, uploadAttachment, deleteAttachment, updateAttachmentTags, subscribeAttachments } from "../../lib/db/attachments";
 import { ATTACHMENT_TYPES, ATTACHMENT_TYPE_LABEL, ACCEPTED_MIME_ACCEPT, LATERALITY_LABEL } from "../../lib/attachments/types";
 import type { Attachment, AttachmentType, Laterality } from "../../lib/attachments/types";
 import { ChartSurface } from "./ChartSurface";
 import { BlankAttachmentArt } from "./BlankArt";
 import { useDismiss } from "./useDismiss";
 import { UploadFromPhoneModal } from "./UploadFromPhoneModal";
+import { AttachmentPreviewModal } from "./AttachmentPreviewModal";
 
 const LATERALITIES: Laterality[] = ["left", "right", "bilateral"];
 
@@ -72,27 +73,62 @@ function formatBytes(n: number | null): string {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Two steps, not one flat list of six. Root asks WHERE the file is coming
+ * from (this computer, or the patient's phone); only "This computer" drills
+ * into the clinical type list (xray/lab/photo/scan/other), because that
+ * choice is what drives compress.ts's profile — "Upload from phone" needs no
+ * type at all, the patient's own upload interface asks nothing like it.
+ *
+ * Anmol, 2026-08-30: "should ask if you wanna upload through the computer or
+ * phone, a simple option instead of showing 6 different options... by
+ * selecting Computer, now ask if its xray and all, make that front back" —
+ * i.e. swap what used to be the one and only menu (the type list) to the
+ * SECOND step, behind a first step that used to not exist.
+ */
+type MenuStep = "root" | "types" | null;
+
 export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = false, maxInline, strip = false }: Props) {
     /** the full list, opened over the page rather than expanded in place */
     const [showAll, setShowAll] = useState(false);
     const [phoneUpload, setPhoneUpload] = useState(false);
+    const [preview, setPreview] = useState<Attachment | null>(null);
     const canUploadFromPhone = !!visitId && !!hospitalId && !!patientId;
     const [items, setItems] = useState<Attachment[]>([]);
-    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuStep, setMenuStep] = useState<MenuStep>(null);
+    const menuOpen = menuStep !== null;
     const [pendingType, setPendingType] = useState<AttachmentType | null>(null);
     const [busy, setBusy] = useState<string | null>(null); // status text while uploading
     const [error, setError] = useState<string | null>(null);
-    const [viewing, setViewing] = useState<number | null>(null); // attachment id being fetched
     const [tagging, setTagging] = useState<number | null>(null); // attachment id whose tag panel is open
     const [regionDraft, setRegionDraft] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
     const headRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+    /** the empty-state "click anywhere to open" zone — see below */
+    const blankRef = useRef<HTMLDivElement>(null);
+    /** full (non-strip) mode's whole card — its own "click anywhere" zone */
+    const sectionRef = useRef<HTMLElement>(null);
 
     // Clicking the page behind the type list closes it. It used to stay open
     // until something was picked, so the only ways out were choosing a file
     // type you did not want or finding the trigger again.
-    useDismiss(menuOpen, () => setMenuOpen(false), [headRef, menuRef]);
+    //
+    // `blankRef` is listed here for the same reason the trigger button's own
+    // wrapper (`headRef`) is: without it, clicking the blank area to OPEN the
+    // menu would, on the very same click, also count as an outside click and
+    // fire `onClose` — mousedown closes it, then this element's own click
+    // handler reopens it, a flicker that reads as the menu refusing to open.
+    // Being "inside" here just means a click here is never treated as
+    // dismissal; it does not by itself open anything.
+    useDismiss(menuOpen, () => setMenuStep(null), [headRef, menuRef, blankRef, sectionRef]);
+
+    const refetch = () => {
+        if (!visitId) return;
+        listAttachments(visitId)
+            .then((rows) => setItems(rows))
+            .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    };
 
     useEffect(() => {
         if (!visitId) { setItems([]); return; }
@@ -100,17 +136,31 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
         listAttachments(visitId)
             .then((rows) => { if (!cancelled) setItems(rows); })
             .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
-        return () => { cancelled = true; };
+        // A phone upload (arenode.com's own interface, entirely outside this
+        // app — see `subscribeAttachments`'s own doc) writes this row with
+        // nobody here to optimistically update `items` the way `onFileChosen`
+        // does for a computer upload. Without this, the new file was invisible
+        // until the doctor left this screen and came back and the effect
+        // above re-ran.
+        return subscribeAttachments(visitId, refetch);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visitId]);
 
+    // Root step: skip straight to the type list when phone upload isn't wired
+    // in for this caller (missing hospitalId/patientId) — same behaviour as
+    // before this two-step menu existed.
+    const openMenu = () => setMenuStep(canUploadFromPhone ? "root" : "types");
+    /** Guarded entry point for "click anywhere in the empty card" — see below. */
+    const openMenuIfClosed = () => { if (menuStep === null) openMenu(); };
+
     const openPhoneUpload = () => {
-        setMenuOpen(false);
+        setMenuStep(null);
         setPhoneUpload(true);
     };
 
     const openPickerFor = (type: AttachmentType) => {
         setPendingType(type);
-        setMenuOpen(false);
+        setMenuStep(null);
         // Reset first — selecting the same file twice in a row does not fire
         // `change` on an unreset input.
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -137,18 +187,10 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
         }
     };
 
-    const onView = async (att: Attachment) => {
-        setViewing(att.id);
-        setError(null);
-        try {
-            const url = await getViewUrl(att.storagePath);
-            window.open(url, "_blank", "noopener,noreferrer");
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not open attachment");
-        } finally {
-            setViewing(null);
-        }
-    };
+    // Used to be `getViewUrl` + `window.open` — a new browser tab whose
+    // address bar reads as leaving Aren entirely. `AttachmentPreviewModal`
+    // fetches the presigned URL itself and renders inline instead.
+    const onView = (att: Attachment) => setPreview(att);
 
     const openTagPanel = (att: Attachment) => {
         setTagging((curr) => (curr === att.id ? null : att.id));
@@ -230,12 +272,11 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                 <button
                     type="button"
                     className="cs-attach-action"
-                    disabled={viewing === att.id}
                     onClick={() => onView(att)}
                     aria-label="View"
                     title="View"
                 >
-                    {viewing === att.id ? <Loader2 size={15} className="cs-spin" /> : <ExternalLink size={15} />}
+                    <Eye size={15} />
                 </button>
                 <button
                     type="button"
@@ -300,20 +341,42 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
         </button>
     );
 
-    // Sits in every "Attach" menu below the type list, separated by its own
-    // group head so it never reads as a sixth attachment type — picking it
-    // skips the type/compression question entirely (see
-    // `UploadFromPhoneModal.tsx`'s own header for why). Hidden rather than
-    // disabled when hospitalId/patientId aren't wired in by a caller yet.
-    const phoneMenuItem = canUploadFromPhone && (
-        <div className="cs-meas-menu-group">
-            <p className="cs-meas-menu-head">Or</p>
-            <button type="button" role="menuitem" onClick={openPhoneUpload}>
-                <QrCode size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
-                Upload from phone
-            </button>
-        </div>
-    );
+    // The menu's actual content, identical wherever it opens (strip header,
+    // full-mode empty state, full-mode "Attach" button) — one function so the
+    // three call sites can never drift into different steps or wording.
+    // `root` only exists when phone upload is wired in (see `openMenu`); the
+    // back arrow only shows on `types` when there WAS a root to go back to.
+    const renderMenuStep = () => {
+        if (menuStep === "root") {
+            return (
+                <>
+                    <button type="button" role="menuitem" onClick={() => setMenuStep("types")}>
+                        <Monitor size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
+                        Upload from this computer
+                    </button>
+                    <button type="button" role="menuitem" onClick={openPhoneUpload}>
+                        <QrCode size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
+                        Upload from phone
+                    </button>
+                </>
+            );
+        }
+        return (
+            <>
+                {canUploadFromPhone && (
+                    <button type="button" className="cs-meas-menu-back" onClick={() => setMenuStep("root")}>
+                        <ChevronLeft size={12} aria-hidden="true" />
+                        Back
+                    </button>
+                )}
+                {ATTACHMENT_TYPES.map((t) => (
+                    <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
+                        {ATTACHMENT_TYPE_LABEL[t]}
+                    </button>
+                ))}
+            </>
+        );
+    };
 
     if (strip) {
         return (
@@ -335,7 +398,7 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                         disabled={disabled || !visitId || !!busy}
                         aria-expanded={menuOpen}
                         aria-haspopup="menu"
-                        onClick={() => setMenuOpen((v) => !v)}
+                        onClick={() => (menuOpen ? setMenuStep(null) : openMenu())}
                     >
                         <span className="cs-glyph is-slate">
                             {busy ? <Loader2 size={16} className="cs-spin" /> : <Paperclip size={16} />}
@@ -347,12 +410,7 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
 
                     {menuOpen && (
                         <div className="cs-meas-menu" role="menu" ref={menuRef}>
-                            {ATTACHMENT_TYPES.map((t) => (
-                                <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
-                                    {ATTACHMENT_TYPE_LABEL[t]}
-                                </button>
-                            ))}
-                            {phoneMenuItem}
+                            {renderMenuStep()}
                         </div>
                     )}
                 </div>
@@ -369,8 +427,26 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                     <div className="cs-attach-strip">{visible.map(renderTile)}</div>
                 )}
 
+                {/* Click anywhere in the empty state to open the same menu the
+                    header's own trigger opens — Anmol: "should open by
+                    clicking anywhere on that attachment section when there
+                    is none." `openMenuIfClosed` is a no-op while a step is
+                    already showing, so this can never re-open or reset one
+                    in progress; `blankRef` (see `useDismiss` above) keeps a
+                    click HERE from ever reading as a dismiss in the first
+                    place. */}
                 {items.length === 0 && !busy && (
-                    <div className="cs-attach-blank">
+                    <div
+                        ref={blankRef}
+                        className="cs-attach-blank"
+                        role={!disabled && visitId ? "button" : undefined}
+                        tabIndex={!disabled && visitId ? 0 : undefined}
+                        onClick={() => { if (!disabled && visitId) openMenuIfClosed(); }}
+                        onKeyDown={(e) => {
+                            if (disabled || !visitId) return;
+                            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMenuIfClosed(); }
+                        }}
+                    >
                         <BlankAttachmentArt />
                         <p className="cs-attach-hint">
                             X-rays, scans and reports — when structured entry cannot
@@ -408,6 +484,8 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                     </ChartSurface>
                 )}
 
+                {preview && <AttachmentPreviewModal attachment={preview} onClose={() => setPreview(null)} />}
+
                 {phoneUpload && visitId && hospitalId && patientId && (
                     <UploadFromPhoneModal
                         visitId={visitId}
@@ -422,8 +500,15 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
 
     return (
         <section
+            ref={sectionRef}
             className={`cs-card cs-attach${isEmpty ? " is-compact" : ""}`}
             aria-label="Attachments"
+            // Click anywhere on the card while it's empty opens the same menu
+            // the "Attach" button does — see the strip-mode blank state's own
+            // comment for the reopen-on-dismiss hazard this guards against.
+            // `sectionRef` (see `useDismiss` above) keeps every click in this
+            // card, menu included, from ever reading as an outside dismiss.
+            onClick={() => { if (isEmpty && !disabled && visitId) openMenuIfClosed(); }}
         >
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
@@ -443,19 +528,14 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                             className="cs-attach-trigger"
                             disabled={disabled || !visitId}
                             aria-expanded={menuOpen}
-                            onClick={() => setMenuOpen((v) => !v)}
+                            onClick={() => (menuOpen ? setMenuStep(null) : openMenu())}
                         >
                             <Paperclip size={15} />
                             Attach
                         </button>
                         {menuOpen && (
-                            <div className="cs-meas-menu" role="menu">
-                                {ATTACHMENT_TYPES.map((t) => (
-                                    <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
-                                        {ATTACHMENT_TYPE_LABEL[t]}
-                                    </button>
-                                ))}
-                                {phoneMenuItem}
+                            <div className="cs-meas-menu" role="menu" ref={menuRef}>
+                                {renderMenuStep()}
                             </div>
                         )}
                     </div>
@@ -502,19 +582,14 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                             className="cs-meas-add"
                             disabled={disabled || !visitId || !!busy}
                             aria-expanded={menuOpen}
-                            onClick={() => setMenuOpen((v) => !v)}
+                            onClick={() => (menuOpen ? setMenuStep(null) : openMenu())}
                         >
                             <Paperclip size={16} />
                             <span className="cs-meas-label">Attach</span>
                         </button>
                         {menuOpen && (
-                            <div className="cs-meas-menu" role="menu">
-                                {ATTACHMENT_TYPES.map((t) => (
-                                    <button key={t} type="button" role="menuitem" onClick={() => openPickerFor(t)}>
-                                        {ATTACHMENT_TYPE_LABEL[t]}
-                                    </button>
-                                ))}
-                                {phoneMenuItem}
+                            <div className="cs-meas-menu" role="menu" ref={menuRef}>
+                                {renderMenuStep()}
                             </div>
                         )}
                     </div>
@@ -531,6 +606,8 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                     <div className="cs-attach-body">{items.map(renderItem)}</div>
                 </ChartSurface>
             )}
+
+            {preview && <AttachmentPreviewModal attachment={preview} onClose={() => setPreview(null)} />}
 
             {phoneUpload && visitId && hospitalId && patientId && (
                 <UploadFromPhoneModal

@@ -40,6 +40,10 @@ type View = "list" | "record";
 
 interface Props {
     onStartConsult: (patient: Patient) => void;
+    /** Today's Patients' ⋮ menu — "Resume consult", active visits only. See
+     *  `useConsultLifecycle.resumeConsult`'s own doc comment for why this is
+     *  a distinct function from `onStartConsult` above, not a call to it. */
+    onResumeConsult: (patient: Patient, visitId: string) => void;
     logoRef: RefObject<HTMLDivElement>;
     onOpenSidebar: () => void;
     specialty: SpecialtyProfile;
@@ -487,7 +491,7 @@ function RightPanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty, onNavigate }: Props) {
+export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenSidebar, specialty, onNavigate }: Props) {
     const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
@@ -597,6 +601,22 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
         });
     }, []);
 
+    // Same patient-shape-from-row as `handleStartConsult` builds elsewhere on
+    // this page/`PatientRecord.tsx` — kept minimal (the fields `Patient`
+    // actually declares) rather than spreading the whole row.
+    const resumeVisit = useCallback((row: PatientRecordRow) => {
+        onResumeConsult(
+            {
+                id: row.patient_id,
+                name: row.patient_name,
+                age: String(row.age),
+                gender: row.gender as Patient["gender"],
+                phone: row.phone,
+            },
+            row.visit_id
+        );
+    }, [onResumeConsult]);
+
     const goBack = useCallback(() => {
         setView("list");
         setSelectedRow(null);
@@ -689,6 +709,7 @@ export function PatientsPage({ onStartConsult, logoRef, onOpenSidebar, specialty
                         specialty={specialty}
                         onSelectPatient={openRecord}
                         onChangeStatus={changeVisitStatus}
+                        onResumeConsult={resumeVisit}
                     />
                 </div>
 

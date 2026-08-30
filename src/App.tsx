@@ -308,7 +308,10 @@ function App() {
   // the flags for where in the consultation we are. Layer 1 like the chart and
   // the ledger: it holds facts, and the transitions ON those facts live in
   // useConsultLifecycle below. See useConsultSession.ts for the layering.
-  const session = useConsultSession({ chart, data: synapse.data });
+  const session = useConsultSession({
+    chart, data: synapse.data,
+    doctorId: identity.isReal ? identity.doctorId : null,
+  });
   const {
     patient, visitId,
     pastVisits, pastVisitsLoading,
@@ -719,7 +722,7 @@ function App() {
   // ranking as the doctor saw it, so it needs the engine's result at render
   // time. Navigation stays here in the shell and is passed in.
   const {
-    handleStartConsultFromRecord, handlePatientConfirm, handleRepeatRx,
+    handleStartConsultFromRecord, resumeConsult, handlePatientConfirm, handleRepeatRx,
     handleConfirmAndSave, openReview, resetConsultState,
   } = useConsultLifecycle({
     identity,
@@ -1319,6 +1322,7 @@ function App() {
       {activePage === "patients" ? (
         <PatientsPage
           onStartConsult={handleStartConsultFromRecord}
+          onResumeConsult={resumeConsult}
           logoRef={logoRef}
           onOpenSidebar={handleOpenSidebar}
           specialty={specialty}

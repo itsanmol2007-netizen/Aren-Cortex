@@ -102,6 +102,9 @@ export interface ConsultLifecycleArgs {
 export interface ConsultLifecycle {
   /** Start (or resume) a consult for a patient chosen from the records page. */
   handleStartConsultFromRecord: (incomingPatient: Patient) => Promise<void>;
+  /** Re-enter a visit that is already in progress, by its known id — see
+   *  this function's own doc comment for why it's not the one above. */
+  resumeConsult: (incomingPatient: Patient, visitId: string) => void;
   /** Start a consult from the patient modal, creating the patient if new. */
   handlePatientConfirm: (incoming: Patient) => Promise<void>;
   /** Carry a past visit's chart and medicines into this one. */
@@ -189,6 +192,41 @@ export function useConsultLifecycle({
     }
   }, [resolveVisitForConsult, session, clearWorkspace, setActivePage, setSidebarOpen,
       showToast, focusChartSearch, carryForwardFor]);
+
+  /**
+   * Re-enter a visit that is ALREADY in progress — the Patients page's
+   * "Resume consult" (Today's Patients ⋮ menu, active visits only) and
+   * `useConsultSession`'s own reload/crash-recovery restore both need this,
+   * not `handleStartConsultFromRecord` above: that one calls
+   * `resolveVisitForConsult`, which only ever finds a `waiting` visit or
+   * mints a brand new one — an already-`serving` visit matches neither
+   * branch, so routing a resume through it would silently create a SECOND
+   * visit row for the same encounter. This skips resolution entirely and
+   * sets the exact known visit id directly.
+   *
+   * ⚠ Known gap, not fixed here: this restores WHICH patient and WHICH
+   * visit, not the chart's own on-screen content. Nothing in this codebase
+   * reads `visit_observations`/measurements/story back into the chart's
+   * live React state on mount — every chip/measurement already written for
+   * this visit is safely still in the DB (a re-toggle from here is a normal
+   * upsert, not a duplicate), but the doctor sees a blank chart until they
+   * start adding to it again. Building that read-back is a real, separate
+   * feature (every one of useConsultChart/useConsultPlan/useVisitStory/
+   * examination/measurements would need its own "load from this visit id"),
+   * out of scope for what was asked here — see the handoff note for this.
+   */
+  const resumeConsult = useCallback((incomingPatient: Patient, visitId: string) => {
+    session.setVisitId(visitId);
+    session.setPatient(incomingPatient);
+    clearWorkspace();
+    session.setRepeatRxBanner(null);
+    setActivePage(null);
+    setSidebarOpen(false);
+    showToast(`Resumed consult for ${incomingPatient.name}`);
+    focusChartSearch();
+    session.loadPastVisits(incomingPatient.id!, visitId);
+    carryForwardFor(incomingPatient.id!);
+  }, [session, clearWorkspace, setActivePage, setSidebarOpen, showToast, focusChartSearch, carryForwardFor]);
 
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
     try {
@@ -435,6 +473,7 @@ export function useConsultLifecycle({
 
   return {
     handleStartConsultFromRecord,
+    resumeConsult,
     handlePatientConfirm,
     handleRepeatRx,
     handleConfirmAndSave,
