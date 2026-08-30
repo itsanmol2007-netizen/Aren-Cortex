@@ -364,14 +364,22 @@ export function ClinicPage({
                     to 50/50 would give one of them dead space it hasn't
                     earned. `items-stretch` gives the row its parity without
                     either card declaring a height. */}
-                {/* `items-start`, not `stretch`: one card holds a fixed-aspect sheet
-                    of paper and the other a seven-row list, so their natural
-                    heights genuinely differ. Stretching them gave the Hours card
-                    a 519px well around a 200px empty state — "a 62px illustration
-                    in a 300px well reads as an accident" (empty-states.md). A real
-                    difference in content is not a layout bug and must not be
-                    papered over with reserved dead space (responsive-grid.md). */}
-                <div className="grid grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] items-start gap-[12px] max-[980px]:grid-cols-1">
+                {/* Reverted back to `items-stretch` (2026-08-30) — the
+                    `items-start` swap above documented a real bug at the
+                    time ("a 519px well around a 200px empty state"), but
+                    `RxPreview`'s own `maxHeight={440}` cap below did not
+                    exist yet when that measurement was taken; today the tall
+                    side of this row can never exceed 440px, so stretching no
+                    longer reproduces that well — it gives Clinic Hours a
+                    height matched to an already-bounded neighbour instead of
+                    an unbounded one. Anmol, live: "if two related cards are
+                    side by side, their heights should remain visually
+                    aligned... don't have one card become 40px tall while its
+                    neighbour is substantially taller" — `EmptyBlock` (see
+                    ui.tsx) already centers itself in whatever height it's
+                    given, so the empty state fills this properly instead of
+                    sitting in unexplained dead space. */}
+                <div className="grid grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] items-stretch gap-[12px] max-[980px]:grid-cols-1">
                     <Card
                         id="clin-card-rx"
                         tone="violet"
