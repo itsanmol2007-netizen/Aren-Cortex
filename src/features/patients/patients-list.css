@@ -139,7 +139,6 @@
  * card's own topbar strip and sits above `.prec-today-card-top`'s avatar
  * without overlapping it (144px card, avatar starts flush left). */
 .prec-today-menu-btn {
-    position: absolute;
     top: 6px;
     right: 5px;
     z-index: 3;
@@ -153,6 +152,30 @@
     color: #475569;
     cursor: pointer;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+/* `position: absolute` has to win over the "atmospheric" section's
+ * `.prec-today-card > *:not(.prec-today-card-glow) { position: relative }`
+ * further down this file — that rule's specificity (0,2,0) otherwise beats
+ * the plain `.prec-today-menu-btn` above (0,1,0), silently downgrading this
+ * to `position: relative`, which reinterprets `top`/`right` as an OFFSET
+ * from its own in-flow position (top-left, right after the topbar strip in
+ * the DOM) instead of an anchor to the card's corner — the exact bug behind
+ * Anmol's "collides with the avatar": the button rendered near the top-LEFT
+ * instead of top-right. `[data-today-menu-btn]` (already on the element, see
+ * the JSX) pushes this selector's specificity to (0,3,0) to win outright,
+ * rather than depending on which of two equally-specific rules happens to
+ * come later in the file. */
+.prec-today-card > .prec-today-menu-btn[data-today-menu-btn] {
+    position: absolute;
+    /* Same fight, same fix, for `z-index` too — the atmospheric rule sets
+     * BOTH `position` and `z-index` on every direct child alike (`z-index:
+     * 1`), so fixing `position` alone left this at 1 instead of the 3 set
+     * above, tying it with `.prec-today-card-top` (also lifted to z-index 1
+     * by that same rule) — a tie that `.prec-today-card-top` won purely by
+     * being later in the DOM, silently swallowing every click meant for
+     * this button. */
+    z-index: 3;
 }
 
 .prec-today-menu-btn:hover,
@@ -427,15 +450,28 @@
     flex-shrink: 0;
 }
 
-/* Anchored to the CARD now, not `.prec-today-card-top` — stacked directly
- * below the ⋮ button (top:6px, 20px tall) in the same top-right corner
- * instead of sharing the avatar's corner, where it used to sit flush
- * against the menu trigger and could read as swallowing it. */
+/* Anchored to the CARD now, not `.prec-today-card-top` — sitting immediately
+ * to the LEFT of the ⋮ button (top:6px/right:5px, 20px square), vertically
+ * centered against it, instead of sharing the avatar's corner (where it used
+ * to sit flush against the menu trigger and could read as swallowing it) or
+ * stacked below it (Anmol, live: "looking trashed... move the green dot to
+ * left side of those 3 dots"). */
 .prec-active-dot--card {
-    position: absolute;
-    top: 29px;
-    right: 8px;
+    top: 12px;
+    right: 29px;
     z-index: 2;
+}
+
+/* Same specificity fight as `.prec-today-menu-btn` above, and the same fix:
+ * without `position: absolute` actually winning, this collapses to a 0x0
+ * inline `<span>` (position:absolute is what blockifies it; the plain
+ * `width`/`height` on `.prec-active-dot` do nothing to an inline element),
+ * i.e. the dot silently disappears — Anmol: "restore the green indicator...
+ * do not remove [it]." Doubling the class (three selectors total) matches
+ * the (0,3,0) specificity used there rather than depending on source order. */
+.prec-today-card > .prec-active-dot.prec-active-dot--card {
+    position: absolute;
+    z-index: 2; /* see the menu button's own override just above for why */
 }
 
 @keyframes prec-pulse {
@@ -1079,13 +1115,25 @@
  * pulled in from the right edge so it reads as an accent behind the ⋮
  * button's corner rather than running underneath it. */
 .prec-today-card-topbar {
-    position: absolute;
     top: 0;
     left: 0;
     right: 30px;
     height: 2px;
     background: linear-gradient(90deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%);
     border-radius: 10px 0 0 0;
+}
+
+/* Same specificity fight as `.prec-today-menu-btn`/`.prec-active-dot--card`
+ * above (see either for the full explanation): the "atmospheric" section's
+ * `.prec-today-card > *:not(.prec-today-card-glow) { position: relative }`
+ * otherwise beats the plain class above, reinterpreting `top`/`left`/`right`
+ * as offsets from this bar's in-flow position rather than anchors — it
+ * still LOOKED roughly like a shortened bar by coincidence (a shifted
+ * full-width block, cropped by the card's own `overflow: hidden`), which is
+ * exactly the kind of silent near-miss this rule exists to rule out rather
+ * than trust by eye. */
+.prec-today-card > .prec-today-card-topbar {
+    position: absolute;
 }
 
 /* Active card — warm pink dominant */
