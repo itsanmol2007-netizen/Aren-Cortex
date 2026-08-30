@@ -1476,6 +1476,8 @@ function App() {
                   anatomicalMeasureKeys={anatomicalMeasureKeys}
                   pastVisits={pastVisits}
                   visitId={visitId}
+                  hospitalId={identity.isReal ? identity.hospitalId : null}
+                  patientId={patient?.id ?? null}
                   disabled={!patient}
                   searchRef={chartSearchRef}
                   measurementsRef={measurementsRef}
@@ -1511,6 +1513,8 @@ function App() {
                   relevantMeasureBecause={measureRelevance.because}
                   pastVisits={pastVisits}
                   visitId={visitId}
+                  hospitalId={identity.isReal ? identity.hospitalId : null}
+                  patientId={patient?.id ?? null}
                   disabled={!patient}
                   searchRef={chartSearchRef}
                   measurementsRef={measurementsRef}
@@ -1541,6 +1545,8 @@ function App() {
                   onOpenChart={(key) => setOpenChart(key as ChartKind)}
                   chartSummaries={chartSummaries}
                   visitId={visitId}
+                  hospitalId={identity.isReal ? identity.hospitalId : null}
+                  patientId={patient?.id ?? null}
                   disabled={!patient}
                   searchRef={chartSearchRef}
                   measurementsRef={measurementsRef}

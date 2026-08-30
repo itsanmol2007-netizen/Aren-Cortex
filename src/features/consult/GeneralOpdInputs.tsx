@@ -57,6 +57,9 @@ interface Props {
     /** completed visits, for the "vs last" line under each reading */
     pastVisits?: TrendVisit[];
     visitId: string | null;
+    /** threaded down to AttachmentsCard's "Upload from phone" — see its own Props doc. */
+    hospitalId?: string | null;
+    patientId?: string | null;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
     /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
@@ -71,7 +74,7 @@ export function GeneralOpdInputs({
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
-    visitId, disabled = false, searchRef, measurementsRef,
+    visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
     templates, onApplyTemplate,
 }: Props) {
     /**
@@ -150,7 +153,7 @@ export function GeneralOpdInputs({
                         maxInline={6}
                         containerRef={measurementsRef}
                     />
-                    <AttachmentsCard visitId={visitId} disabled={disabled} maxInline={3} strip />
+                    <AttachmentsCard visitId={visitId} hospitalId={hospitalId} patientId={patientId} disabled={disabled} maxInline={3} strip />
                 </div>
             </div>
         </>

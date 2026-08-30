@@ -1857,6 +1857,168 @@ body.cs-locked-shell {
     font-size: 12.5px;
 }
 
+/* UPLOAD FROM PHONE — Cortex's copy of Front Desk's gateway QR modal, see
+   `UploadFromPhoneModal.tsx`'s own header for the porting notes. Rendered
+   inside `ChartSurface`, so these only style the body content. */
+.cs-phoneup-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cs-s3);
+    padding: 26px 8px;
+    color: var(--cs-faint);
+    font-size: 13px;
+    font-weight: 560;
+}
+
+.cs-phoneup-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cs-s3);
+    padding: var(--cs-s2) 4px 4px;
+}
+
+.cs-phoneup-qr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 200px;
+    height: 200px;
+    border: 1px solid var(--cs-line);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: var(--cs-shadow);
+    color: var(--cs-faint);
+}
+
+.cs-phoneup-qr img { border-radius: 8px; }
+
+.cs-phoneup-caption {
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 560;
+    text-align: center;
+}
+
+.cs-phoneup-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cs-s3);
+    width: 100%;
+    border: 1px solid var(--cs-line);
+    border-radius: 11px;
+    background: var(--cs-page);
+    padding: var(--cs-s2) var(--cs-s3);
+}
+
+.cs-phoneup-status-left {
+    display: flex;
+    align-items: center;
+    gap: var(--cs-s2);
+}
+
+.cs-phoneup-status-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+
+.cs-phoneup-status-count {
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.cs-phoneup-done-badge {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    border-radius: 7px;
+    background: var(--cs-green-soft);
+    padding: 3px 8px;
+    color: var(--cs-green);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.cs-phoneup-cancel-btn {
+    border: 1px solid var(--cs-rose-soft);
+    border-radius: 9px;
+    background: #fff;
+    padding: 7px 14px;
+    color: var(--cs-rose);
+    font-size: 12.5px;
+    font-weight: 700;
+    transition: border-color 0.13s ease, background 0.13s ease;
+}
+
+.cs-phoneup-cancel-btn:hover:not(:disabled) {
+    border-color: var(--cs-rose);
+    background: var(--cs-rose-soft);
+}
+
+.cs-phoneup-cancel-btn:disabled { opacity: 0.6; }
+
+.cs-phoneup-expired {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cs-s2);
+    padding: 22px 8px;
+    text-align: center;
+}
+
+.cs-phoneup-expired-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+}
+
+.cs-phoneup-expired-title {
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 750;
+}
+
+.cs-phoneup-expired-body {
+    max-width: 300px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 540;
+}
+
+.cs-phoneup-resume-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 2px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--cs-blue);
+    padding: 9px 18px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 750;
+    box-shadow: 0 3px 12px rgba(18, 104, 232, 0.28);
+}
+
+.cs-phoneup-resume-btn:hover:not(:disabled) { background: #0e56c4; }
+.cs-phoneup-resume-btn:disabled { opacity: 0.6; }
+
 .cs-spin {
     animation: cs-spin-turn 0.9s linear infinite;
 }

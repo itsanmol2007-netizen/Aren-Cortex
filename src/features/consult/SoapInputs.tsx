@@ -71,6 +71,9 @@ interface Props {
     chartSummaries: Map<string, string>;
 
     visitId: string | null;
+    /** threaded down to AttachmentsCard's "Upload from phone" — see its own Props doc. */
+    hospitalId?: string | null;
+    patientId?: string | null;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
     /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
@@ -86,7 +89,7 @@ export function SoapInputs({
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     chartTools, onOpenChart, chartSummaries,
-    visitId, disabled = false, searchRef, measurementsRef,
+    visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
 }: Props) {
     return (
         <>
@@ -179,7 +182,7 @@ export function SoapInputs({
                     summaries={chartSummaries}
                     disabled={disabled}
                 />
-                <AttachmentsCard visitId={visitId} disabled={disabled} />
+                <AttachmentsCard visitId={visitId} hospitalId={hospitalId} patientId={patientId} disabled={disabled} />
             </div>
         </>
     );

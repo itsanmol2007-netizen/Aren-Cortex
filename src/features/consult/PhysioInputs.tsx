@@ -79,6 +79,9 @@ interface Props {
     anatomicalMeasureKeys: Set<MeasureFieldKey>;
     pastVisits?: TrendVisit[];
     visitId: string | null;
+    /** threaded down to AttachmentsCard's "Upload from phone" — see its own Props doc. */
+    hospitalId?: string | null;
+    patientId?: string | null;
     disabled?: boolean;
     searchRef?: React.RefObject<HTMLInputElement>;
     measurementsRef?: React.RefObject<HTMLElement | null>;
@@ -105,7 +108,7 @@ export function PhysioInputs({
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     anatomicalMeasureKeys, pastVisits,
-    visitId, disabled = false, searchRef, measurementsRef,
+    visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
     story, onStoryChange, goals, lastGoalScores, todayGoalScores,
     onGoalScoreChange, onAddGoal, onRetireGoal,
     examination, markedRegions, markedSides, onOpenBodyMap,
@@ -181,7 +184,7 @@ export function PhysioInputs({
                         maxInline={5}
                         containerRef={measurementsRef}
                     />
-                    <AttachmentsCard visitId={visitId} disabled={disabled} maxInline={3} strip />
+                    <AttachmentsCard visitId={visitId} hospitalId={hospitalId} patientId={patientId} disabled={disabled} maxInline={3} strip />
                 </div>
             </div>
 

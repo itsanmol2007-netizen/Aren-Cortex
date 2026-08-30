@@ -21,18 +21,26 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, ExternalLink, Tag, Plus, ChevronDown } from "lucide-react";
+import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, ExternalLink, Tag, Plus, ChevronDown, QrCode } from "lucide-react";
 import { listAttachments, uploadAttachment, getViewUrl, deleteAttachment, updateAttachmentTags } from "../../lib/db/attachments";
 import { ATTACHMENT_TYPES, ATTACHMENT_TYPE_LABEL, ACCEPTED_MIME_ACCEPT, LATERALITY_LABEL } from "../../lib/attachments/types";
 import type { Attachment, AttachmentType, Laterality } from "../../lib/attachments/types";
 import { ChartSurface } from "./ChartSurface";
 import { BlankAttachmentArt } from "./BlankArt";
 import { useDismiss } from "./useDismiss";
+import { UploadFromPhoneModal } from "./UploadFromPhoneModal";
 
 const LATERALITIES: Laterality[] = ["left", "right", "bilateral"];
 
 interface Props {
     visitId: string | null;
+    /**
+     * Needed only for "Upload from phone" (`visit_gateways` is hospital- and
+     * patient-scoped, see `lib/db/gateways.ts`). Either missing simply hides
+     * that menu item — the computer-upload flow above never needed them.
+     */
+    hospitalId?: string | null;
+    patientId?: string | null;
     disabled?: boolean;
     /**
      * How many files list inline before the rest move behind a modal.
@@ -64,9 +72,11 @@ function formatBytes(n: number | null): string {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = false }: Props) {
+export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = false, maxInline, strip = false }: Props) {
     /** the full list, opened over the page rather than expanded in place */
     const [showAll, setShowAll] = useState(false);
+    const [phoneUpload, setPhoneUpload] = useState(false);
+    const canUploadFromPhone = !!visitId && !!hospitalId && !!patientId;
     const [items, setItems] = useState<Attachment[]>([]);
     const [menuOpen, setMenuOpen] = useState(false);
     const [pendingType, setPendingType] = useState<AttachmentType | null>(null);
@@ -92,6 +102,11 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
             .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
         return () => { cancelled = true; };
     }, [visitId]);
+
+    const openPhoneUpload = () => {
+        setMenuOpen(false);
+        setPhoneUpload(true);
+    };
 
     const openPickerFor = (type: AttachmentType) => {
         setPendingType(type);
@@ -285,6 +300,21 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
         </button>
     );
 
+    // Sits in every "Attach" menu below the type list, separated by its own
+    // group head so it never reads as a sixth attachment type — picking it
+    // skips the type/compression question entirely (see
+    // `UploadFromPhoneModal.tsx`'s own header for why). Hidden rather than
+    // disabled when hospitalId/patientId aren't wired in by a caller yet.
+    const phoneMenuItem = canUploadFromPhone && (
+        <div className="cs-meas-menu-group">
+            <p className="cs-meas-menu-head">Or</p>
+            <button type="button" role="menuitem" onClick={openPhoneUpload}>
+                <QrCode size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
+                Upload from phone
+            </button>
+        </div>
+    );
+
     if (strip) {
         return (
             <section className="cs-card cs-attach is-strip" aria-label="Attachments">
@@ -322,6 +352,7 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                                     {ATTACHMENT_TYPE_LABEL[t]}
                                 </button>
                             ))}
+                            {phoneMenuItem}
                         </div>
                     )}
                 </div>
@@ -376,6 +407,15 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                         <div className="cs-attach-body">{items.map(renderItem)}</div>
                     </ChartSurface>
                 )}
+
+                {phoneUpload && visitId && hospitalId && patientId && (
+                    <UploadFromPhoneModal
+                        visitId={visitId}
+                        hospitalId={hospitalId}
+                        patientId={patientId}
+                        onClose={() => setPhoneUpload(false)}
+                    />
+                )}
             </section>
         );
     }
@@ -415,6 +455,7 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                                         {ATTACHMENT_TYPE_LABEL[t]}
                                     </button>
                                 ))}
+                                {phoneMenuItem}
                             </div>
                         )}
                     </div>
@@ -473,6 +514,7 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                                         {ATTACHMENT_TYPE_LABEL[t]}
                                     </button>
                                 ))}
+                                {phoneMenuItem}
                             </div>
                         )}
                     </div>
@@ -488,6 +530,15 @@ export function AttachmentsCard({ visitId, disabled = false, maxInline, strip = 
                 <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)}>
                     <div className="cs-attach-body">{items.map(renderItem)}</div>
                 </ChartSurface>
+            )}
+
+            {phoneUpload && visitId && hospitalId && patientId && (
+                <UploadFromPhoneModal
+                    visitId={visitId}
+                    hospitalId={hospitalId}
+                    patientId={patientId}
+                    onClose={() => setPhoneUpload(false)}
+                />
             )}
         </section>
     );

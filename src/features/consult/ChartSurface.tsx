@@ -63,16 +63,26 @@ interface Props {
      * one.
      */
     onEnterContent?: () => void;
+    /**
+     * Blocks Escape and the scrim click from closing the surface — only the
+     * explicit X in the header can. Added for `UploadFromPhoneModal`, which
+     * mirrors Front Desk's `ModalShell` `preventDismiss`: an accidental tap
+     * outside a live QR code must never silently drop the session's on-screen
+     * state. Every other caller (odontogram, body map, "More" panels) leaves
+     * this unset and keeps today's dismiss-anywhere behaviour.
+     */
+    preventDismiss?: boolean;
 }
 
-export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children, onEnterContent }: Props) {
-    // Escape closes, matching every other overlay in this app.
+export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children, onEnterContent, preventDismiss }: Props) {
+    // Escape closes, matching every other overlay in this app — unless this
+    // surface opted out (see `preventDismiss` above).
     useEffect(() => {
-        if (!expanded) return;
+        if (!expanded || preventDismiss) return;
         const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [expanded, onClose]);
+    }, [expanded, onClose, preventDismiss]);
 
     /**
      * Takes focus on open, hands it back on close — see `useOverlayFocus.ts`.
@@ -91,7 +101,7 @@ export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children
 
     return createPortal(
         <div className="cs-chartmodal" role="dialog" aria-modal="true" aria-label={title}>
-            <div className="cs-chartmodal-scrim" onClick={onClose} />
+            <div className="cs-chartmodal-scrim" onClick={preventDismiss ? undefined : onClose} />
             <div
                 className="cs-chartmodal-panel cx-kbd-surface"
                 ref={panelRef}
