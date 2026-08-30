@@ -156,11 +156,26 @@
     min-height: 0;
 }
 
+/* `overflow-y: auto` is the other half of "make it full to the screen
+   size" — without it, a patient with enough visits to exceed the grown
+   card's height just grew the whole `.prec-main-col` taller instead of
+   scrolling in place, which either pushed the card past the column's own
+   scroll boundary (content technically reachable, but only by scrolling the
+   ENTIRE page past cards that should have stayed put) or, depending on an
+   ancestor's own overflow, clipped it outright with no way back to it at
+   all — Anmol: "no usable way to scroll through the overflowing content."
+   `flex:1;min-height:0` alone only lets this box SHRINK to the space the
+   flex layout gives it; it does nothing about what happens once its own
+   content is taller than that — this is the line that actually answers
+   "make the timeline itself scrollable when its content exceeds the
+   available height," with the card's header (title, count, Compare toggle)
+   staying put outside this box while just the rows scroll under it. */
 .prec-panel-card-body--grow {
     display: flex;
     flex-direction: column;
     flex: 1;
     min-height: 0;
+    overflow-y: auto;
 }
 
 .prec-main-col::-webkit-scrollbar {
