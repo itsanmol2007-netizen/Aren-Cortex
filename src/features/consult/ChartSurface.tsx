@@ -72,9 +72,19 @@ interface Props {
      * this unset and keeps today's dismiss-anywhere behaviour.
      */
     preventDismiss?: boolean;
+    /**
+     * Panel width cap in px. Omit for the shared default (`.cs-chartmodal-
+     * panel`'s own CSS, `min(800px, 100%)`) — every chart built on this shell
+     * (odontogram, body map, the Attachments list) wants that room.
+     * `UploadFromPhoneModal` passes a narrower, FIXED one instead: its
+     * content is a small QR code, not a chart canvas, and the shared width
+     * read as "excessively wide" for it. An inline `width` (not just
+     * `max-width`) so it's an exact size, not merely a cap.
+     */
+    maxWidth?: number;
 }
 
-export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children, onEnterContent, preventDismiss }: Props) {
+export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children, onEnterContent, preventDismiss, maxWidth }: Props) {
     // Escape closes, matching every other overlay in this app — unless this
     // surface opted out (see `preventDismiss` above).
     useEffect(() => {
@@ -106,6 +116,7 @@ export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children
                 className="cs-chartmodal-panel cx-kbd-surface"
                 ref={panelRef}
                 tabIndex={-1}
+                style={maxWidth ? { width: `min(${maxWidth}px, 100%)` } : undefined}
                 onKeyDown={(e) => {
                     // Only while the PANEL itself is what's focused — once the
                     // doctor has moved to an actual field, ArrowDown belongs to

@@ -62,7 +62,7 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                     if (disabled) return;
                     accept(Array.from(e.dataTransfer.files));
                 }}
-                className={`flex w-full flex-1 flex-col items-center justify-center gap-[5px] rounded-[11px] border-[1.5px] border-dashed px-4 py-[11px] text-center transition-colors ${
+                className={`flex w-full flex-1 items-center gap-[10px] rounded-[11px] border-[1.5px] border-dashed px-3 py-[10px] text-left transition-colors ${
                     disabled
                         ? "cursor-default border-[#e9e7f4] bg-[#f8f8fb] opacity-60"
                         : dragging
@@ -73,8 +73,10 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[linear-gradient(155deg,#a855f7,#f472b6)] text-white shadow-[0_3px_10px_rgba(168,85,247,0.3)]">
                     <UploadCloud size={15} />
                 </span>
-                <div className="text-[12.5px] font-medium text-[#5a6472]">{t("attachDropLine")}</div>
-                <div className="text-[11px] text-[#a8aeba]">{t("attachDropCaption")}</div>
+                <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] font-medium text-[#5a6472]">{t("attachDropLine")}</span>
+                    <span className="block truncate text-[11px] text-[#a8aeba]">{t("attachDropCaption")}</span>
+                </span>
             </div>
             {rejected && <p className="mt-[6px] text-[12px] font-medium text-[#d23b34]">{t("attachUnsupportedType")}</p>}
         </div>

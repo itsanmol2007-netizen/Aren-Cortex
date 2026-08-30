@@ -7,7 +7,7 @@ import type { PrescriptionMedicine, Vitals } from "../../types";
 import { MEASURE_FIELDS } from "../consult/measures";
 import type { PrintFormat } from "./usePrintFormat";
 import { DEFAULT_PRESCRIPTION_CONFIG, type PrescriptionConfig } from "../../lib/db/clinic";
-import arenLogo from "../../assets/aren-logo.png";
+import arenLogo from "../../assets/aren-logo-w.png";
 
 /**
  * A fixed, deliberately hue-less ramp for `config.printMode === "monochrome"`
@@ -635,18 +635,19 @@ function StandardDocument({
                     {config.footerNote.trim()}
                 </div>
             )}
-            {/* One small line, bottom-right, above one clean closing rule —
-                replacing the old two-column "Generated: {date} / Powered by
-                AREN CORTEX" strip. Deliberately just this: no date, no
-                second line, nothing else sharing the space with it. */}
+            {/* Deliberate product-branding line, not incidental page text —
+                sits low, with room around it, and reads as a signature
+                rather than a watermark. `aren-logo-w.png` is the light-
+                background mark (no baked-in dark square); the dark-bg
+                `aren-logo.png` would look like a stray tile on white paper. */}
             {isBranded && (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ marginTop: 22 }}>
                     <div style={{
                         display: "flex", justifyContent: "flex-end", alignItems: "center",
-                        gap: 5, marginBottom: 6,
+                        gap: 7, marginBottom: 10,
                     }}>
-                        <img src={arenLogo} alt="" style={{ width: 11, height: 11, objectFit: "contain", borderRadius: 2 }} />
-                        <span style={{ fontSize: "7.5px", color: "#aaa", fontWeight: 600, letterSpacing: "0.01em" }}>
+                        <img src={arenLogo} alt="" style={{ width: 15, height: 15, objectFit: "contain" }} />
+                        <span style={{ fontSize: "8.5px", color: "#5b7fc7", fontWeight: 700, letterSpacing: "0.02em" }}>
                             Generated with care, through Arenode
                         </span>
                     </div>

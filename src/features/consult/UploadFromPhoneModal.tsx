@@ -38,6 +38,14 @@ import { ChartSurface } from "./ChartSurface";
 // behind it either; arenode.com owns the upload interface itself.
 const PORTAL_BASE = "https://arenode.com/portal/gateway/";
 
+// Fixed footprint for every phase — same reasoning and same numbers as Front
+// Desk's GatewayQrModal.tsx (its own copy of this note): "give the QR-code
+// modal a consistent fixed width and fixed height, regardless of whether a
+// QR code is currently available... should not resize depending on its
+// state." `QR_MODAL_WIDTH` goes to `ChartSurface`'s `maxWidth`.
+const QR_MODAL_WIDTH = 320;
+const BODY_MIN_HEIGHT = 340;
+
 interface Props {
     visitId: string;
     patientId: string;
@@ -90,10 +98,10 @@ export function UploadFromPhoneModal({ visitId, patientId, hospitalId, onClose }
 
     if (phase.kind === "loading") {
         return (
-            <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} preventDismiss>
-                <div className="cs-phoneup-loading">
-                    <Loader2 size={22} className="cs-spin" />
-                    <span>Preparing upload link…</span>
+            <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} preventDismiss maxWidth={QR_MODAL_WIDTH}>
+                <div className="flex flex-col items-center justify-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
+                    <Loader2 size={26} className="animate-spin text-[#7c5cf0]" />
+                    <span className="text-[12.5px] font-medium text-[#8a91a0]">Preparing upload link…</span>
                 </div>
             </ChartSurface>
         );
@@ -101,8 +109,10 @@ export function UploadFromPhoneModal({ visitId, patientId, hospitalId, onClose }
 
     if (phase.kind === "error") {
         return (
-            <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose}>
-                <p className="cs-attach-error">{phase.message}</p>
+            <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} maxWidth={QR_MODAL_WIDTH}>
+                <div className="flex flex-col items-center justify-center text-center" style={{ minHeight: BODY_MIN_HEIGHT }}>
+                    <p className="text-[13px] font-medium text-[#d23b34]">{phase.message}</p>
+                </div>
             </ChartSurface>
         );
     }
@@ -127,15 +137,19 @@ function ReadyBody({
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
+    // Kept once expired rather than nulled out — the expired box below shows
+    // this SAME image, blurred and dimmed, instead of swapping to a
+    // differently-shaped block. Only regenerates on a real new token (i.e. a
+    // resume), never on the mere passage of time into "expired" — same as
+    // Front Desk's GatewayQrModal.tsx, which this mirrors.
     useEffect(() => {
-        if (expired) { setQrDataUrl(null); return; }
         let cancelled = false;
         import("qrcode")
             .then((QRCode) => QRCode.toDataURL(`${PORTAL_BASE}${session.token}`, { width: 200, margin: 1 }))
             .then((url) => { if (!cancelled) setQrDataUrl(url); })
             .catch(() => { /* silently skip — the modal still shows status without it */ });
         return () => { cancelled = true; };
-    }, [session.token, expired]);
+    }, [session.token]);
 
     const resumable = canResume(session);
     const doResume = async () => {
@@ -151,43 +165,88 @@ function ReadyBody({
     };
 
     return (
-        <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} preventDismiss>
-            {expired ? (
-                <div className="cs-phoneup-expired">
-                    <div className="cs-phoneup-expired-icon"><RotateCcw size={18} /></div>
-                    <div className="cs-phoneup-expired-title">This upload link expired</div>
-                    <div className="cs-phoneup-expired-body">
-                        {resumable ? "Resume it to generate a fresh QR code for the same visit." : "This link has already been resumed twice — start a new one."}
-                    </div>
-                    <button type="button" className="cs-phoneup-resume-btn" onClick={doResume} disabled={busy}>
-                        {busy ? <Loader2 size={14} className="cs-spin" /> : <RotateCcw size={14} />}
-                        {resumable ? "Resume" : "Start a new session"}
-                    </button>
-                </div>
-            ) : (
-                <div className="cs-phoneup-body">
-                    <div className="cs-phoneup-qr">
-                        {qrDataUrl ? <img src={qrDataUrl} alt="" width={200} height={200} /> : <Loader2 size={18} className="cs-spin" />}
-                    </div>
-                    <div className="cs-phoneup-caption">Ask the patient to scan this with their phone camera</div>
-
-                    <div className="cs-phoneup-status">
-                        <div className="cs-phoneup-status-left">
-                            <span className="cs-phoneup-status-icon"><UploadCloud size={13} /></span>
-                            <span className="cs-phoneup-status-count">
-                                {session.documentsUploadedCount > 0 ? `${session.documentsUploadedCount} uploaded` : "No documents yet"}
+        <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} preventDismiss maxWidth={QR_MODAL_WIDTH}>
+            {/* One fixed-size body for every state, same reasoning (and same
+                numbers) as Front Desk's GatewayQrModal.tsx: the QR box is the
+                SAME 216x216 box whether live or expired — expiry overlays a
+                blur + message on top rather than replacing it with a
+                differently-shaped block, so nothing here ever reflows. */}
+            <div className="flex flex-col items-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
+                <div className="relative flex h-[216px] w-[216px] items-center justify-center rounded-[14px] border border-[#eef0f5] bg-white shadow-[0_1px_3px_rgba(20,30,50,0.06)]">
+                    {qrDataUrl ? (
+                        <img
+                            src={qrDataUrl}
+                            alt=""
+                            width={200}
+                            height={200}
+                            className={`rounded-[8px] transition-[filter,opacity] duration-200 ${expired ? "opacity-35 blur-[3px] grayscale" : ""}`}
+                        />
+                    ) : (
+                        <Loader2 size={20} className="animate-spin text-[#a8aeba]" />
+                    )}
+                    {expired && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-[5px] rounded-[14px] bg-white/60">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf2f2] text-[#c9791a] shadow-[0_2px_8px_rgba(201,121,26,0.18)]">
+                                <RotateCcw size={16} />
+                            </div>
+                            <span className="rounded-[6px] bg-white px-[8px] py-[2px] text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-[#b3372f] shadow-[0_1px_4px_rgba(20,30,50,0.10)]">
+                                Expired
                             </span>
                         </div>
-                        {session.patientMarkedDone && (
-                            <span className="cs-phoneup-done-badge"><CheckCircle2 size={12} /> Patient marked done</span>
-                        )}
-                    </div>
-
-                    <button type="button" className="cs-phoneup-cancel-btn" onClick={doCancel} disabled={busy}>
-                        Cancel this link
-                    </button>
+                    )}
                 </div>
-            )}
+
+                {expired ? (
+                    <>
+                        <div className="max-w-[260px] text-center text-[12.5px] font-medium text-[#8a91a0]">
+                            {resumable
+                                ? "Resume it to generate a fresh QR code for the same visit."
+                                : "This link has already been resumed twice — start a new one."}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={doResume}
+                            disabled={busy}
+                            className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4)] transition-[background-color] hover:bg-[#1d51c9] disabled:opacity-60"
+                        >
+                            {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                            {resumable ? "Resume" : "Start a new session"}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <div className="text-center text-[12.5px] font-medium text-[#5a6472]">
+                            Ask the patient to scan this with their phone camera
+                        </div>
+
+                        <div className="flex w-full items-center justify-between gap-[10px] rounded-[11px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[9px]">
+                            <div className="flex items-center gap-[8px]">
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[#efeafd] text-[#6d28d9]">
+                                    <UploadCloud size={13} />
+                                </div>
+                                <span className="text-[12.5px] font-bold text-[#161d29]">
+                                    {session.documentsUploadedCount > 0 ? `${session.documentsUploadedCount} uploaded` : "No documents yet"}
+                                </span>
+                            </div>
+                            {session.patientMarkedDone && (
+                                <span className="flex shrink-0 items-center gap-[4px] rounded-[7px] bg-[#eafaf0] px-[8px] py-[3px] text-[11px] font-bold text-[#1c8a4d]">
+                                    <CheckCircle2 size={12} />
+                                    Patient marked done
+                                </span>
+                            )}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={doCancel}
+                            disabled={busy}
+                            className="h-9 rounded-[9px] border-[1.5px] border-[#f3d3d1] bg-white px-[14px] text-[12.5px] font-bold text-[#b3372f] transition-colors hover:border-[#eab3af] hover:bg-[#fff8f7] disabled:opacity-60"
+                        >
+                            Cancel this link
+                        </button>
+                    </>
+                )}
+            </div>
         </ChartSurface>
     );
 }

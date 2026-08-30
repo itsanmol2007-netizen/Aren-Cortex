@@ -13,6 +13,15 @@ import { randomMedicalWord } from "./loadingWords";
 // past this URL.
 const PORTAL_BASE = "https://arenode.com/portal/gateway/";
 
+// Fixed footprint for every phase of this modal — Anmol: "give the QR-code
+// modal a consistent fixed width and fixed height, regardless of whether a
+// QR code is currently available... should not resize depending on its
+// state." Sized to the ready state's own content (the QR box plus caption
+// plus status row); loading/error/expired all center inside the same box
+// instead of collapsing to their own shorter natural height.
+const QR_BOX = 216;
+const BODY_MIN_HEIGHT = 340;
+
 /** Rotates the loading-state word every ~1.1s so a slow connection doesn't
  *  leave the same word sitting there looking stuck — see loadingWords.ts. */
 function useRotatingWord(active: boolean): string {
@@ -58,8 +67,10 @@ export function GatewayQrModal() {
 
     if (modal.phase === "error") {
         return (
-            <ModalShell eyebrow={t("gwEyebrow")} title={modal.patientLabel} icon={<QrCode size={19} strokeWidth={2.2} />} onClose={minimize}>
-                <p className="py-4 text-center text-[13px] font-medium text-[#d23b34]">{modal.message || t("gwGenericError")}</p>
+            <ModalShell eyebrow={t("gwEyebrow")} title={modal.patientLabel} icon={<QrCode size={19} strokeWidth={2.2} />} onClose={minimize} maxWidth={320}>
+                <div className="flex flex-col items-center justify-center text-center" style={{ minHeight: BODY_MIN_HEIGHT }}>
+                    <p className="text-[13px] font-medium text-[#d23b34]">{modal.message || t("gwGenericError")}</p>
+                </div>
             </ModalShell>
         );
     }
@@ -80,8 +91,8 @@ function LoadingShell({ patientLabel, label, onMinimize }: { patientLabel: strin
     const t = useT();
     const word = useRotatingWord(true);
     return (
-        <ModalShell eyebrow={t("gwEyebrow")} title={patientLabel} icon={<QrCode size={19} strokeWidth={2.2} />} onClose={onMinimize} preventDismiss>
-            <div className="flex flex-col items-center gap-[14px] py-[26px]">
+        <ModalShell eyebrow={t("gwEyebrow")} title={patientLabel} icon={<QrCode size={19} strokeWidth={2.2} />} onClose={onMinimize} preventDismiss maxWidth={320}>
+            <div className="flex flex-col items-center justify-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
                 <Loader2 size={26} className="animate-spin text-[#7c5cf0]" />
                 <div className="text-center">
                     <div className="text-[13.5px] font-bold text-[#161d29]">{label}</div>
@@ -107,15 +118,18 @@ function ReadyModal({
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
+    // Kept once expired rather than nulled out — the expired QR box below
+    // shows this SAME image, blurred and dimmed, instead of swapping to a
+    // differently-shaped block. Only regenerates on a real new token (i.e.
+    // a resume), never on the mere passage of time into "expired".
     useEffect(() => {
-        if (expired) { setQrDataUrl(null); return; }
         let cancelled = false;
         import("qrcode")
             .then((QRCode) => QRCode.toDataURL(`${PORTAL_BASE}${session.token}`, { width: 200, margin: 1 }))
             .then((url) => { if (!cancelled) setQrDataUrl(url); })
             .catch(() => { /* silently skip — the modal still shows context/count without it */ });
         return () => { cancelled = true; };
-    }, [session.token, expired]);
+    }, [session.token]);
 
     const title = visitLabel ? `${patientLabel} · ${visitLabel}` : patientLabel;
 
@@ -139,6 +153,7 @@ function ReadyModal({
             icon={<QrCode size={19} strokeWidth={2.2} />}
             onClose={onMinimize}
             preventDismiss
+            maxWidth={320}
             footer={
                 !expired ? (
                     <button
@@ -152,58 +167,77 @@ function ReadyModal({
                 ) : undefined
             }
         >
-            {expired ? (
-                <div className="flex flex-col items-center gap-[12px] py-[22px] text-center">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#fdf2f2] text-[#c9791a]">
-                        <RotateCcw size={19} />
-                    </div>
-                    <div>
-                        <div className="text-[14px] font-bold text-[#161d29]">{t("gwExpiredTitle")}</div>
-                        <div className="mt-[3px] max-w-[320px] text-[12.5px] font-medium text-[#8a91a0]">
+            {/* One fixed-size body for every state — Anmol: "give the QR-code
+                modal a consistent fixed width and fixed height... should not
+                resize depending on its state." The QR box itself is the SAME
+                216x216 box whether live or expired; expiry overlays a blur +
+                message on top of it rather than replacing it with a
+                differently-shaped block, so nothing here ever reflows. */}
+            <div className="flex flex-col items-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
+                <div className="relative flex h-[216px] w-[216px] items-center justify-center rounded-[14px] border border-[#eef0f5] bg-white shadow-[0_1px_3px_rgba(20,30,50,0.06)]">
+                    {qrDataUrl ? (
+                        <img
+                            src={qrDataUrl}
+                            alt=""
+                            width={200}
+                            height={200}
+                            className={`rounded-[8px] transition-[filter,opacity] duration-200 ${expired ? "opacity-35 blur-[3px] grayscale" : ""}`}
+                        />
+                    ) : (
+                        <Loader2 size={20} className="animate-spin text-[#a8aeba]" />
+                    )}
+                    {expired && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-[5px] rounded-[14px] bg-white/60">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf2f2] text-[#c9791a] shadow-[0_2px_8px_rgba(201,121,26,0.18)]">
+                                <RotateCcw size={16} />
+                            </div>
+                            <span className="rounded-[6px] bg-white px-[8px] py-[2px] text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-[#b3372f] shadow-[0_1px_4px_rgba(20,30,50,0.10)]">
+                                {t("gwExpiredTitle")}
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {expired ? (
+                    <>
+                        <div className="max-w-[260px] text-center text-[12.5px] font-medium text-[#8a91a0]">
                             {resumable ? t("gwExpiredBody") : t("gwResumeCapped")}
                         </div>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={doResume}
-                        disabled={busy}
-                        className="mt-[4px] flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4)] transition-[background-color] hover:bg-[#1d51c9] disabled:opacity-60"
-                    >
-                        {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
-                        {resumable ? t("gwResume") : t("gwStartNew")}
-                    </button>
-                </div>
-            ) : (
-                <div className="flex flex-col items-center gap-[14px] py-[8px]">
-                    <div className="flex h-[216px] w-[216px] items-center justify-center rounded-[14px] border border-[#eef0f5] bg-white shadow-[0_1px_3px_rgba(20,30,50,0.06)]">
-                        {qrDataUrl ? (
-                            <img src={qrDataUrl} alt="" width={200} height={200} className="rounded-[8px]" />
-                        ) : (
-                            <Loader2 size={20} className="animate-spin text-[#a8aeba]" />
-                        )}
-                    </div>
-                    <div className="text-center text-[12.5px] font-medium text-[#5a6472]">{t("gwScanInstruction")}</div>
+                        <button
+                            type="button"
+                            onClick={doResume}
+                            disabled={busy}
+                            className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4)] transition-[background-color] hover:bg-[#1d51c9] disabled:opacity-60"
+                        >
+                            {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                            {resumable ? t("gwResume") : t("gwStartNew")}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <div className="text-center text-[12.5px] font-medium text-[#5a6472]">{t("gwScanInstruction")}</div>
 
-                    <div className="flex w-full items-center justify-between gap-[10px] rounded-[11px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[9px]">
-                        <div className="flex items-center gap-[8px]">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[#efeafd] text-[#6d28d9]">
-                                <UploadCloud size={13} />
+                        <div className="flex w-full items-center justify-between gap-[10px] rounded-[11px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[9px]">
+                            <div className="flex items-center gap-[8px]">
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[#efeafd] text-[#6d28d9]">
+                                    <UploadCloud size={13} />
+                                </div>
+                                <span className="text-[12.5px] font-bold text-[#161d29]">
+                                    {session.documentsUploadedCount > 0
+                                        ? t("gwUploadedCount", { n: session.documentsUploadedCount })
+                                        : t("gwUploadedNone")}
+                                </span>
                             </div>
-                            <span className="text-[12.5px] font-bold text-[#161d29]">
-                                {session.documentsUploadedCount > 0
-                                    ? t("gwUploadedCount", { n: session.documentsUploadedCount })
-                                    : t("gwUploadedNone")}
-                            </span>
+                            {session.patientMarkedDone && (
+                                <span className="flex shrink-0 items-center gap-[4px] rounded-[7px] bg-[#eafaf0] px-[8px] py-[3px] text-[11px] font-bold text-[#1c8a4d]">
+                                    <CheckCircle2 size={12} />
+                                    {t("gwPatientDone")}
+                                </span>
+                            )}
                         </div>
-                        {session.patientMarkedDone && (
-                            <span className="flex shrink-0 items-center gap-[4px] rounded-[7px] bg-[#eafaf0] px-[8px] py-[3px] text-[11px] font-bold text-[#1c8a4d]">
-                                <CheckCircle2 size={12} />
-                                {t("gwPatientDone")}
-                            </span>
-                        )}
-                    </div>
-                </div>
-            )}
+                    </>
+                )}
+            </div>
         </ModalShell>
     );
 }

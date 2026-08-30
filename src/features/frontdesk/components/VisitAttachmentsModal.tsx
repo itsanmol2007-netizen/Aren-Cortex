@@ -89,6 +89,11 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
             title={visit.patient_name}
             icon={<Paperclip size={19} strokeWidth={2.2} />}
             onClose={onClose}
+            // Narrower than the 580px Bhor default — this modal's whole
+            // content is two upload tiles and a short file list, and 580px
+            // read as unnecessarily stretched for that. 460 keeps the tiles
+            // and file rows comfortable without the wide gutters either side.
+            maxWidth={460}
         >
             <div className="mb-3 flex items-center justify-between">
                 <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">

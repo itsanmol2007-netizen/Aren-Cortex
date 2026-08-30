@@ -18,7 +18,7 @@ import { RxMonogram, RxWatermark } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import { usePrescriptionConfig } from "../features/prescription/usePrescriptionConfig";
-import arenLogo from "../assets/aren-logo.png";
+import arenLogo from "../assets/aren-logo-w.png";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -965,22 +965,22 @@ export default function ReviewModal({
                   </span>
                 </div>
                 <p className="text-[9px] text-gray-400">Generated: {today}</p>
-                {/* One small line, matching PrescriptionDocument's own
-                    redesign — no more "Powered by AREN CORTEX" wordmark.
-                    Was sharing `logoError` (the CLINIC logo's own load-failure
-                    flag) for this completely unrelated image, so a clinic
-                    whose OWN logo failed to load also lost this one for no
-                    reason — split into its own state. Was also loading
-                    `/src/assets/aren-logo-w.png`, a dev-server-only path that
-                    404s in a production build; now the same Vite-processed
-                    import PrescriptionDocument itself uses. */}
+                {/* Deliberate product-branding line, matching
+                    PrescriptionDocument's own treatment — reads as a
+                    signature, not incidental page text. Was sharing
+                    `logoError` (the CLINIC logo's own load-failure flag) for
+                    this completely unrelated image, so a clinic whose OWN
+                    logo failed to load also lost this one for no reason —
+                    split into its own state. `aren-logo-w.png` is the
+                    light-background mark (no baked-in dark square) imported
+                    the same Vite-processed way PrescriptionDocument does. */}
                 {isBranded && (
-                  <div className="flex items-center gap-[5px]">
+                  <div className="mt-2 flex items-center gap-[7px]">
                     {!arenLogoError ? (
                       <img src={arenLogo} alt="" onError={() => setArenLogoError(true)}
-                        className="w-[13px] h-[13px] object-contain rounded-[3px]" />
+                        className="w-[16px] h-[16px] object-contain" />
                     ) : null}
-                    <span className="text-[8px] font-semibold text-gray-400 tracking-[0.01em]">
+                    <span className="text-[8.5px] font-bold tracking-[0.02em]" style={{ color: "#5b7fc7" }}>
                       Generated with care, through Arenode
                     </span>
                   </div>

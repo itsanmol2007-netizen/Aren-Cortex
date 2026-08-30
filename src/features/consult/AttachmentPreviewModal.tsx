@@ -49,7 +49,7 @@ export function AttachmentPreviewModal({ attachment, onClose }: Props) {
     const showSkeleton = !error && !mediaLoaded && (isImage || isPdf);
 
     return (
-        <ChartSurface title={label} eyebrow="Attachment" icon={<Paperclip size={15} />} expanded onClose={onClose}>
+        <ChartSurface title={label} eyebrow="Attachment" icon={<Paperclip size={15} />} expanded onClose={onClose} maxWidth={640}>
             <div className="cs-attach-preview">
                 {error ? (
                     <p className="cs-attach-error">{error}</p>

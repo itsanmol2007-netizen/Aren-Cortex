@@ -247,7 +247,19 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
 
     const renderItem = (att: Attachment) => (
         <div key={att.id} className="cs-attach-item">
-            <div className="cs-attach-row">
+            {/* The row itself is the "open" affordance now — clicking
+                anywhere on it (the icon, the name, the empty space)
+                previews it, the way a file normally opens; the Eye icon is
+                one more way in, not the only one. Every other control on the
+                row (Tag/Delete) stops propagation so it fires its own
+                action instead of also opening the preview underneath it. */}
+            <div
+                className="cs-attach-row is-clickable"
+                role="button"
+                tabIndex={0}
+                onClick={() => onView(att)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView(att); } }}
+            >
                 <span className="cs-attach-icon">
                     {att.mimeType?.startsWith("image/") ? <ImageIcon size={17} /> : <FileText size={17} />}
                 </span>
@@ -262,7 +274,7 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                 <button
                     type="button"
                     className={`cs-attach-action${tagging === att.id ? " is-active" : ""}`}
-                    onClick={() => openTagPanel(att)}
+                    onClick={(e) => { e.stopPropagation(); openTagPanel(att); }}
                     aria-label="Tag"
                     aria-expanded={tagging === att.id}
                     title="Which side / where"
@@ -272,7 +284,7 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                 <button
                     type="button"
                     className="cs-attach-action"
-                    onClick={() => onView(att)}
+                    onClick={(e) => { e.stopPropagation(); onView(att); }}
                     aria-label="View"
                     title="View"
                 >
@@ -281,7 +293,7 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                 <button
                     type="button"
                     className="cs-attach-action is-danger"
-                    onClick={() => onDelete(att)}
+                    onClick={(e) => { e.stopPropagation(); onDelete(att); }}
                     aria-label="Remove"
                     title="Remove"
                 >
