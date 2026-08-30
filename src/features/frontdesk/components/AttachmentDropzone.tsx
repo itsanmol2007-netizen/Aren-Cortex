@@ -33,7 +33,7 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
     };
 
     return (
-        <div>
+        <div className="flex h-full flex-col">
             <input
                 ref={inputRef}
                 type="file"
@@ -62,7 +62,7 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                     if (disabled) return;
                     accept(Array.from(e.dataTransfer.files));
                 }}
-                className={`flex flex-col items-center gap-[5px] rounded-[11px] border-[1.5px] border-dashed px-4 py-[11px] text-center transition-colors ${
+                className={`flex w-full flex-1 flex-col items-center justify-center gap-[5px] rounded-[11px] border-[1.5px] border-dashed px-4 py-[11px] text-center transition-colors ${
                     disabled
                         ? "cursor-default border-[#e9e7f4] bg-[#f8f8fb] opacity-60"
                         : dragging

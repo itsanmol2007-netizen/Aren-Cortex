@@ -21,12 +21,12 @@ export function UploadFromPhoneButton({
 }) {
     const t = useT();
     return (
-        <div>
+        <div className="flex h-full flex-col">
             <button
                 type="button"
                 onClick={onClick}
                 disabled={disabled}
-                className={`flex w-full flex-col items-center gap-[5px] rounded-[11px] border-[1.5px] border-dashed px-4 py-[11px] text-center transition-colors ${
+                className={`flex w-full flex-1 flex-col items-center justify-center gap-[5px] rounded-[11px] border-[1.5px] border-dashed px-4 py-[11px] text-center transition-colors ${
                     disabled
                         ? "cursor-default border-[#e9e7f4] bg-[#f8f8fb] opacity-60"
                         : "cursor-pointer border-[#d9d3ee] bg-[#faf9ff] hover:border-[#c9bdf5] hover:bg-[#f8f7fd]"
