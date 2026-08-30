@@ -1,5 +1,5 @@
 import {
-  PersonStanding, RefreshCw, Smile, TrendingUp,
+  CheckCircle2, PersonStanding, RefreshCw, Smile, TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
@@ -260,8 +260,17 @@ function App() {
   // regardless of a second message having replaced it since. Invisible
   // before because nothing called `showToast` twice in quick succession.
   const toastTimerRef = useRef<number | null>(null);
-  const showToast = useCallback((msg: string) => {
+  /** "resume" is its own bottom-CENTER pill, not the generic bottom-right
+   *  `.toast` — Anmol: "make this toast more polished and intentional...
+   *  position it at the bottom center of the viewport. Do not use the
+   *  existing bottom-left/bottom-right positioning for this particular
+   *  action... feel like a clear confirmation rather than a generic system
+   *  notification." Every other `showToast` call omits `variant` and keeps
+   *  today's behavior unchanged. */
+  const [toastVariant, setToastVariant] = useState<"default" | "resume">("default");
+  const showToast = useCallback((msg: string, opts?: { variant?: "resume" }) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    setToastVariant(opts?.variant ?? "default");
     setToast(msg);
     toastTimerRef.current = window.setTimeout(() => {
       setToast("");
@@ -2067,7 +2076,14 @@ function App() {
         />
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && toastVariant === "resume" ? (
+        <div className="fixed bottom-8 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-[10px] rounded-full border border-white/10 bg-[#161d29] px-5 py-3 text-[13.5px] font-semibold text-white shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[rgba(74,222,128,0.16)] text-[#4ade80]">
+            <CheckCircle2 size={14} />
+          </span>
+          {toast}
+        </div>
+      ) : toast && <div className="toast">{toast}</div>}
 
       {
         !isFeaturePage && activeConsultGuardOpen && (

@@ -92,7 +92,10 @@ export interface ConsultLifecycleArgs {
    * always passes it.
    */
   resetStory?: () => void;
-  showToast: (msg: string) => void;
+  /** `variant: "resume"` gets App.tsx's own bottom-center confirmation pill
+   *  instead of the generic bottom-right toast — see `resumeConsult` below,
+   *  the one caller that passes it. */
+  showToast: (msg: string, opts?: { variant?: "resume" }) => void;
   /** put the cursor where a consult actually begins — the chart search box */
   focusChartSearch: () => void;
   setActivePage: (page: SidebarPage | null) => void;
@@ -222,7 +225,7 @@ export function useConsultLifecycle({
     session.setRepeatRxBanner(null);
     setActivePage(null);
     setSidebarOpen(false);
-    showToast(`Resumed consult for ${incomingPatient.name}`);
+    showToast(`Consult resumed for ${incomingPatient.name}`, { variant: "resume" });
     focusChartSearch();
     session.loadPastVisits(incomingPatient.id!, visitId);
     carryForwardFor(incomingPatient.id!);
