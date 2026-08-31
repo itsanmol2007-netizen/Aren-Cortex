@@ -20,7 +20,8 @@
 
 import { ArrowDown, ArrowRight, ArrowUp, TrendingUp } from "lucide-react";
 import { ChartSurface } from "../consult/ChartSurface";
-import { formatDelta, formatValue, formatSpan, type TrendSeries, type TrendVerdict } from "../consult/trend";
+import { formatDelta, formatValue, type TrendSeries, type TrendVerdict } from "../consult/trend";
+import { formatSpan } from "../consult/LongitudinalBand";
 import type { RealVisit } from "../../lib/db";
 import { formatVisitDate } from "../../components/PastVisitCard";
 
