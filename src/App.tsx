@@ -13,6 +13,7 @@ import { GlobalLogoTrigger } from "./components/GlobalLogoTrigger";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { useSettingFocusRunner } from "./features/settings/settingsFocus";
 import { PracticePage } from "./features/practice/PracticePage";
 import { CommunicationPage } from "./features/communication/CommunicationPage";
 import { ClinicPage } from "./features/clinic/ClinicPage";
@@ -188,6 +189,12 @@ function App() {
   const [toast, setToast] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState<SidebarPage | null>(null);
+
+  // Runs a pending "take me to that setting" request after the page it lives
+  // on has mounted — scrolls to the control and flashes it. Mounted once,
+  // here, so no individual page has to know the mechanism exists. See
+  // features/settings/settingsFocus.ts.
+  useSettingFocusRunner(activePage);
   /**
    * The Prescription Editor is a full PAGE, but a page UNDER Clinic — it has
    * no sidebar entry, because a doctor reaches it by asking "what does my
@@ -1360,6 +1367,7 @@ function App() {
           onSpecialtyChanged={(id) =>
             setHospitalProfile((prev) => (prev ? { ...prev, specialty_profile: id } : prev))
           }
+          onNavigate={handleSidebarNavigate}
         />
       ) : activePage === "practice" ? (
         <PracticePage

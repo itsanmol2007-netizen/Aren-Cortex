@@ -153,6 +153,9 @@ export function ClinicPage({
        visual treatment, same typography hierarchy, similar visual weight" is
        enforced by there being literally one implementation. */
     const identityHalf = (opts: {
+        /** DOM anchor, so the Settings page's search can deep-link straight
+         *  to this half (see features/settings/settingsRegistry.ts). */
+        id: string;
         eyebrow: string;
         eyebrowClass: string;
         image: ReactNode;
@@ -165,6 +168,7 @@ export function ClinicPage({
         onOpen: () => void;
     }) => (
         <div
+            id={opts.id}
             role="button"
             tabIndex={0}
             aria-label={opts.cta}
@@ -280,6 +284,7 @@ export function ClinicPage({
                     }
                 >
                     {identityHalf({
+                        id: "clin-identity-clinic",
                         eyebrow: "Clinic",
                         eyebrowClass: "text-[var(--cs-blue)]",
                         /* The logo and the doctor's photo are the SAME square,
@@ -324,6 +329,7 @@ export function ClinicPage({
                     })}
 
                     {identityHalf({
+                        id: "clin-identity-doctor",
                         eyebrow: "Doctor",
                         eyebrowClass: "text-[var(--cs-violet)]",
                         image: (
