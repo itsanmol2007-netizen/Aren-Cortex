@@ -89,9 +89,29 @@
    cards (Identity, Clinical Snapshot, Progress Trend, Visit Timeline) —
    same "one main flow + one packed sidebar" shape as the Overview page,
    not a second, thinner content column. See PatientRecord.tsx's comment
-   on why an earlier 3-region layout got folded back to this. */
+   on why an earlier 3-region layout got folded back to this.
+
+   `flex-shrink: 0` is load-bearing, not decoration — `.prec-main-col` is a
+   COLUMN flex container (patients-shell.css), so these cards are flex
+   items by default, and `.prec-panel-card` sets `overflow: hidden`
+   (rounded corners). Per the flexbox spec, a flex item's automatic minimum
+   size is its content's min-content size — UNLESS the item's `overflow` is
+   anything but `visible`, in which case that floor drops to 0. Without
+   `flex-shrink: 0`, once real content made the column taller than the
+   viewport, every card silently compressed to fit rather than the column
+   overflowing and scrolling — the Progress Trend card's own sparkline and
+   footer line got clipped behind its rounded bottom edge, invisibly, since
+   nothing ERRORS when a flex item shrinks below its content. Found
+   2026-08-31 right after removing Visit Timeline's old `--grow` hack (see
+   that card's own comment): that hack's internal scroll had been quietly
+   absorbing all the column's overflow, which is what hid this from ever
+   triggering. `flex-shrink: 0` is the actual fix for "let `.prec-main-col`
+   scroll, don't let flexbox invent its own answer to not fitting" — every
+   card now keeps its natural height, and genuine overflow is what drives
+   the scrollbar. */
 .prec-main-col > .prec-panel-card {
     margin-bottom: 16px;
+    flex-shrink: 0;
 }
 
 /* ── Progress Trend — mini card grid, Sparkline reused from the consult
