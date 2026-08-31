@@ -15,7 +15,9 @@
        Support/Practice (support.css). Found 2026-08-24 — reported as "half
        rendered... split screen". */
     min-height: 100vh;
-    background: #f5f6f8;
+    /* The same ground Clinic and Practice sit on — this page now uses their
+       card primitives, so it must not sit on a slightly different grey. */
+    background: var(--cs-page);
 }
 
 .settings-scroll {
