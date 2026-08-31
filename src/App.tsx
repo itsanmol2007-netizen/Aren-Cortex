@@ -87,7 +87,7 @@ import { guardIntent } from "./lib/synapse/engine";
 import type { AcceptPayload } from "./features/consult/types";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
-  fetchDoctor, fetchHospital,
+  fetchDoctorCached, fetchHospitalCached,
   type DBDoctor, type DBHospital, type RealVisit,
 } from "./lib/db";
 import { fetchLastExercisePlan } from "./lib/db/exercises";
@@ -402,8 +402,11 @@ function App() {
     if (!identity.ready) return;
     setBootError(null);
     Promise.all([
-      fetchDoctor(identity.doctorId),
-      fetchHospital(identity.hospitalId),
+      // Cached (profileCache.ts) — these two rows are read by the sidebar,
+      // Clinic, Settings and every prescription render; without the cache,
+      // each navigation re-hit the DB for rows that had not changed.
+      fetchDoctorCached(identity.doctorId),
+      fetchHospitalCached(identity.hospitalId),
     ])
       .then(([doctor, hospital]) => {
         setDoctorProfile(doctor);
@@ -1259,6 +1262,8 @@ function App() {
         onNavigate={handleSidebarNavigate}
         onConsult={handleSidebarConsult}
         doctor={DOCTOR}
+        avatarUrl={doctorProfile?.avatar_url}
+        onOpenProfile={() => handleSidebarNavigate("settings")}
         logoRef={logoRef}
       />
 

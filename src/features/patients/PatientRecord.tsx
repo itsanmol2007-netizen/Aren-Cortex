@@ -43,7 +43,7 @@ import {
     User,
 } from "lucide-react";
 import {
-    fetchHospital,
+    fetchHospitalCached,
     fetchPatientVisits,
     fetchPrescriptionRenderData,
     freqSlotToLabel,
@@ -525,7 +525,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
     // same reason Print RX fetches it — the auth identity doesn't carry it.
     useEffect(() => {
         if (!identity.hospitalId) return;
-        fetchHospital(identity.hospitalId).then(setHospital).catch(() => setHospital(null));
+        fetchHospitalCached(identity.hospitalId).then(setHospital).catch(() => setHospital(null));
     }, [identity.hospitalId]);
 
     const completedVisits = useMemo(() => visits.filter((v) => v.status === "completed"), [visits]);

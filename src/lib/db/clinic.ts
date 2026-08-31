@@ -24,6 +24,7 @@
 
 import { supabase } from "../supabase";
 import type { CompressedImage } from "../image/compress";
+import { invalidateDoctor, invalidateHospital } from "./profileCache";
 
 // ── CLINIC IDENTITY ────────────────────────────────────────────────────────────
 
@@ -60,6 +61,10 @@ export async function updateClinicProfile(
         .update(patch)
         .eq("id", hospitalId);
     if (error) throw new Error(`updateClinicProfile: ${error.message}`);
+    // Drops the cached row HERE rather than at the call site, so no future
+    // caller can forget and leave the sidebar/Clinic page showing the old
+    // name or logo for up to a TTL. See profileCache.ts.
+    invalidateHospital(hospitalId);
 }
 
 /** The doctor half of the same identity surface. `name` is required for the
@@ -85,6 +90,7 @@ export async function updateDoctorProfile(
         .update(patch)
         .eq("id", doctorId);
     if (error) throw new Error(`updateDoctorProfile: ${error.message}`);
+    invalidateDoctor(doctorId);
 }
 
 // ── LOGO / PHOTO UPLOAD ─────────────────────────────────────────────────────────

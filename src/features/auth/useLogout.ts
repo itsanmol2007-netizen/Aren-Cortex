@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./AuthProvider";
 import { clearAllConsultDrafts } from "../../lib/consultDraft";
+import { clearProfileCache } from "../../lib/db";
 
 export function useLogout(): () => Promise<void> {
     const { signOut } = useAuth();
@@ -24,6 +25,11 @@ export function useLogout(): () => Promise<void> {
         // from a Front Desk session logging out too — there is nothing under
         // this prefix to find there.
         clearAllConsultDrafts();
+        // The cached doctor/clinic rows (profileCache.ts) are identity, and
+        // this machine may be shared — the next person to sign in must not
+        // inherit the previous session's clinic name, logo or photo from
+        // localStorage while their own rows load.
+        clearProfileCache();
         navigate("/login", { replace: true });
     }, [signOut, queryClient, navigate]);
 }

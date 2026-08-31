@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import logo from "../../assets/aren-logo.png";
 import { SidebarNav, type SidebarPage } from "./SidebarNav";
 import type { Doctor } from "../../types";
@@ -12,6 +12,12 @@ type SidebarProps = {
     onNavigate: (page: SidebarPage) => void;
     onConsult: () => void;
     doctor: Doctor;
+    /** `doctors.avatar_url` — a public URL (lib/db/clinic.ts's `getPublicUrl`),
+     *  so it can be rendered directly and cached by the browser. Falls back to
+     *  initials when the doctor has not uploaded a photo. */
+    avatarUrl?: string | null;
+    /** Opens the doctor's own profile — the footer pill is the way in. */
+    onOpenProfile: () => void;
     logoRef: React.RefObject<HTMLDivElement>;
 };
 
@@ -22,6 +28,8 @@ export function Sidebar({
     onNavigate,
     onConsult,
     doctor,
+    avatarUrl,
+    onOpenProfile,
     logoRef,
 }: SidebarProps) {
     const panelRef = useRef<HTMLElement>(null);
@@ -154,15 +162,32 @@ export function Sidebar({
                     />
                 </div>
 
-                {/* Doctor footer */}
+                {/* Doctor footer — the doctor's real photo when there is one,
+                    and a way IN to their own profile rather than a static
+                    readout. Two initials in a coloured square is what an
+                    account has before it has a face; once `avatar_url` is
+                    set, showing it instead is both more recognisable and
+                    free (a public URL the browser caches — see
+                    lib/db/profileCache.ts for why the ROW is cached but the
+                    bytes deliberately are not). */}
                 <div className="sidebar-footer">
-                    <div className="sidebar-doctor-pill">
-                        <div className="sidebar-doctor-avatar">{doctorInitials}</div>
+                    <button
+                        type="button"
+                        className="sidebar-doctor-pill"
+                        onClick={() => { onOpenProfile(); onClose(); }}
+                        aria-label={`${doctor.name} — open your profile`}
+                    >
+                        <div className="sidebar-doctor-avatar">
+                            {avatarUrl
+                                ? <img src={avatarUrl} alt="" className="sidebar-doctor-photo" />
+                                : doctorInitials}
+                        </div>
                         <div className="sidebar-doctor-info">
                             <span className="sidebar-doctor-name">{doctor.name}</span>
                             <span className="sidebar-doctor-spec">{doctor.specialty || "General"}</span>
                         </div>
-                    </div>
+                        <ChevronRight size={15} className="sidebar-doctor-chevron" />
+                    </button>
                 </div>
             </aside>
         </>

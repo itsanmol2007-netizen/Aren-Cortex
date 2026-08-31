@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import {
     fetchDoctorsByHospital,
-    fetchHospital,
+    fetchHospitalCached,
     fetchPrescriptionRenderData,
     type DBDoctor,
     type DBHospital,
@@ -64,7 +64,7 @@ function PrintRxInner() {
         fetchDoctorsByHospital(hospitalId)
             .then(setDoctors)
             .catch((err) => console.warn("fetchDoctorsByHospital failed (non-fatal):", err));
-        fetchHospital(hospitalId)
+        fetchHospitalCached(hospitalId)
             .then(setHospital)
             .catch((err) => console.warn("fetchHospital failed (non-fatal):", err));
     }, [hospitalId]);

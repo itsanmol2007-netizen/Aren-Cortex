@@ -221,6 +221,39 @@ function ReadyBody({
         finally { setBusy(false); }
     };
 
+    /** The box is an action only while there is genuinely something to
+     *  reload — see the render below for why this must not become a
+     *  `disabled` button instead. */
+    const canReload = expired && resumable && !busy;
+
+    /** The QR image plus its expiry overlay, rendered identically whether the
+     *  box around it is a button or a plain div. */
+    const qrBox = (
+        <>
+            {qrDataUrl ? (
+                <img
+                    src={qrDataUrl}
+                    alt=""
+                    width={200}
+                    height={200}
+                    className={`rounded-[8px] transition-[filter,opacity] duration-200 ${expired ? "opacity-35 blur-[3px] grayscale" : ""}`}
+                />
+            ) : (
+                <Loader2 size={20} className="animate-spin text-[#a8aeba]" />
+            )}
+            {expired && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-[5px] rounded-[14px] bg-white/60">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf2f2] text-[#c9791a] shadow-[0_2px_8px_rgba(201,121,26,0.18)]">
+                        {busy ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+                    </div>
+                    <span className="rounded-[6px] bg-white px-[8px] py-[2px] text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-[#b3372f] shadow-[0_1px_4px_rgba(20,30,50,0.10)]">
+                        Expired
+                    </span>
+                </div>
+            )}
+        </>
+    );
+
     return (
         <>
             {/* One fixed-size body for every state, same reasoning (and same
@@ -272,36 +305,36 @@ function ReadyBody({
                             separate button underneath restating it. A mock QR
                             (blurred) shows even before a real one has ever
                             loaded, so "no active code" reads the same as
-                            "expired", not as a differently-shaped blank. */}
-                        <button
-                            type="button"
-                            onClick={expired && resumable ? doResume : undefined}
-                            disabled={busy || !expired || !resumable}
-                            aria-label={expired && resumable ? "Reload the QR code" : undefined}
-                            className={`relative flex h-[216px] w-[216px] items-center justify-center rounded-[14px] border border-[#eef0f5] bg-white shadow-[0_1px_3px_rgba(20,30,50,0.06)] ${expired && resumable ? "cursor-pointer" : "cursor-default"}`}
-                        >
-                            {qrDataUrl ? (
-                                <img
-                                    src={qrDataUrl}
-                                    alt=""
-                                    width={200}
-                                    height={200}
-                                    className={`rounded-[8px] transition-[filter,opacity] duration-200 ${expired ? "opacity-35 blur-[3px] grayscale" : ""}`}
-                                />
-                            ) : (
-                                <Loader2 size={20} className="animate-spin text-[#a8aeba]" />
-                            )}
-                            {expired && (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-[5px] rounded-[14px] bg-white/60">
-                                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf2f2] text-[#c9791a] shadow-[0_2px_8px_rgba(201,121,26,0.18)]">
-                                        {busy ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
-                                    </div>
-                                    <span className="rounded-[6px] bg-white px-[8px] py-[2px] text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-[#b3372f] shadow-[0_1px_4px_rgba(20,30,50,0.10)]">
-                                        Expired
-                                    </span>
-                                </div>
-                            )}
-                        </button>
+                            "expired", not as a differently-shaped blank.
+
+                            A <button> ONLY when it is really an action. The
+                            first cut always rendered one and marked it
+                            `disabled` whenever it wasn't reloadable — which is
+                            most of the time, because a LIVE code isn't
+                            expired — and `base.css` fades every disabled
+                            button to `opacity: 0.48`. So a perfectly good QR
+                            code rendered at half strength and read as
+                            cancelled: "it's looking washed up... like that QR
+                            code has been deactivated, but it's not
+                            deactivated" (2026-08-31). Same cascade trap as
+                            the `label`/`svg` ones already documented in
+                            cortex-gotchas.md: an unlayered bare-element rule
+                            in base.css beats everything Tailwind puts on the
+                            element. */}
+                        {canReload ? (
+                            <button
+                                type="button"
+                                onClick={doResume}
+                                aria-label="Reload the QR code"
+                                className="relative flex h-[216px] w-[216px] cursor-pointer items-center justify-center rounded-[14px] border border-[#eef0f5] bg-white shadow-[0_1px_3px_rgba(20,30,50,0.06)] transition-colors hover:border-[#d9d3ee]"
+                            >
+                                {qrBox}
+                            </button>
+                        ) : (
+                            <div className="relative flex h-[216px] w-[216px] items-center justify-center rounded-[14px] border border-[#eef0f5] bg-white shadow-[0_1px_3px_rgba(20,30,50,0.06)]">
+                                {qrBox}
+                            </div>
+                        )}
 
                         {expired ? (
                             <>

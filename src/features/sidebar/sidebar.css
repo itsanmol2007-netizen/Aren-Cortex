@@ -267,9 +267,18 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 8px 0 24px;
+    padding: 10px 0 18px;
     position: relative;
     z-index: 1;
+    /* The nav used to sit as a ~350px stack at the top of a ~1000px panel —
+       "they're all looking crammed up with the top half of the sidebar"
+       (2026-08-31). Two things fix that together: bigger tiles (below), and
+       letting the DIVIDERS absorb the leftover height so the four groups
+       distribute down the panel instead of the whole stack hugging the
+       header. `display: flex` here is what gives the nav a height to
+       distribute within. */
+    display: flex;
+    flex-direction: column;
     scrollbar-width: thin;
     scrollbar-color: rgba(99, 102, 241, 0.30) transparent;
 }
@@ -287,10 +296,27 @@
     border-radius: 2px;
 }
 
+/* The nav element `SidebarNav` renders — a column tall enough to spread
+   its groups across, never shorter than the body it sits in. */
+.sidebar-nav-body > nav {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
 /* ── Divider ──────────────────────────────────────────────── */
+/* Doubles as the flexible spacer between nav groups. `flex: 1 1 auto` lets
+   each of the three take an equal share of whatever height the tiles didn't
+   use, capped so a very tall screen spreads the groups without shearing
+   them apart; on a short screen they collapse back to the base margin and
+   the nav simply scrolls as before. */
 .sidebar-divider {
     height: 1px;
-    margin: 5px 14px;
+    flex: 1 1 auto;
+    max-height: 58px;
+    min-height: 1px;
+    margin: 10px 14px;
     background: linear-gradient(to right,
             transparent,
             rgba(255, 255, 255, 0.11) 20%,
@@ -304,13 +330,19 @@
     align-items: center;
     gap: 11px;
     width: 100%;
-    padding: 0 14px 0 18px;
-    height: 40px;
+    padding: 0 14px 0 16px;
+    /* 40 -> 52 (2026-08-31): see `.sidebar-nav-body`'s note. `flex: none` so
+       the dividers, not the tiles, are what absorbs the spare height. */
+    height: 52px;
+    flex: none;
+    margin: 0 8px;
+    width: calc(100% - 16px);
     border: none;
+    border-radius: 10px;
     background: transparent;
     /* Was 0.55 — bumped to 0.78 so nav items are clearly readable */
     color: rgba(255, 255, 255, 0.78);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;
@@ -331,12 +363,12 @@
 .sidebar-nav-item.variant-action {
     color: #fff;
     font-weight: 650;
-    font-size: 13.5px;
-    margin: 6px 8px 2px;
+    font-size: 14.5px;
+    margin: 2px 8px 2px;
     width: calc(100% - 16px);
-    border-radius: 9px;
+    border-radius: 11px;
     padding: 0 14px;
-    height: 44px;
+    height: 56px;
     background: linear-gradient(135deg,
             rgba(18, 104, 232, 0.28) 0%,
             rgba(99, 102, 241, 0.20) 100%);
@@ -372,14 +404,17 @@
     color: #a855f7;
 }
 
+/* Fully rounded and inset since the tile itself became a rounded, inset
+   block (2026-08-31) — a square-edged bar at `left: 0` now pokes out past
+   the tile's own 10px corner. */
 .sidebar-nav-item.is-active::before {
     content: "";
     position: absolute;
-    left: 0;
-    top: 7px;
-    bottom: 7px;
+    left: 4px;
+    top: 11px;
+    bottom: 11px;
     width: 3px;
-    border-radius: 0 3px 3px 0;
+    border-radius: 3px;
     background: linear-gradient(to bottom, #a855f7, #6366f1);
     box-shadow: 0 0 8px rgba(168, 85, 247, 0.65);
 }
@@ -412,9 +447,9 @@
    plus inset highlight for real dimensionality, not a flat rectangle. ──── */
 
 .sidebar-nav-icon-badge {
-    width: 26px;
-    height: 26px;
-    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -464,8 +499,8 @@
    six real jobs above it: smaller, more muted, no active-state left bar
    treatment competing with the real nav for attention. */
 .sidebar-nav-item.variant-utility {
-    height: 34px;
-    font-size: 12px;
+    height: 42px;
+    font-size: 12.5px;
     color: rgba(255, 255, 255, 0.52);
     font-weight: 450;
 }
@@ -494,30 +529,71 @@
     z-index: 1;
 }
 
+/* A real control now, not a readout — it opens the doctor's own profile
+   (2026-08-31). Full width so it reads as the panel's footer rather than a
+   floating chip, and it grew with the nav tiles above it. */
 .sidebar-doctor-pill {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 11px;
+    gap: 11px;
+    width: 100%;
+    padding: 10px 12px;
     background: rgba(255, 255, 255, 0.055);
     border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 10px;
+    border-radius: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease;
 }
 
+.sidebar-doctor-pill:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.20);
+}
+
+.sidebar-doctor-pill:focus-visible {
+    outline: none;
+    border-color: rgba(168, 85, 247, 0.55);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.25);
+}
+
+.sidebar-doctor-chevron {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.30);
+    transition: color 140ms ease, transform 140ms ease;
+}
+
+.sidebar-doctor-pill:hover .sidebar-doctor-chevron {
+    color: rgba(255, 255, 255, 0.62);
+    transform: translateX(2px);
+}
+
+/* Holds either two initials or the doctor's real photo — `overflow: hidden`
+   is what lets the <img> fill the same rounded square the initials use, so
+   the footer's shape never changes with whether a photo exists. */
 .sidebar-doctor-avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
+    width: 38px;
+    height: 38px;
+    overflow: hidden;
+    border-radius: 10px;
     background: linear-gradient(135deg, #1268e8, #6366f1);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     color: #fff;
     letter-spacing: 0.03em;
     flex-shrink: 0;
     box-shadow: 0 0 12px rgba(18, 104, 232, 0.40);
+}
+
+.sidebar-doctor-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .sidebar-doctor-info {
