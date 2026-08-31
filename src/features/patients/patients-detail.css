@@ -9,31 +9,12 @@
    visit timeline spine, and the 2-column detail grid.
 ──────────────────────────────────────────────────────────────────────────── */
 
-/* ── Topbar buttons (sit inside the reused .prec-page-header) ──────────────── */
-/* The back button itself moved to `components/BackButton.tsx` (Tailwind) —
-   this page's copy is now a plain wrapper around that shared component. The
-   values here (border/hover colours, padding, radius) live on IN that
-   component, unchanged; nothing else in this codebase referenced
-   `.prec-back-btn`, so the rule is gone rather than left dead. */
-
-.prec-start-consult-btn--topbar {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    background: #1268e8;
-    border: none;
-    border-radius: 8px;
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background 0.12s;
-}
-
-.prec-start-consult-btn--topbar:hover {
-    background: #0d54c4;
-}
+/* ── Topbar buttons ───────────────────────────────────────────────────────── */
+/* Both the back button and New Consult now live in `WorkspaceHeader`'s dark
+   glass rightSlot (`components/BackButton.tsx` / `.ws-new-consult-btn` in
+   workspace-header.css) — this page no longer has a topbar row of its own.
+   New Consult used to be `.prec-start-consult-btn--topbar`, alone on a
+   full-width light-body row; moved up 2026-08-31, see PatientRecord.tsx. */
 
 /* ── Identity card ────────────────────────────────────────────────────────── */
 
@@ -234,17 +215,41 @@ button.prec-trend-card.is-clickable:hover {
 .prec-trend-card.is-steady .cs-lt-spark circle,
 .prec-trend-card.is-neutral .cs-lt-spark circle { fill: #94a3b8; }
 
-.prec-trend-none {
-    font-size: 12px;
-    color: #94a3b8;
-    margin: 0;
-    line-height: 1.5;
+/* A trend card with nothing to plot yet — same grid, same card shape as a
+   populated one (rendered by mapping three of these instead of real series,
+   see PatientRecord.tsx), dashes standing in for the sparkline/values. Beats
+   the one-line sentence this replaced, which sat alone in an otherwise-empty
+   card and read as the page itself being broken rather than a patient with
+   one visit so far. */
+.prec-trend-card.is-placeholder {
+    color: #b6c0d1;
+    cursor: default;
 }
 
-/* ── Care Plan card (sidebar) — real numbers only: `row.care_plan_progress`
-   is null unless a visit has actually been linked to an active plan, so
-   this card simply doesn't render rather than showing a fabricated "no
-   plan" placeholder frame. ─────────────────────────────────────────────── */
+.prec-trend-card.is-placeholder .prec-trend-label,
+.prec-trend-card.is-placeholder .prec-trend-from,
+.prec-trend-card.is-placeholder .prec-trend-delta span {
+    color: #b6c0d1;
+}
+
+/* One dash, centred, standing in for a card's real content when there is
+   genuinely nothing recorded yet — Care Plan, Clinical Snapshot, Visit
+   Pattern. The card itself always renders (see each one's own call site in
+   PatientRecord.tsx); only what's INSIDE it varies, so the sidebar keeps its
+   full row count instead of shrinking every time a section has nothing to
+   report. */
+.prec-placeholder-dash {
+    padding: 4px 0;
+    color: #b6c0d1;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+/* ── Care Plan card (sidebar) — `row.care_plan_progress` is null unless a
+   visit has actually been linked to an active plan; the card itself always
+   renders now (`.prec-placeholder-dash` above stands in when it's null) so
+   the sidebar doesn't lose a whole row for a patient with no plan yet. ──── */
 
 .prec-careplan-label {
     font-size: 13px;
@@ -515,23 +520,33 @@ button.prec-trend-card.is-clickable:hover {
 
 /* A visit that hasn't been finished in Consult yet is real and shouldn't be
    silently invisible — this is why `row.visit_count` (every status) and the
-   timeline below (completed only) can legitimately disagree. */
+   timeline below (completed only) can legitimately disagree.
+   Sized up 2026-08-31 — Anmol: "its size should be dependent on how much big
+   the page is... looks disconnected from the rest of the page." At 11px/
+   8x11px padding this read as a stray toast next to 18px identity text and
+   16px card titles; scaled to sit closer to that scale (a left accent bar
+   instead of a hairline border all round, same amber family) so it reads as
+   part of the page instead of a small floating chip on top of it. */
 .prec-tl-inprogress-notice {
     display: flex;
     align-items: center;
-    gap: 7px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #92400e;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.4;
+    color: #7c3d0a;
     background: #fffbeb;
     border: 1px solid #fde68a;
-    border-radius: 8px;
-    padding: 8px 11px;
-    margin-bottom: 12px;
+    border-left: 4px solid #d97706;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
 }
 
 .prec-tl-inprogress-notice svg {
     flex-shrink: 0;
+    width: 16px;
+    height: 16px;
     color: #d97706;
 }
 

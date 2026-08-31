@@ -71,8 +71,9 @@ import {
     type TrendSeries,
     type TrendVerdict,
 } from "../consult/trend";
-import { Sparkline, visitForLastReading, formatSpan } from "../consult/LongitudinalBand";
+import { Sparkline, formatSpan } from "../consult/LongitudinalBand";
 import { BlankTimelineArt } from "../consult/BlankArt";
+import { TrendDetailModal } from "./TrendDetailModal";
 import { toast } from "sonner";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -207,14 +208,16 @@ function DetailSkeleton() {
             </div>
 
             {/* Visit Timeline's own row shape — dot+line spine, a date/type
-                header per row — and `--grow` so this card alone fills
-                whatever height the three above didn't use. */}
-            <div className="prec-panel-card prec-panel-card--grow">
+                header per row. Sized to its own content now, same as every
+                other card — see the real card's own comment for why `--grow`
+                (this card alone absorbing the column's leftover height, then
+                scrolling internally) is gone. */}
+            <div className="prec-panel-card">
                 <div className="prec-panel-card-header">
                     <SkelBlock width={13} height={13} style={{ borderRadius: 4 }} />
                     <SkelBlock width={100} height={11} />
                 </div>
-                <div className="prec-panel-card-body prec-panel-card-body--grow" style={{ gap: 0 }}>
+                <div className="prec-panel-card-body" style={{ gap: 0 }}>
                     {[0, 1, 2, 3].map((i) => (
                         <div key={i} className="prec-tl-row">
                             <div className="prec-tl-spine">
@@ -486,6 +489,16 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
     const [loading, setLoading] = useState(true);
     const [showAll, setShowAll] = useState(false);
     const [activeVisit, setActiveVisit] = useState<{ visit: RealVisit; x: number } | null>(null);
+    // Which Progress Trend series is expanded into its own graph — see
+    // `TrendDetailModal`. Clicking a mini-card used to open `PastVisitCard`
+    // directly (the newest visit that produced its last reading), which is
+    // the wrong question: "what does THIS graph mean" answered with "here's
+    // one visit". The modal answers the graph's own question — how the
+    // reading moved across every visit — and only THEN, per visit row or
+    // point, opens `PastVisitCard` (the one shared per-visit detail view;
+    // see `cortex-longitudinal-spec.md` §3.1's "do not build a second detail
+    // view" — that rule is about visits, not about a graph's own expansion).
+    const [trendDetail, setTrendDetail] = useState<TrendSeries | null>(null);
 
     // The prescription viewer — same ReviewModal/fetchPrescriptionRenderData
     // pipeline Print RX and Consult already use (rule 6: one prescription
@@ -624,16 +637,24 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                 onOpenSidebar={onOpenSidebar}
                 title="Patient Record"
                 subtitle="Clinical History & Continuity"
-                rightSlot={<BackButton label="All Patients" onClick={onBack} />}
+                // New Consult moved up here 2026-08-31 — it used to sit alone
+                // on its own full-width row in the light body, an entire
+                // 40px+ line spent on one small button. Same dark-glass pill
+                // family as `BackButton` (`.ws-new-consult-btn`, same border/
+                // blur/shadow as `.ws-back-btn`), placed to ITS left so Back
+                // keeps the exact rightmost position it holds on every other
+                // Cortex page — Anmol: "don't change the position of the back
+                // button... this should be consistent everywhere."
+                rightSlot={
+                    <>
+                        <button type="button" className="ws-new-consult-btn" onClick={handleStartConsult}>
+                            <Plus size={13} />
+                            <span>New Consult</span>
+                        </button>
+                        <BackButton label="All Patients" onClick={onBack} />
+                    </>
+                }
             />
-
-            <div className="prec-page-header">
-                <div style={{ flex: 1 }} />
-                <button type="button" className="prec-start-consult-btn--topbar" onClick={handleStartConsult}>
-                    <Plus size={12} />
-                    New Consult
-                </button>
-            </div>
 
             <div className="prec-page-body">
                 <div className="prec-main-col">
@@ -692,14 +713,19 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                             </div>
 
                             {/* Specialty-aware Clinical Snapshot — same chips/detail shape
-                                as the Overview table's snapshot cell, same source of truth. */}
-                            {(snapshot.chips.length > 0 || snapshot.detail) && (
-                                <div className="prec-panel-card">
-                                    <div className="prec-panel-card-header">
-                                        <Stethoscope size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
-                                        <span className="prec-panel-card-title">Clinical Snapshot</span>
-                                    </div>
-                                    <div className="prec-panel-card-body">
+                                as the Overview table's snapshot cell, same source of truth.
+                                Always rendered now, even with nothing to show — a card that
+                                vanishes entirely reads as one more slab of dead white space
+                                next to the ones that stayed (Anmol: "don't make the page
+                                look completely empty and dead"); a single dash in the same
+                                card shape says "checked, nothing recorded" instead. */}
+                            <div className="prec-panel-card">
+                                <div className="prec-panel-card-header">
+                                    <Stethoscope size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
+                                    <span className="prec-panel-card-title">Clinical Snapshot</span>
+                                </div>
+                                <div className="prec-panel-card-body">
+                                    {snapshot.chips.length > 0 || snapshot.detail ? (
                                         <div className="prec-snapshot-cell" style={{ gap: 8 }}>
                                             {snapshot.chips.length > 0 && (
                                                 <div className="prec-snapshot-chips">
@@ -712,9 +738,11 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                             )}
                                             {snapshot.detail && <div className="prec-snapshot-detail" style={{ fontSize: 12, whiteSpace: "normal" }}>{snapshot.detail}</div>}
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="prec-placeholder-dash">—</div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
 
                             {/* Progress Trend and Visit Timeline are the tall, primary
                                 content — full width of the main column. The shorter
@@ -737,27 +765,49 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                 <div className="prec-panel-card-body">
                                     {trendSummary.series.length > 0 ? (
                                         <div className="prec-trend-grid">
-                                            {trendSummary.series.map((s) => {
-                                                const visit = visitForLastReading(s, completedVisits);
-                                                return (
-                                                    <TrendMiniCard
-                                                        key={s.key}
-                                                        series={s}
-                                                        onOpen={visit ? () => openVisitPopover(visit, window.innerWidth / 2) : undefined}
-                                                    />
-                                                );
-                                            })}
+                                            {trendSummary.series.map((s) => (
+                                                <TrendMiniCard key={s.key} series={s} onOpen={() => setTrendDetail(s)} />
+                                            ))}
                                         </div>
                                     ) : (
-                                        <p className="prec-trend-none">
-                                            No measurement has been recorded twice yet — a trend needs two visits with
-                                            the same reading.
-                                        </p>
+                                        // Same grid, same card shape, dashes instead of readings —
+                                        // a trend needs two visits with the same measurement, which
+                                        // a brand-new or once-seen patient never has yet. The old
+                                        // one-line sentence sat alone in an otherwise-empty card;
+                                        // this keeps the card's own footprint instead of collapsing
+                                        // it, so the page doesn't get thinner every time there's
+                                        // less to say (Anmol, PDPG empty-state pass).
+                                        <div className="prec-trend-grid">
+                                            {["—", "—", "—"].map((_, i) => (
+                                                <div key={i} className="prec-trend-card is-placeholder">
+                                                    <p className="prec-trend-label">—</p>
+                                                    <p className="prec-trend-values">
+                                                        <span className="prec-trend-from">—</span>
+                                                    </p>
+                                                    <p className="prec-trend-delta"><span>Needs 2 visits</span></p>
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="prec-panel-card prec-panel-card--grow">
+                            {/* No longer `--grow` + an internal scrollbox — that
+                                made the card swallow the column's whole
+                                leftover height and scroll ITSELF, a nested
+                                scroll squeezed into a sliver at the very
+                                bottom of the viewport with the rest of the
+                                timeline invisible above it (see this class's
+                                old note in patients-shell.css, and Anmol: "the
+                                visit timeline is not even visible, it's
+                                cramped"). This card now sizes to its own
+                                content like every other one on the page, and
+                                `.prec-main-col`'s own `overflow-y: auto` is
+                                the ONE scrollbar for the whole column — scroll
+                                down past identity/snapshot/trend and the full
+                                timeline is there, not boxed into its own
+                                mini-viewport. */}
+                            <div className="prec-panel-card">
                                 <div className="prec-panel-card-header">
                                     <Calendar size={13} className="prec-panel-card-icon" />
                                     <span className="prec-panel-card-title">Visit Timeline</span>
@@ -775,10 +825,10 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                         </button>
                                     )}
                                 </div>
-                                <div className="prec-panel-card-body prec-panel-card-body--grow">
+                                <div className="prec-panel-card-body">
                                     {inProgressVisits.length > 0 && (
                                         <div className="prec-tl-inprogress-notice">
-                                            <Clock size={12} />
+                                            <Clock size={16} />
                                             <span>
                                                 {inProgressVisits.length === 1
                                                     ? "1 visit hasn't been finished in Consult yet"
@@ -885,28 +935,37 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                         `row.care_plan_progress` directly (already loaded with the row
                         itself). Skeleton the rest rather than let them just not
                         appear and pop in a moment later: the same "silently missing,
-                        not loading" problem just fixed on the Overview sidebar. */}
-                    {row.care_plan_progress && (
-                        <div className="prec-panel-section">
-                            <div className="prec-panel-card">
-                                <div className="prec-panel-card-header">
-                                    <TrendingUp size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
-                                    <span className="prec-panel-card-title">Care Plan</span>
-                                </div>
-                                <div className="prec-panel-card-body">
-                                    <div className="prec-careplan-label">{row.care_plan_session_label}</div>
-                                    <div className="prec-careplan-bar">
-                                        <span style={{
-                                            width: `${Math.min(100, Math.round((row.care_plan_progress.sessionsCompleted / row.care_plan_progress.targetSessions) * 100))}%`,
-                                        }} />
-                                    </div>
-                                    <div className="prec-careplan-sub">
-                                        {Math.max(0, row.care_plan_progress.targetSessions - row.care_plan_progress.sessionsCompleted)} sessions remaining
-                                    </div>
-                                </div>
+                        not loading" problem just fixed on the Overview sidebar.
+
+                        Always rendered now, care plan or not — a sidebar that drops a
+                        whole card for every unmet condition is how four real cards
+                        become one card and a wall of white. No plan says so, once,
+                        in the same card shape everything else keeps. */}
+                    <div className="prec-panel-section">
+                        <div className="prec-panel-card">
+                            <div className="prec-panel-card-header">
+                                <TrendingUp size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
+                                <span className="prec-panel-card-title">Care Plan</span>
+                            </div>
+                            <div className="prec-panel-card-body">
+                                {row.care_plan_progress ? (
+                                    <>
+                                        <div className="prec-careplan-label">{row.care_plan_session_label}</div>
+                                        <div className="prec-careplan-bar">
+                                            <span style={{
+                                                width: `${Math.min(100, Math.round((row.care_plan_progress.sessionsCompleted / row.care_plan_progress.targetSessions) * 100))}%`,
+                                            }} />
+                                        </div>
+                                        <div className="prec-careplan-sub">
+                                            {Math.max(0, row.care_plan_progress.targetSessions - row.care_plan_progress.sessionsCompleted)} sessions remaining
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="prec-placeholder-dash">No active care plan</div>
+                                )}
                             </div>
                         </div>
-                    )}
+                    </div>
 
                     {loading ? (
                         [0, 1, 2].map((i) => (
@@ -919,65 +978,69 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                             </div>
                         ))
                     ) : (
+                        // All three always render now — `RankedBarList` already
+                        // says "No data yet." for an empty list, and Visit
+                        // Pattern gets the same dash fallback below; a card
+                        // that disappears whenever a new patient has nothing
+                        // to rank yet is the "half the sidebar is missing"
+                        // look this pass is fixing.
                         <>
-                            {frequentComplaints.length > 0 && (
-                                <div className="prec-panel-section">
-                                    <div className="prec-panel-card">
-                                        <div className="prec-panel-card-header">
-                                            <Stethoscope size={13} className="prec-panel-card-icon" />
-                                            <span className="prec-panel-card-title">Frequent Complaints</span>
-                                        </div>
-                                        <div className="prec-panel-card-body">
-                                            <RankedBarList items={frequentComplaints} />
-                                        </div>
+                            <div className="prec-panel-section">
+                                <div className="prec-panel-card">
+                                    <div className="prec-panel-card-header">
+                                        <Stethoscope size={13} className="prec-panel-card-icon" />
+                                        <span className="prec-panel-card-title">Frequent Complaints</span>
+                                    </div>
+                                    <div className="prec-panel-card-body">
+                                        <RankedBarList items={frequentComplaints} />
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
-                            {commonMedicines.length > 0 && (
-                                <div className="prec-panel-section">
-                                    <div className="prec-panel-card">
-                                        <div className="prec-panel-card-header">
-                                            <Pill size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
-                                            <span className="prec-panel-card-title">Common Medicines</span>
-                                        </div>
-                                        <div className="prec-panel-card-body">
-                                            <RankedBarList items={commonMedicines} />
-                                        </div>
+                            <div className="prec-panel-section">
+                                <div className="prec-panel-card">
+                                    <div className="prec-panel-card-header">
+                                        <Pill size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
+                                        <span className="prec-panel-card-title">Common Medicines</span>
+                                    </div>
+                                    <div className="prec-panel-card-body">
+                                        <RankedBarList items={commonMedicines} />
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
-                            {completedVisits.length > 0 && (
-                                <div className="prec-panel-section">
-                                    <div className="prec-panel-card">
-                                        <div className="prec-panel-card-header">
-                                            <Calendar size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
-                                            <span className="prec-panel-card-title">Visit Pattern</span>
-                                        </div>
-                                        <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                            {pattern.lastVisitDays !== null && (
+                            <div className="prec-panel-section">
+                                <div className="prec-panel-card">
+                                    <div className="prec-panel-card-header">
+                                        <Calendar size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
+                                        <span className="prec-panel-card-title">Visit Pattern</span>
+                                    </div>
+                                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                        {pattern.lastVisitDays !== null ? (
+                                            <>
                                                 <div className="prec-pattern-row">
                                                     <span>Last visit</span>
                                                     <b>{pattern.lastVisitDays === 0 ? "Today" : `${pattern.lastVisitDays}d ago`}</b>
                                                 </div>
-                                            )}
-                                            {pattern.avgGapDays !== null && (
-                                                <div className="prec-pattern-row">
-                                                    <span>Avg. gap</span>
-                                                    <b>{pattern.avgGapDays}d between visits</b>
-                                                </div>
-                                            )}
-                                            {pattern.mostActiveMonth && (
-                                                <div className="prec-pattern-row">
-                                                    <span>Most active</span>
-                                                    <b>{pattern.mostActiveMonth}</b>
-                                                </div>
-                                            )}
-                                        </div>
+                                                {pattern.avgGapDays !== null && (
+                                                    <div className="prec-pattern-row">
+                                                        <span>Avg. gap</span>
+                                                        <b>{pattern.avgGapDays}d between visits</b>
+                                                    </div>
+                                                )}
+                                                {pattern.mostActiveMonth && (
+                                                    <div className="prec-pattern-row">
+                                                        <span>Most active</span>
+                                                        <b>{pattern.mostActiveMonth}</b>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="prec-placeholder-dash">No visits recorded yet</div>
+                                        )}
                                     </div>
                                 </div>
-                            )}
+                            </div>
                         </>
                     )}
                 </aside>
@@ -990,6 +1053,22 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                     visit={activeVisit.visit}
                     x={activeVisit.x}
                     onClose={() => setActiveVisit(null)}
+                />
+            )}
+
+            {/* A Progress Trend graph, expanded — see `trendDetail`'s own
+                comment above. Its own visit rows/points hand off to the same
+                `PastVisitCard` above rather than opening anything of their
+                own. */}
+            {trendDetail && (
+                <TrendDetailModal
+                    series={trendDetail}
+                    visits={completedVisits}
+                    onClose={() => setTrendDetail(null)}
+                    onOpenVisit={(visit) => {
+                        setTrendDetail(null);
+                        openVisitPopover(visit, window.innerWidth / 2);
+                    }}
                 />
             )}
 

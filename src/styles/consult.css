@@ -5518,12 +5518,19 @@ body.cs-locked-shell {
 /* ── Attachments, as a horizontal strip ──────────────────────────────────
    One row of small cards instead of one full row per file. The row form cost
    a line of page height per attachment in a column that must not grow. */
-.cs-attach.is-strip { min-height: 0; }
+/* A real floor, not `0` — the whole point of a fixed-shape card. Deleting a
+   file down to zero used to shrink the card around it (the strip row and its
+   footer both disappear at once), the exact "why is everything flexible"
+   complaint. Header + one row of tiles + a hint line, whichever of the two
+   states is showing, now land on roughly the same box. */
+.cs-attach.is-strip { min-height: 108px; }
 
 .cs-attach-strip {
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     gap: 6px;
+    min-height: 38px;
     padding: var(--cs-s3) var(--cs-s4) 0;
 }
 
@@ -5640,6 +5647,7 @@ body.cs-locked-shell {
     flex-direction: row;
     align-items: center;
     gap: var(--cs-s2);
+    min-height: 38px;
     padding: var(--cs-s2) var(--cs-s4) 0;
     text-align: left;
 }
@@ -5715,6 +5723,35 @@ body.cs-locked-shell {
 
 .cs-head-action:hover:not(:disabled) .cs-head-plus { color: var(--cs-blue); }
 .cs-head-action:hover:not(:disabled) .cs-card-title { color: var(--cs-blue); }
+
+/* Attachments' own header, split into two real icon-buttons instead of one
+   whole-row trigger with a decorative plus at the end — "view all" needed a
+   click target of its own once it moved up from the card's floor (former
+   `.cs-card-foot-more`, the "More ⌄" row that changed the card's height
+   every time a file was added or removed). Same size/shape family as
+   `.cs-head-plus`, just real buttons now. */
+.cs-head-view-all,
+.cs-head-add-btn {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+    transition: background 0.13s ease, color 0.13s ease;
+}
+
+.cs-head-view-all:hover,
+.cs-head-add-btn:hover:not(:disabled) {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+
+.cs-head-add-btn:disabled { cursor: default; }
 
 .cs-card-head.is-trigger .cs-meas-menu {
     top: calc(100% + 2px);

@@ -141,42 +141,17 @@
     scrollbar-color: #c0cce0 transparent;
 }
 
-/* Anmol, on Patient Record specifically: "the visit timeline section is
-   just half cut... make it full to the screen size." Visit Timeline is the
-   last card in the column and the one most likely to be short (a new
-   patient, or one with few visits) — `flex: 1` lets IT absorb the column's
-   remaining height instead of the column ending early and showing the page
-   background underneath. `min-height: 0` is required on both: a flex item
-   refuses to shrink below its content's natural height otherwise, which
-   here would defeat the point of `overflow-y: auto` on `.prec-main-col`. */
-.prec-panel-card--grow {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-
-/* `overflow-y: auto` is the other half of "make it full to the screen
-   size" — without it, a patient with enough visits to exceed the grown
-   card's height just grew the whole `.prec-main-col` taller instead of
-   scrolling in place, which either pushed the card past the column's own
-   scroll boundary (content technically reachable, but only by scrolling the
-   ENTIRE page past cards that should have stayed put) or, depending on an
-   ancestor's own overflow, clipped it outright with no way back to it at
-   all — Anmol: "no usable way to scroll through the overflowing content."
-   `flex:1;min-height:0` alone only lets this box SHRINK to the space the
-   flex layout gives it; it does nothing about what happens once its own
-   content is taller than that — this is the line that actually answers
-   "make the timeline itself scrollable when its content exceeds the
-   available height," with the card's header (title, count, Compare toggle)
-   staying put outside this box while just the rows scroll under it. */
-.prec-panel-card-body--grow {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
+/* `.prec-panel-card--grow`/`.prec-panel-card-body--grow` used to live here —
+   Visit Timeline absorbing the column's leftover height and scrolling
+   INSIDE itself, a nested scrollbox squeezed to a sliver at the screen's
+   bottom edge with the rest of the timeline invisible above it. Reverted
+   2026-08-31 (Anmol: "the visit timeline is not even visible, it's cramped
+   due to some... design decisions in past session") back to the simpler,
+   correct shape: every card in `.prec-main-col` sizes to its own content,
+   and the column's own `overflow-y: auto` (below) is the one scrollbar for
+   the whole main grid — scrolling it moves identity/snapshot/trend out of
+   the way and the full timeline is just there, not boxed into its own
+   mini-viewport with an unusable scroll thumb. */
 
 .prec-main-col::-webkit-scrollbar {
     width: 4px;

@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, Eye, Tag, Plus, ChevronDown, ChevronLeft, QrCode, Monitor } from "lucide-react";
+import { Paperclip, FileText, Image as ImageIcon, Loader2, Trash2, Eye, Tag, Plus, ChevronLeft, QrCode, Monitor, Maximize2 } from "lucide-react";
 import { listAttachments, uploadAttachment, deleteAttachment, updateAttachmentTags, subscribeAttachments } from "../../lib/db/attachments";
 import { ATTACHMENT_TYPES, ATTACHMENT_TYPE_LABEL, ACCEPTED_MIME_ACCEPT, LATERALITY_LABEL } from "../../lib/attachments/types";
 import type { Attachment, AttachmentType, Laterality } from "../../lib/attachments/types";
@@ -362,12 +362,19 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
         if (menuStep === "root") {
             return (
                 <>
-                    <button type="button" role="menuitem" onClick={() => setMenuStep("types")}>
-                        <Monitor size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
+                    {/* `.cs-meas-menu button` sets no `display`, so these fell back
+                        to the browser default (inline-block); Tailwind's preflight
+                        forces every `svg` to `display: block`, so the icon rendered
+                        as its own full-width line above the text instead of beside
+                        it. `inline-flex` on the button fixes it regardless of the
+                        icon's own display — once the button is a flex container,
+                        the icon is a flex item and lays out inline no matter what. */}
+                    <button type="button" role="menuitem" className="inline-flex w-full items-center gap-1.5" onClick={() => setMenuStep("types")}>
+                        <Monitor size={13} />
                         Upload from this computer
                     </button>
-                    <button type="button" role="menuitem" onClick={openPhoneUpload}>
-                        <QrCode size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
+                    <button type="button" role="menuitem" className="inline-flex w-full items-center gap-1.5" onClick={openPhoneUpload}>
+                        <QrCode size={13} />
                         Upload from phone
                     </button>
                 </>
@@ -417,7 +424,39 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                         </span>
                         <span className="cs-card-title">Attachments</span>
                         {items.length > 0 && <em className="cs-head-count">{items.length} files</em>}
-                        <Plus size={15} className="cs-head-plus" />
+                    </button>
+
+                    {/* "View all" moved up here beside Attach, 2026-08-31 — the
+                        downward-chevron "More" row on the card's floor (still
+                        there in full/non-strip mode, `.cs-attach-more`) read as a
+                        second, weaker add control and cost the card a whole row
+                        that changed height with the file count. One icon-button
+                        per action, both fixed to the header, so the card's own
+                        height stops depending on whether "More" happens to be
+                        showing. */}
+                    {items.length > 0 && (
+                        <button
+                            type="button"
+                            className="cs-head-view-all"
+                            onClick={() => setShowAll(true)}
+                            aria-label="View all attachments"
+                            title="View all"
+                        >
+                            <Maximize2 size={13} />
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        className="cs-head-add-btn"
+                        disabled={disabled || !visitId || !!busy}
+                        aria-expanded={menuOpen}
+                        aria-haspopup="menu"
+                        aria-label="Attach a file"
+                        title="Attach"
+                        onClick={() => (menuOpen ? setMenuStep(null) : openMenu())}
+                    >
+                        <Plus size={15} />
                     </button>
 
                     {menuOpen && (
@@ -467,32 +506,29 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                     </div>
                 )}
 
-                {/* The footer exists so a CAPPED card can never silently imply
-                    it is showing everything. With no files there is nothing to
-                    cap, so "0 / 0 shown" was a hairline and 31px of page height
-                    spent counting nothing — on the exact screen state this pass
-                    is about. It comes back the moment a file does. */}
-                {items.length > 0 && (
-                    <div className="cs-card-foot">
-                        <span className="cs-card-foot-count">
-                            {visible.length} / {items.length} shown
-                        </span>
-                        <button
-                            type="button"
-                            className="cs-card-foot-more"
-                            onClick={() => setShowAll(true)}
-                        >
-                            More
-                            <ChevronDown size={13} />
-                        </button>
-                    </div>
+                {/* Truncated by `maxInline` — said once, quietly, rather than
+                    the old footer row that came and went with the file count
+                    and dragged the card's own height with it. The way to the
+                    rest is the "view all" icon in the header now, not a
+                    second control down here. */}
+                {overflow > 0 && (
+                    <p className="cs-attach-hint" style={{ margin: "6px 0 0" }}>
+                        {visible.length} of {items.length} shown.
+                    </p>
                 )}
 
                 {error && <p className="cs-attach-error">{error}</p>}
 
+                {/* Fixed width — the default `ChartSurface` cap (800px) is sized
+                    for a chart canvas (odontogram/body map), and read as a
+                    single file row stretched across most of the screen. A
+                    minimum body height too, so deleting the one file here down
+                    to zero doesn't shrink the modal around it. */}
                 {showAll && (
-                    <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)}>
-                        <div className="cs-attach-body">{items.map(renderItem)}</div>
+                    <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)} maxWidth={460}>
+                        <div className="cs-attach-body" style={{ minHeight: 120 }}>
+                            {items.length > 0 ? items.map(renderItem) : <p className="cs-attach-empty">No attachments.</p>}
+                        </div>
                     </ChartSurface>
                 )}
 
@@ -614,8 +650,10 @@ export function AttachmentsCard({ visitId, hospitalId, patientId, disabled = fal
                 attachments and the odontogram cannot look like they were
                 built by different people. */}
             {showAll && (
-                <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)}>
-                    <div className="cs-attach-body">{items.map(renderItem)}</div>
+                <ChartSurface title="Attachments" eyebrow="Evidence" icon={<Paperclip size={15} />} expanded onClose={() => setShowAll(false)} maxWidth={460}>
+                    <div className="cs-attach-body" style={{ minHeight: 120 }}>
+                        {items.length > 0 ? items.map(renderItem) : <p className="cs-attach-empty">No attachments.</p>}
+                    </div>
                 </ChartSurface>
             )}
 

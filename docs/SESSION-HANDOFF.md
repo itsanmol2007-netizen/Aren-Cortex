@@ -1,164 +1,136 @@
-# Session handoff — 2026-08-29 (V6: templates can now carry their own symptom)
+# Session handoff — 2026-08-31 (PDPG layout + attachment pipeline pass)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE, not append a new dated
 section.** `cortex-design-dna/*.md` and `context/*.md` are stable reference
 material — touch them only when a rule or fact in them is actually wrong.
 
-## The three fixes this round started with
+## What this round touched
 
-1. **"Generated with care" line invisible on both renderers** — root cause
-   was `hospitals.is_branded = false` on the test account (a pre-existing
-   flag, not a regression), plus a real gap: `ReviewModal` (the on-screen
-   "dark header" review) never read `prescriptionConfig` at all, so it
-   couldn't show a customised footer even once branding was on. Rewrote its
-   letterhead/signature/QR/instructions/footer to read the same config flags
-   `PrescriptionDocument` computes. Flipped `is_branded` to `true` on the
-   test account (`64c26e24-3668-49c6-8b99-6ddb8c14883e`) so the feature is
-   actually visible — still no UI to set this flag; flag if the default
-   should differ or a toggle should get built.
-2. **Upload button icon/text on separate lines** — the `<label>` around
-   "Upload photo" hit the same `base.css` cascade trap already documented
-   for headings/form controls (`label { display: grid }`, unlayered, beats
-   Tailwind regardless of specificity). Fixed with `inline-flex!`/`gap-*!`.
-3. **Applying a template in Consult showed nothing** — this is the one that
-   grew. See below.
+Two areas, both against reference screenshots the user supplied directly (no
+dev-server screenshots taken this round — the user asked not to spend tokens
+re-deriving what the images already pinpointed; verified by reading the
+actual JSX/CSS instead). `npx tsc -p tsconfig.app.json --noEmit` is clean
+throughout (one pre-existing, unrelated `baseUrl` deprecation warning). Could
+not run `vite build` — this sandbox's `node_modules` has no local `vite`
+install and `npx` couldn't fetch one; not caused by this round's edits.
 
-## What "showed nothing" actually was
+### 1. Attachment pipeline (`features/consult/`)
 
-Traced live end to end. The guarded accept path itself was always correct —
-a hard-warned item drops with a toast, a medicine always stops at its dose
-sheet, everything runs through the one `handleAcceptIntent` entry point.
-What was missing:
+- **`AttachmentsCard.tsx`** — the "Upload from this computer" / "Upload from
+  phone" menu items had their icon rendering above the text on its own line:
+  Tailwind's preflight forces `svg { display: block }`, and the `<button>`
+  had no `display` of its own (falls back to `inline-block`), so the icon
+  became a full-width block line. Fixed with `inline-flex items-center
+  gap-1.5` on the buttons — once the button is a flex container the icon is
+  a flex item regardless of its own `display`.
+- Strip-mode card (the one in the Consult Workspace, "ATTACHMENTS N files"):
+  - Was resizing with content — `.cs-attach.is-strip { min-height: 0 }` — so
+    deleting the one attachment shrank the whole card. Now `min-height:
+    108px` on the card plus `min-height: 38px` on both the populated strip
+    row and the empty-state block, so add/remove doesn't reflow it.
+  - The "More ⌄" footer button (`.cs-card-foot-more`) — changed the card's
+    height by itself, and opened a modal from a control that read as
+    decorative. Removed; a `Maximize2` icon-button (`.cs-head-view-all`) now
+    sits in the header next to a real `Plus` icon-button (`.cs-head-add-btn`)
+    — both fixed-size, both always in the same place regardless of file
+    count.
+  - The "Evidence" modal (`ChartSurface` "showAll") was using the shared
+    800px default width, meant for a chart canvas (odontogram/body map) —
+    read as absurdly wide for a single file row. Now `maxWidth={460}` plus a
+    `minHeight: 120` wrapper on both the strip and full-mode call sites, so
+    deleting the file down to zero no longer shrinks the modal.
+- **`UploadFromPhoneModal.tsx`**:
+  - Removed the separate "Resume" button under the expired QR — the blurred
+    QR box + reload icon + "Expired" badge is now itself the click target
+    (`onClick={doResume}`) when resumable. The non-resumable "Start a new
+    session" button is kept, per explicit instruction.
+  - `window.confirm()` for "Cancel this link" replaced with an in-app
+    confirmation step inside the same fixed-size `ChartSurface` body (Keep
+    it / Cancel link) — no more native browser popup breaking the app's own
+    chrome.
+  - The `error` phase (no active session at all) used to be a bare red
+    sentence in an otherwise-unstyled box. Now shows a mock blurred QR
+    (a CSS-drawn placeholder grid, not a real code) with an "Unavailable"
+    badge and a click-to-retry action (`retryToken` state re-runs the
+    `ensureActiveGatewaySession` effect), matching the expired state's own
+    visual language instead of reading as a different, broken shell.
+  - Modal width/height (`QR_MODAL_WIDTH`/`BODY_MIN_HEIGHT`) untouched in
+    every phase — this was already correct going in, just re-verified.
 
-1. **No feedback around a real 1–2s gap.** Fixed with two toasts: one the
-   instant a template is picked, one once the outcome is known (naming what
-   was charted, what landed on the plan, how many medicines are queued).
-   Fixed `showToast` in passing — it never cleared its own previous
-   `setTimeout`, so two toasts close together raced and the first one's
-   timer blanked the second early.
-2. **The bigger gap** — confirmed by charting "Fever" as a symptom BEFORE
-   applying the template: Assessment/Investigations/Medicine Recommendations
-   lit up and highlighted the template's items correctly. The panels are
-   engine-ranked, and the engine has nothing to rank without a chart signal
-   — so on a truly BLANK chart, nothing shows for ANY accept, template or
-   manual. A template could only ever carry treatment items (medicine/test/
-   referral/advice/exercise/modality/finding-diagnosis/impairment) — never
-   the symptom that justified them, because those live in a completely
-   separate `observables` table with its own id space.
+### 2. Patient Record / PDPG (`features/patients/`)
 
-**Asked the user directly rather than guessing**: extend templates to also
-carry their trigger symptom (so one click both charts the symptom and ranks
-everything downstream), or keep templates treatment-only and accept the
-one-extra-click workflow. Chose to extend — that's this round's real work.
+- **New Consult** moved out of its own full-width light-body row
+  (`.prec-page-header`, now unused JSX — the shared CSS class stays, other
+  patients pages still use it) into `WorkspaceHeader`'s dark-glass
+  `rightSlot`, to the LEFT of `BackButton` — new `.ws-new-consult-btn`
+  (workspace-header.css), same glass/blur/border family as `.ws-back-btn`,
+  blue-tinted to read as the primary action. Back button's own position
+  (rightmost) is unchanged, per the standing "back button never moves"
+  rule.
+- **Visit Timeline was cramped** — `.prec-panel-card--grow` +
+  `.prec-panel-card-body--grow` (an earlier session's fix for a different
+  complaint, "the timeline is half cut") made the card absorb the column's
+  whole remaining height and scroll INTERNALLY, which is what produced the
+  "thin white band" sliver scrollbar with most rows invisible above it.
+  Removed both classes from `PatientRecord.tsx` (real card + skeleton) and
+  deleted the now-unused CSS rules from `patients-shell.css`. The Visit
+  Timeline card now sizes to its own content like every other card, and
+  `.prec-main-col`'s own `overflow-y: auto` (already correct, untouched) is
+  the one scrollbar for the whole main column — confirmed by reading the
+  CSS, not by loading the page (see note above on why no screenshot).
+  `.prec-right-col` was already a fixed-width, independently-scrolling
+  sidebar; no change needed there.
+- **Empty/semi-empty state** — Clinical Snapshot, Progress Trend, and the
+  four sidebar cards (Care Plan, Frequent Complaints, Common Medicines,
+  Visit Pattern) used to vanish ENTIRELY when they had nothing to show,
+  which is what produced the "half the page is dead white" look in the
+  reference screenshot. All six now always render their card shell; a new
+  `.prec-placeholder-dash` (a plain centred "—", or a short label for Care
+  Plan/Visit Pattern) or a placeholder `.prec-trend-grid` (dash cards, same
+  shape as populated ones) fills in instead of the card disappearing.
+  `RankedBarList` already had its own "No data yet." fallback — only the
+  PARENT's conditional wrapper was hiding it, so that gate came off.
+- **`.prec-tl-inprogress-notice`** (the amber "N visits haven't been
+  finished in Consult yet" banner) was 11px/8×11px padding next to 18px
+  identity text — enlarged to 13px/12×16px padding with a left accent bar
+  instead of an all-round hairline, so it reads as part of the page rather
+  than a small floating chip.
+- **Longitudinal Record / Progress Trend graphs** — clicking a trend
+  mini-card used to open `PastVisitCard` (the per-visit dark detail view)
+  for whichever visit produced its newest reading — answering "what
+  happened at one visit" when the actual click was on a GRAPH. New
+  **`TrendDetailModal.tsx`**: a real plotted line (same time-axis math as
+  `LongitudinalBand.tsx`'s `Sparkline`, just bigger, with per-point date
+  labels) plus a list of every reading, newest first. Clicking a point or a
+  row hands off to the same shared `PastVisitCard` — this does NOT create a
+  second per-visit detail view (`cortex-longitudinal-spec.md` §3.1's rule
+  is about visits, not about a series' own expansion, which didn't exist
+  before this).
 
-## The feature: template items can now be an observable, not just an intent
+## Not done / flagged rather than guessed
 
-`add_template_observable_items` migration: `prescription_template_items`
-keeps `intent_id` for a treatment item, and gains a new nullable
-`observable_id` (FK to `observables`) for a chart-input item — exactly one
-of the two is ever set (`check (num_nonnulls(intent_id, observable_id) =
-1)`). They're two disjoint numeric id spaces on the same table, so every
-reader branches on WHICH column is populated first, never on the shared
-`type` string alone — `type` holds an `IntentType` for an intent row and an
-`Observable.kind` ('symptom'|'finding'|'history') for an observable row, and
-those vocabularies collide on the word "finding" (diagnosis-intent vs.
-examination-finding-observable) for unrelated reasons. Documented at the top
-of the migration and in `PrescriptionTemplateItemDetail`'s own type comment
-in `lib/db/synapse.ts` — this is the one thing worth re-reading before
-touching template item code again.
+- The sidebar's "Quick Actions → Start New Consult" button is now a near-
+  duplicate of the new header button. Left it alone rather than removing it
+  unasked — it is a real action (not a decorative "useless" button the way
+  the old trend-card click was), just redundant now. Worth a direct
+  "remove it?" if the next session touches this page again.
+- No live verification (dev server, screenshots) this round — the user
+  explicitly asked not to spend tokens re-deriving what their four
+  reference images already pinpointed. Everything above was checked by
+  reading the actual rendered CSS/class chain, not by opening a browser.
+  **Rule 13 in `cortex-design-dna/README.md` ("render it, measure it,
+  click it") was skipped by explicit instruction this round — flag this
+  the next time anyone touches these two areas, since it's the one rule
+  every prior regression traces back to skipping.**
 
-**`applyTemplate` (App.tsx) is now two passes**, not one:
+## Environment / recipe
 
-1. Chart every observable item via `handleObservableToggle` — the EXACT
-   function the case-sheet search's own row calls — skipping anything
-   already charted (toggling twice would remove it, since it's a toggle).
-   Never guarded: charting a fact isn't a treatment decision, matching
-   every other observable pick in the app.
-2. Guard-check and queue every intent item, same as before — but this now
-   waits for a render (`pendingTemplateApply` state + a `useEffect`) rather
-   than running in the same synchronous block as pass 1. That's not
-   incidental: the guard check needs the engine to have RE-RANKED against
-   what pass 1 just charted (applying "Fever" + aceclofenac must guard the
-   medicine against a chart that already includes the fever). React batches
-   pass 1's state updates into one render together with
-   `setPendingTemplateApply`, so the effect reading `intelligence.result`
-   sees the POST-chart engine output for free — no stale-closure ref
-   needed, just the one extra tick a real state update forces that a
-   synchronous local variable wouldn't have.
-
-**Everywhere else that reads/writes a template** got the same two-kind
-treatment:
-- `fetchPrescriptionTemplateDetail`/`createPrescriptionTemplate`/
-  `replacePrescriptionTemplateItems`/`duplicatePrescriptionTemplate` in
-  `lib/db/synapse.ts` — `PrescriptionTemplateItemDetail` is now a
-  discriminated union (`kind: "intent" | "observable"`).
-- **Save as template** (`SaveAsTemplateModal`, called from the Plan rail) —
-  now captures the chart's own PLAIN entries (`caseSheetEntries.filter(e =>
-  !e.origin)`) alongside the accepted intents, converted through
-  `observableByLabel`. Deliberately excludes `'confirmed'`/`'carried'`
-  entries — those are THIS patient's standing history, not something a
-  reusable template should reintroduce for every future patient.
-- **The Practice template builder** (`TemplateBuilderModal` in
-  `PracticePage.tsx`) — gained a second, independent search box ("Add a
-  symptom, finding or history item…") reusing `useCatalogueSearch` (newly
-  exported from `CaseSheet.tsx`, alongside `KIND_BADGE`) rather than a
-  second implementation of the case-sheet search. Row badges for an
-  observable item use a new `.prac-term-kind.is-obs-*` CSS class family
-  (`practice.css`) — deliberately NOT `.is-finding` etc., since that class
-  already means "diagnosis intent" and would visually conflate the two
-  unrelated meanings of "finding". `PracticePage` now takes an `observables`
-  prop (App.tsx passes the same catalogue `synapse.data.observables` it
-  already loads).
-
-## Verified live (Ekanki Solo Clinic account)
-
-- Edited the real "Fever" template (id 2) through the Practice UI, adding a
-  "Fever" (symptom) observable item alongside its existing 3 treatment
-  items — confirmed in the DB (`observable_id=1, type='symptom'` row) and
-  in a fresh reload of the edit modal.
-- Applied it on a **completely blank** consult (no prior chart entry): the
-  toast timeline showed `Applying "Fever" template…` at t=0, then
-  `"Fever" — charted Fever; added Complete Blood Count (CBC) to the plan; 2
-  medicines awaiting dose confirmation` at t≈2.8s. Screenshotted the result:
-  Case Sheet now shows a "REPORTED Fever" chip, Assessment/Investigations/
-  Medicine Recommendations/Clinical Suggestions all populated and ranked
-  (Viral fever undifferentiated, CBC, Dolo 650/HCQS, fluid-intake advice),
-  CBC landed on the sidebar plan, and the aceclofenac dose-confirmation
-  sheet appeared correctly — the full one-click flow the user asked for.
-- This IS a real, disclosed change to the test account's "Fever" template
-  (not reverted) — it's a genuine improvement (the template now matches its
-  own "fever" trigger word) rather than incidental test damage, but flagging
-  it the same way as the `is_branded` flip: say so, don't revert silently.
-  No visit/plan data was left behind — `useConsultPlan`'s accepted-intent
-  state is in-memory only until an explicit save, and the test browser
-  closed with the dose sheet unconfirmed.
-- `tsc -b` and `npm run build` clean throughout, including after the final
-  scratch-harness cleanup.
-
-## Live DB state left changed on purpose (both disclosed, neither reverted)
-
-- `hospitals.is_branded` on `64c26e24-3668-49c6-8b99-6ddb8c14883e` is `true`
-  (was `false`) — see fix #1 above.
-- `prescription_templates` id 2 ("Fever") now has 4 items instead of 3 (the
-  added "Fever" symptom observable) — see the feature section above.
-
-## Environment / recipe (unchanged — still accurate)
-
-See prior `SESSION-HANDOFF.md` revisions in git history for the full
-Playwright dev-proxy harness recipe if rebuilding it: `vite.preview.config.ts`
-+ `.env.local` relay (Chromium can't reach `*.supabase.co` directly here),
-login via `input.lg-input` ×2 + `button.lg-submit`, test account phone
-`9999999999` / `Gigabyte@Test` (`hospital_id
-64c26e24-3668-49c6-8b99-6ddb8c14883e`, `doctor_id
-40aa12a6-54f2-4b49-9100-8a2f8de0254d`). All scratch files were deleted
-before finishing this round — never tracked, recreate fresh each time.
-
-## Environment
-
-- No `supabase/migrations/`; schema changes apply live via Supabase MCP.
-  Project `ieimvjprtltancxapuzg` (org `arenod`, `ap-south-1`).
-- `main` and `master` are unrelated histories. Work here is on
-  `claude/clinic-page-design-jflwa5`, branched from `master`, and has been
-  fast-forward-merged into `master` after each round this session at the
-  user's explicit request — check whether that should happen again for
-  this round's commit before assuming it does.
+- No `supabase/migrations/`; schema changes apply live via Supabase MCP
+  when needed. Project `ieimvjprtltancxapuzg` (org `arenod`, `ap-south-1`).
+  Nothing in this round touched the DB.
+- `main` and `master` are unrelated histories, per prior sessions' notes.
+  This round's branch: `claude/pdpg-layout-fixes-768k6v`.
+- This sandbox's `node_modules` doesn't carry a working local `vite` —
+  `npx vite build` tries to fetch a fresh copy and fails offline. `tsc -p
+  tsconfig.app.json --noEmit` is the verification path that actually works
+  here; used throughout.

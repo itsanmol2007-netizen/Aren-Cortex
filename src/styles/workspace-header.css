@@ -239,6 +239,52 @@
     .ws-back-btn:hover { transform: none; }
 }
 
+/* ── New Consult — same dark-glass pill, blue accent ─────────
+   Same shape/blur/shadow family as `.ws-back-btn` so it reads as one glass
+   toolkit, not two different controls stapled together — a blue tint (the
+   product's one "primary action" colour) is the only difference, so it
+   reads as the button that DOES something next to the one that leaves.
+   Patient Record, 2026-08-31: this used to be its own light, full-width row
+   under the header for one small button. */
+.ws-new-consult-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border: 1px solid rgba(59, 130, 246, 0.38);
+    border-radius: 20px;
+    background: rgba(18, 104, 232, 0.24);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #bfdbfe;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, color 0.14s ease;
+    box-shadow:
+        0 1px 8px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.ws-new-consult-btn:hover {
+    background: rgba(18, 104, 232, 0.38);
+    border-color: rgba(96, 165, 250, 0.6);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.ws-new-consult-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ws-new-consult-btn { transition: none; }
+    .ws-new-consult-btn:hover { transform: none; }
+}
+
 /* ── Stat pills — dark-outlined capsules ───────────────────── */
 
 /* `<button>`, not a bare `<span>` — every pill on Practice is a real jump
