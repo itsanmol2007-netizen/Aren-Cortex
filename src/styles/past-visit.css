@@ -430,6 +430,183 @@
     line-height: 1.4;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT TONE  —  `.is-light`, added 2026-08-31
+   ═══════════════════════════════════════════════════════════════
+   Same card, same sections, same order — a different surface, for the
+   entry point that isn't the consult screen's dark patient header (the
+   Patient Record page's Progress Trend graphs, which drill in from
+   `TrendDetailModal`). See `PastVisitCard.tsx`'s "Two tones" header for
+   why the dark version stays exactly as it is.
+
+   Every value below is lifted from the light-modal family this now lands
+   beside rather than invented for this file: `.cs-chartmodal-scrim`'s
+   scrim + blur, `.cs-chartmodal-panel`'s background/border/shadow,
+   `.cs-chartmodal-stripe`'s gradient, `.cs-chartmodal-icon`'s badge, and
+   the `prec-*` page's own ink/muted/faint greys for text. Nothing here is
+   a new colour — rule 4, there is no eighth colour. */
+
+.pv-overlay.is-light {
+    /* Above `.cs-chartmodal` (z-index 800): this tone opens ON TOP of the
+       graph modal it drilled in from, which stays mounted underneath so
+       closing this returns to the graph rather than to the bare page. */
+    z-index: 900;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: rgba(11, 23, 51, 0.28);
+    backdrop-filter: blur(14px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.pv-card.is-light {
+    /* Centred by the overlay, not anchored to a chip — the inline `position:
+       fixed` the dark tone carries is not applied for this tone (see the
+       component). */
+    max-height: calc(100vh - 96px);
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(246, 248, 252, 0.94));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        0 40px 80px -32px rgba(11, 23, 51, 0.55);
+    animation: pv-rise-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The same entry motion `.cs-chartmodal-panel` uses, so stepping from the
+   graph modal into this card reads as one surface arriving after another
+   rather than two unrelated popups. */
+@keyframes pv-rise-in {
+    from {
+        transform: translateY(8px) scale(0.98);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .pv-card.is-light,
+    .pv-overlay.is-light {
+        animation: none;
+    }
+}
+
+.pv-card.is-light .pv-stripe {
+    height: 4px;
+    border-radius: 22px 22px 0 0;
+    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+}
+
+/* The dark card's ambient indigo glow is a dark-surface device — on white it
+   is either invisible or a smudge. Gone for this tone. */
+.pv-card.is-light .pv-orb {
+    display: none;
+}
+
+.pv-card.is-light .pv-icon-wrap {
+    background: linear-gradient(135deg, #fce7f3 0%, #ede9fe 100%);
+    border-color: transparent;
+    color: #a855f7;
+}
+
+.pv-card.is-light .pv-eyebrow {
+    color: #a855f7;
+    font-weight: 750;
+}
+
+.pv-card.is-light .pv-title {
+    color: #0f172a;
+}
+
+.pv-card.is-light .pv-close {
+    border-color: #dfe3ea;
+    background: #fff;
+    color: #64748b;
+}
+
+.pv-card.is-light .pv-close:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.pv-card.is-light .pv-date-badge {
+    color: #6d28d9;
+    background: #f3f0ff;
+    border-color: #e4dcfb;
+}
+
+.pv-card.is-light .pv-doctor {
+    color: #64748b;
+}
+
+.pv-card.is-light .pv-doctor-dot {
+    background: #cbd5e1;
+}
+
+.pv-card.is-light .pv-body {
+    scrollbar-color: #c0cce0 transparent;
+}
+
+.pv-card.is-light .pv-body::-webkit-scrollbar-thumb {
+    background: #c0cce0;
+}
+
+.pv-card.is-light .pv-section-label {
+    color: #94a3b8;
+}
+
+.pv-card.is-light .pv-chip {
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+}
+
+.pv-card.is-light .pv-chip.abnormal {
+    border-color: #fecdd3;
+    background: #fff1f2;
+    color: #be123c;
+}
+
+.pv-card.is-light .pv-chip.normal {
+    border-color: #ccfbf1;
+    background: #f0fdfa;
+    color: #0f766e;
+}
+
+.pv-card.is-light .pv-med-row {
+    border-color: #e2e8f5;
+    background: #f7f9fc;
+}
+
+.pv-card.is-light .pv-med-name {
+    color: #0f172a;
+}
+
+.pv-card.is-light .pv-med-detail {
+    color: #64748b;
+}
+
+.pv-card.is-light .pv-divider {
+    background: #edf0f7;
+}
+
+.pv-card.is-light .pv-empty {
+    color: #94a3b8;
+}
+
+.pv-card.is-light .pv-footer {
+    border-top-color: #edf0f7;
+}
+
+.pv-card.is-light .pv-repeat-hint {
+    color: #94a3b8;
+}
+
 /* ── Repeat Rx amber banner ───────────────────────────────── */
 .repeat-rx-banner {
     position: fixed;

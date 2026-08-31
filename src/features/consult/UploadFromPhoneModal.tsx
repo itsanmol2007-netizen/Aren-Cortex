@@ -100,26 +100,46 @@ export function UploadFromPhoneModal({ visitId, patientId, hospitalId, onClose }
         });
     }, [phase.kind, hospitalId, visitId]);
 
-    if (phase.kind === "loading") {
-        return (
-            <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} preventDismiss maxWidth={QR_MODAL_WIDTH}>
+    // ONE shell for every phase, with only the BODY swapping inside it.
+    //
+    // Each phase used to return its own `<ChartSurface>`, which meant the
+    // element type at this position changed on every phase change — React
+    // unmounted the shell and mounted a fresh one, so the modal's DOM node
+    // was recreated the instant the link finished preparing. That silently
+    // re-ran `useOverlayFocus` (stealing focus a second time, mid-open) and,
+    // since 2026-08-31, would have replayed `.cs-chartmodal-panel`'s entry
+    // animation, making a routine loading→ready transition look like the
+    // whole modal had closed and reopened. The shell is stable now; the
+    // "fixed footprint for every phase" promise at the top of this file is
+    // also enforced in one place instead of three copies of the same props.
+    //
+    // `preventDismiss` still varies: a live or preparing QR session must
+    // never be dropped by a stray click outside, but an error state has
+    // nothing to lose and should be dismissible like any other overlay.
+    return (
+        <ChartSurface
+            title="Upload from phone"
+            eyebrow="Attachments"
+            icon={<QrCode size={15} />}
+            expanded
+            onClose={onClose}
+            preventDismiss={phase.kind !== "error"}
+            maxWidth={QR_MODAL_WIDTH}
+        >
+            {phase.kind === "loading" && (
                 <div className="flex flex-col items-center justify-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
                     <Loader2 size={26} className="animate-spin text-[#7c5cf0]" />
                     <span className="text-[12.5px] font-medium text-[#8a91a0]">Preparing upload link…</span>
                 </div>
-            </ChartSurface>
-        );
-    }
+            )}
 
-    if (phase.kind === "error") {
-        return (
-            <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} maxWidth={QR_MODAL_WIDTH}>
-                {/* No active code to show — a plain error sentence used to sit
-                    alone in this box, which read as a different, broken shell
-                    next to the real (expired) state. A mock QR under the same
-                    blur, with the same click-to-retry affordance, keeps every
-                    "nothing live right now" state in this modal looking like
-                    ONE component with different things to say, not several. */}
+            {/* No active code to show — a plain error sentence used to sit
+                alone in this box, which read as a different, broken shell
+                next to the real (expired) state. A mock QR under the same
+                blur, with the same click-to-retry affordance, keeps every
+                "nothing live right now" state in this modal looking like
+                ONE component with different things to say, not several. */}
+            {phase.kind === "error" && (
                 <div className="flex flex-col items-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
                     <button
                         type="button"
@@ -145,16 +165,16 @@ export function UploadFromPhoneModal({ visitId, patientId, hospitalId, onClose }
                         {phase.message} — tap the QR code to try again.
                     </div>
                 </div>
-            </ChartSurface>
-        );
-    }
+            )}
 
-    return (
-        <ReadyBody
-            session={phase.session}
-            onClose={onClose}
-            onSessionChange={(session) => setPhase({ kind: "ready", session })}
-        />
+            {phase.kind === "ready" && (
+                <ReadyBody
+                    session={phase.session}
+                    onClose={onClose}
+                    onSessionChange={(session) => setPhase({ kind: "ready", session })}
+                />
+            )}
+        </ChartSurface>
     );
 }
 
@@ -202,14 +222,18 @@ function ReadyBody({
     };
 
     return (
-        <ChartSurface title="Upload from phone" eyebrow="Attachments" icon={<QrCode size={15} />} expanded onClose={onClose} preventDismiss maxWidth={QR_MODAL_WIDTH}>
+        <>
             {/* One fixed-size body for every state, same reasoning (and same
                 numbers) as Front Desk's GatewayQrModal.tsx: the QR box is the
                 SAME 216x216 box whether live or expired — expiry overlays a
                 blur + message on top rather than replacing it with a
                 differently-shaped block, so nothing here ever reflows. The
                 cancel confirmation reuses this exact body too, so the modal's
-                own width/height never move for it either. */}
+                own width/height never move for it either.
+
+                The `ChartSurface` shell itself lives in the parent now (see
+                its "ONE shell for every phase" note) — this renders only the
+                body that goes inside it. */}
             <div className="flex flex-col items-center gap-[14px]" style={{ minHeight: BODY_MIN_HEIGHT }}>
                 {confirmingCancel ? (
                     <div className="flex w-full flex-1 flex-col items-center justify-center gap-[16px] text-center">
@@ -337,6 +361,6 @@ function ReadyBody({
                     </>
                 )}
             </div>
-        </ChartSurface>
+        </>
     );
 }

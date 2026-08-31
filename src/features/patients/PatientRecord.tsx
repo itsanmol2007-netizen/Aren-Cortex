@@ -1047,11 +1047,17 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
             </div>
 
             {/* The one shared past-visit detail — same component the consult
-                screen's longitudinal band opens. Reused, not forked. */}
+                screen's longitudinal band opens. Reused, not forked, but in
+                its LIGHT tone here: this page and the graph modal it drills
+                in from are both light surfaces, and the dark tone (correct
+                where it drops out of Consult's dark patient header) read as a
+                different application landing on top of them. See
+                `PastVisitCard.tsx`'s "Two tones" header. */}
             {activeVisit && (
                 <PastVisitCard
                     visit={activeVisit.visit}
                     x={activeVisit.x}
+                    tone="light"
                     onClose={() => setActiveVisit(null)}
                 />
             )}
@@ -1059,16 +1065,16 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
             {/* A Progress Trend graph, expanded — see `trendDetail`'s own
                 comment above. Its own visit rows/points hand off to the same
                 `PastVisitCard` above rather than opening anything of their
-                own. */}
+                own, and this modal stays MOUNTED underneath while they do:
+                closing the visit steps back to the graph the doctor was
+                reading, instead of dropping them out to the bare page and
+                making them re-open it to look at the next point. */}
             {trendDetail && (
                 <TrendDetailModal
                     series={trendDetail}
                     visits={completedVisits}
                     onClose={() => setTrendDetail(null)}
-                    onOpenVisit={(visit) => {
-                        setTrendDetail(null);
-                        openVisitPopover(visit, window.innerWidth / 2);
-                    }}
+                    onOpenVisit={(visit) => openVisitPopover(visit, window.innerWidth / 2)}
                 />
             )}
 

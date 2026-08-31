@@ -19,6 +19,30 @@
 // clicked. Callers pass their own, which is why a chip in the header and a row
 // in the band can both open it in a sensible place without this component
 // knowing either of them exists.
+//
+// ── Two tones, one card (2026-08-31)
+//
+// This card is dark because of WHERE it was born: it drops out of the
+// consult screen's dark patient header, directly under the chip that opened
+// it, so it reads as that header's own surface extending downward. That is
+// still exactly right for that entry point and is NOT being changed.
+//
+// It has since gained a second entry point in a completely different
+// context — the Patient Record page's Progress Trend graphs, which are
+// light-theme cards on a light page, opening through `TrendDetailModal`
+// (also light). A dark slab landing on top of that read as a different
+// application, not a detail view — Anmol: "this screen was dark only coz
+// when clicking on the past visit shown on dark header... but now is also
+// being opened when clicking on graph elements which are obviously in light
+// theme."
+//
+// So `tone` picks the surface, and NOTHING else changes: same component,
+// same sections, same data, same order. `"dark"` is the default so the
+// consult header keeps its behaviour without any caller opting in; `"light"`
+// swaps the palette to the shared light-modal family (`.cs-chartmodal-*`'s
+// panel/stripe/scrim values — see `.pv-*.is-light` in past-visit.css) and
+// centres the card instead of anchoring it to `x`, because in that context
+// it is drilling in from a centred modal rather than dropping out of a chip.
 // ---------------------------------------------------------------------------
 
 import { useRef } from "react";
@@ -96,14 +120,18 @@ export function visitHasContent(visit: RealVisit): boolean {
 }
 
 export function PastVisitCard({
-    visit, x, onClose, onRepeatRx,
+    visit, x, onClose, onRepeatRx, tone = "dark",
 }: {
     visit: RealVisit;
-    /** viewport x to point at — the centre of whatever opened this */
+    /** viewport x to point at — the centre of whatever opened this. Ignored
+     *  by the light tone, which centres instead (see the header). */
     x: number;
     onClose: () => void;
     onRepeatRx?: (visit: RealVisit) => void;
+    /** which surface this is landing on — see the header's "Two tones" note */
+    tone?: "dark" | "light";
 }) {
+    const light = tone === "light";
     const panelRef = useRef<HTMLDivElement>(null);
 
     // Takes focus, and hands it back on close.
@@ -129,17 +157,24 @@ export function PastVisitCard({
     const measurements = recordedMeasurements(visit.vitals);
 
     return (
-        <div className="pv-overlay" onClick={onClose}>
+        <div className={`pv-overlay${light ? " is-light" : ""}`} onClick={onClose}>
             <div
                 ref={panelRef}
-                className="pv-card cx-kbd-surface"
+                className={`pv-card cx-kbd-surface${light ? " is-light" : ""}`}
                 tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Past consultation"
                 onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}
-                style={{
+                // `stopPropagation` matters once this can open ON TOP of another
+                // overlay (the light tone drills in from `TrendDetailModal`):
+                // `ChartSurface` closes on a WINDOW keydown listener, so without
+                // this, one Escape would dismiss both this card and the graph
+                // modal it was opened from, instead of stepping back one level.
+                onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } }}
+                // Anchored under whatever chip opened it — dark tone only. The
+                // light tone is centred by the overlay's own flex box instead.
+                style={light ? undefined : {
                     position: "fixed",
                     top: 90,
                     left: Math.min(Math.max(x - 210, 12), window.innerWidth - 432),

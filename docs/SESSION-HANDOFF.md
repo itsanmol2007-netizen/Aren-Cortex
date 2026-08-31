@@ -107,6 +107,57 @@ install and `npx` couldn't fetch one; not caused by this round's edits.
   is about visits, not about a series' own expansion, which didn't exist
   before this).
 
+### 3. Follow-up round — the dark card on a light page
+
+Anmol, on the past-visit card opening from a trend graph: "this screen was
+dark only coz when clicking on the past visit shown on dark header so its
+also dark, but now is also being opened when clicking on graph elements
+which are obviously in light theme... but dont change the actual dark model
+which appear when clicking on past visit timeline on darkheader of consult,
+that should be preserved."
+
+- **`PastVisitCard` gained a `tone` prop** (`"dark"` default, `"light"`
+  opt-in). Dark is byte-for-byte the same experience for Consult's header
+  chips and longitudinal band — `App.tsx` passes nothing and gets exactly
+  what it had. `PatientRecord.tsx` passes `tone="light"`, which swaps the
+  palette to the shared light-modal family (`.pv-*.is-light` in
+  past-visit.css, every value lifted from `.cs-chartmodal-*` — panel
+  background/border/shadow, scrim + blur, stripe gradient, icon badge — so
+  no new colours) and centres the card instead of anchoring it to the `x` of
+  whatever was clicked, since in that context it drills in from a centred
+  modal rather than dropping out of a chip. Same component, same sections,
+  same order: only the surface changes.
+- **The graph modal stays mounted underneath** the visit card now
+  (`.pv-overlay.is-light` is z-900, above `.cs-chartmodal`'s 800), so
+  closing a visit steps back to the graph the doctor was reading instead of
+  dumping them on the bare page. `PastVisitCard`'s Escape handler gained
+  `stopPropagation` for this — `ChartSurface` closes on a WINDOW keydown
+  listener, so without it one Escape would have collapsed both layers.
+- **Shared entry motion.** `.cs-chartmodal-panel`/`-scrim` had none at all;
+  both now use the same rise+fade keyframes `.pv-card.is-light` does, so
+  stepping from graph to visit reads as one surface arriving after another.
+  Both guarded by `prefers-reduced-motion` (design DNA rule 6).
+- **`UploadFromPhoneModal`'s shell is now hoisted** — each phase used to
+  return its own `<ChartSurface>`, so the element type at that tree position
+  changed on every phase change and React remounted the whole shell. That
+  already re-stole focus mid-open (a real, pre-existing `useOverlayFocus`
+  bug) and would additionally have replayed the new entry animation, making
+  a routine loading→ready transition look like the modal closed and
+  reopened. One stable shell now, body swaps inside it; `preventDismiss`
+  varies by phase (off for the error state, which has nothing to lose).
+- **The graph itself got the polish pass** (`TrendDetailModal`): the line,
+  dots, area fill and verdict badge all take ONE colour from
+  `series.verdict`, and it is the same green/amber/slate the mini-card's own
+  sparkline already uses — a blue line under a green "Improving" badge made
+  the expanded graph look like a different measurement from the card that
+  opened it. The decorative fixed-midline is replaced by the series' real
+  low/high as labelled gridlines (78 → 110 had no frame of reference
+  before), there's a gradient area fill under the line, the latest point is
+  filled rather than hollow, and every dot has an invisible 14px hit disc
+  because a 3.5px target is not clickable. One `hoverIndex` links both
+  halves both ways: pointing at a dot lifts its reading row, pointing at a
+  row lifts its dot and floats its value above the line.
+
 ## Not done / flagged rather than guessed
 
 - The sidebar's "Quick Actions → Start New Consult" button is now a near-
