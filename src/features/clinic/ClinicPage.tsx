@@ -445,34 +445,61 @@ export function ClinicPage({
                                region on this card, so it is the thing that
                                scrolls rather than the card that grows. */
                             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                                {week.map((d) => (
-                                    <div
-                                        key={d.day}
-                                        className="flex items-start justify-between gap-[9px] border-b border-[var(--cs-line)] px-[2px] py-[9px] last:border-b-0"
-                                    >
-                                        <span className="text-[12.5px] font-semibold text-[var(--cs-ink)]">
-                                            {WEEKDAYS[d.day]}
-                                        </span>
-                                        {d.sessions.length === 0 ? (
-                                            /* Closed is a real state, not an
-                                               error — the muted step, never
-                                               red. Red would say something
-                                               went wrong on a Sunday. */
-                                            <span className="text-[12px] font-semibold text-[var(--cs-label)]">Closed</span>
-                                        ) : (
-                                            <span className="flex flex-col items-end gap-[2px]">
-                                                {d.sessions.map((s, i) => (
-                                                    <span
-                                                        key={i}
-                                                        className="whitespace-nowrap text-[12px] font-medium tabular-nums text-[var(--cs-muted)]"
-                                                    >
-                                                        {clockLabel(s.opensAt)} – {clockLabel(s.closesAt)}
+                                {week.map((d) => {
+                                    // `WEEKDAYS` is Monday-first; `getDay()` is
+                                    // Sunday-first. Rotating by 6 is the whole
+                                    // conversion, and getting it wrong would
+                                    // highlight the wrong row every day.
+                                    const isToday = d.day === (new Date().getDay() + 6) % 7;
+                                    const closed = d.sessions.length === 0;
+                                    return (
+                                        <div
+                                            key={d.day}
+                                            className={`flex items-center justify-between gap-[10px] rounded-[8px] border-b border-[var(--cs-line)] px-[10px] py-[13px] last:border-b-0 ${
+                                                isToday ? "bg-[var(--cs-blue-soft)]" : ""
+                                            }`}
+                                        >
+                                            <span className="flex items-center gap-[9px]">
+                                                {/* Open/closed at a glance, in the
+                                                    card's OWN tone rather than a
+                                                    fifth colour — colour.md's
+                                                    "thread the tone through". */}
+                                                <span
+                                                    className={`h-[7px] w-[7px] shrink-0 rounded-full ${
+                                                        closed ? "bg-[var(--cs-line-strong)]" : "bg-[var(--cs-blue)]"
+                                                    }`}
+                                                    aria-hidden="true"
+                                                />
+                                                <span className="text-[14.5px] font-semibold text-[var(--cs-ink)]">
+                                                    {WEEKDAYS[d.day]}
+                                                </span>
+                                                {isToday && (
+                                                    <span className="rounded-[5px] bg-[var(--cs-blue)] px-[6px] py-[1px] text-[9.5px] font-bold uppercase tracking-[0.06em] text-white">
+                                                        Today
                                                     </span>
-                                                ))}
+                                                )}
                                             </span>
-                                        )}
-                                    </div>
-                                ))}
+                                            {closed ? (
+                                                /* Closed is a real state, not an
+                                                   error — the muted step, never
+                                                   red. Red would say something
+                                                   went wrong on a Sunday. */
+                                                <span className="text-[13.5px] font-semibold text-[var(--cs-label)]">Closed</span>
+                                            ) : (
+                                                <span className="flex flex-col items-end gap-[3px]">
+                                                    {d.sessions.map((sess, i) => (
+                                                        <span
+                                                            key={i}
+                                                            className="whitespace-nowrap text-[13.5px] font-semibold tabular-nums text-[var(--cs-muted)]"
+                                                        >
+                                                            {clockLabel(sess.opensAt)} – {clockLabel(sess.closesAt)}
+                                                        </span>
+                                                    ))}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ) : (
                             <EmptyBlock

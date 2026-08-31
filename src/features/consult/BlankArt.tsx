@@ -250,6 +250,37 @@ export function BlankTimelineArt() {
     );
 }
 
+/** The empty Progress Trend panel: an axis with nothing plotted on it yet —
+ *  one real reading at rest, the rest of the line still dotted, because a
+ *  trend needs a second visit before it can be drawn at all. */
+export function BlankTrendArt() {
+    return (
+        <svg width="58" height="48" viewBox="0 0 58 48" fill="none" aria-hidden="true">
+            <path d="M8 6v32h42" stroke="#dbe1ea" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M14 30c8 0 10-9 17-9s10-7 18-7" stroke="#dbe1ea" strokeWidth="1.6"
+                strokeLinecap="round" strokeDasharray="2 5" fill="none" />
+            <circle cx="14" cy="30" r="3.4" fill="#fbfcfd" stroke="#aab4c4" strokeWidth="1.7" />
+            <circle cx="49" cy="14" r="3" fill="#fbfcfd" stroke="#dbe1ea" strokeWidth="1.6" strokeDasharray="1.5 2.5" />
+        </svg>
+    );
+}
+
+/** The empty Clinical Snapshot: the chips this panel fills with, at rest —
+ *  two outlines waiting for a complaint and a finding to be charted. */
+export function BlankSnapshotArt() {
+    return (
+        <svg width="60" height="42" viewBox="0 0 60 42" fill="none" aria-hidden="true">
+            <rect x="6" y="9" width="26" height="12" rx="6"
+                fill="#fbfcfe" stroke="#d9e0ec" strokeWidth="1.6" />
+            <rect x="36" y="9" width="18" height="12" rx="6"
+                fill="#fbfcfe" stroke="#e4e8ef" strokeWidth="1.6" />
+            <rect x="6" y="26" width="21" height="12" rx="6"
+                fill="none" stroke="#dbe1ea" strokeWidth="1.5" strokeDasharray="2 3" />
+            <path d="M33 32h9" stroke="#eaedf2" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

@@ -618,6 +618,19 @@
     text-align: center;
 }
 
+/* The compact tier — Clinical Snapshot and Progress Trend, which sit ABOVE
+   the timeline in the same column. 220px each would have made a sparse
+   patient's page three tall empty wells stacked on each other, which
+   empty-states.md forbids for exactly the right reason ("a 62px
+   illustration in a 300px well reads as an accident"). 150px is enough for
+   art + fact + next line and lands the three cards at comparable heights
+   instead of one 60px sliver next to a 220px block. */
+.prec-timeline-empty.is-compact {
+    min-height: 150px;
+    padding: 18px 20px;
+    gap: 8px;
+}
+
 .prec-timeline-empty-title {
     color: #334155;
     font-size: 13px;

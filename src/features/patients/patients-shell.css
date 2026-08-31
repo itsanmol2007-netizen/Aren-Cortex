@@ -57,44 +57,68 @@
     align-items: center;
 }
 
+/* Picks up the field's own focus state — a search whose icon never changes
+   reads as decoration sitting next to a box, not as one control. */
 .prec-search-icon {
     position: absolute;
-    left: 12px;
+    left: 14px;
     color: #94a3b8;
     pointer-events: none;
     flex-shrink: 0;
     z-index: 1;
+    transition: color 0.14s;
 }
 
+.prec-search-wrap:focus-within .prec-search-icon {
+    color: #1268e8;
+}
+
+/* Given real presence 2026-08-31 — Anmol: "there is a search button in the
+   patient page, that's looking so much washed out and visually terrible."
+   It was a 36px, near-white box on a near-white page behind a hairline, so
+   the one control that gets a doctor to a patient read as the least
+   important thing on the row. Now: taller, white against the page ground
+   with a defined edge and a real resting shadow, and typography sized for
+   THIS page rather than borrowed from the consult screen's denser scale
+   (typography.md rule 12). */
 .prec-search-input {
     width: 100%;
-    height: 36px;
-    background: #f8f9fc;
-    border: 1px solid #d0d8e8;
-    border-radius: 8px;
-    padding: 0 36px 0 38px;
-    font-size: 13px;
+    height: 44px;
+    background: #ffffff;
+    border: 1px solid #cbd5e8;
+    border-radius: 10px;
+    padding: 0 38px 0 42px;
+    font-size: 14px;
+    font-weight: 500;
     color: #1a2035;
     outline: none;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
     transition: border-color 0.14s, box-shadow 0.14s, background 0.14s;
     font-family: inherit;
 }
 
 .prec-search-input::placeholder {
     color: #94a3b8;
+    font-weight: 450;
+}
+
+.prec-search-input:hover:not(:focus) {
+    border-color: #b8c8e4;
 }
 
 .prec-search-input:focus {
     border-color: #1268e8;
     background: #ffffff;
-    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.10);
+    box-shadow:
+        0 0 0 3px rgba(18, 104, 232, 0.14),
+        0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 .prec-search-clear {
     position: absolute;
-    right: 9px;
-    width: 20px;
-    height: 20px;
+    right: 11px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: #e8ecf4;
     border: none;

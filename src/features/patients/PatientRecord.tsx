@@ -72,7 +72,7 @@ import {
     type TrendVerdict,
 } from "../consult/trend";
 import { Sparkline, formatSpan } from "../consult/LongitudinalBand";
-import { BlankTimelineArt } from "../consult/BlankArt";
+import { BlankSnapshotArt, BlankTimelineArt, BlankTrendArt } from "../consult/BlankArt";
 import { TrendDetailModal } from "./TrendDetailModal";
 import { toast } from "sonner";
 
@@ -739,7 +739,21 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                             {snapshot.detail && <div className="prec-snapshot-detail" style={{ fontSize: 12, whiteSpace: "normal" }}>{snapshot.detail}</div>}
                                         </div>
                                     ) : (
-                                        <div className="prec-placeholder-dash">—</div>
+                                        // A bare "—" floating in a 60px card read as a
+                                        // broken cell, not a designed empty state
+                                        // (2026-08-31). Same block the Visit Timeline's
+                                        // own empty state uses — art, the fact, the next
+                                        // action — at the compact height, so the three
+                                        // main-column cards land at comparable heights
+                                        // on a patient with almost no history instead of
+                                        // collapsing into slivers of different sizes.
+                                        <div className="prec-timeline-empty is-compact">
+                                            <BlankSnapshotArt />
+                                            <p className="prec-timeline-empty-title">Nothing charted yet</p>
+                                            <p className="prec-timeline-empty-sub">
+                                                Complaints and findings from a completed consult show up here.
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -770,23 +784,18 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                             ))}
                                         </div>
                                     ) : (
-                                        // Same grid, same card shape, dashes instead of readings —
-                                        // a trend needs two visits with the same measurement, which
-                                        // a brand-new or once-seen patient never has yet. The old
-                                        // one-line sentence sat alone in an otherwise-empty card;
-                                        // this keeps the card's own footprint instead of collapsing
-                                        // it, so the page doesn't get thinner every time there's
-                                        // less to say (Anmol, PDPG empty-state pass).
-                                        <div className="prec-trend-grid">
-                                            {["—", "—", "—"].map((_, i) => (
-                                                <div key={i} className="prec-trend-card is-placeholder">
-                                                    <p className="prec-trend-label">—</p>
-                                                    <p className="prec-trend-values">
-                                                        <span className="prec-trend-from">—</span>
-                                                    </p>
-                                                    <p className="prec-trend-delta"><span>Needs 2 visits</span></p>
-                                                </div>
-                                            ))}
+                                        // Three identical "Needs 2 visits" tiles said the
+                                        // same thing three times and read as a broken grid
+                                        // (2026-08-31). One empty state, the same block the
+                                        // other two cards on this column use, stating the
+                                        // real reason once: a trend is two readings of the
+                                        // same measurement, so it cannot exist yet.
+                                        <div className="prec-timeline-empty is-compact">
+                                            <BlankTrendArt />
+                                            <p className="prec-timeline-empty-title">No trend to plot yet</p>
+                                            <p className="prec-timeline-empty-sub">
+                                                A trend needs the same measurement recorded at two visits.
+                                            </p>
                                         </div>
                                     )}
                                 </div>

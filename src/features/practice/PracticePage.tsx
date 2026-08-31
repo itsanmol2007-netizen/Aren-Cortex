@@ -59,7 +59,7 @@ import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
     ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart, Layers,
-    MessageCircle, MoreHorizontal, Pill, Plus, Printer, Settings, Shield, SlidersHorizontal, Sparkles, Star,
+    MoreHorizontal, Pill, Plus, Printer, Settings, Shield, SlidersHorizontal, Sparkles, Star,
     ToggleLeft, ToggleRight, User, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
@@ -2476,14 +2476,13 @@ export function PracticePage({
                                 </span>
                                 <ChevronRight size={13} className="prac-settings-chevron" />
                             </button>
-                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("communication")}>
-                                <span className="prac-settings-icon is-teal"><MessageCircle size={15} /></span>
-                                <span className="prac-med-info">
-                                    <span className="prac-row-label">Communication</span>
-                                    <span className="prac-med-brands">Patient communication</span>
-                                </span>
-                                <ChevronRight size={13} className="prac-settings-chevron" />
-                            </button>
+                            {/* "Communication" used to sit here and was removed
+                                2026-08-31: every other tile on this card is a
+                                CONFIGURATION surface, and Communication is a
+                                whole nav destination (its own job, its own page
+                                in the sidebar) that has nothing to do with how
+                                this doctor prescribes. A doorway to a different
+                                job is not a related setting. */}
                             <button type="button" className="prac-settings-tile" onClick={() => onNavigate("settings")}>
                                 <span className="prac-settings-icon is-violet"><Shield size={15} /></span>
                                 <span className="prac-med-info">
