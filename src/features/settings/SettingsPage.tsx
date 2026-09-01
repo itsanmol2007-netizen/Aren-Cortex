@@ -40,9 +40,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
-    ArrowRight, Bell, ChevronRight, Database, Download, ExternalLink, FileText,
-    HelpCircle, Info, Loader2, Lock, LogOut, Mail, MessageCircle, Palette,
-    Search, Shield, ShieldCheck, Trash2, User, Users, X,
+    ArrowRight, ChevronRight, Database, Download, ExternalLink, FileText,
+    HelpCircle, Info, Loader2, Lock, LogOut, LogOut as SignOutAll, Mail,
+    MessageCircle, MonitorSmartphone, Search, Shield, ShieldCheck, Trash2, User, Users, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
@@ -55,6 +55,7 @@ import {
 import { clearAllConsultDrafts } from "../../lib/consultDraft";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
+import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
 import { requestSettingFocus } from "./settingsFocus";
 import { toast } from "sonner";
 import "./settings.css";
@@ -314,7 +315,16 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
  * Auth for real; phone, multi-user management and deletion have no backend
  * yet and say so rather than rendering a control that quietly fails.
  */
-function AccountModal({ email, onClose }: { email: string | null; onClose: () => void }) {
+function AccountModal({
+    email, accountReference, onClose, onSupport,
+}: {
+    email: string | null;
+    accountReference: string;
+    onClose: () => void;
+    /** The three operations a doctor should not perform alone — see
+     *  SupportRequestModal.tsx for why they are not self-service. */
+    onSupport: (topic: SupportTopic) => void;
+}) {
     const [mode, setMode] = useState<"menu" | "email" | "password">("menu");
     const [nextEmail, setNextEmail] = useState(email ?? "");
     const [pw, setPw] = useState("");
@@ -390,16 +400,20 @@ function AccountModal({ email, onClose }: { email: string | null; onClose: () =>
                                 sub="Set a new sign-in password" onClick={() => { setMode("password"); setError(null); }}
                             />
                             <SettingRow
-                                icon={<MessageCircle size={16} />} label="Change phone"
-                                sub="Contact support to update the number on your account" pending
+                                icon={<Users size={16} />} label="Add a colleague"
+                                sub="We set up additional doctors on your clinic"
+                                onClick={() => onSupport({
+                                    title: "Add a doctor to this clinic",
+                                    reason: "A second doctor changes who can see which patients, so we set it up with you rather than leaving it to a form. Tell us who to add and we will get them signed in.",
+                                })}
                             />
                             <SettingRow
-                                icon={<Users size={16} />} label="Manage users"
-                                sub="Adding colleagues arrives with multi-doctor clinics" pending
-                            />
-                            <SettingRow
-                                icon={<Trash2 size={16} />} label="Delete account"
-                                sub="Clinical records have retention rules — support handles this" pending
+                                icon={<Trash2 size={16} />} label="Close this account"
+                                sub="Clinical records carry retention rules — we handle this with you"
+                                onClick={() => onSupport({
+                                    title: "Close clinic account",
+                                    reason: "Clinical records cannot simply be deleted on a button press — there are retention obligations, and you may need a copy first. We will walk through it with you and make sure nothing you are required to keep is lost.",
+                                })}
                             />
                         </>
                     )}
@@ -478,7 +492,30 @@ export function SettingsPage({
     const [subLoading, setSubLoading] = useState(true);
     const [accountOpen, setAccountOpen] = useState(false);
     const [confirmingDrafts, setConfirmingDrafts] = useState(false);
+    const [confirmingGlobal, setConfirmingGlobal] = useState(false);
+    const [globalBusy, setGlobalBusy] = useState(false);
     const [authEmail, setAuthEmail] = useState<string | null>(null);
+    const [lastSignIn, setLastSignIn] = useState<string | null>(null);
+    /** Non-null while the shared "our team handles this" surface is open. */
+    const [supportTopic, setSupportTopic] = useState<SupportTopic | null>(null);
+
+    /** Ends every session on every device — `scope: "global"`, which is a
+     *  genuinely different operation from the local sign-out `useLogout`
+     *  performs. Supabase invalidates the refresh tokens server-side, so the
+     *  local logout afterwards is just this tab catching up. */
+    const signOutEverywhere = async () => {
+        setGlobalBusy(true);
+        try {
+            await supabase.auth.signOut({ scope: "global" });
+            toast.success("Signed out on every device.");
+            await logout();
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Could not sign out everywhere.");
+        } finally {
+            setGlobalBusy(false);
+            setConfirmingGlobal(false);
+        }
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -493,7 +530,11 @@ export function SettingsPage({
     // The email lives in Supabase Auth, not in `users` — see lib/auth.ts's
     // `AppUser`, which deliberately carries no email column.
     useEffect(() => {
-        supabase.auth.getUser().then(({ data }) => setAuthEmail(data.user?.email ?? null)).catch(() => {});
+        supabase.auth.getUser().then(({ data }) => {
+            setAuthEmail(data.user?.email ?? null);
+            const at = data.user?.last_sign_in_at;
+            setLastSignIn(at ? new Date(at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null);
+        }).catch(() => {});
     }, []);
 
     const openSetting = (entry: SettingEntry) => {
@@ -682,36 +723,100 @@ export function SettingsPage({
                             )}
                         </SettingsCard>
 
-                        {/* ══ Preferences ════════════════════════════════════ */}
+                        {/* ══ Security & Sessions ════════════════════════════
+                            Everything here is REAL. "Preferences" (notifications
+                            + appearance) used to sit in this slot and was cut
+                            2026-08-31: Cortex pushes no notifications, so a
+                            toggle would have written a preference nothing reads,
+                            and there is no second theme to switch to — the design
+                            DNA is explicit that there is one visual language on a
+                            deliberately fixed type scale. A row that controls
+                            nothing is worse than no row. */}
                         <SettingsCard
-                            id="set-card-preferences"
-                            icon={<Palette size={17} />}
+                            id="set-card-security"
+                            icon={<ShieldCheck size={17} />}
                             tint="bg-[rgba(18,104,232,0.10)] text-[var(--cs-blue)]"
-                            title="Preferences"
+                            title="Security & Sessions"
                         >
-                            <SettingRow icon={<Bell size={17} />} label="Notifications" sub="Manage alerts and reminders" pending />
+                            <SettingRow
+                                icon={<Mail size={17} />} label="Email address"
+                                sub={authEmail ? `Signing in as ${authEmail}` : "The address you sign in with"}
+                                onClick={() => setAccountOpen(true)}
+                            />
                             <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            <SettingRow icon={<Palette size={17} />} label="Appearance" sub="Theme and interface density" pending />
+                            <SettingRow
+                                icon={<Lock size={17} />} label="Password"
+                                sub={lastSignIn ? `Last signed in ${lastSignIn}` : "Set a new sign-in password"}
+                                onClick={() => setAccountOpen(true)}
+                            />
+                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
+                            {/* A genuinely different operation from the Log out
+                                below: that ends THIS session (`scope: "local"`,
+                                see lib/auth.ts), this ends every session on every
+                                device — the one that matters after signing in on
+                                a shared clinic PC. */}
+                            <div className="flex items-start gap-[11px] rounded-[10px] px-[10px] py-[11px]">
+                                <span className="mt-[1px] flex-none text-[var(--cs-faint)]"><MonitorSmartphone size={17} /></span>
+                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">All devices</span>
+                                    <span className="text-[12px] leading-[1.45] text-[var(--cs-faint)]">
+                                        Sign out everywhere, including any clinic computer you left signed in
+                                    </span>
+                                </span>
+                                {confirmingGlobal ? (
+                                    <span className="flex flex-none items-center gap-[6px]">
+                                        <button
+                                            type="button" onClick={() => setConfirmingGlobal(false)}
+                                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)]"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button" onClick={signOutEverywhere} disabled={globalBusy}
+                                            className="flex items-center gap-[5px] rounded-full border border-[var(--cs-red)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-red)] disabled:opacity-60"
+                                        >
+                                            {globalBusy && <Loader2 size={12} className="animate-spin" />}
+                                            Sign out all
+                                        </button>
+                                    </span>
+                                ) : (
+                                    <button
+                                        type="button" onClick={() => setConfirmingGlobal(true)}
+                                        className="flex-none rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                                    >
+                                        <SignOutAll size={12} className="mr-[4px] inline align-[-2px]" />
+                                        Sign out
+                                    </button>
+                                )}
+                            </div>
                         </SettingsCard>
 
-                        {/* ══ Data & Privacy ═════════════════════════════════ */}
+                        {/* ══ Data & Privacy ═════════════════════════════════
+                            Export and data management deliberately have NO
+                            self-service flow — see SupportRequestModal.tsx.
+                            "Local data" is the exception because it is genuinely
+                            local, genuinely reversible, and affects only this
+                            browser. */}
                         <SettingsCard
                             id="set-card-data"
                             icon={<Database size={17} />}
                             tint="bg-[rgba(15,118,110,0.10)] text-[var(--cs-teal)]"
                             title="Data & Privacy"
                         >
-                            <SettingRow icon={<Download size={17} />} label="Export data" sub="Download your clinic data" pending />
-                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
                             <SettingRow
                                 icon={<Shield size={17} />} label="Privacy & security"
                                 sub="How we protect your data, and your rights" href={PRIVACY_URL}
                             />
                             <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            {/* The one genuinely working data control — it clears
-                                what THIS browser is holding (profileCache.ts and
-                                the consult draft store), which is real, local and
-                                safe to expose. */}
+                            <SettingRow
+                                icon={<Download size={17} />} label="Export your data"
+                                sub="We prepare and hand over a copy — talk to us"
+                                onClick={() => setSupportTopic({
+                                    title: "Export clinic data",
+                                    reason: "Exporting a clinic's records is something we do with you, not something you should have to get right alone — the shape of the export depends on why you need it. Tell us what it is for and we will prepare it.",
+                                })}
+                            />
+                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
                             <div className="flex items-start gap-[11px] rounded-[10px] px-[10px] py-[11px]">
                                 <span className="mt-[1px] flex-none text-[var(--cs-faint)]"><Database size={17} /></span>
                                 <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
@@ -815,7 +920,21 @@ export function SettingsPage({
                 </div>
             </div>
 
-            {accountOpen && <AccountModal email={authEmail} onClose={() => setAccountOpen(false)} />}
+            {accountOpen && (
+                <AccountModal
+                    email={authEmail}
+                    accountReference={hospitalId.slice(0, 8)}
+                    onClose={() => setAccountOpen(false)}
+                    onSupport={(topic) => { setAccountOpen(false); setSupportTopic(topic); }}
+                />
+            )}
+            {supportTopic && (
+                <SupportRequestModal
+                    topic={supportTopic}
+                    accountReference={hospitalId.slice(0, 8)}
+                    onClose={() => setSupportTopic(null)}
+                />
+            )}
         </div>
     );
 }

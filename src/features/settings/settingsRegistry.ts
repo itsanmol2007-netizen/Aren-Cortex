@@ -31,8 +31,9 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
-    Bell, Building2, Clock, Database, Download, FlaskConical, Layers, Palette,
-    Pill, Printer, Shield, ShieldCheck, Sparkles, Stethoscope, User,
+    Building2, Clock, Database, Download, FlaskConical, Layers,
+    MonitorSmartphone, Pill, Printer, Shield, ShieldCheck, Sparkles,
+    Stethoscope, User,
 } from "lucide-react";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
@@ -151,7 +152,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         label: "Account & security",
         description: "Email, phone, password and account access.",
         keywords: ["account", "email", "password", "phone", "security", "login", "sign in", "delete account", "users"],
-        page: "settings", anchor: "set-card-account", group: "Settings", icon: User,
+        page: "settings", anchor: "set-card-security", group: "Settings", icon: User,
     },
     {
         id: "settings.subscription",
@@ -161,24 +162,17 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         page: "settings", anchor: "set-card-subscription", group: "Settings", icon: ShieldCheck,
     },
     {
-        id: "settings.notifications",
-        label: "Notifications",
-        description: "Which alerts and reminders reach you.",
-        keywords: ["notification", "alert", "reminder", "email", "push", "sound"],
-        page: "settings", anchor: "set-card-preferences", group: "Settings", icon: Bell,
-    },
-    {
-        id: "settings.appearance",
-        label: "Appearance",
-        description: "Theme and interface density.",
-        keywords: ["appearance", "theme", "dark", "light", "display", "interface", "font"],
-        page: "settings", anchor: "set-card-preferences", group: "Settings", icon: Palette,
+        id: "settings.sessions",
+        label: "Sign out of all devices",
+        description: "End every session, including a clinic computer you left signed in.",
+        keywords: ["session", "sign out", "logout", "devices", "shared", "computer", "security", "revoke"],
+        page: "settings", anchor: "set-card-security", group: "Settings", icon: MonitorSmartphone,
     },
     {
         id: "settings.export",
         label: "Export data",
-        description: "Download a copy of your clinic's data.",
-        keywords: ["export", "download", "backup", "csv", "data", "copy"],
+        description: "We prepare and hand over a copy of your clinic's data.",
+        keywords: ["export", "download", "backup", "csv", "data", "copy", "migrate"],
         page: "settings", anchor: "set-card-data", group: "Settings", icon: Download,
     },
     {
