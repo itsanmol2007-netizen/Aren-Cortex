@@ -31,8 +31,9 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
-    Building2, Clock, FlaskConical, Keyboard, Layers, MonitorSmartphone,
-    Pill, Printer, Shield, ShieldCheck, Sparkles, Stethoscope, User,
+    Activity, Building2, Clock, FlaskConical, Keyboard, Layers,
+    MonitorSmartphone, Pill, Printer, Shield, ShieldCheck, Sparkles,
+    Stethoscope, User,
 } from "lucide-react";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
@@ -161,11 +162,18 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         page: "settings", anchor: "set-card-subscription", group: "Settings", icon: ShieldCheck,
     },
     {
-        id: "settings.sessions",
-        label: "Sign out of all devices",
-        description: "End every session, including a clinic computer you left signed in.",
-        keywords: ["session", "sign out", "logout", "devices", "shared", "computer", "security", "revoke"],
-        page: "settings", anchor: "set-card-account", group: "Settings", icon: MonitorSmartphone,
+        id: "settings.devices",
+        label: "Devices",
+        description: "The machine you're on, and signing out of every other one.",
+        keywords: ["device", "session", "sign out", "logout", "laptop", "tablet", "shared", "computer", "revoke"],
+        page: "settings", anchor: "set-card-devices", group: "Settings", icon: MonitorSmartphone,
+    },
+    {
+        id: "settings.health",
+        label: "System health",
+        description: "What's working, and diagnostics to send us when something isn't.",
+        keywords: ["health", "status", "diagnostics", "offline", "slow", "broken", "not working", "sync", "logs", "support"],
+        page: "settings", anchor: "set-health-strip", group: "Settings", icon: Activity,
     },
     {
         id: "settings.privacy",
@@ -179,7 +187,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         label: "Keyboard shortcuts",
         description: "Every shortcut the consult screen listens for.",
         keywords: ["keyboard", "shortcut", "key", "binding", "hotkey", "kbd", "shortcuts"],
-        page: "settings", anchor: "set-card-keyboard", group: "Settings", icon: Keyboard,
+        page: "settings", anchor: "set-card-consult", group: "Settings", icon: Keyboard,
     },
 ];
 

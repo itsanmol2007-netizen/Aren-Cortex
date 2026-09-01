@@ -1361,6 +1361,7 @@ function App() {
           logoRef={logoRef}
           onOpenSidebar={handleOpenSidebar}
           hospitalId={identity.hospitalId}
+          doctorId={identity.doctorId}
           hospitalProfile={hospitalProfile}
           doctorProfile={doctorProfile}
           doctorName={DOCTOR.name}

@@ -281,6 +281,23 @@ export function BlankSnapshotArt() {
     );
 }
 
+/** System Health, all clear: a steady pulse line inside a shield outline —
+ *  the page's own subject at rest, drawn to the same rules as every other
+ *  mark in this file (one line weight, the palette at its lightest, never a
+ *  tick or a smiley). Larger than its siblings because it heads a page
+ *  rather than filling a panel. */
+export function BlankHealthArt() {
+    return (
+        <svg width="76" height="76" viewBox="0 0 76 76" fill="none" aria-hidden="true">
+            <path d="M38 8l22 8v20c0 15-9.6 25.6-22 30-12.4-4.4-22-15-22-30V16l22-8z"
+                fill="#fbfcfe" stroke="#d9e0ec" strokeWidth="1.7" strokeLinejoin="round" />
+            <path d="M22 40h8l4-9 6 18 4.5-9H54" stroke="#aab4c4" strokeWidth="1.7"
+                strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <circle cx="54" cy="40" r="2.6" fill="#fbfcfd" stroke="#b7c0cf" strokeWidth="1.6" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

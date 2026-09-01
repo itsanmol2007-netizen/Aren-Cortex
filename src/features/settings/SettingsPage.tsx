@@ -40,9 +40,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
-    ArrowRight, Check, ChevronDown, ChevronRight, ExternalLink, FileText,
-    HelpCircle, Info, Keyboard, Loader2, Lock, LogOut, Mail,
-    MonitorSmartphone, Search, Shield, Stethoscope, Trash2, User, Users, X,
+    Activity, AlertTriangle, ArrowRight, Check, ChevronDown, ChevronRight,
+    ExternalLink, FileText, HelpCircle, Info, Keyboard, Laptop, Loader2, Lock,
+    LogOut, Mail, MonitorSmartphone, Search, Shield, ShieldCheck, Stethoscope,
+    Trash2, User, Users, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
@@ -55,7 +56,10 @@ import {
 import { clearAllConsultDrafts } from "../../lib/consultDraft";
 import { PROFILES, type ChartKind } from "../synapse/specialtyProfile";
 import { updateHospitalSpecialtyProfile, invalidateHospital } from "../../lib/db";
-import { BINDINGS, SCOPE_ORDER, SCOPE_TITLE, chordLabel } from "../../lib/keyboard/keymap";
+import { BINDINGS } from "../../lib/keyboard/keymap";
+import { ShortcutsSheet } from "../../components/ShortcutsSheet";
+import { HealthPage } from "./health/HealthPage";
+import { probeHealth, isDegraded, type HealthSnapshot } from "./health/model";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
@@ -68,6 +72,34 @@ import "./settings.css";
 const PRIVACY_URL = "https://www.arenode.com/privacy";
 
 const PROFILE_LIST = Object.values(PROFILES);
+
+/**
+ * A friendly name for the machine you are on, read off the user agent.
+ *
+ * Deliberately coarse — browser and OS, nothing more. A user agent cannot say
+ * "the tablet in room 2", and a confident wrong label on a security surface is
+ * worse than a vague right one. When a real device registry lands (a row
+ * written on sign-in) THAT carries a name the doctor chose; this is the honest
+ * fallback until then.
+ */
+function describeThisDevice(): { name: string; kind: string } {
+    const ua = navigator.userAgent;
+    const os =
+        /Windows/i.test(ua) ? "Windows"
+        : /Macintosh|Mac OS X/i.test(ua) ? "macOS"
+        : /iPhone|iPad|iPod/i.test(ua) ? "iPadOS / iOS"
+        : /Android/i.test(ua) ? "Android"
+        : /Linux/i.test(ua) ? "Linux"
+        : "this device";
+    const browser =
+        /Edg\//i.test(ua) ? "Edge"
+        : /OPR\/|Opera/i.test(ua) ? "Opera"
+        : /Chrome\//i.test(ua) ? "Chrome"
+        : /Safari\//i.test(ua) && !/Chrome/i.test(ua) ? "Safari"
+        : /Firefox\//i.test(ua) ? "Firefox"
+        : "Browser";
+    return { name: `${browser} on ${os}`, kind: /Mobile|iPhone|Android/i.test(ua) ? "Mobile" : "Desktop" };
+}
 
 const CHART_LABEL: Record<ChartKind, string> = {
     dental: "Dental chart",
@@ -85,6 +117,8 @@ interface SettingsPageProps {
     logoRef: RefObject<HTMLDivElement>;
     onOpenSidebar: () => void;
     hospitalId: string;
+    /** Needed by the health probes and the local draft check. */
+    doctorId: string;
     hospitalProfile: DBHospital | null;
     doctorProfile: DBDoctor | null;
     doctorName: string;
@@ -502,8 +536,8 @@ function AccountModal({
 // ── The page ────────────────────────────────────────────────────────────────
 
 export function SettingsPage({
-    logoRef, onOpenSidebar, hospitalId, hospitalProfile, doctorProfile, doctorName,
-    onNavigate, onSpecialtyChanged,
+    logoRef, onOpenSidebar, hospitalId, doctorId, hospitalProfile, doctorProfile,
+    doctorName, onNavigate, onSpecialtyChanged,
 }: SettingsPageProps) {
     const logout = useLogout();
     const auth = useAuth();
@@ -545,25 +579,23 @@ export function SettingsPage({
         }
     };
 
-    // Keyboard — printed from the real key map, filtered by a plain substring
-    // over what the shortcut DOES and the keys themselves.
-    const [keyQuery, setKeyQuery] = useState("");
-    const keyGroups = useMemo(() => {
-        const q = keyQuery.trim().toLowerCase();
-        return SCOPE_ORDER
-            .map((scope) => ({
-                scope,
-                title: SCOPE_TITLE[scope],
-                rows: BINDINGS.filter(
-                    (b) =>
-                        b.scope === scope &&
-                        (!q ||
-                            b.what.toLowerCase().includes(q) ||
-                            b.keys.some((c) => chordLabel(c).toLowerCase().includes(q)))
-                ),
-            }))
-            .filter((g) => g.rows.length > 0);
-    }, [keyQuery]);
+    // The shortcut REFERENCE is a document, not a control. It opens the sheet
+    // the consult screen already owns rather than spending a card on a
+    // 44-row scrolling list.
+    const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+    // Health is SUMMARISED here and explained on its own page.
+    const [view, setView] = useState<"settings" | "health">("settings");
+    const [health, setHealth] = useState<HealthSnapshot | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        probeHealth({ hospitalId, doctorId })
+            .then((snap) => { if (!cancelled) setHealth(snap); })
+            .catch(() => { /* the strip stays in its checking state */ });
+        return () => { cancelled = true; };
+    }, [hospitalId, doctorId]);
+
+    const device = useMemo(describeThisDevice, []);
 
     /** Ends every session on every device — `scope: "global"`, which is a
      *  genuinely different operation from the local sign-out `useLogout`
@@ -624,9 +656,47 @@ export function SettingsPage({
     const phone = doctorProfile?.phone ?? authPhone;
     const initials = doctorName.split(" ").filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "DR";
 
+    /**
+     * Entitlement keys are machine names; these are the words a doctor would
+     * use. A key with no label here is simply not shown — better a shorter
+     * list than a chip reading "rx_templates".
+     */
+    const included = useMemo(() => {
+        const LABELS: Record<string, string> = {
+            synapse: "Synapse suggestions",
+            whatsapp: "WhatsApp",
+            prescriptions: "Prescriptions",
+            rx_templates: "Templates",
+            care_plans: "Care plans",
+            longitudinal: "Progress tracking",
+            phone_upload: "Phone uploads",
+            attachments: "Attachments",
+            specialty_packs: "Specialty packs",
+        };
+        return (subscription?.entitlements ?? [])
+            .filter((e) => e.enabled && LABELS[e.featureKey])
+            .map((e) => LABELS[e.featureKey]);
+    }, [subscription]);
+
     const renewsOn = subscription?.currentPeriodEnd
         ? new Date(subscription.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
         : null;
+
+    // The health page is a full page in its own right — its own dark header,
+    // its own back button, its own scroll region — reached from the strip
+    // below rather than being a modal cramped inside this one.
+    if (view === "health") {
+        return (
+            <HealthPage
+                logoRef={logoRef}
+                onOpenSidebar={onOpenSidebar}
+                onBack={() => setView("settings")}
+                hospitalId={hospitalId}
+                doctorId={doctorId}
+                clinicName={hospitalProfile?.name ?? "This clinic"}
+            />
+        );
+    }
 
     return (
         <div className="flex min-h-screen flex-col bg-[var(--cs-page)]">
@@ -694,40 +764,25 @@ export function SettingsPage({
                                 sub={lastSignIn ? `Last signed in ${lastSignIn}` : "How you sign in to Cortex"}
                                 onClick={() => setAccountOpen(true)}
                             />
-                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            <div className="flex items-start gap-[11px] rounded-[10px] px-[10px] py-[11px]">
-                                <span className="mt-[1px] flex-none text-[var(--cs-faint)]"><MonitorSmartphone size={17} /></span>
-                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">All devices</span>
-                                    <span className="text-[12px] leading-[1.45] text-[var(--cs-faint)]">
-                                        Sign out everywhere, including a clinic computer left signed in
-                                    </span>
-                                </span>
-                                {confirmingGlobal ? (
-                                    <span className="flex flex-none items-center gap-[6px]">
-                                        <button
-                                            type="button" onClick={() => setConfirmingGlobal(false)}
-                                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)]"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            type="button" onClick={signOutEverywhere} disabled={globalBusy}
-                                            className="flex items-center gap-[5px] rounded-full border border-[var(--cs-red)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-red)] disabled:opacity-60"
-                                        >
-                                            {globalBusy && <Loader2 size={12} className="animate-spin" />}
-                                            Sign out all
-                                        </button>
-                                    </span>
-                                ) : (
-                                    <button
-                                        type="button" onClick={() => setConfirmingGlobal(true)}
-                                        className="flex-none rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
-                                    >
-                                        Sign out
-                                    </button>
-                                )}
-                            </div>
+
+                            {/* Which clinic, as what — the two facts a doctor
+                                signed into more than one place actually needs,
+                                and the answer to "why can't I see patient X".
+                                Real values off the session, not decoration. */}
+                            <dl className="m-0 mt-[2px] flex flex-col">
+                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[12px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Clinic</dt>
+                                    <dd className="m-0 truncate text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                        {hospitalProfile?.name ?? "—"}
+                                    </dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-[10px] px-[12px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Role</dt>
+                                    <dd className="m-0 text-[12.5px] font-bold capitalize text-[var(--cs-ink)]">
+                                        {auth.status === "authed" ? (auth.identity.user.role ?? "Doctor") : "Doctor"}
+                                    </dd>
+                                </div>
+                            </dl>
 
                             {/* Professional and clinic details are NOT duplicated
                                 here — Clinic owns that editor, and this is the
@@ -791,7 +846,26 @@ export function SettingsPage({
                                         </div>
                                     )}
 
-                                    <div className="mt-[10px]">
+                                    {/* What the plan actually carries — the
+                                        entitlement rows, labelled. Real data,
+                                        already fetched alongside the plan, and
+                                        the honest answer to "what am I paying
+                                        for" sitting beside "what does it cost". */}
+                                    {included.length > 0 && (
+                                        <div className="mt-[12px] flex flex-wrap gap-[6px]">
+                                            {included.map((label) => (
+                                                <span
+                                                    key={label}
+                                                    className="inline-flex items-center gap-[5px] rounded-full border border-[var(--cs-line)] bg-[var(--cs-page)] px-[10px] py-[4px] text-[11.5px] font-semibold text-[var(--cs-label)]"
+                                                >
+                                                    <Check size={11} className="text-[var(--cs-green)]" />
+                                                    {label}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="mt-[12px]">
                                         <button
                                             type="button"
                                             onClick={() => toast("Billing is handled by support for now — we'll reach out with options.")}
@@ -906,80 +980,148 @@ export function SettingsPage({
                             {specialtyError && (
                                 <p className="mt-[6px] text-[12px] font-medium text-[var(--cs-red)]">{specialtyError}</p>
                             )}
+
+                            {/* The shortcut reference, one row. It opens the
+                                sheet the consult screen already has — a
+                                44-row scrolling list does not belong in a
+                                quarter of this page. */}
+                            <button
+                                type="button"
+                                onClick={() => setShortcutsOpen(true)}
+                                className="mt-[10px] flex items-center gap-[11px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[11px] text-left transition-colors hover:border-[var(--cs-line-strong)] hover:bg-[var(--cs-page)]"
+                            >
+                                <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] bg-[var(--cs-page)] text-[var(--cs-violet)]">
+                                    <Keyboard size={16} />
+                                </span>
+                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">Keyboard shortcuts</span>
+                                    <span className="text-[12px] text-[var(--cs-faint)]">
+                                        {BINDINGS.length} keys — or press ? during a consult
+                                    </span>
+                                </span>
+                                <ChevronRight size={16} className="flex-none text-[var(--cs-faint)]" />
+                            </button>
                         </SettingsCard>
 
-                        {/* ══ Keyboard ═══════════════════════════════════════
-                            Printed from `BINDINGS` (lib/keyboard/keymap.ts) —
-                            the same table `useConsultKeyboard` dispatches from
-                            and `ShortcutsSheet` prints. That file made the map
-                            data precisely so a shortcut cannot be documented in
-                            one place and missing from another; this is a third
-                            reader of it, not a third copy. */}
+                        {/* ══ Devices ════════════════════════════════════════
+                            A doctor moves between a clinic desktop, a laptop
+                            and (soon) a tablet, and the only question that
+                            matters on a shared machine is "am I still signed
+                            in over there". This names the machine you are on
+                            and gives you the one control that answers it. */}
                         <SettingsCard
-                            id="set-card-keyboard"
-                            icon={<Keyboard size={17} />}
-                            tint="bg-[rgba(124,58,237,0.10)] text-[var(--cs-violet)]"
-                            title="Keyboard"
+                            id="set-card-devices"
+                            icon={<Laptop size={17} />}
+                            tint="bg-[rgba(15,118,110,0.10)] text-[var(--cs-teal)]"
+                            title="Devices"
                         >
-                            <div className="relative">
-                                <Search size={14} className="pointer-events-none absolute left-[11px] top-1/2 -translate-y-1/2 text-[var(--cs-faint)]" />
-                                <input
-                                    value={keyQuery}
-                                    onChange={(e) => setKeyQuery(e.target.value)}
-                                    placeholder="Find a shortcut — “prescribe”, “escape”…"
-                                    aria-label="Find a keyboard shortcut"
-                                    className={
-                                        "h-[36px]! w-full rounded-[9px]! border! border-[var(--cs-line-strong)] bg-white! " +
-                                        "pl-[32px]! pr-[10px] text-[12.5px]! text-[var(--cs-ink)]! outline-none " +
-                                        "focus:border-[var(--cs-violet)]"
-                                    }
-                                />
+                            <div className="flex items-center gap-[11px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[11px]">
+                                <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] border border-[var(--cs-line)] bg-white text-[var(--cs-teal)]">
+                                    <Laptop size={16} />
+                                </span>
+                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                    <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
+                                        This device
+                                    </span>
+                                    <span className="truncate text-[14px] font-bold text-[var(--cs-ink)]">{device.name}</span>
+                                </span>
+                                <span className="flex-none rounded-full bg-[rgba(22,163,74,0.10)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--cs-green)]">
+                                    Active now
+                                </span>
                             </div>
 
-                            <div className="mt-[8px] flex max-h-[168px] min-h-0 flex-col gap-[10px] overflow-y-auto pr-[2px]">
-                                {keyGroups.length === 0 ? (
-                                    <p className="px-[2px] py-[18px] text-center text-[12.5px] text-[var(--cs-faint)]">
-                                        No shortcut matches that.
-                                    </p>
+                            <dl className="m-0 mt-[10px] flex flex-col">
+                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Type</dt>
+                                    <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{device.kind}</dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Last signed in</dt>
+                                    <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{lastSignIn ?? "—"}</dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-[10px] px-[2px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Other devices</dt>
+                                    {/* Honest: Supabase does not expose a session
+                                        list to the client, so we do not pretend
+                                        to have one. Signing out everywhere works
+                                        regardless of what we can enumerate. */}
+                                    <dd className="m-0 text-[12.5px] font-semibold text-[var(--cs-faint)]">Not tracked yet</dd>
+                                </div>
+                            </dl>
+
+                            <div className="mt-[10px] flex items-center justify-between gap-[10px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[10px]">
+                                <span className="flex min-w-0 flex-col gap-[1px]">
+                                    <span className="text-[13px] font-semibold text-[var(--cs-ink)]">Sign out everywhere</span>
+                                    <span className="text-[11.5px] leading-[1.45] text-[var(--cs-faint)]">
+                                        Ends every session, on every device
+                                    </span>
+                                </span>
+                                {confirmingGlobal ? (
+                                    <span className="flex flex-none items-center gap-[6px]">
+                                        <button
+                                            type="button" onClick={() => setConfirmingGlobal(false)}
+                                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)]"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button" onClick={signOutEverywhere} disabled={globalBusy}
+                                            className="flex items-center gap-[5px] rounded-full border border-[var(--cs-red)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-red)] disabled:opacity-60"
+                                        >
+                                            {globalBusy && <Loader2 size={12} className="animate-spin" />}
+                                            Confirm
+                                        </button>
+                                    </span>
                                 ) : (
-                                    keyGroups.map((g) => (
-                                        <div key={g.scope}>
-                                            <p className="m-0 mb-[4px] px-[2px] text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)]">
-                                                {g.title}
-                                            </p>
-                                            {g.rows.map((b) => (
-                                                <div key={b.id} className="flex items-center justify-between gap-[10px] px-[2px] py-[5px]">
-                                                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--cs-muted)]">
-                                                        {b.what}
-                                                    </span>
-                                                    <span className="flex flex-none items-center gap-[4px]">
-                                                        {b.keys.map((c, i) => (
-                                                            <kbd
-                                                                key={i}
-                                                                className="rounded-[5px] border border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[6px] py-[2px] text-[10.5px] font-semibold text-[var(--cs-label)]"
-                                                            >
-                                                                {chordLabel(c)}
-                                                            </kbd>
-                                                        ))}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ))
+                                    <button
+                                        type="button" onClick={() => setConfirmingGlobal(true)}
+                                        className="flex-none rounded-full border border-[var(--cs-line-strong)] bg-white px-[12px] py-[6px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-red)] hover:text-[var(--cs-red)]"
+                                    >
+                                        Sign out
+                                    </button>
                                 )}
                             </div>
-
-                            {/* Honest about the limit: rebinding needs an
-                                override layer in `useConsultKeyboard` that does
-                                not exist, and a toggle that silently half-works
-                                would be worse than saying so. */}
-                            <p className="m-0 mt-[8px] border-t border-[var(--cs-line)] px-[2px] pt-[8px] text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">
-                                {BINDINGS.length} shortcuts, live from the consult screen's own key map. Press{" "}
-                                <kbd className="rounded-[4px] border border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[5px] py-[1px] text-[10.5px] font-semibold text-[var(--cs-label)]">?</kbd>{" "}
-                                anywhere in a consult to see this sheet in place.
-                            </p>
                         </SettingsCard>
                     </div>
+
+                    {/* ══ System Health — a small section, opening a page ═════
+                        Anmol: "the health thing should belong as a small
+                        section on the settings page, and then you click on it
+                        and the main page appears." A strip, not a fifth card:
+                        the answer here is one word, and everything that needs
+                        room to explain itself lives on the page behind it. */}
+                    <button
+                        type="button"
+                        id="set-health-strip"
+                        onClick={() => setView("health")}
+                        className="flex w-full items-center gap-[14px] rounded-[16px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[18px] py-[15px] text-left shadow-[var(--cs-shadow)] transition-colors hover:border-[var(--cs-line-strong)]"
+                    >
+                        <span className={`${ICON_TILE} ${
+                            !health ? "bg-[var(--cs-page)] text-[var(--cs-faint)]"
+                            : health.overall === "healthy" ? "bg-[rgba(22,163,74,0.10)] text-[var(--cs-green)]"
+                            : health.overall === "warning" ? "bg-[rgba(180,83,9,0.10)] text-[var(--cs-amber)]"
+                            : "bg-[rgba(180,35,24,0.10)] text-[var(--cs-red)]"
+                        }`}>
+                            {!health ? <Activity size={17} />
+                                : health.overall === "healthy" ? <ShieldCheck size={17} />
+                                : <AlertTriangle size={17} />}
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                            <span className="text-[13px] font-bold uppercase tracking-[0.07em] text-[var(--cs-ink)]">
+                                System Health
+                            </span>
+                            <span className="text-[12.5px] text-[var(--cs-faint)]">
+                                {!health
+                                    ? "Checking records, suggestions and uploads…"
+                                    : health.overall === "healthy"
+                                        ? "Everything is working — records, suggestions and uploads all responded"
+                                        : `${health.services.filter(isDegraded).length} of ${health.services.length} services need attention`}
+                            </span>
+                        </span>
+                        <span className="flex flex-none items-center gap-[6px] text-[12.5px] font-bold text-[var(--cs-blue)]">
+                            View details <ChevronRight size={15} />
+                        </span>
+                    </button>
 
                     {/* ══ Help & Support — a strip, not a fifth card ═════════ */}
                     <section
@@ -1050,6 +1192,8 @@ export function SettingsPage({
                     onSupport={(topic) => { setAccountOpen(false); setSupportTopic(topic); }}
                 />
             )}
+            {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
+
             {supportTopic && (
                 <SupportRequestModal
                     topic={supportTopic}
