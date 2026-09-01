@@ -8,9 +8,18 @@ interface Props {
     title: string;
     subtitle: string;
     rightSlot?: ReactNode;
+    /**
+     * Centred between the page identity and `rightSlot`. Added 2026-08-31 for
+     * Settings' master search, which the reference design puts IN the dark
+     * header rather than in the page body — extending the shared header
+     * rather than forking a second one, so every page keeps the same logo,
+     * nebula, divider and type treatment. Omitted everywhere else, which
+     * leaves the header's layout exactly as it was.
+     */
+    centerSlot?: ReactNode;
 }
 
-export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot }: Props) {
+export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot }: Props) {
     return (
         <header className="ws-header">
             {/* Nebula asset — inline img, bypasses Vite CSS asset resolution entirely */}
@@ -21,7 +30,7 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
                 alt=""
             />
 
-            <div className="ws-header-inner">
+            <div className={`ws-header-inner${centerSlot ? " has-center" : ""}`}>
 
                 {/* Logo pill — sidebar trigger */}
                 <div
@@ -47,6 +56,12 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
                     <span className="ws-header-title">{title}</span>
                     <span className="ws-header-subtitle">{subtitle}</span>
                 </div>
+
+                {centerSlot && (
+                    <div className="ws-header-center">
+                        {centerSlot}
+                    </div>
+                )}
 
                 {/* Right slot */}
                 {rightSlot && (

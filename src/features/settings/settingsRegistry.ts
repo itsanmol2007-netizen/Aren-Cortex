@@ -29,6 +29,11 @@
 // for this and not know which page it is on".
 // ---------------------------------------------------------------------------
 
+import type { LucideIcon } from "lucide-react";
+import {
+    Bell, Building2, Clock, Database, Download, FlaskConical, Layers, Palette,
+    Pill, Printer, Shield, ShieldCheck, Sparkles, Stethoscope, User,
+} from "lucide-react";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
 export interface SettingEntry {
@@ -46,8 +51,11 @@ export interface SettingEntry {
     page: SidebarPage;
     /** DOM id of the control on that page. Verified to exist — see header. */
     anchor: string;
-    /** Grouping shown in the results list. */
-    group: "Clinic" | "Practice" | "Workspace";
+    /** The small location label on a search result — where this lives, in the
+     *  words a doctor would use to describe the place. */
+    group: "Clinic" | "Practice" | "Prescription Pad" | "Settings";
+    /** Result-row icon. A registry of UI destinations may hold UI. */
+    icon: LucideIcon;
 }
 
 export const SETTINGS_INDEX: SettingEntry[] = [
@@ -56,37 +64,53 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         id: "clinic.identity",
         label: "Clinic profile",
         description: "Name, logo, address, phone and what patients see on a prescription.",
-        keywords: ["clinic", "logo", "address", "branding", "name", "letterhead", "hospital", "contact"],
-        page: "clinic",
-        anchor: "clin-identity-clinic",
-        group: "Clinic",
+        keywords: ["clinic", "logo", "address", "branding", "name", "letterhead", "hospital", "contact", "website"],
+        page: "clinic", anchor: "clin-identity-clinic", group: "Clinic", icon: Building2,
     },
     {
         id: "clinic.doctor",
         label: "Doctor profile",
         description: "Your name, photo, qualification, registration number and signature.",
-        keywords: ["doctor", "profile", "photo", "avatar", "signature", "qualification", "registration", "me", "my account"],
-        page: "clinic",
-        anchor: "clin-identity-doctor",
-        group: "Clinic",
+        keywords: ["doctor", "profile", "photo", "avatar", "signature", "qualification", "registration", "degree"],
+        page: "clinic", anchor: "clin-identity-doctor", group: "Clinic", icon: Stethoscope,
     },
     {
         id: "clinic.hours",
         label: "Clinic hours",
         description: "Which days you see patients, and when.",
-        keywords: ["hours", "timing", "open", "closed", "schedule", "days", "week", "opening"],
-        page: "clinic",
-        anchor: "clin-card-hours",
-        group: "Clinic",
+        keywords: ["hours", "timing", "open", "closed", "schedule", "days", "week", "opening", "shift"],
+        page: "clinic", anchor: "clin-card-hours", group: "Clinic", icon: Clock,
+    },
+
+    {
+        id: "clinic.specialty",
+        label: "Consult setup",
+        description: "Which chart, outputs and measurements the consult screen opens with.",
+        keywords: ["specialty", "speciality", "profile", "physiotherapy", "dental", "cardiology", "chart", "consult", "facility", "engine", "synapse"],
+        page: "clinic", anchor: "clin-card-specialty", group: "Clinic", icon: Stethoscope,
+    },
+
+    // ── Prescription pad (lives on Clinic, but nobody looks for it there) ──
+    {
+        id: "rx.layout",
+        label: "Prescription pad",
+        description: "How a printed prescription is laid out, and what it carries by default.",
+        keywords: ["prescription", "rx", "print", "pad", "layout", "footer", "letterhead", "paper", "header"],
+        page: "clinic", anchor: "clin-card-rx", group: "Prescription Pad", icon: Printer,
     },
     {
-        id: "clinic.rx",
-        label: "Prescription pad",
-        description: "How a printed prescription is laid out, and the advice it carries by default.",
-        keywords: ["prescription", "rx", "print", "pad", "layout", "advice", "footer", "letterhead"],
-        page: "clinic",
-        anchor: "clin-card-rx",
-        group: "Clinic",
+        id: "rx.advice",
+        label: "Default prescription advice",
+        description: "The standing advice lines every prescription starts with.",
+        keywords: ["advice", "instructions", "notes", "default", "standing", "footer"],
+        page: "clinic", anchor: "clin-card-rx", group: "Prescription Pad", icon: Layers,
+    },
+    {
+        id: "rx.language",
+        label: "Prescription language",
+        description: "The language a printed prescription is rendered in.",
+        keywords: ["language", "hindi", "english", "translate", "script", "bilingual", "regional"],
+        page: "clinic", anchor: "clin-card-rx", group: "Prescription Pad", icon: Printer,
     },
 
     // ── Practice ──────────────────────────────────────────────────────────
@@ -94,37 +118,82 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         id: "practice.medicines",
         label: "Preferred medicines",
         description: "The medicines your practice reaches for first, grouped by composition.",
-        keywords: ["medicine", "drug", "brand", "preferred", "favourite", "composition", "molecule"],
-        page: "practice",
-        anchor: "prac-card-medicines",
-        group: "Practice",
+        keywords: ["medicine", "drug", "brand", "preferred", "favourite", "composition", "molecule", "formulary"],
+        page: "practice", anchor: "prac-card-medicines", group: "Practice", icon: Pill,
     },
     {
         id: "practice.labs",
         label: "Preferred labs",
         description: "Which diagnostic centres Cortex suggests first for investigations.",
         keywords: ["lab", "labs", "diagnostic", "centre", "center", "investigation", "test", "pathology"],
-        page: "practice",
-        anchor: "prac-card-labs",
-        group: "Practice",
+        page: "practice", anchor: "prac-card-labs", group: "Practice", icon: FlaskConical,
     },
     {
         id: "practice.templates",
         label: "Prescription templates",
         description: "Saved prescription setups you can apply in one click.",
         keywords: ["template", "preset", "saved", "quick", "reuse", "protocol"],
-        page: "practice",
-        anchor: "prac-card-templates",
-        group: "Practice",
+        page: "practice", anchor: "prac-card-templates", group: "Practice", icon: Layers,
     },
     {
         id: "practice.companions",
         label: "Companion suggestions",
         description: "Which medicines Cortex may offer alongside one you've already chosen.",
-        keywords: ["companion", "pairing", "together", "suggest", "alongside", "combination"],
-        page: "practice",
-        anchor: "prac-card-companions",
-        group: "Practice",
+        keywords: ["companion", "pairing", "together", "suggest", "alongside", "combination", "synapse"],
+        page: "practice", anchor: "prac-card-companions", group: "Practice", icon: Sparkles,
+    },
+
+    // ── Settings' own ─────────────────────────────────────────────────────
+    // Indexed like everything else so the search is genuinely a map of the
+    // whole app, not "other pages, plus whatever you can already see".
+    {
+        id: "settings.account",
+        label: "Account & security",
+        description: "Email, phone, password and account access.",
+        keywords: ["account", "email", "password", "phone", "security", "login", "sign in", "delete account", "users"],
+        page: "settings", anchor: "set-card-account", group: "Settings", icon: User,
+    },
+    {
+        id: "settings.subscription",
+        label: "Subscription",
+        description: "Your plan, its status and when it renews.",
+        keywords: ["subscription", "plan", "billing", "renew", "payment", "invoice", "upgrade", "trial"],
+        page: "settings", anchor: "set-card-subscription", group: "Settings", icon: ShieldCheck,
+    },
+    {
+        id: "settings.notifications",
+        label: "Notifications",
+        description: "Which alerts and reminders reach you.",
+        keywords: ["notification", "alert", "reminder", "email", "push", "sound"],
+        page: "settings", anchor: "set-card-preferences", group: "Settings", icon: Bell,
+    },
+    {
+        id: "settings.appearance",
+        label: "Appearance",
+        description: "Theme and interface density.",
+        keywords: ["appearance", "theme", "dark", "light", "display", "interface", "font"],
+        page: "settings", anchor: "set-card-preferences", group: "Settings", icon: Palette,
+    },
+    {
+        id: "settings.export",
+        label: "Export data",
+        description: "Download a copy of your clinic's data.",
+        keywords: ["export", "download", "backup", "csv", "data", "copy"],
+        page: "settings", anchor: "set-card-data", group: "Settings", icon: Download,
+    },
+    {
+        id: "settings.privacy",
+        label: "Privacy & security",
+        description: "How AREN protects your data, and your rights over it.",
+        keywords: ["privacy", "security", "gdpr", "policy", "rights", "protection", "compliance"],
+        page: "settings", anchor: "set-card-data", group: "Settings", icon: Shield,
+    },
+    {
+        id: "settings.local",
+        label: "Local data",
+        description: "Cached clinic details and saved consult drafts on this device.",
+        keywords: ["cache", "local", "storage", "draft", "offline", "device", "clear"],
+        page: "settings", anchor: "set-card-data", group: "Settings", icon: Database,
     },
 ];
 

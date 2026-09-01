@@ -306,17 +306,35 @@
 }
 
 /* ── Divider ──────────────────────────────────────────────── */
-/* Doubles as the flexible spacer between nav groups. `flex: 1 1 auto` lets
-   each of the three take an equal share of whatever height the tiles didn't
-   use, capped so a very tall screen spreads the groups without shearing
-   them apart; on a short screen they collapse back to the base margin and
-   the nav simply scrolls as before. */
+/* Doubles as the flexible spacer between nav groups: `flex: 1 1 auto` lets
+   each of the three take a share of whatever height the tiles didn't use,
+   capped so the groups spread on a tall screen and collapse back to a plain
+   gap on a short one.
+//
+   THE BOX IS TRANSPARENT AND THE LINE IS A PSEUDO-ELEMENT, and that is the
+   whole point of the shape. The first cut (2026-08-31) painted the gradient
+   on the element itself while also letting it grow to 76px — so each
+   "hairline" rendered as a 76px-tall grey slab between the nav groups, three
+   visible bands down the panel. A growable element must never carry the
+   paint it is only supposed to draw a line's worth of. */
 .sidebar-divider {
+    position: relative;
     height: 1px;
     flex: 1 1 auto;
-    max-height: 76px;
+    max-height: 44px;
     min-height: 1px;
-    margin: 10px 14px;
+    margin: 8px 14px;
+    background: none;
+}
+
+.sidebar-divider::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* Centred in whatever height the flex layout gave the box. */
+    top: 50%;
+    height: 1px;
     background: linear-gradient(to right,
             transparent,
             rgba(255, 255, 255, 0.11) 20%,

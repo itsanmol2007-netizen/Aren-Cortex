@@ -161,6 +161,26 @@
     min-width: 0;
 }
 
+/* With a centre slot present the page identity must NOT also grow, or the two
+   fight for the same space and the search lands off-centre. */
+.ws-header-inner.has-center .ws-header-identity {
+    flex: none;
+}
+
+/* The optional centre region — Settings' master search. Bounded rather than
+   greedy: it must not push the page identity or the right slot around, and a
+   search field spanning half a 2560px monitor reads as a browser chrome bar,
+   not a control. */
+.ws-header-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 580px;
+    padding: 0 18px;
+}
+
 .ws-header-title {
     font-size: 16.5px;
     font-weight: 750;
