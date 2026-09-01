@@ -10,3 +10,4 @@ export * from "./db/carePlans";
 export * from "./db/clinic";
 export * from "./db/profileCache";
 export * from "./db/subscriptions";
+export * from "./db/devices";

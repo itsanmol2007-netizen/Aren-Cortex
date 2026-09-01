@@ -71,11 +71,21 @@ export function isDegraded(s: HealthService): boolean {
     return !OK.includes(s.state);
 }
 
+type ProbeResult = { ok: true; ms: number } | { ok: false; ms: number; error: string };
+
 /** A timed round trip to the database, capped so a dead network reports as
- *  offline instead of hanging the whole page behind one probe. */
-async function timed<T>(label: string, run: () => Promise<T>, timeoutMs = 6000): Promise<
-    { ok: true; ms: number } | { ok: false; ms: number; error: string }
-> {
+ *  offline instead of hanging the whole page behind one probe.
+ *
+ *  `skip` is what makes this page usable with no internet. A dead network
+ *  does not refuse a request, it swallows it — so three probes at 6s each
+ *  meant eighteen seconds of spinner before the page could say the one thing
+ *  it already knew from `navigator.onLine`. When we know we are offline we do
+ *  not dial at all, and the verdict is on screen immediately. */
+async function timed<T>(
+    label: string, run: () => Promise<T>, opts: { skip?: boolean; timeoutMs?: number } = {}
+): Promise<ProbeResult> {
+    const { skip = false, timeoutMs = 6000 } = opts;
+    if (skip) return { ok: false, ms: 0, error: "skipped — device is offline" };
     const started = performance.now();
     try {
         await Promise.race([
@@ -104,27 +114,32 @@ export async function probeHealth({
 }: { hospitalId: string; doctorId: string }): Promise<HealthSnapshot> {
     const online = navigator.onLine;
 
-    // ── Records: can we actually read this clinic's own row?
-    const records = await timed("records", async () => {
-        const { error } = await supabase
-            .from("hospitals").select("id", { head: true, count: "exact" }).eq("id", hospitalId);
-        if (error) throw new Error(error.message);
-    });
+    // The three network probes run TOGETHER. Sequentially they compounded —
+    // three 6s ceilings is an eighteen-second page — and they have no
+    // dependency on each other, so there was never a reason to queue them.
+    const [records, synapse, gateways] = await Promise.all([
+        // ── Records: can we actually read this clinic's own row?
+        timed("records", async () => {
+            const { error } = await supabase
+                .from("hospitals").select("id", { head: true, count: "exact" }).eq("id", hospitalId);
+            if (error) throw new Error(error.message);
+        }, { skip: !online }),
 
-    // ── Synapse: are the engine's rules reachable? A consult can open without
-    //    them, but every suggestion it makes would be empty.
-    const synapse = await timed("synapse", async () => {
-        const { error } = await supabase
-            .from("signal_intent_rules").select("id", { head: true, count: "exact" }).limit(1);
-        if (error) throw new Error(error.message);
-    });
+        // ── Synapse: are the engine's rules reachable? A consult can open
+        //    without them, but every suggestion it makes would be empty.
+        timed("synapse", async () => {
+            const { error } = await supabase
+                .from("signal_intent_rules").select("id", { head: true, count: "exact" }).limit(1);
+            if (error) throw new Error(error.message);
+        }, { skip: !online }),
 
-    // ── Attachments: the phone-upload gateway table backing the QR flow.
-    const gateways = await timed("attachments", async () => {
-        const { error } = await supabase
-            .from("visit_gateways").select("id", { head: true, count: "exact" }).eq("hospital_id", hospitalId);
-        if (error) throw new Error(error.message);
-    });
+        // ── Attachments: the phone-upload gateway table backing the QR flow.
+        timed("attachments", async () => {
+            const { error } = await supabase
+                .from("visit_gateways").select("id", { head: true, count: "exact" }).eq("hospital_id", hospitalId);
+            if (error) throw new Error(error.message);
+        }, { skip: !online }),
+    ]);
 
     const realtimeUp = (() => {
         try { return supabase.realtime.isConnected(); } catch { return false; }
@@ -153,7 +168,7 @@ export async function probeHealth({
             name: "Patient records",
             role: "Reading and writing this clinic's patients, visits and prescriptions.",
             state: records.ok ? "operational" : online ? "attention" : "offline",
-            metric: records.ok ? `${records.ms} ms` : "Unreachable",
+            metric: records.ok ? `${records.ms} ms` : online ? "Unreachable" : "Not checked — offline",
             impact: "Consults cannot be saved and past visits will not load.",
             recovery: [
                 "Wait a moment and re-run the check — most failures here are momentary.",
@@ -169,7 +184,7 @@ export async function probeHealth({
             name: "Synapse engine",
             role: "The suggestions ranked for you as you chart.",
             state: synapse.ok ? "operational" : online ? "attention" : "offline",
-            metric: synapse.ok ? `${synapse.ms} ms` : "Rules unreachable",
+            metric: synapse.ok ? `${synapse.ms} ms` : online ? "Rules unreachable" : "Not checked — offline",
             impact: "The consult still works, but suggestions will come up empty.",
             recovery: [
                 "Re-run the check — the rule set is read once per consult, so a retry usually clears it.",
@@ -198,7 +213,7 @@ export async function probeHealth({
             name: "Phone uploads",
             role: "The QR code that lets a patient send files from their phone.",
             state: gateways.ok ? "operational" : online ? "attention" : "offline",
-            metric: gateways.ok ? `${gateways.ms} ms` : "Unreachable",
+            metric: gateways.ok ? `${gateways.ms} ms` : online ? "Unreachable" : "Not checked — offline",
             impact: "New upload links cannot be created. Files already uploaded are unaffected.",
             recovery: [
                 "Re-run the check.",
@@ -241,6 +256,76 @@ export async function probeHealth({
 
     return { overall: rollUp(services), checkedAt: new Date(), services };
 }
+
+// ── Surviving a lost connection ─────────────────────────────────────────────
+//
+// Opening this page on a dead network used to mean a spinner, then a page of
+// failures with no history — the least useful moment to have the least
+// information. So the last snapshot is kept on the device: the page renders it
+// the instant it mounts, says plainly how old it is, and re-probes behind it.
+// Nothing here is authoritative; it is the previous answer, labelled as such.
+//
+// Deliberately localStorage and not the profile cache: this is per-DEVICE
+// truth ("was the internet working on THIS machine"), and copying it between
+// installs would make it a lie.
+
+const SNAPSHOT_KEY = "aren.health.v1.snapshot";
+
+/** The serialised shape. Icons are React components and states are rebuilt on
+ *  the next probe, so only the copy a human reads is stored — the icon is
+ *  restored by id when the snapshot is read back. */
+interface StoredSnapshot {
+    overall: OverallState;
+    checkedAt: string;
+    services: Omit<HealthService, "icon">[];
+}
+
+export function cacheSnapshot(snapshot: HealthSnapshot): void {
+    try {
+        const stored: StoredSnapshot = {
+            overall: snapshot.overall,
+            checkedAt: snapshot.checkedAt.toISOString(),
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            services: snapshot.services.map(({ icon, ...rest }) => rest),
+        };
+        localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(stored));
+    } catch {
+        // A full or unavailable store is not worth a word to the doctor —
+        // they lose the cached view, not the live check.
+    }
+}
+
+/** The last snapshot taken on this device, with its icons put back. Returns
+ *  `null` for anything unreadable rather than throwing: a corrupt cache must
+ *  degrade to "no cache", never to a broken page. */
+export function readCachedSnapshot(): HealthSnapshot | null {
+    try {
+        const raw = localStorage.getItem(SNAPSHOT_KEY);
+        if (!raw) return null;
+        const stored = JSON.parse(raw) as StoredSnapshot;
+        if (!Array.isArray(stored.services)) return null;
+        return {
+            overall: stored.overall,
+            checkedAt: new Date(stored.checkedAt),
+            services: stored.services.map((s) => ({ ...s, icon: ICON_BY_ID[s.id] ?? Cloud })),
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** Icons keyed by service id, so a cached snapshot comes back looking like
+ *  the live one. A service added without an entry here falls back to a
+ *  neutral glyph rather than crashing the page. */
+const ICON_BY_ID: Record<string, HealthService["icon"]> = {
+    internet: Wifi,
+    records: Database,
+    synapse: Sparkles,
+    realtime: Radio,
+    attachments: Paperclip,
+    drafts: Cloud,
+    whatsapp: MessageCircle,
+};
 
 /**
  * The whole snapshot as one pasteable block.

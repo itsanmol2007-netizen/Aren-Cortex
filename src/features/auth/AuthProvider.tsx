@@ -28,8 +28,9 @@ import {
     clearCachedIdentity,
 } from "../../lib/auth";
 import type { Identity, IdentityFailure } from "../../lib/auth";
+import { touchThisDevice } from "../../lib/db/devices";
 
-export type GateNotice = IdentityFailure | "signed-out";
+export type GateNotice = IdentityFailure | "signed-out" | "device-revoked";
 
 type AuthState =
     | { status: "checking" }
@@ -141,6 +142,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // ── Device register ─────────────────────────────────────────────────────
+    // Records that this browser install is in use, so Settings can answer
+    // "where am I signed in" (see lib/db/devices.ts). Runs once per signed-in
+    // account, never while offline — a bookkeeping write is not worth a
+    // request from a device that has no network.
+    //
+    // The one thing it can act on is its OWN row being revoked from another
+    // device, which is what makes that button a real remote sign-out rather
+    // than a list entry disappearing. Every other outcome, failures included,
+    // leaves the session exactly as it was.
+    const registeredDeviceFor = useRef<string | null>(null);
+    useEffect(() => {
+        if (state.status !== "authed" || state.offline) return;
+        const uid = state.identity.user.id;
+        if (registeredDeviceFor.current === uid) return;
+        registeredDeviceFor.current = uid;
+
+        let cancelled = false;
+        void touchThisDevice(uid, state.identity.hospital.id).then(({ revoked }) => {
+            if (cancelled || !revoked) return;
+            deliberateSignOut.current = true;
+            userIdRef.current = null;
+            clearCachedIdentity();
+            void signOutLocal().finally(() => {
+                deliberateSignOut.current = false;
+                setState({ status: "anon", notice: "device-revoked" });
+            });
+        });
+        return () => { cancelled = true; };
+    }, [state]);
+
     const adoptIdentity = (identity: Identity) => {
         userIdRef.current = identity.user.id;
         cacheIdentity(identity);
@@ -149,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const signOut = async () => {
         deliberateSignOut.current = true;
+        registeredDeviceFor.current = null;
         userIdRef.current = null;
         clearCachedIdentity();
         await signOutLocal();

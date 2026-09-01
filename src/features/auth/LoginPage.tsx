@@ -33,6 +33,7 @@ const MSG = {
     pending: "Your clinic's account isn't active yet. Write to care@arenode.com and we'll get you started.",
     unreachable: "Can't reach AREN right now. Check your connection and try again.",
     sessionLost: "Please sign in again to continue.",
+    deviceRevoked: "This device was signed out from your Settings. Sign in again to keep using it.",
 } as const;
 
 function bannerFromGateNotice(notice: GateNotice | undefined): Banner {
@@ -45,6 +46,8 @@ function bannerFromGateNotice(notice: GateNotice | undefined): Banner {
             return { tone: "error", text: MSG.incomplete };
         case "unreachable":
             return { tone: "info", text: MSG.sessionLost };
+        case "device-revoked":
+            return { tone: "info", text: MSG.deviceRevoked };
         default:
             return null; // plain visit or ordinary sign-out: no message
     }

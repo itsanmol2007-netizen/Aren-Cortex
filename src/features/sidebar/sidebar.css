@@ -272,11 +272,11 @@
     z-index: 1;
     /* The nav used to sit as a ~350px stack at the top of a ~1000px panel —
        "they're all looking crammed up with the top half of the sidebar"
-       (2026-08-31). Two things fix that together: bigger tiles (below), and
-       letting the DIVIDERS absorb the leftover height so the four groups
-       distribute down the panel instead of the whole stack hugging the
-       header. `display: flex` here is what gives the nav a height to
-       distribute within. */
+       (2026-08-31). Bigger tiles (below) fix most of it. The rest is dealt
+       with at the END of the nav rather than between its groups: see
+       `.sidebar-divider.is-tail`, which drops Help & Support to the bottom.
+       `display: flex` here is what gives that `margin-top: auto` a height to
+       push against. */
     display: flex;
     flex-direction: column;
     scrollbar-width: thin;
@@ -296,50 +296,51 @@
     border-radius: 2px;
 }
 
-/* The nav element `SidebarNav` renders — a column tall enough to spread
-   its groups across, never shorter than the body it sits in. */
+/* The nav element `SidebarNav` renders. Its OWN height, not the body's — the
+   list ends where the list ends, and whatever panel is left over stays below
+   it as plain background above the doctor pill. */
 .sidebar-nav-body > nav {
     display: flex;
     flex-direction: column;
-    flex: 1;
+    flex: none;
     min-height: 0;
 }
 
 /* ── Divider ──────────────────────────────────────────────── */
-/* Doubles as the flexible spacer between nav groups: `flex: 1 1 auto` lets
-   each of the three take a share of whatever height the tiles didn't use,
-   capped so the groups spread on a tall screen and collapse back to a plain
-   gap on a short one.
+/* A LINE, and nothing but a line.
 //
-   THE BOX IS TRANSPARENT AND THE LINE IS A PSEUDO-ELEMENT, and that is the
-   whole point of the shape. The first cut (2026-08-31) painted the gradient
-   on the element itself while also letting it grow to 76px — so each
-   "hairline" rendered as a 76px-tall grey slab between the nav groups, three
-   visible bands down the panel. A growable element must never carry the
-   paint it is only supposed to draw a line's worth of. */
-.sidebar-divider {
-    position: relative;
-    height: 1px;
-    flex: 1 1 auto;
-    max-height: 44px;
-    min-height: 1px;
-    margin: 8px 14px;
-    background: none;
-}
+   Two wrong shapes preceded this one, both from the same bad idea — that the
+   divider should absorb the panel's leftover height so the nav groups spread
+   down it. First it painted its gradient on a box grown to 76px, giving three
+   grey slabs. Then the box went transparent and drew a centred hairline, which
+   removed the slabs but left the height: "there is consultation communication,
+   and then there is some space, and then we have practice clinic, and then
+   some space and then settings. It's looking unfinished" (2026-09-01).
 
-.sidebar-divider::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    /* Centred in whatever height the flex layout gave the box. */
-    top: 50%;
+   Dark empty space between groups does not read as breathing room, it reads
+   as something failing to load. The divider is now a fixed hairline with an
+   ordinary margin, and the leftover height is dealt with ONCE, deliberately,
+   by `.sidebar-divider.is-tail` below. */
+.sidebar-divider {
+    flex: none;
     height: 1px;
+    margin: 9px 14px;
     background: linear-gradient(to right,
             transparent,
             rgba(255, 255, 255, 0.11) 20%,
             rgba(255, 255, 255, 0.11) 80%,
             transparent);
+}
+
+/* The tail divider — above Help & Support — gets a slightly wider margin and
+   nothing else. It was briefly `margin-top: auto`, which pinned the utility
+   row to the bottom of the panel and simply moved the complaint: one 400px
+   band of dark instead of three 44px ones. The leftover height belongs BELOW
+   the whole nav, where an unfilled list is ordinary, not inside it, where it
+   reads as something that failed to render. */
+.sidebar-divider.is-tail {
+    margin-top: 13px;
+    margin-bottom: 11px;
 }
 
 /* ── Nav items ────────────────────────────────────────────── */
@@ -349,8 +350,8 @@
     gap: 11px;
     width: 100%;
     padding: 0 14px 0 16px;
-    /* 40 -> 52 (2026-08-31): see `.sidebar-nav-body`'s note. `flex: none` so
-       the dividers, not the tiles, are what absorbs the spare height. */
+    /* 40 -> 52 (2026-08-31): see `.sidebar-nav-body`'s note. `flex: none` so a
+       tile is its own height and never stretches to fill the panel. */
     height: 52px;
     flex: none;
     margin: 0 8px;

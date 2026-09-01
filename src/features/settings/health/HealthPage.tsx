@@ -27,13 +27,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type { RefObject } from "react";
 import {
-    AlertTriangle, Check, ClipboardCopy, Loader2, RefreshCw, ShieldCheck,
+    AlertTriangle, Check, ClipboardCopy, Loader2, RefreshCw, ShieldCheck, WifiOff,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../../components/WorkspaceHeader";
 import { BackButton } from "../../../components/BackButton";
 import { BlankHealthArt } from "../../consult/BlankArt";
 import {
-    diagnosticsReport, isDegraded, probeHealth,
+    cacheSnapshot, diagnosticsReport, isDegraded, probeHealth, readCachedSnapshot,
     type HealthService, type HealthSnapshot, type ServiceState,
 } from "./model";
 import { toast } from "sonner";
@@ -119,6 +119,53 @@ function ProblemRow({ service }: { service: HealthService }) {
     );
 }
 
+/**
+ * The page's own shape, drawn before the first probe answers.
+ *
+ * Not a spinner in the middle of an empty page: the hero, the section heading
+ * and four cards are all laid out at their real sizes, so nothing jumps when
+ * the data lands. A doctor opening this page is already worried — the layout
+ * appearing instantly is part of the answer.
+ */
+function HealthSkeleton() {
+    return (
+        <div className="flex flex-col gap-[16px]" aria-hidden="true">
+            <section className="flex flex-wrap items-center gap-[18px] rounded-[16px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[22px] py-[20px] shadow-[var(--cs-shadow)]">
+                <span className="h-[54px] w-[54px] flex-none animate-pulse rounded-full bg-[var(--cs-page)]" />
+                <div className="flex min-w-[240px] flex-1 flex-col gap-[8px]">
+                    <span className="h-[19px] w-[220px] animate-pulse rounded-[6px] bg-[var(--cs-page)]" />
+                    <span className="h-[13px] w-[320px] max-w-full animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
+                    <span className="h-[11px] w-[140px] animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
+                </div>
+                <div className="flex flex-none items-center gap-[8px]">
+                    <span className="h-[38px] w-[124px] animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
+                    <span className="h-[38px] w-[150px] animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
+                </div>
+            </section>
+
+            <span className="ml-[2px] h-[11px] w-[86px] animate-pulse rounded-[4px] bg-[var(--cs-line)]" />
+
+            <div className="grid grid-cols-2 gap-[12px] max-[900px]:grid-cols-1">
+                {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="flex h-[118px] flex-col justify-between rounded-[14px] border border-[var(--cs-line)] bg-[var(--cs-card)] p-[15px] shadow-[var(--cs-shadow)]">
+                        <div className="flex items-start gap-[11px]">
+                            <span className="h-[34px] w-[34px] flex-none animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
+                            <span className="flex flex-1 flex-col gap-[6px]">
+                                <span className="h-[14px] w-[52%] animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
+                                <span className="h-[11px] w-[78%] animate-pulse rounded-[4px] bg-[var(--cs-page)]" />
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-[var(--cs-line)] pt-[10px]">
+                            <span className="h-[12px] w-[64px] animate-pulse rounded-[4px] bg-[var(--cs-page)]" />
+                            <span className="h-[18px] w-[92px] animate-pulse rounded-full bg-[var(--cs-page)]" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export function HealthPage({
     logoRef, onOpenSidebar, onBack, hospitalId, doctorId, clinicName,
 }: {
@@ -129,19 +176,43 @@ export function HealthPage({
     doctorId: string;
     clinicName: string;
 }) {
-    const [snapshot, setSnapshot] = useState<HealthSnapshot | null>(null);
+    // Boots from the last snapshot taken on THIS device, so a doctor who
+    // opens this page with no internet sees the previous answer (labelled as
+    // previous) instead of a spinner followed by a wall of failures.
+    const [snapshot, setSnapshot] = useState<HealthSnapshot | null>(() => readCachedSnapshot());
     const [checking, setChecking] = useState(true);
+    const [online, setOnline] = useState(() => navigator.onLine);
+    /** True until the first LIVE probe of this visit lands — separates "this
+     *  is yesterday's answer" from "this is now". */
+    const [stale, setStale] = useState(true);
 
     const run = useCallback(async () => {
         setChecking(true);
         try {
-            setSnapshot(await probeHealth({ hospitalId, doctorId }));
+            const next = await probeHealth({ hospitalId, doctorId });
+            setSnapshot(next);
+            setStale(false);
+            cacheSnapshot(next);
         } finally {
             setChecking(false);
         }
     }, [hospitalId, doctorId]);
 
     useEffect(() => { void run(); }, [run]);
+
+    // Connectivity is the one input this page can be told about rather than
+    // having to poll for. Coming back online re-runs immediately, which is
+    // exactly what a doctor would otherwise press the button for.
+    useEffect(() => {
+        const up = () => { setOnline(true); void run(); };
+        const down = () => { setOnline(false); };
+        window.addEventListener("online", up);
+        window.addEventListener("offline", down);
+        return () => {
+            window.removeEventListener("online", up);
+            window.removeEventListener("offline", down);
+        };
+    }, [run]);
 
     const problems = snapshot?.services.filter(isDegraded) ?? [];
     const healthy = snapshot?.services.filter((s) => !isDegraded(s)) ?? [];
@@ -169,20 +240,48 @@ export function HealthPage({
             <div className="flex-1 overflow-y-auto">
                 <div className="mx-auto flex w-full max-w-[1220px] flex-col gap-[16px] px-[56px] pb-[44px] pt-[22px] max-[900px]:px-[14px]">
 
+                    {/* Nothing cached and nothing probed yet — draw the page's
+                        real shape rather than a spinner in an empty frame. */}
+                    {!snapshot ? <HealthSkeleton /> : (
+                    <>
+
+                    {/* No connection is the ONE thing this page can still say
+                        with certainty when everything else times out, so it
+                        says it first and explains what the rest of the page
+                        now means. */}
+                    {!online && (
+                        <div className="flex items-start gap-[11px] rounded-[14px] border border-[rgba(180,83,9,0.28)] bg-[rgba(180,83,9,0.06)] px-[16px] py-[13px]">
+                            <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[10px] bg-[rgba(180,83,9,0.12)] text-[var(--cs-amber)]">
+                                <WifiOff size={16} />
+                            </span>
+                            <div className="flex min-w-0 flex-col gap-[2px]">
+                                <span className="text-[13.5px] font-bold text-[var(--cs-ink)]">
+                                    This device has no internet connection
+                                </span>
+                                <span className="text-[12.5px] leading-[1.5] text-[var(--cs-muted)]">
+                                    Nothing below could be checked just now — what you see is the last check on this
+                                    device. It re-runs on its own the moment you are back online.
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ══ The verdict, and the two things you can do with it ══ */}
                     <section className="flex flex-wrap items-center gap-[18px] rounded-[16px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[22px] py-[20px] shadow-[var(--cs-shadow)]">
                         <span className="flex-none">
-                            {checking && !snapshot
-                                ? <Loader2 size={40} className="animate-spin text-[var(--cs-line-strong)]" />
-                                : problems.length === 0
-                                    ? <BlankHealthArt />
-                                    : <AlertTriangle size={54} strokeWidth={1.4} className="text-[var(--cs-amber)]" />}
+                            {problems.length === 0
+                                ? <BlankHealthArt />
+                                : <AlertTriangle size={54} strokeWidth={1.4} className="text-[var(--cs-amber)]" />}
                         </span>
 
                         <div className="flex min-w-[240px] flex-1 flex-col gap-[5px]">
+                            {/* Offline is ONE fault with four symptoms, and
+                                counting the symptoms is how a page tells a
+                                doctor to chase four problems that are really
+                                the Wi-Fi. Name the cause instead. */}
                             <h2 className="m-0 text-[19px] font-extrabold tracking-[-0.01em] text-[var(--cs-ink)]">
-                                {checking && !snapshot
-                                    ? "Checking your systems…"
+                                {!online
+                                    ? "You're offline"
                                     : problems.length === 0
                                         ? "Everything is working"
                                         : problems.length === 1
@@ -190,15 +289,23 @@ export function HealthPage({
                                             : `${problems.length} things need your attention`}
                             </h2>
                             <p className="m-0 text-[13px] leading-[1.5] text-[var(--cs-muted)]">
-                                {problems.length === 0
-                                    ? "Records, suggestions and uploads all responded. Nothing is waiting on you."
-                                    : "Everything else is fine — only what's listed below is affected."}
+                                {!online
+                                    ? "Everything below depends on the connection, so nothing else could be checked. Fix the connection first."
+                                    : problems.length === 0
+                                        ? "Records, suggestions and uploads all responded. Nothing is waiting on you."
+                                        : "Everything else is fine — only what's listed below is affected."}
                             </p>
-                            {snapshot && (
-                                <p className="m-0 mt-[2px] text-[11.5px] text-[var(--cs-faint)]">
-                                    Checked {snapshot.checkedAt.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
-                                </p>
-                            )}
+                            {/* Says WHEN, and whether that "when" is this
+                                visit — a cached verdict presented as live is
+                                the one dishonest thing this page could do. */}
+                            <p className="m-0 mt-[2px] flex items-center gap-[6px] text-[11.5px] text-[var(--cs-faint)]">
+                                {checking && <Loader2 size={11} className="animate-spin" />}
+                                {checking
+                                    ? "Checking now…"
+                                    : stale
+                                        ? `Last checked ${snapshot.checkedAt.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
+                                        : `Checked ${snapshot.checkedAt.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`}
+                            </p>
                         </div>
 
                         <div className="flex flex-none flex-wrap items-center gap-[8px]">
@@ -213,7 +320,7 @@ export function HealthPage({
                                 turns "it's not working" into something we can
                                 actually read. */}
                             <button
-                                type="button" onClick={copy} disabled={!snapshot}
+                                type="button" onClick={copy}
                                 className="inline-flex items-center gap-[7px] rounded-[10px] bg-[var(--cs-blue)] px-[15px] py-[10px] text-[12.5px] font-bold text-white transition-colors hover:bg-[#0e56c4] disabled:opacity-60"
                             >
                                 <ClipboardCopy size={14} /> Copy diagnostics
@@ -238,23 +345,17 @@ export function HealthPage({
                             )}
                         </h3>
 
-                        {checking && !snapshot ? (
-                            <div className="grid grid-cols-2 gap-[12px] max-[900px]:grid-cols-1">
-                                {[0, 1, 2, 3].map((i) => (
-                                    <div key={i} className="h-[118px] animate-pulse rounded-[14px] border border-[var(--cs-line)] bg-[var(--cs-card)]" />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-[12px] max-[900px]:grid-cols-1">
-                                {healthy.map((s) => <ServiceCard key={s.id} service={s} />)}
-                            </div>
-                        )}
+                        <div className="grid grid-cols-2 gap-[12px] max-[900px]:grid-cols-1">
+                            {healthy.map((s) => <ServiceCard key={s.id} service={s} />)}
+                        </div>
                     </section>
 
                     <p className="m-0 flex items-center gap-[7px] px-[4px] text-[11.5px] text-[var(--cs-faint)]">
                         <Check size={13} />
                         Only checks Cortex can actually run are listed — nothing here is a green light nobody measured.
                     </p>
+                    </>
+                    )}
                 </div>
             </div>
         </div>

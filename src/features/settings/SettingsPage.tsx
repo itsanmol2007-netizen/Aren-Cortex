@@ -42,8 +42,8 @@ import type { ReactNode, RefObject } from "react";
 import {
     Activity, AlertTriangle, ArrowRight, Check, ChevronDown, ChevronRight,
     ExternalLink, FileText, HelpCircle, Info, Keyboard, Laptop, Loader2, Lock,
-    LogOut, Mail, MonitorSmartphone, Search, Shield, ShieldCheck, Stethoscope,
-    Trash2, User, Users, X,
+    LogOut, Mail, MonitorSmartphone, Receipt, Search, Settings2, Shield,
+    ShieldCheck, Smartphone, Stethoscope, Tablet, Trash2, User, Users, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
@@ -51,7 +51,11 @@ import { useLogout } from "../auth/useLogout";
 import { supabase } from "../../lib/supabase";
 import {
     billingIntervalLabel, clearProfileCache, fetchClinicSubscription,
+    formatPlanPrice, fetchSubscriptionRequests, submitSubscriptionRequest,
+    REQUEST_KIND_LABEL, updateDoctorContactEmail,
+    describeDevice, fetchDevices, formFactorLabel, lastSeenLabel, revokeDevice,
     type ClinicSubscription, type DBDoctor, type DBHospital,
+    type SubscriptionRequest, type SubscriptionRequestKind, type UserDevice,
 } from "../../lib/db";
 import { clearAllConsultDrafts } from "../../lib/consultDraft";
 import { PROFILES, type ChartKind } from "../synapse/specialtyProfile";
@@ -59,7 +63,9 @@ import { updateHospitalSpecialtyProfile, invalidateHospital } from "../../lib/db
 import { BINDINGS } from "../../lib/keyboard/keymap";
 import { ShortcutsSheet } from "../../components/ShortcutsSheet";
 import { HealthPage } from "./health/HealthPage";
-import { probeHealth, isDegraded, type HealthSnapshot } from "./health/model";
+import {
+    cacheSnapshot, isDegraded, probeHealth, readCachedSnapshot, type HealthSnapshot,
+} from "./health/model";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
@@ -74,31 +80,27 @@ const PRIVACY_URL = "https://www.arenode.com/privacy";
 const PROFILE_LIST = Object.values(PROFILES);
 
 /**
- * A friendly name for the machine you are on, read off the user agent.
+ * The doctor photo's backdrop, ON SCREEN.
  *
- * Deliberately coarse — browser and OS, nothing more. A user agent cannot say
- * "the tablet in room 2", and a confident wrong label on a security surface is
- * worse than a vague right one. When a real device registry lands (a row
- * written on sign-in) THAT carries a name the doctor chose; this is the honest
- * fallback until then.
+ * It used to be a saturated blue→indigo fill, which read as a coloured tile
+ * with a face on it rather than as a portrait — "why are you putting that
+ * blue background behind the doctor's profile?" (2026-09-01). This is the
+ * brand gradient at wash strength: enough to be ours, faint enough that the
+ * photo, or the initials, is the thing you see.
+ *
+ * PRESCRIPTIONS DO NOT USE THIS. Printed output keeps a plain white ground —
+ * a tinted disc behind a prescriber's photo costs ink and reads as decoration
+ * on a clinical document. See `PrescriptionPreview`, which paints its own.
  */
-function describeThisDevice(): { name: string; kind: string } {
-    const ua = navigator.userAgent;
-    const os =
-        /Windows/i.test(ua) ? "Windows"
-        : /Macintosh|Mac OS X/i.test(ua) ? "macOS"
-        : /iPhone|iPad|iPod/i.test(ua) ? "iPadOS / iOS"
-        : /Android/i.test(ua) ? "Android"
-        : /Linux/i.test(ua) ? "Linux"
-        : "this device";
-    const browser =
-        /Edg\//i.test(ua) ? "Edge"
-        : /OPR\/|Opera/i.test(ua) ? "Opera"
-        : /Chrome\//i.test(ua) ? "Chrome"
-        : /Safari\//i.test(ua) && !/Chrome/i.test(ua) ? "Safari"
-        : /Firefox\//i.test(ua) ? "Firefox"
-        : "Browser";
-    return { name: `${browser} on ${os}`, kind: /Mobile|iPhone|Android/i.test(ua) ? "Mobile" : "Desktop" };
+const AVATAR_SCREEN_BG =
+    "bg-[linear-gradient(135deg,rgba(18,104,232,0.13),rgba(124,58,237,0.13))] " +
+    "text-[var(--cs-blue)] ring-1 ring-inset ring-[rgba(18,104,232,0.16)]";
+
+/** Form-factor icon for a device row — a tablet should not wear a laptop. */
+function deviceIcon(formFactor: string) {
+    if (formFactor === "tablet") return <Tablet size={16} />;
+    if (formFactor === "phone") return <Smartphone size={16} />;
+    return <Laptop size={16} />;
 }
 
 const CHART_LABEL: Record<ChartKind, string> = {
@@ -360,19 +362,301 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
     );
 }
 
+// ── Managing a subscription, before there is billing ────────────────────────
+
+/**
+ * What "Manage subscription" opens.
+ *
+ * There is no payment provider wired up, so this cannot be a billing portal
+ * and must not pretend to be one. What it can honestly be is the plan in
+ * full — what the clinic is on, what that carries, who we bill — plus the one
+ * thing a doctor actually wants from a billing portal: a way to ask for a
+ * change and know the ask landed. That goes to `subscription_requests`
+ * (lib/db/subscriptions.ts), against this clinic, in their own words.
+ *
+ * Nothing here branches on the plan's NAME. Every string a doctor reads —
+ * name, tagline, highlights, support promise, the note under the form — is a
+ * row an Admin can edit without a deploy.
+ */
+function ManageSubscriptionModal({
+    subscription, hospitalId, userId, contactEmail, onClose,
+}: {
+    subscription: ClinicSubscription;
+    hospitalId: string;
+    userId: string | null;
+    /** Pre-fills who to reply to. The doctor's own address or nothing —
+     *  never the phone-derived sign-in address. */
+    contactEmail: string | null;
+    onClose: () => void;
+}) {
+    const [kind, setKind] = useState<SubscriptionRequestKind | null>(null);
+    const [message, setMessage] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [history, setHistory] = useState<SubscriptionRequest[] | null>(null);
+
+    // Requests already filed. Shown so a doctor who asked on Monday sees that
+    // it landed rather than asking again on Tuesday.
+    useEffect(() => {
+        let cancelled = false;
+        fetchSubscriptionRequests(hospitalId)
+            .then((rows) => { if (!cancelled) setHistory(rows); })
+            .catch(() => { if (!cancelled) setHistory([]); });
+        return () => { cancelled = true; };
+    }, [hospitalId]);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
+
+    const submit = async () => {
+        if (!kind) return;
+        if (!userId) { setError("Sign in again to file this request."); return; }
+        setBusy(true);
+        setError(null);
+        try {
+            await submitSubscriptionRequest({
+                hospitalId,
+                subscriptionId: subscription.id,
+                requestedBy: userId,
+                kind,
+                message,
+                contactEmail,
+            });
+            toast.success("Sent. We'll come back to you on this.");
+            onClose();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not send that just now.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const price = formatPlanPrice(subscription.plan);
+    const started = new Date(subscription.startedAt).toLocaleDateString("en-IN", {
+        day: "numeric", month: "short", year: "numeric",
+    });
+
+    return (
+        <div
+            className="fixed inset-0 z-[900] flex items-center justify-center bg-[rgba(11,23,51,0.28)] p-[32px] backdrop-blur-[14px]"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
+            <div className="flex max-h-[min(720px,88vh)] w-[min(560px,100%)] flex-col overflow-hidden rounded-[20px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(246,248,252,0.94))] shadow-[0_40px_80px_-32px_rgba(11,23,51,0.55)]">
+                <div className="h-[4px] flex-none bg-[linear-gradient(90deg,#a855f7_0%,#6366f1_100%)]" />
+
+                <div className="flex flex-none items-start justify-between gap-[12px] px-[18px] pb-[12px] pt-[16px]">
+                    <div className="flex min-w-0 items-center gap-[10px]">
+                        <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] bg-[linear-gradient(135deg,rgba(168,85,247,0.16),rgba(99,102,241,0.16))] text-[var(--cs-violet)]">
+                            <Shield size={16} />
+                        </span>
+                        <div className="min-w-0">
+                            <p className="m-0 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--cs-violet)]">
+                                Your subscription
+                            </p>
+                            <span className="truncate text-[15px] font-bold text-[var(--cs-ink)]">
+                                {subscription.plan.name}
+                            </span>
+                        </div>
+                    </div>
+                    <button
+                        type="button" onClick={onClose} aria-label="Close"
+                        className="grid h-[26px] w-[26px] flex-none place-items-center rounded-[8px] border border-[var(--cs-line-strong)] bg-white text-[var(--cs-muted)]"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+
+                {/* One scroll region, so the sheet never grows past the
+                    viewport and the form never scrolls the page behind it. */}
+                <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[18px] pb-[18px]">
+                    {subscription.plan.description && (
+                        <p className="m-0 text-[12.5px] leading-[1.55] text-[var(--cs-muted)]">
+                            {subscription.plan.description}
+                        </p>
+                    )}
+
+                    {/* The commercial facts, in one block. Every value is a
+                        column, including the ones that are legitimately blank
+                        — "not set" beats a plausible-looking zero. */}
+                    <dl className="m-0 grid grid-cols-2 gap-x-[14px] gap-y-[2px] rounded-[12px] border border-[var(--cs-line)] bg-white px-[14px] py-[10px]">
+                        {/* `cap` only where the VALUE is a machine word.
+                            Tailwind's `capitalize` title-cases every word, so
+                            applying it to the whole grid turned "Agreed with
+                            us directly" into "Agreed With Us Directly". */}
+                        {([
+                            ["Plan", subscription.plan.name, false],
+                            ["Status", subscription.status, true],
+                            ["Billing", price ?? "Agreed with us directly", false],
+                            ["Doctors included", subscription.seats === 1 ? "1 doctor" : `${subscription.seats} doctors`, false],
+                            ["Started", started, false],
+                            ["Billed to", subscription.billingEmail ?? contactEmail ?? "Not set", false],
+                        ] as [string, string, boolean][]).map(([label, value, cap]) => (
+                            <div key={label} className="flex flex-col gap-[1px] border-b border-[var(--cs-line)] py-[7px] last:border-b-0 [&:nth-last-child(2)]:border-b-0">
+                                <dt className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">{label}</dt>
+                                <dd className={`m-0 truncate text-[12.5px] font-bold text-[var(--cs-ink)] ${cap ? "capitalize" : ""}`}>{value}</dd>
+                            </div>
+                        ))}
+                    </dl>
+
+                    {subscription.plan.highlights.length > 0 && (
+                        <div>
+                            <p className="m-0 mb-[7px] text-[10.5px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+                                What this plan carries
+                            </p>
+                            <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
+                                {subscription.plan.highlights.map((line) => (
+                                    <li key={line} className="flex items-start gap-[8px] text-[12.5px] leading-[1.5] text-[var(--cs-label)]">
+                                        <Check size={13} className="mt-[3px] flex-none text-[var(--cs-green)]" />
+                                        {line}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {subscription.plan.supportResponse && (
+                        <p className="m-0 flex items-start gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[9px] text-[12px] leading-[1.5] text-[var(--cs-muted)]">
+                            <HelpCircle size={14} className="mt-[2px] flex-none text-[var(--cs-violet)]" />
+                            {subscription.plan.supportResponse}
+                        </p>
+                    )}
+
+                    <div className="h-px bg-[var(--cs-line)]" />
+
+                    {/* The ask. Not a mailto — a row against this clinic, so
+                        it survives an unconfigured mail client. */}
+                    <div>
+                        <p className="m-0 mb-[3px] text-[13px] font-bold text-[var(--cs-ink)]">Need a change?</p>
+                        <p className="m-0 mb-[9px] text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">
+                            {subscription.plan.ctaNote ?? "Tell us what you need and we handle it with you."}
+                        </p>
+
+                        <div className="flex flex-wrap gap-[6px]">
+                            {(Object.keys(REQUEST_KIND_LABEL) as SubscriptionRequestKind[]).map((k) => (
+                                <button
+                                    key={k}
+                                    type="button"
+                                    onClick={() => setKind(kind === k ? null : k)}
+                                    className={`rounded-full border px-[11px] py-[5px] text-[11.5px] font-semibold transition-colors ${
+                                        kind === k
+                                            ? "border-[var(--cs-violet)] bg-[rgba(124,58,237,0.08)] text-[var(--cs-violet)]"
+                                            : "border-[var(--cs-line-strong)] bg-white text-[var(--cs-label)] hover:border-[var(--cs-violet)]"
+                                    }`}
+                                >
+                                    {REQUEST_KIND_LABEL[k]}
+                                </button>
+                            ))}
+                        </div>
+
+                        {kind && (
+                            <div className="mt-[10px] flex flex-col gap-[8px]">
+                                <textarea
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                    rows={3}
+                                    autoFocus
+                                    placeholder="Anything we should know? Optional."
+                                    className="w-full resize-none rounded-[10px]! border! border-[var(--cs-line-strong)] bg-white! px-[12px]! py-[9px]! text-[12.5px]! leading-[1.5] text-[var(--cs-ink)]! outline-none focus:border-[var(--cs-violet)]"
+                                />
+                                <div className="flex items-center justify-between gap-[10px]">
+                                    <span className="min-w-0 truncate text-[11.5px] text-[var(--cs-faint)]">
+                                        {contactEmail
+                                            ? `We'll reply to ${contactEmail}`
+                                            : "Add a contact email to your account and we'll reply there."}
+                                    </span>
+                                    <button
+                                        type="button" onClick={submit} disabled={busy}
+                                        className="flex h-[36px] flex-none items-center gap-[6px] rounded-[10px] bg-[var(--cs-violet)] px-[16px] text-[12.5px] font-bold text-white disabled:opacity-60!"
+                                    >
+                                        {busy && <Loader2 size={13} className="animate-spin" />}
+                                        Send request
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {error && <p className="m-0 mt-[8px] text-[12px] font-medium text-[var(--cs-red)]">{error}</p>}
+                    </div>
+
+                    {history && history.length > 0 && (
+                        <div>
+                            <p className="m-0 mb-[7px] text-[10.5px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+                                Your recent requests
+                            </p>
+                            <ul className="m-0 flex list-none flex-col gap-[5px] p-0">
+                                {history.map((r) => (
+                                    <li key={r.id} className="flex items-center justify-between gap-[10px] rounded-[9px] border border-[var(--cs-line)] bg-white px-[11px] py-[7px]">
+                                        <span className="flex min-w-0 flex-col">
+                                            <span className="truncate text-[12px] font-semibold text-[var(--cs-ink)]">
+                                                {REQUEST_KIND_LABEL[r.kind] ?? r.kind}
+                                            </span>
+                                            <span className="text-[11px] text-[var(--cs-faint)]">
+                                                {new Date(r.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                                            </span>
+                                        </span>
+                                        <span className={`flex-none rounded-full px-[8px] py-[2px] text-[10.5px] font-bold capitalize ${
+                                            r.status === "resolved"
+                                                ? "bg-[rgba(22,163,74,0.10)] text-[var(--cs-green)]"
+                                                : "bg-[var(--cs-page)] text-[var(--cs-faint)]"
+                                        }`}>
+                                            {r.status.replace("_", " ")}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* An invoice is the one thing a doctor will look for here
+                        and not find. Say where it is instead of leaving them
+                        hunting. */}
+                    <p className="m-0 flex items-start gap-[8px] text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">
+                        <Receipt size={13} className="mt-[2px] flex-none" />
+                        Invoices are issued by us directly — ask above and we will send the ones you need.
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ── Account operations ──────────────────────────────────────────────────────
 
 /**
- * The technical account surface. Email and password are wired to Supabase
- * Auth for real; phone, multi-user management and deletion have no backend
- * yet and say so rather than rendering a control that quietly fails.
+ * The technical account surface.
+ *
+ * ── Two emails, and only one of them is real
+ *
+ * Sign-in is by phone. The landing repo turns the digits into a synthetic
+ * Supabase Auth address (`<digits>@aren.internal`) purely so Supabase has
+ * something shaped like an email to key on. This modal used to display that
+ * address and offer "Change email" against `supabase.auth.updateUser` — which
+ * would have rewritten the login identity out from under
+ * `phoneToAuthEmail()` and locked the doctor out of their own clinic on the
+ * next sign-in. It also published their phone number to anyone reading the
+ * screen.
+ *
+ * So: the auth address is never shown and never editable. What this edits is
+ * `doctors.email`, a plain contact address the doctor owns, which changes
+ * nothing about how they sign in. Password IS the auth credential and is
+ * still wired to Supabase Auth for real.
  */
 function AccountModal({
-    email, accountReference, onClose, onSupport,
+    doctorId, email, phoneHint, accountReference, onClose, onSaved, onSupport,
 }: {
+    /** `null` when the signed-in user has no `doctors` row — rare, but then
+     *  there is nowhere to store a contact address and the row says so. */
+    doctorId: string | null;
     email: string | null;
+    /** Last two digits of the sign-in number, e.g. "••••••••42", so a doctor
+     *  can confirm WHICH account this is without the number being on screen. */
+    phoneHint: string | null;
     accountReference: string;
     onClose: () => void;
+    onSaved: (email: string | null) => void;
     /** The three operations a doctor should not perform alone — see
      *  SupportRequestModal.tsx for why they are not self-service. */
     onSupport: (topic: SupportTopic) => void;
@@ -386,13 +670,26 @@ function AccountModal({
 
     const submitEmail = async () => {
         setError(null);
-        if (!nextEmail.trim() || nextEmail.trim() === email) { setError("Enter a different email address."); return; }
+        if (!doctorId) { setError("This account has no doctor profile to attach an address to."); return; }
+        const trimmed = nextEmail.trim();
+        // Clearing it is legitimate — "no email on file" is a state we render
+        // truthfully rather than a failure.
+        if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
+            setError("That doesn't look like an email address.");
+            return;
+        }
+        if (trimmed === (email ?? "")) { setError("That's already the address on file."); return; }
         setBusy(true);
-        const { error: e } = await supabase.auth.updateUser({ email: nextEmail.trim() });
-        setBusy(false);
-        if (e) { setError(e.message); return; }
-        toast.success("Confirm the change from the link sent to your new address.");
-        onClose();
+        try {
+            await updateDoctorContactEmail(doctorId, trimmed || null);
+            onSaved(trimmed || null);
+            toast.success(trimmed ? "Contact email saved." : "Contact email removed.");
+            onClose();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that address.");
+        } finally {
+            setBusy(false);
+        }
     };
 
     const submitPassword = async () => {
@@ -425,7 +722,7 @@ function AccountModal({
                         <div>
                             <p className="m-0 text-[10px] font-bold uppercase tracking-[0.08em] text-[#a855f7]">Account</p>
                             <span className="text-[14px] font-bold text-[var(--cs-ink)]">
-                                {mode === "email" ? "Change email" : mode === "password" ? "Change password" : "Manage account"}
+                                {mode === "email" ? "Contact email" : mode === "password" ? "Change password" : "Manage account"}
                             </span>
                         </div>
                     </div>
@@ -442,9 +739,26 @@ function AccountModal({
                 <div className="flex flex-col gap-[4px] px-[12px] pb-[16px]">
                     {mode === "menu" && (
                         <>
+                            {/* How you sign in, stated plainly and NOT editable.
+                                The number is masked: it identifies the account
+                                without putting a personal phone number on a
+                                screen anyone in the room can read. */}
+                            <div className="mx-[10px] mb-[4px] flex items-center gap-[10px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[9px]">
+                                <span className="grid h-[28px] w-[28px] flex-none place-items-center rounded-[8px] border border-[var(--cs-line)] bg-white text-[var(--cs-faint)]">
+                                    <ShieldCheck size={14} />
+                                </span>
+                                <span className="flex min-w-0 flex-col gap-[1px]">
+                                    <span className="text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                        You sign in with your phone number
+                                    </span>
+                                    <span className="text-[11.5px] text-[var(--cs-faint)]">
+                                        {phoneHint ? `${phoneHint} · ` : ""}changing it needs us — write to care@arenode.com
+                                    </span>
+                                </span>
+                            </div>
                             <SettingRow
-                                icon={<Mail size={16} />} label="Change email"
-                                sub={email ? `Currently ${email}` : "Set the address you sign in with"}
+                                icon={<Mail size={16} />} label="Contact email"
+                                sub={email ? `Currently ${email}` : "Where we reach you. Not used to sign in."}
                                 onClick={() => { setMode("email"); setError(null); }}
                             />
                             <SettingRow
@@ -473,15 +787,16 @@ function AccountModal({
                     {mode === "email" && (
                         <div className="flex flex-col gap-[10px] px-[10px] pt-[6px]">
                             <label className="text-[11.5px] font-semibold text-[var(--cs-label)]">
-                                New email address
+                                Contact email address
                                 <input
                                     className={`${inputClass} mt-[5px]`} type="email" value={nextEmail}
                                     onChange={(e) => setNextEmail(e.target.value)} autoFocus
+                                    placeholder="you@yourclinic.com"
                                 />
                             </label>
                             <p className="m-0 text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">
-                                We send a confirmation link to the new address. The change only takes effect once
-                                you open it.
+                                Where we send account and subscription mail. It does not change how you sign in —
+                                that stays your phone number. Leave it blank to remove the address entirely.
                             </p>
                         </div>
                     )}
@@ -547,8 +862,11 @@ export function SettingsPage({
     const [confirmingDrafts, setConfirmingDrafts] = useState(false);
     const [confirmingGlobal, setConfirmingGlobal] = useState(false);
     const [globalBusy, setGlobalBusy] = useState(false);
-    const [authEmail, setAuthEmail] = useState<string | null>(null);
     const [lastSignIn, setLastSignIn] = useState<string | null>(null);
+    const [devices, setDevices] = useState<UserDevice[] | null>(null);
+    const [devicesError, setDevicesError] = useState(false);
+    const [revoking, setRevoking] = useState<string | null>(null);
+    const [manageSubOpen, setManageSubOpen] = useState(false);
     /** Non-null while the shared "our team handles this" surface is open. */
     const [supportTopic, setSupportTopic] = useState<SupportTopic | null>(null);
 
@@ -586,16 +904,21 @@ export function SettingsPage({
 
     // Health is SUMMARISED here and explained on its own page.
     const [view, setView] = useState<"settings" | "health">("settings");
-    const [health, setHealth] = useState<HealthSnapshot | null>(null);
+    // Seeded from the last check taken on this device, so the strip reads
+    // truthfully the instant Settings opens — including with no internet,
+    // where the live probe now short-circuits rather than hanging.
+    const [health, setHealth] = useState<HealthSnapshot | null>(() => readCachedSnapshot());
     useEffect(() => {
         let cancelled = false;
         probeHealth({ hospitalId, doctorId })
-            .then((snap) => { if (!cancelled) setHealth(snap); })
-            .catch(() => { /* the strip stays in its checking state */ });
+            .then((snap) => { if (!cancelled) { setHealth(snap); cacheSnapshot(snap); } })
+            .catch(() => { /* the strip keeps whatever it had */ });
         return () => { cancelled = true; };
     }, [hospitalId, doctorId]);
 
-    const device = useMemo(describeThisDevice, []);
+    /** Always available, even before (or without) the registry — the machine
+     *  you are reading this on describes itself. */
+    const thisDevice = useMemo(() => describeDevice(), []);
 
     /** Ends every session on every device — `scope: "global"`, which is a
      *  genuinely different operation from the local sign-out `useLogout`
@@ -625,15 +948,54 @@ export function SettingsPage({
         return () => { cancelled = true; };
     }, [hospitalId]);
 
-    // The email lives in Supabase Auth, not in `users` — see lib/auth.ts's
-    // `AppUser`, which deliberately carries no email column.
+    // ⚠ THE AUTH EMAIL IS NEVER READ OUT OF THIS.
+    //
+    // Cortex signs in by phone: the landing repo derives a synthetic Supabase
+    // Auth address from the digits (`<digits>@aren.internal`, lib/auth.ts).
+    // It is undeliverable, it is not the doctor's address, and printing it
+    // publishes their phone number on screen. This page used to show it as
+    // "your email" and offer to change it — the change would have rewritten
+    // the login identity and locked the doctor out.
+    //
+    // The only address we display is `doctors.email`, which the doctor sets
+    // themselves. All we take from the auth user is when they last signed in.
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
-            setAuthEmail(data.user?.email ?? null);
             const at = data.user?.last_sign_in_at;
             setLastSignIn(at ? new Date(at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null);
         }).catch(() => {});
     }, []);
+
+    // Devices this account has signed in from. A failure here is cosmetic —
+    // the card falls back to naming the machine you are on, which it can
+    // always do from the user agent alone.
+    const userId = auth.status === "authed" ? auth.identity.user.id : null;
+    const loadDevices = useMemo(() => async () => {
+        // No resolved session yet: fall through to the empty list so the card
+        // renders its "this device" fallback row instead of holding a skeleton
+        // that will never resolve.
+        if (!userId) { setDevices([]); return; }
+        try {
+            setDevices(await fetchDevices(userId));
+            setDevicesError(false);
+        } catch {
+            setDevicesError(true);
+        }
+    }, [userId]);
+    useEffect(() => { void loadDevices(); }, [loadDevices]);
+
+    const revokeOne = async (device: UserDevice) => {
+        setRevoking(device.id);
+        try {
+            await revokeDevice(device.id);
+            setDevices((list) => (list ?? []).filter((d) => d.id !== device.id));
+            toast.success(`${device.label ?? "That device"} will be signed out when it next opens Cortex.`);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Could not sign that device out.");
+        } finally {
+            setRevoking(null);
+        }
+    };
 
     const openSetting = (entry: SettingEntry) => {
         requestSettingFocus(entry.anchor);
@@ -650,10 +1012,23 @@ export function SettingsPage({
         onNavigate(entry.page);
     };
 
-    // The doctor row's number first, then the signed-in user's — `??` chained
-    // with a ternary parsed in an order that only worked by accident here.
-    const authPhone = auth.status === "authed" ? auth.identity.user.phone : null;
-    const phone = doctorProfile?.phone ?? authPhone;
+    // The doctor's own address, or nothing. Never `auth.user.email` (the
+    // phone-derived placeholder) and never the phone number itself — see the
+    // getUser effect above for why both are off limits on this surface.
+    // `doctorProfile` is a prop the parent refetches on its own schedule, so a
+    // save inside the modal would otherwise show the old value until the next
+    // reload. `undefined` means "no local edit"; `null` means "cleared".
+    const [emailOverride, setEmailOverride] = useState<string | null | undefined>(undefined);
+    const contactEmail = emailOverride !== undefined ? emailOverride : (doctorProfile?.email?.trim() || null);
+
+    // Enough of the sign-in number to recognise the account, never enough to
+    // read it off someone's screen.
+    const phoneHint = useMemo(() => {
+        const raw = doctorProfile?.phone ?? (auth.status === "authed" ? auth.identity.user.phone : null);
+        const digits = (raw ?? "").replace(/\D/g, "");
+        return digits.length >= 4 ? `•••• ${digits.slice(-4)}` : null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [doctorProfile?.phone, auth.status]);
     const initials = doctorName.split(" ").filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "DR";
 
     /**
@@ -677,6 +1052,8 @@ export function SettingsPage({
             .filter((e) => e.enabled && LABELS[e.featureKey])
             .map((e) => LABELS[e.featureKey]);
     }, [subscription]);
+
+    const price = subscription ? formatPlanPrice(subscription.plan) : null;
 
     const renewsOn = subscription?.currentPeriodEnd
         ? new Date(subscription.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
@@ -713,7 +1090,7 @@ export function SettingsPage({
                             onClick={() => openSetting(SETTINGS_INDEX.find((s) => s.id === "settings.account")!)}
                             className="flex items-center gap-[9px] rounded-[10px] px-[8px] py-[5px] transition-colors hover:bg-white/[0.07]"
                         >
-                            <span className="grid h-[30px] w-[30px] flex-none place-items-center overflow-hidden rounded-full bg-[linear-gradient(135deg,#1268e8,#6366f1)] text-[11px] font-bold text-white">
+                            <span className={`grid h-[30px] w-[30px] flex-none place-items-center overflow-hidden rounded-full text-[11px] font-bold text-white ${doctorProfile?.avatar_url ? "bg-white/10" : "bg-white/[0.14]"}`}>
                                 {doctorProfile?.avatar_url
                                     ? <img src={doctorProfile.avatar_url} alt="" className="h-full w-full object-cover" />
                                     : initials}
@@ -740,28 +1117,58 @@ export function SettingsPage({
                             title="Your Account"
                         >
                             <div className="flex items-center gap-[16px]">
-                                <span className="grid h-[84px] w-[84px] flex-none place-items-center overflow-hidden rounded-full bg-[linear-gradient(135deg,#1268e8,#6366f1)] text-[24px] font-bold text-white">
+                                {/* Brand wash, not a blue tile — see
+                                    AVATAR_SCREEN_BG. A photo covers it
+                                    entirely; initials sit on it in brand ink. */}
+                                <span className={`grid h-[84px] w-[84px] flex-none place-items-center overflow-hidden rounded-full text-[24px] font-bold ${AVATAR_SCREEN_BG}`}>
                                     {doctorProfile?.avatar_url
                                         ? <img src={doctorProfile.avatar_url} alt="" className="h-full w-full object-cover" />
                                         : initials}
                                 </span>
                                 <div className="flex min-w-0 flex-col gap-[3px]">
                                     <span className="text-[17px] font-bold text-[var(--cs-ink)]">{doctorName}</span>
-                                    <span className="truncate text-[13px] text-[var(--cs-muted)]">{authEmail ?? "No email on file"}</span>
-                                    {phone && <span className="text-[13px] text-[var(--cs-muted)]">{phone}</span>}
+                                    <span className="truncate text-[12px] font-semibold text-[var(--cs-faint)]">
+                                        {doctorProfile?.specialization?.trim() || "Doctor"}
+                                        {hospitalProfile?.name ? ` · ${hospitalProfile.name}` : ""}
+                                    </span>
+                                    {/* The doctor's OWN address, or an honest
+                                        blank. Never the phone-derived sign-in
+                                        address, and never the phone number. */}
+                                    {contactEmail ? (
+                                        <span className="truncate text-[13px] text-[var(--cs-muted)]">{contactEmail}</span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setAccountOpen(true)}
+                                            className="w-fit text-[12.5px] font-semibold text-[var(--cs-blue)] hover:underline"
+                                        >
+                                            Add a contact email
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
+                            {/* What this card is FOR, said once. A doctor
+                                opening Settings for the first time should not
+                                have to infer the difference between "your
+                                account" and "your professional details". */}
+                            <p className="m-0 mt-[12px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[9px] text-[12px] leading-[1.5] text-[var(--cs-muted)]">
+                                <strong className="font-bold text-[var(--cs-ink)]">This card is your sign-in.</strong>{" "}
+                                Your password, the address we reach you on, and which clinic you belong to. The
+                                name, qualification and registration that print on a prescription live in
+                                Professional details.
+                            </p>
+
                             <div className="my-[13px] h-px bg-[var(--cs-line)]" />
 
-                            {/* Email, password and sessions live HERE and only
+                            {/* Password and contact address live HERE and only
                                 here. They previously had a second card of their
                                 own that opened this same modal — the identical
                                 operation offered twice on one screen. */}
                             <SettingRow
                                 icon={<Mail size={17} />}
-                                label="Email & password"
-                                sub={lastSignIn ? `Last signed in ${lastSignIn}` : "How you sign in to Cortex"}
+                                label="Contact email & password"
+                                sub={lastSignIn ? `Last signed in ${lastSignIn}` : "How we reach you, and how you sign in"}
                                 onClick={() => setAccountOpen(true)}
                             />
 
@@ -784,16 +1191,27 @@ export function SettingsPage({
                                 </div>
                             </dl>
 
-                            {/* Professional and clinic details are NOT duplicated
-                                here — Clinic owns that editor, and this is the
-                                way to it. */}
-                            <button
-                                type="button"
-                                onClick={() => openSetting(SETTINGS_INDEX.find((e) => e.id === "clinic.doctor")!)}
-                                className="mt-[8px] inline-flex w-fit items-center gap-[7px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[14px] py-[9px] text-[12.5px] font-bold text-[var(--cs-violet)] transition-colors hover:border-[var(--cs-violet)]"
-                            >
-                                Professional details <ArrowRight size={14} />
-                            </button>
+                            {/* Two doors, side by side, because they are two
+                                different jobs: manage the ACCOUNT here, edit
+                                what PRINTS on Clinic. Naming both is what stops
+                                "Professional details" reading as the only thing
+                                this card can do. */}
+                            <div className="mt-[10px] flex flex-wrap items-center gap-[8px]">
+                                <button
+                                    type="button"
+                                    onClick={() => setAccountOpen(true)}
+                                    className="inline-flex items-center gap-[7px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[14px] py-[9px] text-[12.5px] font-bold text-[var(--cs-violet)] transition-colors hover:border-[var(--cs-violet)]"
+                                >
+                                    <Settings2 size={14} /> Manage account
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => openSetting(SETTINGS_INDEX.find((e) => e.id === "clinic.doctor")!)}
+                                    className="inline-flex items-center gap-[7px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[14px] py-[9px] text-[12.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-violet)] hover:text-[var(--cs-violet)]"
+                                >
+                                    Professional details <ArrowRight size={14} />
+                                </button>
+                            </div>
                         </SettingsCard>
 
                         {/* ══ Subscription ═══════════════════════════════════ */}
@@ -819,7 +1237,7 @@ export function SettingsPage({
                             ) : (
                                 <>
                                     <div className="flex items-center gap-[16px]">
-                                        <span className="grid h-[76px] w-[76px] flex-none place-items-center rounded-full bg-[linear-gradient(135deg,#a855f7,#6366f1)] text-white">
+                                        <span className="grid h-[76px] w-[76px] flex-none place-items-center rounded-full bg-[linear-gradient(135deg,rgba(168,85,247,0.16),rgba(99,102,241,0.16))] text-[var(--cs-violet)] ring-1 ring-inset ring-[rgba(124,58,237,0.18)]">
                                             <Shield size={30} />
                                         </span>
                                         <div className="flex min-w-0 flex-col gap-[5px]">
@@ -830,21 +1248,45 @@ export function SettingsPage({
                                             </span>
                                             <span className="text-[13px] text-[var(--cs-muted)]">
                                                 {billingIntervalLabel(subscription.plan.billingInterval)}
+                                                {price ? ` · ${price}` : ""}
                                             </span>
-                                            <span className="inline-flex w-fit items-center gap-[5px] rounded-full bg-[rgba(22,163,74,0.10)] px-[9px] py-[3px] text-[11.5px] font-bold capitalize text-[var(--cs-green)]">
-                                                {subscription.status}
+                                            <span className="flex flex-wrap items-center gap-[5px]">
+                                                <span className="inline-flex w-fit items-center gap-[5px] rounded-full bg-[rgba(22,163,74,0.10)] px-[9px] py-[3px] text-[11.5px] font-bold capitalize text-[var(--cs-green)]">
+                                                    {subscription.status}
+                                                </span>
+                                                {/* A founding clinic is on terms
+                                                    nobody else gets. Worth saying. */}
+                                                {subscription.isFounding && (
+                                                    <span className="inline-flex w-fit items-center gap-[4px] rounded-full bg-[rgba(124,58,237,0.10)] px-[9px] py-[3px] text-[11.5px] font-bold text-[var(--cs-violet)]">
+                                                        <Check size={11} /> Founding clinic
+                                                    </span>
+                                                )}
                                             </span>
                                         </div>
                                     </div>
 
+                                    {subscription.plan.tagline && (
+                                        <p className="m-0 mt-[12px] text-[12.5px] leading-[1.55] text-[var(--cs-muted)]">
+                                            {subscription.plan.tagline}
+                                        </p>
+                                    )}
+
                                     <div className="my-[14px] h-px bg-[var(--cs-line)]" />
 
-                                    {renewsOn && (
-                                        <div className="flex items-center justify-between gap-[10px] px-[2px] py-[4px]">
-                                            <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">Renews on</span>
-                                            <span className="text-[13.5px] font-semibold text-[var(--cs-muted)]">{renewsOn}</span>
+                                    <dl className="m-0 flex flex-col">
+                                        {renewsOn && (
+                                            <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[8px]">
+                                                <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Renews on</dt>
+                                                <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{renewsOn}</dd>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center justify-between gap-[10px] px-[2px] py-[8px]">
+                                            <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Doctors included</dt>
+                                            <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                                {subscription.seats === 1 ? "1 doctor" : `${subscription.seats} doctors`}
+                                            </dd>
                                         </div>
-                                    )}
+                                    </dl>
 
                                     {/* What the plan actually carries — the
                                         entitlement rows, labelled. Real data,
@@ -868,7 +1310,7 @@ export function SettingsPage({
                                     <div className="mt-[12px]">
                                         <button
                                             type="button"
-                                            onClick={() => toast("Billing is handled by support for now — we'll reach out with options.")}
+                                            onClick={() => setManageSubOpen(true)}
                                             className="inline-flex items-center gap-[7px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[14px] py-[9px] text-[12.5px] font-bold text-[var(--cs-violet)] transition-colors hover:border-[var(--cs-violet)]"
                                         >
                                             Manage subscription <ArrowRight size={14} />
@@ -1015,41 +1457,84 @@ export function SettingsPage({
                             tint="bg-[rgba(15,118,110,0.10)] text-[var(--cs-teal)]"
                             title="Devices"
                         >
-                            <div className="flex items-center gap-[11px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[11px]">
-                                <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] border border-[var(--cs-line)] bg-white text-[var(--cs-teal)]">
-                                    <Laptop size={16} />
-                                </span>
-                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                                    <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
-                                        This device
-                                    </span>
-                                    <span className="truncate text-[14px] font-bold text-[var(--cs-ink)]">{device.name}</span>
-                                </span>
-                                <span className="flex-none rounded-full bg-[rgba(22,163,74,0.10)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--cs-green)]">
-                                    Active now
-                                </span>
-                            </div>
+                            {/* The real list, from `user_devices`. Until the
+                                first row comes back we still name the machine
+                                you are on — that fact needs no network. */}
+                            {devices === null && !devicesError ? (
+                                <div className="flex flex-col gap-[8px]">
+                                    {[0, 1].map((i) => (
+                                        <div key={i} className="h-[54px] animate-pulse rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)]" />
+                                    ))}
+                                </div>
+                            ) : (
+                                <ul className="m-0 flex list-none flex-col gap-[8px] p-0">
+                                    {(devices && devices.length > 0
+                                        ? devices
+                                        : [{
+                                            id: "local", deviceKey: "local", label: thisDevice.label,
+                                            platform: thisDevice.platform, browser: thisDevice.browser,
+                                            formFactor: thisDevice.formFactor, firstSeenAt: "", lastSeenAt: "",
+                                            revokedAt: null, isThisDevice: true,
+                                        } as UserDevice]
+                                    ).map((d) => (
+                                        <li
+                                            key={d.id}
+                                            className={`flex items-center gap-[11px] rounded-[10px] border px-[12px] py-[10px] ${
+                                                d.isThisDevice
+                                                    ? "border-[rgba(15,118,110,0.30)] bg-[rgba(15,118,110,0.05)]"
+                                                    : "border-[var(--cs-line)] bg-[var(--cs-page)]"
+                                            }`}
+                                        >
+                                            <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] border border-[var(--cs-line)] bg-white text-[var(--cs-teal)]">
+                                                {deviceIcon(d.formFactor)}
+                                            </span>
+                                            <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                                <span className="truncate text-[13.5px] font-bold text-[var(--cs-ink)]">
+                                                    {d.label ?? "Unknown device"}
+                                                </span>
+                                                <span className="truncate text-[11.5px] text-[var(--cs-faint)]">
+                                                    {formFactorLabel(d.formFactor)}
+                                                    {d.lastSeenAt ? ` · ${lastSeenLabel(d.lastSeenAt)}` : ""}
+                                                </span>
+                                            </span>
+                                            {d.isThisDevice ? (
+                                                <span className="flex-none rounded-full bg-[rgba(22,163,74,0.10)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--cs-green)]">
+                                                    This device
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => revokeOne(d)}
+                                                    disabled={revoking === d.id}
+                                                    className="flex flex-none items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-red)] hover:text-[var(--cs-red)] disabled:opacity-60!"
+                                                >
+                                                    {revoking === d.id && <Loader2 size={11} className="animate-spin" />}
+                                                    Sign out
+                                                </button>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
 
-                            <dl className="m-0 mt-[10px] flex flex-col">
-                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[9px]">
-                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Type</dt>
-                                    <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{device.kind}</dd>
-                                </div>
-                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[9px]">
-                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Last signed in</dt>
-                                    <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{lastSignIn ?? "—"}</dd>
-                                </div>
-                                <div className="flex items-center justify-between gap-[10px] px-[2px] py-[9px]">
-                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Other devices</dt>
-                                    {/* Honest: Supabase does not expose a session
-                                        list to the client, so we do not pretend
-                                        to have one. Signing out everywhere works
-                                        regardless of what we can enumerate. */}
-                                    <dd className="m-0 text-[12.5px] font-semibold text-[var(--cs-faint)]">Not tracked yet</dd>
-                                </div>
-                            </dl>
+                            {/* Revoking is enforced the next time that device
+                                opens Cortex (lib/db/devices.ts). Saying so is
+                                the difference between a control the doctor can
+                                trust and one they find out about later. */}
+                            <p className="m-0 mb-[10px] mt-[9px] px-[2px] text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">
+                                {devicesError
+                                    ? "Couldn't load your other devices just now. Signing out everywhere still works."
+                                    : devices && devices.length > 1
+                                        ? "Signing a device out takes effect the next time it opens Cortex. To end every session immediately, use the button below."
+                                        : "New machines appear here the first time you sign in on them."}
+                            </p>
 
-                            <div className="mt-[10px] flex items-center justify-between gap-[10px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[10px]">
+                            {/* Pinned to the foot of the card. The device list
+                                above it grows with the account; the kill switch
+                                stays where the eye lands last, and the card
+                                never shows a pool of dead space under a short
+                                list. */}
+                            <div className="mt-auto flex items-center justify-between gap-[10px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[10px]">
                                 <span className="flex min-w-0 flex-col gap-[1px]">
                                     <span className="text-[13px] font-semibold text-[var(--cs-ink)]">Sign out everywhere</span>
                                     <span className="text-[11.5px] leading-[1.45] text-[var(--cs-faint)]">
@@ -1186,10 +1671,22 @@ export function SettingsPage({
 
             {accountOpen && (
                 <AccountModal
-                    email={authEmail}
+                    doctorId={doctorProfile?.id ?? null}
+                    email={contactEmail}
+                    phoneHint={phoneHint}
                     accountReference={hospitalId.slice(0, 8)}
                     onClose={() => setAccountOpen(false)}
+                    onSaved={setEmailOverride}
                     onSupport={(topic) => { setAccountOpen(false); setSupportTopic(topic); }}
+                />
+            )}
+            {manageSubOpen && subscription && (
+                <ManageSubscriptionModal
+                    subscription={subscription}
+                    hospitalId={hospitalId}
+                    userId={auth.status === "authed" ? auth.identity.user.id : null}
+                    contactEmail={contactEmail}
+                    onClose={() => setManageSubOpen(false)}
                 />
             )}
             {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}

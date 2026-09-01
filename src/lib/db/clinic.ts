@@ -76,6 +76,10 @@ export type DoctorProfilePatch = {
     specialization: string | null;
     registration_number: string | null;
     phone: string | null;
+    /** Contact address, not a credential. Sign-in derives its own address
+     *  from the phone number; writing here never touches that. Optional in
+     *  the patch so a save that isn't about the email leaves it alone. */
+    email?: string | null;
     /** Same rule as `ClinicProfilePatch.logo_url` — present only when this
      *  save actually changed the photo. */
     avatar_url?: string | null;
@@ -90,6 +94,30 @@ export async function updateDoctorProfile(
         .update(patch)
         .eq("id", doctorId);
     if (error) throw new Error(`updateDoctorProfile: ${error.message}`);
+    invalidateDoctor(doctorId);
+}
+
+/**
+ * Set (or clear) the doctor's contact email on its own.
+ *
+ * Separate from `updateDoctorProfile` because that patch requires `name` —
+ * it is the identity editor, and this is one field changed from Settings.
+ * Passing `null` clears the address, which is a legitimate thing to want:
+ * "no email on file" is a state we render truthfully.
+ *
+ * This deliberately does NOT call `supabase.auth.updateUser({ email })`.
+ * Sign-in derives its address from the phone number, so rewriting the auth
+ * email would lock the doctor out of their own clinic.
+ */
+export async function updateDoctorContactEmail(
+    doctorId: string,
+    email: string | null
+): Promise<void> {
+    const { error } = await supabase
+        .from("doctors")
+        .update({ email })
+        .eq("id", doctorId);
+    if (error) throw new Error(`updateDoctorContactEmail: ${error.message}`);
     invalidateDoctor(doctorId);
 }
 

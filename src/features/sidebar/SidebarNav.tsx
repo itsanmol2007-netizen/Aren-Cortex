@@ -145,7 +145,11 @@ export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProp
         <nav>
             {items.map((item, idx) => {
                 if (item.type === "divider") {
-                    return <div key={`div-${idx}`} className="sidebar-divider" />;
+                    // The final divider carries the nav's spare height (see
+                    // `.is-tail`), pinning Help & Support to the bottom. The
+                    // others are plain hairlines with a fixed margin.
+                    const isTail = !items.slice(idx + 1).some((n) => n.type === "divider");
+                    return <div key={`div-${idx}`} className={`sidebar-divider${isTail ? " is-tail" : ""}`} />;
                 }
 
                 if (item.type === "action") {

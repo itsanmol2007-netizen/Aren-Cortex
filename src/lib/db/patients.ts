@@ -320,6 +320,10 @@ export type DBDoctor = {
     qualification: string | null;
     registration_number: string | null;
     phone: string | null;
+    /** The doctor's REAL contact address, or null when none is on file.
+     *  Never the phone-derived `<digits>@aren.internal` sign-in address —
+     *  that one is a login artifact and must not surface in the UI. */
+    email: string | null;
     signature_image_url: string | null;
     hospital_id: string | null;
     avatar_url: string | null;
@@ -332,7 +336,7 @@ export type DBDoctor = {
 };
 
 const DOCTOR_COLUMNS =
-    "id, name, specialization, qualification, registration_number, phone, signature_image_url, hospital_id, avatar_url, availability_status, last_seen";
+    "id, name, specialization, qualification, registration_number, phone, email, signature_image_url, hospital_id, avatar_url, availability_status, last_seen";
 
 export async function fetchDoctor(doctorId: string): Promise<DBDoctor | null> {
     const { data, error } = await supabase
