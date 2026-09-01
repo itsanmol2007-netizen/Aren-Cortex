@@ -31,9 +31,8 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
-    Building2, Clock, Database, Download, FlaskConical, Layers,
-    MonitorSmartphone, Pill, Printer, Shield, ShieldCheck, Sparkles,
-    Stethoscope, User,
+    Building2, Clock, FlaskConical, Keyboard, Layers, MonitorSmartphone,
+    Pill, Printer, Shield, ShieldCheck, Sparkles, Stethoscope, User,
 } from "lucide-react";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
@@ -84,11 +83,11 @@ export const SETTINGS_INDEX: SettingEntry[] = [
     },
 
     {
-        id: "clinic.specialty",
+        id: "settings.consult",
         label: "Consult setup",
         description: "Which chart, outputs and measurements the consult screen opens with.",
         keywords: ["specialty", "speciality", "profile", "physiotherapy", "dental", "cardiology", "chart", "consult", "facility", "engine", "synapse"],
-        page: "clinic", anchor: "clin-card-specialty", group: "Clinic", icon: Stethoscope,
+        page: "settings", anchor: "set-card-consult", group: "Settings", icon: Stethoscope,
     },
 
     // ── Prescription pad (lives on Clinic, but nobody looks for it there) ──
@@ -152,7 +151,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         label: "Account & security",
         description: "Email, phone, password and account access.",
         keywords: ["account", "email", "password", "phone", "security", "login", "sign in", "delete account", "users"],
-        page: "settings", anchor: "set-card-security", group: "Settings", icon: User,
+        page: "settings", anchor: "set-card-account", group: "Settings", icon: User,
     },
     {
         id: "settings.subscription",
@@ -166,28 +165,21 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         label: "Sign out of all devices",
         description: "End every session, including a clinic computer you left signed in.",
         keywords: ["session", "sign out", "logout", "devices", "shared", "computer", "security", "revoke"],
-        page: "settings", anchor: "set-card-security", group: "Settings", icon: MonitorSmartphone,
-    },
-    {
-        id: "settings.export",
-        label: "Export data",
-        description: "We prepare and hand over a copy of your clinic's data.",
-        keywords: ["export", "download", "backup", "csv", "data", "copy", "migrate"],
-        page: "settings", anchor: "set-card-data", group: "Settings", icon: Download,
+        page: "settings", anchor: "set-card-account", group: "Settings", icon: MonitorSmartphone,
     },
     {
         id: "settings.privacy",
         label: "Privacy & security",
         description: "How AREN protects your data, and your rights over it.",
         keywords: ["privacy", "security", "gdpr", "policy", "rights", "protection", "compliance"],
-        page: "settings", anchor: "set-card-data", group: "Settings", icon: Shield,
+        page: "settings", anchor: "set-help-strip", group: "Settings", icon: Shield,
     },
     {
-        id: "settings.local",
-        label: "Local data",
-        description: "Cached clinic details and saved consult drafts on this device.",
-        keywords: ["cache", "local", "storage", "draft", "offline", "device", "clear"],
-        page: "settings", anchor: "set-card-data", group: "Settings", icon: Database,
+        id: "settings.keyboard",
+        label: "Keyboard shortcuts",
+        description: "Every shortcut the consult screen listens for.",
+        keywords: ["keyboard", "shortcut", "key", "binding", "hotkey", "kbd", "shortcuts"],
+        page: "settings", anchor: "set-card-keyboard", group: "Settings", icon: Keyboard,
     },
 ];
 

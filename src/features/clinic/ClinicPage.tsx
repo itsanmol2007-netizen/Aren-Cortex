@@ -38,9 +38,9 @@
 import { useEffect, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
-    ArrowRight, Award, Building2, CalendarDays, Check, ChevronDown, ChevronRight,
-    Clock, FileSignature, Globe, GraduationCap, Loader2, Mail, MapPin,
-    MessageCircle, MessageSquare, Monitor, Pencil, Phone, ScrollText, Stethoscope,
+    ArrowRight, Award, Building2, CalendarDays, ChevronRight, Clock,
+    FileSignature, Globe, GraduationCap, Mail, MapPin, MessageCircle,
+    MessageSquare, Monitor, Pencil, Phone, ScrollText, Stethoscope,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { CommunicationArt } from "../../components/PlaceholderArt";
@@ -53,15 +53,7 @@ import {
     fetchPrescriptionConfig, type ClinicDayHours, type PrescriptionConfig,
 } from "../../lib/db/clinic";
 import type { DBDoctor, DBHospital } from "../../lib/db";
-import { updateHospitalSpecialtyProfile, invalidateHospital } from "../../lib/db";
-import { PROFILES, type ChartKind } from "../synapse/specialtyProfile";
 
-const CHART_LABEL: Record<ChartKind, string> = {
-    dental: "Dental chart",
-    body: "Body map",
-    joints: "Joint map",
-    growth: "Growth chart",
-};
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
 interface Props {
@@ -124,36 +116,6 @@ export function ClinicPage({
     const [clinicModalOpen, setClinicModalOpen] = useState(false);
     const [doctorModalOpen, setDoctorModalOpen] = useState(false);
     const [hoursModalOpen, setHoursModalOpen] = useState(false);
-    /* The engine's own facility configuration. It used to live on Settings;
-       moved here 2026-08-31 when Settings became the account/index page —
-       `specialty_profile` is a column on `hospitals`, so this page already
-       owns the row it writes, and `facility_type` (the doctor's own words for
-       the same idea) is two cards above it. Folded by default: nine options
-       for something set once at onboarding is a wall, not a control. */
-    const [specialtyOpen, setSpecialtyOpen] = useState(false);
-    const [savingSpecialty, setSavingSpecialty] = useState<string | null>(null);
-    const [specialtyError, setSpecialtyError] = useState<string | null>(null);
-    const currentSpecialtyId = hospital?.specialty_profile ?? "general_opd";
-    const currentSpecialty = PROFILES[currentSpecialtyId] ?? PROFILES.general_opd;
-
-    const pickSpecialty = async (id: string) => {
-        if (id === currentSpecialtyId || savingSpecialty) return;
-        setSavingSpecialty(id);
-        setSpecialtyError(null);
-        try {
-            await updateHospitalSpecialtyProfile(identity.hospitalId, id);
-            // `updateHospitalSpecialtyProfile` lives in db/patients.ts, which
-            // profileCache imports — invalidating inside it would be circular,
-            // so this is the one write that invalidates at its call site.
-            invalidateHospital(identity.hospitalId);
-            onHospitalChange({ specialty_profile: id });
-        } catch (e) {
-            setSpecialtyError(e instanceof Error ? e.message : "Could not save — try again");
-        } finally {
-            setSavingSpecialty(null);
-        }
-    };
-
     useEffect(() => {
         if (!identity.ready) return;
         setHoursLoading(true);
@@ -588,70 +550,6 @@ export function ClinicPage({
                             fact="Patient messaging lives in one place"
                             next="Every conversation, reminder and template for your patients — configured there, not here."
                         />
-                    </Card>
-
-                    {/* ══ Consult setup — what the engine opens with ═══════ */}
-                    <Card
-                        id="clin-card-specialty"
-                        tone="violet"
-                        icon={<Stethoscope size={14} />}
-                        title="Consult Setup"
-                        subtitle="Which chart, outputs and measurements the consult screen opens with."
-                    >
-                        <div className="flex items-center gap-[10px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[11px] py-[10px]">
-                            <span className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[9px] border border-[var(--cs-line)] bg-white text-[var(--cs-violet)]">
-                                <Stethoscope size={15} />
-                            </span>
-                            <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                                <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
-                                    Specialty profile
-                                </span>
-                                <span className="text-[13.5px] font-bold text-[var(--cs-ink)]">
-                                    {currentSpecialty.label}
-                                </span>
-                            </span>
-                            <CardPillButton tone="violet" onClick={() => setSpecialtyOpen((v) => !v)}>
-                                {specialtyOpen ? "Close" : "Change"}
-                                <ChevronDown size={11} className={specialtyOpen ? "rotate-180 transition-transform" : "transition-transform"} />
-                            </CardPillButton>
-                        </div>
-
-                        {specialtyOpen && (
-                            <div className="mt-[8px] grid grid-cols-2 gap-[6px] max-[560px]:grid-cols-1">
-                                {Object.values(PROFILES).map((p) => {
-                                    const active = p.id === currentSpecialtyId;
-                                    const saving = savingSpecialty === p.id;
-                                    return (
-                                        <button
-                                            key={p.id}
-                                            type="button"
-                                            aria-pressed={active}
-                                            disabled={savingSpecialty !== null}
-                                            onClick={() => pickSpecialty(p.id)}
-                                            className={
-                                                "flex min-w-0 flex-col gap-[2px] rounded-[10px] border px-[11px] py-[9px] text-left transition-colors " +
-                                                (active
-                                                    ? "border-[var(--cs-violet)] bg-[rgba(124,58,237,0.06)]"
-                                                    : "border-[var(--cs-line)] bg-white hover:border-[rgba(124,58,237,0.4)]")
-                                            }
-                                        >
-                                            <span className="flex items-center gap-[6px]">
-                                                <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{p.label}</span>
-                                                {saving && <Loader2 size={13} className="animate-spin text-[var(--cs-violet)]" />}
-                                                {!saving && active && <Check size={13} className="text-[var(--cs-violet)]" />}
-                                            </span>
-                                            <span className="truncate text-[11px] text-[var(--cs-faint)]">
-                                                {p.primaryLabel} primary
-                                                {p.charts.length > 0 && ` · ${p.charts.map((c) => CHART_LABEL[c]).join(" + ")}`}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-                        {specialtyError && (
-                            <p className="mt-[6px] text-[12px] font-medium text-[var(--cs-red)]">{specialtyError}</p>
-                        )}
                     </Card>
 
                     <Card

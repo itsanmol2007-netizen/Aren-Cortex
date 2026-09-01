@@ -40,9 +40,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
-    ArrowRight, ChevronRight, Database, Download, ExternalLink, FileText,
-    HelpCircle, Info, Loader2, Lock, LogOut, LogOut as SignOutAll, Mail,
-    MessageCircle, MonitorSmartphone, Search, Shield, ShieldCheck, Trash2, User, Users, X,
+    ArrowRight, Check, ChevronDown, ChevronRight, ExternalLink, FileText,
+    HelpCircle, Info, Keyboard, Loader2, Lock, LogOut, Mail,
+    MonitorSmartphone, Search, Shield, Stethoscope, Trash2, User, Users, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
@@ -53,6 +53,9 @@ import {
     type ClinicSubscription, type DBDoctor, type DBHospital,
 } from "../../lib/db";
 import { clearAllConsultDrafts } from "../../lib/consultDraft";
+import { PROFILES, type ChartKind } from "../synapse/specialtyProfile";
+import { updateHospitalSpecialtyProfile, invalidateHospital } from "../../lib/db";
+import { BINDINGS, SCOPE_ORDER, SCOPE_TITLE, chordLabel } from "../../lib/keyboard/keymap";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
@@ -63,6 +66,15 @@ import "./settings.css";
 /** Where "Privacy & security" goes — the one external URL we were actually
  *  given. */
 const PRIVACY_URL = "https://www.arenode.com/privacy";
+
+const PROFILE_LIST = Object.values(PROFILES);
+
+const CHART_LABEL: Record<ChartKind, string> = {
+    dental: "Dental chart",
+    body: "Body map",
+    joints: "Joint map",
+    growth: "Growth chart",
+};
 /** ⚠ ASSUMED, not supplied: derived from PRIVACY_URL's own domain. Correct it
  *  if the terms page lives elsewhere — it is the only invented URL here, and
  *  "Help center" / "Contact support" deliberately route to the in-app Support
@@ -78,6 +90,9 @@ interface SettingsPageProps {
     doctorName: string;
     /** Takes a search result to the page that owns it. */
     onNavigate: (page: SidebarPage) => void;
+    /** Fired after the specialty write so the caller updates its cached
+     *  hospital row without a refetch. */
+    onSpecialtyChanged: (specialtyProfileId: string) => void;
 }
 
 // ── Shared shapes ───────────────────────────────────────────────────────────
@@ -219,10 +234,12 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
 
     return (
         <div ref={wrapRef} className="relative w-full">
-            <Search
-                size={17}
-                className="pointer-events-none absolute left-[15px] top-1/2 -translate-y-1/2 text-white/45"
-            />
+            {/* The glyph sits in its own tinted well rather than floating as a
+                thin outline on a nebula — at 17px, white/45, over a moving
+                purple gradient it read as nothing at all. */}
+            <span className="pointer-events-none absolute left-[6px] top-1/2 z-[1] grid h-[32px] w-[32px] -translate-y-1/2 place-items-center rounded-[9px] bg-white/[0.10] text-white/80">
+                <Search size={17} />
+            </span>
             <input
                 ref={inputRef}
                 value={query}
@@ -244,13 +261,14 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
                    31px against the 42px asked for. Same trap as the
                    `label`/`svg` ones in cortex-gotchas.md. */
                 className={
-                    "h-[42px]! w-full rounded-[12px]! border! border-white/12 bg-white/[0.07]! pl-[44px]! pr-[52px] " +
-                    "text-[13.5px]! font-medium text-white/95! outline-none backdrop-blur-[8px] " +
-                    "placeholder:text-white/40 transition-colors " +
-                    "hover:border-white/20 focus:border-[rgba(167,139,250,0.6)] focus:bg-white/[0.10]!"
+                    "h-[44px]! w-full rounded-[13px]! border! border-white/25 bg-[rgba(8,12,28,0.55)]! pl-[46px]! pr-[56px] " +
+                    "text-[14px]! font-medium text-white! outline-none backdrop-blur-[10px] " +
+                    "placeholder:text-white/55 transition-colors " +
+                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_10px_rgba(0,0,0,0.30)] " +
+                    "hover:border-white/40 focus:border-[rgba(167,139,250,0.85)] focus:bg-[rgba(8,12,28,0.72)]!"
                 }
             />
-            <kbd className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 rounded-[6px] border border-white/12 bg-white/[0.06] px-[7px] py-[3px] text-[10.5px] font-semibold text-white/45">
+            <kbd className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 rounded-[6px] border border-white/20 bg-white/[0.10] px-[7px] py-[3px] text-[10.5px] font-semibold text-white/65">
                 ⌘ K
             </kbd>
 
@@ -484,7 +502,8 @@ function AccountModal({
 // ── The page ────────────────────────────────────────────────────────────────
 
 export function SettingsPage({
-    logoRef, onOpenSidebar, hospitalId, hospitalProfile, doctorProfile, doctorName, onNavigate,
+    logoRef, onOpenSidebar, hospitalId, hospitalProfile, doctorProfile, doctorName,
+    onNavigate, onSpecialtyChanged,
 }: SettingsPageProps) {
     const logout = useLogout();
     const auth = useAuth();
@@ -498,6 +517,53 @@ export function SettingsPage({
     const [lastSignIn, setLastSignIn] = useState<string | null>(null);
     /** Non-null while the shared "our team handles this" surface is open. */
     const [supportTopic, setSupportTopic] = useState<SupportTopic | null>(null);
+
+    // Consult Setup — the specialty profile. Back on Settings at Anmol's call
+    // (it briefly lived on Clinic): it configures the ENGINE, not the clinic's
+    // public identity, which is what the rest of Clinic is about.
+    const [specialtyOpen, setSpecialtyOpen] = useState(false);
+    const [savingSpecialty, setSavingSpecialty] = useState<string | null>(null);
+    const [specialtyError, setSpecialtyError] = useState<string | null>(null);
+    const currentSpecialtyId = hospitalProfile?.specialty_profile ?? "general_opd";
+    const currentSpecialty = PROFILES[currentSpecialtyId] ?? PROFILES.general_opd;
+
+    const pickSpecialty = async (id: string) => {
+        if (id === currentSpecialtyId || savingSpecialty) return;
+        setSavingSpecialty(id);
+        setSpecialtyError(null);
+        try {
+            await updateHospitalSpecialtyProfile(hospitalId, id);
+            // `updateHospitalSpecialtyProfile` lives in db/patients.ts, which
+            // profileCache imports — invalidating inside it would be circular,
+            // so this is the one write that invalidates at its call site.
+            invalidateHospital(hospitalId);
+            onSpecialtyChanged(id);
+        } catch (e) {
+            setSpecialtyError(e instanceof Error ? e.message : "Could not save — try again");
+        } finally {
+            setSavingSpecialty(null);
+        }
+    };
+
+    // Keyboard — printed from the real key map, filtered by a plain substring
+    // over what the shortcut DOES and the keys themselves.
+    const [keyQuery, setKeyQuery] = useState("");
+    const keyGroups = useMemo(() => {
+        const q = keyQuery.trim().toLowerCase();
+        return SCOPE_ORDER
+            .map((scope) => ({
+                scope,
+                title: SCOPE_TITLE[scope],
+                rows: BINDINGS.filter(
+                    (b) =>
+                        b.scope === scope &&
+                        (!q ||
+                            b.what.toLowerCase().includes(q) ||
+                            b.keys.some((c) => chordLabel(c).toLowerCase().includes(q)))
+                ),
+            }))
+            .filter((g) => g.rows.length > 0);
+    }, [keyQuery]);
 
     /** Ends every session on every device — `scope: "global"`, which is a
      *  genuinely different operation from the local sign-out `useLogout`
@@ -574,20 +640,6 @@ export function SettingsPage({
                     <>
                         <button
                             type="button"
-                            onClick={() => onNavigate("support")}
-                            className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[6px] transition-colors hover:bg-white/[0.07]"
-                        >
-                            <span className="grid h-[26px] w-[26px] place-items-center rounded-full border border-white/15 bg-white/[0.06] text-white/70">
-                                <HelpCircle size={14} />
-                            </span>
-                            <span className="flex flex-col leading-[1.25]">
-                                <span className="text-[11.5px] font-bold text-white/90">Need help?</span>
-                                <span className="text-[10.5px] text-[rgba(196,167,250,0.94)]">Visit help center</span>
-                            </span>
-                        </button>
-                        <span className="mx-[4px] h-[26px] w-px bg-white/12" />
-                        <button
-                            type="button"
                             onClick={() => openSetting(SETTINGS_INDEX.find((s) => s.id === "settings.account")!)}
                             className="flex items-center gap-[9px] rounded-[10px] px-[8px] py-[5px] transition-colors hover:bg-white/[0.07]"
                         >
@@ -630,34 +682,63 @@ export function SettingsPage({
                                 </div>
                             </div>
 
-                            <div className="my-[14px] h-px bg-[var(--cs-line)]" />
+                            <div className="my-[13px] h-px bg-[var(--cs-line)]" />
 
+                            {/* Email, password and sessions live HERE and only
+                                here. They previously had a second card of their
+                                own that opened this same modal — the identical
+                                operation offered twice on one screen. */}
                             <SettingRow
-                                icon={<ShieldCheck size={17} />}
-                                label="Security"
-                                sub="Email and password for signing in"
+                                icon={<Mail size={17} />}
+                                label="Email & password"
+                                sub={lastSignIn ? `Last signed in ${lastSignIn}` : "How you sign in to Cortex"}
                                 onClick={() => setAccountOpen(true)}
                             />
+                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
+                            <div className="flex items-start gap-[11px] rounded-[10px] px-[10px] py-[11px]">
+                                <span className="mt-[1px] flex-none text-[var(--cs-faint)]"><MonitorSmartphone size={17} /></span>
+                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">All devices</span>
+                                    <span className="text-[12px] leading-[1.45] text-[var(--cs-faint)]">
+                                        Sign out everywhere, including a clinic computer left signed in
+                                    </span>
+                                </span>
+                                {confirmingGlobal ? (
+                                    <span className="flex flex-none items-center gap-[6px]">
+                                        <button
+                                            type="button" onClick={() => setConfirmingGlobal(false)}
+                                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)]"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button" onClick={signOutEverywhere} disabled={globalBusy}
+                                            className="flex items-center gap-[5px] rounded-full border border-[var(--cs-red)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-red)] disabled:opacity-60"
+                                        >
+                                            {globalBusy && <Loader2 size={12} className="animate-spin" />}
+                                            Sign out all
+                                        </button>
+                                    </span>
+                                ) : (
+                                    <button
+                                        type="button" onClick={() => setConfirmingGlobal(true)}
+                                        className="flex-none rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                                    >
+                                        Sign out
+                                    </button>
+                                )}
+                            </div>
 
                             {/* Professional and clinic details are NOT duplicated
                                 here — Clinic owns that editor, and this is the
                                 way to it. */}
-                            <div className="mt-[10px] flex flex-wrap gap-[8px]">
-                                <button
-                                    type="button"
-                                    onClick={() => setAccountOpen(true)}
-                                    className="inline-flex items-center gap-[7px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[14px] py-[9px] text-[12.5px] font-bold text-[var(--cs-violet)] transition-colors hover:border-[var(--cs-violet)]"
-                                >
-                                    Manage account <ArrowRight size={14} />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => openSetting(SETTINGS_INDEX.find((s) => s.id === "clinic.doctor")!)}
-                                    className="inline-flex items-center gap-[7px] rounded-[10px] border border-transparent px-[12px] py-[9px] text-[12.5px] font-semibold text-[var(--cs-muted)] transition-colors hover:bg-[var(--cs-page)]"
-                                >
-                                    Professional details <ChevronRight size={14} />
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => openSetting(SETTINGS_INDEX.find((e) => e.id === "clinic.doctor")!)}
+                                className="mt-[8px] inline-flex w-fit items-center gap-[7px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[14px] py-[9px] text-[12.5px] font-bold text-[var(--cs-violet)] transition-colors hover:border-[var(--cs-violet)]"
+                            >
+                                Professional details <ArrowRight size={14} />
+                            </button>
                         </SettingsCard>
 
                         {/* ══ Subscription ═══════════════════════════════════ */}
@@ -723,161 +804,191 @@ export function SettingsPage({
                             )}
                         </SettingsCard>
 
-                        {/* ══ Security & Sessions ════════════════════════════
-                            Everything here is REAL. "Preferences" (notifications
-                            + appearance) used to sit in this slot and was cut
-                            2026-08-31: Cortex pushes no notifications, so a
-                            toggle would have written a preference nothing reads,
-                            and there is no second theme to switch to — the design
-                            DNA is explicit that there is one visual language on a
-                            deliberately fixed type scale. A row that controls
-                            nothing is worse than no row. */}
+                        {/* ══ Consult Setup ══════════════════════════════════
+                            The engine's own configuration — which chart the
+                            consult opens with, which outputs are elevated.
+                            Nine options for something set once at onboarding is
+                            a wall, so it is folded to its current value. */}
                         <SettingsCard
-                            id="set-card-security"
-                            icon={<ShieldCheck size={17} />}
+                            id="set-card-consult"
+                            icon={<Stethoscope size={17} />}
                             tint="bg-[rgba(18,104,232,0.10)] text-[var(--cs-blue)]"
-                            title="Security & Sessions"
+                            title="Consult Setup"
                         >
-                            <SettingRow
-                                icon={<Mail size={17} />} label="Email address"
-                                sub={authEmail ? `Signing in as ${authEmail}` : "The address you sign in with"}
-                                onClick={() => setAccountOpen(true)}
-                            />
-                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            <SettingRow
-                                icon={<Lock size={17} />} label="Password"
-                                sub={lastSignIn ? `Last signed in ${lastSignIn}` : "Set a new sign-in password"}
-                                onClick={() => setAccountOpen(true)}
-                            />
-                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            {/* A genuinely different operation from the Log out
-                                below: that ends THIS session (`scope: "local"`,
-                                see lib/auth.ts), this ends every session on every
-                                device — the one that matters after signing in on
-                                a shared clinic PC. */}
-                            <div className="flex items-start gap-[11px] rounded-[10px] px-[10px] py-[11px]">
-                                <span className="mt-[1px] flex-none text-[var(--cs-faint)]"><MonitorSmartphone size={17} /></span>
+                            <div className="flex items-center gap-[11px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[11px]">
+                                <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] border border-[var(--cs-line)] bg-white text-[var(--cs-blue)]">
+                                    <Stethoscope size={16} />
+                                </span>
                                 <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">All devices</span>
-                                    <span className="text-[12px] leading-[1.45] text-[var(--cs-faint)]">
-                                        Sign out everywhere, including any clinic computer you left signed in
+                                    <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
+                                        Specialty profile
+                                    </span>
+                                    <span className="text-[14px] font-bold text-[var(--cs-ink)]">
+                                        {currentSpecialty.label}
                                     </span>
                                 </span>
-                                {confirmingGlobal ? (
-                                    <span className="flex flex-none items-center gap-[6px]">
-                                        <button
-                                            type="button" onClick={() => setConfirmingGlobal(false)}
-                                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)]"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            type="button" onClick={signOutEverywhere} disabled={globalBusy}
-                                            className="flex items-center gap-[5px] rounded-full border border-[var(--cs-red)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-red)] disabled:opacity-60"
-                                        >
-                                            {globalBusy && <Loader2 size={12} className="animate-spin" />}
-                                            Sign out all
-                                        </button>
-                                    </span>
-                                ) : (
-                                    <button
-                                        type="button" onClick={() => setConfirmingGlobal(true)}
-                                        className="flex-none rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
-                                    >
-                                        <SignOutAll size={12} className="mr-[4px] inline align-[-2px]" />
-                                        Sign out
-                                    </button>
-                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setSpecialtyOpen((v) => !v)}
+                                    aria-expanded={specialtyOpen}
+                                    className="flex flex-none items-center gap-[4px] rounded-full border border-[var(--cs-line-strong)] bg-white px-[12px] py-[6px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                                >
+                                    {specialtyOpen ? "Close" : "Change"}
+                                    <ChevronDown size={12} className={specialtyOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+                                </button>
                             </div>
+
+                            <p className="m-0 mt-[9px] px-[2px] text-[12px] leading-[1.5] text-[var(--cs-faint)]">
+                                Decides the chart, the elevated outputs and the measurements the consult
+                                screen opens with.
+                            </p>
+
+                            {/* What the CURRENT profile actually gives you, read
+                                off the profile itself — so the card answers "and
+                                what does that mean for me" instead of leaving a
+                                fold and a sentence in a stretched box. */}
+                            <dl className="m-0 mt-[10px] flex flex-col">
+                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Primary output</dt>
+                                    <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                        {currentSpecialty.primaryLabel}
+                                    </dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Charts</dt>
+                                    <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                        {currentSpecialty.charts.length > 0
+                                            ? currentSpecialty.charts.map((c) => CHART_LABEL[c]).join(" + ")
+                                            : "None"}
+                                    </dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-[10px] px-[2px] py-[9px]">
+                                    <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Applies to</dt>
+                                    <dd className="m-0 truncate text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                        {hospitalProfile?.name ?? "This clinic"}
+                                    </dd>
+                                </div>
+                            </dl>
+
+                            {specialtyOpen && (
+                                <div className="mt-[9px] grid grid-cols-2 gap-[6px] max-[560px]:grid-cols-1">
+                                    {PROFILE_LIST.map((sp) => {
+                                        const active = sp.id === currentSpecialtyId;
+                                        const saving = savingSpecialty === sp.id;
+                                        return (
+                                            <button
+                                                key={sp.id}
+                                                type="button"
+                                                aria-pressed={active}
+                                                disabled={savingSpecialty !== null}
+                                                onClick={() => pickSpecialty(sp.id)}
+                                                className={
+                                                    "flex min-w-0 flex-col gap-[2px] rounded-[10px] border px-[11px] py-[9px] text-left transition-colors " +
+                                                    (active
+                                                        ? "border-[var(--cs-blue)] bg-[var(--cs-blue-soft)]"
+                                                        : "border-[var(--cs-line)] bg-white hover:border-[rgba(18,104,232,0.4)]")
+                                                }
+                                            >
+                                                <span className="flex items-center gap-[6px]">
+                                                    <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{sp.label}</span>
+                                                    {saving && <Loader2 size={13} className="animate-spin text-[var(--cs-blue)]" />}
+                                                    {!saving && active && <Check size={13} className="text-[var(--cs-blue)]" />}
+                                                </span>
+                                                <span className="truncate text-[11px] text-[var(--cs-faint)]">
+                                                    {sp.primaryLabel} primary
+                                                    {sp.charts.length > 0 && ` · ${sp.charts.map((c) => CHART_LABEL[c]).join(" + ")}`}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            {specialtyError && (
+                                <p className="mt-[6px] text-[12px] font-medium text-[var(--cs-red)]">{specialtyError}</p>
+                            )}
                         </SettingsCard>
 
-                        {/* ══ Data & Privacy ═════════════════════════════════
-                            Export and data management deliberately have NO
-                            self-service flow — see SupportRequestModal.tsx.
-                            "Local data" is the exception because it is genuinely
-                            local, genuinely reversible, and affects only this
-                            browser. */}
+                        {/* ══ Keyboard ═══════════════════════════════════════
+                            Printed from `BINDINGS` (lib/keyboard/keymap.ts) —
+                            the same table `useConsultKeyboard` dispatches from
+                            and `ShortcutsSheet` prints. That file made the map
+                            data precisely so a shortcut cannot be documented in
+                            one place and missing from another; this is a third
+                            reader of it, not a third copy. */}
                         <SettingsCard
-                            id="set-card-data"
-                            icon={<Database size={17} />}
-                            tint="bg-[rgba(15,118,110,0.10)] text-[var(--cs-teal)]"
-                            title="Data & Privacy"
+                            id="set-card-keyboard"
+                            icon={<Keyboard size={17} />}
+                            tint="bg-[rgba(124,58,237,0.10)] text-[var(--cs-violet)]"
+                            title="Keyboard"
                         >
-                            <SettingRow
-                                icon={<Shield size={17} />} label="Privacy & security"
-                                sub="How we protect your data, and your rights" href={PRIVACY_URL}
-                            />
-                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            <SettingRow
-                                icon={<Download size={17} />} label="Export your data"
-                                sub="We prepare and hand over a copy — talk to us"
-                                onClick={() => setSupportTopic({
-                                    title: "Export clinic data",
-                                    reason: "Exporting a clinic's records is something we do with you, not something you should have to get right alone — the shape of the export depends on why you need it. Tell us what it is for and we will prepare it.",
-                                })}
-                            />
-                            <div className="my-[2px] h-px bg-[var(--cs-line)]" />
-                            <div className="flex items-start gap-[11px] rounded-[10px] px-[10px] py-[11px]">
-                                <span className="mt-[1px] flex-none text-[var(--cs-faint)]"><Database size={17} /></span>
-                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">Local data</span>
-                                    <span className="text-[12px] leading-[1.45] text-[var(--cs-faint)]">
-                                        Cached clinic details and saved consult drafts on this device
-                                    </span>
-                                </span>
-                                <span className="flex flex-none items-center gap-[6px]">
-                                    <button
-                                        type="button"
-                                        onClick={() => { clearProfileCache(); toast.success("Cached clinic data cleared."); }}
-                                        className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-teal)] hover:text-[var(--cs-teal)]"
-                                    >
-                                        Clear cache
-                                    </button>
-                                    {confirmingDrafts ? (
-                                        <>
-                                            <button
-                                                type="button" onClick={() => setConfirmingDrafts(false)}
-                                                className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)]"
-                                            >
-                                                Keep
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => { clearAllConsultDrafts(); setConfirmingDrafts(false); toast.success("Saved drafts discarded."); }}
-                                                className="rounded-full border border-[var(--cs-red)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-red)]"
-                                            >
-                                                Discard
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <button
-                                            type="button" onClick={() => setConfirmingDrafts(true)}
-                                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-red)] hover:text-[var(--cs-red)]"
-                                        >
-                                            Drafts
-                                        </button>
-                                    )}
-                                </span>
+                            <div className="relative">
+                                <Search size={14} className="pointer-events-none absolute left-[11px] top-1/2 -translate-y-1/2 text-[var(--cs-faint)]" />
+                                <input
+                                    value={keyQuery}
+                                    onChange={(e) => setKeyQuery(e.target.value)}
+                                    placeholder="Find a shortcut — “prescribe”, “escape”…"
+                                    aria-label="Find a keyboard shortcut"
+                                    className={
+                                        "h-[36px]! w-full rounded-[9px]! border! border-[var(--cs-line-strong)] bg-white! " +
+                                        "pl-[32px]! pr-[10px] text-[12.5px]! text-[var(--cs-ink)]! outline-none " +
+                                        "focus:border-[var(--cs-violet)]"
+                                    }
+                                />
                             </div>
+
+                            <div className="mt-[8px] flex max-h-[168px] min-h-0 flex-col gap-[10px] overflow-y-auto pr-[2px]">
+                                {keyGroups.length === 0 ? (
+                                    <p className="px-[2px] py-[18px] text-center text-[12.5px] text-[var(--cs-faint)]">
+                                        No shortcut matches that.
+                                    </p>
+                                ) : (
+                                    keyGroups.map((g) => (
+                                        <div key={g.scope}>
+                                            <p className="m-0 mb-[4px] px-[2px] text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)]">
+                                                {g.title}
+                                            </p>
+                                            {g.rows.map((b) => (
+                                                <div key={b.id} className="flex items-center justify-between gap-[10px] px-[2px] py-[5px]">
+                                                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--cs-muted)]">
+                                                        {b.what}
+                                                    </span>
+                                                    <span className="flex flex-none items-center gap-[4px]">
+                                                        {b.keys.map((c, i) => (
+                                                            <kbd
+                                                                key={i}
+                                                                className="rounded-[5px] border border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[6px] py-[2px] text-[10.5px] font-semibold text-[var(--cs-label)]"
+                                                            >
+                                                                {chordLabel(c)}
+                                                            </kbd>
+                                                        ))}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Honest about the limit: rebinding needs an
+                                override layer in `useConsultKeyboard` that does
+                                not exist, and a toggle that silently half-works
+                                would be worse than saying so. */}
+                            <p className="m-0 mt-[8px] border-t border-[var(--cs-line)] px-[2px] pt-[8px] text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">
+                                {BINDINGS.length} shortcuts, live from the consult screen's own key map. Press{" "}
+                                <kbd className="rounded-[4px] border border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[5px] py-[1px] text-[10.5px] font-semibold text-[var(--cs-label)]">?</kbd>{" "}
+                                anywhere in a consult to see this sheet in place.
+                            </p>
                         </SettingsCard>
                     </div>
 
                     {/* ══ Help & Support — a strip, not a fifth card ═════════ */}
                     <section
-                        aria-label="Help and support"
+                        id="set-help-strip"
+                        aria-label="Help, terms and privacy"
                         className="flex flex-wrap items-center gap-x-[10px] gap-y-[8px] rounded-[16px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[18px] py-[14px] shadow-[var(--cs-shadow)]"
                     >
-                        <span className="mr-[8px] flex items-center gap-[9px]">
-                            <span className={`${ICON_TILE} bg-[rgba(124,58,237,0.10)] text-[var(--cs-violet)]`}>
-                                <HelpCircle size={17} />
-                            </span>
-                            <span className="text-[13px] font-bold uppercase tracking-[0.07em] text-[var(--cs-ink)]">
-                                Help &amp; Support
-                            </span>
-                        </span>
                         {[
-                            { icon: <HelpCircle size={15} />, label: "Help center", sub: "Guides and tutorials", onClick: () => onNavigate("support") },
-                            { icon: <MessageCircle size={15} />, label: "Contact support", sub: "We're here to help", onClick: () => onNavigate("support") },
+                            { icon: <HelpCircle size={15} />, label: "Help & support", sub: "Guides, and a way to reach us", onClick: () => onNavigate("support") },
                             { icon: <Info size={15} />, label: "About AREN", sub: "Cortex v1.0.0" },
                             { icon: <FileText size={15} />, label: "Terms of service", sub: "Read our terms", href: TERMS_URL },
                             { icon: <Shield size={15} />, label: "Privacy policy", sub: "arenode.com/privacy", href: PRIVACY_URL },
@@ -902,12 +1013,23 @@ export function SettingsPage({
                     </section>
 
                     <div className="flex flex-wrap items-center justify-between gap-[12px] px-[4px] pb-[4px]">
-                        <p className="m-0 flex items-center gap-[7px] text-[11.5px] text-[var(--cs-faint)]">
+                        <p className="m-0 flex flex-wrap items-center gap-[7px] text-[11.5px] text-[var(--cs-faint)]">
                             Account reference
                             <code className="rounded-[5px] bg-[var(--cs-card)] px-[7px] py-[2px] text-[11px] tracking-[0.04em] text-[var(--cs-label)]">
                                 {hospitalId.slice(0, 8)}
                             </code>
                             — quote this to support.
+                            {/* Troubleshooting, not a setting: demoted to the
+                                footer rather than given a card of its own. */}
+                            <span className="mx-[2px] h-[11px] w-px bg-[var(--cs-line-strong)]" />
+                            <button
+                                type="button"
+                                onClick={() => { clearProfileCache(); clearAllConsultDrafts(); toast.success("Local cache and saved drafts cleared."); }}
+                                className="text-[11.5px] font-semibold text-[var(--cs-label)] underline decoration-dotted underline-offset-2 transition-colors hover:text-[var(--cs-blue)]"
+                                title="Clears this browser's cached clinic details and any saved consult drafts"
+                            >
+                                Clear local data
+                            </button>
                         </p>
                         <button
                             type="button"

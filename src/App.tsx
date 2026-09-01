@@ -1365,6 +1365,9 @@ function App() {
           doctorProfile={doctorProfile}
           doctorName={DOCTOR.name}
           onNavigate={handleSidebarNavigate}
+          onSpecialtyChanged={(id) =>
+            setHospitalProfile((prev) => (prev ? { ...prev, specialty_profile: id } : prev))
+          }
         />
       ) : activePage === "practice" ? (
         <PracticePage
