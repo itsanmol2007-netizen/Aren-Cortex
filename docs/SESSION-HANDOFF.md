@@ -86,7 +86,16 @@ Migration `user_device_sessions`. One row per (account, browser install);
   verdict on screen 152ms after DOM ready.
 - The last snapshot is cached per-device (`aren.health.v1.snapshot`) and
   rendered immediately, labelled "Last checked …" until a live probe lands.
-- Full-page skeleton at real sizes, not a spinner in an empty frame.
+- Full-page skeleton at real sizes, not a spinner in an empty frame. Sized
+  against the real hero icon (76×76, matching `BlankHealthArt` exactly, not
+  a rounder guess) and a **7-card grid, not 4** — `probeHealth` always
+  returns the same 7 services, so the count was never actually unknown, only
+  their pass/fail state was. The skeleton assumes the healthy outcome (no
+  "Needs attention" block, "All services" heading) since that's the common
+  case and the real answer replaces it within ~2s regardless; guessing
+  "something's wrong" would be wrong far more often and double the layout
+  shift. Verified by rendering skeleton and live-healthy side by side —
+  hero icon and card count now measure identical.
 - Offline is ONE fault with four symptoms, so the hero says "You're offline"
   rather than counting four problems that are really the Wi-Fi.
 

@@ -123,30 +123,53 @@ function ProblemRow({ service }: { service: HealthService }) {
  * The page's own shape, drawn before the first probe answers.
  *
  * Not a spinner in the middle of an empty page: the hero, the section heading
- * and four cards are all laid out at their real sizes, so nothing jumps when
- * the data lands. A doctor opening this page is already worried — the layout
- * appearing instantly is part of the answer.
+ * and the card grid are all laid out at their REAL sizes, so nothing jumps
+ * when the data lands. Two things make that possible rather than a guess:
+ *
+ * 1. `probeHealth` always returns exactly the same seven services (`model.ts`
+ *    — internet, records, synapse, realtime, attachments, drafts, whatsapp).
+ *    Only their pass/fail state is unknown before the first check, never
+ *    their count — so the grid below draws seven cards, not a round number.
+ * 2. The skeleton assumes the healthy outcome: no "Needs attention" block,
+ *    an "All services" heading, all seven cards in one grid. That is the
+ *    overwhelmingly common real state, and a doctor opening this page
+ *    mid-incident sees the true one within a couple of seconds regardless —
+ *    a skeleton that guessed "something's wrong" would be wrong far more
+ *    often, and would mean the layout jumps TWICE: once to a fake problem,
+ *    once to the real answer.
+ *
+ * The hero icon is sized to `BlankHealthArt` itself (76×76) — the healthy
+ * icon, matching the outcome this skeleton assumes — not a rounder guess;
+ * a mismatched placeholder is exactly the kind of shift this exists to avoid.
  */
 function HealthSkeleton() {
     return (
         <div className="flex flex-col gap-[16px]" aria-hidden="true">
             <section className="flex flex-wrap items-center gap-[18px] rounded-[16px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[22px] py-[20px] shadow-[var(--cs-shadow)]">
-                <span className="h-[54px] w-[54px] flex-none animate-pulse rounded-full bg-[var(--cs-page)]" />
+                <span className="h-[76px] w-[76px] flex-none animate-pulse rounded-full bg-[var(--cs-page)]" />
                 <div className="flex min-w-[240px] flex-1 flex-col gap-[8px]">
-                    <span className="h-[19px] w-[220px] animate-pulse rounded-[6px] bg-[var(--cs-page)]" />
-                    <span className="h-[13px] w-[320px] max-w-full animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
-                    <span className="h-[11px] w-[140px] animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
+                    <span className="h-[19px] w-[210px] animate-pulse rounded-[6px] bg-[var(--cs-page)]" />
+                    <span className="h-[13px] w-[340px] max-w-full animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
+                    <span className="h-[11.5px] w-[120px] animate-pulse rounded-[5px] bg-[var(--cs-page)]" />
                 </div>
+                {/* Same two buttons, same order, same padding as the live
+                    hero — "Re-run check" (border) then "Copy diagnostics"
+                    (filled) — so the row doesn't reflow width on landing. */}
                 <div className="flex flex-none items-center gap-[8px]">
-                    <span className="h-[38px] w-[124px] animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
-                    <span className="h-[38px] w-[150px] animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
+                    <span className="h-[38px] w-[132px] animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
+                    <span className="h-[38px] w-[158px] animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
                 </div>
             </section>
 
-            <span className="ml-[2px] h-[11px] w-[86px] animate-pulse rounded-[4px] bg-[var(--cs-line)]" />
+            {/* "ALL SERVICES", plus the small check glyph the live heading
+                only shows once it actually knows nothing is wrong. */}
+            <div className="ml-[2px] flex items-center gap-[7px]">
+                <span className="h-[11px] w-[84px] animate-pulse rounded-[4px] bg-[var(--cs-line)]" />
+                <span className="h-[13px] w-[13px] animate-pulse rounded-full bg-[var(--cs-line)]" />
+            </div>
 
             <div className="grid grid-cols-2 gap-[12px] max-[900px]:grid-cols-1">
-                {[0, 1, 2, 3].map((i) => (
+                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
                     <div key={i} className="flex h-[118px] flex-col justify-between rounded-[14px] border border-[var(--cs-line)] bg-[var(--cs-card)] p-[15px] shadow-[var(--cs-shadow)]">
                         <div className="flex items-start gap-[11px]">
                             <span className="h-[34px] w-[34px] flex-none animate-pulse rounded-[10px] bg-[var(--cs-page)]" />
@@ -156,8 +179,8 @@ function HealthSkeleton() {
                             </span>
                         </div>
                         <div className="flex items-center justify-between border-t border-[var(--cs-line)] pt-[10px]">
-                            <span className="h-[12px] w-[64px] animate-pulse rounded-[4px] bg-[var(--cs-page)]" />
-                            <span className="h-[18px] w-[92px] animate-pulse rounded-full bg-[var(--cs-page)]" />
+                            <span className="h-[12px] w-[56px] animate-pulse rounded-[4px] bg-[var(--cs-page)]" />
+                            <span className="h-[18px] w-[86px] animate-pulse rounded-full bg-[var(--cs-page)]" />
                         </div>
                     </div>
                 ))}

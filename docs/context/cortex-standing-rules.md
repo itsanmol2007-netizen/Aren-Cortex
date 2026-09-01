@@ -99,6 +99,22 @@ renumber, append.
     alike. A full audit for the same ambiguous-symptom shape elsewhere is
     real clinical review work, flagged not attempted.
 
+24. **The phone-derived auth email (`{digits}@aren.internal`) must never be
+    displayed, and never offered as something to "change."** Cortex signs in
+    by phone; `phoneToAuthEmail()` (`lib/auth.ts`) turns the digits into that
+    address purely so Supabase Auth has something email-shaped to key on. It
+    is not deliverable, it is not the doctor's, and showing it publishes their
+    phone number to anyone reading the screen. Worse: a "change email" control
+    wired to `supabase.auth.updateUser({ email })` against it would rewrite
+    the login identity out from under `phoneToAuthEmail()` and lock the
+    account out on its next sign-in. Settings did exactly this and was
+    corrected 2026-09-01. The only email any UI may show or edit for a doctor
+    is `doctors.email` — a real, optional, doctor-owned contact address,
+    unrelated to how they sign in. NULL renders as "no email on file," never
+    as a fallback to the auth address. This applies to every surface that
+    reads a doctor's identity, admin tooling included — see
+    `ADMIN-PANEL-INTEGRATION.md` §4/§9.
+
 **What's NOT covered here:** *why* each rule exists in narrative form beyond
 the one-liner above (search the git history / `cortex-open-*.md` for the
 session that established it), the engine's own internal doctrine (→
