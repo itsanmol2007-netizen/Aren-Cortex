@@ -235,11 +235,18 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
                 }}
                 placeholder="Search any setting across AREN…"
                 aria-label="Search any setting across AREN"
+                /* Every `!` here is load-bearing: `styles/base.css` styles bare
+                   `input` UNLAYERED (height 31px, pale background, 7px radius,
+                   9px padding), and unlayered CSS outranks every Tailwind
+                   utility regardless of specificity. Without them this field
+                   renders as a squat pale box in a dark header — measured at
+                   31px against the 42px asked for. Same trap as the
+                   `label`/`svg` ones in cortex-gotchas.md. */
                 className={
-                    "h-[42px] w-full rounded-[12px] border border-white/12 bg-white/[0.07] pl-[44px] pr-[52px] " +
-                    "text-[13.5px] font-medium text-white/95 outline-none backdrop-blur-[8px] " +
+                    "h-[42px]! w-full rounded-[12px]! border! border-white/12 bg-white/[0.07]! pl-[44px]! pr-[52px] " +
+                    "text-[13.5px]! font-medium text-white/95! outline-none backdrop-blur-[8px] " +
                     "placeholder:text-white/40 transition-colors " +
-                    "hover:border-white/20 focus:border-[rgba(167,139,250,0.6)] focus:bg-white/[0.10]"
+                    "hover:border-white/20 focus:border-[rgba(167,139,250,0.6)] focus:bg-white/[0.10]!"
                 }
             />
             <kbd className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 rounded-[6px] border border-white/12 bg-white/[0.06] px-[7px] py-[3px] text-[10.5px] font-semibold text-white/45">
@@ -275,7 +282,7 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
                                         (i === active ? "bg-[var(--cs-page)]" : "")
                                     }
                                 >
-                                    <span className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[8px] bg-[var(--cs-violet-soft,rgba(124,58,237,0.10))] text-[var(--cs-violet)]">
+                                    <span className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[8px] bg-[rgba(124,58,237,0.10)] text-[var(--cs-violet)]">
                                         <Icon size={15} />
                                     </span>
                                     <span className="flex min-w-0 flex-1 flex-col">
@@ -338,9 +345,10 @@ function AccountModal({ email, onClose }: { email: string | null; onClose: () =>
         onClose();
     };
 
+    // `!` for the same reason as the header search — see its comment.
     const inputClass =
-        "h-[40px] w-full rounded-[10px] border border-[var(--cs-line-strong)] bg-white px-[12px] " +
-        "text-[13.5px] text-[var(--cs-ink)] outline-none focus:border-[var(--cs-blue)] " +
+        "h-[40px]! w-full rounded-[10px]! border! border-[var(--cs-line-strong)] bg-white! px-[12px]! " +
+        "text-[13.5px]! text-[var(--cs-ink)]! outline-none focus:border-[var(--cs-blue)] " +
         "focus:shadow-[0_0_0_3px_rgba(18,104,232,0.13)]";
 
     return (
@@ -619,13 +627,13 @@ export function SettingsPage({
                             title="Subscription"
                         >
                             {subLoading ? (
-                                <div className="flex items-center gap-[10px] py-[18px] text-[13px] text-[var(--cs-faint)]">
+                                <div className="flex flex-1 items-center justify-center gap-[10px] py-[18px] text-[13px] text-[var(--cs-faint)]">
                                     <Loader2 size={16} className="animate-spin" /> Loading your plan…
                                 </div>
                             ) : !subscription ? (
                                 /* A clinic with no subscription row is a real
                                    state — Admin assigns them. Never invent one. */
-                                <div className="flex flex-col gap-[6px] py-[10px]">
+                                <div className="flex flex-1 flex-col justify-center gap-[6px] py-[10px]">
                                     <span className="text-[15px] font-bold text-[var(--cs-ink)]">No subscription on file</span>
                                     <span className="text-[12.5px] text-[var(--cs-faint)]">
                                         Contact support to have a plan assigned to this clinic.
@@ -765,7 +773,7 @@ export function SettingsPage({
                         {[
                             { icon: <HelpCircle size={15} />, label: "Help center", sub: "Guides and tutorials", onClick: () => onNavigate("support") },
                             { icon: <MessageCircle size={15} />, label: "Contact support", sub: "We're here to help", onClick: () => onNavigate("support") },
-                            { icon: <Info size={15} />, label: "About AREN Cortex", sub: "Version 1.0.0" },
+                            { icon: <Info size={15} />, label: "About AREN", sub: "Cortex v1.0.0" },
                             { icon: <FileText size={15} />, label: "Terms of service", sub: "Read our terms", href: TERMS_URL },
                             { icon: <Shield size={15} />, label: "Privacy policy", sub: "arenode.com/privacy", href: PRIVACY_URL },
                         ].map((item) => {
@@ -773,13 +781,13 @@ export function SettingsPage({
                                 <>
                                     <span className="flex-none text-[var(--cs-faint)]">{item.icon}</span>
                                     <span className="flex flex-col leading-[1.3]">
-                                        <span className="text-[12.5px] font-semibold text-[var(--cs-ink)]">{item.label}</span>
-                                        <span className="text-[11px] text-[var(--cs-faint)]">{item.sub}</span>
+                                        <span className="whitespace-nowrap text-[12.5px] font-semibold text-[var(--cs-ink)]">{item.label}</span>
+                                        <span className="whitespace-nowrap text-[11px] text-[var(--cs-faint)]">{item.sub}</span>
                                     </span>
                                     {item.href && <ExternalLink size={13} className="flex-none text-[var(--cs-faint)]" />}
                                 </>
                             );
-                            const cls = "flex flex-1 min-w-[168px] items-center gap-[9px] rounded-[10px] px-[10px] py-[8px] transition-colors hover:bg-[var(--cs-page)]";
+                            const cls = "flex flex-1 min-w-[146px] items-center gap-[8px] rounded-[10px] px-[8px] py-[8px] transition-colors hover:bg-[var(--cs-page)]";
                             return item.href ? (
                                 <a key={item.label} href={item.href} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
                             ) : (
