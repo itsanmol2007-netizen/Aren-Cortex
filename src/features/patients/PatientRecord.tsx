@@ -730,7 +730,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                             {snapshot.chips.length > 0 && (
                                                 <div className="prec-snapshot-chips">
                                                     {snapshot.chips.map((chip: SnapshotChip, i: number) => (
-                                                        <span key={i} className={`prec-snapshot-chip prec-snapshot-chip--${chip.tone}`} style={{ fontSize: 11, padding: "3px 9px" }}>
+                                                        <span key={i} className={`prec-snapshot-chip prec-snapshot-chip--roomy prec-snapshot-chip--${chip.tone}`} style={{ fontSize: 11, padding: "3px 9px" }}>
                                                             {chip.label}
                                                         </span>
                                                     ))}

@@ -16,7 +16,7 @@
 //     never ejects them to login for losing Wi-Fi — and silently re-verifies
 //     the moment connectivity returns.
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import {
@@ -28,7 +28,15 @@ import {
     clearCachedIdentity,
 } from "../../lib/auth";
 import type { Identity, IdentityFailure } from "../../lib/auth";
-import { touchThisDevice } from "../../lib/db/devices";
+import { touchThisDevice, watchThisDeviceRevocation } from "../../lib/db/devices";
+
+/** How often the fallback re-check runs while a tab sits open and idle.
+ *  Realtime (`watchThisDeviceRevocation`) is the live path and fires the
+ *  instant a revocation lands; this is only the safety net for a channel
+ *  that silently dropped — see the effect below for the other trigger
+ *  (the tab regaining focus), which usually catches it well before this
+ *  interval would. */
+const DEVICE_RECHECK_MS = 5 * 60 * 1000;
 
 export type GateNotice = IdentityFailure | "signed-out" | "device-revoked";
 
@@ -142,36 +150,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ── Device register ─────────────────────────────────────────────────────
+    // ── Device register + revocation ────────────────────────────────────────
     // Records that this browser install is in use, so Settings can answer
-    // "where am I signed in" (see lib/db/devices.ts). Runs once per signed-in
-    // account, never while offline — a bookkeeping write is not worth a
-    // request from a device that has no network.
+    // "where am I signed in" (see lib/db/devices.ts). The registering upsert
+    // runs once per signed-in account, never while offline — a bookkeeping
+    // write is not worth a request from a device that has no network.
     //
-    // The one thing it can act on is its OWN row being revoked from another
-    // device, which is what makes that button a real remote sign-out rather
-    // than a list entry disappearing. Every other outcome, failures included,
-    // leaves the session exactly as it was.
+    // Revocation used to be checked ONLY at that one boot-time upsert — a tab
+    // already open and idle had no way to learn its own row had been revoked
+    // short of a full reload, so "Sign out from a specific device" visibly
+    // did nothing on the device actually being signed out (2026-09-02). Two
+    // things now watch for it for as long as the tab is signed in:
+    // realtime (live, `watchThisDeviceRevocation`) and a periodic re-check
+    // (the fallback for a dropped channel — same "polling stays on as the
+    // safety net" doctrine `subscribeGatewaySessions` already follows).
     const registeredDeviceFor = useRef<string | null>(null);
+
+    const signOutRevokedDevice = useCallback(() => {
+        if (deliberateSignOut.current) return; // already leaving on purpose
+        deliberateSignOut.current = true;
+        userIdRef.current = null;
+        clearCachedIdentity();
+        void signOutLocal().finally(() => {
+            deliberateSignOut.current = false;
+            setState({ status: "anon", notice: "device-revoked" });
+        });
+    }, []);
+
     useEffect(() => {
         if (state.status !== "authed" || state.offline) return;
         const uid = state.identity.user.id;
+        const hospitalId = state.identity.hospital.id;
         if (registeredDeviceFor.current === uid) return;
         registeredDeviceFor.current = uid;
 
         let cancelled = false;
-        void touchThisDevice(uid, state.identity.hospital.id).then(({ revoked }) => {
-            if (cancelled || !revoked) return;
-            deliberateSignOut.current = true;
-            userIdRef.current = null;
-            clearCachedIdentity();
-            void signOutLocal().finally(() => {
-                deliberateSignOut.current = false;
-                setState({ status: "anon", notice: "device-revoked" });
-            });
+        void touchThisDevice(uid, hospitalId).then(({ revoked }) => {
+            if (!cancelled && revoked) signOutRevokedDevice();
         });
         return () => { cancelled = true; };
-    }, [state]);
+    }, [state, signOutRevokedDevice]);
+
+    useEffect(() => {
+        if (state.status !== "authed" || state.offline) return;
+        const uid = state.identity.user.id;
+        const hospitalId = state.identity.hospital.id;
+
+        const unwatch = watchThisDeviceRevocation(signOutRevokedDevice);
+
+        const recheck = () => { void touchThisDevice(uid, hospitalId).then(({ revoked }) => revoked && signOutRevokedDevice()); };
+        const interval = window.setInterval(recheck, DEVICE_RECHECK_MS);
+        // A doctor returning to a tab that's been backgrounded (switched
+        // apps, another consult, lunch) is exactly the moment a stale
+        // revocation would otherwise sit unnoticed until the interval next
+        // fires — catch it as soon as they're back rather than making them
+        // wait out the rest of the 5 minutes.
+        const onVisible = () => { if (document.visibilityState === "visible") recheck(); };
+        document.addEventListener("visibilitychange", onVisible);
+        window.addEventListener("focus", recheck);
+
+        return () => {
+            unwatch();
+            window.clearInterval(interval);
+            document.removeEventListener("visibilitychange", onVisible);
+            window.removeEventListener("focus", recheck);
+        };
+    }, [state, signOutRevokedDevice]);
 
     const adoptIdentity = (identity: Identity) => {
         userIdRef.current = identity.user.id;

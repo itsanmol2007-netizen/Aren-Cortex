@@ -59,12 +59,16 @@ import { ConditionsCard } from "./features/consult/ConditionsCard";
 import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
 import { relevantFields, JOINT_RANGE_FIELDS } from "./features/consult/measures";
-import { buildTrendSummary } from "./features/consult/trend";
+import { buildTrendSummary, type TrendSeries } from "./features/consult/trend";
 import { formatLine, type ExerciseLine } from "./features/consult/exercisePlan";
 import { ExercisePlanCard } from "./features/consult/ExercisePlanCard";
 import { LongitudinalBand } from "./features/consult/LongitudinalBand";
 import { CarePlanSheet } from "./features/consult/CarePlanSheet";
 import { PastVisitCard, visitHasContent } from "./components/PastVisitCard";
+// Same modal Patient Record's own Progress Trend cards open — see
+// LongitudinalBand.tsx's `TrendCard` comment for why a graph click here
+// now goes through this instead of straight to `PastVisitCard`.
+import { TrendDetailModal } from "./features/patients/TrendDetailModal";
 import { visitStatusKind } from "./features/patients/visitStatus";
 import { PlanCard } from "./features/consult/PlanCard";
 import { SaveAsTemplateModal } from "./features/practice/SaveAsTemplateModal";
@@ -242,6 +246,25 @@ function App() {
    * open overlay to the workspace behind it).
    */
   const [activeVisit, setActiveVisit] = useState<{ visit: RealVisit; x: number } | null>(null);
+
+  /**
+   * The Longitudinal Record's own drill-in, mirroring Patient Record's
+   * `trendDetail`/visit-popover pair exactly (`PatientRecord.tsx`,
+   * `TrendDetailModal.tsx`) — a graph click opens the series' detail
+   * (`trendDetail`), and a point/row inside THAT opens `trendVisit`, its own
+   * light-toned `PastVisitCard` layered on top so closing it steps back to
+   * the graph rather than dropping out to the workspace.
+   *
+   * Kept separate from `activeVisit` on purpose: `activeVisit` is the DARK
+   * `PastVisitCard` reached from the dark header's past-visit chips and the
+   * band's own Last Visit/timeline rows — Anmol asked explicitly that this
+   * entry point NOT change ("don't change the actual dark model... that
+   * should be preserved", 2026-08-31). Only the trend-graph path moved to
+   * the light modal chain Patient Record already uses; sharing one state
+   * variable between the two would mean picking one tone for both.
+   */
+  const [trendDetail, setTrendDetail] = useState<TrendSeries | null>(null);
+  const [trendVisit, setTrendVisit] = useState<RealVisit | null>(null);
   const [carePlanSheetOpen, setCarePlanSheetOpen] = useState(false);
 
   /**
@@ -724,7 +747,7 @@ function App() {
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
       !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
-      !!activeVisit || carePlanSheetOpen || addMedicineQuery != null,
+      !!activeVisit || !!trendDetail || !!trendVisit || carePlanSheetOpen || addMedicineQuery != null,
   });
 
   // The consult workspace's shell (`.cs-shell`, consult.css) locks its own
@@ -1310,13 +1333,39 @@ function App() {
       )}
 
       {/* The shared past-visit detail, opened by the header's chips AND by the
-          band's timeline. One view, two ways in. */}
+          band's Last Visit card / timeline rows. One view, two ways in — its
+          dark tone (the default) is Consult's own, deliberately unchanged. */}
       {activeVisit && (
         <PastVisitCard
           visit={activeVisit.visit}
           x={activeVisit.x}
           onClose={() => setActiveVisit(null)}
           onRepeatRx={(v) => { setActiveVisit(null); handleRepeatRx(v); }}
+        />
+      )}
+
+      {/* A Longitudinal Record graph, expanded — the THIRD way into a past
+          visit, and the one that changed 2026-09-02: it used to hand off
+          straight to the dark card above; now it goes through the same
+          light `TrendDetailModal` chain Patient Record uses (see
+          `LongitudinalBand.tsx`'s `TrendCard` comment). `trendVisit` is its
+          own light `PastVisitCard`, layered on TOP of the modal rather than
+          replacing it, so closing the visit steps back to the graph. */}
+      {trendDetail && (
+        <TrendDetailModal
+          series={trendDetail}
+          visits={meaningfulPastVisits}
+          onClose={() => setTrendDetail(null)}
+          onOpenVisit={setTrendVisit}
+        />
+      )}
+      {trendVisit && (
+        <PastVisitCard
+          visit={trendVisit}
+          x={window.innerWidth / 2}
+          tone="light"
+          onClose={() => setTrendVisit(null)}
+          onRepeatRx={(v) => { setTrendVisit(null); setTrendDetail(null); handleRepeatRx(v); }}
         />
       )}
 
@@ -1461,6 +1510,7 @@ function App() {
             carePlan={carePlan.plan}
             sessionNumbers={carePlan.sessionNumbers}
             onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
+            onOpenTrend={setTrendDetail}
             onEditCarePlan={() => setCarePlanSheetOpen(true)}
             onStartCarePlan={() => setCarePlanSheetOpen(true)}
           />

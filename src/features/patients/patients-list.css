@@ -1607,6 +1607,21 @@
     letter-spacing: 0.01em;
 }
 
+/* The Patient Record detail page reuses this class in a card roughly twice
+   the width of the Overview table's snapshot cell the 130px cap was sized
+   for — "Generalised body pain" was landing as "Generalised body …",
+   truncated mid-word for no reason the card's own width justified
+   (2026-09-02). `--roomy` is that one call site: no cap, no ellipsis, wraps
+   like an ordinary line of text instead of hiding the end of it. The table
+   cell keeps the base rule — a table row genuinely doesn't have the width
+   to spare. */
+.prec-snapshot-chip--roomy {
+    max-width: none;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
 /* Primary complaint — leads, same blue as the rest of the table's chips */
 .prec-snapshot-chip--primary {
     background: #eff5ff;

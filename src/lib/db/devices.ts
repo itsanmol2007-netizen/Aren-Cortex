@@ -23,11 +23,22 @@
 //
 // ── Revocation
 //
-// `revoked_at` is enforced by the client that owns the row: `touchThisDevice`
-// reports it back, and the app signs itself out when it sees its own row
-// revoked. That is a real remote sign-out for any device that comes back
-// online. It is NOT instant, so Settings still offers `scope: "global"`
-// sign-out as the immediate server-side kill switch, and says which is which.
+// `revoked_at` is enforced by the client that owns the row, two ways:
+//
+// 1. LIVE, via `watchThisDeviceRevocation` — a realtime subscription on this
+//    device's own row (migration `user_devices_realtime`), signing out the
+//    instant the UPDATE lands. This is the fix for "I signed a device out
+//    and it's still logged in over there" (2026-09-02): a tab sitting open
+//    had no way to learn its own row had been revoked short of a manual
+//    reload, which is not what pressing "Sign out" on that device means to
+//    anyone using the button.
+// 2. As a FALLBACK, `touchThisDevice` reports revocation back too, so a
+//    device that reconnects after being offline (or whose realtime channel
+//    dropped — see AuthProvider's periodic re-check) still catches it.
+//
+// `scope: "global"` sign-out remains the immediate, unconditional
+// server-side kill switch regardless of whether either of the above is
+// connected, and Settings' UI says which is which.
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
@@ -157,6 +168,38 @@ export async function touchThisDevice(
     } catch {
         return { revoked: false };
     }
+}
+
+/**
+ * Live: call `onRevoked` the moment THIS device's own row is revoked from
+ * elsewhere, without waiting for a reload.
+ *
+ * Filtered server-side on `device_key` (RLS on `user_devices` scopes it to
+ * rows this account owns regardless, but the filter also means this one
+ * open tab isn't sent every OTHER device's updates just to ignore them).
+ * Same `postgres_changes` shape as `subscribeGatewaySessions`
+ * (`lib/db/gateways.ts`) — unique channel name, `removeChannel` on cleanup.
+ *
+ * This is the live half only. `touchThisDevice`'s own return value is the
+ * fallback for when the channel never connected or dropped silently — see
+ * AuthProvider's periodic re-check, which exists for exactly that gap.
+ */
+export function watchThisDeviceRevocation(onRevoked: () => void): () => void {
+    const key = thisDeviceKey();
+    const channel = supabase
+        .channel(`user_devices:${key}:${Date.now()}`)
+        .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "user_devices", filter: `device_key=eq.${key}` },
+            (payload) => {
+                const next = payload.new as { revoked_at: string | null };
+                if (next.revoked_at != null) onRevoked();
+            }
+        )
+        .subscribe();
+    return () => {
+        void supabase.removeChannel(channel);
+    };
 }
 
 /** Every install this account has signed in from, most recent first. Revoked

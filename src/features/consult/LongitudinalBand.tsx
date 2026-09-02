@@ -172,23 +172,35 @@ function VerdictArrow({ verdict, rising }: { verdict: TrendVerdict; rising: bool
  * the standing principle at the top of the spec is blunter still — nothing the
  * software surfaces should read as an instruction.
  *
- * Clickable since 2026-08-17 — Anmol: "it should open when you click on that
- * box." The spec's own line is what shapes WHAT opens: "click to expand into
- * the existing per-visit detail view we already have. Do not build a second
- * detail view." So a click opens `PastVisitCard` (via `onOpen`) for the visit
- * that produced the card's newest REAL reading — not today's in-progress one,
- * which has no saved visit to open yet — same component `LastVisitCard` and
- * the timeline already open. `visitForLastReading` picks it; `onOpen` is
- * omitted (and the card renders as a plain div) when no saved visit carries
- * this reading, which only happens if every point is today's.
+ * ── What a click opens changed on 2026-09-02
+ *
+ * Clickable since 2026-08-17, but that first cut opened `PastVisitCard`
+ * (the dark per-visit view) directly, for the visit behind the card's
+ * newest reading — reading its own click as "show me that visit". Anmol,
+ * 2026-09-02: "clicking on any graph opens that dark theme past visit
+ * modal, no it should not... same [as Patient Record] should be here too."
+ * The Patient Record page had already answered the right question for a
+ * graph click — not "what happened at one visit" but "how did this READING
+ * move" — with `TrendDetailModal` (light, the real plotted line, every
+ * point in the series, `PastVisitCard` reachable per-point from inside it).
+ * A click here now opens that same modal via `onOpen`, keyed by series
+ * rather than by visit; `PastVisitCard` is still exactly one click further
+ * in, same component, same tone, just no longer the FIRST thing a graph
+ * click reaches.
+ *
+ * `visit` stays the gate on whether the card is clickable at all —
+ * `visitForLastReading` returns `null` when every point in the series is
+ * today's still-unsaved reading, and a series with nothing saved behind it
+ * yet has nothing for the modal to show either.
  */
 function TrendCard({
     series, visit, onOpen,
 }: {
     series: TrendSeries;
-    /** the visit that produced the newest SAVED point in this series, if any */
+    /** the visit that produced the newest SAVED point in this series, if any
+     *  — read only to decide whether this card is clickable at all */
     visit: RealVisit | null;
-    onOpen: (visit: RealVisit, x: number) => void;
+    onOpen: (series: TrendSeries) => void;
 }) {
     const rising = series.delta > 0;
     const label: Record<TrendVerdict, string> = {
@@ -246,10 +258,7 @@ function TrendCard({
         <button
             type="button"
             className={`cs-lt-card is-${series.verdict} cs-lt-card-open`}
-            onClick={(e) => {
-                const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                onOpen(visit, r.left + r.width / 2);
-            }}
+            onClick={() => onOpen(series)}
         >
             {body}
         </button>
@@ -400,7 +409,7 @@ function LongitudinalSkeleton() {
 
 export function LongitudinalBand({
     summary, pastVisits, loading, carePlan, sessionNumbers,
-    onOpenVisit, onEditCarePlan, onStartCarePlan,
+    onOpenVisit, onOpenTrend, onEditCarePlan, onStartCarePlan,
 }: {
     summary: TrendSummary;
     /** newest first, as `fetchPatientVisits` returns them */
@@ -410,7 +419,15 @@ export function LongitudinalBand({
     carePlan: CarePlan | null;
     /** visit id → session number within the active care plan */
     sessionNumbers: Map<string, number>;
+    /** Opens `PastVisitCard` directly — the Last Visit card and the visit
+     *  timeline rows below still answer "what happened at one visit", so
+     *  they stay wired to this. A trend mini-card's own click does NOT use
+     *  this any more — see `onOpenTrend`. */
     onOpenVisit: (visit: RealVisit, x: number) => void;
+    /** A trend mini-card's click — opens the series' own detail modal
+     *  (`TrendDetailModal`, same one Patient Record uses), not a visit
+     *  directly. See `TrendCard`'s 2026-09-02 comment for why. */
+    onOpenTrend: (series: TrendSeries) => void;
     onEditCarePlan: () => void;
     onStartCarePlan: () => void;
 }) {
@@ -507,7 +524,7 @@ export function LongitudinalBand({
                                 key={s.key}
                                 series={s}
                                 visit={visitForLastReading(s, pastVisits)}
-                                onOpen={onOpenVisit}
+                                onOpen={onOpenTrend}
                             />
                         ))}
 

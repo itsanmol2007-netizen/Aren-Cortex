@@ -89,6 +89,19 @@ const generalOpdSnapshot = (row: PatientRecordRow): ClinicalSnapshot => {
     }
 
     if (!chips.length && !detail) return EMPTY_SNAPSHOT;
+
+    // The real visit count, same rule `physiotherapySnapshot` already
+    // follows for its own count chip — appended last so it only displaces a
+    // genuine clinical chip once there are already 3, and only shown at all
+    // once there's at least one real clinical chip to sit beside (a bare
+    // "5 visits" with nothing else charted would read as filler, not as the
+    // supporting fact it is). Without this, a visit with just a primary
+    // complaint charted (no finding, no medicine, no test) rendered a single
+    // chip in a card built to hold three — real, honest, and thin enough to
+    // read as unfinished. `row.visit_count` is the same figure the page's
+    // own "Total visits" stat shows, not a second number invented here.
+    if (chips.length) chips.push(countChip(row, "visit"));
+
     return { chips: chips.slice(0, 3), detail };
 };
 

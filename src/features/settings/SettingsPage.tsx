@@ -40,7 +40,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
-    Activity, AlertTriangle, ArrowRight, Check, ChevronDown, ChevronRight,
+    Activity, AlertTriangle, ArrowRight, Check, ChevronRight,
     ExternalLink, FileText, HelpCircle, Info, Keyboard, Laptop, Loader2, Lock,
     LogOut, Mail, MonitorSmartphone, Receipt, Search, Settings2, Shield,
     ShieldCheck, Smartphone, Stethoscope, Tablet, Trash2, User, Users, X,
@@ -623,6 +623,103 @@ function ManageSubscriptionModal({
     );
 }
 
+// ── Specialty profile picker ────────────────────────────────────────────────
+
+/**
+ * A floating picker, not an in-place expansion.
+ *
+ * The grid used to render INSIDE the Consult Setup card when "Change" was
+ * pressed, which grew that one card past its neighbour on the same row —
+ * "clicking Change in speciality is just expanding the same box and the box
+ * around it" (2026-09-02). A settings grid where opening one control resizes
+ * its own card, but not the card beside it, is exactly the mismatched-height
+ * row this page's cards were rebuilt to avoid. The picker now lives here, in
+ * its own layer above the page — the card behind it never changes size.
+ */
+function SpecialtyModal({
+    currentId, saving, error, onPick, onClose,
+}: {
+    currentId: string;
+    saving: string | null;
+    error: string | null;
+    onPick: (id: string) => void;
+    onClose: () => void;
+}) {
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !saving) onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose, saving]);
+
+    return (
+        <div
+            className="fixed inset-0 z-[900] flex items-center justify-center bg-[rgba(11,23,51,0.28)] p-[32px] backdrop-blur-[14px]"
+            onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}
+        >
+            <div className="flex max-h-[min(600px,88vh)] w-[min(560px,100%)] flex-col overflow-hidden rounded-[20px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(246,248,252,0.94))] shadow-[0_40px_80px_-32px_rgba(11,23,51,0.55)]">
+                <div className="h-[4px] flex-none bg-[linear-gradient(90deg,#1268e8_0%,#6366f1_100%)]" />
+                <div className="flex flex-none items-center justify-between gap-[12px] px-[18px] pb-[10px] pt-[16px]">
+                    <div className="flex items-center gap-[10px]">
+                        <span className="grid h-[30px] w-[30px] place-items-center rounded-[8px] bg-[rgba(18,104,232,0.10)] text-[var(--cs-blue)]">
+                            <Stethoscope size={15} />
+                        </span>
+                        <div>
+                            <p className="m-0 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--cs-blue)]">Consult Setup</p>
+                            <span className="text-[14px] font-bold text-[var(--cs-ink)]">Change specialty profile</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button" onClick={onClose} disabled={!!saving} aria-label="Close"
+                        className="grid h-[26px] w-[26px] flex-none place-items-center rounded-[8px] border border-[var(--cs-line-strong)] bg-white text-[var(--cs-muted)] disabled:opacity-60!"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col gap-[10px] overflow-y-auto px-[18px] pb-[18px]">
+                    <p className="m-0 text-[12px] leading-[1.5] text-[var(--cs-faint)]">
+                        Decides the chart, the elevated outputs and the measurements the consult screen opens with.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-[6px] max-[420px]:grid-cols-1">
+                        {PROFILE_LIST.map((sp) => {
+                            const active = sp.id === currentId;
+                            const isSaving = saving === sp.id;
+                            return (
+                                <button
+                                    key={sp.id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    disabled={saving !== null}
+                                    onClick={() => onPick(sp.id)}
+                                    className={
+                                        "flex min-w-0 flex-col gap-[2px] rounded-[10px] border px-[11px] py-[9px] text-left transition-colors disabled:cursor-default " +
+                                        (active
+                                            ? "border-[var(--cs-blue)] bg-[var(--cs-blue-soft)]"
+                                            : "border-[var(--cs-line)] bg-white hover:border-[rgba(18,104,232,0.4)]")
+                                    }
+                                >
+                                    <span className="flex items-center gap-[6px]">
+                                        <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{sp.label}</span>
+                                        {isSaving && <Loader2 size={13} className="animate-spin text-[var(--cs-blue)]" />}
+                                        {!isSaving && active && <Check size={13} className="text-[var(--cs-blue)]" />}
+                                    </span>
+                                    <span className="truncate text-[11px] text-[var(--cs-faint)]">
+                                        {sp.primaryLabel} primary
+                                        {sp.charts.length > 0 && ` · ${sp.charts.map((c) => CHART_LABEL[c]).join(" + ")}`}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {error && <p className="m-0 text-[12px] font-medium text-[var(--cs-red)]">{error}</p>}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ── Account operations ──────────────────────────────────────────────────────
 
 /**
@@ -890,6 +987,10 @@ export function SettingsPage({
             // so this is the one write that invalidates at its call site.
             invalidateHospital(hospitalId);
             onSpecialtyChanged(id);
+            // A successful pick is the modal's own job done — close it. A
+            // failed one leaves it open with the error in view so retrying
+            // doesn't mean finding the "Change" button again.
+            setSpecialtyOpen(false);
         } catch (e) {
             setSpecialtyError(e instanceof Error ? e.message : "Could not save — try again");
         } finally {
@@ -1345,12 +1446,10 @@ export function SettingsPage({
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => setSpecialtyOpen((v) => !v)}
-                                    aria-expanded={specialtyOpen}
+                                    onClick={() => { setSpecialtyError(null); setSpecialtyOpen(true); }}
                                     className="flex flex-none items-center gap-[4px] rounded-full border border-[var(--cs-line-strong)] bg-white px-[12px] py-[6px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
                                 >
-                                    {specialtyOpen ? "Close" : "Change"}
-                                    <ChevronDown size={12} className={specialtyOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+                                    Change
                                 </button>
                             </div>
 
@@ -1385,43 +1484,6 @@ export function SettingsPage({
                                     </dd>
                                 </div>
                             </dl>
-
-                            {specialtyOpen && (
-                                <div className="mt-[9px] grid grid-cols-2 gap-[6px] max-[560px]:grid-cols-1">
-                                    {PROFILE_LIST.map((sp) => {
-                                        const active = sp.id === currentSpecialtyId;
-                                        const saving = savingSpecialty === sp.id;
-                                        return (
-                                            <button
-                                                key={sp.id}
-                                                type="button"
-                                                aria-pressed={active}
-                                                disabled={savingSpecialty !== null}
-                                                onClick={() => pickSpecialty(sp.id)}
-                                                className={
-                                                    "flex min-w-0 flex-col gap-[2px] rounded-[10px] border px-[11px] py-[9px] text-left transition-colors " +
-                                                    (active
-                                                        ? "border-[var(--cs-blue)] bg-[var(--cs-blue-soft)]"
-                                                        : "border-[var(--cs-line)] bg-white hover:border-[rgba(18,104,232,0.4)]")
-                                                }
-                                            >
-                                                <span className="flex items-center gap-[6px]">
-                                                    <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{sp.label}</span>
-                                                    {saving && <Loader2 size={13} className="animate-spin text-[var(--cs-blue)]" />}
-                                                    {!saving && active && <Check size={13} className="text-[var(--cs-blue)]" />}
-                                                </span>
-                                                <span className="truncate text-[11px] text-[var(--cs-faint)]">
-                                                    {sp.primaryLabel} primary
-                                                    {sp.charts.length > 0 && ` · ${sp.charts.map((c) => CHART_LABEL[c]).join(" + ")}`}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                            {specialtyError && (
-                                <p className="mt-[6px] text-[12px] font-medium text-[var(--cs-red)]">{specialtyError}</p>
-                            )}
 
                             {/* The shortcut reference, one row. It opens the
                                 sheet the consult screen already has — a
@@ -1687,6 +1749,15 @@ export function SettingsPage({
                     userId={auth.status === "authed" ? auth.identity.user.id : null}
                     contactEmail={contactEmail}
                     onClose={() => setManageSubOpen(false)}
+                />
+            )}
+            {specialtyOpen && (
+                <SpecialtyModal
+                    currentId={currentSpecialtyId}
+                    saving={savingSpecialty}
+                    error={specialtyError}
+                    onPick={pickSpecialty}
+                    onClose={() => setSpecialtyOpen(false)}
                 />
             )}
             {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
