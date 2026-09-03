@@ -3,3 +3,7 @@ dist
 .DS_Store
 *.local
 *.tsbuildinfo
+
+# Real WhatsApp/Supabase secrets — never commit. server/.env.example is the
+# committed template with no real values in it.
+server/.env
