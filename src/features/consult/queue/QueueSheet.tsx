@@ -112,7 +112,7 @@ export function QueueSheet({
                     any region fed by data we do not control. */}
                 <div className="flex min-h-[300px] min-w-0 flex-col border-r border-[var(--cs-line)] max-[720px]:border-b max-[720px]:border-r-0">
                     <div className="flex flex-none items-center justify-between px-[15px] pb-[7px] pt-[13px]">
-                        <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-blue)]">Waiting</span>
+                        <span className="text-[12.5px] font-bold text-[var(--cs-blue)]">Waiting</span>
                         <span className="text-[11px] font-semibold tabular-nums text-[var(--cs-faint)]">{waiting.length}</span>
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col gap-[6px] overflow-y-auto px-[15px] pb-[15px]">
@@ -143,10 +143,10 @@ export function QueueSheet({
                         return (
                             <>
                                 <div className="flex flex-none items-center gap-[8px] px-[15px] pb-[7px] pt-[13px]">
-                                    <span className="text-[9.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-faint)]">
-                                        {selected ? "Selected" : "Preview · up next"}
+                                    <span className="text-[11px] font-semibold text-[var(--cs-faint)]">
+                                        {selected ? "Selected" : "Up next"}
                                     </span>
-                                    <span className="truncate text-[11.5px] font-bold text-[var(--cs-ink)]">{showing.patient_name}</span>
+                                    <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{showing.patient_name}</span>
                                 </div>
                                 <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense onManageAttachments={onManageAttachments} />
                             </>

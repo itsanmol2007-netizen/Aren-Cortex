@@ -128,7 +128,7 @@ function ChipRow({ label, items, tone }: { label: string; items: string[]; tone:
     if (!items.length) return null;
     return (
         <div className="flex flex-col gap-[5px]">
-            <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-label)]">{label}</span>
+            <span className="text-[11px] font-semibold text-[var(--cs-label)]">{label}</span>
             <div className="flex flex-wrap gap-[5px]">
                 {items.map((it) => (
                     <span
@@ -204,7 +204,7 @@ export function IntakePanel({
 
             {measurements.length > 0 && (
                 <div className="flex flex-col gap-[5px]">
-                    <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-label)]">Measurements</span>
+                    <span className="text-[11px] font-semibold text-[var(--cs-label)]">Measurements</span>
                     <div className="flex flex-wrap gap-[5px]">
                         {measurements.map((m) => (
                             <span

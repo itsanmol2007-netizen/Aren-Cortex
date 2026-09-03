@@ -251,7 +251,7 @@ export function TransitionModal({
                         grey label. */}
                     <div className="flex min-h-[240px] min-w-0 flex-col border-r border-[var(--cs-line)] max-[720px]:border-b max-[720px]:border-r-0">
                         <div className="flex-none px-[15px] pb-[2px] pt-[13px]">
-                            <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-blue)]">
+                            <span className="text-[12.5px] font-bold text-[var(--cs-blue)]">
                                 Prepared at the front desk
                             </span>
                         </div>
@@ -263,7 +263,7 @@ export function TransitionModal({
                         recessed column, hairline rows, no borders of its own. */}
                     <div className="flex min-h-0 min-w-0 flex-col bg-[var(--cs-page)]">
                         <div className="flex flex-none items-center justify-between px-[13px] pb-[6px] pt-[13px]">
-                            <span className="text-[9.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-faint)]">Also waiting</span>
+                            <span className="text-[11px] font-semibold text-[var(--cs-faint)]">Also waiting</span>
                             <span className="text-[10.5px] font-semibold tabular-nums text-[var(--cs-faint)]">{waiting.length}</span>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[7px] pb-[6px]">

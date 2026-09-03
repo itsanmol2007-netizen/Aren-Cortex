@@ -82,6 +82,13 @@ export function ConsultModal({
                     "bg-[rgba(255,255,255,0.97)] outline-none " +
                     "shadow-[0_2px_4px_rgba(16,28,46,0.06),0_8px_24px_rgba(16,28,46,0.10),0_32px_80px_rgba(16,28,46,0.18)]"
                 }
+                // Set once, here, on the one ancestor everything in this modal
+                // family shares — an inline style beats any cascade collision
+                // this codebase's unlayered legacy CSS could otherwise win
+                // (the same class of bug documented across cortex-gotchas.md).
+                // A clean humanist stack, never a monospace/system fallback
+                // that reads as a terminal to a doctor.
+                style={{ fontFamily: "'Geist Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}
             >
                 {/* The 4px mark, in the action tone this whole surface carries. */}
                 <div
