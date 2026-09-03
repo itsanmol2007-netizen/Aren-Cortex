@@ -62,6 +62,13 @@ export interface ChartDraft {
     selectedSymptomsWithIntensity: SelectedSymptom[];
     selectedFindings: string[];
     chipOrigins: [string, ChipOrigin][];
+    /**
+     * label -> days (entries, same Map-serialisation reason as `chipOrigins`).
+     * Optional because a draft written before durations existed has none, and
+     * `restoreChart` treats a missing list as "nothing was asked" rather than
+     * refusing to restore the rest of a perfectly good chart.
+     */
+    symptomDurations?: [string, number][];
 }
 
 /** `useConsultPlan`'s own in-progress-only fields — the ones its `reset()`

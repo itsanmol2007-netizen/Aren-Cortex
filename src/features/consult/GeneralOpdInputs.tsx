@@ -24,8 +24,9 @@
 // branch to the picker in App.tsx. Nothing else moves.
 // ---------------------------------------------------------------------------
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { ClinicalCommandBar, CaseSheet, type CaseSheetEntry } from "./CaseSheet";
+import { durationCandidates } from "./duration";
 import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
 import { useRovingList } from "../../hooks/useRovingList";
@@ -41,6 +42,16 @@ interface Props {
     onObservableToggle: (o: Observable) => void;
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
+    /**
+     * How long each complaint has been going on — the map, and the way to
+     * change it. General OPD asks this in the command bar (see
+     * `ClinicalCommandBar`'s `durationCandidates`); physiotherapy does NOT,
+     * because its Story already owns "how long" and asking twice is the
+     * double-entry this screen exists to remove. That is the whole of why
+     * these two props live here and not in `PhysioInputs.tsx`.
+     */
+    symptomDurations?: Map<string, number>;
+    onSetSymptomDuration?: (label: string, days: number | null) => void;
     /** take a carried-forward condition off the patient — see CaseSheet's RetireMenu */
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
     intensities: SelectedSymptom[];
@@ -71,6 +82,7 @@ interface Props {
 
 export function GeneralOpdInputs({
     observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
+    symptomDurations, onSetSymptomDuration,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
@@ -101,6 +113,23 @@ export function GeneralOpdInputs({
         actionSelector: ".cx-related-chip",
     });
 
+    /**
+     * Label -> slug, so the duration list can be keyed on the stable
+     * identifier rather than on display text. `duration.ts` names slugs
+     * because a label is a rendering decision that can be edited in the
+     * catalogue without anybody thinking about this file.
+     */
+    const slugByLabel = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const o of observables) m.set(o.label, o.slug);
+        return m;
+    }, [observables]);
+
+    const pendingDurations = useMemo(
+        () => (onSetSymptomDuration ? durationCandidates(caseSheetEntries, slugByLabel) : []),
+        [onSetSymptomDuration, caseSheetEntries, slugByLabel]
+    );
+
     return (
         <>
             {/* The page's one input, above every card because it belongs to the
@@ -116,6 +145,9 @@ export function GeneralOpdInputs({
                 onEmptyEnter={() => relatedRoving.activate()}
                 templates={templates}
                 onApplyTemplate={onApplyTemplate}
+                durationCandidates={pendingDurations}
+                durationsByLabel={symptomDurations}
+                onDurationAnswer={onSetSymptomDuration}
             />
 
             {/* One box in place of three (History, Symptoms, Findings): the Case

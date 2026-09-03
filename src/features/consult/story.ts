@@ -31,6 +31,8 @@
 // not Phase 1 — it needs real irritability data to calibrate against.
 // ---------------------------------------------------------------------------
 
+import { durationChoicesFor } from "./duration";
+
 export type StoryDuration = "under_2wk" | "2_6wk" | "6wk_3mo" | "over_3mo";
 export type StoryOnsetMode = "sudden" | "gradual" | "post_surgical" | "post_traumatic" | "unknown";
 export type StoryIrritability = "low" | "moderate" | "high";
@@ -419,6 +421,20 @@ export function selectedStoryItems(s: Story): StorySearchItem[] {
             label: DURATION_LABEL[s.duration], dimension: "Duration",
             single: true, synonyms: [],
         });
+    } else if (s.durationText && !picked.some((it) => it.dimension === "Duration")) {
+        // A duration the clinician TYPED — "4 days", "17 days", "8 months".
+        // `STORY_SEARCH_ITEMS` cannot contain it by construction (see
+        // `freeDurationItems`), so filtering that list alone would drop the
+        // chip off the sentence the moment it was recorded, which is the exact
+        // class of "stored but invisible" failure this file argues against
+        // everywhere else. Rebuilt from what was actually stored, so the chip,
+        // the record and the ranked bucket can never disagree.
+        picked.unshift({
+            id: `Duration:${s.durationText}`,
+            key: s.duration ?? durationBucket(0),
+            label: s.durationText, dimension: "Duration",
+            single: true, synonyms: [],
+        });
     }
     return picked;
 }
@@ -488,12 +504,81 @@ export function storyClauses(s: Story): StoryClause[] {
  * search surfaces on this screen behave identically under the hand rather
  * than each having its own idea of a good match.
  */
+/**
+ * Which bucket a number of days falls into.
+ *
+ * The boundaries follow `DURATION_LABEL`'s own words literally, exactly as
+ * `DURATION_TERMS` above does: `under_2wk` is "< 2 weeks", so 14 days is the
+ * first `2_6wk` day; `6wk_3mo` starts at 42; `over_3mo` starts past 90.
+ * Deriving the bucket rather than looking it up in a table is what lets ANY
+ * number be a real answer (standing rule 19 — one of the two has to read the
+ * other, and a second hand-maintained table would be the thing that drifts).
+ */
+export function durationBucket(days: number): StoryDuration {
+    if (days < 14) return "under_2wk";
+    if (days < 42) return "2_6wk";
+    if (days <= 90) return "6wk_3mo";
+    return "over_3mo";
+}
+
+/**
+ * The duration the clinician actually typed, as a real, pickable item.
+ *
+ * ── The complaint this fixes (Anmol, 2026-09-03) ──────────────────────────
+ * "I enter knee pain and then it asks for how many days, and if I try to put
+ * four days or five days there, there isn't any option. There are just
+ * hardcoded options like one day, two days, three days, one week." Exactly
+ * right: `DURATION_TERMS` is eighteen fixed strings, so "4 days", "17 days"
+ * or "8 months" simply could not be recorded — the clinician had to round the
+ * patient's answer to the nearest option somebody happened to write down,
+ * which is the rounding `durationText` exists specifically to prevent (see
+ * the `Story.durationText` doc).
+ *
+ * So the list stays as the SHORTCUT it always was, and this synthesises the
+ * exact answer alongside it. `key` is still one of the four buckets — the
+ * ranked value has not changed and neither has anything downstream of it —
+ * and `label` is still what gets stored as `durationText`, so a saved story
+ * with a synthesised duration is byte-identical in shape to one picked from
+ * the list. `check:duration` covers the same parsing on the General OPD side;
+ * this reuses `duration.ts`'s parser rather than writing a second one.
+ */
+export function freeDurationItems(query: string): StorySearchItem[] {
+    return durationChoicesFor(query).map((choice) => ({
+        id: `Duration:${choice.label}`,
+        key: durationBucket(choice.days),
+        label: choice.label,
+        dimension: "Duration" as const,
+        single: true,
+        synonyms: [],
+    }));
+}
+
 export function searchStory(query: string, s: Story, limit = 8): StorySearchItem[] {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const ranked: { it: StorySearchItem; r: number }[] = [];
+
+    /**
+     * A typed number leads, always.
+     *
+     * `4` used to return nothing at all in the Duration slot — no item's label
+     * starts with it and no synonym contains it — so the composer sat there
+     * looking broken. Now `4` offers "4 days / 4 weeks / 4 months" and
+     * "4 days" offers exactly that, at rank -1 so it cannot be pushed below a
+     * fixed term that merely happens to contain the same digit.
+     */
+    const seen = new Set(STORY_SEARCH_ITEMS.filter((it) => storyHas(s, it)).map((it) => it.label));
+    for (const it of freeDurationItems(q)) {
+        if (seen.has(it.label)) continue;
+        if (s.durationText === it.label) continue;
+        ranked.push({ it, r: -1 });
+    }
+    const offered = new Set(ranked.map((x) => x.it.label));
     for (const it of STORY_SEARCH_ITEMS) {
         if (storyHas(s, it)) continue; // already said — never offer it twice
+        // ...and never twice in the same list either: "3 weeks" is both a
+        // fixed term and something the parser above can synthesise.
+        if (offered.has(it.label)) continue;
         const label = it.label.toLowerCase();
         let r = 99;
         if (label.startsWith(q)) r = 0;

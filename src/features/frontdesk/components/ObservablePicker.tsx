@@ -24,8 +24,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Search } from "lucide-react";
+import { Clock3, Plus, Search } from "lucide-react";
 import type { IntakeChip } from "@/lib/db/synapse";
+import {
+    ASKS_DURATION, bareNumber, parseDurationDays, shortDuration,
+} from "@/features/consult/duration";
 import { useCachedIntakeChips } from "../operational/referenceCache";
 import { useT } from "../i18n/i18n";
 import { bestTermScore, matchScore } from "./observableMatch";
@@ -45,12 +48,28 @@ type Props = {
     catalogLabel: string;
     /** shown when a query matches nothing */
     noMatchLabel: string;
+    /**
+     * ── "How long?" at the desk (2026-09-03) ─────────────────────────────
+     *
+     * observableId -> days, and the way to change it. Optional: a picker
+     * without these is exactly the picker it was before.
+     *
+     * Reception is usually the person who actually hears the answer — "since
+     * Monday", "about three weeks" — and asking again in the consult room is
+     * the double-entry Consult exists to remove. The same curated list decides
+     * WHICH chips get a duration box (`ASKS_DURATION`), so the desk and the
+     * doctor cannot disagree about which complaints the question is worth
+     * asking for.
+     */
+    durations?: Map<number, number>;
+    onDurationChange?: (observableId: number, days: number | null) => void;
 };
 
 const KIND_LABEL: Record<string, string> = { symptom: "symptom", history: "history" };
 
 export function ObservablePicker({
     kinds, selected, onChange, inputRef, error, placeholder, catalogLabel, noMatchLabel,
+    durations, onDurationChange,
 }: Props) {
     const t = useT();
     const catalog = useCachedIntakeChips().data;
@@ -153,7 +172,13 @@ export function ObservablePicker({
         setQuery("");
         inputRef.current?.focus();
     };
-    const remove = (id: number) => onChange(selected.filter((s) => s.observableId !== id));
+    const remove = (id: number) => {
+        onChange(selected.filter((s) => s.observableId !== id));
+        // The duration qualified a chip that is gone. Leaving it behind would
+        // silently re-attach "3 weeks" to the next chip that happens to reuse
+        // this id — the same argument `useConsultChart` makes on its own side.
+        onDurationChange?.(id, null);
+    };
 
     /** the alias that explains a non-label match, so the receptionist sees their word landed */
     const matchedAlias = (s: IntakeChip): string | null => {
@@ -279,13 +304,25 @@ export function ObservablePicker({
                 {selected.map((s) => (
                     <span
                         key={s.observableId}
+                        /* Violet = history, rose = what the patient reports. The
+                           exact pairing Cortex's own Case Sheet uses (CaseSheet's
+                           TONE table), so one chip is the same colour at the desk
+                           and in the consult room. The symptom half used to be
+                           plain white, which read as "not yet classified" beside
+                           a tinted history chip. */
                         className={`flex items-center gap-[5px] rounded-[8px] border py-[4px] pl-[9px] pr-[5px] text-[12.5px] font-medium shadow-[0_1px_2px_rgba(20,30,50,0.05)] ${
                             showKindTag && s.kind === "history"
                                 ? "border-[#e2d9fb] bg-[rgba(124,92,240,0.07)] text-[#5b4bb0]"
-                                : "border-[#e2e5ee] bg-white text-[#374151]"
+                                : "border-[#f6c9d3] bg-[rgba(244,114,182,0.07)] text-[#a63a5c]"
                         }`}
                     >
                         {s.label}
+                        {onDurationChange && s.kind === "symptom" && ASKS_DURATION.has(s.slug) && (
+                            <DurationBox
+                                days={durations?.get(s.observableId) ?? null}
+                                onChange={(d) => onDurationChange(s.observableId, d)}
+                            />
+                        )}
                         <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); remove(s.observableId); }}
@@ -311,5 +348,79 @@ export function ObservablePicker({
             </div>
             {dropdown}
         </div>
+    );
+}
+
+/**
+ * "How long?" on the chip that owns it.
+ *
+ * ── Why a free box and not a menu ─────────────────────────────────────────
+ * Anmol, 2026-09-03: "if I try to put four days or five days there, there
+ * isn't any option — there are just hardcoded options like one day, two days,
+ * three days, one week." A fixed ladder cannot hold what a patient actually
+ * says, so this takes any of `3` (days), `3d`, `2w`, `6m`, `1y` and stores
+ * days. The hint under the caret says so rather than making anyone guess.
+ *
+ * ── Why it is a `<span role="button">` and not a `<button>` ───────────────
+ * It lives inside a chip that already carries its own × button, and a button
+ * inside a button is the invalid-DOM/hydration trap `cortex-gotchas.md`
+ * records this codebase hitting twice. The chip itself is not interactive, so
+ * a real `<button>` would be legal here — but the box becomes an `<input>` the
+ * moment it is opened, and nesting THAT in a button is the same problem one
+ * layer down. One shape, correct in both states.
+ */
+function DurationBox({ days, onChange }: { days: number | null; onChange: (days: number | null) => void }) {
+    const [editing, setEditing] = useState(false);
+    const [raw, setRaw] = useState("");
+    const ref = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+
+    const commit = () => {
+        const q = raw.trim();
+        setEditing(false);
+        setRaw("");
+        if (!q) return;                       // left empty = skipped, not zero
+        const exact = parseDurationDays(q);
+        if (exact !== null) { onChange(exact); return; }
+        const bare = bareNumber(q);           // a plain number means days
+        if (bare !== null) onChange(bare);
+    };
+
+    if (editing) {
+        return (
+            <input
+                ref={ref}
+                value={raw}
+                onChange={(e) => setRaw(e.target.value)}
+                onBlur={commit}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                    e.stopPropagation();      // never reaches the picker's own Enter/Backspace
+                    if (e.key === "Enter") { e.preventDefault(); commit(); }
+                    if (e.key === "Escape") { e.preventDefault(); setEditing(false); setRaw(""); }
+                }}
+                placeholder="3d / 2w"
+                aria-label="How long — a number of days, or 3d / 2w / 6m"
+                className="h-[18px]! w-[52px] rounded-[5px]! border! border-[#e2e5ee]! bg-white! px-[4px]! text-[10.5px]! font-semibold text-[#374151] outline-none"
+            />
+        );
+    }
+
+    return (
+        <span
+            role="button"
+            tabIndex={0}
+            title={days ? "How long — click to change" : "How long has this been going on?"}
+            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setEditing(true); }
+            }}
+            className={`flex cursor-pointer items-center gap-[3px] rounded-[5px] px-[5px] py-[1px] text-[10.5px] font-bold tabular-nums leading-none transition-colors ${
+                days ? "bg-black/[0.07] text-current" : "text-current opacity-45 hover:opacity-80"
+            }`}
+        >
+            {days ? shortDuration(days) : <Clock3 size={10} aria-hidden="true" />}
+        </span>
     );
 }

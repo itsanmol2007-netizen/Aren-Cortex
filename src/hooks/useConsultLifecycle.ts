@@ -60,6 +60,23 @@ export interface ConsultLifecycleArgs {
    */
   carryForwardFor: (patientId: string) => Promise<void>;
   /**
+   * Put whatever is already recorded against this visit onto the chart, and
+   * say what came back. See `features/consult/useIntakePrefill.ts`.
+   *
+   * ── The ORDER this is called in is load-bearing ──────────────────────────
+   * It runs while `visitId` is still null, before `session.setVisitId`. The
+   * consult's own persist effect (`useConsultIntelligence`) DELETES a visit's
+   * observations and re-inserts them from the chart on a 600ms debounce — so
+   * with the visit id already set and an empty chart, it would erase the front
+   * desk's intake a fraction of a second before this read put it back. No visit
+   * id, no persist effect, no race. Every start path below therefore reads
+   * `resolve -> clear -> prefill -> set the id`, and a new one must too.
+   *
+   * Awaited rather than fired and forgotten for the same reason. Optional so a
+   * caller that has not wired it still works — App.tsx always passes it.
+   */
+  prefillFromIntake?: (visitId: string) => Promise<{ chips: number; hasMeasurements: boolean; attachmentCount: number }>;
+  /**
    * Called once, after a consult has actually been saved, with the visit that
    * was saved. Today this attaches the visit to the running care plan so it
    * counts as a session.
@@ -120,6 +137,28 @@ export interface ConsultLifecycle {
   resetConsultState: () => void;
 }
 
+/**
+ * What the toast says when a consult opens.
+ *
+ * It names what the front desk already did, once, and then gets out of the
+ * way — "Consult started for Meera Nair · 4 items from front desk" tells the
+ * doctor the chart in front of them is not something they typed, which is the
+ * one thing they need to know in the first second. Silent when nothing was
+ * prepared, which is every Cortex consult.
+ */
+function startedMessage(
+  name: string,
+  intake?: { chips: number; hasMeasurements: boolean; attachmentCount: number }
+): string {
+  const base = `Consult started for ${name}`;
+  if (!intake) return base;
+  const parts: string[] = [];
+  if (intake.chips) parts.push(`${intake.chips} item${intake.chips === 1 ? "" : "s"}`);
+  if (intake.hasMeasurements) parts.push("measurements");
+  if (intake.attachmentCount) parts.push(`${intake.attachmentCount} file${intake.attachmentCount === 1 ? "" : "s"}`);
+  return parts.length ? `${base} · ${parts.join(", ")} from front desk` : base;
+}
+
 export function useConsultLifecycle({
   identity,
   observables,
@@ -129,6 +168,7 @@ export function useConsultLifecycle({
   plan,
   intelligence,
   carryForwardFor,
+  prefillFromIntake,
   onVisitSaved,
   onSaveStory,
   resetStory,
@@ -175,13 +215,17 @@ export function useConsultLifecycle({
   const handleStartConsultFromRecord = useCallback(async (incomingPatient: Patient) => {
     try {
       const visit = await resolveVisitForConsult(incomingPatient.id!);
-      session.setVisitId(visit.id);
+      // Null first, then clear, then prefill, THEN set the real id — see
+      // `prefillFromIntake`'s note on why this order is not cosmetic.
+      session.setVisitId(null);
       session.setPatient(incomingPatient);
       clearWorkspace();
+      const intake = await prefillFromIntake?.(visit.id);
+      session.setVisitId(visit.id);
       session.setRepeatRxBanner(null);
       setActivePage(null);
       setSidebarOpen(false);
-      showToast(`Consult started for ${incomingPatient.name}`);
+      showToast(startedMessage(incomingPatient.name, intake));
       focusChartSearch();
 
       // Excludes the visit just resolved above — otherwise a patient's very
@@ -194,7 +238,7 @@ export function useConsultLifecycle({
       showToast(`Error starting consult: ${err.message}`);
     }
   }, [resolveVisitForConsult, session, clearWorkspace, setActivePage, setSidebarOpen,
-      showToast, focusChartSearch, carryForwardFor]);
+      showToast, focusChartSearch, carryForwardFor, prefillFromIntake]);
 
   /**
    * Re-enter a visit that is ALREADY in progress — the Patients page's
@@ -219,17 +263,32 @@ export function useConsultLifecycle({
    * out of scope for what was asked here — see the handoff note for this.
    */
   const resumeConsult = useCallback((incomingPatient: Patient, visitId: string) => {
-    session.setVisitId(visitId);
+    session.setVisitId(null);
     session.setPatient(incomingPatient);
     clearWorkspace();
     session.setRepeatRxBanner(null);
     setActivePage(null);
     setSidebarOpen(false);
-    showToast(`Consult resumed for ${incomingPatient.name}`, { variant: "resume" });
-    focusChartSearch();
+    // The read-back this function's own header used to record as a known gap
+    // ("restores WHICH patient and WHICH visit, not the chart's own on-screen
+    // content"). It is not the whole of that gap — the plan, the story and the
+    // examination still rebuild from their own sources — but every chip and
+    // every measurement already written for this visit now comes back instead
+    // of the doctor facing a blank chart they have to retype.
+    void (async () => {
+      const intake = await prefillFromIntake?.(visitId);
+      session.setVisitId(visitId);
+      showToast(
+        intake?.chips
+          ? `Consult resumed for ${incomingPatient.name} — ${intake.chips} item${intake.chips === 1 ? "" : "s"} restored`
+          : `Consult resumed for ${incomingPatient.name}`,
+        { variant: "resume" }
+      );
+      focusChartSearch();
+    })();
     session.loadPastVisits(incomingPatient.id!, visitId);
     carryForwardFor(incomingPatient.id!);
-  }, [session, clearWorkspace, setActivePage, setSidebarOpen, showToast, focusChartSearch, carryForwardFor]);
+  }, [session, clearWorkspace, setActivePage, setSidebarOpen, showToast, focusChartSearch, carryForwardFor, prefillFromIntake]);
 
   const handlePatientConfirm = useCallback(async (incoming: Patient) => {
     try {
@@ -267,13 +326,15 @@ export function useConsultLifecycle({
       }
 
       const visit = await resolveVisitForConsult(dbPatient.id!);
-      session.setVisitId(visit.id);
+      session.setVisitId(null);
       session.setPatient(dbPatient);
       clearWorkspace();
+      const intake = await prefillFromIntake?.(visit.id);
+      session.setVisitId(visit.id);
       session.setRepeatRxBanner(null);
       session.setPatientModalOpen(false);
       setActivePage(null);
-      showToast(`Consult started for ${dbPatient.name}`);
+      showToast(startedMessage(dbPatient.name, intake));
       // The chart is where a consult actually begins, so the cursor lands there
       // and the first complaint is one keystroke away (spec §4.2).
       focusChartSearch();
@@ -286,7 +347,7 @@ export function useConsultLifecycle({
       showToast(`Error: ${err.message}`);
     }
   }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId,
-      setActivePage, showToast, focusChartSearch, carryForwardFor]);
+      setActivePage, showToast, focusChartSearch, carryForwardFor, prefillFromIntake]);
 
   const handleRepeatRx = useCallback((visit: RealVisit) => {
     // A past visit stores v1 names ("fever"); the catalogue now speaks

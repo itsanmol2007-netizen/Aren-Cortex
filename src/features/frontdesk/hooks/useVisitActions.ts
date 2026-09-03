@@ -114,6 +114,13 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         gender: string;
         observableIds: number[];
         symptomNames: string[];
+        /**
+         * observableId -> days, for the complaints where reception asked.
+         * Sparse and optional: the desk asks only where `ASKS_DURATION` says
+         * a duration changes what the doctor does, and a skipped question
+         * writes nothing rather than writing zero.
+         */
+        observableDurations?: Map<number, number>;
         // Measurements taken at the desk (BP, weight, LMP…), keyed by the
         // consult's own Vitals field keys. Optional — most registrations have
         // none. Reduced to MeasurementRows and written to `visit_measurements`
@@ -196,7 +203,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
                 // never lose the visit.
                 if (opts.observableIds.length) {
                     const ids = opts.observableIds;
-                    saveVisitObservations(visit.id, ids)
+                    saveVisitObservations(visit.id, ids, opts.observableDurations)
                         .then(() => legacySymptomIdsFor(ids))
                         .then((legacy) => (legacy.length ? saveVisitSymptoms(visit.id, legacy) : undefined))
                         .catch((err) => console.warn("saveVisitObservations failed (non-fatal):", err));

@@ -55,6 +55,10 @@ import {
     storyHas, DIMENSION_PROMPT,
 } from "./story";
 import type { Story, StorySearchItem, StoryDimension } from "./story";
+import {
+    ASKS_DURATION, DURATION_QUICK, durationChoicesFor, escalationFor,
+    formatDuration, shortDuration, type DurationChoice,
+} from "./duration";
 
 /** Every character of `q`, in order, somewhere in `text`. Cheap typo tolerance. */
 function isSubsequence(q: string, text: string): boolean {
@@ -185,14 +189,25 @@ export interface CaseSheetEntry {
      *
      * 'confirmed' — they confirmed a condition this visit and it became input.
      * 'carried'   — it was confirmed at an EARLIER visit and follows the patient.
+     * 'reception' — the front desk recorded it at intake (Consult, 2026-09-03).
      *
-     * The second one has to look different, and this is not decoration. A
-     * doctor reading a chart must be able to tell that "Known diabetic" came
-     * from a confirmation three visits ago rather than from the patient sitting
-     * in front of them — otherwise one wrong confirmation propagates forever
-     * and looks freshly entered every single time.
+     * Neither of the last two may look like a chip the doctor typed, and that
+     * is not decoration. A doctor reading a chart must be able to tell that
+     * "Known diabetic" came from a confirmation three visits ago rather than
+     * from the patient sitting in front of them — otherwise one wrong
+     * confirmation propagates forever and looks freshly entered every single
+     * time. The same argument holds one degree less sharply for reception's
+     * intake: it IS from today and it IS about this patient, so it wears a
+     * quiet marker rather than the drained carried-forward surface — enough
+     * to say "check this", not enough to say "distrust this".
      */
-    origin?: "confirmed" | "carried";
+    origin?: "confirmed" | "carried" | "reception";
+    /**
+     * How long this complaint has been going on, in days. Symptoms only, and
+     * only the ones `duration.ts` asks about — see that file for why not
+     * everything. Absent means nobody was asked or the question was skipped.
+     */
+    durationDays?: number;
 }
 
 /**
@@ -216,6 +231,23 @@ const TONE_CARRIED: Record<Observable["kind"], string> = {
     history: "border-dashed border-[#c4b5e8] bg-[#f6f3fd] text-[#7c60b8] shadow-none",
     symptom: "border-dashed border-[#e8b9c4] bg-[#fdf5f6] text-[#b5697f] shadow-none",
     finding: "border-dashed border-[#9dcfc3] bg-[#f2fbf8] text-[#4a8b84] shadow-none",
+};
+
+/**
+ * Reception's intake: the chip's own colour, full strength, plus a marker.
+ *
+ * Deliberately NOT `TONE_CARRIED`'s drained surface and NOT a new colour. A
+ * complaint the front desk wrote down five minutes ago is as true as one the
+ * doctor typed — the doctor should REVIEW it, not doubt it — so the only
+ * change is a small leading dot in the chip's own hue, which reads as "this
+ * arrived here" without downgrading the fact. The dot is a `<span>`, never a
+ * second `<button>` inside the chip (the nested-button hydration trap
+ * `cortex-gotchas.md` records twice).
+ */
+const TONE_RECEPTION: Record<Observable["kind"], string> = {
+    history: "bg-[#a855f7]",
+    symptom: "bg-[#f472b6]",
+    finding: "bg-[#0f766e]",
 };
 
 // ── shared search ──────────────────────────────────────────────────────────
@@ -269,7 +301,11 @@ type BarResult =
     | { t: "story"; key: string; it: StorySearchItem }
     /** A doctor-authored template, matched by trigger word — never a
      *  Synapse suggestion. See BarProps.templates and `take()` below. */
-    | { t: "template"; key: string; tpl: PrescriptionTemplateSummary };
+    | { t: "template"; key: string; tpl: PrescriptionTemplateSummary }
+    /** How long the complaint in the current duration slot has been going on.
+     *  A fourth vocabulary the same box routes, on exactly the terms the
+     *  other three already established — see `durationCandidates`. */
+    | { t: "duration"; key: string; complaint: string; choice: DurationChoice };
 
 interface BarProps {
     observables: Observable[];
@@ -316,6 +352,28 @@ interface BarProps {
      */
     templates?: PrescriptionTemplateSummary[];
     onApplyTemplate?: (templateId: number) => void;
+    /**
+     * ── THE DURATION SLOT (2026-09-03) ────────────────────────────────────
+     *
+     * Complaints on the sheet that could carry a duration and do not have one
+     * yet, oldest first. The box asks about the first of them the same way
+     * physiotherapy's composer asks its next open story dimension — same
+     * pill, same Space-to-skip, same Backspace-to-undo — because it is the
+     * same mechanism, and a second one that merely resembled it would drift.
+     *
+     * The CALLER decides which complaints qualify (`ASKS_DURATION` in
+     * `duration.ts`, filtered against what is already recorded); the bar owns
+     * only which of them is currently being asked and which have been skipped
+     * this visit. Physiotherapy passes nothing here: its Story already owns
+     * "how long", and asking twice is precisely the double-entry this screen
+     * exists to remove.
+     */
+    durationCandidates?: string[];
+    /** label -> days, for the chips already answered — read to decide whether
+     *  a threshold escalation is worth offering. */
+    durationsByLabel?: Map<string, number>;
+    /** `null` clears a duration already recorded — what Backspace undoes. */
+    onDurationAnswer?: (label: string, days: number | null) => void;
 }
 
 /**
@@ -326,6 +384,7 @@ export function ClinicalCommandBar({
     observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove, leadComplaint,
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
     templates, onApplyTemplate,
+    durationCandidates, durationsByLabel, onDurationAnswer,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -384,7 +443,12 @@ export function ClinicalCommandBar({
      */
     type Step =
         | { kind: "skip"; dim: StoryDimension }
-        | { kind: "answer"; item: StorySearchItem };
+        | { kind: "answer"; item: StorySearchItem }
+        /** the duration slot's own two steps — see `durationSlot` below.
+         *  They ride the SAME history so Backspace walks one timeline, not
+         *  two interleaved ones the clinician has to hold in their head. */
+        | { kind: "durskip"; label: string }
+        | { kind: "duration"; label: string };
     const [history, setHistory] = useState<Step[]>([]);
 
     const openDims = useMemo(
@@ -418,6 +482,62 @@ export function ClinicalCommandBar({
         inputRef.current?.focus();
     }, [slot]);
 
+    // ── THE DURATION SLOT ───────────────────────────────────────────────
+    //
+    // Same three pieces as the story slot above it — what is being asked, what
+    // has been stepped past, and how to step past it — for the surfaces that
+    // have no Story. Never both: `durationOn` is false whenever the story
+    // composer is running (see `durationCandidates`).
+    const [durationSkipped, setDurationSkipped] = useState<Set<string>>(new Set());
+    const durationOn = !storyOn && !!durationCandidates?.length && !!onDurationAnswer;
+    const durationSlot = useMemo(
+        () => (durationOn ? (durationCandidates!.find((l) => !durationSkipped.has(l)) ?? null) : null),
+        [durationOn, durationCandidates, durationSkipped]
+    );
+
+    const skipDuration = useCallback(() => {
+        if (!durationSlot) return;
+        setDurationSkipped((prev) => new Set(prev).add(durationSlot));
+        setHistory((h) => [...h, { kind: "durskip", label: durationSlot }]);
+        setActive(0);
+        inputRef.current?.focus();
+    }, [durationSlot]);
+
+    /**
+     * A duration that has crossed a threshold the catalogue already has a chip
+     * for — "18 days" on a fever is `fever_prolonged`, which is a real
+     * observable with real rules behind it.
+     *
+     * OFFERED, never applied. Auto-charting it would be the software making a
+     * clinical assertion nobody made, and then ranking medicines off it. This
+     * is the same "suggested, with the reason stated, one click to take it"
+     * shape `suggestIrritability` and MeasureCell's `suggested`/`because`
+     * already use. Dismissable, and dismissal is per-visit UI state — the
+     * suggestion is not a finding, so there is nothing to record about
+     * declining it.
+     */
+    const [dismissedEscalations, setDismissedEscalations] = useState<Set<string>>(new Set());
+    const observableByLabel = useMemo(() => {
+        const m = new Map<string, Observable>();
+        for (const o of observables) m.set(o.label, o);
+        return m;
+    }, [observables]);
+
+    const escalation = useMemo(() => {
+        if (!durationsByLabel?.size) return null;
+        for (const [label, days] of durationsByLabel) {
+            const source = observableByLabel.get(label);
+            if (!source) continue;
+            const hit = escalationFor(source.slug, days);
+            if (!hit) continue;
+            const target = observables.find((o) => o.slug === hit.toSlug);
+            if (!target || onSheet.has(target.label)) continue;
+            if (dismissedEscalations.has(target.slug)) continue;
+            return { complaint: label, days, target };
+        }
+        return null;
+    }, [durationsByLabel, observableByLabel, observables, onSheet, dismissedEscalations]);
+
     /** The sentence so far, for the tokens rendered INSIDE the box. */
     const clauses = useMemo(() => (story ? storyClauses(story) : []), [story]);
 
@@ -443,6 +563,27 @@ export function ClinicalCommandBar({
                     s.delete(step.dim);
                     return s;
                 });
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
+            if (step.kind === "durskip") {
+                setDurationSkipped((prev) => {
+                    const s = new Set(prev);
+                    s.delete(step.label);
+                    return s;
+                });
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
+            if (step.kind === "duration") {
+                // Clearing the answer puts the complaint back in the rotation
+                // on its own — `durationCandidates` is recomputed from what is
+                // recorded, so there is no second piece of state to unwind.
+                onDurationAnswer?.(step.label, null);
                 setHistory(next);
                 setActive(0);
                 inputRef.current?.focus();
@@ -503,9 +644,31 @@ export function ClinicalCommandBar({
             .map((t) => ({ t: "template" as const, key: `tpl:${t.id}`, tpl: t }));
     }, [templates, onApplyTemplate, query]);
 
+    /**
+     * What the typed query means as a DURATION, when a duration is what is
+     * being asked.
+     *
+     * These lead the list, for the same reason story items answering the open
+     * dimension lead it: the first row is what Enter takes, and a doctor
+     * answering "how many days" with `3` must not have that Enter file an
+     * observable whose label happens to contain a 3. `durationChoicesFor`
+     * turns a bare number into days/weeks/months and a qualified one
+     * ("3 weeks", "10d") into exactly what was said — so any number is
+     * enterable, which is the whole complaint that started this.
+     */
+    const durationMatches = useMemo<BarResult[]>(() => {
+        if (!durationSlot) return [];
+        return durationChoicesFor(query).map((choice) => ({
+            t: "duration" as const,
+            key: `d:${durationSlot}:${choice.days}`,
+            complaint: durationSlot,
+            choice,
+        }));
+    }, [durationSlot, query]);
+
     const results = useMemo<BarResult[]>(() => {
         const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
-        if (!storyOn) return [...templateMatches, ...obs];
+        if (!storyOn) return [...durationMatches, ...templateMatches, ...obs];
         const st = searchStory(query, story!, 6);
 
         /**
@@ -531,14 +694,27 @@ export function ClinicalCommandBar({
         const rest: BarResult[] = st.filter((it) => !inSlot(it))
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
         return [...templateMatches, ...lead, ...obs, ...rest];
-    }, [obsResults, storyOn, query, story, slot, templateMatches]);
+    }, [obsResults, storyOn, query, story, slot, templateMatches, durationMatches]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
-        if (!storyOn || query.trim() || !slot) return [];
+        if (query.trim()) return [];
+        if (durationSlot) {
+            // The everyday answers, offered — and the box still takes any
+            // number typed over the top of them. A ladder is a shortcut here,
+            // never the only way through, which is exactly where
+            // physiotherapy's hard-coded list went wrong.
+            return DURATION_QUICK.map((choice) => ({
+                t: "duration" as const,
+                key: `dp:${durationSlot}:${choice.days}`,
+                complaint: durationSlot,
+                choice,
+            }));
+        }
+        if (!storyOn || !slot) return [];
         return itemsForDimension(story!, slot, 6)
             .map((it) => ({ t: "story", key: `p:${it.id}`, it }));
-    }, [storyOn, query, story, slot]);
+    }, [storyOn, query, story, slot, durationSlot]);
 
     const showPrompts = focused && !query.trim() && prompts.length > 0;
     const shown = query.trim() ? results : prompts;
@@ -599,6 +775,10 @@ export function ClinicalCommandBar({
     const take = (r: BarResult) => {
         if (r.t === "obs") onToggle(r.o);
         else if (r.t === "template") onApplyTemplate?.(r.tpl.id);
+        else if (r.t === "duration") {
+            onDurationAnswer?.(r.complaint, r.choice.days);
+            setHistory((h) => [...h, { kind: "duration", label: r.complaint }]);
+        }
         else {
             onStoryAdd?.(r.it);
             // Only story answers go on the step history. An observable is a
@@ -624,6 +804,16 @@ export function ClinicalCommandBar({
         if (empty && storyOn && slot && (e.key === " " || e.key === "Tab")) {
             e.preventDefault();
             skipSlot();
+            return;
+        }
+
+        // The duration slot skips on exactly the same keys, because to the
+        // hand it IS the same question: "how long" with nothing typed. Anmol,
+        // 2026-09-03: "you click space, it will be simply ignored, you could
+        // just go to new symptom."
+        if (empty && durationSlot && (e.key === " " || e.key === "Tab")) {
+            e.preventDefault();
+            skipDuration();
             return;
         }
 
@@ -679,10 +869,10 @@ export function ClinicalCommandBar({
                 {/* The prompt list says WHY it is offering these, because
                     otherwise a list that appears on focus reads as a search
                     result for a query nobody typed. */}
-                {showPrompts && slot && (
+                {showPrompts && (slot || durationSlot) && (
                     <p className="flex items-center justify-between gap-2 border-b border-[var(--cs-line)] px-3 pb-1.5 pt-2">
                         <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--cs-label)]">
-                            {DIMENSION_PROMPT[slot]}
+                            {slot ? DIMENSION_PROMPT[slot] : `${durationSlot} — how long?`}
                         </span>
                         {/* The skip is stated where the clinician is looking —
                             a key that is only discoverable by being told is a
@@ -704,7 +894,10 @@ export function ClinicalCommandBar({
                         // search filters those out at source (`searchStory`),
                         // so only observables can come back ticked.
                         const on = r.t === "obs" && onSheet.has(r.o.label);
-                        const label = r.t === "obs" ? r.o.label : r.t === "template" ? r.tpl.name : r.it.label;
+                        const label = r.t === "obs" ? r.o.label
+                            : r.t === "template" ? r.tpl.name
+                                : r.t === "duration" ? r.choice.label
+                                    : r.it.label;
                         return (
                             <button
                                 key={r.key}
@@ -726,7 +919,13 @@ export function ClinicalCommandBar({
                                     // keep it visually apart from the symptom it
                                     // may sit right beside (typing "fever" can
                                     // return both), never merged into one row.
-                                    (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] bg-[#faf8ff] " : "")
+                                    (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] bg-[#faf8ff] " : "") +
+                                    // A duration answers the question the box is
+                                    // standing on, so it leads the list and says
+                                    // so with the same left rule a template uses
+                                    // to say "bigger than a chip" — one shape,
+                                    // two meanings kept apart by colour.
+                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] bg-[var(--cs-blue-soft)]/40 " : "")
                                 }
                             >
                                 <span className="min-w-0 flex-1 truncate">
@@ -753,7 +952,10 @@ export function ClinicalCommandBar({
                                                 : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
-                                    {r.t === "obs" ? KIND_BADGE[r.o.kind] : r.t === "template" ? "Template" : r.it.dimension.toLowerCase()}
+                                    {r.t === "obs" ? KIND_BADGE[r.o.kind]
+                                        : r.t === "template" ? "Template"
+                                            : r.t === "duration" ? "duration"
+                                                : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );
@@ -835,7 +1037,8 @@ export function ClinicalCommandBar({
                         onFocus={() => setFocused(true)}
                         onBlur={() => setFocused(false)}
                         placeholder={
-                            !storyOn ? "Add clinical information (symptoms, findings, history…)"
+                            durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
+                                : !storyOn ? "Add clinical information (symptoms, findings, history…)"
                                 : !leadComplaint ? "What happened? Start with the complaint…"
                                     // A slot names the question in the pill beside the
                                     // caret, so a placeholder would only repeat it.
@@ -862,6 +1065,40 @@ export function ClinicalCommandBar({
                     has been skipped `slot` is null — which is exactly the
                     moment a clinician most needs a way out, and exactly the
                     moment the old markup rendered nothing at all. */}
+                {/* The duration composer's own controls. Same three shapes as
+                    the story composer's below — pill, Back, Skip — so the two
+                    are one mechanism a doctor learns once, not two that look
+                    alike. Rendered only when a duration is actually open;
+                    General OPD with nothing to ask is exactly the bar it has
+                    always been. */}
+                {durationSlot && (
+                    <span className="flex flex-none items-center gap-1.5 pl-1">
+                        <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
+                            how long
+                        </span>
+                        {canGoBack && (
+                            <button
+                                type="button"
+                                disabled={disabled}
+                                onMouseDown={(e) => { e.preventDefault(); goBack(); }}
+                                title="Go back one step — Backspace"
+                                className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                            >
+                                Back
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onMouseDown={(e) => { e.preventDefault(); skipDuration(); }}
+                            title="Skip this question — Space"
+                            className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
+                        >
+                            Skip
+                        </button>
+                    </span>
+                )}
+
                 {storyOn && leadComplaint && (
                     <span className="flex flex-none items-center gap-1.5 pl-1">
                         {slot && (
@@ -914,6 +1151,42 @@ export function ClinicalCommandBar({
                     Ctrl K
                 </kbd>
             </div>
+
+            {/* ── What this duration means, if the catalogue already knows ──
+                One line, one action, and only when a real threshold has been
+                crossed. It states the REASON before the offer ("18 days —"),
+                because a suggestion whose grounds are invisible is one a
+                doctor has to either trust blindly or ignore. Taking it is a
+                normal chip toggle: the observable is already in the
+                catalogue, already carries its own rules, and ranks from the
+                moment it lands. Nothing is minted here. */}
+            {escalation && (
+                <div className="mt-1.5 flex items-center gap-2 rounded-[var(--cs-radius)] border border-[#f3d9a7] bg-[linear-gradient(180deg,#fffcf5_0%,#fdf4e3_100%)] px-3 py-[6px]">
+                    <span className="text-[12.5px] font-medium leading-tight text-[#7a5a17]">
+                        <strong className="font-bold">{formatDuration(escalation.days)}</strong>
+                        {" — "}
+                        {escalation.complaint.toLowerCase()} of this length is
+                        {" "}
+                        <strong className="font-bold">{escalation.target.label.toLowerCase()}</strong>.
+                    </span>
+                    <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onToggle(escalation.target)}
+                        className="ml-auto flex-none rounded-md border border-[#e0b95f] bg-white px-2.5 py-[4px] text-[11.5px] font-semibold text-[#8a6410] transition-colors hover:bg-[#fdf4e3]"
+                    >
+                        Add to chart
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Dismiss this suggestion"
+                        onClick={() => setDismissedEscalations((d) => new Set(d).add(escalation.target.slug))}
+                        className="grid size-[20px] flex-none place-items-center rounded border-0 bg-transparent p-0 text-[#b08c3e] hover:bg-black/5"
+                    >
+                        <X size={12} />
+                    </button>
+                </div>
+            )}
             {dropdown}
         </div>
     );
@@ -1362,7 +1635,9 @@ export function CaseSheet({
                                                     ? "Carried forward from a previous visit. Click × to say whether it still applies."
                                                     : entry.origin === "confirmed"
                                                         ? "Added by confirming a condition in this consultation."
-                                                        : undefined
+                                                        : entry.origin === "reception"
+                                                            ? "Recorded at the front desk. Edit or remove it like any other chip."
+                                                            : undefined
                                             }
                                             className={
                                                 "relative inline-flex items-center gap-[6px] rounded-lg border py-[4px] pl-[10px] pr-[7px] " +
@@ -1393,7 +1668,25 @@ export function CaseSheet({
                                                     ))}
                                                 </button>
                                             )}
+                                            {entry.origin === "reception" && (
+                                                <span
+                                                    aria-hidden="true"
+                                                    className={`size-[5px] flex-none rounded-full ${TONE_RECEPTION[entry.kind]}`}
+                                                />
+                                            )}
                                             {entry.label}
+                                            {entry.durationDays != null && (
+                                                /* The number, on the chip that owns it. A duration is a
+                                                   qualifier OF this complaint, so it rides the chip rather
+                                                   than becoming a row of its own — the same reasoning
+                                                   `story.ts` applies to its clauses. */
+                                                <span
+                                                    title={`Present for ${formatDuration(entry.durationDays)}`}
+                                                    className="rounded-[5px] bg-black/[0.07] px-[4px] py-[1px] text-[10.5px] font-bold tabular-nums leading-none opacity-80"
+                                                >
+                                                    {shortDuration(entry.durationDays)}
+                                                </span>
+                                            )}
                                             <button
                                                 type="button"
                                                 onClick={() => {

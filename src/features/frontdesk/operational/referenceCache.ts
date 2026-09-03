@@ -103,7 +103,11 @@ function useCachedResource<T>(
 // silently give the receptionist the small catalogue back.
 // v3 (2026-09-03): each chip now carries `signalIds`, used to rank which
 // measurements the intake surface offers. A v2 blob has no such field.
-const INTAKE_KEY = "aren.cache.intakechips.v3";
+// v4 (2026-09-03): `IntakeChip` gained `slug`, so a v3 entry is a cache of
+// chips with no slug on them — the duration question would silently never fire
+// for anyone still holding one. Bumping the key is how this file has always
+// handled a shape change; nothing reads the old entry, it simply ages out.
+const INTAKE_KEY = "aren.cache.intakechips.v4";
 
 export function useCachedIntakeChips(): CachedResource<IntakeChip[]> {
     return useCachedResource<IntakeChip[]>(INTAKE_KEY, fetchIntakeChips, []);

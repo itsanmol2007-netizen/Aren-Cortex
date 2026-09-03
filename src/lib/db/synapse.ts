@@ -157,6 +157,14 @@ export interface IntakeAlias {
  */
 export interface IntakeChip {
     observableId: number;
+    /**
+     * The catalogue's stable identifier. Carried so the front desk can ask the
+     * same "how long?" question Cortex asks, off the same curated list
+     * (`features/consult/duration.ts` keys on slugs, because a label is a
+     * rendering decision the catalogue can change without anybody thinking
+     * about the code that names it).
+     */
+    slug: string;
     label: string;
     kind: "symptom" | "finding" | "history";
     system: string;
@@ -209,6 +217,7 @@ export async function fetchIntakeChips(): Promise<IntakeChip[]> {
         const aliases = byObservable.get(o.id) ?? [];
         return {
             observableId: o.id,
+            slug: o.slug,
             label: o.label,
             kind: o.kind,
             system: o.system,
@@ -1657,10 +1666,15 @@ export async function resolvePanelTests(panelId: number): Promise<string[]> {
  * must exist in `visit_observations_source_check`. Translating at this single
  * boundary is what stops UI wording drifting into a silent data outage.
  */
-const DB_SOURCE: Record<"doctor" | "confirmed" | "carried", string> = {
+const DB_SOURCE: Record<"doctor" | "confirmed" | "carried" | "reception", string> = {
     doctor: "doctor",
     confirmed: "confirmed_intent",
     carried: "carried_forward",
+    // Entered at the front desk before the doctor opened the visit. Added
+    // 2026-09-03 with Consult, alongside a widened
+    // `visit_observations_source_check` — see the note above about an unknown
+    // value rejecting the whole insert silently.
+    reception: "reception",
 };
 
 export async function persistVisitInput(opts: {
@@ -1676,7 +1690,18 @@ export async function persistVisitInput(opts: {
      * say which — otherwise a ranking re-derived from this table looks like the
      * doctor typed something they never touched.
      */
-    sources?: Map<number, "confirmed" | "carried">;
+    sources?: Map<number, "confirmed" | "carried" | "reception">;
+    /**
+     * How long each symptom has been going on, in days.
+     *
+     * This write DELETES the visit's observations and re-inserts them, so a
+     * qualifier that lives on the row — and `duration_days` does, because a
+     * duration qualifies an observation rather than being a second one — has
+     * to be handed back in on every write or it is destroyed by the next
+     * chart change. Absent means "not asked, or skipped": a real answer of
+     * zero days would mean "started today" and is not the same thing.
+     */
+    durations?: Map<number, number>;
 }): Promise<void> {
     await supabase.from("visit_observations").delete().eq("visit_id", opts.visitId);
     if (opts.observableIds.length) {
@@ -1686,6 +1711,7 @@ export async function persistVisitInput(opts: {
                 observable_id,
                 is_negated: false,
                 source: DB_SOURCE[opts.sources?.get(observable_id) ?? "doctor"],
+                duration_days: opts.durations?.get(observable_id) ?? null,
             }))
         );
         if (error) throw new Error(`visit_observations: ${error.message}`);

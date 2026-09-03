@@ -1,5 +1,6 @@
 import type { ReactNode, RefObject } from "react";
 import arenLogo from "../assets/aren-logo.png";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import "../styles/workspace-header.css";
 
 interface Props {
@@ -20,6 +21,17 @@ interface Props {
 }
 
 export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot }: Props) {
+    /**
+     * "Cortex" or "Consult", read rather than passed.
+     *
+     * Twelve pages render this header, and every one of them would otherwise
+     * have to thread the same prop down to say the same word. The mode is a
+     * fact about the signed-in clinic (`lib/workspace/mode.ts`), the header is
+     * always inside <AuthProvider>, so it reads the fact itself — the same
+     * move `useClinicalIdentity` already makes for "which doctor".
+     */
+    const { brand } = useWorkspaceMode();
+
     return (
         <header className="ws-header">
             {/* Nebula asset — inline img, bypasses Vite CSS asset resolution entirely */}
@@ -45,7 +57,7 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
                     <img src={arenLogo} alt="AREN" className="ws-logo-img" />
                     <div className="ws-logo-text">
                         <span className="ws-logo-name">AREN</span>
-                        <span className="ws-logo-sub">Cortex</span>
+                        <span className="ws-logo-sub">{brand.product}</span>
                     </div>
                 </div>
 

@@ -222,7 +222,14 @@ export async function saveVisitSymptoms(
  */
 export async function saveVisitObservations(
     visitId: string,
-    observableIds: number[]
+    observableIds: number[],
+    /**
+     * How long each complaint has been going on, in days, keyed by observable
+     * id. Optional and sparse — reception asks it for the handful of
+     * complaints where it changes what the doctor does (see
+     * `features/consult/duration.ts`), not for every chip.
+     */
+    durations?: Map<number, number>
 ): Promise<void> {
     if (!observableIds.length) return;
     const { error } = await supabase.from("visit_observations").insert(
@@ -230,7 +237,14 @@ export async function saveVisitObservations(
             visit_id: visitId,
             observable_id,
             is_negated: false,
-            source: "doctor",
+            // `'reception'`, not `'doctor'` (2026-09-03, with Consult). The
+            // column has always recorded WHO put a chip on the record, and
+            // this write is the front desk's — labelling it 'doctor' made
+            // reception's intake indistinguishable from the doctor's own
+            // charting, which is exactly the distinction Consult's opening
+            // screen has to draw ("the desk recorded this, review it").
+            source: "reception",
+            duration_days: durations?.get(observable_id) ?? null,
         }))
     );
     if (error) throw new Error(`saveVisitObservations: ${error.message}`);

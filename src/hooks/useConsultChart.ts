@@ -41,8 +41,16 @@ export const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weig
  * 'confirmed' — the doctor confirmed a condition THIS visit and the map turned
  *               it into an input.
  * 'carried'   — it was confirmed at an earlier visit and follows the patient.
+ * 'reception' — the front desk recorded it at intake, before the doctor opened
+ *               the visit (Consult, 2026-09-03). A real chip on a real chart —
+ *               fully editable, fully removable, ranked exactly like any other
+ *               — that simply says who wrote it down. It matters twice: the
+ *               doctor should be able to see at a glance what they are being
+ *               handed versus what they have added themselves, and
+ *               `visit_observations.source` should keep telling the truth
+ *               after the doctor's own write re-inserts the row.
  */
-export type ChipOrigin = "confirmed" | "carried";
+export type ChipOrigin = "confirmed" | "carried" | "reception";
 
 export interface ConsultChart {
   // ── The state itself ──────────────────────────────────────────────────
@@ -67,6 +75,19 @@ export interface ConsultChart {
   caseSheetEntries: CaseSheetEntry[];
   /** The chart in the engine's vocabulary. */
   chartObservableIds: number[];
+
+  // ── How long, per complaint ───────────────────────────────────────────
+  /**
+   * label -> days. Sparse on purpose: only the complaints where a duration
+   * changes what the doctor does are ever asked (`features/consult/
+   * duration.ts`'s `ASKS_DURATION`), and a skipped question stores nothing
+   * rather than storing zero.
+   */
+  symptomDurations: Map<string, number>;
+  /** The same thing keyed the way `visit_observations.duration_days` needs it. */
+  observableDurations: Map<number, number>;
+  /** Record — or, with `null`, clear — how long one complaint has been going on. */
+  setSymptomDuration: (label: string, days: number | null) => void;
 
   // ── The longitudinal record ───────────────────────────────────────────
   /**
@@ -95,6 +116,21 @@ export interface ConsultChart {
   addContextObservable: (label: string, origin: ChipOrigin) => void;
   /** Seed carried-forward conditions at the start of a consult. */
   carryForward: (labels: string[]) => void;
+  /**
+   * Put the front desk's intake onto a fresh chart — Consult's whole opening
+   * move. See `useIntakePrefill`.
+   *
+   * Additive like `carryForward`, never a replace: it runs alongside
+   * carried-forward conditions on the same fresh chart, and neither may wipe
+   * the other. A label already present keeps whatever provenance it has.
+   */
+  seedIntake: (entries: {
+    label: string;
+    kind: "symptom" | "finding" | "history";
+    durationDays: number | null;
+    /** absent = the doctor's own entry, so it wears no marker */
+    origin?: ChipOrigin;
+  }[]) => void;
 
   // ── Mutating it ───────────────────────────────────────────────────────
   handleSymptomToggle: (label: string) => void;
@@ -135,6 +171,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     useState<SelectedSymptom[]>([]);
   const [selectedFindings, setSelectedFindings] = useState<string[]>([]);
   const [chipOrigins, setChipOrigins] = useState<Map<string, ChipOrigin>>(new Map());
+  const [symptomDurations, setSymptomDurations] = useState<Map<string, number>>(new Map());
 
   /** Patient context — pregnancy, comorbidities, exposures. */
   const historyLabels = useMemo(
@@ -214,8 +251,17 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
    */
   const caseSheetEntries = useMemo<CaseSheetEntry[]>(
     () => [
-      ...symptomChips.map((label) => ({ label, kind: "symptom" as const })),
-      ...selectedFindings.map((label) => ({ label, kind: "finding" as const })),
+      ...symptomChips.map((label) => ({
+        label,
+        kind: "symptom" as const,
+        origin: chipOrigins.get(label),
+        durationDays: symptomDurations.get(label),
+      })),
+      ...selectedFindings.map((label) => ({
+        label,
+        kind: "finding" as const,
+        origin: chipOrigins.get(label),
+      })),
       // Only the history group can carry provenance today — a confirmed
       // condition always maps to a `kind='history'` observable — but the origin
       // is attached generically rather than assumed, so a future mapping to
@@ -226,7 +272,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
         origin: chipOrigins.get(label),
       })),
     ],
-    [symptomChips, selectedFindings, contextChips, chipOrigins]
+    [symptomChips, selectedFindings, contextChips, chipOrigins, symptomDurations]
   );
 
   // The chart, as observable ids. Both panels hold display LABELS; this is the
@@ -310,6 +356,30 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
       next.delete(label);
       return next;
     });
+    // Same argument for the duration: it qualified a chip that is no longer
+    // on the chart, and leaving it behind would silently re-attach "18 days"
+    // to a complaint typed back in later that may be nothing of the sort.
+    setSymptomDurations((curr) => {
+      if (!curr.has(label)) return curr;
+      const next = new Map(curr);
+      next.delete(label);
+      return next;
+    });
+  }, []);
+
+  // ── Duration ────────────────────────────────────────────────────────────
+
+  const setSymptomDuration = useCallback((label: string, days: number | null) => {
+    setSymptomDurations((curr) => {
+      if (days === null) {
+        if (!curr.has(label)) return curr;
+        const next = new Map(curr);
+        next.delete(label);
+        return next;
+      }
+      if (curr.get(label) === days) return curr;
+      return new Map(curr).set(label, days);
+    });
   }, []);
 
   // ── The longitudinal record ─────────────────────────────────────────────
@@ -322,6 +392,15 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     }
     return m;
   }, [chipOrigins, observableByLabel]);
+
+  const observableDurations = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const [label, days] of symptomDurations) {
+      const id = observableByLabel.get(label);
+      if (id !== undefined) m.set(id, days);
+    }
+    return m;
+  }, [symptomDurations, observableByLabel]);
 
   const addContextObservable = useCallback((label: string, origin: ChipOrigin) => {
     setSelectedSymptoms((curr) => (curr.includes(label) ? curr : [...curr, label]));
@@ -344,12 +423,69 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     });
   }, []);
 
+  /**
+   * Consult's opening state — what the front desk already recorded.
+   *
+   * Routed by the observable's own `kind`, exactly the way
+   * `handleObservableToggle` routes a doctor's own pick: a history chip
+   * entered at the desk belongs in the context bar and a symptom in the
+   * complaints group, and reception's entry is not a different KIND of fact
+   * just because a different person typed it.
+   *
+   * Each entry keeps the provenance the ROW carried, not a blanket
+   * "reception" — the same read is what restores a consult being resumed, and
+   * relabelling the doctor's own chips as the front desk's would be a lie the
+   * permanent record then keeps. A label already on the chart is left alone: a
+   * carried-forward condition reception also happened to tick stays
+   * carried-forward, because that is the older and more informative
+   * provenance.
+   */
+  const seedIntake = useCallback((entries: {
+    label: string;
+    kind: "symptom" | "finding" | "history";
+    durationDays: number | null;
+    origin?: ChipOrigin;
+  }[]) => {
+    if (!entries.length) return;
+    const reportable = entries.filter((e) => e.kind !== "finding").map((e) => e.label);
+    const findings = entries.filter((e) => e.kind === "finding").map((e) => e.label);
+
+    if (reportable.length) {
+      setSelectedSymptoms((curr) => {
+        const missing = reportable.filter((l) => !curr.includes(l));
+        return missing.length ? [...curr, ...missing] : curr;
+      });
+    }
+    if (findings.length) {
+      setSelectedFindings((curr) => {
+        const missing = findings.filter((l) => !curr.includes(l));
+        return missing.length ? [...curr, ...missing] : curr;
+      });
+    }
+    setChipOrigins((curr) => {
+      const next = new Map(curr);
+      // Each row's OWN provenance, not a blanket "reception". The same read
+      // restores a consult the doctor is resuming, and relabelling their own
+      // chips as the front desk's would be a lie the record then keeps.
+      for (const e of entries) if (e.origin && !next.has(e.label)) next.set(e.label, e.origin);
+      return next;
+    });
+    setSymptomDurations((curr) => {
+      const next = new Map(curr);
+      for (const e of entries) {
+        if (e.durationDays != null && !next.has(e.label)) next.set(e.label, e.durationDays);
+      }
+      return next;
+    });
+  }, []);
+
   const reset = useCallback(() => {
     setSelectedSymptomsWithIntensity([]);
     setVitals(emptyVitals);
     setSelectedSymptoms([]);
     setSelectedFindings([]);
     setChipOrigins(new Map());
+    setSymptomDurations(new Map());
   }, []);
 
   const replaceChart = useCallback((symptoms: string[], findings: string[]) => {
@@ -359,6 +495,10 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     // provenance. Anything previously marked carried-forward is no longer on
     // this chart by that route, so the origins go with the chart they described.
     setChipOrigins(new Map());
+    // And with them the durations, for the same reason: a repeated
+    // prescription carries the previous visit's complaints forward, not how
+    // long they had been going on THEN.
+    setSymptomDurations(new Map());
   }, []);
 
   const restoreChart = useCallback((draft: ChartDraft) => {
@@ -367,6 +507,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setSelectedSymptomsWithIntensity(draft.selectedSymptomsWithIntensity);
     setSelectedFindings(draft.selectedFindings);
     setChipOrigins(new Map(draft.chipOrigins));
+    setSymptomDurations(new Map(draft.symptomDurations ?? []));
   }, []);
 
   return {
@@ -386,10 +527,15 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     caseSheetEntries,
     chartObservableIds,
 
+    symptomDurations,
+    observableDurations,
+    setSymptomDuration,
+
     chipOrigins,
     observableSources,
     addContextObservable,
     carryForward,
+    seedIntake,
 
     handleSymptomToggle,
     handleFindingToggle,

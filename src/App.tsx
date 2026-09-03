@@ -46,6 +46,7 @@ import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MedicineAddSheet } from "./features/consult/MedicineAddSheet";
 import { AddMedicineSheet } from "./features/consult/AddMedicineSheet";
 import { useChartSummaries } from "./features/consult/useChartSummaries";
+import { useIntakePrefill } from "./features/consult/useIntakePrefill";
 import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
 import { PhysioInputs } from "./features/consult/PhysioInputs";
 import { SoapInputs } from "./features/consult/SoapInputs";
@@ -370,6 +371,13 @@ function App() {
     identity,
   });
 
+  // ★ Consult's opening state — the front desk's intake, read back onto the
+  // chart at the moment a consult starts. A no-op in Cortex (nobody else
+  // touched the visit); in Consult it is the whole handoff, and on a RESUMED
+  // visit in either mode it is the chart read-back `resumeConsult` used to
+  // list as a known gap. Layer 1: it only needs the chart.
+  const prefillFromIntake = useIntakePrefill(chart);
+
   // ★ The care plan — the course of treatment this visit is one session of.
   // Layer 1 beside the session for the same reason as the longitudinal record:
   // it needs the patient at render time and nothing downstream of it. See
@@ -460,6 +468,7 @@ function App() {
     visitId,
     observableIds: chartObservableIds,
     observableSources: chart.observableSources,
+    observableDurations: chart.observableDurations,
     vitals,
     ageYears,
     ageMonths,
@@ -782,6 +791,7 @@ function App() {
     plan,
     intelligence,
     carryForwardFor,
+    prefillFromIntake,
     onVisitSaved: carePlan.attachCurrentVisit,
     onSaveStory: visitStory.save,
     resetStory: () => { visitStory.reset(); examination.reset(); },
@@ -1585,6 +1595,13 @@ function App() {
                   onObservableToggle={handleObservableToggle}
                   caseSheetEntries={caseSheetEntries}
                   onCaseSheetRemove={handleCaseSheetRemove}
+                  /* "How long?" — asked here and NOT in PhysioInputs above,
+                     because physiotherapy's Story composer already owns that
+                     question (`story.ts`'s Duration dimension) and two boxes
+                     asking it is the double-entry this screen exists to
+                     remove. See GeneralOpdInputs' own prop doc. */
+                  symptomDurations={chart.symptomDurations}
+                  onSetSymptomDuration={chart.setSymptomDuration}
                   onRetireCarried={handleRetireCarried}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}

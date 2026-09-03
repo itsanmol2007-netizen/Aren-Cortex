@@ -220,6 +220,97 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/**
+ * `visit_measurements` back into the `Vitals` shape the card edits — the exact
+ * inverse of `vitalsToMeasurements` above, and it lives beside it for the one
+ * reason that matters: these two must agree about every key, every unit and
+ * every conversion, and the only way to keep that true is to read one while
+ * editing the other (standing rule 19).
+ *
+ * Written for the Front Desk -> Consult handoff. Reception enters a BP and a
+ * temperature; the row it lands in is the ENGINE's normalised record
+ * (BP_SYS/BP_DIA, Celsius), because that is what `saveVitalsMeasurements`
+ * writes. The doctor's card takes one "120/80" string and Fahrenheit. Without
+ * this reduction the doctor sees an empty Measurements card beside a queue row
+ * that plainly showed a temperature — the number was captured and then not
+ * shown, which is worse than never capturing it.
+ *
+ * ── What it deliberately does NOT do ──────────────────────────────────────
+ * It never invents a value. A key with no row comes back absent, not "", so a
+ * caller merging this into existing vitals cannot blank a field the doctor has
+ * already typed. Derived keys (LMP_DAYS, WAZ/HAZ, the four G-P-L-A splits) are
+ * skipped on the way back: they are outputs of this reduction, and rebuilding
+ * an input from them would be a second, drifting source of truth for the same
+ * fact. LMP comes back from its own text row, which is the value that was
+ * actually entered.
+ */
+export function measurementsToVitals(
+    rows: { measure_key: string; value_num: number | string | null; value_text: string | null }[]
+): Partial<Vitals> {
+    const numByKey = new Map<string, number>();
+    const textByKey = new Map<string, string>();
+    for (const r of rows) {
+        if (r.value_num !== null && r.value_num !== undefined) {
+            const n = typeof r.value_num === "number" ? r.value_num : Number.parseFloat(r.value_num);
+            if (Number.isFinite(n)) numByKey.set(r.measure_key, n);
+        }
+        if (r.value_text) textByKey.set(r.measure_key, r.value_text);
+    }
+
+    const out: Partial<Vitals> = {};
+    const str = (n: number) => String(Math.round(n * 100) / 100);
+
+    // BP: two rows back into one field, and only when at least one half
+    // exists — "120/" is a value nobody entered.
+    const sys = numByKey.get("BP_SYS");
+    const dia = numByKey.get("BP_DIA");
+    if (sys !== undefined || dia !== undefined) {
+        out.bp = `${sys !== undefined ? Math.round(sys) : ""}/${dia !== undefined ? Math.round(dia) : ""}`;
+    }
+
+    // Temperature: stored Celsius, edited Fahrenheit. One decimal, because
+    // that is the precision the field itself shows.
+    const tempC = numByKey.get("TEMP");
+    if (tempC !== undefined) out.temp = String(round1((tempC * 9) / 5 + 32));
+
+    const SIMPLE: [string, keyof Vitals][] = [
+        ["HR", "pulse"], ["RR", "respRate"], ["SPO2", "spo2"],
+        ["WEIGHT", "weight"], ["HEIGHT", "height"],
+        ["PAIN_VAS", "painVas"], ["ROM_PCT", "romPct"],
+        ["LEFS", "lefs"], ["ODI", "odi"], ["QUICKDASH", "quickdash"],
+        ["CERVICAL_ROT_L", "cervicalRotL"], ["CERVICAL_ROT_R", "cervicalRotR"],
+        ["SHOULDER_FLEX_L", "shoulderFlexL"], ["SHOULDER_FLEX_R", "shoulderFlexR"],
+        ["SHOULDER_ABD_L", "shoulderAbdL"], ["SHOULDER_ABD_R", "shoulderAbdR"],
+        ["HIP_FLEX_L", "hipFlexL"], ["HIP_FLEX_R", "hipFlexR"],
+        ["KNEE_FLEX_L", "kneeFlexL"], ["KNEE_FLEX_R", "kneeFlexR"],
+        ["KNEE_EXT_LAG_L", "kneeExtLagL"], ["KNEE_EXT_LAG_R", "kneeExtLagR"],
+        ["ANKLE_DORSI_L", "ankleDorsiL"], ["ANKLE_DORSI_R", "ankleDorsiR"],
+        ["KNEE_GIRTH_L", "kneeGirthL"], ["KNEE_GIRTH_R", "kneeGirthR"],
+        ["GLUCOSE_FASTING", "glucoseFasting"], ["GLUCOSE_RANDOM", "glucoseRandom"],
+        ["HBA1C", "hba1c"],
+    ];
+    for (const [measureKey, vitalKey] of SIMPLE) {
+        const n = numByKey.get(measureKey);
+        if (n !== undefined) (out as Record<string, string>)[vitalKey] = str(n);
+    }
+
+    // The two text rows, entered as text and stored as text.
+    const bloodGroup = textByKey.get("BLOOD_GROUP");
+    if (bloodGroup) out.bloodGroup = bloodGroup;
+    const lmp = textByKey.get("LMP");
+    if (lmp) out.lmp = lmp;
+
+    // G-P-L-A: four rows, one control. Rebuilt only when at least one part is
+    // present, and missing parts stay empty rather than becoming zero — a
+    // gravidity nobody recorded is not "G0".
+    const gplaParts = ["GRAVIDA", "PARA", "LIVING", "ABORTIONS"].map((k) => numByKey.get(k));
+    if (gplaParts.some((p) => p !== undefined)) {
+        out.gpla = gplaParts.map((p) => (p === undefined ? "" : String(Math.round(p)))).join("/");
+    }
+
+    return out;
+}
+
 export interface BuildInputArgs {
     /**
      * The observables on the chart — symptoms, examination findings and patient

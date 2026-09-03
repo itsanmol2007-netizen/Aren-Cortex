@@ -74,6 +74,8 @@ type Props = {
         gender: string;
         observableIds: number[];
         symptomNames: string[];
+        /** observableId -> days, for the complaints reception asked about */
+        observableDurations?: Map<number, number>;
         vitals: Partial<Vitals>;
         doctorId: string;
         doctorName: string;
@@ -99,6 +101,14 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     // single search field, the way Cortex's picker works. Split by `kind` only
     // at save / validation time.
     const [picked, setPicked] = useState<IntakeChip[]>([]);
+    /**
+     * observableId -> days. Reception hears "since Monday" and "about three
+     * weeks" more often than the doctor does, so the question is asked where
+     * the answer is actually given — and then it is simply THERE on the
+     * doctor's chart instead of being asked twice. Sparse: only the complaints
+     * `duration.ts` says it matters for even show a box.
+     */
+    const [durations, setDurations] = useState<Map<number, number>>(new Map());
     const symptomCount = picked.filter((c) => c.kind === "symptom").length;
     const [measures, setMeasures] = useState<MeasureValues>({});
     const [measuresOpen, setMeasuresOpen] = useState(false);
@@ -245,6 +255,13 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         // only symptoms carry into the queue's "Symptoms" column (symptomNames).
         observableIds: picked.map((s) => s.observableId),
         symptomNames: picked.filter((c) => c.kind === "symptom").map((c) => c.label),
+        // Only for chips still picked — a duration entered and then un-picked
+        // must not be written against an observable that is no longer on the
+        // visit. `ObservablePicker` already clears one on remove; this is the
+        // belt to that braces, and it costs one filter.
+        observableDurations: new Map(
+            [...durations].filter(([id]) => picked.some((c) => c.observableId === id))
+        ),
         vitals: measures as Partial<Vitals>,
         doctorId,
         doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
@@ -515,6 +532,14 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         placeholder={t("phComplaints")}
                         catalogLabel={t("bothCatalog")}
                         noMatchLabel={t("noSymptomMatch")}
+                        durations={durations}
+                        onDurationChange={(id, days) =>
+                            setDurations((curr) => {
+                                const next = new Map(curr);
+                                if (days === null) next.delete(id); else next.set(id, days);
+                                return next;
+                            })
+                        }
                     />
                 </Field>
 

@@ -59,6 +59,7 @@ const story = await load("../src/features/consult/story.ts", "story");
 const {
     STORY_FACTORS, STORY_PATTERNS, DURATION_SIGNAL,
     emptyStory, isStoryEmpty, showMechanism, showSettling, suggestIrritability,
+    searchStory, addToStory, storyHas, selectedStoryItems, durationBucket,
 } = story;
 
 const errors = [];
@@ -107,6 +108,39 @@ assert(!isStoryEmpty({ ...emptyStory(), note: "x" }), "setting free text did not
     assert(s && s.value === "high", "suggestIrritability did not suggest High for night pain");
     assert(suggestIrritability(emptyStory()) === null,
         "suggestIrritability suggested something with no pattern at all — should stay quiet");
+}
+
+// ── 4b. Any number is a real duration (2026-09-03) ────────────────────────
+// The reported bug: `DURATION_TERMS` is eighteen fixed strings, so typing "4"
+// or "17 days" in the Duration slot returned NOTHING and the composer looked
+// broken. These four checks are the whole of that fix, and they are what
+// stops the list quietly becoming the only way through again.
+{
+    const s0 = emptyStory();
+    for (const q of ["4", "17", "37"]) {
+        const hits = searchStory(q, s0, 8).filter((it) => it.dimension === "Duration");
+        assert(hits.length >= 3, `typing "${q}" in the Duration slot offered fewer than days/weeks/months`);
+        assert(hits[0].label === `${q} days`, `typing "${q}" did not lead with "${q} days"`);
+    }
+    const exact = searchStory("17 days", s0, 8).filter((it) => it.dimension === "Duration");
+    assert(exact.length === 1 && exact[0].label === "17 days", '"17 days" did not resolve to exactly one item');
+
+    // Buckets follow DURATION_LABEL's own words, and a synthesised item must
+    // land in the same one a hand-written term would.
+    assert(durationBucket(13) === "under_2wk" && durationBucket(14) === "2_6wk", "the 2-week bucket boundary moved");
+    assert(durationBucket(41) === "2_6wk" && durationBucket(42) === "6wk_3mo", "the 6-week bucket boundary moved");
+    assert(durationBucket(90) === "6wk_3mo" && durationBucket(91) === "over_3mo", "the 3-month bucket boundary moved");
+    const three = searchStory("3 weeks", s0, 8).filter((it) => it.dimension === "Duration");
+    assert(three.length === 1, '"3 weeks" appeared twice — the fixed term and the synthesised one were not de-duplicated');
+
+    // Round trip: a typed duration must survive onto the sentence, or it is
+    // stored-but-invisible — the exact failure this file argues against.
+    const typed = addToStory(s0, exact[0]);
+    assert(typed.durationText === "17 days", "a typed duration did not reach durationText");
+    assert(storyHas(typed, exact[0]), "a typed duration did not read back as part of the story");
+    const shown = selectedStoryItems(typed).filter((it) => it.dimension === "Duration");
+    assert(shown.length === 1 && shown[0].label === "17 days",
+        "a typed duration vanished from the story line — selectedStoryItems only knows the fixed list");
 }
 
 // ── 5. Every signalId — in STORY_FACTORS, STORY_PATTERNS and
