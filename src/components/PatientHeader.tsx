@@ -1,7 +1,8 @@
-import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pill, Stethoscope, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pill, Stethoscope, Plus, Users } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient } from "../types";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import { ActionButton } from "./ActionButton";
 import { formatVisitDate } from "./PastVisitCard";
 import type { RealVisit } from "../lib/db";
@@ -48,6 +49,26 @@ type PatientHeaderProps = {
    * case the chips print the medicine they always did.
    */
   sessionLabels?: Map<string, string>;
+  /**
+   * ── Consult's own controls (2026-09-03) ─────────────────────────────────
+   *
+   * All optional, all absent in Cortex, which is what keeps that header
+   * byte-identical to what it always was. In Consult:
+   *
+   *   · `onOpenQueue` puts a Queue control in the header. A doctor does not
+   *     need to watch the queue while consulting — they need to be able to
+   *     ask — so it is one quiet control that opens a sheet, not a live list
+   *     pinned to the screen.
+   *   · `queueCount` / `nextToken` are what that control says without being
+   *     opened: how many are waiting, and who is next.
+   *   · `onOpenPatientModal` STILL EXISTS in Consult but is no longer wired
+   *     to a header button — registering a patient moved into the queue
+   *     sheet, where it belongs as the exception it is (receptionist away,
+   *     walk-in). It is not removed; see `QueueSheet`'s header.
+   */
+  onOpenQueue?: () => void;
+  queueCount?: number;
+  nextToken?: string | null;
 };
 
 // The vitals strip that used to live here is gone. BP, Pulse, SpO2, Temp and
@@ -62,8 +83,13 @@ export function PatientHeader({
   onOpenSidebar, isSidebarOpen,
   pastVisits = [], pastVisitsLoading = false,
   onOpenVisit, sessionLabels,
+  onOpenQueue, queueCount = 0, nextToken,
   logoRef,
 }: PatientHeaderProps) {
+  // "Cortex" or "Consult" — read, not passed, exactly as `WorkspaceHeader`
+  // does it. The word and the line under it are the whole of the branding
+  // difference; the header's shape, colour and type scale do not move.
+  const { brand, isConsult } = useWorkspaceMode();
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [isStuck, setIsStuck] = useState(false);
@@ -204,8 +230,8 @@ export function PatientHeader({
             <img src={logo} alt="AREN Logo" />
           </div>
           <div className="tb-brand-text">
-            <strong>AREN <span>Cortex</span></strong>
-            <small>Phase 1 workflow</small>
+            <strong>AREN <span>{brand.product}</span></strong>
+            <small>{brand.tagline}</small>
           </div>
         </div>
 
@@ -294,7 +320,24 @@ export function PatientHeader({
 
         {/* Actions */}
         <div className="tb-actions">
-          <ActionButton icon={<Plus size={15} />} onClick={onOpenPatientModal}>Patient</ActionButton>
+          {/* Consult replaces "+ Patient" with the Queue. Cortex keeps it:
+              in a solo clinic the doctor IS the front desk, and taking that
+              button away would remove the only way to start a consultation. */}
+          {isConsult && onOpenQueue ? (
+            <button
+              type="button"
+              className="tb-queue-btn"
+              onClick={onOpenQueue}
+              title={queueCount ? `${queueCount} waiting — next is ${nextToken ?? "—"}` : "Nobody waiting"}
+            >
+              <Users size={14} aria-hidden="true" />
+              <span className="tb-queue-label">Queue</span>
+              <span className={`tb-queue-count${queueCount ? "" : " is-empty"}`}>{queueCount}</span>
+              {nextToken && <span className="tb-queue-next">next {nextToken}</span>}
+            </button>
+          ) : (
+            <ActionButton icon={<Plus size={15} />} onClick={onOpenPatientModal}>Patient</ActionButton>
+          )}
           <div className="tb-doctor-pill">
             <Stethoscope size={14} />
             <span>{doctor.name}</span>
@@ -302,7 +345,11 @@ export function PatientHeader({
           <button type="button" className={`tb-cancel-btn${cancelArmed ? " armed" : ""}`} onClick={handleCancelClick}>
             {cancelArmed ? "Sure? Click again" : "Cancel"}
           </button>
-          <button type="button" className="tb-review-btn" onClick={onReviewRx}>Review Rx</button>
+          {/* Same button, same guard, same modal — it just says what actually
+              happens next in a clinic with a queue behind the door. */}
+          <button type="button" className="tb-review-btn" onClick={onReviewRx}>
+            {isConsult ? "Complete & Next" : "Review Rx"}
+          </button>
         </div>
       </header>
 

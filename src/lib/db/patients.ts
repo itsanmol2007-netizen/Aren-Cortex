@@ -1373,6 +1373,16 @@ export type TodayVisit = {
     age: number;
     gender: string;
     phone: string;
+    /**
+     * ISO yyyy-mm-dd, null for every patient created before the column
+     * existed. Already fetched by `fetchTodayVisits` and previously dropped on
+     * the floor; carried now because Consult starts a consultation FROM a
+     * queue row, and paediatric growth standards need age in months, which
+     * cannot be derived from the integer year (lib/growth/age.ts). Without it
+     * a child seen through the queue would silently fall off their curve.
+     */
+    date_of_birth: string | null;
+
     token_number: number | null;
     status: string;
     created_at: string;
@@ -1476,6 +1486,7 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
             age: pat.age ?? 0,
             gender: pat.gender ?? "",
             phone: pat.phone ?? "",
+            date_of_birth: pat.date_of_birth ?? null,
             token_number: v.token_number,
             status: v.status,
             created_at: v.created_at,

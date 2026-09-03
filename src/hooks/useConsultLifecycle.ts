@@ -100,6 +100,20 @@ export interface ConsultLifecycleArgs {
    */
   onSaveStory?: (visitId: string, doctorId: string | null) => Promise<void>;
   /**
+   * The consultation is written and the workspace is clear.
+   *
+   * Consult uses this to open the handover — Complete & Next is not a
+   * different save, it is this save plus what happens after it, which is why
+   * this is a callback rather than a second code path through
+   * `handleConfirmAndSave`. Cortex passes nothing and the save ends where it
+   * always did.
+   *
+   * Fires only on a save that actually succeeded, after the reset, with the
+   * name of the patient who was just seen (the session is cleared by then, so
+   * the caller could not read it for itself).
+   */
+  onConsultSaved?: (patientName: string | null) => void;
+  /**
    * Clears Story + Goals state on every path that starts or ends a
    * consultation — wired into `clearWorkspace` alongside `chart.reset()`
    * and `plan.reset()` from the start, unlike `stagedMedicine` /
@@ -171,6 +185,7 @@ export function useConsultLifecycle({
   prefillFromIntake,
   onVisitSaved,
   onSaveStory,
+  onConsultSaved,
   resetStory,
   showToast,
   focusChartSearch,
@@ -515,16 +530,21 @@ export function useConsultLifecycle({
         );
       }
 
+      const seen = session.patient?.name ?? null;
       session.setIsReviewOpen(false);
       resetConsultState();
       showToast("Prescription saved ✓");
+      // Last, and only on success: the workspace is already clear, so the
+      // handover opens onto a consult that is genuinely finished rather than
+      // over the top of one still being written.
+      onConsultSaved?.(seen);
     } catch (err: any) {
       showToast(`Save failed: ${err.message}`);
     } finally {
       session.setIsSaving(false);
     }
   }, [session, plan, chart, ledger, intelligence.result, identity,
-      resetConsultState, showToast, onVisitSaved, onSaveStory]);
+      resetConsultState, showToast, onVisitSaved, onSaveStory, onConsultSaved]);
 
   const openReview = useCallback(() => {
     const blocking = plan.unreadPrescribedWarnings[0];

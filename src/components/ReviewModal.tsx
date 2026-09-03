@@ -78,6 +78,16 @@ interface ReviewModalProps {
   hospital?: DBHospital | null;
   vitals?: Vitals;
   isSaving?: boolean;
+  /**
+   * What the primary action is called. Consult passes "Complete & Next",
+   * because in a clinic with a front desk saving IS the handover to the next
+   * patient and the button should say what happens (2026-09-03).
+   *
+   * A prop rather than a fork: standing rule 6 is that there is one review
+   * surface and it does not get copied. The behaviour is identical either
+   * way — `onSave` is the same call — only the word changes.
+   */
+  saveLabel?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -176,7 +186,7 @@ export default function ReviewModal({
   prescription = [], tests = [],
   followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
   storySummary = [], goalSummary = [],
-  doctor, hospital, vitals, isSaving,
+  doctor, hospital, vitals, isSaving, saveLabel,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
 
@@ -1037,7 +1047,7 @@ export default function ReviewModal({
                 className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
                 <CheckCircle className="w-4 h-4" />
-                {isSaving ? "Saving..." : "Confirm & Save"}
+                {isSaving ? "Saving..." : (saveLabel ?? "Confirm & Save")}
                 <kbd className="rounded border border-white/25 bg-white/15 px-1.5 text-[11px] font-semibold not-italic leading-5 text-white/80">
                   Ctrl ⏎
                 </kbd>

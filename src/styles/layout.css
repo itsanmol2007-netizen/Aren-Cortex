@@ -486,6 +486,92 @@
 }
 
 
+/* ── Queue control (Consult only) ─────────────────────────────
+   Replaces "+ Patient" in the dark header when the clinic has a front
+   desk. Same 34px height, same radius, same weight as `.tb-review-btn`
+   and `.tb-cancel-btn` beside it — this is the third member of an
+   existing family, not a new control shape. Blue, because it is the
+   one that DOES something (colour.md: blue is the action colour, and
+   red is already spent on Cancel, violet on Review).
+
+   It says the two things a doctor wants without opening anything: how
+   many are waiting, and which token is next. Everything else about the
+   queue is one click away and nowhere on this bar — a doctor mid-
+   consultation should not be reading a live list.
+   ──────────────────────────────────────────────────────────── */
+.tb-queue-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 11px 0 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(59, 130, 246, 0.36);
+    background: rgba(18, 104, 232, 0.14);
+    color: #bfdbfe;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.tb-queue-btn:hover {
+    background: rgba(18, 104, 232, 0.26);
+    border-color: rgba(96, 165, 250, 0.6);
+    color: #fff;
+    box-shadow: 0 2px 12px rgba(18, 104, 232, 0.20);
+}
+
+.tb-queue-btn:active {
+    transform: scale(0.97);
+}
+
+.tb-queue-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.45);
+}
+
+.tb-queue-label {
+    letter-spacing: 0.01em;
+}
+
+/* The count is the loud part — it is the number a doctor glances for. */
+.tb-queue-count {
+    display: grid;
+    place-items: center;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+/* An empty queue is a real state, not an alarm: same pill, drained. */
+.tb-queue-count.is-empty {
+    background: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.tb-queue-next {
+    font-size: 10.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: rgba(191, 219, 254, 0.62);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tb-queue-btn { transition: none; }
+    .tb-queue-btn:active { transform: none; }
+}
+
+
 /* ════════════════════════════════════════════════════════════
    PAST VISIT POPUP
    ════════════════════════════════════════════════════════════ */

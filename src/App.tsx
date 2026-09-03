@@ -47,6 +47,14 @@ import { MedicineAddSheet } from "./features/consult/MedicineAddSheet";
 import { AddMedicineSheet } from "./features/consult/AddMedicineSheet";
 import { useChartSummaries } from "./features/consult/useChartSummaries";
 import { useIntakePrefill } from "./features/consult/useIntakePrefill";
+import { useConsultQueue } from "./features/consult/queue/useConsultQueue";
+import { QueueSheet } from "./features/consult/queue/QueueSheet";
+import { TransitionModal } from "./features/consult/queue/TransitionModal";
+import { useWorkspaceMode } from "./hooks/useWorkspaceMode";
+import { logOperationalEvent } from "./lib/db/intake";
+import { padToken } from "./features/frontdesk/utils";
+import type { TodayVisit } from "./lib/db";
+import type { Patient } from "./types";
 import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
 import { PhysioInputs } from "./features/consult/PhysioInputs";
 import { SoapInputs } from "./features/consult/SoapInputs";
@@ -370,6 +378,47 @@ function App() {
     session,
     identity,
   });
+
+  // ★ Which workspace this clinic is served. Cortex when the doctor does
+  // their own intake; Consult when a front desk prepares the encounter. Read
+  // from `hospitals.clinic_mode`, never chosen — see lib/workspace/mode.ts.
+  const workspace = useWorkspaceMode();
+
+  // ★ The queue, as this doctor sees it. Reads the SAME poll the front desk
+  // page uses (`useQueue`), filtered and previewed for Consult; disabled
+  // entirely in Cortex, where there is no desk and nothing to poll.
+  const queue = useConsultQueue({
+    hospitalId: identity.ready ? identity.hospitalId : null,
+    doctorId: identity.doctorId,
+    multiDoctor: workspace.multiDoctor,
+    enabled: workspace.isConsult && identity.ready,
+  });
+
+  const [queueSheetOpen, setQueueSheetOpen] = useState(false);
+  /**
+   * The handover, after Complete & Next. `null` when there is none;
+   * otherwise it carries the name of the consultation that just finished, so
+   * the modal can say what was saved before it says who is next.
+   */
+  const [transition, setTransition] = useState<{ justCompleted: string | null } | null>(null);
+
+  /**
+   * ── Why the patient modal needs a second flag in Consult ────────────────
+   *
+   * `session.patientModalOpen` starts TRUE and `session.reset()` sets it back
+   * to true, because in Cortex "no patient" means "ask who the patient is" —
+   * that modal is how a solo doctor begins, and on a cold start it is the
+   * whole screen.
+   *
+   * In Consult it is the wrong question twice over: on boot the answer is the
+   * queue, and after a save it would open behind the handover modal. But
+   * registering someone directly must stay reachable (receptionist away,
+   * walk-in), so the flag cannot simply be forced off either.
+   *
+   * So Consult renders that modal only when the doctor ASKED for it. Cortex
+   * ignores this entirely and behaves exactly as it always has.
+   */
+  const [registerRequested, setRegisterRequested] = useState(false);
 
   // ★ Consult's opening state — the front desk's intake, read back onto the
   // chart at the moment a consult starts. A no-op in Cortex (nobody else
@@ -794,6 +843,13 @@ function App() {
     prefillFromIntake,
     onVisitSaved: carePlan.attachCurrentVisit,
     onSaveStory: visitStory.save,
+    // Complete & Next. Cortex passes nothing here and a save ends where it
+    // always did; Consult opens the handover onto a workspace that is already
+    // clear. The queue is re-read first so the modal cannot open showing the
+    // patient who has just been seen still waiting.
+    onConsultSaved: workspace.isConsult
+      ? (name) => { queue.refetch(); setTransition({ justCompleted: name }); }
+      : undefined,
     resetStory: () => { visitStory.reset(); examination.reset(); },
     showToast,
     focusChartSearch,
@@ -872,9 +928,95 @@ function App() {
     setActivePage(null);
     setSidebarOpen(false);
     if (!hasActiveConsult) {
-      setPatientModalOpen(true);
+      // In a clinic with a front desk the answer to "start a consultation" is
+      // the queue, not a blank patient form — the patient is already
+      // registered and already waiting. The form is still reachable from
+      // inside the sheet, for when the desk is unavailable.
+      if (workspace.isConsult) setQueueSheetOpen(true);
+      else setPatientModalOpen(true);
     }
   };
+
+  // ── Taking a patient from the queue ─────────────────────────────────────
+  //
+  // One entry point for both surfaces that offer it (the queue sheet and the
+  // handover modal), because both mean exactly the same thing and an override
+  // recorded from one but not the other would make the audit useless.
+  //
+  // `resolveVisitForConsult` (useConsultLifecycle) finds this patient's
+  // waiting visit and marks it `serving`, so the desk's own board updates
+  // without a second write from here — the queue row and the consult are the
+  // SAME visit, which is the whole point of the handoff.
+  const consultFromQueue = useCallback((visit: TodayVisit, aheadOfQueue: boolean) => {
+    setQueueSheetOpen(false);
+    setTransition(null);
+
+    if (aheadOfQueue) {
+      // An override is a decision somebody may have to account for. Recorded
+      // clinic-wide and durably (`operational_events`), never in the front
+      // desk's per-browser event log — see `logOperationalEvent`. Fire-and-
+      // forget by rule 4: the consultation must not fail because the audit
+      // write did.
+      logOperationalEvent({
+        hospitalId: identity.hospitalId,
+        actorUserId: identity.userId,
+        kind: "queue_override",
+        visitId: visit.visit_id,
+        detail: {
+          taken: { visit_id: visit.visit_id, token: visit.token_number, patient: visit.patient_name },
+          // Who was in front of them, so the event answers the question
+          // somebody will actually ask, rather than only naming who was taken.
+          skipped: queue.waiting
+            .slice(0, queue.waiting.findIndex((v) => v.visit_id === visit.visit_id))
+            .map((v) => ({ visit_id: v.visit_id, token: v.token_number, patient: v.patient_name })),
+        },
+      });
+    }
+
+    void handleStartConsultFromRecord({
+      id: visit.patient_id,
+      name: visit.patient_name,
+      age: visit.age ? String(visit.age) : "",
+      gender: (visit.gender as Patient["gender"]) ?? "",
+      phone: visit.phone ?? "",
+      dateOfBirth: visit.date_of_birth ?? undefined,
+    }).then(() => queue.refetch());
+  }, [identity.hospitalId, identity.userId, queue, handleStartConsultFromRecord]);
+
+  /** The receptionist-unavailable path, from wherever it is offered. */
+  const registerPatientDirectly = useCallback(() => {
+    setQueueSheetOpen(false);
+    setTransition(null);
+    setActivePage(null);
+    setRegisterRequested(true);
+    setPatientModalOpen(true);
+  }, [setActivePage, setPatientModalOpen]);
+
+  /**
+   * Consult's cold start: the queue, once, if anyone is actually in it.
+   *
+   * A doctor opening Consult is arriving at a clinic that has been taking
+   * patients without them. Landing on an empty workspace with a number in the
+   * header would make finding the first patient a step they have to think
+   * about. Landing on a "create patient" form — which is what Cortex's own
+   * default does — would be worse, because it answers a question the front
+   * desk already answered.
+   *
+   * At most once per mount (`coldStart`), never over a consult already in
+   * progress, and never when nobody is waiting — an empty queue sheet on boot
+   * is a modal for nothing.
+   */
+  const coldStart = useRef(false);
+  useEffect(() => {
+    if (!workspace.isConsult || !workspace.ready) return;
+    if (coldStart.current) return;
+    if (queue.loading) return;              // wait for a real answer, not the empty first render
+    coldStart.current = true;
+    if (hasActiveConsult) return;           // a resumed draft owns the screen
+    setPatientModalOpen(false);
+    if (queue.waiting.length > 0) setQueueSheetOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace.isConsult, workspace.ready, queue.loading, queue.waiting.length, hasActiveConsult]);
 
   // ── The specialty profile ───────────────────────────────────────────────
   // Which intent type this facility elevates into the Primary Recommendation
@@ -1338,6 +1480,11 @@ function App() {
           pastVisitsLoading={pastVisitsLoading}
           onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
           sessionLabels={carePlan.sessionLabels}
+          // Consult only — in Cortex these are undefined and the header keeps
+          // its "+ Patient" button exactly as it was.
+          onOpenQueue={workspace.isConsult ? () => setQueueSheetOpen(true) : undefined}
+          queueCount={queue.waiting.length}
+          nextToken={queue.waiting[0] ? padToken(queue.waiting[0].token_number) : null}
           logoRef={logoRef}
         />
       )}
@@ -2185,11 +2332,59 @@ function App() {
           />
         )
       }
+      {/* ── The queue, on demand ──────────────────────────────────────────
+          Opened from the dark header's Queue control, closed again. Not
+          rendered at all in Cortex, where there is no front desk to have a
+          queue. `isFeaturePage` is deliberately NOT a condition: a doctor
+          reading Patients or Practice can still be asked to take the next
+          patient, and `consultFromQueue` navigates back to the workspace
+          itself. */}
+      {workspace.isConsult && queueSheetOpen && (
+        <QueueSheet
+          waiting={queue.waiting}
+          serving={queue.serving}
+          previews={queue.previews}
+          completedCount={queue.completedCount}
+          loading={queue.loading}
+          currentVisitId={visitId}
+          onClose={() => setQueueSheetOpen(false)}
+          onPick={consultFromQueue}
+          onRegisterPatient={registerPatientDirectly}
+        />
+      )}
+
+      {/* ── The handover ──────────────────────────────────────────────────
+          Opens on a successful save in Consult, over an already-cleared
+          workspace. Owns its own 10-second continuation; everything it can
+          decide it hands back through `consultFromQueue`, the same entry
+          point the queue sheet uses. */}
+      {workspace.isConsult && transition && (
+        <TransitionModal
+          waiting={queue.waiting}
+          previews={queue.previews}
+          completedCount={queue.completedCount}
+          justCompleted={transition.justCompleted}
+          onContinue={consultFromQueue}
+          onRegisterPatient={registerPatientDirectly}
+          onDismiss={() => setTransition(null)}
+        />
+      )}
+
       {
-        !isFeaturePage && patientModalOpen && (
+        // Consult adds one condition and changes nothing else: the modal shows
+        // when the doctor asked for it, never as a default (see
+        // `registerRequested`). Its close is also reachable unconditionally
+        // there — in Cortex a patient-less workspace has nothing behind this
+        // modal to go back to, which is why that branch still refuses to close;
+        // in Consult there is a queue behind it.
+        !isFeaturePage && patientModalOpen && (!workspace.isConsult || registerRequested) && (
           <PatientModal
-            onClose={patient ? () => setPatientModalOpen(false) : () => { }}
-            onConfirm={handlePatientConfirm}
+            onClose={
+              workspace.isConsult
+                ? () => { setRegisterRequested(false); setPatientModalOpen(false); }
+                : patient ? () => setPatientModalOpen(false) : () => { }
+            }
+            onConfirm={(p) => { setRegisterRequested(false); return handlePatientConfirm(p); }}
           />
         )
       }
@@ -2214,6 +2409,7 @@ function App() {
             prescription={prescription}
             tests={selectedTests}
             isSaving={isSaving}
+            saveLabel={workspace.isConsult ? "Complete & Next" : undefined}
             onEdit={() => setIsReviewOpen(false)}
             onSave={handleConfirmAndSave}
             onClose={() => setIsReviewOpen(false)}

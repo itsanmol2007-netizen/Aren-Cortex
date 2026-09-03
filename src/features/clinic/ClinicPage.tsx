@@ -13,8 +13,10 @@
 //
 // ── What is deliberately NOT here ─────────────────────────────────────────
 // No Contact Details card (that IS clinic information), no Branding,
-// Documents, Reports, Billing, Staff, Inventory, public presence or "clinic
-// preferences". If a thing belongs to clinic information it lives in that
+// Documents, Reports, Billing, Inventory, public presence or "clinic
+// preferences". Staff WAS on that list until 2026-09-03 and is not any more:
+// Consult makes this a multi-user clinic, so "who works here and what may they
+// do" became a real question this page is the only place to answer. If a thing belongs to clinic information it lives in that
 // modal; if it belongs to another module this page links to that module; if it
 // does not exist in the MVP there is no configuration surface pretending it
 // does.
@@ -40,13 +42,15 @@ import type { ReactNode, RefObject } from "react";
 import {
     ArrowRight, Award, Building2, CalendarDays, ChevronRight, Clock,
     FileSignature, Globe, GraduationCap, Mail, MapPin, MessageCircle,
-    MessageSquare, Monitor, Pencil, Phone, ScrollText, Stethoscope,
+    MessageSquare, Monitor, Pencil, Phone, ScrollText, Stethoscope, UserCog, Users,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { CommunicationArt } from "../../components/PlaceholderArt";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { RxPreview } from "./RxPreview";
 import { ClinicHoursModal, EditClinicModal, EditDoctorModal } from "./ClinicModals";
+import { StaffModal } from "./StaffModal";
+import { fetchStaff, type StaffMember } from "../../lib/db/staff";
 import { Card, CardAction, CardPillButton, EmptyAction, EmptyBlock, FootLink, Heading, RowText, SkeletonRows } from "./ui";
 import {
     DEFAULT_PRESCRIPTION_CONFIG, WEEKDAYS, emptyClinicHours, fetchClinicHours,
@@ -116,6 +120,8 @@ export function ClinicPage({
     const [clinicModalOpen, setClinicModalOpen] = useState(false);
     const [doctorModalOpen, setDoctorModalOpen] = useState(false);
     const [hoursModalOpen, setHoursModalOpen] = useState(false);
+    const [staffModalOpen, setStaffModalOpen] = useState(false);
+    const [staff, setStaff] = useState<StaffMember[] | null>(null);
     useEffect(() => {
         if (!identity.ready) return;
         setHoursLoading(true);
@@ -130,6 +136,8 @@ export function ClinicPage({
         fetchPrescriptionConfig(identity.hospitalId)
             .then(setRxConfig)
             .catch(console.error);
+
+        fetchStaff(identity.hospitalId).then(setStaff).catch(console.error);
     }, [identity.ready, identity.hospitalId]);
 
     const openDays = week.filter((d) => d.sessions.length > 0).length;
@@ -593,7 +601,59 @@ export function ClinicPage({
                         </div>
                     </Card>
                 </div>
+
+                {/* ══ Staff — new with Consult, because a clinic with a front
+                    desk is a multi-user clinic and had nowhere to manage one. ══ */}
+                <div className="grid grid-cols-1 gap-[12px]">
+                    <Card
+                        tone="violet"
+                        icon={<Users size={14} />}
+                        title="Staff"
+                        subtitle="Who works at this clinic, and what they can do."
+                        action={<CardPillButton tone="violet" onClick={() => setStaffModalOpen(true)}>
+                            <UserCog size={12} /> Manage staff
+                        </CardPillButton>}
+                    >
+                        {staff === null ? (
+                            <SkeletonRows count={2} />
+                        ) : staff.length === 0 ? (
+                            <EmptyBlock
+                                fact="Nobody else is registered here yet"
+                                next="Staff join by registering against this clinic; manage their role and access here."
+                                action={<EmptyAction tone="violet" onClick={() => setStaffModalOpen(true)}>Manage staff</EmptyAction>}
+                            />
+                        ) : (
+                            <div className="flex flex-col gap-[6px]">
+                                {staff.slice(0, 5).map((m) => (
+                                    <div key={m.id} className="flex items-center gap-[9px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[8px]">
+                                        <span className="grid h-[28px] w-[28px] flex-none place-items-center rounded-full bg-[var(--cs-violet-soft)] text-[10.5px] font-extrabold text-[var(--cs-violet)]">
+                                            {(m.full_name ?? "?").replace(/[^A-Za-z ]/g, "").split(" ").filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "?"}
+                                        </span>
+                                        <RowText label={m.full_name ?? "Unnamed"} sub={m.phone ?? "no phone on file"} />
+                                        <span className="ml-auto flex-none rounded-full border border-[var(--cs-line-strong)] bg-[var(--cs-card)] px-[9px] py-[3px] text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--cs-label)]">
+                                            {m.role === "reception" ? "Front desk" : (m.role ?? "—")}{m.is_active ? "" : " · inactive"}
+                                        </span>
+                                    </div>
+                                ))}
+                                {staff.length > 5 && (
+                                    <FootLink tone="violet" onClick={() => setStaffModalOpen(true)}>
+                                        {staff.length - 5} more <ChevronRight size={12} />
+                                    </FootLink>
+                                )}
+                            </div>
+                        )}
+                    </Card>
+                </div>
             </div>
+
+            {staffModalOpen && (
+                <StaffModal
+                    hospitalId={identity.hospitalId}
+                    currentUserId={identity.userId}
+                    onClose={() => setStaffModalOpen(false)}
+                    onChanged={setStaff}
+                />
+            )}
 
             {clinicModalOpen && (
                 <EditClinicModal

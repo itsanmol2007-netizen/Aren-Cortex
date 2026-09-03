@@ -150,6 +150,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
             age: opts.existingPatient?.age ?? (Number(opts.age) || 0),
             gender: opts.existingPatient?.gender ?? opts.gender,
             phone: opts.existingPatient?.phone ?? opts.phone.trim(),
+            date_of_birth: opts.existingPatient?.date_of_birth ?? (opts.dateOfBirth || null),
             token_number: null,
             status: "waiting",
             created_at: nowIso,
