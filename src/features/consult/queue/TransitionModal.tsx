@@ -50,7 +50,7 @@ type View = "patient" | "queue";
 
 export function TransitionModal({
     waiting, previews, completedCount, justCompleted,
-    onContinue, onRegisterPatient, onDismiss,
+    onContinue, onRegisterPatient, onDismiss, onManageAttachments,
 }: {
     waiting: TodayVisit[];
     previews: Map<string, IntakePreview>;
@@ -61,6 +61,7 @@ export function TransitionModal({
     onContinue: (visit: TodayVisit, aheadOfQueue: boolean) => void;
     onRegisterPatient: () => void;
     onDismiss: () => void;
+    onManageAttachments?: (visit: TodayVisit) => void;
 }) {
     const suggested = waiting[0] ?? null;
     const [chosenId, setChosenId] = useState<string | null>(null);
@@ -243,26 +244,29 @@ export function TransitionModal({
                     ))}
                 </div>
             ) : (
-                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] max-[720px]:grid-cols-1">
-                    {/* What the desk prepared. */}
+                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] max-[720px]:grid-cols-1">
+                    {/* What the desk prepared — the actual subject of this
+                        screen, so it carries the weight: white ground, wider
+                        column, an accent-coloured heading rather than a flat
+                        grey label. */}
                     <div className="flex min-h-[240px] min-w-0 flex-col border-r border-[var(--cs-line)] max-[720px]:border-b max-[720px]:border-r-0">
                         <div className="flex-none px-[15px] pb-[2px] pt-[13px]">
-                            <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-label)]">
+                            <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-blue)]">
                                 Prepared at the front desk
                             </span>
                         </div>
-                        {showing && <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense />}
+                        {showing && <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense onManageAttachments={onManageAttachments} />}
                     </div>
 
-                    {/* The compact queue — four or five rows, and a way to all
-                        of them. The doctor should not have to open anything
-                        else just to understand who is waiting. */}
+                    {/* The rest of the queue — a glance, not a second card
+                        list competing with the patient beside it: a quiet
+                        recessed column, hairline rows, no borders of its own. */}
                     <div className="flex min-h-0 min-w-0 flex-col bg-[var(--cs-page)]">
-                        <div className="flex flex-none items-center justify-between px-[15px] pb-[7px] pt-[13px]">
-                            <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-label)]">Queue</span>
-                            <span className="text-[11px] font-semibold tabular-nums text-[var(--cs-faint)]">{waiting.length}</span>
+                        <div className="flex flex-none items-center justify-between px-[13px] pb-[6px] pt-[13px]">
+                            <span className="text-[9.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-faint)]">Also waiting</span>
+                            <span className="text-[10.5px] font-semibold tabular-nums text-[var(--cs-faint)]">{waiting.length}</span>
                         </div>
-                        <div className="flex min-h-0 flex-1 flex-col gap-[5px] overflow-y-auto px-[13px] pb-[10px]">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[7px] pb-[6px]">
                             {compact.length === 0
                                 ? <QueueEmpty />
                                 : compact.map((v, i) => (
@@ -273,13 +277,14 @@ export function TransitionModal({
                                         position={i + 1}
                                         selected={showing?.visit_id === v.visit_id}
                                         onSelect={pick}
+                                        quiet
                                     />
                                 ))}
                         </div>
                         <button
                             type="button"
                             onClick={openQueue}
-                            className="flex flex-none items-center gap-[4px] border-t border-[var(--cs-line)] px-[15px] py-[9px] text-left text-[11.5px] font-semibold text-[var(--cs-blue)] transition-[gap] hover:gap-[7px]"
+                            className="flex flex-none items-center gap-[4px] border-t border-[var(--cs-line)] px-[13px] py-[9px] text-left text-[11px] font-semibold text-[var(--cs-blue)] transition-[gap] hover:gap-[7px]"
                         >
                             View full queue{rest > 0 ? ` (${rest} more)` : ""} <ArrowRight size={12} />
                         </button>

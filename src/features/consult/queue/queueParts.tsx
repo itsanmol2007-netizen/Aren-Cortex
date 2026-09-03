@@ -160,12 +160,15 @@ function ChipRow({ label, items, tone }: { label: string; items: string[]; tone:
  * three grey rows that promise data nobody captured.
  */
 export function IntakePanel({
-    preview, visit, dense = false,
+    preview, visit, dense = false, onManageAttachments,
 }: {
     preview: IntakePreview | undefined;
     visit: TodayVisit;
     /** the transition modal's tighter column */
     dense?: boolean;
+    /** opens the same attachment manager the front desk uses — view, add,
+     *  delete. Omitted where the caller hasn't wired it. */
+    onManageAttachments?: (visit: TodayVisit) => void;
 }) {
     const symptoms = preview?.symptoms ?? [];
     const history = preview?.history ?? [];
@@ -181,6 +184,15 @@ export function IntakePanel({
                 <span className="max-w-[34ch] text-[11.5px] leading-[1.5] text-[var(--cs-muted)]">
                     Start the consultation and chart it here.
                 </span>
+                {onManageAttachments && (
+                    <button
+                        type="button"
+                        onClick={() => onManageAttachments(visit)}
+                        className="mt-[4px] flex items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] px-[11px] py-[5px] text-[11.5px] font-semibold text-[var(--cs-teal)] hover:bg-[var(--cs-teal-soft)]"
+                    >
+                        <Paperclip size={12} /> Add attachment
+                    </button>
+                )}
             </div>
         );
     }
@@ -207,13 +219,23 @@ export function IntakePanel({
                 </div>
             )}
 
-            {files > 0 && (
+            {(files > 0 || onManageAttachments) && (
                 <div className="flex items-center gap-[6px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[6px]">
                     <Paperclip size={13} className="flex-none text-[var(--cs-teal)]" aria-hidden="true" />
                     <span className="text-[12px] font-semibold text-[var(--cs-muted)]">
-                        {files} file{files === 1 ? "" : "s"} from the front desk
+                        {files > 0 ? `${files} file${files === 1 ? "" : "s"} from the front desk` : "No attachments yet"}
                     </span>
-                    <span className="ml-auto text-[11px] font-normal text-[var(--cs-faint)]">opens with the consult</span>
+                    {onManageAttachments ? (
+                        <button
+                            type="button"
+                            onClick={() => onManageAttachments(visit)}
+                            className="ml-auto flex-none rounded-full border border-[var(--cs-teal)]/40 px-[9px] py-[2px] text-[11px] font-semibold text-[var(--cs-teal)] hover:bg-[var(--cs-teal-soft)]"
+                        >
+                            {files > 0 ? "View / add" : "Add"}
+                        </button>
+                    ) : (
+                        <span className="ml-auto text-[11px] font-normal text-[var(--cs-faint)]">opens with the consult</span>
+                    )}
                 </div>
             )}
 
@@ -239,7 +261,7 @@ export function IntakePanel({
  * commitment is a separate, named action.
  */
 export function QueueRow({
-    visit, preview, selected, position, onSelect,
+    visit, preview, selected, position, onSelect, quiet,
 }: {
     visit: TodayVisit;
     preview?: IntakePreview;
@@ -247,8 +269,45 @@ export function QueueRow({
     /** 1-based place in the desk's order, printed so "ahead of queue" is visible */
     position?: number;
     onSelect: (visit: TodayVisit) => void;
+    /**
+     * The flattened treatment — a hairline row, no card chrome, smaller type
+     * — for when this list sits BESIDE the actual decision (the transition
+     * modal's compact sidebar) rather than being the screen's own subject
+     * (the queue sheet's own waiting list, or the expanded full-queue view).
+     * Without this every row read as an equally loud card regardless of
+     * which one the doctor was actually looking at.
+     */
+    quiet?: boolean;
 }) {
     const complaints = (preview?.symptoms ?? []).slice(0, 3).join(", ");
+
+    if (quiet) {
+        return (
+            <button
+                type="button"
+                onClick={() => onSelect(visit)}
+                aria-pressed={selected}
+                className={
+                    "flex w-full items-center gap-[8px] rounded-[8px] px-[8px] py-[7px] text-left transition-colors duration-150 " +
+                    (selected ? "bg-[var(--cs-blue-soft)]" : "hover:bg-black/[0.03]")
+                }
+            >
+                <span className={"w-[16px] flex-none text-[10.5px] font-bold tabular-nums " + (selected ? "text-[var(--cs-blue)]" : "text-[var(--cs-faint)]")}>
+                    {position}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                    <span className={"truncate text-[12px] font-semibold " + (selected ? "text-[var(--cs-blue)]" : "text-[var(--cs-ink)]")}>
+                        {visit.patient_name}
+                    </span>
+                    <span className="truncate text-[10.5px] font-normal text-[var(--cs-faint)]">
+                        {complaints || patientLine(visit) || "No complaint recorded"}
+                    </span>
+                </span>
+                <span className="flex-none text-[10px] font-semibold text-[var(--cs-faint)]">{waitedFor(visit)}</span>
+            </button>
+        );
+    }
+
     return (
         <button
             type="button"

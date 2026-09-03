@@ -396,17 +396,6 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
  * automatic open." Header-only now, exactly what the loaded band shows
  * collapsed, so there is nothing left to snap shut.
  */
-function LongitudinalSkeleton() {
-    return (
-        <section className="cs-lt is-skel is-collapsed" aria-hidden="true">
-            <header className="cs-lt-head">
-                <span className="cs-lt-skel-bar cs-lt-skel-title" />
-                <span className="cs-lt-skel-bar cs-lt-skel-sub" />
-            </header>
-        </section>
-    );
-}
-
 export function LongitudinalBand({
     summary, pastVisits, loading, carePlan, sessionNumbers,
     onOpenVisit, onOpenTrend, onEditCarePlan, onStartCarePlan,
@@ -439,7 +428,9 @@ export function LongitudinalBand({
     // doctor has asked for it.
     const [collapsed, setCollapsed] = useState(true);
 
-    if (loading) return <LongitudinalSkeleton />;
+    // Nothing while unknown — a skeleton that then collapses to nothing for a
+    // first-visit patient is a DOM resize with no payoff.
+    if (loading) return null;
 
     // The whole component, gone, for a patient with no history. See the header.
     if (pastVisits.length === 0) return null;

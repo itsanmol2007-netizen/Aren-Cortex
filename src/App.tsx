@@ -52,6 +52,9 @@ import { QueueSheet } from "./features/consult/queue/QueueSheet";
 import { TransitionModal } from "./features/consult/queue/TransitionModal";
 import { useWorkspaceMode } from "./hooks/useWorkspaceMode";
 import { logOperationalEvent } from "./lib/db/intake";
+import { GatewaySessionsProvider } from "./features/frontdesk/components/gateway/GatewaySessionsProvider";
+import { GatewayQrModal } from "./features/frontdesk/components/gateway/GatewayQrModal";
+import { VisitAttachmentsModal } from "./features/frontdesk/components/VisitAttachmentsModal";
 import { padToken } from "./features/frontdesk/utils";
 import type { TodayVisit } from "./lib/db";
 import type { Patient } from "./types";
@@ -118,6 +121,10 @@ import { fetchLastExercisePlan } from "./lib/db/exercises";
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {};
 
 function App() {
+  // ★ Which workspace this clinic is served. Cortex when the doctor does
+  // their own intake; Consult when a front desk prepares the encounter. Read
+  // from `hospitals.clinic_mode`, never chosen — see lib/workspace/mode.ts.
+  const workspace = useWorkspaceMode();
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   // One ref per Tab stop of the workspace, in the order STOPS walks them
   // (useConsultKeyboard.ts). The old findings/tests refs are gone with the
@@ -320,8 +327,14 @@ function App() {
   // Where a consult actually begins. Passed to the lifecycle hook rather than
   // the ref itself, so that hook stays ignorant of the DOM.
   const focusChartSearch = useCallback(() => {
+    // Consult opens onto a chart the front desk already populated — jamming
+    // focus into the search field pops the catalogue dropdown open over it
+    // before the doctor has had a chance to glance at what's there. Cortex
+    // starts from nothing, so the search box is exactly where the cursor
+    // should land.
+    if (workspace.isConsult) return;
     window.setTimeout(() => chartSearchRef.current?.focus(), 0);
-  }, []);
+  }, [workspace.isConsult]);
 
   // ★ Ranking + the catalogue. `observables` IS the catalogue in v2 (handoff
   // §16): symptoms, examination findings and patient history are one table
@@ -379,11 +392,6 @@ function App() {
     identity,
   });
 
-  // ★ Which workspace this clinic is served. Cortex when the doctor does
-  // their own intake; Consult when a front desk prepares the encounter. Read
-  // from `hospitals.clinic_mode`, never chosen — see lib/workspace/mode.ts.
-  const workspace = useWorkspaceMode();
-
   // ★ The queue, as this doctor sees it. Reads the SAME poll the front desk
   // page uses (`useQueue`), filtered and previewed for Consult; disabled
   // entirely in Cortex, where there is no desk and nothing to poll.
@@ -401,6 +409,9 @@ function App() {
    * the modal can say what was saved before it says who is next.
    */
   const [transition, setTransition] = useState<{ justCompleted: string | null } | null>(null);
+  /** which waiting/serving visit's attachments the doctor is managing, from
+   *  the queue sheet or the handover — same modal the front desk uses. */
+  const [attachmentsVisit, setAttachmentsVisit] = useState<TodayVisit | null>(null);
 
   /**
    * ── Why the patient modal needs a second flag in Consult ────────────────
@@ -947,7 +958,24 @@ function App() {
   // waiting visit and marks it `serving`, so the desk's own board updates
   // without a second write from here — the queue row and the consult are the
   // SAME visit, which is the whole point of the handoff.
+  // What to do once whatever consult is currently active has been dealt
+  // with (discarded, saved as draft, or referred) — set only when the guard
+  // below had to interrupt a queue action to ask first.
+  const pendingQueueAction = useRef<(() => void) | null>(null);
+
   const consultFromQueue = useCallback((visit: TodayVisit, aheadOfQueue: boolean) => {
+    // Picking someone else while a consult is already open is exactly the
+    // "start a new consult over an active one" case Cortex already guards —
+    // the queue must not be a side door around it. `hasActiveConsult` is
+    // false the moment TransitionModal's own onContinue calls this (the
+    // workspace was already cleared by the save that opened it), so this
+    // never fires there.
+    if (hasActiveConsult) {
+      pendingQueueAction.current = () => consultFromQueue(visit, aheadOfQueue);
+      setQueueSheetOpen(false);
+      setActiveConsultGuardOpen(true);
+      return;
+    }
     setQueueSheetOpen(false);
     setTransition(null);
 
@@ -981,16 +1009,22 @@ function App() {
       phone: visit.phone ?? "",
       dateOfBirth: visit.date_of_birth ?? undefined,
     }).then(() => queue.refetch());
-  }, [identity.hospitalId, identity.userId, queue, handleStartConsultFromRecord]);
+  }, [hasActiveConsult, identity.hospitalId, identity.userId, queue, handleStartConsultFromRecord]);
 
   /** The receptionist-unavailable path, from wherever it is offered. */
   const registerPatientDirectly = useCallback(() => {
+    if (hasActiveConsult) {
+      pendingQueueAction.current = registerPatientDirectly;
+      setQueueSheetOpen(false);
+      setActiveConsultGuardOpen(true);
+      return;
+    }
     setQueueSheetOpen(false);
     setTransition(null);
     setActivePage(null);
     setRegisterRequested(true);
     setPatientModalOpen(true);
-  }, [setActivePage, setPatientModalOpen]);
+  }, [hasActiveConsult, setActivePage, setPatientModalOpen]);
 
   /**
    * Consult's cold start: the queue, once, if anyone is actually in it.
@@ -2321,14 +2355,23 @@ function App() {
             onDiscard={() => {
               resetConsultState();
               setActiveConsultGuardOpen(false);
+              const run = pendingQueueAction.current;
+              pendingQueueAction.current = null;
+              run?.();
             }}
             onComplete={() => {
-              // After saving as draft/referral, reset and start new consult
+              // After saving as draft/referral, reset and continue whatever
+              // asked to interrupt this consult — the queue action that
+              // triggered the guard, or (nothing pending) Cortex's own
+              // default of opening the new-patient modal.
               resetConsultState();
               setActiveConsultGuardOpen(false);
-              setPatientModalOpen(true); // Open modal to start new consult
+              const run = pendingQueueAction.current;
+              pendingQueueAction.current = null;
+              if (run) run();
+              else setPatientModalOpen(true);
             }}
-            onClose={() => setActiveConsultGuardOpen(false)}
+            onClose={() => { pendingQueueAction.current = null; setActiveConsultGuardOpen(false); }}
           />
         )
       }
@@ -2350,6 +2393,7 @@ function App() {
           onClose={() => setQueueSheetOpen(false)}
           onPick={consultFromQueue}
           onRegisterPatient={registerPatientDirectly}
+          onManageAttachments={setAttachmentsVisit}
         />
       )}
 
@@ -2367,7 +2411,15 @@ function App() {
           onContinue={consultFromQueue}
           onRegisterPatient={registerPatientDirectly}
           onDismiss={() => setTransition(null)}
+          onManageAttachments={setAttachmentsVisit}
         />
+      )}
+
+      {workspace.isConsult && attachmentsVisit && (
+        <GatewaySessionsProvider>
+          <VisitAttachmentsModal visit={attachmentsVisit} onClose={() => setAttachmentsVisit(null)} />
+          <GatewayQrModal />
+        </GatewaySessionsProvider>
       )}
 
       {

@@ -235,7 +235,7 @@ function Cell({
                 placeholder={field.placeholder}
                 inputMode="decimal"
                 aria-label={field.label}
-                className={`fd-field ${warn ? "border-[#d9822b] bg-[#fffaf3]" : ""}`}
+                className={`fd-field ${warn ? "fd-field-warn" : ""}`}
             />
         </div>
     );

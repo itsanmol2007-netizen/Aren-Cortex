@@ -163,10 +163,13 @@ export const MEASURE_FIELDS: MeasureField[] = [
         group: "vitals", betterWhen: "band", trendNoise: 5,
         placeholder: "120", kind: "bp",
         warn: (v) => {
-            const sys = Number.parseInt(String(v).split("/")[0] ?? "", 10);
-            return Number.isFinite(sys) && (sys > 140 || sys < 90);
+            const [sysRaw, diaRaw] = String(v).split("/");
+            const sys = Number.parseInt(sysRaw ?? "", 10);
+            const dia = Number.parseInt(diaRaw ?? "", 10);
+            return (Number.isFinite(sys) && (sys > 140 || sys < 90))
+                || (Number.isFinite(dia) && (dia > 90 || dia < 60));
         },
-        warnText: "Systolic outside 90–140 mmHg",
+        warnText: "Outside 90–140 / 60–90 mmHg",
     },
     {
         key: "pulse", label: "Pulse (bpm)", shortLabel: "Pulse",

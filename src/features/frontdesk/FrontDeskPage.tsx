@@ -48,6 +48,22 @@ function FrontDeskInner() {
         return () => clearInterval(t);
     }, []);
 
+    // Ctrl+K opens (or refocuses) the intake modal — the same binding Cortex
+    // uses to jump to its own search (lib/keyboard/keymap.ts), so a
+    // receptionist coming from the consult side finds the same shortcut here.
+    // Skipped while any modal is already open (its own field order + Enter-
+    // to-advance already owns the keyboard then) or while typing elsewhere.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
+            if (createState || openVisit || attachmentsVisit) return;
+            e.preventDefault();
+            setCreateState({ existingPatient: null, prefillName: "" });
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [createState, openVisit, attachmentsVisit]);
+
     // Keep the open detail modal in sync with the live queue (optimistic status
     // changes + silent refresh) so its buttons reflect the current status.
     const liveOpenVisit = openVisit ? visits.find((v) => v.visit_id === openVisit.visit_id) ?? openVisit : null;

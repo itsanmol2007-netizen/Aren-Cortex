@@ -43,6 +43,11 @@ const CSS = `
 }
 .fd-field::placeholder { color: #8a91a0; }
 .fd-field-error, .fd-field-error:hover { border-color: #d23b34; background: #fffafa; }
+/* Out-of-range measurement (MeasurementsModal). A Tailwind utility class
+   here would lose to .fd-field's own border/background above — both
+   unlayered, .fd-field written later in the same stylesheet wins regardless
+   of specificity — so this is a real class, same trick as fd-field-error. */
+.fd-field-warn, .fd-field-warn:hover { border-color: #d9822b; background: #fffaf3; }
 select.fd-field { cursor: pointer; }
 
 /* Compact filter select (Patients browser): same family as fd-field, shrunk

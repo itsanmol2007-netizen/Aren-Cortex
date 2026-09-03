@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ClipboardList, History, RefreshCw, Stethoscope, Thermometer } from "lucide-react";
+import { ClipboardList, History, MoreVertical, RefreshCw, Stethoscope, Thermometer } from "lucide-react";
 import { fetchPatientVisits, type DBDoctor, type RealVisit } from "@/lib/db";
 import type { TodayVisit } from "../types/frontdesk";
 import { tintFor } from "../statusStyle";
@@ -182,43 +182,53 @@ function StatusBar({
     onClose: () => void;
 }) {
     const t = useT();
+    const [moreOpen, setMoreOpen] = useState(false);
     const btnBase =
         "flex h-10 flex-1 items-center justify-center gap-[6px] rounded-[10px] border-[1.5px] text-[13px] font-semibold transition-colors";
 
-    if (visit.status === "waiting") {
+    // Reception can cancel or reorder a visit; only the doctor marks one "in
+    // consultation" or "completed" — those two are edge-case overrides now
+    // (doctor unavailable, correcting a mistake), tucked behind More rather
+    // than sitting as two equally-obvious buttons.
+    if (visit.status === "waiting" || visit.status === "serving") {
+        const overrideLabel = visit.status === "waiting" ? t("stConsult") : t("stCompleted");
+        const runOverride = () => {
+            (visit.status === "waiting" ? onStartConsultation : onComplete)(visit);
+            onClose();
+        };
         return (
-            <div className="flex gap-[9px]">
-                <button
-                    onClick={() => { onStartConsultation(visit); onClose(); }}
-                    className={`${btnBase} border-[#2f6bed] bg-[#2f6bed] text-white hover:bg-[#1d51c9]`}
-                >
-                    {t("stConsult")}
-                </button>
+            <div className="relative flex gap-[9px]">
                 <button
                     onClick={() => { onCancel(visit); onClose(); }}
                     className={`${btnBase} border-[#e4e7ee] bg-white text-[#5a6472] hover:border-[#d23b34] hover:bg-[rgba(210,59,52,0.05)] hover:text-[#d23b34]`}
                 >
                     {t("stCancelled")}
                 </button>
-            </div>
-        );
-    }
-
-    if (visit.status === "serving") {
-        return (
-            <div className="flex gap-[9px]">
                 <button
-                    onClick={() => { onComplete(visit); onClose(); }}
-                    className={`${btnBase} border-[#1c8a4d] bg-[#1c8a4d] text-white hover:brightness-95`}
+                    onClick={() => setMoreOpen((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={moreOpen}
+                    className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border-[1.5px] border-[#e4e7ee] bg-white text-[#8a91a0] hover:border-[#d5dae4] hover:text-[#5a6472]"
+                    title="More"
                 >
-                    {t("stCompleted")}
+                    <MoreVertical size={16} />
                 </button>
-                <button
-                    onClick={() => { onCancel(visit); onClose(); }}
-                    className={`${btnBase} border-[#e4e7ee] bg-white text-[#5a6472] hover:border-[#d23b34] hover:bg-[rgba(210,59,52,0.05)] hover:text-[#d23b34]`}
-                >
-                    {t("stCancelled")}
-                </button>
+                {moreOpen && (
+                    <>
+                        <div className="fixed inset-0 z-[59]" onClick={() => setMoreOpen(false)} />
+                        <div className="absolute bottom-[46px] right-0 z-[60] min-w-[220px] rounded-[9px] border border-[#e4e7ee] bg-white p-[5px] shadow-[0_24px_60px_rgba(16,24,40,0.24)]">
+                            <button
+                                onClick={runOverride}
+                                className="flex w-full items-center gap-[9px] rounded-[7px] px-[10px] py-[8px] text-left text-[13px] font-medium text-[#161d29] hover:bg-[#f6f6fb]"
+                            >
+                                {overrideLabel}
+                            </button>
+                            <p className="m-0 px-[10px] pb-[5px] pt-[2px] text-[10.5px] text-[#a8aeba]">
+                                Normally set by the doctor — use this only if they're unavailable.
+                            </p>
+                        </div>
+                    </>
+                )}
             </div>
         );
     }

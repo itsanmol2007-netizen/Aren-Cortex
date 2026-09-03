@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, QrCode, RotateCcw, UploadCloud } from "lucide-react";
 import { canResume, isEffectivelyExpired, type VisitGateway } from "@/lib/db/gateways";
+import { listAttachments, subscribeAttachments } from "@/lib/db/attachments";
 import { useT } from "../../i18n/i18n";
 import { useCachedIntakeChips } from "../../operational/referenceCache";
 import { ModalShell } from "../ModalShell";
@@ -118,6 +119,26 @@ function ReadyModal({
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
+    // `session.documentsUploadedCount` is written by the phone-side portal
+    // (a separate project) directly onto `visit_gateways` — real, but this
+    // modal has no control over when/whether that write happens. The
+    // attachment row itself lands in `visit_attachments`, which IS ours and
+    // already has a realtime subscription built for exactly this (see
+    // AttachmentsCard). Counting that directly means "0 files" here can
+    // never lag behind what the doctor's own screen already shows live.
+    const [uploadedCount, setUploadedCount] = useState(session.documentsUploadedCount);
+    useEffect(() => {
+        let cancelled = false;
+        const refresh = () => {
+            listAttachments(session.visitId)
+                .then((rows) => { if (!cancelled) setUploadedCount(rows.length); })
+                .catch(() => { /* keep the last known count */ });
+        };
+        refresh();
+        const unsubscribe = subscribeAttachments(session.visitId, refresh);
+        return () => { cancelled = true; unsubscribe(); };
+    }, [session.visitId]);
+
     // Kept once expired rather than nulled out — the expired QR box below
     // shows this SAME image, blurred and dimmed, instead of swapping to a
     // differently-shaped block. Only regenerates on a real new token (i.e.
@@ -223,8 +244,8 @@ function ReadyModal({
                                     <UploadCloud size={13} />
                                 </div>
                                 <span className="text-[12.5px] font-bold text-[#161d29]">
-                                    {session.documentsUploadedCount > 0
-                                        ? t("gwUploadedCount", { n: session.documentsUploadedCount })
+                                    {uploadedCount > 0
+                                        ? t("gwUploadedCount", { n: uploadedCount })
                                         : t("gwUploadedNone")}
                                 </span>
                             </div>

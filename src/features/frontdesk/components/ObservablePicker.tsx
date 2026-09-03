@@ -416,11 +416,17 @@ function DurationBox({ days, onChange }: { days: number | null; onChange: (days:
             onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setEditing(true); }
             }}
-            className={`flex cursor-pointer items-center gap-[3px] rounded-[5px] px-[5px] py-[1px] text-[10.5px] font-bold tabular-nums leading-none transition-colors ${
-                days ? "bg-black/[0.07] text-current" : "text-current opacity-45 hover:opacity-80"
+            className={`flex cursor-pointer items-center gap-[3px] rounded-[5px] px-[5px] py-[1px] text-[10.5px] font-bold leading-none transition-colors ${
+                days
+                    ? "bg-black/[0.07] tabular-nums text-current"
+                    : "border border-dashed border-current/25 font-semibold text-current opacity-55 hover:border-current/45 hover:opacity-90"
             }`}
         >
-            {days ? shortDuration(days) : <Clock3 size={10} aria-hidden="true" />}
+            {days ? shortDuration(days) : (
+                <>
+                    <Clock3 size={9} aria-hidden="true" /> days?
+                </>
+            )}
         </span>
     );
 }

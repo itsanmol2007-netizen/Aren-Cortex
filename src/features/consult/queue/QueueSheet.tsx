@@ -32,7 +32,7 @@ import { IntakePanel, PatientBand, QueueEmpty, QueueRow } from "./queueParts";
 
 export function QueueSheet({
     waiting, serving, previews, completedCount, loading,
-    currentVisitId, onClose, onPick, onRegisterPatient,
+    currentVisitId, onClose, onPick, onRegisterPatient, onManageAttachments,
 }: {
     waiting: TodayVisit[];
     serving: TodayVisit[];
@@ -50,6 +50,10 @@ export function QueueSheet({
     onPick: (visit: TodayVisit, aheadOfQueue: boolean) => void;
     /** the receptionist-unavailable path — see the file header */
     onRegisterPatient: () => void;
+    /** view/add/delete attachments for the previewed visit — same modal the
+     *  front desk uses. Omitted where the caller hasn't wired the gateway
+     *  provider needed to mount it. */
+    onManageAttachments?: (visit: TodayVisit) => void;
 }) {
     const [selected, setSelected] = useState<TodayVisit | null>(null);
 
@@ -76,7 +80,6 @@ export function QueueSheet({
                 </span>
             } /> : undefined}
             onClose={onClose}
-            holdOpen={!!selected}
             footer={
                 selected ? (
                     <>
@@ -109,7 +112,7 @@ export function QueueSheet({
                     any region fed by data we do not control. */}
                 <div className="flex min-h-[300px] min-w-0 flex-col border-r border-[var(--cs-line)] max-[720px]:border-b max-[720px]:border-r-0">
                     <div className="flex flex-none items-center justify-between px-[15px] pb-[7px] pt-[13px]">
-                        <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-label)]">Waiting</span>
+                        <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-blue)]">Waiting</span>
                         <span className="text-[11px] font-semibold tabular-nums text-[var(--cs-faint)]">{waiting.length}</span>
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col gap-[6px] overflow-y-auto px-[15px] pb-[15px]">
@@ -139,12 +142,13 @@ export function QueueSheet({
                         if (!showing) return <QueueEmpty note="Nothing to preview." />;
                         return (
                             <>
-                                <div className="flex flex-none items-center justify-between gap-[8px] px-[15px] pb-[7px] pt-[13px]">
-                                    <span className="truncate text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-label)]">
-                                        {selected ? "Selected" : "Up next"} · {showing.patient_name}
+                                <div className="flex flex-none items-center gap-[8px] px-[15px] pb-[7px] pt-[13px]">
+                                    <span className="text-[9.5px] font-extrabold uppercase tracking-[0.08em] text-[var(--cs-faint)]">
+                                        {selected ? "Selected" : "Preview · up next"}
                                     </span>
+                                    <span className="truncate text-[11.5px] font-bold text-[var(--cs-ink)]">{showing.patient_name}</span>
                                 </div>
-                                <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense />
+                                <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense onManageAttachments={onManageAttachments} />
                             </>
                         );
                     })()}

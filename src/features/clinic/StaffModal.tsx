@@ -111,7 +111,7 @@ export function StaffModal({
                                 disabled={self || busyId === m.id}
                                 onChange={(e) => void apply(m.id, { role: e.target.value })}
                                 title={self ? "You cannot change your own role" : "Role"}
-                                className="h-[30px]! flex-none rounded-[8px]! border! border-[var(--cs-line)]! bg-white! px-[8px]! text-[11.5px]! font-semibold"
+                                className="h-[30px]! w-auto! flex-none rounded-[8px]! border! border-[var(--cs-line)]! bg-white! px-[8px]! text-[11.5px]! font-semibold"
                             >
                                 {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                             </select>
