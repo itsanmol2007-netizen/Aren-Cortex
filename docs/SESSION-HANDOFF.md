@@ -1,88 +1,132 @@
-# Session handoff — 2026-09-02 (Clinical Snapshot, specialty picker, live device revoke, trend-graph tone)
+# Session handoff — 2026-09-03 (Front Desk intake: unified symptom/history picker, reception measurements, layout polish)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE.** `cortex-design-dna/*.md`
 and `context/*.md` are stable reference — touch them only when a rule in them
-is actually wrong.
+is actually wrong. Front Desk's own long-form record is
+`docs/aren-frontdesk-source-of-truth.md` (add a Part when this lands for good).
 
-## What this round did — five items from Anmol, all from field-testing the
-## previous round's work against real screenshots
+## ⚠ HOW TO VERIFY IN THIS ENVIRONMENT
 
-### 1 & 2. Clinical Snapshot — truncated chip + a card that read thinner than it is
-`.prec-snapshot-chip` capped labels at `max-width: 130px` with `text-overflow:
-ellipsis` — correct for the Overview TABLE's cramped column, wrong for the
-Patient Record detail page's much wider sidebar card, which reuses the same
-class. "Generalised body pain" rendered as "Generalised body …". Fixed with a
-`--roomy` modifier (no cap, wraps instead of truncating) applied only at the
-detail-page call site; the table keeps the base rule, which is still correct
-there.
+- `npm install` first (node_modules can start incomplete). `npx tsc --version`
+  must say **5.9.3**. `npm run build` (`tsc -b && vite build`) currently passes
+  clean — 0 type errors, exit 0. Do not add `ignoreDeprecations`.
+- **Build passing ≠ looks right.** Render it. This session's throwaway harness
+  (deleted afterward) was `preview.html` + `src/__preview.tsx`: mounts
+  `CreateVisitModal` / `FrontDeskPage` inside `QueryClientProvider` +
+  `MemoryRouter` + `AuthProvider`, stubs `window.fetch` for the three catalogue
+  reads (`observables`, `observable_alias`, `observable_signals`) with a mock
+  chip set, `npx vite --port 5199`, drive with the browser tools.
+  `?v=page` rendered the whole Front Desk page; `?v=modal` just the intake modal.
+  - **Gotcha:** `useCachedIntakeChips` refreshes on mount whenever
+    `navigator.onLine`; against the real `.env` Supabase that returns `[]`
+    (unauthed RLS) and *overwrites* the seeded localStorage cache. Stub `fetch`,
+    don't just seed the cache.
+  - **Gotcha:** synthetic `dispatchEvent('click')` on a `createPortal` dropdown
+    row does NOT reach React's handler (portal is outside `#root`). Real clicks
+    (`computer` tool / `.click()` won't help) work; drive picks via keyboard
+    (type + Enter) or the `computer` tool with a fresh screenshot.
 
-Separately: `generalOpdSnapshot` never appended a visit-count chip, unlike
-`physiotherapySnapshot` (which already calls `countChip`). A visit with only
-a primary complaint charted (no finding/medicine/test) rendered ONE chip in a
-card sized for the specialty-aware "1–3 chips + detail" shape — real, honest,
-but reading as unfinished. Now mirrors physio's own rule: append the real
-visit count (same figure the page's own "Total visits" stat shows) whenever
-there's at least one clinical chip to sit beside it, never alone. Verified by
-rendering `snapshotFor` against Sunita Devi's real row shape: chips now read
-`["Generalised body pain", "5 visits"]`, full text, no ellipsis.
+## What this session did — Front Desk intake modal + layout
 
-### 3. Settings — "Change" specialty no longer grows the card
-Used to render the 8-profile picker grid INSIDE the Consult Setup card,
-which grew past its neighbour on the same row (Devices) — exactly the
-mismatched-height problem this page was rebuilt to avoid. Moved to a new
-`SpecialtyModal` (floating overlay, same chrome as `AccountModal`/
-`ManageSubscriptionModal`) — `pickSpecialty` now closes it on a successful
-save, leaves it open with the error visible on failure. Verified by
-measuring `#set-card-consult`'s `getBoundingClientRect()` before and after
-clicking Change: identical, 546×388, in both states.
+### One search field for symptoms AND history (was: symptoms only, inline results)
+`components/ObservablePicker.tsx` (new) replaces the old inline `SymptomPicker`
+inside `CreateVisitModal.tsx`. Modelled on Cortex's `PickerCard`:
+- **`kinds: ("symptom"|"history")[]`** — Front Desk passes both into ONE field
+  ("Symptoms & History", required ≥1 symptom-kind). Each result row shows a
+  `SYMPTOM` / `HISTORY` tag; history chips wear a violet tint. Split back by
+  `chip.kind` at save: symptom labels → `symptomNames` (queue column), all ids →
+  `visit_observations`.
+- **Results in a `createPortal` dropdown** (`position:fixed`, own scroll, capped
+  `MAX_RESULTS = 10`) — never in-flow. The selected-chip well is **fixed height
+  `h-[62px]`** and scrolls. **Verified: the modal card is byte-identical
+  (measured `getBoundingClientRect`) across closed / open / 3 results / 20 fuzzy
+  results / no match / after Escape.** This was the whole point — the old inline
+  picker grew and shrank the modal on every keystroke.
+- Ranking/keyboard/dismissal carried over from the old picker
+  (`observableMatch.ts`, extracted). Empty query → the everyday general-system
+  symptoms; history surfaces once you type. Dismiss on outside **click** (never
+  mousedown — the s37 "existing patient visits fail" regression).
+- Persistence path unchanged: `useVisitActions.createNewVisit` →
+  `saveVisitObservations` writes every id, `saveVisitSymptoms` mirrors the legacy
+  subset. **`observationNamesByVisit` gained a `kinds` param** (default
+  `["symptom","history"]`, unchanged for every existing caller);
+  `fetchTodayVisits` now passes `["symptom"]` so volunteered history is saved
+  canonically but does not read as a presenting complaint in the queue column.
 
-### 4. Device "Sign out" now actually signs the device out
-It never really worked past the first boot: `touchThisDevice` only checked
-`revoked_at` ONCE, at initial sign-in. A tab already open and idle had no way
-to learn its own row had been revoked short of a full manual reload — so
-clicking "Sign out" on a device in Settings visibly did nothing on THAT
-device. Two things now watch for it for as long as a tab is signed in:
+### Reception measurements — a stacked sub-modal
+`components/MeasurementsModal.tsx` (new), opened from a quiet optional row in the
+intake modal ("Measurements", like the Attachments row), stacked over intake via
+`ModalShell`'s existing `openModalIds` stack.
+- Reuses Cortex's field catalogue verbatim — `MEASURE_FIELDS` / `FIELD_BY_KEY`
+  from `features/consult/measures.ts` — filtered to a **reception allow-list**
+  (`RECEPTION_KEYS`: BP, pulse, resp rate, SpO₂, temp, weight, height, blood
+  group, the glucose panel, pain, LMP, G-P-L-A). No goniometry / disability
+  indices.
+- Shown = default vitals (`bp,pulse,temp,spo2,weight`) ∪ **Synapse-relevant** ∪
+  anything holding a value. The rest reached via a capped search
+  (`DEFAULT_VISIBLE = 6`). Fixed-height scroll box (`h-[300px]`); the
+  add-measurement section is **always mounted** with fixed internal heights
+  (`h-[62px]` chip area) so the modal is the same size with ten fields to add or
+  none. **Verified stable** across adding all fields.
+- **Synapse relevance**: `fetchIntakeChips` in `lib/db/synapse.ts` now reads
+  `observable_signals` and attaches **`signalIds: string[]`** to each
+  `IntakeChip` (cache key bumped `aren.cache.intakechips.v2` → `v3` in
+  `operational/referenceCache.ts`). `CreateVisitModal.relevantFromChips()` maps
+  the picked chips' signals → `RELEVANT_FIELDS` (same map Cortex's
+  MeasurementsCard uses). **Verified live**: Fever→Temp, Cough→Resp Rate,
+  Pregnancy(history)→LMP + G-P-L-A auto-surface. `JOINT_RANGE_FIELDS` not used.
+- **Persistence**: `lib/db/patients.ts` `saveVisitMeasurements(visitId, rows)` —
+  additive `upsert` into `visit_measurements` on `onConflict: "visit_id,
+  measure_key"` (same target as `persistVisitInput`). Rows built by the shared
+  **`vitalsToMeasurements`** (`lib/synapse/consultInput.ts`) so a reception BP is
+  the exact `BP_SYS`/`BP_DIA` pair the engine/print expect (also °F→°C, LMP→
+  LMP_DAYS, G-P-L-A split). Wired through `createNewVisit` as an optional
+  `vitals?: Partial<Vitals>`, best-effort — a failed number never fails the visit.
 
-- **Realtime** (`watchThisDeviceRevocation`, `lib/db/devices.ts`) — a
-  `postgres_changes` subscription filtered on this device's own `device_key`,
-  firing the sign-out the instant the UPDATE lands. Required adding
-  `user_devices` to the `supabase_realtime` publication (migration
-  `user_devices_realtime`) — it wasn't in it.
-- **A periodic fallback** (`DEVICE_RECHECK_MS` = 5 min, plus `focus`/
-  `visibilitychange` triggers) — same "polling stays on as the safety net"
-  doctrine `subscribeGatewaySessions` already follows, for a channel that
-  silently dropped.
+### Layout — reference image (2026-09-03)
+- **`StatStrip.tsx`** icons: Waiting `Armchair`→**`Hourglass`**, In Consultation
+  `ClipboardCheck`→`Stethoscope`, Completed `BadgeCheck`→`CheckCircle2`. Tone
+  tiles unchanged.
+- **`FrontDeskPage.tsx`** regrid: the launcher + stat strip + queue now share the
+  **left column** of a `grid-cols-[1fr_248px]`; the right **Sidebar rises to the
+  top**, aligned with the search bar. So the search bar is queue-width, not
+  full-page, and the sidebar no longer starts below the stat strip.
+- **`Sidebar.tsx`** is now **ONE white panel**, full height, same surface
+  language as the QueuePanel — both columns are framed and end on the same line.
+  `SummaryCard` / `DoctorsCard` / `DoctorRequestsCard` are **sections** of it
+  (hairline `divide-y` between; their individual `rounded/border/bg-white/shadow`
+  chrome removed). Fixes the "sidebar ends mid-air with a void beneath it"
+  problem without stretching anything — leftover space is quiet panel, exactly
+  like the QueuePanel's own empty area.
 
-`scope: "global"` sign-out remains the immediate, unconditional kill switch
-regardless of either path's health.
+## Flagged / not done
 
-### 5. Longitudinal Record's graph click — dark modal → light trend detail
-A trend mini-card's click used to open the dark `PastVisitCard` directly, for
-the visit behind its newest reading. Anmol: "clicking on any graph opens
-that dark theme past visit modal, no it should not... see in patient details
-page, how clicking on any longitudinal chart works... same should be here
-too." Patient Record already answers a graph click correctly —
-`TrendDetailModal` (light, the real plotted series, every reading, drilling
-to `PastVisitCard` per point/row) — so Consult's `LongitudinalBand` now opens
-that same component via a new `onOpenTrend` prop, kept SEPARATE from
-`onOpenVisit`.
-
-That split matters: `onOpenVisit` (the dark header's past-visit chips, the
-band's own Last Visit card and timeline rows) is UNCHANGED — Anmol asked
-explicitly, last round, that the dark entry point be preserved. Only the
-graph's own click moved. The visit opened FROM WITHIN the new light
-`TrendDetailModal` is its own `PastVisitCard` instance (`trendVisit` state in
-`App.tsx`, `tone="light"`) layered on top of the modal, matching Patient
-Record's own reasoning for why a light drill-in must not open a dark card —
-two different applications landing on top of each other, otherwise.
+- **NavRail** not touched. The reference's "rail nudged up" was judged not worth
+  a change; revisit if it still reads wrong on a real 1080p screen.
+- **VisitDetailModal** shows no dedicated "History / context" section — history
+  is saved to `visit_observations` (Cortex reads it) but the FD detail view
+  still only lists symptom-kind labels via `visit.symptom_names`. Add a section
+  if reception needs to see it back.
+- Only verified against the **mock** catalogue in the harness + `getBounding
+  ClientRect` measurements + screenshots. **Not** verified against live Supabase
+  with a real reception login, and a real `visit_measurements` / history-kind
+  `visit_observations` write was **not** confirmed end-to-end via the DB.
+- `i18n/strings.ts` carries a few now-unused keys from an earlier two-field
+  design (`fldHistory`, `phHistory`, `histCatalog`, `noHistoryMatch`) — harmless,
+  `hinglish` has them too; delete on a tidy pass.
+- Chunk-size build warning is pre-existing (1.6 MB `index` bundle), not from this
+  work.
 
 ## Environment
 
-- No `supabase/migrations/`; schema changes go in live via Supabase MCP.
-  Project `ieimvjprtltancxapuzg` (org `arenod`, `ap-south-1`).
-- `main` and `master` are unrelated histories. Work is on
-  `claude/pdpg-layout-fixes-768k6v`, fast-forwarded into `master` each round.
-- Admin panel integration reference lives at
-  `docs/admin-panel/ADMIN-PANEL-INTEGRATION.md` (moved there from `docs/` —
-  a bare `docs/ADMIN-PANEL-INTEGRATION.md` path was conflicting on Anmol's
-  local checkout).
+- No `supabase/migrations/`; schema changes go in live via Supabase MCP. This
+  session added **no** schema — `observable_signals`, `visit_measurements`,
+  `visit_observations` already existed.
+- Project `ieimvjprtltancxapuzg` (org `arenod`, `ap-south-1`).
+- `main` and `master` are unrelated histories; Front Desk work lands on `master`.
+- Changed: `FrontDeskPage.tsx`, `CreateVisitModal.tsx`, `Sidebar.tsx`,
+  `SummaryCard.tsx`, `DoctorsCard.tsx`, `DoctorRequestsCard.tsx`,
+  `StatStrip.tsx`, `hooks/useVisitActions.ts`, `i18n/strings.ts`,
+  `operational/referenceCache.ts`, `lib/db/patients.ts`, `lib/db/synapse.ts`.
+  New: `components/ObservablePicker.tsx`, `components/observableMatch.ts`,
+  `components/MeasurementsModal.tsx`.

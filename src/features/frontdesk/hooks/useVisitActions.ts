@@ -9,9 +9,12 @@ import {
     reassignVisitDoctor,
     saveVisitSymptoms,
     saveVisitObservations,
+    saveVisitMeasurements,
     legacySymptomIdsFor,
     type DBPatient,
 } from "@/lib/db";
+import { vitalsToMeasurements } from "@/lib/synapse/consultInput";
+import type { Vitals } from "@/types";
 import { uploadAttachment } from "@/lib/db/attachments";
 import type { AttachmentType } from "@/lib/attachments/types";
 import type { TodayVisit } from "../types/frontdesk";
@@ -111,6 +114,11 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         gender: string;
         observableIds: number[];
         symptomNames: string[];
+        // Measurements taken at the desk (BP, weight, LMP…), keyed by the
+        // consult's own Vitals field keys. Optional — most registrations have
+        // none. Reduced to MeasurementRows and written to `visit_measurements`
+        // best-effort, exactly like the observations above.
+        vitals?: Partial<Vitals>;
         doctorId: string;
         doctorName: string;
         attachments: { file: File; attachmentType: AttachmentType }[];
@@ -192,6 +200,17 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
                         .then(() => legacySymptomIdsFor(ids))
                         .then((legacy) => (legacy.length ? saveVisitSymptoms(visit.id, legacy) : undefined))
                         .catch((err) => console.warn("saveVisitObservations failed (non-fatal):", err));
+                }
+
+                // Front-desk measurements — same best-effort contract: a number
+                // that fails to write must never fail the visit that is already
+                // committed above.
+                if (opts.vitals && Object.keys(opts.vitals).length) {
+                    const rows = vitalsToMeasurements(opts.vitals as Vitals);
+                    if (rows.length) {
+                        saveVisitMeasurements(visit.id, rows)
+                            .catch((err) => console.warn("saveVisitMeasurements failed (non-fatal):", err));
+                    }
                 }
 
                 // Same rule: a failed attachment must never be mistaken for a

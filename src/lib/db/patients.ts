@@ -237,6 +237,37 @@ export async function saveVisitObservations(
 }
 
 /**
+ * Measurements taken at the front desk, written the same way Cortex writes
+ * them (`persistVisitInput` in `lib/db/synapse.ts`): one upsert into
+ * `visit_measurements`, keyed on `(visit_id, measure_key)`, so a value the
+ * receptionist entered and a value the doctor later enters for the same key
+ * collapse to one row rather than fighting.
+ *
+ * Additive and best-effort: it never deletes, and losing a number must never
+ * lose the visit. Build `rows` with `vitalsToMeasurements` (the shared
+ * Vitals -> MeasurementRow reduction — BP split, °F->°C, LMP->LMP_DAYS,
+ * G-P-L-A split) so a reception BP is the exact BP_SYS/BP_DIA pair the engine
+ * and the print already understand.
+ */
+export async function saveVisitMeasurements(
+    visitId: string,
+    rows: { measureKey: string; value: number | null; unit: string; text?: string }[]
+): Promise<void> {
+    if (!rows.length) return;
+    const { error } = await supabase.from("visit_measurements").upsert(
+        rows.map((m) => ({
+            visit_id: visitId,
+            measure_key: m.measureKey,
+            value_num: m.value,
+            value_text: m.text ?? null,
+            unit: m.unit,
+        })),
+        { onConflict: "visit_id,measure_key" }
+    );
+    if (error) throw new Error(`saveVisitMeasurements: ${error.message}`);
+}
+
+/**
  * What was reported at intake, per visit, read from the CANONICAL record.
  *
  * `visit_symptoms` can only hold the 51 observables that have a v1 row; the
@@ -244,11 +275,16 @@ export async function saveVisitObservations(
  * enters "High grade fever", it saves correctly, and then vanishes from the
  * row — stored but invisible, which is worse than refusing it.
  *
- * Only symptom- and history-kind observables come back: this fills the
- * "Symptoms" column, and an examination finding is not one.
+ * Only symptom- and history-kind observables come back by default: this fills
+ * the "Symptoms" column, and an examination finding is not one. A caller that
+ * wants the today's-complaints column to stay strictly that — the Front Desk
+ * live queue — passes `kinds: ["symptom"]` so volunteered history ("Known
+ * diabetic") is still saved canonically but does not read as a presenting
+ * symptom in the triage list.
  */
 export async function observationNamesByVisit(
-    visitIds: string[]
+    visitIds: string[],
+    kinds: readonly ("symptom" | "history")[] = ["symptom", "history"]
 ): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
     if (!visitIds.length) return out;
@@ -267,7 +303,7 @@ export async function observationNamesByVisit(
 
     const labelById = new Map<number, string>();
     for (const o of obs ?? []) {
-        if (o.kind === "symptom" || o.kind === "history") labelById.set(o.id, o.label);
+        if (kinds.includes(o.kind)) labelById.set(o.id, o.label);
     }
 
     for (const r of rows) {
@@ -1387,8 +1423,10 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
         (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
     }
 
-    // The canonical intake record, which the v1 join above cannot represent in full.
-    const obsNamesByVisit = await observationNamesByVisit(visitIds);
+    // The canonical intake record, which the v1 join above cannot represent in
+    // full. Symptoms only here — the queue's "Symptoms" column is today's
+    // complaints, not the history a receptionist also captured on the visit.
+    const obsNamesByVisit = await observationNamesByVisit(visitIds, ["symptom"]);
 
     // How many files (if any) are attached to each visit — cheap (id +
     // visit_id only) so the queue can show a quiet indicator without a

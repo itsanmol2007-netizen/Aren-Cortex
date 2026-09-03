@@ -1,16 +1,55 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Cake, Calendar, Paperclip, Phone, Plus, Search, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users, X } from "lucide-react";
+import { Activity, ArrowRight, Cake, Calendar, Paperclip, Phone, Sparkles, Stethoscope, Thermometer, UserRound, UserCheck, Users } from "lucide-react";
 import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
 import type { IntakeChip } from "@/lib/db/synapse";
 import type { AttachmentType } from "@/lib/attachments/types";
+import { RELEVANT_FIELDS, FIELD_BY_KEY, type MeasureFieldKey } from "@/features/consult/measures";
+import type { Vitals } from "@/types";
 import { initials } from "../utils";
 import { useT } from "../i18n/i18n";
-import { useCachedIntakeChips } from "../operational/referenceCache";
 import { ModalShell } from "./ModalShell";
+import { ObservablePicker } from "./ObservablePicker";
+import { MeasurementsModal } from "./MeasurementsModal";
 import { AgeInput, Field, PhoneInput, SectionLabel } from "./fields";
 import { IntakeAttachmentsField, type StagedAttachment } from "./IntakeAttachmentsField";
 import { useGatewaySessions } from "./gateway/GatewaySessionsProvider";
 import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
+
+type MeasureValues = Partial<Record<MeasureFieldKey, string>>;
+
+// Which measurements the entered symptoms/history make worth taking — the same
+// RELEVANT_FIELDS map Cortex's MeasurementsCard reads, keyed on the engine
+// signals each chip carries (fetchIntakeChips attaches `signalIds`). A
+// PREGNANCY chip asks for LMP + G-P-L-A, FEVER for temperature, and so on. No
+// engine run, just the static map.
+function relevantFromChips(chips: IntakeChip[]): {
+    keys: Set<MeasureFieldKey>;
+    because: Map<MeasureFieldKey, string>;
+} {
+    const keys = new Set<MeasureFieldKey>();
+    const because = new Map<MeasureFieldKey, string>();
+    for (const c of chips) {
+        for (const sig of c.signalIds) {
+            for (const k of RELEVANT_FIELDS[sig] ?? []) {
+                keys.add(k);
+                if (!because.has(k)) because.set(k, c.label);
+            }
+        }
+    }
+    return { keys, because };
+}
+
+/** "BP 120/80 · Weight 68 · +1" — the one-line résumé on the collapsed row. */
+function measureSummary(values: MeasureValues): string {
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(values)) {
+        if (!v || !String(v).trim()) continue;
+        const f = FIELD_BY_KEY.get(k as MeasureFieldKey);
+        parts.push(`${f?.printLabel ?? k} ${v}`);
+    }
+    if (parts.length <= 2) return parts.join("  ·  ");
+    return `${parts.slice(0, 2).join("  ·  ")}  ·  +${parts.length - 2}`;
+}
 
 type Props = {
     existingPatient: DBPatient | null;
@@ -35,6 +74,7 @@ type Props = {
         gender: string;
         observableIds: number[];
         symptomNames: string[];
+        vitals: Partial<Vitals>;
         doctorId: string;
         doctorName: string;
         attachments: { file: File; attachmentType: AttachmentType }[];
@@ -55,8 +95,19 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const [age, setAge] = useState("");
     const [dateOfBirth, setDateOfBirth] = useState("");
     const [gender, setGender] = useState("");
-    const [selectedSymptoms, setSelectedSymptoms] = useState<IntakeChip[]>([]);
+    // One list over BOTH kinds — symptoms and volunteered history share a
+    // single search field, the way Cortex's picker works. Split by `kind` only
+    // at save / validation time.
+    const [picked, setPicked] = useState<IntakeChip[]>([]);
+    const symptomCount = picked.filter((c) => c.kind === "symptom").length;
+    const [measures, setMeasures] = useState<MeasureValues>({});
+    const [measuresOpen, setMeasuresOpen] = useState(false);
     const [doctorId, setDoctorId] = useState(defaultDoctorId);
+
+    // Which measurements the entered complaints/history make relevant, for the
+    // measurements sub-modal to surface first.
+    const relevant = useMemo(() => relevantFromChips(picked), [picked]);
+    const measureSummaryText = measureSummary(measures);
     // Staged only — no visit_id exists yet to attach these to. Uploaded (same
     // pipeline as everywhere else attachments happen) right after Save
     // actually creates the visit; see handleSave.
@@ -141,8 +192,8 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     const dupPhoneHit = !existing && !!dup && dup.phone === phone && phoneOk;
     const dupExact = dupPhoneHit && dup!.name.trim().toLowerCase() === name.trim().toLowerCase();
     const formComplete = existing
-        ? selectedSymptoms.length > 0
-        : !!name.trim() && !!age.trim() && !!gender && phoneOk && selectedSymptoms.length > 0;
+        ? symptomCount > 0
+        : !!name.trim() && !!age.trim() && !!gender && phoneOk && symptomCount > 0;
 
     const validate = () => {
         const nextErrors: Record<string, boolean> = {};
@@ -152,7 +203,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             if (!gender) nextErrors.gender = true;
             if (!phoneOk) nextErrors.phone = true;
         }
-        if (!selectedSymptoms.length) nextErrors.symptoms = true;
+        if (!symptomCount) nextErrors.symptoms = true;
         setErrors(nextErrors);
         return Object.keys(nextErrors).length === 0;
     };
@@ -190,8 +241,11 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         age,
         dateOfBirth,
         gender,
-        observableIds: selectedSymptoms.map((s) => s.observableId),
-        symptomNames: selectedSymptoms.map((s) => s.label),
+        // Symptoms and volunteered history both land in `visit_observations`;
+        // only symptoms carry into the queue's "Symptoms" column (symptomNames).
+        observableIds: picked.map((s) => s.observableId),
+        symptomNames: picked.filter((c) => c.kind === "symptom").map((c) => c.label),
+        vitals: measures as Partial<Vitals>,
         doctorId,
         doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
         attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
@@ -256,7 +310,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         if (ref === ageRef) return !age.trim();
         if (ref === genderRef) return !gender;
         if (ref === phoneRef) return !phoneOk;
-        if (ref === symptomRef) return selectedSymptoms.length === 0;
+        if (ref === symptomRef) return symptomCount === 0;
         return false;
     };
 
@@ -442,23 +496,51 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 )}
 
                 <SectionLabel text={t("secVisit")} className={existing ? "" : "mt-[14px]"} />
-                <Field icon={<Thermometer size={13} />} label={t("fldSymptoms")} required error={errors.symptoms ? t("errSymptom") : undefined}>
-                    <SymptomPicker
+
+                {/* ONE field for today's complaints AND volunteered history —
+                    the same catalogue, one search, exactly like Cortex. Each
+                    result row says which it is; history chips wear a violet
+                    tint. At least one symptom is required; history is a bonus
+                    the doctor gets for free. Split back apart on save. */}
+                <Field icon={<Thermometer size={13} />} label={t("fldComplaints")} required error={errors.symptoms ? t("errSymptom") : undefined}>
+                    <ObservablePicker
+                        kinds={["symptom", "history"]}
                         inputRef={symptomRef}
-                        selected={selectedSymptoms}
+                        selected={picked}
                         onChange={(next) => {
-                            setSelectedSymptoms(next);
-                            if (next.length) setErrors((e) => ({ ...e, symptoms: false }));
+                            setPicked(next);
+                            if (next.some((c) => c.kind === "symptom")) setErrors((e) => ({ ...e, symptoms: false }));
                         }}
                         error={!!errors.symptoms}
+                        placeholder={t("phComplaints")}
+                        catalogLabel={t("bothCatalog")}
+                        noMatchLabel={t("noSymptomMatch")}
                     />
                 </Field>
+
                 <Field className="mt-[10px]" icon={<Stethoscope size={13} />} label={t("fldDoctor")}>
                     <select ref={doctorRef} value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={fieldClass()}>
                         {doctors.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                     </select>
+                </Field>
+
+                {/* Measurements — a quiet optional row (like Attachments below).
+                    Clicking opens a stacked modal; whatever the desk records
+                    there is written to the visit as real measurements so the
+                    doctor's vitals card is not empty. */}
+                <Field className="mt-[10px]" icon={<Activity size={13} />} label={t("measAddRow")} optional>
+                    <button
+                        type="button"
+                        onClick={() => setMeasuresOpen(true)}
+                        className="flex h-[38px] w-full items-center gap-[8px] rounded-[10px] border-[1.5px] border-dashed border-[#d9d3ee] bg-[#f8f8fd] px-3 text-left text-[13px] font-medium text-[#5a6472] transition-colors hover:border-[#7c5cf0] hover:bg-white hover:text-[#161d29]"
+                    >
+                        <Activity size={14} className="shrink-0 text-[#8b5cf6]" />
+                        {measureSummaryText
+                            ? <span className="truncate text-[#161d29]">{measureSummaryText}</span>
+                            : <span>{t("measAdd")}</span>}
+                    </button>
                 </Field>
 
                 {/* A field, not a new section — matches the reference exactly
@@ -472,268 +554,18 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     />
                 </Field>
             </div>
+
+            {measuresOpen && (
+                <MeasurementsModal
+                    values={measures}
+                    onCommit={setMeasures}
+                    onClose={() => setMeasuresOpen(false)}
+                    relevantKeys={relevant.keys}
+                    relevantBecause={relevant.because}
+                />
+            )}
         </ModalShell>
     );
-}
-
-// Structured symptom selection: symptoms are entities in the `symptoms` table
-// (they feed Cortex, medicine ranking, and specialty logic), never free text.
-// Focusing the field opens the full catalog immediately; typing filters it
-// with typo tolerance ("feber" still surfaces fever); Enter adds the
-// highlighted top match.
-//
-// The catalog renders in-flow and is dismissed on outside CLICK — never on
-// mousedown. Closing on mousedown collapsed the modal layout between a
-// mousedown and its mouseup, so the click landed on the backdrop and
-// silently destroyed the whole intake (the "existing patient visits fail"
-// regression). With click-based dismissal the layout is stable for the full
-// duration of any press: a first click on Save both saves and closes.
-function SymptomPicker({
-    inputRef,
-    selected,
-    onChange,
-    error,
-}: {
-    inputRef: React.RefObject<HTMLInputElement | null>;
-    selected: IntakeChip[];
-    onChange: (next: IntakeChip[]) => void;
-    error?: boolean;
-}) {
-    const t = useT();
-    // Cache-fresh: the catalog is served instantly from this computer's last
-    // copy (so the picker works offline) and quietly refreshed while online.
-    const catalog = useCachedIntakeChips().data;
-    const [query, setQuery] = useState("");
-    const [open, setOpen] = useState(false);
-    const rootRef = useRef<HTMLDivElement>(null);
-
-    // A completed click anywhere outside the picker closes the catalog.
-    // Deliberately `click`, not `mousedown` — see the component comment.
-    // Registration is deferred a tick: when the catalog opens as a side
-    // effect of a click (selecting a patient in the launcher auto-focuses
-    // this field), that same click would otherwise reach this listener while
-    // still bubbling and close the catalog in the same breath.
-    useEffect(() => {
-        if (!open) return;
-        const onClick = (e: MouseEvent) => {
-            const target = e.target as Node;
-            // Picking a chip unmounts it before the click finishes bubbling —
-            // a detached target is an inside click, not an outside one.
-            if (!target.isConnected) return;
-            if (rootRef.current && !rootRef.current.contains(target)) {
-                setOpen(false);
-                setQuery("");
-            }
-        };
-        const timer = setTimeout(() => document.addEventListener("click", onClick), 0);
-        return () => {
-            clearTimeout(timer);
-            document.removeEventListener("click", onClick);
-        };
-    }, [open]);
-
-    // While the catalog is open, Escape closes it — not the modal. Capture
-    // phase on document runs before (and stops) ModalShell's bubble listener.
-    useEffect(() => {
-        if (!open) return;
-        const onEsc = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                setOpen(false);
-                setQuery("");
-            }
-        };
-        document.addEventListener("keydown", onEsc, true);
-        return () => document.removeEventListener("keydown", onEsc, true);
-    }, [open]);
-
-    // The catalogue is the doctor's full 374 — a receptionist must be able to
-    // enter whatever the patient reported, and a shorter list only moves the
-    // transcription problem onto them. What makes that usable is that the chip
-    // is reachable in the language it was spoken: every term (English label,
-    // colloquial text, Devanagari and romanised alias) is matched with the same
-    // typo tolerance, and the CANONICAL label is what gets picked.
-    //
-    // With no query the catalogue opens on the everyday complaints rather than
-    // 374 chips — same feel as the 51-row list it replaces.
-    const filtered = useMemo(() => {
-        const chosen = new Set(selected.map((s) => s.observableId));
-        const available = catalog.filter((s) => !chosen.has(s.observableId));
-        const q = query.trim().toLowerCase();
-        if (!q) return available.filter((s) => s.system === "general" && s.kind === "symptom");
-        return available
-            .map((s) => {
-                // best-scoring term wins; a Devanagari alias and the English
-                // label are equally good ways to have found the same chip
-                let best: number | null = null;
-                for (const term of s.terms) {
-                    const sc = matchScore(term, q);
-                    if (sc !== null && (best === null || sc < best)) best = sc;
-                }
-                return { s, score: best };
-            })
-            .filter((x): x is { s: IntakeChip; score: number } => x.score !== null)
-            .sort((a, b) => a.score - b.score || a.s.label.localeCompare(b.s.label))
-            .map((x) => x.s);
-    }, [catalog, query, selected]);
-
-    /** The alias that explains why this chip matched, if it was not the label. */
-    const matchedAlias = (s: IntakeChip): string | null => {
-        const q = query.trim().toLowerCase();
-        if (!q || s.label.toLowerCase().includes(q)) return null;
-        const hit = s.aliases.find((a) => matchScore(a.term.toLowerCase(), q) !== null);
-        return hit?.term ?? null;
-    };
-
-    const pick = (s: IntakeChip) => {
-        onChange([...selected, s]);
-        setQuery("");
-        inputRef.current?.focus();
-    };
-
-    const remove = (id: number) => onChange(selected.filter((s) => s.observableId !== id));
-
-    return (
-        <div ref={rootRef}>
-            {/* The well: selected chips live inside the field, input inline after
-                them. A div, so Tailwind works here (the layer trap only bites on
-                input/select/label elements). */}
-            <div
-                onClick={() => { inputRef.current?.focus(); setOpen(true); }}
-                className={`flex min-h-[36px] cursor-text flex-wrap items-center gap-[6px] rounded-[10px] border-[1.5px] px-3 py-[5px] transition-[border-color,box-shadow,background-color] duration-150 ${
-                    error
-                        ? "border-[#d23b34] bg-[#fffafa]"
-                        : open
-                            ? "border-[#7c5cf0] bg-white shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
-                            : "border-[#e9e7f4] bg-[#f8f8fd] hover:border-[#d9d3ee]"
-                }`}
-            >
-                {selected.map((s) => (
-                    <span
-                        key={s.observableId}
-                        className="flex items-center gap-[5px] rounded-[8px] border border-[#e2e5ee] bg-white py-[4px] pl-[9px] pr-[5px] text-[12.5px] font-medium text-[#374151] shadow-[0_1px_2px_rgba(20,30,50,0.05)]"
-                    >
-                        {s.label}
-                        <button
-                            type="button"
-                            onClick={() => remove(s.observableId)}
-                            aria-label={`${t("cancel")} ${s.label}`}
-                            className="flex h-[18px] w-[18px] items-center justify-center rounded-[5px] text-[#a8aeba] transition-colors hover:bg-[#eef0f5] hover:text-[#5a6472]"
-                        >
-                            <X size={12} />
-                        </button>
-                    </span>
-                ))}
-                <div className="flex h-[26px] min-w-[130px] flex-1 items-center gap-[7px]">
-                    <Search size={14} className="shrink-0 text-[#a8aeba]" />
-                    <input
-                        ref={inputRef}
-                        value={query}
-                        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-                        onFocus={() => setOpen(true)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                                // Consume Enter only while picking; with nothing to
-                                // pick it bubbles up to the form's advance/save flow
-                                // and takes the catalog down with it.
-                                if (query.trim() && filtered.length) {
-                                    e.preventDefault();
-                                    pick(filtered[0]);
-                                } else {
-                                    setOpen(false);
-                                    setQuery("");
-                                }
-                            } else if (e.key === "Tab") {
-                                setOpen(false);
-                                setQuery("");
-                            } else if (e.key === "Backspace" && !query && selected.length) {
-                                remove(selected[selected.length - 1].observableId);
-                            }
-                        }}
-                        placeholder={selected.length ? "" : t("phSymp")}
-                        className="fd-bare"
-                    />
-                </div>
-            </div>
-
-            {open && (
-                <div className="mt-2 rounded-[11px] border border-[#e9ebf2] bg-white p-3 shadow-[0_10px_30px_rgba(20,30,50,0.08)]">
-                    <div className="mb-[9px] flex items-center justify-between">
-                        <span className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-[#837bb2]">{t("symCatalog")}</span>
-                        <span className="text-[11px] font-semibold tabular-nums text-[#a8aeba]">{filtered.length}</span>
-                    </div>
-                    {filtered.length ? (
-                        <div className="flex max-h-[168px] flex-wrap content-start gap-[7px] overflow-y-auto pr-[2px]">
-                            {filtered.map((s, i) => {
-                                // The top match is what Enter will pick — it wears the
-                                // focus ring (structural affordance, not data color).
-                                const isTop = i === 0 && query.trim().length > 0;
-                                const via = matchedAlias(s);
-                                return (
-                                    <button
-                                        key={s.observableId}
-                                        type="button"
-                                        onClick={() => pick(s)}
-                                        className={`flex items-center gap-[5px] rounded-[8px] border py-[5px] pl-[8px] pr-[10px] text-[12.5px] font-medium transition-colors ${
-                                            isTop
-                                                ? "border-[#7c5cf0] bg-white text-[#161d29] shadow-[0_0_0_3px_rgba(99,102,241,0.18)]"
-                                                : "border-[#e4e7ee] bg-[#f7f8fb] text-[#374151] hover:border-[#c9bdf5] hover:bg-white hover:text-[#161d29]"
-                                        }`}
-                                    >
-                                        <Plus size={12} className={isTop ? "text-[#7c5cf0]" : "text-[#a8aeba]"} />
-                                        {s.label}
-                                        {/* Why this matched, when it was not the English
-                                            label — so the receptionist can see their own
-                                            word was understood, and that the chip going
-                                            into the record is the clinical one. */}
-                                        {via && (
-                                            <span className="text-[11.5px] font-normal text-[#8b93a3]">
-                                                · {via}
-                                            </span>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="py-[10px] text-center text-[12.5px] text-[#a8aeba]">{t("noSymptomMatch")}</div>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-}
-
-// Tolerant matching for fast receptionist typing: prefix beats substring beats
-// small-typo matches. Distance is classic Levenshtein against each word of the
-// symptom name (and its prefix, so partial typing stays fuzzy too); names and
-// queries are short, so the DP cost is negligible.
-function matchScore(name: string, q: string): number | null {
-    const n = name.toLowerCase();
-    if (n.startsWith(q)) return 0;
-    if (n.includes(q)) return 1;
-    if (q.length < 3) return null;
-    const budget = q.length <= 5 ? 1 : 2;
-    let best = Infinity;
-    for (const w of n.split(/[^a-z0-9]+/)) {
-        if (!w) continue;
-        best = Math.min(best, editDistance(q, w), editDistance(q, w.slice(0, q.length)));
-    }
-    return best <= budget ? 2 + best : null;
-}
-
-function editDistance(a: string, b: string): number {
-    const row = Array.from({ length: b.length + 1 }, (_, j) => j);
-    for (let i = 1; i <= a.length; i++) {
-        let prev = row[0];
-        row[0] = i;
-        for (let j = 1; j <= b.length; j++) {
-            const tmp = row[j];
-            row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
-            prev = tmp;
-        }
-    }
-    return row[b.length];
 }
 
 // SectionLabel / Field / AgeInput / GenderControl / PhoneInput live in

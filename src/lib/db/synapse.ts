@@ -164,14 +164,24 @@ export interface IntakeChip {
     terms: string[];
     /** the regional terms only, so the UI can show which one matched */
     aliases: IntakeAlias[];
+    /**
+     * The engine signals this observable emits (`observable_signals`). Carried
+     * so the Front Desk intake surface can rank which MEASUREMENTS to surface
+     * from the same `RELEVANT_FIELDS` map Cortex uses — a `PREGNANCY` chip
+     * asking for LMP + G-P-L-A, `FEVER` asking for temperature — without
+     * running the engine. Empty for an observable with no signal edge.
+     */
+    signalIds: string[];
 }
 
 export async function fetchIntakeChips(): Promise<IntakeChip[]> {
-    const [all, aliasRes] = await Promise.all([
+    const [all, aliasRes, sigRes] = await Promise.all([
         fetchObservables(),
         supabase.from("observable_alias").select("observable_id, term, lang").limit(5000),
+        supabase.from("observable_signals").select("observable_id, signal_id").limit(5000),
     ]);
     if (aliasRes.error) throw new Error(`observable_alias: ${aliasRes.error.message}`);
+    if (sigRes.error) throw new Error(`observable_signals: ${sigRes.error.message}`);
 
     // What a patient REPORTS, plus the history they volunteer. Examination
     // findings are excluded: "crepitations on chest" is not something a patient
@@ -187,6 +197,14 @@ export async function fetchIntakeChips(): Promise<IntakeChip[]> {
         else byObservable.set(id, [{ term: a.term, lang: a.lang }]);
     }
 
+    const signalsByObservable = new Map<number, string[]>();
+    for (const s of sigRes.data ?? []) {
+        const id = Number(s.observable_id);
+        const list = signalsByObservable.get(id);
+        if (list) list.push(String(s.signal_id));
+        else signalsByObservable.set(id, [String(s.signal_id)]);
+    }
+
     return obs.map((o) => {
         const aliases = byObservable.get(o.id) ?? [];
         return {
@@ -195,6 +213,7 @@ export async function fetchIntakeChips(): Promise<IntakeChip[]> {
             kind: o.kind,
             system: o.system,
             aliases,
+            signalIds: signalsByObservable.get(o.id) ?? [],
             terms: [
                 o.label.toLowerCase(),
                 ...(o.searchText ? o.searchText.toLowerCase().split(/\s+/).filter(Boolean) : []),

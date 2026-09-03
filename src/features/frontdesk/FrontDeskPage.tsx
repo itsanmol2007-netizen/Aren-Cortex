@@ -54,28 +54,34 @@ function FrontDeskInner() {
 
     return (
         <WorkspaceShell>
-            <div className="mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col px-4 pb-4 pt-3">
-                <PatientLauncher
-                    onSelectExisting={(p) => setCreateState({ existingPatient: p, prefillName: "" })}
-                    onCreateNew={(prefillName) => setCreateState({ existingPatient: null, prefillName })}
-                />
-
-                <StatStrip visits={visits} />
-
-                <div className="grid min-h-0 flex-1 grid-cols-[1fr_264px] items-stretch gap-[10px] max-[1040px]:grid-cols-1">
-                    <QueuePanel
-                        visits={visits}
-                        now={now}
-                        loading={loading}
-                        onOpen={(v) => setOpenVisit(v)}
-                        onComplete={actions.completeVisit}
-                        onCancel={actions.cancelVisit}
-                        onAttachments={(v) => setAttachmentsVisit(v)}
-                        selectedVisitId={openVisit?.visit_id ?? null}
-                        onAddPatient={() => setCreateState({ existingPatient: null, prefillName: "" })}
+            {/* The right sidebar rises to the top of the workspace (aligned with
+                the search bar), and the launcher + stat strip + queue share the
+                left column — so the search bar is the width of the queue, not
+                the full page. Reference: 2026-09-03. */}
+            <div className="mx-auto grid min-h-0 w-full max-w-[1320px] flex-1 grid-cols-[1fr_248px] items-stretch gap-[14px] px-4 pb-4 pt-3 max-[1040px]:grid-cols-1">
+                <div className="flex min-h-0 flex-col">
+                    <PatientLauncher
+                        onSelectExisting={(p) => setCreateState({ existingPatient: p, prefillName: "" })}
+                        onCreateNew={(prefillName) => setCreateState({ existingPatient: null, prefillName })}
                     />
-                    <Sidebar doctors={doctors} visits={visits} now={now} hospitalId={hospitalId} />
+
+                    <StatStrip visits={visits} />
+
+                    <div className="min-h-0 flex-1">
+                        <QueuePanel
+                            visits={visits}
+                            now={now}
+                            loading={loading}
+                            onOpen={(v) => setOpenVisit(v)}
+                            onComplete={actions.completeVisit}
+                            onCancel={actions.cancelVisit}
+                            onAttachments={(v) => setAttachmentsVisit(v)}
+                            selectedVisitId={openVisit?.visit_id ?? null}
+                            onAddPatient={() => setCreateState({ existingPatient: null, prefillName: "" })}
+                        />
+                    </div>
                 </div>
+                <Sidebar doctors={doctors} visits={visits} now={now} hospitalId={hospitalId} />
             </div>
 
             {liveOpenVisit && (

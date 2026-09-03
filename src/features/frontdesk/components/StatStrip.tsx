@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Users, Armchair, ClipboardCheck, BadgeCheck } from "lucide-react";
+import { Users, Hourglass, Stethoscope, CheckCircle2 } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
 import type { StringKey } from "../i18n/strings";
@@ -21,15 +21,14 @@ export function StatStrip({ visits }: Props) {
     return (
         <div className="mb-[10px] grid grid-cols-4 gap-[10px] max-[1040px]:grid-cols-2">
             <StatCard icon={<Users size={16} />} tone="indigo" labelKey="statTotal" value={stats.total} t={t} />
-            {/* Waiting used to be a flat yellow clock face — read as a cheap
-                clip-art glyph, and "waiting" isn't really about the clock,
-                it's about someone sitting in the room. Armchair says that
-                more honestly, in the same warm-amber family the rest of the
-                app already uses for this status (row tint, tab dot) — this
-                pass deepens that amber slightly so it reads less yellow. */}
-            <StatCard icon={<Armchair size={16} />} tone="amber" labelKey="statWaiting" value={stats.waiting} t={t} />
-            <StatCard icon={<ClipboardCheck size={16} />} tone="blue" labelKey="statConsult" value={stats.serving} t={t} />
-            <StatCard icon={<BadgeCheck size={16} />} tone="green" labelKey="statCompleted" value={stats.completed} t={t} />
+            {/* Waiting = an hourglass: time passing while someone sits in the
+                room, in the app's warm-amber "waiting" family (row tint, tab
+                dot). Replaced the Armchair glyph per the 2026-09-03 reference —
+                the clock/armchair reads flat at this size, the hourglass reads
+                as "still waiting". */}
+            <StatCard icon={<Hourglass size={16} />} tone="amber" labelKey="statWaiting" value={stats.waiting} t={t} />
+            <StatCard icon={<Stethoscope size={16} />} tone="blue" labelKey="statConsult" value={stats.serving} t={t} />
+            <StatCard icon={<CheckCircle2 size={16} />} tone="green" labelKey="statCompleted" value={stats.completed} t={t} />
         </div>
     );
 }

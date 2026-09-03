@@ -23,22 +23,22 @@ export function DoctorRequestsCard({ hospitalId }: { hospitalId: string | null }
 
     return (
         <div
-            className={`relative shrink-0 overflow-hidden rounded-[12px] border bg-white p-[13px] pt-[14px] shadow-[0_1px_2px_rgba(20,30,50,0.05)] ${active ? "border-[#e4e7ee] border-l-2 border-l-[#c9791a] bg-[rgba(224,145,32,0.03)]" : "border-[#e4e7ee]"
-                }`}
+            className={`relative flex min-h-0 flex-1 flex-col p-[16px] ${active ? "border-l-2 border-l-[#c9791a] bg-[rgba(224,145,32,0.03)]" : ""}`}
         >
-            <div className="absolute inset-x-0 top-0 h-px bg-white/60" />
-            <h3 className="m-0 mb-[10px] flex items-center gap-[6px] text-[13px] font-bold text-[#161d29]">
-                <Bell size={13} className="text-[#7c5cf0]" />
+            <h3 className="m-0 mb-[10px] flex items-center gap-[6px] text-[13.5px] font-bold text-[#161d29]">
+                <Bell size={14} className="text-[#7c5cf0]" />
                 {t("requestsTitle")}
             </h3>
 
             {!active && (
-                <div className="flex flex-col items-center py-[6px] pb-[14px] text-center">
-                    <div className="mb-[7px] flex h-9 w-9 items-center justify-center rounded-full text-[#8b7fd4]" style={{ background: "#f4f1fe" }}>
-                        <Bell size={16} />
+                // Centred in whatever height the section grew into — no slab of
+                // empty white below it.
+                <div className="flex flex-1 flex-col items-center justify-center gap-[3px] py-[10px] text-center">
+                    <div className="mb-[7px] flex h-11 w-11 items-center justify-center rounded-full text-[#8b7fd4]" style={{ background: "#f4f1fe" }}>
+                        <Bell size={19} />
                     </div>
-                    <p className="m-0 text-[12px] font-semibold text-[#374151]">{t("noRequests")}</p>
-                    <p className="m-0 mt-[2px] text-[10.5px] text-[#a8aeba]">{t("requestsSub")}</p>
+                    <p className="m-0 text-[13px] font-semibold text-[#374151]">{t("noRequests")}</p>
+                    <p className="m-0 mt-[1px] text-[11px] text-[#a8aeba]">{t("requestsSub")}</p>
                 </div>
             )}
 

@@ -45,13 +45,12 @@ export function DoctorsCard({ doctors, visits, now }: Props) {
     );
 
     return (
-        <div className="relative shrink-0 overflow-hidden rounded-[12px] border border-[#e7e9f0] bg-white p-[13px] shadow-[0_1px_2px_rgba(20,30,50,0.05)]">
-            <div className="absolute inset-x-0 top-0 h-px bg-white/60" />
-            <h3 className="m-0 mb-[6px] flex items-center gap-[6px] text-[13px] font-bold text-[#161d29]">
-                <Stethoscope size={13} className="text-[#7c5cf0]" />
+        <div className="relative shrink-0 p-[16px]">
+            <h3 className="m-0 mb-[8px] flex items-center gap-[6px] text-[13.5px] font-bold text-[#161d29]">
+                <Stethoscope size={14} className="text-[#7c5cf0]" />
                 {t("doctorsTitle")}
             </h3>
-            {rows.length === 0 && <p className="m-0 text-[11px] text-[#a8aeba]">{t("noDoctors")}</p>}
+            {rows.length === 0 && <p className="m-0 text-[11.5px] text-[#a8aeba]">{t("noDoctors")}</p>}
             {rows.map(({ doctor, presence, withVisit, queueCount }, i) => {
                 const s = PRESENCE_STYLE[presence];
                 const label =
@@ -63,10 +62,10 @@ export function DoctorsCard({ doctors, visits, now }: Props) {
                                 ? (doctor.last_seen ? t("docLastSeen", { t: timeAgo(doctor.last_seen) }) : t("docAway"))
                                 : t("docOffline");
                 return (
-                    <div key={doctor.id} className={`flex items-center gap-[9px] py-[8px] ${i === 0 ? "" : "border-t border-[#eef0f5]"}`}>
+                    <div key={doctor.id} className={`flex items-center gap-[10px] py-[10px] ${i === 0 ? "" : "border-t border-[#f0f1f5]"}`}>
                         <div className="relative shrink-0">
                             <div
-                                className="flex h-[32px] w-[32px] items-center justify-center overflow-hidden rounded-[9px] text-[11px] font-bold ring-2 ring-offset-0"
+                                className="flex h-[34px] w-[34px] items-center justify-center overflow-hidden rounded-[10px] text-[11.5px] font-bold ring-2 ring-offset-0"
                                 style={{ background: s.avatarBg, color: s.avatarText, boxShadow: `0 0 0 2px ${s.ring}` }}
                             >
                                 {doctor.avatar_url ? (
@@ -81,13 +80,13 @@ export function DoctorsCard({ doctors, visits, now }: Props) {
                             />
                         </div>
                         <div className="min-w-0 flex-1">
-                            <div className="truncate text-[11.5px] font-semibold text-[#161d29]">{doctor.name}</div>
-                            <div className="mt-[1px] truncate text-[10px]" style={{ color: s.text }}>
+                            <div className="truncate text-[12px] font-semibold text-[#161d29]">{doctor.name}</div>
+                            <div className="mt-[1px] truncate text-[10.5px]" style={{ color: s.text }}>
                                 {label}
                             </div>
                         </div>
                         <div className="shrink-0 text-right">
-                            <b className={`block font-[Manrope,sans-serif] text-[13px] leading-[1.1] tabular-nums ${presence === "offline" ? "text-[#a8aeba]" : "text-[#161d29]"}`}>
+                            <b className={`block font-[Manrope,sans-serif] text-[14px] leading-[1.1] tabular-nums ${presence === "offline" ? "text-[#a8aeba]" : "text-[#161d29]"}`}>
                                 {queueCount}
                             </b>
                             <span className="text-[9px] text-[#a8aeba]">{t("queueLabel")}</span>
