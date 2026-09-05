@@ -257,7 +257,16 @@ export function PaymentRail({
                 <div className="mt-[10px]">
                     <button
                         type="button"
-                        onClick={() => setDiscountOpen((v) => !v)}
+                        onClick={() => {
+                            const next = !discountOpen;
+                            setDiscountOpen(next);
+                            // Opening IS the intent to discount, so the unit
+                            // starts at rupees rather than on a sentinel the
+                            // receptionist would have to clear first. Closing
+                            // is how a discount is taken back off.
+                            if (next) { if (state.discountKind === "none") set({ discountKind: "amount" }); }
+                            else set({ discountKind: "none", discountValue: "" });
+                        }}
                         aria-expanded={discountOpen}
                         className="flex w-full cursor-pointer items-center gap-[8px] rounded-[9px] border-0 bg-transparent px-[2px] py-[7px] text-left text-[13px] font-semibold text-[#5b4fe9] transition-colors hover:text-[#4338ca]"
                     >
@@ -271,54 +280,60 @@ export function PaymentRail({
                     </button>
 
                     {discountOpen && (
-                        <div className="mt-[4px] flex flex-col gap-[8px] rounded-[11px] bg-[#f8f7fd] p-[11px]">
-                            <div className="grid grid-cols-3 gap-[6px]" role="group" aria-label="Discount type">
-                                {([
-                                    { key: "none", label: "None" },
-                                    { key: "percent", label: "Percent" },
-                                    { key: "amount", label: "Rupees" },
-                                ] as { key: DiscountKind; label: string }[]).map((o) => {
-                                    const on = state.discountKind === o.key;
-                                    return (
-                                        <button
-                                            key={o.key}
-                                            type="button"
-                                            aria-pressed={on}
-                                            onClick={() => set({ discountKind: o.key, discountValue: "" })}
-                                            className={
-                                                "h-[32px] cursor-pointer rounded-[8px] border-[1.5px] text-[12px] font-bold transition-colors " +
-                                                (on
-                                                    ? "border-[#5b4fe9] bg-white text-[#4338ca]"
-                                                    : "border-[#e4e2f0] bg-white text-[#8a91a0] hover:text-[#3b4453]")
-                                            }
-                                        >
-                                            {o.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            {state.discountKind !== "none" && (
-                                <div className="flex items-center gap-[8px]">
-                                    <span className="text-[12.5px] font-semibold text-[#5a6472]">
-                                        {state.discountKind === "percent" ? "Percent off" : "Rupees off"}
-                                    </span>
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={state.discountKind === "percent" ? 100 : breakdown.base}
-                                        inputMode="numeric"
-                                        autoFocus
-                                        value={state.discountValue}
-                                        placeholder={state.discountKind === "percent" ? "10" : "100"}
-                                        aria-label={state.discountKind === "percent" ? "Discount percent" : "Discount amount"}
-                                        onChange={(e) => set({ discountValue: e.target.value })}
-                                        className="ml-auto h-[34px] w-[92px] rounded-[9px] border-[1.5px] border-[#e4e2f0] bg-white px-[10px] text-[13px] font-semibold text-[#161d29] outline-none focus:border-[#5b4fe9]"
-                                    />
+                        // One box and one unit switch.
+                        //
+                        // The previous version offered None / Percent / Rupees
+                        // as three equal buttons, which was wrong twice over:
+                        // pressing "Adjust discount" IS the intent to discount,
+                        // so "None" was a button that undid the click which
+                        // revealed it — and three choices ate the rail's whole
+                        // width to express one property. Clearing the box is
+                        // "none"; closing the panel clears it.
+                        <div className="mt-[4px] flex flex-col gap-[7px] rounded-[11px] bg-[#f8f7fd] p-[10px]">
+                            <div className="flex items-center gap-[7px]">
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={state.discountKind === "percent" ? 100 : breakdown.base}
+                                    inputMode="numeric"
+                                    autoFocus
+                                    value={state.discountValue}
+                                    placeholder="0"
+                                    aria-label={state.discountKind === "percent" ? "Discount percent" : "Discount amount"}
+                                    onChange={(e) => set({ discountValue: e.target.value })}
+                                    className="h-[36px] min-w-0 flex-1 rounded-[9px] border-[1.5px] border-[#e4e2f0] bg-white px-[11px] text-[14px] font-bold text-[#161d29] outline-none focus:border-[#5b4fe9]"
+                                />
+                                {/* A two-position switch, not two radio pills:
+                                    the unit is one property with two states. */}
+                                <div
+                                    role="group"
+                                    aria-label="Discount unit"
+                                    className="flex h-[36px] shrink-0 overflow-hidden rounded-[9px] border-[1.5px] border-[#e4e2f0] bg-white"
+                                >
+                                    {([
+                                        { key: "amount", label: "₹" },
+                                        { key: "percent", label: "%" },
+                                    ] as { key: DiscountKind; label: string }[]).map((u) => {
+                                        const on = state.discountKind === u.key;
+                                        return (
+                                            <button
+                                                key={u.key}
+                                                type="button"
+                                                aria-pressed={on}
+                                                onClick={() => set({ discountKind: u.key })}
+                                                className={
+                                                    "w-[38px] cursor-pointer border-0 text-[14px] font-bold transition-colors " +
+                                                    (on ? "bg-[#5b4fe9] text-white" : "bg-transparent text-[#8a91a0] hover:text-[#3b4453]")
+                                                }
+                                            >
+                                                {u.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                            )}
+                            </div>
                             <p className="m-0 text-[11px] leading-[1.45] text-[#8a91a0]">
-                                The doctor's fee itself is set by your admin. Discounts are recorded
-                                against your name.
+                                The doctor's fee is set by your admin. Discounts are recorded against your name.
                             </p>
                         </div>
                     )}

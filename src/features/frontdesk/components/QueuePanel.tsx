@@ -10,9 +10,9 @@ type Props = {
     now: Date;
     loading: boolean;
     onOpen: (visit: TodayVisit) => void;
-    onComplete: (visit: TodayVisit) => void;
     onCancel: (visit: TodayVisit) => void;
     onAttachments: (visit: TodayVisit) => void;
+    onMeasurements: (visit: TodayVisit) => void;
     selectedVisitId?: string | null;
     onAddPatient?: () => void;
 };
@@ -27,7 +27,7 @@ const TAB_KIND: Record<QueueTab, "waiting" | "serving" | "completed" | "generic"
     completed: "completed",
 };
 
-export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel, onAttachments, selectedVisitId, onAddPatient }: Props) {
+export function QueuePanel({ visits, now, loading, onOpen, onCancel, onAttachments, onMeasurements, selectedVisitId, onAddPatient }: Props) {
     const t = useT();
     const [tab, setTab] = useState<QueueTab>("all");
 
@@ -108,9 +108,9 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
                                 now={now}
                                 selected={selectedVisitId === v.visit_id}
                                 onOpen={onOpen}
-                                onComplete={onComplete}
                                 onCancel={onCancel}
                                 onAttachments={onAttachments}
+                                onMeasurements={onMeasurements}
                             />
                         ))}
                         {tab === "all" && everyoneDone && <DayDone />}

@@ -193,6 +193,11 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
             visit_count: opts.existingPatient ? 2 : 1,
             last_visit_at: nowIso,
             attachment_count: opts.attachments.length,
+            // Optimistic: the payment row is written after the visit lands, so
+            // the badge shows what the desk just chose rather than blinking
+            // through "unrecorded" for a second.
+            payment_status: opts.payment ? opts.payment.status : null,
+            payment_total: opts.payment ? opts.payment.total : null,
             pending: true,
         };
         setVisits((vs) => [optimistic, ...vs]);

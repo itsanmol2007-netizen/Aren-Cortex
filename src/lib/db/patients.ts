@@ -1394,6 +1394,15 @@ export type TodayVisit = {
     visit_count: number;
     last_visit_at: string | null;
     attachment_count: number;
+    /**
+     * What the desk recorded for this visit's fee, straight from
+     * `visit_payments.status`. `null` means NO ROW — either this clinic
+     * charges nothing, or nobody has settled it yet. That is a third state,
+     * not a synonym for unpaid, and the queue badge renders it as neither.
+     */
+    payment_status: "paid" | "pending" | "waived" | "refunded" | null;
+    /** Rupees actually due, for the badge's tooltip. */
+    payment_total: number | null;
     // Client-only, optimistic-UI flags — never set by a real fetch. A row
     // carries `pending` from the instant Front Desk inserts it (before the
     // server has confirmed anything) until the next real queue refresh
@@ -1464,6 +1473,18 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
         attachmentCountByVisit.set(r.visit_id, (attachmentCountByVisit.get(r.visit_id) ?? 0) + 1);
     });
 
+    // The queue's paid/unpaid badge. One read over today's visit ids, mirroring
+    // the attachment count above — cheap, and it keeps the badge honest rather
+    // than inferring "unpaid" from the absence of a row.
+    const { data: payRows } = await supabase
+        .from("visit_payments")
+        .select("visit_id, status, total")
+        .in("visit_id", visitIds);
+    const paymentByVisit = new Map<string, { status: string; total: number }>();
+    (payRows ?? []).forEach((r) => {
+        paymentByVisit.set(r.visit_id, { status: r.status, total: Number(r.total ?? 0) });
+    });
+
     const { data: allVisitsForPatients } = await supabase
         .from("visits")
         .select("patient_id, created_at")
@@ -1506,6 +1527,8 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
             visit_count: visitCountMap.get(v.patient_id) ?? 1,
             last_visit_at: lastVisitMap.get(v.patient_id) ?? v.created_at,
             attachment_count: attachmentCountByVisit.get(v.id) ?? 0,
+            payment_status: (paymentByVisit.get(v.id)?.status as TodayVisit["payment_status"]) ?? null,
+            payment_total: paymentByVisit.get(v.id)?.total ?? null,
         };
     });
 }

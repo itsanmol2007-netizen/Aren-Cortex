@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Cake, Calendar, CalendarDays, Paperclip, Phone, Stethoscope, Thermometer, UserPlus, UserRound, UserCheck, Users } from "lucide-react";
+import { ArrowRight, Cake, Calendar, Paperclip, Phone, Stethoscope, Thermometer, UserPlus, UserRound, UserCheck, Users } from "lucide-react";
 import { fetchPatientVisitStats, searchPatients, type DBDoctor, type DBPatient } from "@/lib/db";
 import type { IntakeChip } from "@/lib/db/synapse";
 import type { AttachmentType } from "@/lib/attachments/types";
@@ -453,7 +453,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             icon={<UserPlus size={19} strokeWidth={2.2} />}
             onClose={onClose}
             dirtyGuard={dirty}
-            maxWidth={1040}
+            maxWidth={936}
             flushBody
             footer={
                 <>
@@ -478,10 +478,10 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 below a comfortable reading width on a 1280 screen. */}
             <div
                 onKeyDown={handleFormKeyDown}
-                className="grid grid-cols-[minmax(0,1fr)_320px] items-start gap-0 max-[900px]:grid-cols-1"
+                className="grid grid-cols-[minmax(0,1fr)_292px] items-start gap-0 max-[900px]:grid-cols-1"
             >
                 {/* ── Left: the form ─────────────────────────────────────── */}
-                <div className="min-w-0 px-[22px] pb-[18px] pt-[16px]">
+                <div className="min-w-0 px-[19px] pb-[15px] pt-[14px]">
 
                     {existing && existingPatient ? (
                         <div className="mb-[14px] flex items-center gap-3 rounded-[12px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[10px]">
@@ -554,32 +554,26 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                                 />
                                             </div>
                                             <span className="shrink-0 text-[12px] font-medium text-[#a8aeba]">or</span>
-                                            <label
-                                                className="relative flex h-[36px] shrink-0 cursor-pointer items-center gap-[6px] rounded-[10px] border-[1.5px] border-[#e9e7f4] bg-[#f8f8fd] px-[10px] text-[12.5px] font-semibold text-[#5a6472] transition-colors hover:border-[#c9c4ee] hover:bg-white"
+                                            <input
+                                                type="date"
+                                                className="fd-field w-[152px] shrink-0 px-[9px] text-[12.5px]"
+                                                max={todayIso()}
+                                                value={dateOfBirth}
+                                                aria-label={t("fldDob")}
                                                 title={dobMattersFor(Number.parseInt(age, 10)) ? t("fldDobNeeded") : t("fldDob")}
-                                            >
-                                                <CalendarDays size={14} className="shrink-0 text-[#8b5cf6]" />
-                                                {dateOfBirth || "Date of birth"}
-                                                <input
-                                                    type="date"
-                                                    className="absolute inset-0 cursor-pointer opacity-0"
-                                                    max={todayIso()}
-                                                    value={dateOfBirth}
-                                                    aria-label={t("fldDob")}
-                                                    onChange={(e) => {
-                                                        const dob = e.target.value;
-                                                        setDateOfBirth(dob);
-                                                        // The date is the harder fact; age follows
-                                                        // it rather than being asked twice and
-                                                        // allowed to drift.
-                                                        const derived = ageInYears(dob);
-                                                        if (derived !== null) {
-                                                            setAge(String(derived));
-                                                            setErrors((er) => ({ ...er, age: false }));
-                                                        }
-                                                    }}
-                                                />
-                                            </label>
+                                                onChange={(e) => {
+                                                    const dob = e.target.value;
+                                                    setDateOfBirth(dob);
+                                                    // The date is the harder fact; age follows it
+                                                    // rather than being asked twice and allowed
+                                                    // to drift.
+                                                    const derived = ageInYears(dob);
+                                                    if (derived !== null) {
+                                                        setAge(String(derived));
+                                                        setErrors((er) => ({ ...er, age: false }));
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                     </Field>
 
@@ -687,7 +681,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 </div>
 
                 {/* ── Right: the payment rail ────────────────────────────── */}
-                <div className="min-w-0 border-l border-[#eeebf7] bg-[#fbfaff] px-[16px] pb-[18px] pt-[16px] max-[900px]:border-l-0 max-[900px]:border-t">
+                <div className="min-w-0 border-l border-[#eeebf7] bg-[#fbfaff] px-[14px] pb-[15px] pt-[14px] max-[900px]:border-l-0 max-[900px]:border-t">
                     <PaymentRail
                         state={fee}
                         onChange={setFee}

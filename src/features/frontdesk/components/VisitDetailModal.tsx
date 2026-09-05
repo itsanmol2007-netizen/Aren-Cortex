@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ClipboardList, History, MoreVertical, RefreshCw, Stethoscope, Thermometer } from "lucide-react";
 import { fetchPatientVisits, type DBDoctor, type RealVisit } from "@/lib/db";
 import type { TodayVisit } from "../types/frontdesk";
@@ -19,21 +19,29 @@ type Props = {
 
 export function VisitDetailModal({ visit, doctors, onClose, onReassignDoctor, onStartConsultation, onComplete, onCancel }: Props) {
     const t = useT();
-    const [pastVisits, setPastVisits] = useState<RealVisit[]>([]);
-    // "Recent Visits" used to just be absent for the couple of seconds the
-    // fetch was in flight, then pop in — read as the modal not being ready
-    // rather than as loading. A skeleton says the same thing honestly.
-    const [pastLoading, setPastLoading] = useState(true);
+    // History is fetched ON DEMAND, never on open.
+    //
+    // It used to fire the moment the modal mounted and paint a two-row
+    // skeleton that, for every first-time patient, resolved to nothing at all
+    // — a loading state for absent data, which reads as broken. Most opens of
+    // this modal are to reassign a doctor or cancel it; the history is the
+    // exception, so it costs one click instead of costing every open.
+    const [pastVisits, setPastVisits] = useState<RealVisit[] | null>(null);
+    const [pastLoading, setPastLoading] = useState(false);
+    const [pastError, setPastError] = useState(false);
 
-    useEffect(() => {
-        let cancelled = false;
+    const loadPast = () => {
+        if (pastLoading || pastVisits) return;
         setPastLoading(true);
+        setPastError(false);
         fetchPatientVisits(visit.patient_id)
-            .then((rows) => { if (!cancelled) setPastVisits(rows.slice(0, 3)); })
-            .catch((err) => console.warn("fetchPatientVisits failed (non-fatal):", err))
-            .finally(() => { if (!cancelled) setPastLoading(false); });
-        return () => { cancelled = true; };
-    }, [visit.patient_id]);
+            .then((rows) => setPastVisits(rows.slice(0, 5)))
+            .catch((err) => {
+                console.warn("fetchPatientVisits failed (non-fatal):", err);
+                setPastError(true);
+            })
+            .finally(() => setPastLoading(false));
+    };
 
     const tint = tintFor(visit.status);
 
@@ -115,38 +123,58 @@ export function VisitDetailModal({ visit, doctors, onClose, onReassignDoctor, on
                 <StatusBar visit={visit} onStartConsultation={onStartConsultation} onComplete={onComplete} onCancel={onCancel} onClose={onClose} />
             </Section>
 
-            {(pastLoading || pastVisits.length > 0) && (
+            {/* Only offered when there IS a history to offer. `visit_count`
+                comes free with the queue row, so a first-time patient never
+                sees a control that would resolve to an empty list. */}
+            {visit.visit_count > 1 && (
                 <Section icon={<History size={13} />} label={t("detPast")}>
-                    {pastLoading ? (
-                        <div className="flex flex-col gap-[7px]">
-                            {[0, 1].map((i) => (
-                                <div key={i} className="flex items-center justify-between rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="h-[13px] w-[62%] animate-pulse rounded-md bg-[linear-gradient(90deg,#eef0f4_25%,#e4e7ee_37%,#eef0f4_63%)]" />
-                                        <div className="mt-[6px] h-[11px] w-[38%] animate-pulse rounded-md bg-[linear-gradient(90deg,#eef0f4_25%,#e4e7ee_37%,#eef0f4_63%)]" />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        pastVisits.map((pv) => {
-                            const pvTint = tintFor(pv.status);
-                            return (
-                                <div key={pv.id} className="mb-[7px] flex items-center justify-between rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
-                                    <div className="min-w-0">
-                                        <div className="truncate text-[13px] font-semibold text-[#161d29]">
-                                            {pv.symptoms.length ? pv.symptoms.join(", ") : "—"}
-                                        </div>
-                                        <div className="mt-[1px] flex items-center gap-[6px] text-[12px] font-medium text-[#8a91a0]">
-                                            {/* past visits had states too */}
-                                            <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: pvTint.dotColor }} />
-                                            {formatShortDate(pv.created_at)}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })
+                    {!pastVisits && !pastLoading && !pastError && (
+                        <button
+                            type="button"
+                            onClick={loadPast}
+                            className="flex w-full items-center gap-[8px] rounded-[10px] border-[1.5px] border-dashed border-[#dfe2ea] bg-white px-3 py-[9px] text-[12.5px] font-semibold text-[#5a6472] transition-colors hover:border-[#7c5cf0] hover:bg-[#faf9ff] hover:text-[#161d29]"
+                        >
+                            <History size={14} className="shrink-0 text-[#8b5cf6]" />
+                            Show {visit.visit_count - 1} earlier visit{visit.visit_count - 1 === 1 ? "" : "s"}
+                        </button>
                     )}
+
+                    {pastLoading && (
+                        <div className="flex items-center gap-[8px] px-1 py-[9px] text-[12.5px] text-[#8a91a0]">
+                            <RefreshCw size={13} className="animate-spin" /> Loading history…
+                        </div>
+                    )}
+
+                    {pastError && (
+                        <button
+                            type="button"
+                            onClick={() => { setPastError(false); loadPast(); }}
+                            className="w-full rounded-[10px] border border-[#f3d6d4] bg-[#fffafa] px-3 py-[9px] text-left text-[12.5px] font-semibold text-[#d23b34]"
+                        >
+                            Could not load history — tap to retry
+                        </button>
+                    )}
+
+                    {pastVisits && pastVisits.length === 0 && (
+                        <div className="px-1 py-[6px] text-[12.5px] text-[#a8aeba]">No earlier visits on record.</div>
+                    )}
+
+                    {pastVisits?.map((pv) => {
+                        const pvTint = tintFor(pv.status);
+                        return (
+                            <div key={pv.id} className="mb-[7px] flex items-center justify-between rounded-[10px] border border-[#eef0f5] bg-[#fafbfc] px-3 py-[10px]">
+                                <div className="min-w-0">
+                                    <div className="truncate text-[13px] font-semibold text-[#161d29]">
+                                        {pv.symptoms.length ? pv.symptoms.join(", ") : "—"}
+                                    </div>
+                                    <div className="mt-[1px] flex items-center gap-[6px] text-[12px] font-medium text-[#8a91a0]">
+                                        <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: pvTint.dotColor }} />
+                                        {formatShortDate(pv.created_at)}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </Section>
             )}
         </ModalShell>

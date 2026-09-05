@@ -15,6 +15,11 @@ import { WorkspaceShell } from "./components/WorkspaceShell";
 import { VisitDetailModal } from "./components/VisitDetailModal";
 import { CreateVisitModal } from "./components/CreateVisitModal";
 import { VisitAttachmentsModal } from "./components/VisitAttachmentsModal";
+import { MeasurementsModal } from "./components/MeasurementsModal";
+import { saveVisitMeasurements } from "@/lib/db";
+import { vitalsToMeasurements } from "@/lib/synapse/consultInput";
+import type { Vitals } from "@/types";
+import { toast } from "sonner";
 import { I18nProvider } from "./i18n/i18n";
 
 type CreateState = { existingPatient: DBPatient | null; prefillName: string };
@@ -38,6 +43,11 @@ function FrontDeskInner() {
     // Cache-fresh doctor list: instant from this computer's copy, refreshed
     // whenever online — so the intake dropdown is never empty during an outage.
     const doctors = useCachedDoctors(hospitalId).data;
+
+    // Measurements left the registration form on 2026-09-05 and live here
+    // instead: the visit already exists, so they write straight through rather
+    // than being staged. Best-effort, same as every other visit side-write.
+    const [measureVisit, setMeasureVisit] = useState<TodayVisit | null>(null);
     const [openVisit, setOpenVisit] = useState<TodayVisit | null>(null);
     const [createState, setCreateState] = useState<CreateState | null>(null);
     const [attachmentsVisit, setAttachmentsVisit] = useState<TodayVisit | null>(null);
@@ -89,9 +99,9 @@ function FrontDeskInner() {
                             now={now}
                             loading={loading}
                             onOpen={(v) => setOpenVisit(v)}
-                            onComplete={actions.completeVisit}
                             onCancel={actions.cancelVisit}
                             onAttachments={(v) => setAttachmentsVisit(v)}
+                            onMeasurements={(v) => setMeasureVisit(v)}
                             selectedVisitId={openVisit?.visit_id ?? null}
                             onAddPatient={() => setCreateState({ existingPatient: null, prefillName: "" })}
                         />
@@ -99,6 +109,31 @@ function FrontDeskInner() {
                 </div>
                 <Sidebar doctors={doctors} visits={visits} now={now} hospitalId={hospitalId} />
             </div>
+
+            {measureVisit && (
+                <MeasurementsModal
+                    values={{}}
+                    /* No "relevant" hint from the queue: the chips that drove
+                       it live on the intake form, which is closed by now. The
+                       modal degrades to its full catalogue, which is correct
+                       here — the desk is choosing what to measure, not being
+                       prompted. */
+                    relevantKeys={new Set()}
+                    relevantBecause={new Map()}
+                    onClose={() => setMeasureVisit(null)}
+                    onCommit={(values) => {
+                        const rows = vitalsToMeasurements(values as Vitals);
+                        if (!rows.length) return;
+                        const id = measureVisit.visit_id;
+                        saveVisitMeasurements(id, rows)
+                            .then(() => toast.success("Measurements saved"))
+                            .catch((err) => {
+                                console.warn("saveVisitMeasurements failed:", err);
+                                toast.error("Could not save those measurements.");
+                            });
+                    }}
+                />
+            )}
 
             {liveOpenVisit && (
                 <VisitDetailModal

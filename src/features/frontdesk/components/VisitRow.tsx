@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ExternalLink, ArrowRightLeft, CheckCircle2, Loader2, WifiOff, XCircle, MoreVertical, Paperclip, Printer } from "lucide-react";
+import { Activity, ExternalLink, IndianRupee, Loader2, WifiOff, XCircle, MoreVertical, Paperclip, Printer } from "lucide-react";
 import type { TodayVisit } from "../types/frontdesk";
 import { tintFor } from "../statusStyle";
 import { maskPhone, padToken, formatShortDate } from "../utils";
@@ -12,12 +12,12 @@ type Props = {
     now: Date;
     selected?: boolean;
     onOpen: (visit: TodayVisit) => void;
-    onComplete: (visit: TodayVisit) => void;
     onCancel: (visit: TodayVisit) => void;
     onAttachments: (visit: TodayVisit) => void;
+    onMeasurements: (visit: TodayVisit) => void;
 };
 
-export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, onAttachments }: Props) {
+export function VisitRow({ visit, now, selected, onOpen, onCancel, onAttachments, onMeasurements }: Props) {
     const t = useT();
     const navigate = useNavigate();
     const [hovered, setHovered] = useState(false);
@@ -70,14 +70,9 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
                     <MenuItem icon={<ExternalLink size={15} className="opacity-70" />} onClick={() => { onOpen(visit); closeMenu(); }}>
                         {t("menuOpen")}
                     </MenuItem>
-                    <MenuItem icon={<ArrowRightLeft size={15} className="opacity-70" />} onClick={() => { onOpen(visit); closeMenu(); }}>
-                        {t("menuMove")}
+                    <MenuItem icon={<Activity size={15} className="opacity-70" />} onClick={() => { onMeasurements(visit); closeMenu(); }}>
+                        Add measurements
                     </MenuItem>
-                    {visit.status !== "completed" && (
-                        <MenuItem icon={<CheckCircle2 size={15} className="opacity-70" />} onClick={() => { onComplete(visit); closeMenu(); }}>
-                            {t("menuComplete")}
-                        </MenuItem>
-                    )}
                     {isCompleted && (
                         <MenuItem icon={<Printer size={15} className="opacity-70" />} onClick={() => { goToPrintRx(); closeMenu(); }}>
                             {t("menuPrintRx")}
@@ -137,6 +132,24 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
                         shortcut straight into the attachments modal —
                         data-row-menu-btn opts it out of the row's own
                         onOpen click, same mechanism the kebab uses. */}
+                    {visit.payment_status === "paid" && (
+                        <span
+                            title={visit.payment_total ? `Paid ₹${visit.payment_total}` : "Paid"}
+                            className="flex shrink-0 items-center gap-[3px] whitespace-nowrap rounded-[5px] border border-[#bbf0cd] bg-[#effdf4] px-[6px] py-[2px] text-[10px] font-bold text-[#15803d]"
+                        >
+                            <IndianRupee size={9} strokeWidth={3} />
+                            Paid
+                        </span>
+                    )}
+                    {visit.payment_status === "pending" && (
+                        <span
+                            title={visit.payment_total ? `₹${visit.payment_total} due` : "Unpaid"}
+                            className="flex shrink-0 items-center gap-[3px] whitespace-nowrap rounded-[5px] border border-[#3b4453] bg-[#3b4453] px-[6px] py-[2px] text-[10px] font-bold text-white"
+                        >
+                            <IndianRupee size={9} strokeWidth={3} />
+                            {visit.payment_total ? visit.payment_total : "Unpaid"}
+                        </span>
+                    )}
                     {visit.attachment_count > 0 && (
                         <button
                             type="button"
