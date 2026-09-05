@@ -78,3 +78,46 @@ export const MODE_BRAND: Record<WorkspaceMode, ModeBrand> = {
         context: "Prepared by front desk",
     },
 };
+
+// ── The admin workspace ────────────────────────────────────────────────────
+//
+// Named here and NOWHERE else. Anmol, 2026-09-04: "just don't hardcode it in
+// code, so that it can be editable later, from just one single source of
+// truth." Renaming the product is this object and nothing else — no string
+// search, no missed header, no stale page title.
+//
+// "Parallax": measuring something by comparing the same subject from two
+// viewpoints. That is exactly what the admin surface does — this period
+// against the one before it, this bench against that one — so the name
+// describes the product rather than decorating it. (Alternate on record if
+// this is ever changed: "Azimuth".)
+export const ADMIN_BRAND: ModeBrand = {
+    product: "Parallax",
+    tagline: "Clinic administration",
+    context: "Practice management",
+};
+
+// ── Clinic shape labels ────────────────────────────────────────────────────
+//
+// Display only. `hospitals.clinic_mode` keeps its stored values (`solo`,
+// `solo_reception`, `multi_doctor`) — renaming a live enum would be a
+// migration plus every read site for no user-visible gain, so the human words
+// live here instead. Anmol, 2026-09-04: these are internal vocabulary, NOT a
+// four-tier subscription ladder; AREN Polaris remains the only plan.
+//
+// `managed` is not a stored mode at all. It is DERIVED — a clinic with at
+// least one admin/owner user — which is why it cannot be a row in the same
+// enum: the same `multi_doctor` clinic is "managed" the day it hires an office
+// manager and "unmanaged" the day that person leaves, with no migration in
+// between. See `adminAccess.ts`.
+export const SHAPE_LABEL: Record<string, string> = {
+    solo: "Solo practice",
+    solo_reception: "Single bench, front desk",
+    multi_doctor: "Multi-bench clinic",
+    managed: "Managed clinic",
+};
+
+export function shapeLabel(clinicMode: string | null | undefined, hasDedicatedAdmin: boolean): string {
+    if (hasDedicatedAdmin) return SHAPE_LABEL.managed;
+    return (clinicMode && SHAPE_LABEL[clinicMode]) || "Clinic";
+}

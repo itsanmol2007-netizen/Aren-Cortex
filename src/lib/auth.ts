@@ -156,10 +156,21 @@ export async function loadIdentity(authUserId: string): Promise<IdentityResult> 
     return { ok: true, identity: { user, hospital, doctor } };
 }
 
-// Role → landing route. Unknown roles ('owner'/'admin' may exist later) land
-// in Cortex explicitly rather than crashing or looping.
+// Role → landing route.
+//
+// 'owner'/'admin' got a real home 2026-09-04 (Admin Control). Before that they
+// fell through to Cortex, which was a placeholder, not a decision — an owner
+// who does not consult has no business landing on a consultation screen.
+//
+// Everything still-unmapped ('lab', 'pharmacist' — both allowed by the
+// `users_role_check` constraint, neither built) keeps falling through to
+// Cortex deliberately: RequireRole admits a role standing on its own home
+// route even when it isn't in that route's `allow` list, so this fallback is
+// what stops an unbuilt role from bouncing between redirects forever. Give one
+// of them a real workspace and it gets a line here, not a new mechanism.
 export function homeRouteForRole(role: string | null): string {
     if (role === "reception") return "/app/frontdesk";
+    if (role === "admin" || role === "owner") return "/app/admin";
     return "/app/cortex";
 }
 

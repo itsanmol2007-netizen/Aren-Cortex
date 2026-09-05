@@ -8,6 +8,14 @@ import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
 import { ClinicStatusPage } from "./features/frontdesk/ClinicStatusPage";
 import { AuthProvider } from "./features/auth/AuthProvider";
 import { RequireAuth, RequireRole, HomeRedirect } from "./features/auth/RequireAuth";
+import { AdminShell } from "./features/admin/AdminShell";
+import { OverviewPage } from "./features/admin/pages/OverviewPage";
+import { ReportsPage } from "./features/admin/pages/ReportsPage";
+import { PeoplePage } from "./features/admin/pages/PeoplePage";
+import { MoneyPage } from "./features/admin/pages/MoneyPage";
+import { CataloguePage } from "./features/admin/pages/CataloguePage";
+import { ClinicSettingsPage } from "./features/admin/pages/ClinicSettingsPage";
+import { PlanPage } from "./features/admin/pages/PlanPage";
 import { LoginPage } from "./features/auth/LoginPage";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -50,6 +58,25 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/app/patients" element={<PatientsPage />} />
                 <Route path="/app/printrx" element={<PrintRxPage />} />
                 <Route path="/app/clinicstatus" element={<ClinicStatusPage />} />
+              </Route>
+              {/* The clinic owner's workspace — its own route, NOT a page in
+                  the clinical sidebar: "how is my clinic performing" is a
+                  different job from consulting, even when it is the same human.
+                  'doctor' is in the allow list because every clinic on the
+                  platform today is owner-operated (one doctor, one
+                  receptionist, verified live) — a doctor IS the owner here. It
+                  comes back out the moment real 'owner' accounts exist and a
+                  junior doctor should not be reading clinic-wide money. */}
+              <Route element={<RequireRole allow={["admin", "owner", "doctor"]} />}>
+                <Route path="/app/admin" element={<AdminShell />}>
+                  <Route index element={<OverviewPage />} />
+                  <Route path="reports" element={<ReportsPage />} />
+                  <Route path="people" element={<PeoplePage />} />
+                  <Route path="money" element={<MoneyPage />} />
+                  <Route path="catalogue" element={<CataloguePage />} />
+                  <Route path="clinic" element={<ClinicSettingsPage />} />
+                  <Route path="plan" element={<PlanPage />} />
+                </Route>
               </Route>
               <Route path="/app" element={<HomeRedirect />} />
               <Route path="/" element={<HomeRedirect />} />

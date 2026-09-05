@@ -33,10 +33,12 @@ export function RequireAuth() {
 // active user with the wrong role is sent to their OWN workspace, never to
 // login; login redirects stay RequireAuth's job.
 //
-// Loop safety for roles outside `allow` lists entirely (future 'owner' /
-// 'admin'): homeRouteForRole() places them in Cortex by design, so a role
-// standing on its own home route is admitted even when not listed —
-// otherwise it would bounce to where it already is, forever.
+// Loop safety for roles outside `allow` lists entirely ('lab', 'pharmacist' —
+// permitted by the users_role_check constraint, no workspace built):
+// homeRouteForRole() places them in Cortex by design, so a role standing on
+// its own home route is admitted even when not listed — otherwise it would
+// bounce to where it already is, forever. ('owner'/'admin' stopped being in
+// that category on 2026-09-04, when /app/admin became their real home.)
 export function RequireRole({ allow }: { allow: string[] }) {
     const auth = useAuth();
     const location = useLocation();

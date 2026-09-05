@@ -4,6 +4,7 @@ import logo from "../../assets/aren-logo.png";
 import { SidebarNav, type SidebarPage } from "./SidebarNav";
 import type { Doctor } from "../../types";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
+import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
 
 type SidebarProps = {
     isOpen: boolean;
@@ -11,6 +12,7 @@ type SidebarProps = {
     activePage: SidebarPage | null;
     onNavigate: (page: SidebarPage) => void;
     onConsult: () => void;
+    showClinicControl?: boolean;
     doctor: Doctor;
     /** `doctors.avatar_url` — a public URL (lib/db/clinic.ts's `getPublicUrl`),
      *  so it can be rendered directly and cached by the browser. Falls back to
@@ -27,6 +29,7 @@ export function Sidebar({
     activePage,
     onNavigate,
     onConsult,
+    showClinicControl,
     doctor,
     avatarUrl,
     onOpenProfile,
@@ -34,6 +37,13 @@ export function Sidebar({
 }: SidebarProps) {
     const panelRef = useRef<HTMLElement>(null);
     const sidebarLogoRef = useRef<HTMLDivElement>(null);
+
+    // The drawer used to hard-code "AREN Cortex" / "Phase 1 workflow" while
+    // WorkspaceHeader two inches above it read the real product name from the
+    // clinic row — so every Consult clinic opened this panel and was told it
+    // was running Cortex. Same source as the header now (rule 19: when two
+    // things must agree, make one read the other, never both).
+    const { brand } = useWorkspaceMode();
 
     // Escape to close
     useEffect(() => {
@@ -140,8 +150,8 @@ export function Sidebar({
                         <img src={logo} alt="AREN Logo" />
                     </div>
                     <div className="sidebar-brand-text">
-                        <strong>AREN <span>Cortex</span></strong>
-                        <small>Phase 1 workflow</small>
+                        <strong>AREN <span>{brand.product}</span></strong>
+                        <small>{brand.tagline}</small>
                     </div>
                     <button
                         type="button"
@@ -159,6 +169,7 @@ export function Sidebar({
                         activePage={activePage}
                         onNavigate={handleNavItemClick}
                         onConsult={handleConsultClick}
+                        showClinicControl={showClinicControl}
                     />
                 </div>
 

@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from "react";
 import arenLogo from "../assets/aren-logo.png";
 import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
+import type { ModeBrand } from "../lib/workspace/mode";
 import "../styles/workspace-header.css";
 
 interface Props {
@@ -18,9 +19,20 @@ interface Props {
      * leaves the header's layout exactly as it was.
      */
     centerSlot?: ReactNode;
+    /**
+     * Overrides the product word in the logo pill.
+     *
+     * Every clinical page leaves this alone and gets "Cortex"/"Consult" read
+     * from the clinic row. The admin suite passes ADMIN_BRAND, because the
+     * workspace someone is standing in is not always the workspace their
+     * clinic is served — an admin at a Consult clinic is in Parallax, and a
+     * header that said "AREN Consult" over a staff roster would be naming the
+     * wrong product. Still one header component, not two.
+     */
+    brand?: ModeBrand;
 }
 
-export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot }: Props) {
+export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot, brand: brandOverride }: Props) {
     /**
      * "Cortex" or "Consult", read rather than passed.
      *
@@ -30,7 +42,8 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
      * always inside <AuthProvider>, so it reads the fact itself — the same
      * move `useClinicalIdentity` already makes for "which doctor".
      */
-    const { brand } = useWorkspaceMode();
+    const { brand: derivedBrand } = useWorkspaceMode();
+    const brand = brandOverride ?? derivedBrand;
 
     return (
         <header className="ws-header">
