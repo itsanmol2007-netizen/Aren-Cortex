@@ -29,13 +29,18 @@ const GRAPH_VERSION = "v21.0";
  * Non-fatal: a message that sent successfully must never read as failed
  * because its OWN log row didn't write.
  */
-async function logOutbound({ to, waMessageId, messageType, templateName, preview, patientId, prescriptionId }) {
+async function logOutbound({ to, waMessageId, messageType, templateName, preview, patientId, prescriptionId, hospitalId }) {
     try {
         await getSupabase().from("whatsapp_messages").insert({
             direction: "outbound",
             phone: to,
             patient_id: patientId ?? null,
             prescription_id: prescriptionId ?? null,
+            // Without this the clinic cannot see its own sent messages: the
+            // Communication page reads under RLS scoped to hospital_id, so a
+            // null here makes an outbound message invisible to the very people
+            // who sent it.
+            hospital_id: hospitalId ?? null,
             wa_message_id: waMessageId,
             message_type: messageType,
             template_name: templateName ?? null,
@@ -93,7 +98,67 @@ export async function sendTextMessage(to, text, opts = {}) {
         text: { body: text },
     });
     const waMessageId = data.messages[0].id;
-    await logOutbound({ to, waMessageId, messageType: "text", preview: text, patientId: opts.patientId });
+    await logOutbound({
+        to, waMessageId, messageType: "text", preview: text,
+        patientId: opts.patientId, hospitalId: opts.hospitalId,
+    });
+    return { waMessageId };
+}
+
+/**
+ * A message with up to three tappable reply buttons.
+ *
+ * This is the backbone of the booking flow. A tap comes back through the
+ * webhook as `interactive.button_reply.id` — the EXACT id string sent here —
+ * so intent arrives already unambiguous, with no parsing and nothing to
+ * misread. That is the whole argument for buttons over free text.
+ *
+ * Meta's limits, all enforced server-side by them (a violation is a 400, not
+ * a truncation): at most 3 buttons, button title <= 20 chars, id <= 256,
+ * body <= 1024. Titles are truncated here rather than left to fail the send,
+ * because a slightly clipped label is a better outcome than no message.
+ *
+ * Bound by the same 24-hour window as sendTextMessage — interactive messages
+ * are NOT templates. To open a conversation from cold, send an approved
+ * template first; buttons work once the patient has replied.
+ *
+ * @param {string} to  patient's phone, E.164 without "+"
+ * @param {string} bodyText
+ * @param {Array<{id: string, title: string}>} buttons  max 3
+ * @param {{patientId?: string, hospitalId?: string, footer?: string}} [opts]
+ */
+export async function sendInteractiveButtons(to, bodyText, buttons, opts = {}) {
+    if (!buttons.length) throw new Error("sendInteractiveButtons: needs at least one button");
+    if (buttons.length > 3) {
+        // Silently dropping the 4th would hide a real bug in flow design —
+        // if a step needs more than three choices it wants a list message,
+        // not a quietly shortened button row.
+        throw new Error(`sendInteractiveButtons: WhatsApp allows 3 buttons, got ${buttons.length}`);
+    }
+
+    const data = await callGraphApi({
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: bodyText.slice(0, 1024) },
+            ...(opts.footer ? { footer: { text: opts.footer.slice(0, 60) } } : {}),
+            action: {
+                buttons: buttons.map((b) => ({
+                    type: "reply",
+                    reply: { id: b.id, title: b.title.slice(0, 20) },
+                })),
+            },
+        },
+    });
+
+    const waMessageId = data.messages[0].id;
+    await logOutbound({
+        to, waMessageId, messageType: "interactive",
+        preview: bodyText,
+        patientId: opts.patientId, hospitalId: opts.hospitalId,
+    });
     return { waMessageId };
 }
 
@@ -126,6 +191,7 @@ export async function sendTemplateMessage(to, templateName, languageCode = "en_U
         to, waMessageId, messageType: "template", templateName,
         preview: `template:${templateName}`,
         patientId: opts.patientId, prescriptionId: opts.prescriptionId,
+        hospitalId: opts.hospitalId,
     });
     return { waMessageId };
 }

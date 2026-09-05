@@ -4,6 +4,11 @@
    practice.css states for itself. Green is the one deliberate departure
    from the app's blue/indigo family: this page is specifically about
    WhatsApp, and PlaceholderArt.tsx's own header explains why that earns it.
+
+   Widened from the 560px column it had as a stub (2026-09-04): a two-pane
+   inbox needs the room, and the old width made a thread 40 characters wide.
+   The empty and loading states keep a narrow centred column of their own, so
+   an empty page still reads as composed rather than as a wide blank.
 ──────────────────────────────────────────────────────────────────────────── */
 
 .comm-page {
@@ -19,24 +24,337 @@
 .comm-body {
     flex: 1;
     overflow-y: auto;
-    padding: 56px 20px 20px;
-    max-width: 560px;
+    padding: 28px 20px 20px;
+    max-width: 1080px;
     margin: 0 auto;
     width: 100%;
     display: flex;
     flex-direction: column;
-    /* §11, 2026-08-24 — was `justify-content: center`, same fix as
-       support.css's identical note: centring short real content in a full
-       `min-height: 100vh` box reads as the page being half-missing, not as
-       a deliberately short page. Top-aligned instead. */
-    gap: 20px;
+    gap: 18px;
 }
+
+.comm-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    padding: 6px 11px;
+    cursor: pointer;
+}
+
+.comm-refresh:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
+.comm-refresh:disabled { opacity: 0.55; cursor: default; }
+
+@keyframes comm-spin { to { transform: rotate(360deg); } }
+.comm-spin { animation: comm-spin 0.9s linear infinite; }
+
+.comm-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: rgba(180, 35, 24, 0.06);
+    border: 1px solid rgba(180, 35, 24, 0.24);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-size: 12.5px;
+    color: #b42318;
+}
+
+.comm-error button {
+    font-size: 12px;
+    font-weight: 650;
+    color: #b42318;
+    background: none;
+    border: none;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.comm-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 56px 0;
+    font-size: 12.5px;
+    color: #64748b;
+}
+
+/* ── Appointment requests ─────────────────────────────────────────────────
+   Above the inbox because it is the only region with work attached — see
+   the page component's header for why the two live together. */
+
+.comm-requests {
+    background: #ffffff;
+    border: 1px solid #d0d8e8;
+    border-radius: 14px;
+    padding: 16px 18px;
+}
+
+.comm-section-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 12px;
+    font-size: 12.5px;
+    font-weight: 750;
+    color: #1e293b;
+}
+
+.comm-count {
+    font-size: 10.5px;
+    font-weight: 750;
+    color: #15803d;
+    background: rgba(37, 211, 102, 0.14);
+    border-radius: 20px;
+    padding: 2px 8px;
+}
+
+.comm-request-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.comm-request {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 13px;
+}
+
+.comm-request-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.comm-request-name { font-size: 13px; font-weight: 650; color: #1e293b; }
+.comm-request-meta { font-size: 11.5px; color: #64748b; }
+
+.comm-request-actions { display: flex; gap: 7px; flex: none; }
+
+.comm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 650;
+    border-radius: 8px;
+    padding: 6px 11px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.comm-btn:disabled { opacity: 0.5; cursor: default; }
+
+.comm-btn-confirm {
+    color: #15803d;
+    background: rgba(37, 211, 102, 0.12);
+    border-color: rgba(37, 211, 102, 0.34);
+}
+.comm-btn-confirm:hover:not(:disabled) { background: rgba(37, 211, 102, 0.2); }
+
+.comm-btn-decline {
+    color: #64748b;
+    background: #ffffff;
+    border-color: #d0d8e8;
+}
+.comm-btn-decline:hover:not(:disabled) { background: #f1f5f9; }
+
+.comm-requests-note {
+    margin: 10px 0 0;
+    font-size: 11px;
+    line-height: 1.55;
+    color: #94a3b8;
+}
+
+/* ── Inbox ────────────────────────────────────────────────────────────────
+   Fixed height rather than page-flow: a chat list and a chat body each need
+   their OWN scroll. Letting the page scroll instead means selecting a thread
+   at the bottom of a long list leaves you reading its messages from a
+   scrolled-down page with the header gone. */
+
+.comm-inbox {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 0;
+    background: #ffffff;
+    border: 1px solid #d0d8e8;
+    border-radius: 14px;
+    overflow: hidden;
+    height: min(620px, calc(100vh - 190px));
+}
+
+.comm-threads {
+    list-style: none;
+    margin: 0;
+    padding: 6px;
+    overflow-y: auto;
+    border-right: 1px solid #e2e8f0;
+    background: #fbfcfe;
+}
+
+.comm-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 9px;
+    padding: 9px 11px;
+    cursor: pointer;
+}
+
+.comm-thread:hover { background: #f1f5f9; }
+.comm-thread.is-active { background: rgba(37, 211, 102, 0.12); }
+
+.comm-thread-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.comm-thread-name {
+    font-size: 12.5px;
+    font-weight: 650;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.comm-thread-time { font-size: 10.5px; color: #94a3b8; flex: none; }
+
+.comm-thread-preview {
+    font-size: 11.5px;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.comm-thread-view { display: flex; flex-direction: column; min-width: 0; }
+
+.comm-thread-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #94a3b8;
+    font-size: 12.5px;
+}
+.comm-thread-empty p { margin: 0; }
+
+.comm-thread-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.comm-thread-title { font-size: 13px; font-weight: 700; color: #1e293b; }
+.comm-thread-sub { font-size: 11.5px; color: #64748b; }
+
+.comm-window {
+    font-size: 10.5px;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 3px 10px;
+    flex: none;
+}
+
+.comm-window-open {
+    color: #15803d;
+    background: rgba(37, 211, 102, 0.14);
+    border: 1px solid rgba(37, 211, 102, 0.3);
+}
+
+.comm-window-closed {
+    color: #94a3b8;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+}
+
+.comm-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #f8fafc;
+}
+
+.comm-msg {
+    max-width: 76%;
+    border-radius: 11px;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.comm-msg-inbound {
+    align-self: flex-start;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    color: #1e293b;
+}
+
+.comm-msg-outbound {
+    align-self: flex-end;
+    background: rgba(37, 211, 102, 0.16);
+    border: 1px solid rgba(37, 211, 102, 0.3);
+    color: #14532d;
+}
+
+.comm-msg-body { white-space: pre-wrap; word-break: break-word; }
+
+.comm-msg-meta {
+    margin-top: 3px;
+    font-size: 10px;
+    color: #94a3b8;
+    text-align: right;
+}
+
+.comm-composer-note {
+    margin: 0;
+    padding: 11px 16px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 11px;
+    line-height: 1.55;
+    color: #94a3b8;
+    background: #ffffff;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────
+   Keeps the narrow centred column the page had as a stub — an empty inbox
+   stretched across 1080px reads as broken, not as empty. */
 
 .comm-hero {
     background: #ffffff;
     border: 1px solid #d0d8e8;
     border-radius: 14px;
-    padding: 32px 28px;
+    padding: 40px 28px;
+    max-width: 560px;
+    width: 100%;
+    margin: 24px auto 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -53,54 +371,21 @@
 
 .comm-hero-sub {
     margin: 0;
-    max-width: 360px;
+    max-width: 380px;
     font-size: 12.5px;
     line-height: 1.6;
     color: #64748b;
 }
 
-.comm-badge {
-    margin-top: 4px;
-    font-size: 9.5px;
-    font-weight: 750;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #15803d;
-    background: rgba(37, 211, 102, 0.14);
-    border: 1px solid rgba(37, 211, 102, 0.32);
-    border-radius: 20px;
-    padding: 4px 14px;
-}
-
-.comm-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.comm-list li {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 9px;
-    padding: 10px 14px;
-    font-size: 12.5px;
-    color: #475569;
-    font-weight: 500;
-    position: relative;
-    padding-left: 30px;
-}
-
-.comm-list li::before {
-    content: "";
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #25d366;
+@media (max-width: 860px) {
+    .comm-inbox {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .comm-threads {
+        max-height: 240px;
+        border-right: none;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .comm-messages { max-height: 420px; }
 }

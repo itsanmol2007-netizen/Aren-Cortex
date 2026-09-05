@@ -34,17 +34,8 @@
 import crypto from "node:crypto";
 import express from "express";
 import { getSupabase } from "./supabaseClient.js";
-
-/**
- * WhatsApp hands you "91XXXXXXXXXX" (country code + bare number, no "+").
- * Every phone number already in this product's `patients` table is the
- * bare 10-digit number with no country code (same convention the login
- * screen and toWhatsAppNumber() in src/lib/whatsapp.ts use) — so matching
- * means stripping a leading "91" before comparing, not comparing raw.
- */
-function stripCountryCode(waPhone) {
-    return waPhone.length === 12 && waPhone.startsWith("91") ? waPhone.slice(2) : waPhone;
-}
+import { resolveIdentity } from "./routing.js";
+import { handleInboundMessage } from "./booking.js";
 
 /**
  * Verifies Meta's X-Hub-Signature-256 header against the raw request body.
@@ -171,6 +162,46 @@ export function mountWhatsAppWebhook(app, opts = {}) {
  * which of YOUR sent messages a status update is about — match it against
  * the wa_message_id you stored when you called sendWhatsAppMessage().
  */
+/**
+ * A tapped button's id, across the three shapes Meta uses for what a patient
+ * experiences as the same gesture:
+ *
+ *   interactive.button_reply — a button on a normal interactive message
+ *   interactive.list_reply   — a row picked from a list message
+ *   button.payload           — a quick-reply button on a TEMPLATE message.
+ *                              Different shape entirely, and the one that
+ *                              matters most: it's how a patient replies to
+ *                              the prescription we sent them, which is the
+ *                              first tap in the whole booking flow.
+ *
+ * Returns null for a plain text message, which is the signal to fall back to
+ * keyword matching.
+ */
+function readButtonId(msg) {
+    return (
+        msg.interactive?.button_reply?.id ??
+        msg.interactive?.list_reply?.id ??
+        msg.button?.payload ??
+        null
+    );
+}
+
+/**
+ * Human-readable text for the log, whatever the message type. A button tap
+ * has no `text.body`, but it does have a title the patient actually saw —
+ * logging that keeps the inbox readable as a conversation instead of showing
+ * blanks wherever someone tapped rather than typed.
+ */
+function readMessageText(msg) {
+    return (
+        msg.text?.body ??
+        msg.interactive?.button_reply?.title ??
+        msg.interactive?.list_reply?.title ??
+        msg.button?.text ??
+        null
+    );
+}
+
 export function parseWebhookPayload(payload) {
     const events = [];
     for (const entry of payload.entry || []) {
@@ -183,7 +214,9 @@ export function parseWebhookPayload(payload) {
                     type: "message",
                     phoneNumberId,
                     from: msg.from,
-                    text: msg.text?.body,
+                    text: readMessageText(msg),
+                    buttonId: readButtonId(msg),
+                    messageType: msg.type,
                     waMessageId: msg.id,
                     raw: msg,
                 });
@@ -220,24 +253,40 @@ async function defaultOnEvent(event) {
         const supabase = getSupabase();
 
         if (event.type === "message") {
-            const bare = stripCountryCode(event.from);
-            const { data: patient } = await supabase
-                .from("patients")
-                .select("id")
-                .eq("phone", bare)
-                .maybeSingle();
+            // Run the conversation first: it resolves WHICH CLINIC this
+            // message belongs to, including the cases only it can settle —
+            // a patient who just tapped a clinic button, or one we asked
+            // earlier and whose answer is held in conversation state.
+            let resolved = { hospitalId: null, patientId: null };
+            try {
+                resolved = await handleInboundMessage({
+                    phone: event.from,
+                    text: event.text,
+                    buttonId: event.buttonId,
+                });
+            } catch (e) {
+                console.error("[whatsapp] conversation flow failed:", e.message);
+                // The flow failing must not cost us the message. Fall back to
+                // a plain identity lookup so the row is still attributable to
+                // a clinic and shows up in that clinic's inbox.
+                try {
+                    const identity = await resolveIdentity(event.from);
+                    resolved = { hospitalId: identity.hospitalId, patientId: identity.patientId };
+                } catch { /* leave unattributed rather than lose the log */ }
+            }
 
             await supabase.from("whatsapp_messages").insert({
                 direction: "inbound",
                 phone: event.from,
-                patient_id: patient?.id ?? null,
+                patient_id: resolved.patientId,
+                hospital_id: resolved.hospitalId,
                 wa_message_id: event.waMessageId,
-                message_type: "text",
+                message_type: event.messageType || "text",
                 body_preview: (event.text || "").slice(0, 200),
                 status: "received",
             });
 
-            if (!patient) {
+            if (!resolved.patientId) {
                 console.warn(`[whatsapp] inbound message from ${event.from} matched no patient`);
             }
         } else if (event.type === "status") {
