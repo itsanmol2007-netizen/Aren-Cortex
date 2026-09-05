@@ -18,7 +18,7 @@ const PRESENCE_STYLE: Record<Presence, { dot: string; ring: string; text: string
     busy: { dot: "#2f6bed", ring: "rgba(47,107,237,0.30)", text: "#1d51c9", avatarBg: "#e9f0fe", avatarText: "#1d51c9" },
     online: { dot: "#1c8a4d", ring: "rgba(28,138,77,0.32)", text: "#1c7a45", avatarBg: "#e6f5ec", avatarText: "#1c7a45" },
     away: { dot: "#c9791a", ring: "rgba(201,121,26,0.32)", text: "#b06f14", avatarBg: "#fbeed9", avatarText: "#b06f14" },
-    offline: { dot: "#c4c9d3", ring: "transparent", text: "#a8aeba", avatarBg: "#eef0f5", avatarText: "#a8aeba" },
+    offline: { dot: "#b3b9c4", ring: "transparent", text: "#7d8593", avatarBg: "#e9ebf0", avatarText: "#868e9c" },
 };
 
 function presenceFromLastSeen(lastSeen: string | null | undefined, now: number): Presence {
@@ -86,10 +86,10 @@ export function DoctorsCard({ doctors, visits, now }: Props) {
                             </div>
                         </div>
                         <div className="shrink-0 text-right">
-                            <b className={`block font-[Manrope,sans-serif] text-[14px] leading-[1.1] tabular-nums ${presence === "offline" ? "text-[#a8aeba]" : "text-[#161d29]"}`}>
+                            <b className={`block font-[Manrope,sans-serif] text-[14px] leading-[1.1] tabular-nums ${presence === "offline" ? "text-[#868e9c]" : "text-[#161d29]"}`}>
                                 {queueCount}
                             </b>
-                            <span className="text-[9px] text-[#a8aeba]">{t("queueLabel")}</span>
+                            <span className="text-[9px] font-semibold uppercase tracking-[0.04em] text-[#7b8391]">{t("queueLabel")}</span>
                         </div>
                     </div>
                 );

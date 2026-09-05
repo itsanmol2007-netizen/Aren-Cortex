@@ -151,7 +151,7 @@ export function VisitAttachmentsModal({ visit, onClose }: Props) {
                                 <div className="truncate text-[13px] font-semibold text-[#161d29]">
                                     {att.attachmentType ? ATTACHMENT_TYPE_LABEL[att.attachmentType] : "Attachment"}
                                 </div>
-                                <div className="mt-[1px] text-[11.5px] text-[#8a91a0]">{formatBytes(att.sizeBytes)}</div>
+                                <div className="mt-[1px] text-[11.5px] text-[#68707e]">{formatBytes(att.sizeBytes)}</div>
                             </div>
                             <button
                                 type="button"

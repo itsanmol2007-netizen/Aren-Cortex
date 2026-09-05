@@ -17,8 +17,19 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
     const [focused, setFocused] = useState(false);
     const [matches, setMatches] = useState<DBPatient[]>([]);
     const [rect, setRect] = useState<DOMRect | null>(null);
+    // Keyboard cursor over the dropdown. -1 = nothing highlighted (Enter then
+    // means "register the typed name"); 0..matches.length-1 = a patient row;
+    // matches.length = the "Register new patient" row.
+    const [active, setActive] = useState(-1);
     const barRef = useRef<HTMLDivElement>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // The launcher is the front door — land the receptionist's cursor here on
+    // load so she can just start typing a name.
+    useEffect(() => {
+        inputRef.current?.focus();
+    }, []);
 
     useEffect(() => {
         if (!query.trim() || query.trim().length < 2) {
@@ -33,6 +44,10 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
         }, 220);
         return () => { cancelled = true; clearTimeout(timer); };
     }, [query]);
+
+    // Any change to the result set or the query resets the cursor to "nothing
+    // highlighted" — Enter must never fire a stale selection.
+    useEffect(() => { setActive(-1); }, [matches, query]);
 
     useEffect(() => {
         const onDocClick = (e: MouseEvent) => {
@@ -72,48 +87,77 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
     };
 
     const showDrop = open && query.trim().length >= 2;
+    // Index of the "Register new patient" row within the navigable list.
+    const registerIdx = matches.length;
+
+    const onKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            if (active >= 0 && active < matches.length) selectPatient(matches[active]);
+            else if (query.trim()) createNew();
+            return;
+        }
+        if (!showDrop) return;
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActive((i) => Math.min(i + 1, registerIdx));
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActive((i) => Math.max(i - 1, -1));
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            setOpen(false);
+        }
+    };
 
     const dropdown = showDrop && rect
         ? createPortal(
             <div
                 id="launcher-dropdown-portal"
                 style={{ position: "fixed", top: rect.bottom + 7, left: rect.left, width: rect.width }}
-                className="z-[70] max-h-[380px] overflow-y-auto rounded-[9px] border border-[#e4e7ee] bg-white shadow-[0_24px_60px_rgba(16,24,40,0.24)]"
+                className="z-[70] max-h-[380px] overflow-y-auto rounded-[9px] border border-[#d5d9e2] bg-white shadow-[0_24px_60px_rgba(16,24,40,0.24)]"
             >
-                {matches.length > 0 ? (
+                {matches.length > 0 && (
                     <>
                         <div className="px-4 pb-[5px] pt-[11px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#837bb2]">
                             {t("existingPatients")}
                         </div>
-                        {matches.map((p) => (
+                        {matches.map((p, i) => (
                             <div
                                 key={p.id}
+                                onMouseEnter={() => setActive(i)}
                                 onClick={() => selectPatient(p)}
-                                className="flex min-h-[44px] cursor-pointer items-center gap-3 px-4 py-[10px] hover:bg-[#f5f6f9]"
+                                className={`flex min-h-[44px] cursor-pointer items-center gap-3 px-4 py-[10px] ${
+                                    active === i ? "bg-[rgba(47,107,237,0.08)]" : "hover:bg-[#f2f4f8]"
+                                }`}
                             >
-                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[#e9f0fe] text-[13px] font-bold text-[#1d51c9]">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[#e0ebfe] text-[13px] font-bold text-[#1746b8]">
                                     {initials(p.name)}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate text-[14px] font-semibold text-[#161d29]">{p.name}</div>
                                     <div className="text-[12px] text-[#5a6472]">
                                         {p.phone}
-                                        <span className="mx-[5px] text-[#a8aeba]">·</span>
+                                        <span className="mx-[5px] text-[#8a91a0]">·</span>
                                         {p.age} yrs, {p.gender}
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        <div className="my-1 h-px bg-[#eef0f5]" />
+                        <div className="my-1 h-px bg-[#e6e9f0]" />
                     </>
-                ) : (
-                    <div className="px-4 py-[18px] text-center text-[13px] text-[#a8aeba]">{t("noMatch")}</div>
                 )}
+                {/* No "No matching patients" line — the "Register new patient
+                    «name»" row below already says exactly that, and the extra
+                    line was only dead vertical space. */}
                 <div
+                    onMouseEnter={() => setActive(registerIdx)}
                     onClick={createNew}
-                    className="flex min-h-[44px] cursor-pointer items-center gap-[11px] px-4 py-3 text-[13.5px] font-semibold text-[#2f6bed] hover:bg-[rgba(47,107,237,0.055)]"
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-[11px] px-4 py-3 text-[13.5px] font-semibold text-[#2f6bed] ${
+                        active === registerIdx ? "bg-[rgba(47,107,237,0.08)]" : "hover:bg-[rgba(47,107,237,0.055)]"
+                    }`}
                 >
-                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] bg-[#e9f0fe]">
+                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] bg-[#e0ebfe]">
                         <Plus size={15} />
                     </span>
                     {query.trim() ? t("registerNewNamed", { q: query.trim() }) : t("registerNew")}
@@ -131,7 +175,7 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                 // its own inner layer instead) — overflow-hidden on this element
                 // would silently clip its own box-shadow, which is exactly why
                 // the calm outer glow wasn't visible before.
-                className="relative flex h-[54px] items-center gap-[10px] rounded-[12px] border-[1.5px] border-[#d7dae4] bg-white pl-[15px] pr-[10px] shadow-[0_1px_2px_rgba(20,30,50,0.05),0_0_0_1px_rgba(124,92,240,0.05),0_10px_26px_-6px_rgba(124,92,240,0.38)] transition-[border-color,box-shadow] duration-150 focus-within:border-[#2f6bed] focus-within:shadow-[0_0_0_4px_rgba(99,102,241,0.24),0_10px_26px_-6px_rgba(124,92,240,0.42)]"
+                className="relative flex h-[54px] items-center gap-[10px] rounded-[12px] border-[1.5px] border-[#c9cdd9] bg-white pl-[15px] pr-[10px] shadow-[0_1px_2px_rgba(20,30,50,0.05),0_0_0_1px_rgba(124,92,240,0.05),0_10px_26px_-6px_rgba(124,92,240,0.38)] transition-[border-color,box-shadow] duration-150 focus-within:border-[#2f6bed] focus-within:shadow-[0_0_0_4px_rgba(99,102,241,0.24),0_10px_26px_-6px_rgba(124,92,240,0.42)]"
             >
                 {/* Dawn wash (§6): a static violet→pink glow bleeding in from the
                     left. It breathes ±6% over 8s while idle (one of two ambient
@@ -148,12 +192,14 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                         }}
                     />
                 </div>
-                <Search size={17} strokeWidth={2.2} className="relative shrink-0 text-[#6d6690]" />
+                <Search size={17} strokeWidth={2.2} className="relative shrink-0 text-[#5b5580]" />
                 <input
+                    ref={inputRef}
                     value={query}
                     onChange={(e) => { setQuery(e.target.value); openDrop(); }}
                     onFocus={() => { setFocused(true); openDrop(); }}
                     onBlur={() => setFocused(false)}
+                    onKeyDown={onKeyDown}
                     placeholder={t("launcherPlaceholder")}
                     className="fd-bare relative flex-1 text-[14px] font-[450] placeholder:font-[450]"
                 />

@@ -39,7 +39,7 @@ export function StatStrip({ visits }: Props) {
 // for a 30px chip — replaces the single-flat-color treatment that read as
 // "clip-art" at this size (Anmol's word for it, live, 2026-08-24).
 const TONE = {
-    indigo: { from: "#f1effe", to: "#dedbfa", icon: "text-[#5b4fe0]", glow: "rgba(99,102,241,0.32)", num: "text-[#161d29]", sub: "text-[#8a91a0]" },
+    indigo: { from: "#f1effe", to: "#dedbfa", icon: "text-[#5b4fe0]", glow: "rgba(99,102,241,0.32)", num: "text-[#161d29]", sub: "text-[#697082]" },
     amber: { from: "#fff1de", to: "#ffdfb0", icon: "text-[#a05e0c]", glow: "rgba(194,120,15,0.34)", num: "text-[#a05e0c]", sub: "text-[#a05e0c]" },
     blue: { from: "#eef4ff", to: "#d7e6ff", icon: "text-[#1d51c9]", glow: "rgba(47,107,237,0.32)", num: "text-[#1d51c9]", sub: "text-[#2f6bed]" },
     green: { from: "#eafaf1", to: "#cdf1de", icon: "text-[#157a41]", glow: "rgba(28,138,77,0.3)", num: "text-[#1c8a4d]", sub: "text-[#1c8a4d]" },

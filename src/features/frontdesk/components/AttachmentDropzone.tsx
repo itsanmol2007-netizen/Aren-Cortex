@@ -62,20 +62,20 @@ export function AttachmentDropzone({ onFiles, disabled }: Props) {
                     if (disabled) return;
                     accept(Array.from(e.dataTransfer.files));
                 }}
-                className={`flex w-full flex-1 items-center gap-[10px] rounded-[11px] border-[1.5px] border-dashed px-3 py-[10px] text-left transition-colors ${
+                className={`flex w-full flex-1 items-center gap-[10px] rounded-[11px] border-[1.5px] px-3 py-[10px] text-left transition-colors ${
                     disabled
-                        ? "cursor-default border-[#e9e7f4] bg-[#f8f8fb] opacity-60"
+                        ? "cursor-default border-[#d8dbe4] bg-[#f7f8fb] opacity-60"
                         : dragging
-                            ? "cursor-pointer border-[#7c5cf0] bg-[rgba(124,92,240,0.07)]"
-                            : "cursor-pointer border-[#d9d3ee] bg-[#faf9ff] hover:border-[#c9bdf5] hover:bg-[#f8f7fd]"
+                            ? "cursor-pointer border-[#7c5cf0] bg-[rgba(124,92,240,0.09)]"
+                            : "cursor-pointer border-[#bcc2d0] bg-[#fbfbfe] hover:border-[#8a94a8] hover:bg-[#f6f7fb]"
                 }`}
             >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[linear-gradient(155deg,#a855f7,#f472b6)] text-white shadow-[0_3px_10px_rgba(168,85,247,0.3)]">
                     <UploadCloud size={15} />
                 </span>
                 <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px] font-medium text-[#5a6472]">{t("attachDropLine")}</span>
-                    <span className="block truncate text-[11px] text-[#a8aeba]">{t("attachDropCaption")}</span>
+                    <span className="block truncate text-[12.5px] font-semibold text-[#3b4453]">{t("attachDropLine")}</span>
+                    <span className="mt-[2px] block truncate text-[11px] text-[#78808f]">{t("attachDropCaption")}</span>
                 </span>
             </div>
             {rejected && <p className="mt-[6px] text-[12px] font-medium text-[#d23b34]">{t("attachUnsupportedType")}</p>}

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { toast } from "sonner";
 import {
@@ -16,6 +17,8 @@ import {
 import { vitalsToMeasurements } from "@/lib/synapse/consultInput";
 import type { Vitals } from "@/types";
 import { uploadAttachment } from "@/lib/db/attachments";
+import { recordVisitPayment, type PaymentMethod, type VisitType } from "@/lib/db/payments";
+import { useAuth } from "@/features/auth/AuthProvider";
 import type { AttachmentType } from "@/lib/attachments/types";
 import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
@@ -37,6 +40,18 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
     // the hardcoded clinic, so registering a patient anywhere else was rejected
     // by RLS with a 403. Same null-over-guess rule as the hook itself.
     const hospitalId = useHospitalId();
+
+    // Who is doing this, for the payment audit trail. Held in a ref because
+    // the background `attempt()` below runs after this modal has closed and
+    // possibly after a re-render — reading auth state through a ref keeps the
+    // actor correct without adding auth to every callback dependency list.
+    const auth = useAuth();
+    const actorRef = useRef<{ id: string | null; name: string | null; role: string | null }>({
+        id: null, name: null, role: null,
+    });
+    actorRef.current = auth.status === "authed"
+        ? { id: auth.identity.user.id, name: auth.identity.user.full_name, role: auth.identity.user.role }
+        : { id: null, name: null, role: null };
 
     const patch = (visitId: string, fields: Partial<TodayVisit>) => {
         setVisits((vs) => vs.map((v) => (v.visit_id === visitId ? { ...v, ...fields } : v)));
@@ -129,6 +144,20 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         doctorId: string;
         doctorName: string;
         attachments: { file: File; attachmentType: AttachmentType }[];
+        /** What the desk charged, or null when no fee is configured for the
+         *  assigned doctor. Written after the visit lands, best-effort. */
+        payment?: {
+            visitType: VisitType;
+            base: number;
+            discount: number;
+            gstAmount: number;
+            total: number;
+            discountKind: "none" | "percent" | "amount";
+            discountPercent: number | null;
+            gstPercent: number;
+            status: "paid" | "pending";
+            method: PaymentMethod | null;
+        } | null;
         // Optional — CreateVisitModal itself never sets this (it doesn't
         // await anything anymore), but a caller with its own state that
         // depends on the visit actually existing (PatientsPage refreshing
@@ -219,6 +248,28 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
                         saveVisitMeasurements(visit.id, rows)
                             .catch((err) => console.warn("saveVisitMeasurements failed (non-fatal):", err));
                     }
+                }
+
+                // The fee. Same best-effort contract as everything above: the
+                // visit is already committed, and a clinic must never lose a
+                // registration because a payment row failed. A gap in the money
+                // record is visible and fixable in Parallax; a lost visit is
+                // not. Also writes the first audit event — see lib/db/payments.
+                if (opts.payment) {
+                    const pay = opts.payment;
+                    recordVisitPayment({
+                        visitId: visit.id,
+                        hospitalId,
+                        doctorId: opts.doctorId || null,
+                        visitType: pay.visitType,
+                        breakdown: { base: pay.base, discount: pay.discount, gstAmount: pay.gstAmount, total: pay.total },
+                        discountKind: pay.discountKind,
+                        discountPercent: pay.discountPercent,
+                        gstPercent: pay.gstPercent,
+                        status: pay.status,
+                        method: pay.method,
+                        actor: actorRef.current,
+                    }).catch((err) => console.warn("recordVisitPayment failed (non-fatal):", err));
                 }
 
                 // Same rule: a failed attachment must never be mistaken for a

@@ -50,6 +50,24 @@ free-text and composition-request fallbacks.
 | The free-text fallback — persistence | `lib/db/synapse.ts` → `loadDoctorFreeTerms` / `saveDoctorFreeTerm`, `doctor_free_terms` table |
 | The free-text fallback — chart-local add | `useConsultPlan.ts` → `addFreeDiagnosis` / `addFreeTest` / `addFreeReferral` / `addFreeAdvice` |
 | Adding a brand not in the catalogue | `AddMedicineSheet.tsx` — forces an existing composition pick, hands off into `MedicineAddSheet` |
+| The intake modal's layout, sections or duplicate dropdown | `features/frontdesk/components/CreateVisitModal.tsx` — two columns: form left, payment rail right |
+| The payment rail (what shows when, collect flow, discount panel) | `features/frontdesk/components/PaymentRail.tsx` — progressive disclosure lives here, not in the modal |
+| Attaching a document at intake | `features/frontdesk/components/AttachDocumentField.tsx` (compact); `IntakeAttachmentsField` is the older full dropzone, still used by the gateway button |
+| Measurements at registration | Nowhere — deliberately removed 2026-09-05. `MeasurementsModal` still serves Practice |
+| What a visit COSTS — the maths, the write, the audit | `lib/db/payments.ts` — the one place. `computeFee` is pure; reception has no code path that sets a base fee |
+| The fee strip on the intake form | `features/frontdesk/components/FeeSection.tsx`; state flows through `CreateVisitModal` → `useVisitActions.createNewVisit` |
+| What counts as a follow-up | `lib/db/payments.ts` → `FOLLOW_UP_WINDOW_DAYS` / `defaultVisitType` — a DEFAULT the desk always overrides |
+| The fee audit trail | `visit_payment_events` (append-only: no UPDATE/DELETE policy exists); read by `fetchPaymentAudit`, shown on Parallax → Money |
+| Who sees the admin workspace at all | `lib/workspace/adminAccess.ts` (pure rule) + `hooks/useAdminAccess.ts` — never a per-page check |
+| The admin product name, or a clinic-shape label | `lib/workspace/mode.ts` → `ADMIN_BRAND` / `SHAPE_LABEL` — the one place |
+| Anything Parallax QUERIES | `lib/db/admin.ts` — the pages do no querying (rule 1) |
+| An admin page, or adding one | `src/features/admin/pages/*` + its route in `main.tsx` + a row in `AdminShell.tsx`’s `NAV` |
+| The admin rail (width, collapse, persistence) | `features/admin/AdminShell.tsx` — mirrors `frontdesk/components/NavRail.tsx`, keep them animating alike |
+| A chart on any admin surface | `features/admin/charts.tsx` — inline SVG, no chart library, `--cs-*` tokens only |
+| The period selector on an admin page | `features/admin/PeriodBar.tsx` — the one place |
+| Consultation fees / GST / desk-discount policy | `features/admin/FeesModal.tsx` writes; `lib/db/admin.ts` → `updateDoctorFees` / `updateBillingPolicy` |
+| Clinic-endorsed labs (and pushing them to doctors) | `lib/db/admin.ts` → `fetchClinicLabs` / `applyClinicLabsToAllDoctors`, `clinic_preferred_labs` table |
+| The owner-doctor’s summarised view inside Cortex | `features/admin/pages/ClinicControlPage.tsx` (rendered by `App.tsx` at `activePage === "admin"`) |
 | Requesting a composition/salt not in the catalogue | `lib/db/synapse.ts` → `requestNewComposition`, `composition_requests` table (a request queue, never a live mint — rule 22) |
 
 **What's NOT covered here:** WHY a file is shaped the way it is (read that

@@ -75,7 +75,12 @@ export function ObservablePicker({
     const catalog = useCachedIntakeChips().data;
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
-    const [active, setActive] = useState(0);
+    // -1 = nothing highlighted. The catalogue opens on focus, so a pre-
+    // selected row (active = 0) meant a bare Enter — the receptionist just
+    // tabbing through the form — silently grabbed whatever symptom happened
+    // to be first in the list. Enter now only picks a row she has walked to
+    // with the arrow keys (or hovered).
+    const [active, setActive] = useState(-1);
     const [rect, setRect] = useState<DOMRect | null>(null);
 
     const rootRef = useRef<HTMLDivElement>(null);
@@ -115,7 +120,7 @@ export function ObservablePicker({
         return { results: scored.slice(0, MAX_RESULTS), restCount: Math.max(0, scored.length - MAX_RESULTS) };
     }, [pool, query, selected]);
 
-    useEffect(() => { setActive(0); }, [query, open]);
+    useEffect(() => { setActive(-1); }, [query, open]);
 
     const updateRect = useCallback(() => {
         if (boxRef.current) setRect(boxRef.current.getBoundingClientRect());
@@ -195,12 +200,15 @@ export function ObservablePicker({
             setActive((i) => Math.min(i + 1, results.length - 1));
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            setActive((i) => Math.max(i - 1, 0));
+            // Back past the first row lands on "nothing highlighted", not
+            // stuck on row 0 — so the receptionist can arrow back out of a
+            // mis-step without it committing on the next Enter.
+            setActive((i) => Math.max(i - 1, -1));
         } else if (e.key === "Enter") {
-            // Consume Enter only while there is a highlighted match to take;
-            // otherwise let it bubble to the form's advance/save flow and take
-            // the catalogue down with it.
-            if (results[active]) {
+            // Consume Enter only while a row has actually been walked to with
+            // the arrow keys; otherwise let it bubble to the form's
+            // advance/save flow and take the catalogue down with it.
+            if (active >= 0 && results[active]) {
                 e.preventDefault();
                 pick(results[active]);
             } else {
@@ -293,7 +301,7 @@ export function ObservablePicker({
             <div
                 ref={boxRef}
                 onClick={() => { inputRef.current?.focus(); setOpen(true); }}
-                className={`flex h-[62px] cursor-text flex-wrap content-start items-start gap-[6px] overflow-y-auto rounded-[10px] border-[1.5px] px-3 py-[6px] transition-[border-color,box-shadow,background-color] duration-150 ${
+                className={`flex min-h-[86px] max-h-[184px] cursor-text flex-wrap content-start items-start gap-[6px] overflow-y-auto rounded-[10px] border-[1.5px] px-3 py-[8px] transition-[border-color,box-shadow,background-color] duration-150 ${
                     error
                         ? "border-[#d23b34] bg-[#fffafa]"
                         : open

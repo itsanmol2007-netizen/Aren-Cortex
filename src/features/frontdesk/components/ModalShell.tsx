@@ -22,7 +22,15 @@ const openModalIds: number[] = [];
 // admiring).
 
 type Props = {
+    /** Small uppercase line above the title. Pass "" to drop it — the intake
+     *  modal uses a plain descriptive subtitle instead, which reads better on
+     *  a wide two-column surface than a shouted category. */
     eyebrow: string;
+    /** Sentence under the title. */
+    subtitle?: string;
+    /** Removes the body padding so a page can own its own two-column grid
+     *  edge to edge. Header and footer keep theirs. */
+    flushBody?: boolean;
     title: React.ReactNode;
     icon: React.ReactNode; // ~19px lucide icon; renders white on the gradient tile
     onClose: () => void;
@@ -38,9 +46,14 @@ type Props = {
     // only via an explicit X button". Every other modal leaves this false
     // and keeps the normal backdrop/Escape behavior.
     preventDismiss?: boolean;
+    // A softer version of the above: the backdrop click alone is ignored
+    // (Escape and the X still close) once the form holds unsaved input, so a
+    // stray click on the dimmed page can't wipe a half-filled registration.
+    // The owning modal passes its own "is anything typed yet" signal.
+    dirtyGuard?: boolean;
 };
 
-export function ModalShell({ eyebrow, title, icon, onClose, footer, children, maxWidth = 580, preventDismiss = false }: Props) {
+export function ModalShell({ eyebrow, subtitle, flushBody = false, title, icon, onClose, footer, children, maxWidth = 580, preventDismiss = false, dirtyGuard = false }: Props) {
     const t = useT();
     // A backdrop click only counts if the press ALSO started on the backdrop.
     // Without this, any in-panel interaction that reflows the layout between
@@ -87,7 +100,10 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     "rgba(15,18,32,0.46)",
             }}
             onMouseDown={(e) => { pressedOnBackdrop.current = e.target === e.currentTarget; }}
-            onClick={(e) => { if (!preventDismiss && e.target === e.currentTarget && pressedOnBackdrop.current) onClose(); }}
+            onClick={(e) => {
+                if (preventDismiss || dirtyGuard) return;
+                if (e.target === e.currentTarget && pressedOnBackdrop.current) onClose();
+            }}
         >
             <div
                 role="dialog"
@@ -122,10 +138,15 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                             {icon}
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[10.5px] font-extrabold uppercase tracking-[0.09em] text-[#8b5cf6]">{eyebrow}</div>
-                            <div className="mt-[1px] truncate font-[Manrope,sans-serif] text-[17px] font-extrabold tracking-[-0.01em] text-[#161d29]">
+                            {eyebrow && (
+                                <div className="text-[10.5px] font-extrabold uppercase tracking-[0.09em] text-[#8b5cf6]">{eyebrow}</div>
+                            )}
+                            <div className="mt-[1px] truncate font-[Manrope,sans-serif] text-[19px] font-extrabold tracking-[-0.015em] text-[#161d29]">
                                 {title}
                             </div>
+                            {subtitle && (
+                                <div className="mt-[2px] truncate text-[12.5px] text-[#6b7280]">{subtitle}</div>
+                            )}
                         </div>
                     </div>
                     <button
@@ -138,7 +159,7 @@ export function ModalShell({ eyebrow, title, icon, onClose, footer, children, ma
                     </button>
                 </div>
 
-                <div className="px-[20px] pb-[14px] pt-[10px]">{children}</div>
+                <div className={flushBody ? "" : "px-[20px] pb-[14px] pt-[10px]"}>{children}</div>
 
                 {footer && (
                     <div className="flex items-center justify-end gap-[10px] rounded-b-[18px] border-t border-[#eeebf7] bg-[#fbfaff] px-[20px] py-[9px]">

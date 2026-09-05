@@ -151,7 +151,7 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
                         </button>
                     )}
                 </div>
-                <div className="mt-[1px] truncate text-[12px] text-[#8a91a0] tabular-nums">
+                <div className="mt-[1px] truncate text-[12px] text-[#6b7280] tabular-nums">
                     {maskPhone(visit.phone)}
                     {visit.age > 0 && <span> · {visit.age} yrs</span>}
                     {visit.gender && <span> · {visit.gender}</span>}
@@ -173,7 +173,7 @@ export function VisitRow({ visit, now, selected, onOpen, onComplete, onCancel, o
 
             <div className="max-lg:hidden">
                 <div className="text-[12.5px] font-medium text-[#374151] tabular-nums">{createdTime}</div>
-                <div className="mt-[1px] text-[11px] text-[#a8aeba]">{formatShortDate(visit.created_at)}</div>
+                <div className="mt-[1px] text-[11px] text-[#7c8593]">{formatShortDate(visit.created_at)}</div>
             </div>
 
             {/* Status pill: dot + label, and for waiting the live duration —

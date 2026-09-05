@@ -118,7 +118,7 @@ export function QueuePanel({ visits, now, loading, onOpen, onComplete, onCancel,
                 )}
             </div>
             {!loading && rows.length > 0 && (
-                <div className="border-t border-[#eef0f5] px-4 py-[7px] text-[10.5px] font-medium text-[#8a91a0]">
+                <div className="border-t border-[#eef0f5] px-4 py-[7px] text-[10.5px] font-medium text-[#6c7482]">
                     {t("showingCount", { n: rows.length })}
                 </div>
             )}
@@ -167,7 +167,7 @@ function Tab({
         >
             {dot && <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: dot }} />}
             {t(labelKey)}
-            <span className={active ? "font-semibold text-[#1d51c9]" : "font-semibold text-[#a8aeba]"}>({count})</span>
+            <span className={active ? "font-semibold text-[#1d51c9]" : "font-semibold text-[#7c8493]"}>({count})</span>
         </button>
     );
 }
