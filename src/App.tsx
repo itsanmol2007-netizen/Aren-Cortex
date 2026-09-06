@@ -1115,6 +1115,24 @@ function App() {
   }, [workspace.isConsult, workspace.ready, hasActiveConsult,
       activePage, patientModalOpen, transition, queueSheetOpen]);
 
+  /**
+   * Drives the TEMPORARY debug box rendered near the top of this component's
+   * JSX (2026-09-06). Deliberately its own 2-second debounce, separate from
+   * both invariants above — this must never flash on a normal load (both of
+   * those resolve in well under 2s when they work), only light up once the
+   * "should be impossible" state has genuinely persisted. Remove this
+   * state/effect and the box together once the underlying report is closed.
+   */
+  const [blankCanvasDetected, setBlankCanvasDetected] = useState(false);
+  useEffect(() => {
+    const stuck = workspace.isConsult && workspace.ready && !hasActiveConsult &&
+      activePage === null && !patientModalOpen && !transition && !queueSheetOpen;
+    if (!stuck) { setBlankCanvasDetected(false); return; }
+    const t = setTimeout(() => setBlankCanvasDetected(true), 2000);
+    return () => clearTimeout(t);
+  }, [workspace.isConsult, workspace.ready, hasActiveConsult,
+      activePage, patientModalOpen, transition, queueSheetOpen]);
+
   // ── The specialty profile ───────────────────────────────────────────────
   // Which intent type this facility elevates into the Primary Recommendation
   // slot. Read once from the facility, never inferred from what the doctor is
@@ -1533,6 +1551,21 @@ function App() {
 
   return (
     <div className="app-shell">
+
+      {blankCanvasDetected && (
+        <div
+          style={{
+            position: "fixed", bottom: 12, left: 12, zIndex: 99999,
+            background: "#7c2d12", color: "#fff", fontFamily: "monospace",
+            fontSize: 12, lineHeight: 1.5, padding: "10px 14px", borderRadius: 10,
+            maxWidth: 420, boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+          }}
+        >
+          <strong>DEBUG — the queue sheet should be open right now and isn't.</strong>
+          <br />This box only appears once that's been true for 2+ seconds —
+          not a normal one-frame flash. Please screenshot it and send it back.
+        </div>
+      )}
 
       <Sidebar
         isOpen={sidebarOpen}
