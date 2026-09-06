@@ -19,7 +19,8 @@
     "check:story": "node scripts/story-catalogue.mjs",
     "check:examination": "node scripts/examination-catalogue.mjs",
     "check:duration": "node scripts/duration-catalogue.mjs",
-    "server": "node server/index.js"
+    "server": "node server/index.js",
+    "check:email": "node scripts/check-email.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
