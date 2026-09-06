@@ -47,7 +47,7 @@ import { BuyCreditsModal } from "./BuyCreditsModal";
 import { CreditHistoryModal } from "./CreditHistoryModal";
 import {
     BigEmpty, ConversationArt, FillArt, CreditRing, Panel, PanelHead,
-    UsageBars, dayLabel, type UsagePoint,
+    UsageBars, WhatsAppTemplatePreview, dayLabel, type UsagePoint,
 } from "./parts";
 import {
     DELIVERY_LABEL, deliveryStateOf, fetchAppointmentRequests, fetchDeliveryStats,
@@ -719,6 +719,43 @@ export function CommunicationPage({
                         </p>
                     </Panel>
                 )}
+
+                {/* ── Message templates — what the patient actually sees ──────
+                    Added 2026-09-08: nowhere on this page showed the real
+                    template copy before this, even though the send path
+                    (server/whatsapp/client.js, server/messaging/providers/
+                    meta.js) already builds it — a doctor had no way to see
+                    what a patient receives short of reading server code.
+                    Static preview, not fetched from Meta: these are AREN's
+                    own approved-template designs (communication-credits.md
+                    §5b), not live remote content. */}
+                <Panel className="flex-none" label="Message templates">
+                    <PanelHead icon={<MessageSquare size={13} />} title="Message templates" right={
+                        <span className="text-[10.5px] font-semibold text-[var(--cs-faint)]">What patients receive</span>
+                    } />
+                    <div className="grid grid-cols-2 gap-[12px] px-[14px] pb-[13px] pt-[9px] max-[900px]:grid-cols-1">
+                        <WhatsAppTemplatePreview
+                            title="Prescription Ready"
+                            header="Prescription Ready"
+                            body={
+                                <>Hi <strong>Patient Name</strong>, Your prescription from Dr. <strong>Doctor Name</strong> from <strong>Clinic Name</strong> is
+                                ready to view or download. If you have any questions or need help, we're just a message away!
+                                <br />With care, <strong>Clinic Name</strong> Arenode</>
+                            }
+                            button="View Prescription"
+                        />
+                        <div className="flex flex-col items-center justify-center gap-[6px] rounded-[12px] border border-dashed border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[14px] py-[18px] text-center">
+                            <Clock size={16} className="text-[var(--cs-faint)]" />
+                            <span className="text-[11.5px] font-semibold text-[var(--cs-muted)]">Follow-up reminder</span>
+                            <span className="text-[10.5px] leading-[1.4] text-[var(--cs-faint)]">
+                                Copy not finalized yet — nothing is sent under this purpose until it is.
+                            </span>
+                        </div>
+                    </div>
+                    <p className="m-0 border-t border-[var(--cs-line)] px-[14px] py-[7px] text-[10.5px] leading-[1.45] text-[var(--cs-faint)]">
+                        These are the templates submitted to Meta for approval — the actual wording every patient sees, not a mockup.
+                    </p>
+                </Panel>
 
                 {/* ── Feed + conversation ──────────────────────────────────── */}
                 <div className="grid min-h-[440px] flex-1 grid-cols-[minmax(300px,0.62fr)_minmax(0,1fr)] gap-[12px] max-[1100px]:grid-cols-1">

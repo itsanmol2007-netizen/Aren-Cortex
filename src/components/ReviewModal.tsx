@@ -37,6 +37,16 @@ interface ReviewModalProps {
   // Print RX can open this same surface without wiring consult actions.
   onEdit?: () => void;
   onSave?: () => void;
+  /**
+   * The dedicated "WhatsApp" action (2026-09-08) — saves the consultation
+   * the same way `onSave` does, but ALSO sends the prescription to the
+   * patient. Plain "Confirm & Save" no longer sends WhatsApp on its own;
+   * this is the one explicit door for that, per Anmol: "there is a
+   * dedicated message for whatsapp, it should not be automatic." Optional
+   * so Print RX's reprint surface (`mode="print"`, no button for this at
+   * all) needs no change.
+   */
+  onSendWhatsApp?: () => void;
   // "review": Consult's edit/confirm flow (default, unchanged).
   // "print":  Print RX's read-only reprint surface — no Edit, no Save; the
   //           primary action is printing. One rendering pipeline, two doors.
@@ -180,7 +190,7 @@ function RxIcon() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ReviewModal({
-  onClose, onEdit, onSave,
+  onClose, onEdit, onSave, onSendWhatsApp,
   patient, visitId, prescriptionRef,
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
@@ -1038,10 +1048,13 @@ export default function ReviewModal({
                 </kbd>
               </button>
 
-              <button
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors">
-                <MessageCircle className="w-4 h-4" /> WhatsApp
-              </button>
+              {onSendWhatsApp && (
+                <button onClick={onSendWhatsApp} disabled={isSaving}
+                  title="Save this consultation and send the prescription to the patient over WhatsApp"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                </button>
+              )}
 
               <button onClick={onSave} disabled={isSaving}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"

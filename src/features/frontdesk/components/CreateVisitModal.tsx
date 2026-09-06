@@ -292,6 +292,27 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         ? symptomCount > 0
         : !!name.trim() && !!age.trim() && !!gender && phoneOk && symptomCount > 0;
 
+    // What PaymentRail's lock message actually says, computed rather than a
+    // fixed string — bug found 2026-09-08: the hint used to always read
+    // "Complete the patient's name, phone, age and sex", which is simply
+    // WRONG for an existing patient (already selected, none of those fields
+    // apply) who just hasn't picked a symptom yet. That patient saw a
+    // locked, unexplained Paid/Not Paid with a reason that didn't match
+    // their screen — reachable "why can't I create this visit" with no real
+    // answer on it. `existing` never contributes to this list; only what's
+    // actually still missing does.
+    const missingForCompletion: string[] = [];
+    if (!existing) {
+        if (!name.trim()) missingForCompletion.push("name");
+        if (!phoneOk) missingForCompletion.push("phone number");
+        if (!age.trim()) missingForCompletion.push("age");
+        if (!gender) missingForCompletion.push("sex");
+    }
+    if (!symptomCount) missingForCompletion.push("symptoms");
+    const lockReason = missingForCompletion.length
+        ? `Add the patient's ${missingForCompletion.join(", ")} to continue.`
+        : undefined;
+
     // Anything typed / picked yet? While true, ModalShell ignores a stray
     // backdrop click so a half-filled registration can't be lost to one.
     const dirty = existing
@@ -761,7 +782,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         baseFee={baseFee}
                         breakdown={breakdown}
                         doctorName={doctors.find((d) => d.id === doctorId)?.name ?? ""}
-                        locked={!formComplete}
+                        lockReason={lockReason}
                     />
                 </div>
             </div>

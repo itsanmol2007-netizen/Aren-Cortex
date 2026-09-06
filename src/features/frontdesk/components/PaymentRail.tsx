@@ -32,11 +32,11 @@
 // footer behind these — Anmol: "remove the separate Done button entirely...
 // Paid/Not Paid is the completion action itself." So clicking "Collect" (once
 // a method is picked) or "Mark as unpaid" now submits the whole registration,
-// and `locked` (new prop) is the one gate stopping that from firing against a
-// patient who was never actually established — a NEW patient still missing
-// name/phone/age/gender, same requirement the form already had, just moved
-// from "blocks the Save button" to "blocks these two buttons" since they are
-// the Save button now.
+// and `lockReason` (new prop, a string — see its own doc comment for why
+// not a boolean) is the one gate stopping that from firing against a patient
+// who was never actually established — same requirement the form already
+// had, just moved from "blocks the Save button" to "blocks these two
+// buttons" since they are the Save button now.
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
@@ -75,7 +75,7 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 ];
 
 export function PaymentRail({
-    state, onChange, policy, baseFee, breakdown, doctorName, locked,
+    state, onChange, policy, baseFee, breakdown, doctorName, lockReason,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
@@ -85,16 +85,25 @@ export function PaymentRail({
     breakdown: FeeBreakdown | null;
     doctorName: string;
     /**
-     * True while the patient isn't valid yet (a new patient still missing
-     * name/phone/age/gender, or the required symptom). Paid/Not Paid IS the
-     * completion action now — there is no separate Save button behind it any
-     * more — so this is the one gate that keeps a visit from being created
-     * against a patient who was never actually established. `undefined`/
-     * omitted behaves as unlocked, so every other caller of this component
-     * needs no change.
+     * Set while the patient isn't valid yet (a new patient still missing
+     * name/phone/age/gender, or the required symptom), to what's actually
+     * still missing — e.g. "Add the patient's symptoms to continue." Paid/
+     * Not Paid IS the completion action now — there is no separate Save
+     * button behind it any more — so this is the one gate that keeps a
+     * visit from being created against a patient who was never actually
+     * established.
+     *
+     * A STRING, not a boolean (bug found 2026-09-08): the caller computes
+     * what's missing rather than this component assuming "name/phone/age/
+     * sex", which was flatly wrong for an existing (already-selected)
+     * patient only missing a symptom — a locked control with a reason that
+     * doesn't match the screen reads as broken, not as "add one more
+     * thing". `undefined`/omitted behaves as unlocked, so every other
+     * caller of this component needs no change.
      */
-    locked?: boolean;
+    lockReason?: string;
 }) {
+    const locked = !!lockReason;
     // Local, not lifted: whether a panel is OPEN is chrome, not data. Nothing
     // outside this component needs to know, and the parent re-rendering on
     // every keystroke of the patient's name must not collapse it.
@@ -269,10 +278,10 @@ export function PaymentRail({
                             Locked rather than hidden: the doctor/desk should
                             see exactly what's blocking them, not wonder where
                             the buttons went. */}
-                        {locked && (
+                        {lockReason && (
                             <span className="flex items-center gap-[7px] rounded-[9px] bg-[#f6f5fb] px-[10px] py-[8px] text-[11.5px] leading-[1.4] text-[#6b7280]">
                                 <Lock size={12} className="shrink-0" />
-                                Complete the patient's name, phone, age and sex to continue.
+                                {lockReason}
                             </span>
                         )}
                         <button

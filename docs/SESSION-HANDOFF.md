@@ -1,155 +1,143 @@
-# Session handoff — 2026-09-06 (Overview absorbs admin; WhatsApp template; Create New Patient flow)
+# Session handoff — 2026-09-08 (four bugs from live use, found by reading code, not verified live)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE.**
 
+Follow-up round to 2026-09-06's Overview/admin rewrite and Create-New-Patient
+work. Anmol tried it live and reported four real problems. **This round could
+not get a browser working against this sandbox's proxy** (see "Live
+verification" below) — every fix here is from reading the code end to end,
+not from clicking through it. Treat that as real risk, not a formality.
+
 ## What shipped, in order
 
-### 1. WhatsApp "Prescription Ready" template — new shape
+### 1. Payment lock showed the WRONG reason on an existing patient
 
-Anmol supplied the real copy: header "Prescription Ready" (static text, not
-a document attachment any more), a body with patient/doctor/clinic name, and
-a "View Prescription" button. `server/whatsapp/client.js`'s
-`sendPrescriptionTemplate` and `server/messaging/providers/meta.js` rebuilt
-to match — the button is a dynamic-URL button pointing straight at the
-prescription's own link (no hosted app to route a quick-reply through yet,
-per Anmol: *"unless whatsapp is wired, simply open that exact prescription
-preview"*). Full detail incl. the no-PDF-yet fallback's structural mismatch:
-`docs/context/communication-credits.md` §5b.
+`CreateVisitModal`'s Paid/Not Paid lock (built 2026-09-06) always said
+"Complete the patient's name, phone, age and sex to continue" — flatly wrong
+for an EXISTING (already-selected) patient who just hadn't picked a symptom
+yet, since none of those fields apply to them. A locked control with a
+reason that doesn't match the screen reads as broken, which is very likely
+what "you can't actually create any visit... unless you verify payment
+status" was describing.
 
-### 2. "Clinic Management" removed; Overview grows an admin-doctor layer
+Fixed: `PaymentRail`'s `locked: boolean` prop is now `lockReason?: string`,
+computed in `CreateVisitModal` from what's ACTUALLY still missing (existing
+patient missing only a symptom now sees "Add the patient's symptoms to
+continue.", nothing about name/phone/age/sex). Mechanically, the underlying
+gate (`formComplete`) is unchanged — only the message was wrong.
 
-The whole point of this round. Anmol's brief: stop having Overview → a
-separate Admin Dashboard → a separate Clinic Management page; a doctor with
-admin authority should get "Normal Overview + additional clinic visibility +
-additional authority", nothing more.
+**Not ruled out:** a genuinely separate hard failure on the existing-patient
+path, if one exists — I could not click through it to check. If the fixed
+message still doesn't explain what's on screen, that's the next thing to
+chase, not a re-read of this same code.
 
-- **`ClinicControlPage.tsx` is deleted.** Its content (KPIs, fee card, bench
-  performance, the "Full Parallax" door) is gone as a page; the KPI/fee/bench
-  substance now lives inside `DoctorOverviewPage.tsx`'s new "Clinic
-  management" section. "Clinic Control" is gone from the sidebar too.
-- **New concept: a doctor can be a clinic admin without stopping being a
-  doctor.** `doctors.is_clinic_admin` (migration
-  `20260906_doctor_clinic_admin.sql`), additive to `users.role` — deliberately
-  NOT a role change, so nothing keyed on `role === 'doctor'` (RLS, the
-  clinical sidebar, the consult workspace) needed touching. Several doctors
-  at one clinic can carry the flag at once. `resolveAdminAccess()` in
-  `lib/workspace/adminAccess.ts` now takes this as a third input; `embedded`
-  means "this doctor has admin authority" (via zero dedicated admins OR this
-  flag) and **no longer implies a door into Parallax** — only `dedicated`
-  (a non-doctor admin/owner) has Parallax as home now.
-- **Overview's existing cards get a scope toggle, not duplicates.** An admin
-  doctor sees "Performance: Overall | You | {other doctors}" above the SAME
-  KPI tiles/chart/donut/busiest-hours cards a plain doctor has — picking a
-  scope re-fetches `fetchClinicAnalytics` with a different (or no) `doctorId`
-  filter. Untouched, the page is pixel-identical to a plain doctor's.
-- **New "Doctors" bench-management card**, admin-only: roster with fee, an
-  admin badge, and a per-row "Manage" control (self-guarded, same rule as
-  Parallax's People page) exposing Make/Remove admin and Remove/fire
-  (`is_active`). A "Fees" button opens the same `FeesModal` Parallax uses.
-- **Minimal "Request to add staff"**, shown only when the clinic has no
-  active reception staff — sends `notifySupport("support_request", …)`
-  rather than fabricating a staff-management workflow a solo/Cortex clinic
-  has no use for (Anmol was explicit: no invented workflow here).
-- **Parallax's People page** gained the same Make/Remove admin toggle per
-  bench row (`setDoctorClinicAdmin`), so a dedicated admin can also grant the
-  flag — this is how the FIRST doctor-admin at a multi-doctor clinic with a
-  real office manager gets flagged, without a new bootstrap mechanism.
-- **Bootstrapping the very first admin at a clinic with NONE at all** (no
-  dedicated admin, no doctor flagged) is deliberately NOT self-service —
-  Anmol, when asked: treat it like `owner` today, a manual/operational
-  action, not a product feature.
-- Parallax itself (routes, pages, People/Money/Catalogue/Plan/Clinic) is
-  **untouched** — it remains the full authoritative surface for a non-doctor
-  admin/manager, per the brief's "do not force the doctor-admin into
-  Parallax."
+### 2. WhatsApp auto-sent on every "Complete Consult" — now explicit only
 
-Full detail: `docs/context/doctor-overview.md` (rewritten sections) and
-`docs/context/parallax-admin.md`'s resolver table (rewritten).
+`useConsultLifecycle.ts`'s `handleConfirmAndSave` fired `sendPrescription`
+unconditionally on every save with a patient phone on file — by design,
+per its own old comment ("consultation completed → prescription generated →
+send"). Anmol: *"there is a dedicated message for whatsapp, it should not be
+automatic."* That dedicated action already existed in the UI —
+`ReviewModal`'s green "WhatsApp" button — it just had **no `onClick` at
+all**, a dead button sitting next to a save action that quietly did its job
+for it.
 
-**Verified:** `npx tsc -b --noEmit` clean across the whole project after
-every change in this round (App.tsx, Sidebar/SidebarNav, adminAccess.ts,
-useAdminAccess.ts, useClinicalIdentity.ts, auth.ts, lib/db/admin.ts,
-DoctorOverviewPage.tsx, PeoplePage.tsx). **Not exercised live** — no browser
-verification this round (no relay/credentials set up in this container); the
-next session should click through as an admin-doctor (toggle the scope,
-promote/demote a colleague, confirm the self-guard) before trusting the UI
-beyond the type-checker.
+Fixed: `handleConfirmAndSave(opts?: { sendWhatsApp?: boolean })` — the send
+only fires when `sendWhatsApp: true`. Plain "Confirm & Save" (`onSave`,
+keyboard shortcut included) passes nothing → no send, ever. The WhatsApp
+button now calls `onSendWhatsApp` → `handleConfirmAndSave({ sendWhatsApp:
+true })` → same save, plus the send. A patient with no phone now gets its
+own toast when the button is clicked (used to fail silently, fine when this
+was an automatic side effect nobody consciously triggered — wrong now that
+it's an explicit click that visibly does nothing otherwise).
 
-### 3. Front desk's "Create New Patient" flow — search/create split, payment gates completion
+### 3. Communication page never showed the actual template wording
 
-Front desk only (Consult workspace) — `PatientLauncher.tsx` +
-`CreateVisitModal.tsx` + `PaymentRail.tsx`. Cortex's OWN patient
-search/payment (`PatientModal.tsx` / `PatientPaymentRail.tsx`) is a separate,
-independently-built surface and was deliberately left untouched — the brief
-used "Consult" by name, which is this codebase's own word for the front-desk
-workspace specifically.
+Nowhere in the product showed the real "Prescription Ready" copy (header/
+body/button) to a doctor — it only existed in server code
+(`server/whatsapp/client.js`, `server/messaging/providers/meta.js`) and this
+repo's own docs. Added a "Message templates" card to `CommunicationPage.tsx`
+(new `WhatsAppTemplatePreview` in `parts.tsx`) rendering the real header/
+body/button in a WhatsApp-bubble shape, static content matching the send
+path exactly. Follow-up's card is an honest placeholder — that copy was
+never designed (see `communication-credits.md`), so it says "not finalized
+yet" rather than inventing wording.
 
-- **Zero-result search now gets a real empty state** instead of blending
-  into the always-present "Register new patient «name»" row: a centred
-  "Patient '{name}' not found" + a solid "Create a new patient with this
-  name" button. Only replaces the bottom row when `matches.length === 0`;
-  the modest row stays as-is when there ARE matches but none is right.
-- **The searched name already flowed through** — `CreateVisitModal` already
-  took `prefillName` and seeded `name` from it before this round; verified,
-  not rebuilt.
-- **Paid/Not Paid IS the completion action now — no separate "Save & Create
-  Visit" step behind it.** `PaymentRail` gained a `locked` prop; while
-  locked, "Collect"/"Mark as unpaid"/the method buttons are disabled with a
-  one-line reason. `CreateVisitModal`'s `handleFeeChange` watches for the
-  undecided→decided transition and calls `completeVisit` (same fire-and-
-  forget shape "Save" always used) the instant a method is picked or "Mark
-  as unpaid" is clicked — the modal closes in the same tick. The footer's
-  "Save & Create Visit" survives ONLY for a clinic with no fee configured
-  for the assigned doctor, where `PaymentRail` shows no payment controls at
-  all and something has to remain the way out.
-- **The lock condition is the EXISTING `formComplete`**, unchanged: new
-  patient needs name/phone/age/gender **and** the pre-existing symptom
-  requirement; existing patient needs only the symptom requirement (already
-  true the instant one is selected). Anmol's spec described the existing-
-  patient path as unlocking "once selected" without mentioning symptoms —
-  read as emphasis on removing the Done button, not as a request to drop an
-  unrelated, already-required field; flagging this reading rather than
-  silently picking one.
+### 4. Discarding an active consult from the queue silently did nothing visible
 
-**Verified:** `npx tsc -b --noEmit` clean. **Not browser-verified** — same
-gap as §2, no relay in this container this round.
+Reported: opening a new patient from the queue while a consult is active
+shows `ActiveConsultGuard` ("what do you want to do with this current
+visit?"); clicking Discard (or Save as draft/referral) DOES write the DB
+change (`updateVisitStatus`) but the card never disappears and the new
+consult never opens.
+
+Root cause, found by tracing `App.tsx`: `pendingQueueAction.current` was set
+to `() => consultFromQueue(visit, aheadOfQueue)` — i.e. it re-invoked the
+SAME guarded function it was called FROM. `onDiscard`/`onComplete` call
+`resetConsultState()` (schedules state updates, doesn't apply them
+synchronously) and then immediately run `pendingQueueAction.current()` in
+the same tick — so the re-invoked `consultFromQueue` still read its OWN
+closed-over `hasActiveConsult` as `true` (the value from when the pending
+action was captured, not yet re-rendered), took the "guard again" branch,
+and called `setActiveConsultGuardOpen(true)` — landing in the SAME React
+batch as the `setActiveConsultGuardOpen(false)` that had just run, netting
+to `true` and no visible change. Classic stale-closure-on-a-ref bug.
+
+Fixed by splitting both `consultFromQueue` and `registerPatientDirectly`
+into a guarded wrapper (checks `hasActiveConsult`, unchanged) plus an
+unguarded core (`startConsultForQueueVisit` /
+`registerPatientDirectlyNow`) — `pendingQueueAction` now always stores the
+CORE, which never re-checks `hasActiveConsult` and so cannot re-trigger the
+guard it was just dismissed from. Also removed a stray leftover comment on
+that render (`// ← ADD THIS LINE (the ! means...)`) that had no business
+being in committed code.
+
+## Live verification — what happened and why it's still not done
+
+Tried hard this round: started the vite dev server, got Playwright's
+Chromium loading the app and even completing plain `GET`s to Supabase
+through the sandbox's agent proxy (confirmed via a hand-rolled local Node
+CONNECT relay — `curl`/Node's own TLS client complete the handshake fine
+through the proxy, including POST + HTTP/2 + TLS 1.3). **Chromium's own TLS
+client specifically cannot** — every CONNECT tunnel for Chromium's traffic
+(to Supabase, Google, fonts.googleapis.com, everything) gets reset by the
+upstream side after ~6s having sent a ClientHello and received zero bytes
+back, disabling QUIC/ECH/etc. didn't change it. This matches the PRIOR
+session's own note about a Chromium-specific TLS limitation in this sandbox,
+which apparently had a workaround ("a local Node relay via undici's
+ProxyAgent") that was never committed anywhere — it doesn't exist in this
+checkout or git history, so it couldn't be reused, only rediscovered, and
+rediscovering it burned real time this round without success. **Next
+session: don't re-attempt the from-scratch investigation — either the user
+provides whatever made it work before, or accept static code review as the
+verification method and say so upfront.**
 
 ## Next, in the order I'd do it
 
-1. **Live-verify §2 and §3 above** — nobody has clicked through either this
-   round (toggle the Overview scope, promote/demote a colleague, confirm the
-   self-guard; run through both New/Existing patient paths at front desk,
-   confirm the lock/unlock timing and that "Collect" really does create the
-   visit and close the modal).
-2. If Anmol confirms the existing-patient path should skip the symptom
-   requirement too (see §3's flagged reading), that's a one-line change to
-   `formComplete` in `CreateVisitModal.tsx` — deliberately not made this
-   round without asking.
-3. Decide whether SK Pandey should stay at 76 credits (previous session's
-   test data) or be restored; `RC_2` (their pending recharge) is still open.
-4. Everything from the previous handoff's "Next" is still open and untouched
-   this round: the follow-up-message scheduler, real Meta template
-   submission (now with a settled shape to submit, see §1 above), an admin UI
+1. **Get eyes on this live** — a human clicking through beats any amount of
+   static reading. All four fixes above are reasoned through carefully but
+   NONE have been clicked.
+2. If #1's existing-patient lock message is still wrong or still blocks
+   incorrectly once seen live, that's a real second bug to find, not a
+   repeat of this round's fix.
+3. Everything from the 2026-09-06 handoff that was still open stays open:
+   SK Pandey's 76-credit test state, `RC_2`'s pending recharge, the
+   follow-up-message scheduler, real Meta template submission, an admin UI
    for `approve_credit_recharge`.
 
 ## Traps worth knowing before you edit (carried forward + this round's)
 
+- **Chromium cannot complete a TLS handshake through this sandbox's agent
+  proxy** — confirmed again, harder, this round. `curl`/Node's own `https`
+  DO work through it (proven with GET, POST, HTTP/2, TLS1.3). Don't
+  rediscover this from scratch again; ask whether a working relay script
+  exists somewhere outside this repo before spending time on it.
 - **`doctors.is_clinic_admin` is NOT `users.role`.** Never write `role:
-  'admin'` to promote a doctor — that routes them to Parallax as their HOME
-  and is a different, larger change nobody asked for. The column to write is
-  `doctors.is_clinic_admin`, via `setDoctorClinicAdmin()`.
-- **`button:disabled` in this codebase is not decoration-safe.**
-  `styles/base.css`'s unlayered rule beats every Tailwind override; render a
-  plain element instead of a disabled interactive one whenever "disabled"
-  really means "nothing to click".
-- **Same file, `input, select { padding: 0 9px }`** — any icon-in-input
-  layout needs the Tailwind `!` bang on padding, not a bare utility.
-- Chromium in this sandbox cannot complete a TLS handshake through the agent
-  proxy; prior sessions built a local Node relay (via `undici`'s
-  `ProxyAgent`) to get around it for live verification — not set up in this
-  container, which is why this round's changes are type-checked but not
-  browser-verified.
-- Supabase MCP's `execute_sql` refuses multi-statement writes; `apply_migration`
-  handles a whole file fine.
-- `node_modules` was empty at the start of this session (a fresh container) —
-  `npm install` populated it; don't assume a checkout already has it.
+  'admin'` to promote a doctor.
+- **`button:disabled` in this codebase is not decoration-safe** —
+  `styles/base.css`'s unlayered rule beats every Tailwind override.
+- **`input, select { padding: 0 9px }`**, same file — icon-in-input layouts
+  need the Tailwind `!` bang on padding.
+- Supabase MCP's `execute_sql` refuses multi-statement writes;
+  `apply_migration` handles a whole file fine.
+- `node_modules` starts empty in a fresh container; `npm install` first.

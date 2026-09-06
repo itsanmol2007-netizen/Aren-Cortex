@@ -27,6 +27,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Send } from "lucide-react";
 
 // ── Art ────────────────────────────────────────────────────────────────────
 
@@ -268,6 +269,48 @@ export function Panel({
         >
             {children}
         </section>
+    );
+}
+
+/**
+ * A read-only mockup of one WhatsApp template — header, body, button — in
+ * WhatsApp's own bubble shape. Added 2026-09-08 for Communication's
+ * "Message templates" card, the first place in the product a doctor can
+ * actually see the wording a patient receives (previously only in server
+ * code and docs). Static content, passed in by the caller — this component
+ * has no idea what Meta actually approved; it just renders the shape.
+ */
+export function WhatsAppTemplatePreview({
+    title, header, body, button,
+}: {
+    /** Small caption above the bubble, naming which send this is. */
+    title: string;
+    /** The template's HEADER line — bold, top of the bubble. */
+    header: string;
+    /** The template's BODY — the bulk of the message. */
+    body: ReactNode;
+    /** The template's button label, rendered as WhatsApp itself draws a
+     *  template button: a full-width row below a divider, not part of the
+     *  bubble's own rounded shape. */
+    button: string;
+}) {
+    return (
+        <div className="flex flex-col gap-[6px]">
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[var(--cs-label)]">{title}</span>
+            <div className="overflow-hidden rounded-[12px] border border-[#d9fdd3] bg-[#d9fdd3] shadow-[var(--cs-shadow)]">
+                <div className="flex flex-col gap-[4px] px-[12px] pb-[9px] pt-[10px] text-[12px] leading-[1.45] text-[#111b21]">
+                    <span className="font-bold">{header}</span>
+                    <span>{body}</span>
+                </div>
+                <button
+                    type="button"
+                    disabled
+                    className="flex w-full cursor-default items-center justify-center gap-[6px] border-t border-[rgba(0,0,0,0.08)] bg-[#d9fdd3] py-[8px] text-[12px] font-semibold text-[#00a5f4]"
+                >
+                    <Send size={12} /> {button}
+                </button>
+            </div>
+        </div>
     );
 }
 

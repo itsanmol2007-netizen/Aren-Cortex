@@ -1006,19 +1006,18 @@ function App() {
   // below had to interrupt a queue action to ask first.
   const pendingQueueAction = useRef<(() => void) | null>(null);
 
-  const consultFromQueue = useCallback((visit: TodayVisit, aheadOfQueue: boolean) => {
-    // Picking someone else while a consult is already open is exactly the
-    // "start a new consult over an active one" case Cortex already guards —
-    // the queue must not be a side door around it. `hasActiveConsult` is
-    // false the moment TransitionModal's own onContinue calls this (the
-    // workspace was already cleared by the save that opened it), so this
-    // never fires there.
-    if (hasActiveConsult) {
-      pendingQueueAction.current = () => consultFromQueue(visit, aheadOfQueue);
-      setQueueSheetOpen(false);
-      setActiveConsultGuardOpen(true);
-      return;
-    }
+  // The actual work of `consultFromQueue`, WITHOUT the active-consult check —
+  // this is what `pendingQueueAction` stores. Storing `consultFromQueue`
+  // itself (as this used to) was the bug: the guard's onDiscard/onComplete
+  // call `resetConsultState()` and then immediately run the pending action in
+  // the SAME synchronous tick, before React has re-rendered — so
+  // `hasActiveConsult` inside a re-invoked `consultFromQueue` still closed
+  // over its OLD value (`true`), and it would guard itself again, silently
+  // reopening the same ActiveConsultGuard instead of starting the new visit.
+  // Measured live 2026-09-08: the card never visibly changed because
+  // `setActiveConsultGuardOpen(false)` and the re-triggered `(true)` landed
+  // in the same React batch.
+  const startConsultForQueueVisit = useCallback((visit: TodayVisit, aheadOfQueue: boolean) => {
     setQueueSheetOpen(false);
     setTransition(null);
 
@@ -1052,22 +1051,45 @@ function App() {
       phone: visit.phone ?? "",
       dateOfBirth: visit.date_of_birth ?? undefined,
     }).then(() => queue.refetch());
-  }, [hasActiveConsult, identity.hospitalId, identity.userId, queue, handleStartConsultFromRecord]);
+  }, [identity.hospitalId, identity.userId, queue, handleStartConsultFromRecord]);
 
-  /** The receptionist-unavailable path, from wherever it is offered. */
-  const registerPatientDirectly = useCallback(() => {
+  const consultFromQueue = useCallback((visit: TodayVisit, aheadOfQueue: boolean) => {
+    // Picking someone else while a consult is already open is exactly the
+    // "start a new consult over an active one" case Cortex already guards —
+    // the queue must not be a side door around it. `hasActiveConsult` is
+    // false the moment TransitionModal's own onContinue calls this (the
+    // workspace was already cleared by the save that opened it), so this
+    // never fires there.
     if (hasActiveConsult) {
-      pendingQueueAction.current = registerPatientDirectly;
+      pendingQueueAction.current = () => startConsultForQueueVisit(visit, aheadOfQueue);
       setQueueSheetOpen(false);
       setActiveConsultGuardOpen(true);
       return;
     }
+    startConsultForQueueVisit(visit, aheadOfQueue);
+  }, [hasActiveConsult, startConsultForQueueVisit]);
+
+  // Same split, same reason: the core action never re-checks
+  // `hasActiveConsult`, so storing it in `pendingQueueAction` cannot
+  // re-trigger the guard it was just dismissed from.
+  const registerPatientDirectlyNow = useCallback(() => {
     setQueueSheetOpen(false);
     setTransition(null);
     setActivePage(null);
     setRegisterRequested(true);
     setPatientModalOpen(true);
-  }, [hasActiveConsult, setActivePage, setPatientModalOpen]);
+  }, [setActivePage, setPatientModalOpen]);
+
+  /** The receptionist-unavailable path, from wherever it is offered. */
+  const registerPatientDirectly = useCallback(() => {
+    if (hasActiveConsult) {
+      pendingQueueAction.current = registerPatientDirectlyNow;
+      setQueueSheetOpen(false);
+      setActiveConsultGuardOpen(true);
+      return;
+    }
+    registerPatientDirectlyNow();
+  }, [hasActiveConsult, registerPatientDirectlyNow]);
 
   /**
    * Consult's standing invariant: never a blank workspace.
@@ -2546,7 +2568,10 @@ function App() {
       {
         !isFeaturePage && activeConsultGuardOpen && (
           <ActiveConsultGuard
-            visitId={visitId!}  // ← ADD THIS LINE (the ! means "I promise it's not null")
+            // Only rendered while activeConsultGuardOpen is true, which never
+            // happens without a real active visit — see the three call sites
+            // that set it.
+            visitId={visitId!}
             patientName={patient?.name ?? "this patient"}
             onDiscard={() => {
               resetConsultState();
@@ -2675,7 +2700,12 @@ function App() {
             isSaving={isSaving}
             saveLabel={workspace.isConsult ? "Complete & Next" : undefined}
             onEdit={() => setIsReviewOpen(false)}
-            onSave={handleConfirmAndSave}
+            onSave={() => handleConfirmAndSave()}
+            // The dedicated WhatsApp action (2026-09-08) — saves exactly the
+            // same way, and additionally sends the prescription. Plain
+            // "Confirm & Save" above no longer does this on its own; see
+            // handleConfirmAndSave's own doc comment.
+            onSendWhatsApp={() => handleConfirmAndSave({ sendWhatsApp: true })}
             onClose={() => setIsReviewOpen(false)}
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}

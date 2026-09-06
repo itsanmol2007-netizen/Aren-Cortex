@@ -156,8 +156,18 @@ export interface ConsultLifecycle {
   handlePatientConfirm: (incoming: Patient, payment?: ConfirmedPayment | null) => Promise<void>;
   /** Carry a past visit's chart and medicines into this one. */
   handleRepeatRx: (visit: RealVisit) => void;
-  /** Write the consultation, log the decision, and clear the workspace. */
-  handleConfirmAndSave: () => Promise<void>;
+  /**
+   * Write the consultation, log the decision, and clear the workspace.
+   *
+   * `sendWhatsApp` (2026-09-08, default false): whether to ALSO send the
+   * prescription over WhatsApp. This used to fire unconditionally the
+   * moment a patient had a phone number — Anmol: "there is a dedicated
+   * message for whatsapp, it should not be automatic." `ReviewModal`'s own
+   * "WhatsApp" button is that dedicated action and passes `true`; plain
+   * "Confirm & Save" omits it, so the save no longer carries the side
+   * effect by default.
+   */
+  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean }) => Promise<void>;
   /** Open Review — refused while a prescribed hard warning is unread. */
   openReview: () => void;
   /** Abandon this consultation and go back to an empty workspace. */
@@ -453,7 +463,7 @@ export function useConsultLifecycle({
     setTimeout(() => session.setRepeatRxBanner(null), 6000);
   }, [observables, chart, plan, session]);
 
-  const handleConfirmAndSave = useCallback(async () => {
+  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean }) => {
     const { visitId } = session;
     if (!visitId) { showToast("No active consult to save"); return; }
     session.setIsSaving(true);
@@ -522,36 +532,46 @@ export function useConsultLifecycle({
         }
       }
 
-      // ── WhatsApp: the prescription goes to the patient ────────────────
+      // ── WhatsApp: the prescription goes to the patient, ONLY when asked ─
       //
-      // This is the trigger the whole Communication service hangs off:
-      // "consultation completed → prescription generated → send". It is NOT
-      // awaited and NOT allowed to fail the save, for the same reason the two
-      // writes above are caught — by this line the prescription is already
-      // committed, and a doctor told "save failed" because WhatsApp was slow
-      // would try again and produce a second prescription for one visit.
+      // 2026-09-08: no longer automatic. This used to fire unconditionally —
+      // "consultation completed → prescription generated → send" — the
+      // instant a patient had a phone number. Anmol: "there is a dedicated
+      // message for whatsapp, it should not be automatic." That dedicated
+      // action is `ReviewModal`'s own "WhatsApp" button, which calls this
+      // save with `sendWhatsApp: true`; plain "Confirm & Save" does not, so
+      // completing a consult no longer has a side effect nobody asked for.
       //
-      // Skipped outright when the patient has no phone. The server would
-      // reject that case with a perfectly good message, but a doctor seeing
-      // twenty consultations a day at a clinic that does not collect phone
-      // numbers would get twenty toasts about a thing they already know. A
-      // real failure — no credits, a provider outage — still surfaces, and
-      // every send lands in Communication's activity list either way.
+      // Still not awaited and not allowed to fail the save when it DOES run,
+      // for the same reason the two writes above are caught — by this line
+      // the prescription is already committed, and a doctor told "save
+      // failed" because WhatsApp was slow would try again and produce a
+      // second prescription for one visit.
+      //
+      // No phone on file gets its OWN toast now that this is an explicit
+      // click rather than an automatic side effect — a doctor who just
+      // pressed "WhatsApp" and sees nothing happen has no way to know why.
+      // (The old silent skip made sense when this fired on every save
+      // regardless of intent; it doesn't any more.)
       const rxPatientId = session.patient?.id ?? null;
       const rxPatientPhone = (session.patient?.phone ?? "").replace(/\D/g, "");
-      if (rxPatientId && rxPatientPhone.length >= 10 && identity.isReal) {
-        void sendPrescription({
-          prescriptionId: saved.prescriptionId,
-          patientId: rxPatientId,
-          // Sent for completeness; the server resolves the doctor from the
-          // session and ignores this, because a request body cannot be
-          // allowed to name whose credits get spent.
-          doctorId: identity.doctorId,
-        }).catch((e: unknown) => {
-          const message = e instanceof Error ? e.message : "WhatsApp send failed";
-          console.error("[messaging] prescription send failed:", e);
-          showToast(message);
-        });
+      if (opts?.sendWhatsApp) {
+        if (rxPatientId && rxPatientPhone.length >= 10 && identity.isReal) {
+          void sendPrescription({
+            prescriptionId: saved.prescriptionId,
+            patientId: rxPatientId,
+            // Sent for completeness; the server resolves the doctor from the
+            // session and ignores this, because a request body cannot be
+            // allowed to name whose credits get spent.
+            doctorId: identity.doctorId,
+          }).catch((e: unknown) => {
+            const message = e instanceof Error ? e.message : "WhatsApp send failed";
+            console.error("[messaging] prescription send failed:", e);
+            showToast(message);
+          });
+        } else if (!rxPatientPhone) {
+          showToast("No phone number on file for this patient — nothing to send.");
+        }
       }
 
       // The visit is now a completed session of whatever course it belongs to.
