@@ -1087,6 +1087,34 @@ function App() {
   }, [workspace.isConsult, workspace.ready, hasActiveConsult,
       activePage, patientModalOpen, transition, queueSheetOpen]);
 
+  /**
+   * A watchdog on the invariant directly above, not a second copy of it.
+   *
+   * Every render-time check I can find says the effect above fires
+   * synchronously the instant `workspace.ready` flips true (auth resolves
+   * fully — hospital row, `clinic_mode` included — BEFORE `RequireAuth`
+   * ever renders this component; there is no cortex-fallback flash to race
+   * against for a real Consult clinic). I have not been able to reproduce a
+   * blank reload against that trace, and I don't have a live browser to
+   * catch whatever I'm missing. Rather than ship another guess as the only
+   * defence, this re-runs the SAME four conditions a beat later and forces
+   * the same outcome if they still hold — a no-op every time the effect
+   * above already did its job, a real fix the one time it didn't for a
+   * reason this comment doesn't know about yet. If this one is ever
+   * observed actually firing, that's the signal the effect above has a
+   * real gap worth finding, not just theorizing about.
+   */
+  useEffect(() => {
+    if (!workspace.isConsult || !workspace.ready) return;
+    const t = setTimeout(() => {
+      if (hasActiveConsult || activePage !== null) return;
+      if (patientModalOpen || transition || queueSheetOpen) return;
+      setQueueSheetOpen(true);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [workspace.isConsult, workspace.ready, hasActiveConsult,
+      activePage, patientModalOpen, transition, queueSheetOpen]);
+
   // ── The specialty profile ───────────────────────────────────────────────
   // Which intent type this facility elevates into the Primary Recommendation
   // slot. Read once from the facility, never inferred from what the doctor is

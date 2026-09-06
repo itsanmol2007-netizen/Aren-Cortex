@@ -183,13 +183,22 @@ export function PatientPaymentRail({
                             {state.status === "paid" ? <Check size={16} strokeWidth={3} /> : <Clock size={16} />}
                         </span>
                         <span className="min-w-0 flex-1">
+                            {/* Future tense, deliberately — see this component's
+                                own prop doc for `needsDecision`. Nothing is
+                                actually recorded by picking Collect/Cash here;
+                                only confirming a patient below writes anything
+                                anywhere. "Collected ₹472" read as a completed,
+                                already-recorded transaction to a doctor who
+                                had not even picked a patient yet — this is
+                                the plan for whichever patient gets confirmed,
+                                not a receipt. */}
                             <span className={`block text-[13px] font-bold ${state.status === "paid" ? "text-[#15803d]" : "text-[#92400e]"}`}>
-                                {state.status === "paid" ? `Collected ${money(breakdown.total)}` : "Marked unpaid"}
+                                {state.status === "paid" ? `Will collect ${money(breakdown.total)}` : "Will mark unpaid"}
                             </span>
                             <span className="block text-[11px] text-[#64748b]">
                                 {state.status === "paid"
-                                    ? METHODS.find((m) => m.key === state.method)?.label ?? "Cash"
-                                    : "Collect later from the visit"}
+                                    ? `${METHODS.find((m) => m.key === state.method)?.label ?? "Cash"} — once you confirm a patient`
+                                    : "Recorded once you confirm a patient"}
                             </span>
                         </span>
                         <button
@@ -320,6 +329,17 @@ export function PatientPaymentRail({
                     )}
                 </div>
             )}
+
+            {/* Always visible, not only once something's been picked — this
+                whole rail is a PLAN attached to whichever patient gets
+                confirmed, never a standalone action with its own effect.
+                Nothing here writes anywhere until then. */}
+            <div className="mt-[12px] flex items-start gap-[7px] rounded-[10px] bg-black/[0.03] px-[10px] py-[8px]">
+                <Info size={12} className="mt-[1px] shrink-0 text-[#94a3b8]" />
+                <span className="text-[11px] leading-[1.45] text-[#64748b]">
+                    Nothing is recorded until you confirm a patient.
+                </span>
+            </div>
         </RailFrame>
     );
 }
