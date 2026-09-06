@@ -109,6 +109,16 @@ that file, unchanged in content, just moved.
   move base.css's bare-element block into `@layer base`** — that changes the
   cascade on every legacy screen at once, so it is flagged here rather than
   done in passing.
+- **Same file, a second rule: `button:disabled { opacity: … }`.** Any
+  `<button disabled>` — including one that is disabled only to make a
+  non-actionable tile inert, never meant to look "off" — gets washed toward
+  grey by this unlayered rule, and no `text-[var(--cs-ink)]` or `opacity-100`
+  utility on the button or its children reaches it (measured live 2026-09-07:
+  `getComputedStyle` showed the correct `color` and `opacity: 0.48` on the
+  element itself — the colour was right, the button's own opacity wasn't).
+  The fix used on Overview's KPI tiles and the activity-list rows: render a
+  plain `<div>` instead of a `disabled` `<button>` when there is genuinely
+  nothing to click — sidestep `:disabled` rather than fight its cascade.
 - **A Tailwind class assembled at runtime is never generated.** Tailwind finds
   classes by scanning source TEXT, so `` `hover:${tone.soft}` `` produces
   nothing — the literal string appears nowhere. Write every class whole,

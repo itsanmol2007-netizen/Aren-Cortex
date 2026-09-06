@@ -700,6 +700,202 @@ export async function markPaymentPaid(paymentId: number): Promise<void> {
     if (error) throw new Error(`markPaymentPaid: ${error.message}`);
 }
 
+// ── The doctor's own Payment Details ────────────────────────────────────────
+//
+// Everything below is scoped to ONE doctor, for Overview's "Collected" tile —
+// a different shape of question than Parallax's Money page, which is
+// clinic-wide and run by whoever owns the till. This never reads a diagnosis
+// or a prescription's contents, same rule `fetchPendingPayments` above
+// already states: money and a patient's name, never clinical detail.
+
+export interface PaymentTransaction {
+    id: number;
+    patientId: string | null;
+    patientName: string | null;
+    /** `collected_at` — when this row was actually recorded, which is the
+     *  date a doctor means by "when did this get paid". */
+    at: string;
+    amount: number;
+    status: string;
+    method: string | null;
+}
+
+export interface DoctorPaymentSummary {
+    totalCollected: number;
+    pendingAmount: number;
+    paidCount: number;
+    pendingCount: number;
+    transactions: PaymentTransaction[];
+}
+
+/**
+ * One doctor's money, over one range — the numbers behind Overview's
+ * "Collected" tile once it is clicked open.
+ *
+ * Scoped to the SAME range the tile itself is showing, not "all time": a
+ * doctor who just picked "This month" on the KPI and then opens Payment
+ * Details expects the transactions under that number, not a different and
+ * larger question.
+ */
+export async function fetchDoctorPaymentSummary(
+    hospitalId: string,
+    doctorId: string,
+    range: DateRange,
+    limit = 40
+): Promise<DoctorPaymentSummary> {
+    const { data, error } = await supabase
+        .from("visit_payments")
+        .select("id, visit_id, total, status, method, collected_at, visits ( patients ( id, name ) )")
+        .eq("hospital_id", hospitalId)
+        .eq("doctor_id", doctorId)
+        .gte("collected_at", startInstant(range.from))
+        .lt("collected_at", endInstantExclusive(range.to))
+        .in("status", ["paid", "pending"])
+        .order("collected_at", { ascending: false })
+        .limit(limit);
+    if (error) throw new Error(`fetchDoctorPaymentSummary: ${error.message}`);
+
+    const rows = (data ?? []).map((r) => {
+        const row = r as unknown as {
+            id: number; total: number | string | null; status: string; method: string | null;
+            collected_at: string;
+            visits?: { patients?: { id?: string; name?: string } | null } | null;
+        };
+        return {
+            id: Number(row.id),
+            patientId: row.visits?.patients?.id ?? null,
+            patientName: row.visits?.patients?.name ?? null,
+            at: row.collected_at,
+            amount: Number(row.total ?? 0),
+            status: row.status,
+            method: row.method,
+        };
+    });
+
+    let totalCollected = 0, pendingAmount = 0, paidCount = 0, pendingCount = 0;
+    for (const r of rows) {
+        if (r.status === "paid") { totalCollected += r.amount; paidCount++; }
+        else if (r.status === "pending") { pendingAmount += r.amount; pendingCount++; }
+    }
+
+    return { totalCollected, pendingAmount, paidCount, pendingCount, transactions: rows };
+}
+
+// ── The doctor's own activity — visits and prescriptions ────────────────────
+//
+// The other two clickable KPI tiles ("Patients seen", "Prescriptions") open
+// onto the same shape: who, and when. `kind` carries just enough to phrase a
+// row's second line without a second component per tile.
+
+export interface DoctorActivityRow {
+    id: string;
+    patientId: string | null;
+    patientName: string | null;
+    at: string;
+    /** "Completed" / "Waiting" / … for a visit row; null for a prescription
+     *  row, which has nothing else to say about itself. */
+    detail: string | null;
+}
+
+const VISIT_STATUS_LABEL: Record<ReturnType<typeof visitStatusKind>, string> = {
+    done: "Completed",
+    active: "In progress",
+    waiting: "Waiting",
+    inactive: "Discarded",
+};
+
+/**
+ * Every visit this doctor had in `range` that actually counts — the list
+ * behind "Patients seen".
+ *
+ * Excludes `inactive` (discarded) visits, the SAME rule
+ * `fetchClinicAnalytics` states for the KPI this list is opened FROM: "a
+ * discarded visit is not work the clinic did, so it counts toward nothing
+ * anywhere on this page." Missed this the first time (caught live 2026-09-07
+ * by actually opening the modal: the tile said 17, the list said 18 — one
+ * discarded row the tile correctly ignored and the list didn't). Filtered
+ * after the fetch rather than in SQL, so a very active doctor's discards can
+ * in principle push the visible count under `limit` below their true total —
+ * an acceptable approximation for a capped "recent activity" list, not for
+ * the number on the tile itself.
+ */
+export async function fetchDoctorVisitRows(
+    hospitalId: string,
+    doctorId: string,
+    range: DateRange,
+    limit = 60
+): Promise<DoctorActivityRow[]> {
+    const { data, error } = await supabase
+        .from("visits")
+        .select("id, patient_id, created_at, status, patients ( name )")
+        .eq("hospital_id", hospitalId)
+        .eq("assigned_doctor_id", doctorId)
+        .gte("created_at", startInstant(range.from))
+        .lt("created_at", endInstantExclusive(range.to))
+        .order("created_at", { ascending: false })
+        .limit(limit);
+    if (error) throw new Error(`fetchDoctorVisitRows: ${error.message}`);
+
+    return (data ?? [])
+        .map((r) => {
+            const row = r as unknown as {
+                id: string; patient_id: string | null; created_at: string; status: string | null;
+                patients?: { name?: string } | null;
+            };
+            return {
+                id: row.id,
+                patientId: row.patient_id,
+                patientName: row.patients?.name ?? null,
+                at: row.created_at,
+                kind: visitStatusKind(row.status ?? ""),
+            };
+        })
+        .filter((r) => r.kind !== "inactive")
+        .map((r) => ({
+            id: r.id, patientId: r.patientId, patientName: r.patientName, at: r.at,
+            detail: VISIT_STATUS_LABEL[r.kind],
+        }));
+}
+
+/**
+ * Every prescription this doctor wrote in `range` — the list behind
+ * "Prescriptions". `prescriptions` carries no `patient_id` of its own (only
+ * `visit_id`); the nested select below reaches the patient through the same
+ * visit the prescription belongs to, in one round trip rather than a second
+ * query per row.
+ */
+export async function fetchDoctorPrescriptionRows(
+    hospitalId: string,
+    doctorId: string,
+    range: DateRange,
+    limit = 60
+): Promise<DoctorActivityRow[]> {
+    const { data, error } = await supabase
+        .from("prescriptions")
+        .select("id, created_at, visits ( patient_id, patients ( name ) )")
+        .eq("hospital_id", hospitalId)
+        .eq("assigned_doctor_id", doctorId)
+        .gte("created_at", startInstant(range.from))
+        .lt("created_at", endInstantExclusive(range.to))
+        .order("created_at", { ascending: false })
+        .limit(limit);
+    if (error) throw new Error(`fetchDoctorPrescriptionRows: ${error.message}`);
+
+    return (data ?? []).map((r) => {
+        const row = r as unknown as {
+            id: string; created_at: string;
+            visits?: { patient_id?: string | null; patients?: { name?: string } | null } | null;
+        };
+        return {
+            id: row.id,
+            patientId: row.visits?.patient_id ?? null,
+            patientName: row.visits?.patients?.name ?? null,
+            at: row.created_at,
+            detail: null,
+        };
+    });
+}
+
 // ── Catalogue ──────────────────────────────────────────────────────────────
 
 export interface ClinicLab {

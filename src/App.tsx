@@ -1754,6 +1754,21 @@ function App() {
              consult: it already knows a Consult clinic opens the queue and a
              Cortex clinic opens the patient form. */
           onStartConsult={handleSidebarConsult}
+          onNavigate={handleSidebarNavigate}
+          onViewPatient={(query) => {
+            handleSidebarNavigate("patients");
+            setPatientSearchSeed(query);
+          }}
+          /* Today's Queue mirrors the SAME read the queue sheet already
+             polls (`useConsultQueue`, disabled entirely in Cortex) — never a
+             second fetch of "who is waiting", which is exactly the mistake
+             that hook's own file header warns against repeating. */
+          queueWaiting={queue.waiting}
+          queueLoading={queue.loading}
+          onOpenQueue={() => setQueueSheetOpen(true)}
+          onStartFromQueueRow={(visit) =>
+            consultFromQueue(visit, visit.visit_id !== queue.waiting[0]?.visit_id)
+          }
         />
       ) : activePage === "patients" ? (
         <PatientsPage

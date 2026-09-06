@@ -235,6 +235,11 @@ export function TrendChart({
  * should I put the second doctor on") instead of drawing a lot of zeros.
  */
 export function HourBars({ byHour }: { byHour: number[] }) {
+    // Hover state for the floating tooltip below. `null` = nothing hovered,
+    // which is also the initial state, so nothing renders until the pointer
+    // actually finds a bar.
+    const [hover, setHover] = useState<number | null>(null);
+
     const active = byHour.map((n, h) => ({ n, h })).filter((b) => b.n > 0);
     if (active.length === 0) {
         return (
@@ -251,10 +256,35 @@ export function HourBars({ byHour }: { byHour: number[] }) {
     const busiest = active.reduce((a, b) => (b.n > a.n ? b : a));
 
     const label = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? "am" : "pm"}`;
+    const hovered = hover !== null ? span.find((b) => b.h === hover) : undefined;
+    // Percentage across the bar ROW, not the whole card: computed from the
+    // hovered bar's position among `span`'s equal-width flex children, which
+    // is what the row actually lays out (the native `title` attribute this
+    // replaces gave no positioning at all, just the OS's own tooltip after a
+    // pause — this one is instant and matches the reference mock's floating
+    // bubble).
+    const hoveredIndex = hovered ? span.findIndex((b) => b.h === hovered.h) : -1;
+    const hoveredLeftPct = hoveredIndex >= 0 ? ((hoveredIndex + 0.5) / span.length) * 100 : 0;
 
     return (
         <div className="flex flex-col gap-[5px]">
-            <div className="flex h-[64px] items-end gap-[3px]">
+            <div className="relative flex h-[64px] items-end gap-[3px]" onMouseLeave={() => setHover(null)}>
+                {/* The floating bubble. Absolutely positioned against THIS
+                    row, not the card — so it tracks the bar regardless of
+                    whatever else the card around it puts above the chart. */}
+                {hovered && (
+                    <div
+                        className="pointer-events-none absolute bottom-full z-[5] mb-[6px] -translate-x-1/2 whitespace-nowrap rounded-[8px] bg-[#111827] px-[10px] py-[6px] text-center shadow-[0_4px_14px_rgba(16,28,46,0.28)]"
+                        style={{ left: `${hoveredLeftPct}%` }}
+                    >
+                        <div className="text-[12px] font-bold leading-[1.1] text-white">
+                            {hovered.n} {hovered.n === 1 ? "visit" : "visits"}
+                        </div>
+                        <div className="text-[10px] leading-[1.3] text-[rgba(255,255,255,0.65)]">
+                            {label(hovered.h)} – {label((hovered.h + 1) % 24)}
+                        </div>
+                    </div>
+                )}
                 {span.map((b) => (
                     // `h-full` is load-bearing, not decoration (measured live
                     // 2026-09-06: every column was 0px tall and no bar drew at
@@ -265,7 +295,11 @@ export function HourBars({ byHour }: { byHour: number[] }) {
                     // content, which resolves against an indefinite height and
                     // collapses to nothing. The height has to be definite for
                     // the percentage to mean anything.
-                    <div key={b.h} className="group relative flex h-full flex-1 flex-col justify-end" title={`${b.n} at ${label(b.h)}`}>
+                    <div
+                        key={b.h}
+                        className="group relative flex h-full flex-1 flex-col justify-end"
+                        onMouseEnter={() => setHover(b.h)}
+                    >
                         <div
                             className={
                                 "w-full rounded-t-[3px] transition-colors " +
@@ -480,5 +514,67 @@ export function Donut({
                 ))}
             </ul>
         </div>
+    );
+}
+
+// ── Sparkline ──────────────────────────────────────────────────────────────
+
+/**
+ * A tiny trend line for a KPI tile — the shape of a week, not its axes.
+ *
+ * Deliberately fixed-pixel, unlike every chart above it: those measure their
+ * container because they are the whole card and any real width fits them.
+ * This one is a small fixed ornament BESIDE a number, always drawn at exactly
+ * `width`×`height`, so there is nothing to measure and nothing gets stretched
+ * — the file header's "never distort a stroke" rule holds for a different
+ * reason here (fixed size) rather than a different rule.
+ *
+ * Fewer than two points draws nothing: a single dot has no trend to show, and
+ * a flat line across a blank card reads as more informative than it is.
+ */
+export function Sparkline({
+    values, width = 56, height = 22, stroke = "var(--cs-blue)",
+}: {
+    values: number[];
+    width?: number;
+    height?: number;
+    stroke?: string;
+}) {
+    if (values.length < 2) return null;
+
+    const max = Math.max(...values);
+    const min = Math.min(...values, 0);
+    // A flat series (every day the same, often all-zero) still needs a line
+    // to draw — dividing by a zero range would produce NaN coordinates and
+    // silently drop the whole path.
+    const range = Math.max(max - min, 1);
+    const stepX = width / (values.length - 1);
+    const pad = 2; // keeps the stroke's own width from clipping at the edges
+
+    const points = values
+        .map((v, i) => {
+            const x = i * stepX;
+            const y = pad + (1 - (v - min) / range) * (height - pad * 2);
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        })
+        .join(" ");
+
+    return (
+        <svg
+            width={width} height={height} viewBox={`0 0 ${width} ${height}`}
+            role="img" aria-label={`Trend: ${values.join(", ")}`}
+            className="flex-none overflow-visible"
+        >
+            <polyline
+                points={points} fill="none" stroke={stroke}
+                strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
+            />
+            {/* The last point, marked — a sparkline with no endpoint reads as
+                cut off rather than as "this is where you are now". */}
+            {(() => {
+                const [x, y] = points.split(" ").at(-1)!.split(",").map(Number);
+                return <circle cx={x} cy={y} r={2} fill={stroke} />;
+            })()}
+        </svg>
     );
 }

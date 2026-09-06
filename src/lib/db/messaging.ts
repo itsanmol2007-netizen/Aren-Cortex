@@ -37,6 +37,21 @@ import { supabase } from "../supabase";
  */
 export const LOW_CREDIT_THRESHOLD = 100;
 
+/**
+ * Below this — but still above `LOW_CREDIT_THRESHOLD` — the page nudges
+ * without alarming. UI-only: it mirrors nothing in the database, triggers no
+ * email, and does not touch `messaging_credit_balances`'s own CASE. That view
+ * stays the authority AREN's support team and the low-credit email actually
+ * fire against; this is a second, gentler rung the DOCTOR sees first, so a
+ * balance drifting down reads as a heads-up before it reads as a warning.
+ *
+ * 500 rather than some fraction of the 5,000 starting grant: it is a round,
+ * doctor-legible number and, at roughly a week's typical sending, gives real
+ * lead time to recharge before `LOW_CREDIT_THRESHOLD` (and AREN's own email)
+ * take over.
+ */
+export const SOFT_LOW_CREDIT_THRESHOLD = 500;
+
 /** What one message costs. AREN's own unit, not Meta's — the doctor never
  *  sees a conversation category or a per-country rate.
  *

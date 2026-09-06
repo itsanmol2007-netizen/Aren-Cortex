@@ -119,6 +119,31 @@ doctor to avoid the one thing two-way messaging exists to give them. It was
 replaced by a delivery-health tile ("are my messages reaching people?"), which
 counts outbound only and says the rule in words underneath.
 
+### 6b. Three credit tiers, not two — `soft` is UI-only
+
+`SOFT_LOW_CREDIT_THRESHOLD = 500` (`lib/db/messaging.ts`), checked ABOVE
+`LOW_CREDIT_THRESHOLD = 100`, never instead of it. Anmol, 2026-09-07: *"as the
+credits go under 500, start showing soft warning"* — on top of the existing
+under-100 reminder. `soft` triggers no email and touches no database column;
+it is purely the page nudging a doctor earlier, in a lighter tone (teal, a
+wallet icon) than the amber `low` tier. At zero, the exhausted state is its
+own banner above the tiles rather than a line in the same strip — "that
+warning should be much better if credit is exhausted" — with the recharge
+action built into the banner itself.
+
+### 6c. The page caches itself, in memory, for one running session
+
+Anmol, 2026-09-07: *"why are you loading data again when you are going to
+that page? cache these data."* A module-scope `Map` in
+`CommunicationPage.tsx`, keyed on `hospitalId::doctorId`, seeds every
+`useState` on mount so a revisit within the same tab shows real numbers on
+the FIRST paint, then revalidates silently in the background (no skeleton,
+no error banner on a failed silent refresh — just a console log). Explicitly
+NOT `localStorage`: this solves re-entering the page inside one running app,
+and nothing more — credits and deliveries can change from another device at
+any moment, so a cache surviving a reload or a day would go stale with no
+way for a doctor to notice.
+
 ### 7. A doctor can withdraw their own request after three hours
 
 `cancel_credit_recharge(request_id)`. Before this, a request nobody actioned

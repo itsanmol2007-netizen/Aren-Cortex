@@ -57,10 +57,39 @@ import {
     type MessageActivity, type PatientCard, type WhatsAppThread,
 } from "../../lib/db/whatsapp";
 import {
-    LOW_CREDIT_THRESHOLD, cancelRechargeRequest, fetchCreditBalance, fetchCreditUsage,
-    fetchRechargeRequests, formatCredits, formatWait, msUntilCancellable,
+    LOW_CREDIT_THRESHOLD, SOFT_LOW_CREDIT_THRESHOLD, cancelRechargeRequest, fetchCreditBalance,
+    fetchCreditUsage, fetchRechargeRequests, formatCredits, formatWait, msUntilCancellable,
     type CreditBalance, type RechargeRequest,
 } from "../../lib/db/messaging";
+
+// ── The page cache ───────────────────────────────────────────────────────
+//
+// Anmol, 2026-09-07: *"whenever you enter that page, it takes some time to
+// load... why are you loading data again when you are going to that page?
+// cache these data."* Every mount used to start from nothing — five empty
+// arrays and a null balance — and refetch on every visit, so leaving
+// Communication for Patients and coming straight back showed a full skeleton
+// flash for numbers that had not actually changed.
+//
+// A module-scope Map, not `localStorage`: this solves EXACTLY the complaint —
+// re-entering the page within the same running app — and nothing more.
+// Credits, deliveries and replies can change from another device or another
+// browser tab at any moment, so a cache that survived a reload or a day would
+// go stale in a way a doctor has no way to notice; keeping it in memory means
+// a fresh tab always starts from the database, honestly, while a same-session
+// revisit is instant. Keyed on hospital+doctor so switching identity (which
+// does not happen mid-session today, but might) can never hand one doctor's
+// numbers to another.
+interface CachedPage {
+    activity: MessageActivity[];
+    threads: WhatsAppThread[];
+    requests: AppointmentRequest[];
+    credits: CreditBalance | null;
+    recharges: RechargeRequest[];
+    usage: UsagePoint[];
+    stats: DeliveryStats | null;
+}
+const pageCache = new Map<string, CachedPage>();
 
 interface Props {
     logoRef: RefObject<HTMLDivElement>;
@@ -172,16 +201,24 @@ export function CommunicationPage({
     const [tab, setTab] = useState<Tab>("all");
     const [query, setQuery] = useState("");
 
-    const [activity, setActivity] = useState<MessageActivity[]>([]);
-    const [threads, setThreads] = useState<WhatsAppThread[]>([]);
-    const [requests, setRequests] = useState<AppointmentRequest[]>([]);
-    const [credits, setCredits] = useState<CreditBalance | null>(null);
-    const [recharges, setRecharges] = useState<RechargeRequest[]>([]);
-    const [usage, setUsage] = useState<UsagePoint[]>([]);
-    const [stats, setStats] = useState<DeliveryStats | null>(null);
+    // The cache key for THIS render. Read once, up front, so the lazy
+    // `useState` initializers below and the hydrate-on-mount effect further
+    // down are guaranteed to agree on what "cached" meant at mount time.
+    const cacheKey = hospitalId && doctorId ? `${hospitalId}::${doctorId}` : null;
+    const cached = cacheKey ? pageCache.get(cacheKey) : undefined;
+
+    const [activity, setActivity] = useState<MessageActivity[]>(cached?.activity ?? []);
+    const [threads, setThreads] = useState<WhatsAppThread[]>(cached?.threads ?? []);
+    const [requests, setRequests] = useState<AppointmentRequest[]>(cached?.requests ?? []);
+    const [credits, setCredits] = useState<CreditBalance | null>(cached?.credits ?? null);
+    const [recharges, setRecharges] = useState<RechargeRequest[]>(cached?.recharges ?? []);
+    const [usage, setUsage] = useState<UsagePoint[]>(cached?.usage ?? []);
+    const [stats, setStats] = useState<DeliveryStats | null>(cached?.stats ?? null);
     const [patient, setPatient] = useState<PatientCard | null>(null);
 
-    const [loading, setLoading] = useState(true);
+    // Skeletons only when there is nothing to show yet. A cache hit means
+    // real numbers are already on screen from the first paint.
+    const [loading, setLoading] = useState(!cached);
     const [error, setError] = useState<string | null>(null);
     const [busyRequestId, setBusyRequestId] = useState<number | null>(null);
     const [cancelling, setCancelling] = useState(false);
@@ -193,9 +230,18 @@ export function CommunicationPage({
     const [activePhone, setActivePhone] = useState<string | null>(null);
     const [focusMessageId, setFocusMessageId] = useState<number | null>(null);
 
-    const load = useCallback(async () => {
+    /**
+     * `opts.silent` is what makes a cache hit invisible. A background
+     * revalidation on mount must not flip `loading` back to true (that would
+     * momentarily blank a list that is already correctly showing) and must
+     * not surface a transient network hiccup as a page-level error banner
+     * over data the doctor can already see and that is still probably right —
+     * it is logged instead, and the NEXT successful load clears it same as
+     * always.
+     */
+    const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         if (!hospitalId) return;
-        setError(null);
+        if (!opts.silent) { setError(null); setLoading(true); }
         try {
             const [a, t, r, c, rc, u, s] = await Promise.all([
                 fetchMessageActivity(hospitalId, { doctorId }),
@@ -208,14 +254,20 @@ export function CommunicationPage({
             ]);
             setActivity(a); setThreads(t); setRequests(r);
             setCredits(c); setRecharges(rc); setUsage(u); setStats(s);
+            if (cacheKey) pageCache.set(cacheKey, { activity: a, threads: t, requests: r, credits: c, recharges: rc, usage: u, stats: s });
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Could not load messages");
+            if (opts.silent) console.error("[communication] background refresh failed:", e);
+            else setError(e instanceof Error ? e.message : "Could not load messages");
         } finally {
-            setLoading(false);
+            if (!opts.silent) setLoading(false);
         }
-    }, [hospitalId, doctorId]);
+    }, [hospitalId, doctorId, cacheKey]);
 
-    useEffect(() => { void load(); }, [load]);
+    // Silent exactly when this mount already had a cache hit to show —
+    // computed once, in the same render that produced `cached` above, so it
+    // reflects the state BEFORE this load call rather than one this call is
+    // about to overwrite.
+    useEffect(() => { void load({ silent: !!cached }); }, [load]);
 
     const activeThread = useMemo(
         () => threads.find((t) => t.phone === activePhone) ?? null,
@@ -348,7 +400,15 @@ export function CommunicationPage({
     }, [pendingRecharge, cancelling, load]);
 
     const balance = credits?.balance ?? 0;
-    const health = balance <= 0 ? "out" : balance < LOW_CREDIT_THRESHOLD ? "low" : "ok";
+    // Three tiers below "ok", each a step up in urgency — Anmol, 2026-09-07:
+    // "as the credits go under 500, start showing soft warning" ON TOP OF the
+    // existing under-100 reminder, not instead of it. `LOW_CREDIT_THRESHOLD`
+    // stays what the database and AREN's own email alert use; "soft" is a
+    // UI-only earlier nudge with no email behind it.
+    const health = balance <= 0 ? "out"
+        : balance < LOW_CREDIT_THRESHOLD ? "low"
+            : balance < SOFT_LOW_CREDIT_THRESHOLD ? "soft"
+                : "ok";
     const usageTotal = useMemo(() => usage.reduce((n, p) => n + p.credits, 0), [usage]);
     const waitMs = pendingRecharge ? msUntilCancellable(pendingRecharge) : 0;
 
@@ -518,24 +578,64 @@ export function CommunicationPage({
                     </Panel>
                 </div>
 
-                {/* Low / exhausted / pending-recharge, one strip, only when true. */}
-                {(health !== "ok" || pendingRecharge) && (
+                {/* ── Exhausted: its own banner, not a line in a strip ────────
+                    Anmol, 2026-09-07: "that warning should be much better if
+                    credit is exhausted." At zero, nothing on this page sends
+                    any more — that is a different order of problem than
+                    "getting low", and sharing a thin strip with a soft nudge
+                    made it read as equally casual. It now gets a bigger,
+                    two-colour card, above the tiles, with the recharge action
+                    built in rather than pointed at. */}
+                {health === "out" && (
+                    <div className="flex flex-none items-center gap-[14px] rounded-[var(--cs-radius)] border-2 border-[var(--cs-red)] bg-[var(--cs-red-soft)] px-[18px] py-[14px]">
+                        <span className="grid h-[38px] w-[38px] flex-none place-items-center rounded-full bg-[var(--cs-red)] text-white">
+                            <AlertTriangle size={19} />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                            <strong className="text-[14px] font-bold leading-[1.2] text-[var(--cs-red)]">
+                                Messaging credits exhausted
+                            </strong>
+                            <span className="text-[12px] leading-[1.4] text-[var(--cs-red)]">
+                                Prescriptions and follow-ups can't go out on WhatsApp until you recharge.
+                            </span>
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setBuyOpen(true)}
+                            disabled={!doctorId}
+                            className="flex-none cursor-pointer rounded-full border-0 bg-[var(--cs-red)] px-[16px] py-[9px] text-[12.5px] font-bold text-white outline-none transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Buy credits now
+                        </button>
+                    </div>
+                )}
+
+                {/* Soft / low / pending-recharge — a thinner strip, one step
+                    down in urgency from the banner above. "Soft" (under 500)
+                    reads as a nudge, not an alarm: teal rather than amber, an
+                    outline icon rather than a triangle, because the doctor has
+                    not actually run into a wall yet. */}
+                {(health === "low" || health === "soft" || pendingRecharge) && (
                     <div
                         className={
                             "flex flex-none flex-wrap items-center gap-x-[14px] gap-y-[6px] rounded-[var(--cs-radius)] border px-[14px] py-[9px] text-[12px] font-medium " +
-                            (health === "out"
-                                ? "border-[var(--cs-red)] bg-[var(--cs-red-soft)] text-[var(--cs-red)]"
-                                : health === "low"
-                                    ? "border-[var(--cs-amber)] bg-[var(--cs-amber-soft)] text-[var(--cs-amber)]"
+                            (health === "low"
+                                ? "border-[var(--cs-amber)] bg-[var(--cs-amber-soft)] text-[var(--cs-amber)]"
+                                : health === "soft"
+                                    ? "border-[var(--cs-teal)] bg-[var(--cs-teal-soft)] text-[var(--cs-teal)]"
                                     : "border-[var(--cs-line)] bg-[var(--cs-card)] text-[var(--cs-muted)]")
                         }
                     >
-                        {health !== "ok" && (
+                        {health === "low" && (
                             <span className="flex items-center gap-[6px] font-semibold">
                                 <AlertTriangle size={13} />
-                                {health === "out"
-                                    ? "Messaging credits exhausted. Recharge to continue sending messages."
-                                    : `Low messaging credits — ${formatCredits(balance)} remaining.`}
+                                Low messaging credits — {formatCredits(balance)} remaining.
+                            </span>
+                        )}
+                        {health === "soft" && (
+                            <span className="flex items-center gap-[6px] font-semibold">
+                                <Wallet size={13} />
+                                {formatCredits(balance)} credits left — worth topping up soon.
                             </span>
                         )}
                         {pendingRecharge && (
