@@ -36,6 +36,8 @@ import express from "express";
 import { getSupabase } from "./supabaseClient.js";
 import { resolveIdentity } from "./routing.js";
 import { handleInboundMessage } from "./booking.js";
+import { settleFailedDelivery } from "../messaging/service.js";
+import { notify } from "../email/notify.js";
 
 /**
  * Verifies Meta's X-Hub-Signature-256 header against the raw request body.
@@ -304,6 +306,44 @@ async function defaultOnEvent(event) {
             if (!resolved.patientId) {
                 console.warn(`[whatsapp] inbound message from ${event.from} matched no patient`);
             }
+
+            // ── Tell AREN a patient wrote in ────────────────────────────────
+            //
+            // Throttled hard, and both conditions are the point:
+            //
+            //   * Only a message that OPENS a conversation (nothing inbound
+            //     from this phone in six hours). A patient going back and
+            //     forth is one thread, not eight emails.
+            //   * Only free TEXT. A button tap is the booking bot being used
+            //     as designed, and it already produces an `appointment_requests`
+            //     row that front desk sees — emailing about it as well would
+            //     make the alert that matters (somebody typed a real sentence
+            //     nobody is answering) indistinguishable from routine traffic.
+            //
+            // Fire-and-forget: the webhook must answer Meta 200 whatever
+            // happens here, or it gets retried and eventually unsubscribed.
+            if (resolved.hospitalId && !event.buttonId && (event.text || "").trim()) {
+                try {
+                    const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+                    const { count: recent } = await supabase
+                        .from("whatsapp_messages")
+                        .select("id", { count: "exact", head: true })
+                        .eq("phone", event.from)
+                        .eq("direction", "inbound")
+                        .gte("created_at", since);
+                    // 1 is the message just inserted above — anything more
+                    // means this thread was already live.
+                    if ((recent ?? 0) <= 1) {
+                        void notify("patient_message", {
+                            hospitalId: resolved.hospitalId,
+                            phone: event.from,
+                            preview: (event.text || "").slice(0, 200),
+                        }).catch(() => {});
+                    }
+                } catch (e) {
+                    console.error("[whatsapp] patient-message alert failed (non-fatal):", e.message);
+                }
+            }
         } else if (event.type === "status") {
             const { error, count } = await supabase
                 .from("whatsapp_messages")
@@ -311,6 +351,27 @@ async function defaultOnEvent(event) {
                 .eq("wa_message_id", event.statusForMessageId);
             if (error || !count) {
                 console.warn("[whatsapp] status update had no matching row:", event.statusForMessageId);
+            }
+
+            // ── Give the credit back ────────────────────────────────────────
+            //
+            // This is the OTHER half of "a credit is never spent on a message
+            // that never arrived", and the half that actually matters in
+            // practice. `sendMessage` refunds when the send call throws — an
+            // expired token, a rejected request. But the common failure is
+            // quiet: Meta returns 200, the credit is charged, and minutes
+            // later this webhook says `failed` because the number is not on
+            // WhatsApp or the patient blocked us. Without this, the doctor
+            // stays charged for that message forever.
+            //
+            // Idempotent, because Meta re-delivers status webhooks on its own
+            // schedule and this WILL run more than once for one message.
+            if (event.status === "failed" || event.status === "undelivered") {
+                const reason =
+                    event.raw?.errors?.[0]?.title ||
+                    event.raw?.errors?.[0]?.message ||
+                    `Provider reported ${event.status}`;
+                await settleFailedDelivery(event.statusForMessageId, reason);
             }
         }
     } catch (e) {

@@ -303,5 +303,89 @@ export async function sendMessage(input) {
     }
 }
 
+/**
+ * Meta accepted the message, then told us later it never arrived.
+ *
+ * ── The hole this closes
+ *
+ * `sendMessage` above refunds when the SEND CALL throws — a rejected request,
+ * an expired token, a malformed template. That is the loud failure. The quiet
+ * one is more common: Meta returns 200, we charge the credit, and minutes
+ * later a status webhook says `failed` because the number is not on WhatsApp,
+ * or the patient blocked the sender, or the handset never came online. Until
+ * this existed, the doctor stayed charged for that message — which makes
+ * "no credit is lost on a failed message" true only for the failures that
+ * happen inside one HTTP request.
+ *
+ * Idempotent at both levels: `refund_messaging_credit` returns the existing
+ * refund rather than paying twice, and Meta re-delivers status webhooks on
+ * its own schedule, so this WILL be called more than once for one message.
+ *
+ * Never throws. It runs inside the webhook, which must keep answering Meta
+ * with a 200 whatever happens down here — a webhook that errors gets retried
+ * and eventually unsubscribed.
+ */
+export async function settleFailedDelivery(waMessageId, reason) {
+    const sb = getSupabase();
+    try {
+        const { data: msg } = await sb
+            .from("whatsapp_messages")
+            .select("id, doctor_id, hospital_id, patient_id, phone, purpose, credits_charged")
+            .eq("wa_message_id", waMessageId)
+            .maybeSingle();
+
+        // No row, or a message that never cost anything (inbound, or already
+        // refunded). Nothing owed.
+        if (!msg || !msg.credits_charged) return { ok: true, refunded: false };
+
+        const { data: debit } = await sb
+            .from("messaging_credit_ledger")
+            .select("id")
+            .eq("message_id", msg.id)
+            .eq("kind", "MESSAGE_DEBIT")
+            .maybeSingle();
+
+        if (!debit) {
+            // Charged on the message row but with no debit behind it. That is
+            // a real inconsistency rather than a normal state, so it is said
+            // out loud instead of silently zeroed.
+            console.error(
+                `[messaging] message ${msg.id} shows credits_charged=${msg.credits_charged} ` +
+                `but has no MESSAGE_DEBIT row — not refunding, please investigate.`
+            );
+            return { ok: false, refunded: false };
+        }
+
+        await sb.rpc("refund_messaging_credit", {
+            p_ledger_id: debit.id,
+            p_note: `Delivery failed: ${reason || "reported failed by the provider"}`.slice(0, 300),
+        });
+        await sb.from("whatsapp_messages")
+            .update({ credits_charged: 0, error_detail: (reason || "Delivery failed").slice(0, 500) })
+            .eq("id", msg.id);
+
+        let patientName = null;
+        if (msg.patient_id) {
+            const { data: p } = await sb.from("patients").select("name").eq("id", msg.patient_id).maybeSingle();
+            patientName = p?.name ?? null;
+        }
+
+        void notify("message_failed", {
+            doctorId: msg.doctor_id,
+            hospitalId: msg.hospital_id,
+            patientName,
+            phone: msg.phone,
+            purposeLabel: msg.purpose === "prescription" ? "Prescription" : "Follow-up",
+            reason: reason || "Reported failed by the provider",
+            reference: `MSG_${msg.id}`,
+        }).catch(() => {});
+
+        return { ok: true, refunded: true };
+    } catch (e) {
+        console.error("[messaging] settleFailedDelivery:", e.message);
+        return { ok: false, refunded: false };
+    }
+}
+
 export const sendPrescription = (input) => sendMessage({ ...input, purpose: "prescription" });
 export const sendFollowUp = (input) => sendMessage({ ...input, purpose: "follow_up" });

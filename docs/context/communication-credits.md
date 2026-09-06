@@ -70,7 +70,20 @@ doctor may insert into is `credit_recharge_requests`, whose `WITH CHECK` pins
 
 There is no UPDATE or DELETE policy on either table.
 
-### 4. Debit first, refund on failure — never "send then charge"
+### 4. Debit first, refund on failure — BOTH kinds of failure
+
+There are two, and the second is the common one:
+
+- **Synchronous** — the send call throws (expired token, rejected request).
+  `sendMessage` refunds inline.
+- **Asynchronous** — Meta returns 200, the credit is charged, and a status
+  webhook says `failed` minutes later because the number is not on WhatsApp or
+  the patient blocked us. `settleFailedDelivery` (called from the webhook's
+  status branch) refunds that one. Without it, "no credit is lost on a failed
+  message" would be true only for failures that happen inside one HTTP
+  request — which is the minority.
+
+Both are idempotent: Meta re-delivers status webhooks on its own schedule.
 
 "No message should be sent without sufficient credits" is read strictly. The
 message row is written `pending`, `debit_messaging_credit()` charges it under a
@@ -116,7 +129,23 @@ not silently reclassify a year of history.
 
 ---
 
-## Email
+## Email — what fires each of the seven
+
+| Event | Fired by | Throttle |
+|---|---|---|
+| `recharge_request` | `createRechargeRequest` (browser) → `POST /api/support/notify` | one pending request per doctor, enforced by a unique index |
+| `low_credit` | `maybeAlertLowCredits`, after every successful debit | one per doctor per 24h (`messaging_alert_state`) |
+| `credits_exhausted` | same | once, until the doctor recharges |
+| `message_failed` | `sendMessage` (synchronous failure) **and** `settleFailedDelivery` (async webhook failure) | none — one patient, one email |
+| `provider_error` | `sendMessage`, when the error matches `isProviderLevelFailure` | none — this is the outage alert |
+| `patient_message` | the webhook, on inbound | free TEXT only (never a button tap), and only the first inbound in 6h from that phone |
+| `support_request` | `notifySupport` from the browser | none |
+
+`/api/support/notify` allowlists only the three a browser has any business
+raising; the ids come from the SESSION, never the request body, so an alert
+can only ever be about the caller's own clinic and wallet.
+
+## Email — the plumbing
 
 One door — `notify(kind, ids)` in `server/email/notify.js`. Callers pass IDS,
 never prose, so wording changes never touch a call site. Three files, three
@@ -169,6 +198,13 @@ consultation about a thing the doctor already knows.
 
 ## Open
 
+- **No email has ever actually been sent.** The pipeline is wired end to end
+  and every template renders, but `server/.env` has no `ZOHO_*` values in any
+  checkout an agent has had, so `emailConfigured()` is false and `notify()`
+  takes its "log what it would have sent" path. Zoho's India token endpoint IS
+  reachable and answers correctly (`invalid_client` for bogus credentials), so
+  the remaining unknown is the credentials, not the code. First real send is
+  also the first row in `support_email_log` — check both.
 - **The follow-up send has no trigger yet.** `sendFollowUp` and its template
   exist and work; nothing schedules them. It needs a job (or a login-time
   sweep) over `prescriptions.follow_up_days`. Until then the Templates tab's
