@@ -52,17 +52,25 @@ export const metaAdapter = {
         const { name, language } = templateFor(message.purpose);
 
         try {
-            // A prescription with a rendered PDF gets the document-header
-            // template; without one it falls back to the plain body template,
-            // because "here is your prescription, ask the clinic for a copy"
-            // is still worth sending and a missing PDF must not swallow the
-            // message entirely.
+            // "Prescription Ready" (header: static "Prescription Ready", body:
+            // patient/doctor/clinic, button: View Prescription → the PDF link)
+            // needs a link to point the button at. With one, it's the real
+            // template — sendPrescriptionTemplate builds the body+button
+            // shape. Without one (no rendered PDF yet), fall back to a plain
+            // body-only send: "here is your prescription" is still worth
+            // saying and a missing PDF must not swallow the message entirely.
+            // NOTE: structurally these are two different Meta template
+            // shapes (one has a button component, one doesn't) sharing one
+            // configured name — fine for the mock adapter today, but whoever
+            // submits the real templates needs a second approved template
+            // (no button) for this fallback case, not the same one.
             if (message.purpose === "prescription" && message.documentUrl) {
                 const { waMessageId } = await sendPrescriptionTemplate(
                     message.to,
                     name,
                     message.documentUrl,
                     message.patientName || "there",
+                    message.doctorName || "your doctor",
                     message.clinicName || "your clinic",
                     { patientId: message.patientId, prescriptionId: message.prescriptionId, hospitalId: message.hospitalId, skipLog: true }
                 );
@@ -77,16 +85,16 @@ export const metaAdapter = {
                     type: "body",
                     parameters: [
                         { type: "text", text: message.patientName || "there" },
-                        { type: "text", text: message.clinicName || "your clinic" },
-                        // Slot 3 differs by purpose and every AREN template
-                        // reserves it: the follow-up date for a reminder, the
-                        // doctor's name on a prescription.
+                        // Slot 2 differs by purpose and every AREN template
+                        // reserves it: the doctor's name on a prescription,
+                        // the follow-up date for a reminder.
                         {
                             type: "text",
                             text: message.purpose === "follow_up"
                                 ? (message.followUpDate || "soon")
                                 : (message.doctorName || "your doctor"),
                         },
+                        { type: "text", text: message.clinicName || "your clinic" },
                     ],
                 }],
                 { patientId: message.patientId, prescriptionId: message.prescriptionId, hospitalId: message.hospitalId, skipLog: true }

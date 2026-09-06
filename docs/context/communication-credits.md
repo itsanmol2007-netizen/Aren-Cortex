@@ -106,6 +106,39 @@ status transitioned) — only the WhatsApp hop is simulated.
 `MESSAGING_MOCK_FAILURE_RATE` exists because the refund path can only be
 exercised by a failure, and a failure path that has never run is a guess.
 
+### 5b. "Prescription Ready" — the template's actual shape (2026-09-06)
+
+Agreed with Anmol, since these are unsubmitted and someone has to eventually
+paste this exact copy into Meta Business Manager:
+
+- **Header** — static text, "Prescription Ready". No variable, so
+  `sendPrescriptionTemplate` sends no header component at all (Meta only
+  wants parameters for the parts of an approved template that are dynamic).
+- **Body** — "Hi {{1}}, Your prescription from Dr. {{2}} from {{3}} is ready
+  to view or download. If you have any questions or need help, we're just a
+  message away! With care, {{3}} Arenode." {{1}}=patient name, {{2}}=doctor
+  name, {{3}}=clinic name — reused at the end, which WhatsApp templates
+  allow.
+- **Button** — "View Prescription", a dynamic-URL button whose parameter is
+  the prescription's own `documentUrl` (already a public HTTPS link — the
+  same one a document-header send would have fetched). Anmol, when asked
+  whether this should instead be a quick-reply that triggers a follow-up
+  send: *"right now the app itself is not hosted anywhere so adding any
+  dynamic link will not work unless we host this app... unless whatsapp is
+  wired, simply open that exact prescription preview"* — so the button opens
+  the link directly, no webhook round trip. **Not solved by this change:**
+  where prescriptions end up permanently hosted (the app has no stable
+  public home yet — same blocker as this file's own "Open" section and
+  `docs/whatsapp-two-way.md`'s). Whoever submits the real template in Meta's
+  console needs to register a dynamic URL button; if Meta's UI insists on a
+  fixed base + short suffix rather than a fully dynamic link, that's the
+  piece to revisit once hosting is real.
+- **No PDF yet** (`documentUrl` is null) falls back to a plain body-only send
+  — same three variables, no button. This is a structurally DIFFERENT Meta
+  template shape (no button component) sharing the same configured name as
+  the button version; fine for the mock adapter, but real submission needs
+  two separate approved templates, not one.
+
 ### 6. A patient's reply is FREE, and the UI must never suggest otherwise
 
 Meta charges us to send, not to receive. So an inbound message writes no

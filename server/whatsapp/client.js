@@ -204,30 +204,54 @@ export async function sendTemplateMessage(to, templateName, languageCode = "en_U
 }
 
 /**
- * A prescription as a template message whose header is a document (PDF).
- * The PDF must already be at a public HTTPS URL (Meta fetches it from
- * there). Assumes a template shaped like: header = document, body = "Hi
- * {{1}}, your prescription from {{2}} is attached." — adjust the
- * `components` array once you know your actual approved template's shape.
+ * The "Prescription Ready" template. Shape agreed 2026-09-06 (Anmol):
+ *
+ *   Header: "Prescription Ready" — STATIC text, no variable, so it carries
+ *           no components entry at all (Meta only wants parameters for the
+ *           parts of an approved template that are actually dynamic).
+ *   Body:   "Hi {{1}}, Your prescription from Dr. {{2}} from {{3}} is ready
+ *            to view or download. If you have any questions or need help,
+ *            we're just a message away! With care, {{3}} Arenode" —
+ *            {{3}} (clinic name) is reused, which WhatsApp templates allow.
+ *   Button: "View Prescription" — a dynamic-URL button. Its parameter is the
+ *           full `pdfUrl` (already a public HTTPS link — the same one Meta
+ *           would otherwise have fetched for a document header), so tapping
+ *           it opens that exact prescription preview directly. NOT a
+ *           quick-reply: there is nowhere stable to host a follow-up flow
+ *           yet (no deployed app, no landing-page sub-URL for previews) —
+ *           see docs/context/communication-credits.md's Open section.
+ *           Whoever submits this template in Meta Business Manager needs to
+ *           register the button as a dynamic URL; if Meta's console insists
+ *           on a fixed base URL + short suffix rather than a fully dynamic
+ *           link, this is the piece that needs revisiting once prescriptions
+ *           have a stable, permanent host.
+ *
+ * `pdfUrl` must already be a public HTTPS link (unchanged requirement from
+ * before this template's header stopped being the document itself).
+ *
  * @param {string} to
  * @param {string} templateName
  * @param {string} pdfUrl
  * @param {string} patientName
+ * @param {string} doctorName
  * @param {string} clinicName
- * @param {{patientId?: string, prescriptionId?: string}} [opts]
+ * @param {{patientId?: string, prescriptionId?: string, hospitalId?: string, skipLog?: boolean}} [opts]
  */
-export async function sendPrescriptionTemplate(to, templateName, pdfUrl, patientName, clinicName, opts = {}) {
+export async function sendPrescriptionTemplate(to, templateName, pdfUrl, patientName, doctorName, clinicName, opts = {}) {
     return sendTemplateMessage(to, templateName, "en_US", [
-        {
-            type: "header",
-            parameters: [{ type: "document", document: { link: pdfUrl, filename: "prescription.pdf" } }],
-        },
         {
             type: "body",
             parameters: [
                 { type: "text", text: patientName },
+                { type: "text", text: doctorName },
                 { type: "text", text: clinicName },
             ],
+        },
+        {
+            type: "button",
+            sub_type: "url",
+            index: "0",
+            parameters: [{ type: "text", text: pdfUrl }],
         },
     ], opts);
 }
