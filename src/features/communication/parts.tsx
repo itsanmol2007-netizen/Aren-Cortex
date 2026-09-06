@@ -273,43 +273,45 @@ export function Panel({
 }
 
 /**
- * A read-only mockup of one WhatsApp template — header, body, button — in
- * WhatsApp's own bubble shape. Added 2026-09-08 for Communication's
- * "Message templates" card, the first place in the product a doctor can
- * actually see the wording a patient receives (previously only in server
- * code and docs). Static content, passed in by the caller — this component
- * has no idea what Meta actually approved; it just renders the shape.
+ * One real sent WhatsApp template, in the conversation thread, in WhatsApp's
+ * own bubble shape — header, body, button. Rewritten 2026-09-08: this used
+ * to be a static mockup pinned in its own standalone card above the feed,
+ * with placeholder names ("Patient Name", "Doctor Name") — Anmol: *"it was
+ * way better before... the chat preview... should be the exact replica of
+ * what message has been sent."* It now renders IN the thread, in place of
+ * the plain-text bubble, with the real values that message actually carried
+ * and a live button rather than a disabled one.
  */
 export function WhatsAppTemplatePreview({
-    title, header, body, button,
+    header, body, button, onButtonClick,
 }: {
-    /** Small caption above the bubble, naming which send this is. */
-    title: string;
     /** The template's HEADER line — bold, top of the bubble. */
     header: string;
-    /** The template's BODY — the bulk of the message. */
+    /** The template's BODY — the bulk of the message, with real values
+     *  already substituted by the caller (patient/doctor/clinic name). */
     body: ReactNode;
     /** The template's button label, rendered as WhatsApp itself draws a
      *  template button: a full-width row below a divider, not part of the
      *  bubble's own rounded shape. */
     button: string;
+    /** What the button actually does — omit to render it inert (no
+     *  document to open yet, or none on file). */
+    onButtonClick?: () => void;
 }) {
     return (
-        <div className="flex flex-col gap-[6px]">
-            <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[var(--cs-label)]">{title}</span>
-            <div className="overflow-hidden rounded-[12px] border border-[#d9fdd3] bg-[#d9fdd3] shadow-[var(--cs-shadow)]">
-                <div className="flex flex-col gap-[4px] px-[12px] pb-[9px] pt-[10px] text-[12px] leading-[1.45] text-[#111b21]">
-                    <span className="font-bold">{header}</span>
-                    <span>{body}</span>
-                </div>
-                <button
-                    type="button"
-                    disabled
-                    className="flex w-full cursor-default items-center justify-center gap-[6px] border-t border-[rgba(0,0,0,0.08)] bg-[#d9fdd3] py-[8px] text-[12px] font-semibold text-[#00a5f4]"
-                >
-                    <Send size={12} /> {button}
-                </button>
+        <div className="overflow-hidden rounded-[12px] border border-[#d9fdd3] bg-[#d9fdd3] shadow-[0_1px_1px_rgba(16,28,46,0.06)]">
+            <div className="flex flex-col gap-[4px] px-[11px] pb-[8px] pt-[9px] text-[12px] leading-[1.45] text-[#111b21]">
+                <span className="font-bold">{header}</span>
+                <span>{body}</span>
             </div>
+            <button
+                type="button"
+                disabled={!onButtonClick}
+                onClick={onButtonClick}
+                className="flex w-full cursor-pointer items-center justify-center gap-[6px] border-t border-[rgba(0,0,0,0.08)] bg-[#d9fdd3] py-[7px] text-[12px] font-semibold text-[#00a5f4] outline-none transition-colors hover:bg-[#cdf4c4] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-[#d9fdd3]"
+            >
+                <Send size={12} /> {button}
+            </button>
         </div>
     );
 }

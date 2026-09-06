@@ -43,6 +43,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
+import ReviewModal from "../../components/ReviewModal";
+import {
+    fetchDoctorsByHospital, fetchHospitalCached, fetchPrescriptionRenderData,
+    type DBDoctor, type DBHospital, type PrescriptionRenderData,
+} from "../../lib/db";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { CreditHistoryModal } from "./CreditHistoryModal";
 import {
@@ -720,43 +725,6 @@ export function CommunicationPage({
                     </Panel>
                 )}
 
-                {/* ── Message templates — what the patient actually sees ──────
-                    Added 2026-09-08: nowhere on this page showed the real
-                    template copy before this, even though the send path
-                    (server/whatsapp/client.js, server/messaging/providers/
-                    meta.js) already builds it — a doctor had no way to see
-                    what a patient receives short of reading server code.
-                    Static preview, not fetched from Meta: these are AREN's
-                    own approved-template designs (communication-credits.md
-                    §5b), not live remote content. */}
-                <Panel className="flex-none" label="Message templates">
-                    <PanelHead icon={<MessageSquare size={13} />} title="Message templates" right={
-                        <span className="text-[10.5px] font-semibold text-[var(--cs-faint)]">What patients receive</span>
-                    } />
-                    <div className="grid grid-cols-2 gap-[12px] px-[14px] pb-[13px] pt-[9px] max-[900px]:grid-cols-1">
-                        <WhatsAppTemplatePreview
-                            title="Prescription Ready"
-                            header="Prescription Ready"
-                            body={
-                                <>Hi <strong>Patient Name</strong>, Your prescription from Dr. <strong>Doctor Name</strong> from <strong>Clinic Name</strong> is
-                                ready to view or download. If you have any questions or need help, we're just a message away!
-                                <br />With care, <strong>Clinic Name</strong> Arenode</>
-                            }
-                            button="View Prescription"
-                        />
-                        <div className="flex flex-col items-center justify-center gap-[6px] rounded-[12px] border border-dashed border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[14px] py-[18px] text-center">
-                            <Clock size={16} className="text-[var(--cs-faint)]" />
-                            <span className="text-[11.5px] font-semibold text-[var(--cs-muted)]">Follow-up reminder</span>
-                            <span className="text-[10.5px] leading-[1.4] text-[var(--cs-faint)]">
-                                Copy not finalized yet — nothing is sent under this purpose until it is.
-                            </span>
-                        </div>
-                    </div>
-                    <p className="m-0 border-t border-[var(--cs-line)] px-[14px] py-[7px] text-[10.5px] leading-[1.45] text-[var(--cs-faint)]">
-                        These are the templates submitted to Meta for approval — the actual wording every patient sees, not a mockup.
-                    </p>
-                </Panel>
-
                 {/* ── Feed + conversation ──────────────────────────────────── */}
                 <div className="grid min-h-[440px] flex-1 grid-cols-[minmax(300px,0.62fr)_minmax(0,1fr)] gap-[12px] max-[1100px]:grid-cols-1">
 
@@ -880,6 +848,7 @@ export function CommunicationPage({
                         focus={focusMessage}
                         patient={patient}
                         onViewPatient={onViewPatient}
+                        hospitalId={hospitalId}
                     />
                 </div>
 
@@ -927,12 +896,13 @@ export function CommunicationPage({
  * promise a reply box this version deliberately does not have.
  */
 function ConversationPanel({
-    thread, focus, patient, onViewPatient,
+    thread, focus, patient, onViewPatient, hospitalId,
 }: {
     thread: WhatsAppThread | null;
     focus: MessageActivity | null;
     patient: PatientCard | null;
     onViewPatient: (query: string) => void;
+    hospitalId: string | null;
 }) {
     const name = patient?.name ?? thread?.patientName ?? focus?.patientName ?? null;
     const phone = thread?.phone ?? focus?.phone ?? null;
@@ -944,7 +914,42 @@ function ConversationPanel({
         phone ? formatWhatsAppPhone(phone) : null,
     ].filter(Boolean).join("  •  ");
 
+    // ── Rendering a sent prescription template as it actually looked ────────
+    // Needs the clinic's own name and the sending doctor's, which nothing on
+    // this page loads today — a message row only carries `doctor_id`. Fetched
+    // once per hospital (`fetchHospitalCached` is already a cross-page cache,
+    // same one Print RX uses), not per message.
+    const [hospital, setHospital] = useState<DBHospital | null>(null);
+    const [doctors, setDoctors] = useState<DBDoctor[]>([]);
+    useEffect(() => {
+        if (!hospitalId) return;
+        fetchHospitalCached(hospitalId).then(setHospital).catch(() => setHospital(null));
+        fetchDoctorsByHospital(hospitalId).then(setDoctors).catch(() => setDoctors([]));
+    }, [hospitalId]);
+    const doctorNameById = useMemo(
+        () => new Map(doctors.map((d) => [d.id, d.name])),
+        [doctors]
+    );
+
+    // "View Prescription" opens the SAME renderer Consult and Print RX use —
+    // never a second one (standing rule 6) — read-only, exactly like Print
+    // RX's reprint door.
+    const [viewingRxId, setViewingRxId] = useState<string | null>(null);
+    const [rxDetail, setRxDetail] = useState<PrescriptionRenderData | null>(null);
+    useEffect(() => {
+        if (!viewingRxId) { setRxDetail(null); return; }
+        let cancelled = false;
+        fetchPrescriptionRenderData(viewingRxId)
+            .then((d) => { if (!cancelled) setRxDetail(d); })
+            .catch((e: unknown) => {
+                console.error("[communication] fetchPrescriptionRenderData:", e);
+                if (!cancelled) { toast.error("Could not open that prescription."); setViewingRxId(null); }
+            });
+        return () => { cancelled = true; };
+    }, [viewingRxId]);
+
     return (
+        <>
         <Panel className="min-h-0" label="Conversation">
             {nothing ? (
                 <BigEmpty
@@ -997,6 +1002,40 @@ function ConversationPanel({
                             const out = m.direction === "outbound";
                             const state = deliveryStateOf(m.status);
                             const Icon = STATE_STYLE[state].icon;
+                            const timeRow = (extraPad?: boolean) => (
+                                <span className={`flex items-center gap-[4px] self-end text-[9.5px] text-[var(--cs-faint)]${extraPad ? " px-[2px]" : ""}`}>
+                                    {clockTime(m.created_at)}
+                                    {out && <Icon size={11} className={STATE_STYLE[state].text} />}
+                                </span>
+                            );
+
+                            // The real template, not a paraphrase — Anmol,
+                            // 2026-09-08: "the chat preview... should be the
+                            // exact replica of what message has been sent."
+                            // `body_preview` ("Prescription for Anmol") is a
+                            // plain summary for the activity feed elsewhere on
+                            // this page; a prescription send actually has a
+                            // shape (header/body/button) worth showing here.
+                            if (out && m.purpose === "prescription") {
+                                const doctorName = (m.doctor_id && doctorNameById.get(m.doctor_id)) || "your doctor";
+                                const clinicName = hospital?.name || "your clinic";
+                                return (
+                                    <div key={m.id} className="flex max-w-[76%] flex-none flex-col gap-[3px] self-end">
+                                        <WhatsAppTemplatePreview
+                                            header="Prescription Ready"
+                                            body={
+                                                <>Hi {name || "there"}, Your prescription from Dr. {doctorName} from {clinicName} is
+                                                ready to view or download. If you have any questions or need help, we're just a message away!
+                                                <br />With care, {clinicName} Arenode</>
+                                            }
+                                            button="View Prescription"
+                                            onButtonClick={m.prescription_id ? () => setViewingRxId(m.prescription_id) : undefined}
+                                        />
+                                        {timeRow(true)}
+                                    </div>
+                                );
+                            }
+
                             return (
                                 <div
                                     key={m.id}
@@ -1010,10 +1049,7 @@ function ConversationPanel({
                                     <span className="text-[12px] leading-[1.45] text-[var(--cs-ink)]">
                                         {m.body_preview || `[${m.message_type}]`}
                                     </span>
-                                    <span className="flex items-center gap-[4px] self-end text-[9.5px] text-[var(--cs-faint)]">
-                                        {clockTime(m.created_at)}
-                                        {out && <Icon size={11} className={STATE_STYLE[state].text} />}
-                                    </span>
+                                    {timeRow()}
                                 </div>
                             );
                         })}
@@ -1042,6 +1078,30 @@ function ConversationPanel({
                 </>
             )}
         </Panel>
+
+        {/* Consult's exact review/print pipeline, opened read-only — the
+            same door Print RX's reprint uses, never a second renderer
+            (standing rule 6). */}
+        {viewingRxId && rxDetail && (
+            <ReviewModal
+                mode="print"
+                patient={rxDetail.patient}
+                visitId={rxDetail.visitId}
+                prescriptionRef={rxDetail.prescriptionRef ?? undefined}
+                symptoms={rxDetail.symptoms}
+                findings={rxDetail.findings}
+                prescription={rxDetail.medicines}
+                tests={rxDetail.tests}
+                followUpDays={rxDetail.followUpDays}
+                adviceNotes={rxDetail.adviceNotes ?? undefined}
+                doctor={rxDetail.doctor}
+                hospital={hospital}
+                vitals={rxDetail.vitals ?? undefined}
+                date={new Date(rxDetail.createdAt)}
+                onClose={() => setViewingRxId(null)}
+            />
+        )}
+        </>
     );
 }
 
