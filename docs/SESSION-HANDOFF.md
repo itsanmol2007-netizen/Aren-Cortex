@@ -92,6 +92,49 @@ guard it was just dismissed from. Also removed a stray leftover comment on
 that render (`// ← ADD THIS LINE (the ! means...)`) that had no business
 being in committed code.
 
+### 5. Communication's chat preview, corrected (not the standalone card from earlier)
+
+Anmol: the "Message templates" card added earlier this round was wrong on
+its own terms — he wanted the EXISTING conversation/chat preview updated to
+show the real template, not a new standalone card. Reverted that card;
+`WhatsAppTemplatePreview` (`parts.tsx`) now renders INLINE in
+`ConversationPanel`'s message thread, replacing the plain "Prescription for
+X" bubble for any outbound `purpose === "prescription"` message — real
+header/body/button, with the actual patient name, the sending doctor's name
+(`doctor_id` looked up via `fetchDoctorsByHospital`) and the clinic's name
+(`fetchHospitalCached`) substituted in. The button is live: "View
+Prescription" opens the SAME `ReviewModal` (`mode="print"`) pipeline Print
+RX's reprint door uses, via `fetchPrescriptionRenderData(prescription_id)`
+— never a second renderer.
+
+### 6. The SAME "payment decided before a patient exists" bug, in the OTHER intake modal
+
+Round 1 of this handoff only fixed front desk's `CreateVisitModal`/
+`PaymentRail`. There is a SECOND, separate "find or create patient + pay"
+implementation — `PatientModal.tsx` + `PatientPaymentRail.tsx` — mounted
+once in `App.tsx` and used by BOTH Cortex and Consult (the doctor's own
+direct-intake door, not the front-desk receptionist's). Anmol's screenshot:
+"Search existing" tab, nothing typed, and the rail already showing a
+confirmed "Will collect ₹472 · Cash — once you confirm a patient." Missed
+it entirely in round 1 by assuming "Consult" meant the front-desk modal
+specifically — should have checked both search-and-create-patient surfaces
+from the start.
+
+Note this one never actually WROTE anything prematurely — `PatientPaymentRail`
+only ever builds a plan `onConfirm` applies once a real patient is
+established, unlike front desk's old bug. Still reads as broken regardless
+of what is or isn't written underneath, so fixed the same way: added
+`lockReason` (mirroring front desk's), computed in `PatientModal.tsx` from
+the SAME identity-validity rule the modal already used for its own confirm
+button (`isFormValid`, or a matched duplicate) — plain "Search existing"
+mode locks unconditionally, since a result row there confirms in one click
+and was never gated on this rail's decision at all (that's an existing,
+deliberate, UNCHANGED behavior — see `paymentError`'s own doc comment in
+`PatientModal.tsx`). The existing `needsDecision` reactive nudge (fires if
+`Confirm`/`Start consult` is pressed with identity valid but fee still
+undecided) is untouched and still fires as a defense-in-depth on top of the
+new proactive lock.
+
 ## Live verification — what happened and why it's still not done
 
 Tried hard this round: started the vite dev server, got Playwright's

@@ -319,6 +319,30 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
 
   const isFormValid = draft.name.trim() && draft.phone.length === 10 && draft.gender;
 
+  // What PatientPaymentRail locks on — no real patient to attach a fee
+  // decision to yet. 2026-09-08, from Anmol's screenshot of "Search
+  // existing" with nothing typed and the rail already showing a confirmed-
+  // looking "Will collect ₹472": *"why the fuck is this still possible?"*
+  // A patient becomes real here either by being matched (the phone-duplicate
+  // card) or by the new-patient form's own required fields being filled —
+  // exactly `isFormValid`'s definition, not a second one. Plain search mode
+  // has no such context at all: a result row confirms in one click and was
+  // never gated on this rail (see `paymentError`'s own doc comment above),
+  // so there is nothing here to unlock it for.
+  const railMissing: string[] = [];
+  if (mode === "search") {
+    railMissing.push("a patient");
+  } else if (!matchedPatient) {
+    if (!draft.name.trim()) railMissing.push("name");
+    if (draft.phone.length !== 10) railMissing.push("phone number");
+    if (!draft.gender) railMissing.push("sex");
+  }
+  const railLockReason = railMissing.length === 0
+    ? undefined
+    : mode === "search"
+      ? "Search for or create a patient to continue."
+      : `Add the patient's ${railMissing.join(", ")} to continue.`;
+
   return (
     <div className="pm-overlay" role="dialog" aria-modal="true" aria-label="Patient intake">
       <button className="pm-backdrop" type="button" onClick={onClose} aria-label="Close" />
@@ -651,6 +675,7 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
               breakdown={breakdown}
               doctorName={billing.doctorName}
               needsDecision={paymentError}
+              lockReason={railLockReason}
             />
           </div>
         )}

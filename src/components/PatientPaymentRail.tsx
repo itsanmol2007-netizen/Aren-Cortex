@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-    Check, ChevronDown, Clock, CreditCard, Info, Percent, RotateCcw, Wallet,
+    Check, ChevronDown, Clock, CreditCard, Info, Lock, Percent, RotateCcw, Wallet,
 } from "lucide-react";
 import type {
     BillingPolicy, DiscountKind, FeeBreakdown, PaymentMethod, VisitType,
@@ -23,6 +23,17 @@ import type {
 // visit is always assigned to the one signed-in doctor (`useClinicalIdentity`),
 // so `baseFee`/`breakdown` arrive already resolved — this component only
 // ever renders ONE doctor's numbers.
+//
+// ── 2026-09-08: `lockReason`
+//
+// This rail never wrote anything prematurely — a decision here is only ever
+// a PLAN, applied by `PatientModal.onConfirm` at the moment a real patient
+// is actually established — but nothing stopped a doctor from reaching a
+// confirmed-looking "Will collect ₹472" box with NO patient chosen at all
+// (fresh modal, "Search existing" tab, nothing typed). Reads as broken
+// regardless of what is or isn't written. `lockReason` disables the
+// deciding controls until `PatientModal` says there's a real patient
+// context to attach the plan to — see its own doc comment.
 // ---------------------------------------------------------------------------
 
 export type PayStatus = "undecided" | "paid" | "unpaid";
@@ -53,7 +64,7 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 ];
 
 export function PatientPaymentRail({
-    state, onChange, policy, baseFee, breakdown, doctorName, needsDecision,
+    state, onChange, policy, baseFee, breakdown, doctorName, needsDecision, lockReason,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
@@ -72,7 +83,21 @@ export function PatientPaymentRail({
      * component — the rail stays a pure display of `state`).
      */
     needsDecision?: boolean;
+    /**
+     * Set while there's no real patient to attach this plan to yet — nobody
+     * searched/matched/typed enough of a new patient's identity (2026-09-08:
+     * Anmol, from a screenshot of "Search existing" with nothing typed and
+     * the rail already showing a confirmed-looking "Will collect ₹472 /
+     * Cash — once you confirm a patient": *"why the fuck is this still
+     * possible?"*). Nothing was ever actually WRITTEN in that state — this
+     * rail only ever builds a plan `onConfirm` carries — but a deciding-
+     * looking control with no patient behind it reads as broken regardless.
+     * Disables Collect/Mark-as-unpaid/the method buttons and shows why,
+     * same pattern as front desk's `PaymentRail`'s `lockReason`.
+     */
+    lockReason?: string;
 }) {
+    const locked = !!lockReason;
     // Chrome, not data — stays local so the parent re-rendering on every
     // keystroke of the patient's name can't collapse an open panel.
     const [collecting, setCollecting] = useState(false);
@@ -157,7 +182,12 @@ export function PatientPaymentRail({
                 </span>
             </div>
 
-            {needsDecision && !decided && (
+            {locked ? (
+                <div className="mt-[12px] flex items-center gap-[7px] rounded-[9px] bg-black/[0.03] px-[10px] py-[8px] text-[11.5px] leading-[1.4] text-[#64748b]">
+                    <Lock size={12} className="shrink-0" />
+                    {lockReason}
+                </div>
+            ) : needsDecision && !decided && (
                 <div className="mt-[12px] flex items-center gap-[6px] rounded-[9px] bg-[#fef2f2] px-[10px] py-[7px] text-[11.5px] font-bold text-[#b91c1c]">
                     <Info size={13} className="shrink-0" />
                     Mark this visit paid or unpaid to continue
@@ -167,7 +197,7 @@ export function PatientPaymentRail({
             <div
                 className={
                     "mt-[10px] flex flex-col gap-[8px] rounded-[13px] " +
-                    (needsDecision && !decided ? "outline outline-2 outline-offset-[4px] outline-[#fca5a5]" : "")
+                    (needsDecision && !decided && !locked ? "outline outline-2 outline-offset-[4px] outline-[#fca5a5]" : "")
                 }
             >
                 {decided ? (
@@ -219,8 +249,9 @@ export function PatientPaymentRail({
                                 <button
                                     key={m.key}
                                     type="button"
+                                    disabled={locked}
                                     onClick={() => { set({ status: "paid", method: m.key }); setCollecting(false); }}
-                                    className="h-[36px] cursor-pointer rounded-[10px] border border-black/10 bg-white text-[12.5px] font-bold text-[#334155] transition-colors hover:border-[#a855f7] hover:bg-[#faf5ff] hover:text-[#7c3aed]"
+                                    className="h-[36px] cursor-pointer rounded-[10px] border border-black/10 bg-white text-[12.5px] font-bold text-[#334155] transition-colors hover:border-[#a855f7] hover:bg-[#faf5ff] hover:text-[#7c3aed] disabled:cursor-not-allowed"
                                 >
                                     {m.label}
                                 </button>
@@ -238,16 +269,18 @@ export function PatientPaymentRail({
                     <>
                         <button
                             type="button"
+                            disabled={locked}
                             onClick={() => setCollecting(true)}
-                            className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-[9px] rounded-[12px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(168,85,247,0.32)] transition-[opacity,box-shadow] hover:opacity-90 hover:shadow-[0_5px_18px_rgba(168,85,247,0.42)]"
+                            className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-[9px] rounded-[12px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(168,85,247,0.32)] transition-[opacity,box-shadow] hover:opacity-90 hover:shadow-[0_5px_18px_rgba(168,85,247,0.42)] disabled:cursor-not-allowed disabled:shadow-none"
                         >
                             <CreditCard size={16} />
                             Collect {money(breakdown.total)}
                         </button>
                         <button
                             type="button"
+                            disabled={locked}
                             onClick={() => set({ status: "unpaid", method: null })}
-                            className="flex h-[40px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-black/[0.04] text-[13px] font-bold text-[#4b5563] transition-colors hover:bg-black/[0.07] hover:text-[#0f172a]"
+                            className="flex h-[40px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-black/[0.04] text-[13px] font-bold text-[#4b5563] transition-colors hover:bg-black/[0.07] hover:text-[#0f172a] disabled:cursor-not-allowed"
                         >
                             <Clock size={14} />
                             Mark as unpaid
