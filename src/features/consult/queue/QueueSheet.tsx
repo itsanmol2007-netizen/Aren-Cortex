@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ListOrdered, UserPlus } from "lucide-react";
 import type { TodayVisit } from "../../../lib/db";
 import type { IntakePreview } from "../../../lib/db/intake";
@@ -32,7 +33,7 @@ import { IntakePanel, PatientBand, QueueEmpty, QueueRow } from "./queueParts";
 
 export function QueueSheet({
     waiting, serving, previews, completedCount, loading,
-    currentVisitId, onClose, onPick, onRegisterPatient, onManageAttachments,
+    currentVisitId, onClose, onPick, onRegisterPatient, onManageAttachments, dismissable = true,
 }: {
     waiting: TodayVisit[];
     serving: TodayVisit[];
@@ -42,6 +43,13 @@ export function QueueSheet({
     /** the visit the doctor is in right now, so its row reads as "in the room" */
     currentVisitId: string | null;
     onClose: () => void;
+    /**
+     * False when there is no active consult behind this sheet — a doctor who
+     * dismisses it here lands on a workspace with nothing in the header at
+     * all. See `ConsultModal`'s own doc comment; App.tsx passes
+     * `hasActiveConsult` straight through.
+     */
+    dismissable?: boolean;
     /**
      * Take this patient now. The caller decides what that means (finish the
      * current consult first, record the override) — this surface only ever
@@ -56,6 +64,7 @@ export function QueueSheet({
     onManageAttachments?: (visit: TodayVisit) => void;
 }) {
     const [selected, setSelected] = useState<TodayVisit | null>(null);
+    const reduce = useReducedMotion();
 
     // "Ahead of queue" is a fact about position, not a judgement: it is true
     // whenever the chosen patient is not the one the desk has at the front.
@@ -80,6 +89,7 @@ export function QueueSheet({
                 </span>
             } /> : undefined}
             onClose={onClose}
+            dismissable={dismissable}
             footer={
                 selected ? (
                     <>
@@ -99,14 +109,19 @@ export function QueueSheet({
                             <UserPlus size={14} /> Register a patient
                         </GhostButton>
                         <span className="min-w-0 flex-1 text-[11.5px] leading-[1.45] text-[var(--cs-faint)]">
-                            For when the front desk is unavailable.
+                            {dismissable
+                                ? "For when the front desk is unavailable."
+                                : "Pick a patient from the queue, or register one yourself."}
                         </span>
-                        <GhostButton onClick={onClose}>Close</GhostButton>
+                        {dismissable && <GhostButton onClick={onClose}>Close</GhostButton>}
                     </>
                 )
             }
         >
-            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] max-[720px]:grid-cols-1">
+            {/* The detail column is a glance, not a form — thinned from an
+                even ~54/46 split (2026-09-06) so the queue itself, the actual
+                subject of this screen, carries more of the width. */}
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,0.75fr)] max-[720px]:grid-cols-1">
                 {/* The queue itself. Scrolls in its own box, never grows the
                     card — the bound `layout-composition.md` rule 10 asks for on
                     any region fed by data we do not control. */}
@@ -136,20 +151,36 @@ export function QueueSheet({
                 {/* What the desk recorded about whoever is selected — or, with
                     nothing selected, about whoever is next, because that is the
                     question a doctor opening the queue is usually asking. */}
-                <div className="flex min-h-0 min-w-0 flex-col bg-[var(--cs-page)]">
+                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--cs-page)]">
                     {(() => {
                         const showing = selected ?? next;
                         if (!showing) return <QueueEmpty note="Nothing to preview." />;
                         return (
-                            <>
-                                <div className="flex flex-none items-center gap-[8px] px-[15px] pb-[7px] pt-[13px]">
-                                    <span className="text-[11px] font-semibold text-[var(--cs-faint)]">
-                                        {selected ? "Selected" : "Up next"}
-                                    </span>
-                                    <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{showing.patient_name}</span>
-                                </div>
-                                <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense onManageAttachments={onManageAttachments} />
-                            </>
+                            // A new patient landing here is a real change of
+                            // subject, not a value update — worth a beat of
+                            // its own rather than the text just snapping to
+                            // the next name mid-read. `mode="wait"` so the
+                            // outgoing card is gone before the next begins;
+                            // this panel is a single answer at a time, never
+                            // two overlapping.
+                            <AnimatePresence mode="wait" initial={false}>
+                                <motion.div
+                                    key={showing.visit_id}
+                                    className="flex min-h-0 flex-1 flex-col"
+                                    initial={reduce ? false : { opacity: 0, y: 4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={reduce ? undefined : { opacity: 0 }}
+                                    transition={{ duration: 0.14 }}
+                                >
+                                    <div className="flex flex-none items-center gap-[8px] px-[15px] pb-[7px] pt-[13px]">
+                                        <span className="text-[11px] font-semibold text-[var(--cs-faint)]">
+                                            {selected ? "Selected" : "Up next"}
+                                        </span>
+                                        <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">{showing.patient_name}</span>
+                                    </div>
+                                    <IntakePanel preview={previews.get(showing.visit_id)} visit={showing} dense onManageAttachments={onManageAttachments} />
+                                </motion.div>
+                            </AnimatePresence>
                         );
                     })()}
                 </div>

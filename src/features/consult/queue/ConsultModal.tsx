@@ -28,10 +28,11 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useOverlayFocus } from "../../../hooks/useOverlayFocus";
 
 export function ConsultModal({
-    icon, eyebrow, title, subtitle, band, footer, onClose, holdOpen, children, labelledBy,
+    icon, eyebrow, title, subtitle, band, footer, onClose, holdOpen, dismissable = true, children, labelledBy,
 }: {
     icon: ReactNode;
     eyebrow: string;
@@ -47,6 +48,17 @@ export function ConsultModal({
      * because both are an explicit "I want to leave".
      */
     holdOpen?: boolean;
+    /**
+     * False when this surface is the ONLY thing standing between the doctor
+     * and a blank workspace — no active consult behind it to fall back to
+     * (`QueueSheet`, cold-started with nothing else on screen). Stronger than
+     * `holdOpen`: no ×, Escape does nothing, backdrop click does nothing.
+     * The doctor's only way out is the surface's own primary actions (pick a
+     * patient, or register one) — same doctrine `PatientModal` already
+     * applies to itself while intake is mandatory. Defaults to true (every
+     * other caller today) so this is opt-in, not a behaviour change by default.
+     */
+    dismissable?: boolean;
     children: ReactNode;
     labelledBy?: string;
 }) {
@@ -58,25 +70,36 @@ export function ConsultModal({
     // Review behind the scrim.
     const ref = useRef<HTMLDivElement>(null);
     useOverlayFocus(ref);
+    const reduce = useReducedMotion();
 
     useEffect(() => {
+        if (!dismissable) return;
         const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [onClose]);
+    }, [onClose, dismissable]);
 
     return (
-        <div
+        <motion.div
             className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(8,16,35,0.45)] p-[var(--cs-s4)] backdrop-blur-[10px] backdrop-saturate-[1.4]"
-            onMouseDown={(e) => { if (e.target === e.currentTarget && !holdOpen) onClose(); }}
+            onMouseDown={(e) => { if (e.target === e.currentTarget && !holdOpen && dismissable) onClose(); }}
+            // Entrance only — this family never plays an exit (its callers
+            // unmount it with a plain `&&`, not `AnimatePresence`), the same
+            // choice `AddMedicineSheet` already made for its own scrim.
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.16 }}
         >
-            <div
+            <motion.div
                 ref={ref}
                 tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
                 aria-label={labelledBy ? undefined : title}
                 aria-labelledby={labelledBy}
+                initial={reduce ? false : { opacity: 0, y: 10, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
                 className={
                     "flex max-h-[min(660px,90vh)] w-[min(760px,100%)] flex-col overflow-hidden rounded-[20px] " +
                     "bg-[rgba(255,255,255,0.97)] outline-none " +
@@ -114,14 +137,16 @@ export function ConsultModal({
                             )}
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        aria-label="Close"
-                        className="grid h-[28px] w-[28px] flex-none place-items-center rounded-full border-0 bg-black/[0.03] text-[var(--cs-faint)] transition-colors hover:bg-black/[0.07] hover:text-[var(--cs-ink)]"
-                    >
-                        <X size={15} />
-                    </button>
+                    {dismissable && (
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close"
+                            className="grid h-[28px] w-[28px] flex-none place-items-center rounded-full border-0 bg-black/[0.03] text-[var(--cs-faint)] transition-colors hover:bg-black/[0.07] hover:text-[var(--cs-ink)]"
+                        >
+                            <X size={15} />
+                        </button>
+                    )}
                 </div>
 
                 {band}
@@ -133,8 +158,8 @@ export function ConsultModal({
                         {footer}
                     </div>
                 )}
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 }
 

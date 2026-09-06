@@ -35,7 +35,7 @@ import type { ReactNode } from "react";
 import { Clock3, FileText, Paperclip, Stethoscope, User } from "lucide-react";
 import type { TodayVisit } from "../../../lib/db";
 import type { IntakePreview } from "../../../lib/db/intake";
-import { initials, padToken, timeAgo } from "../../frontdesk/utils";
+import { formatShortDate, initials, padToken, timeAgo } from "../../frontdesk/utils";
 
 /** Minutes waited, as the number the doctor actually reasons about. */
 export function waitedFor(visit: TodayVisit): string {
@@ -151,6 +151,83 @@ function ChipRow({ label, items, tone }: { label: string; items: string[]; tone:
     );
 }
 
+const PAYMENT_LABEL: Record<NonNullable<TodayVisit["payment_status"]>, string> = {
+    paid: "Paid",
+    pending: "Payment pending",
+    waived: "Waived",
+    refunded: "Refunded",
+};
+
+/** Reuses this app's own settled/pending meanings (colour.md: green = taken/
+ *  settled, amber = soft guard/attention) rather than inventing a payment-
+ *  specific palette. `waived`/`refunded` are administrative outcomes, neither
+ *  good nor needing action, so they stay the neutral muted tone. */
+function paymentTone(status: NonNullable<TodayVisit["payment_status"]>): string {
+    if (status === "paid") return "border-[var(--cs-green)]/30 bg-[var(--cs-green-soft)] text-[var(--cs-green)]";
+    if (status === "pending") return "border-[var(--cs-amber)]/30 bg-[var(--cs-amber-soft)] text-[var(--cs-amber)]";
+    return "border-[var(--cs-line-strong)] bg-black/[0.03] text-[var(--cs-muted)]";
+}
+
+/**
+ * The glance facts — visits on file, last seen, money — above whatever
+ * reception recorded. A doctor opening a card is usually asking "have I seen
+ * this person before, and does money need my attention" before they read a
+ * single chip, so this answers both in one line rather than making them
+ * piece it together from a date buried under the chips (where this used to
+ * live, undated, as just a visit count).
+ *
+ * Renders nothing when there is nothing to say — a first-ever visit at a
+ * clinic with no fee configured prints an empty strip, not three "—"s.
+ */
+function QuickFacts({ visit }: { visit: TodayVisit }) {
+    const previousVisits = visit.visit_count - 1;
+    const money = visit.payment_total != null
+        ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(visit.payment_total)
+        : null;
+
+    const pills: { key: string; icon: ReactNode; label: string; tone?: string }[] = [];
+    if (previousVisits > 0) {
+        pills.push({
+            key: "visits",
+            icon: <FileText size={10} aria-hidden="true" />,
+            label: `${previousVisits} earlier visit${previousVisits === 1 ? "" : "s"}`,
+        });
+    }
+    if (visit.last_visit_at) {
+        pills.push({
+            key: "last",
+            icon: <Clock3 size={10} aria-hidden="true" />,
+            label: `Last seen ${formatShortDate(visit.last_visit_at)}`,
+        });
+    }
+    if (visit.payment_status) {
+        pills.push({
+            key: "payment",
+            icon: null,
+            label: money ? `${PAYMENT_LABEL[visit.payment_status]} · ${money}` : PAYMENT_LABEL[visit.payment_status],
+            tone: paymentTone(visit.payment_status),
+        });
+    }
+    if (!pills.length) return null;
+
+    return (
+        <div className="flex flex-none flex-wrap gap-[6px]">
+            {pills.map((p) => (
+                <span
+                    key={p.key}
+                    className={
+                        "flex items-center gap-[4px] rounded-full border px-[8px] py-[3px] text-[10.5px] font-bold leading-none " +
+                        (p.tone ?? "border-[var(--cs-line-strong)] bg-white text-[var(--cs-muted)] font-semibold")
+                    }
+                >
+                    {p.icon}
+                    {p.label}
+                </span>
+            ))}
+        </div>
+    );
+}
+
 /**
  * The prepared encounter, as one panel.
  *
@@ -175,30 +252,35 @@ export function IntakePanel({
     const measurements = preview?.measurements ?? [];
     const files = preview?.attachmentCount ?? visit.attachment_count ?? 0;
     const anything = symptoms.length || history.length || measurements.length || files;
+    const quickFacts = <QuickFacts visit={visit} />;
 
     if (!anything) {
         return (
-            <div className="flex flex-1 flex-col items-center justify-center gap-[5px] px-[10px] py-[22px] text-center">
-                <User size={22} className="text-[var(--cs-line-strong)]" aria-hidden="true" />
-                <strong className="text-[13px] font-semibold text-[var(--cs-ink)]">Nothing recorded yet</strong>
-                <span className="max-w-[34ch] text-[11.5px] leading-[1.5] text-[var(--cs-muted)]">
-                    Start the consultation and chart it here.
-                </span>
-                {onManageAttachments && (
-                    <button
-                        type="button"
-                        onClick={() => onManageAttachments(visit)}
-                        className="mt-[4px] flex items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] px-[11px] py-[5px] text-[11.5px] font-semibold text-[var(--cs-teal)] hover:bg-[var(--cs-teal-soft)]"
-                    >
-                        <Paperclip size={12} /> Add attachment
-                    </button>
-                )}
+            <div className={"flex min-h-0 flex-1 flex-col " + (dense ? "gap-[10px] p-[13px]" : "gap-[12px] p-[15px]")}>
+                {quickFacts}
+                <div className="flex flex-1 flex-col items-center justify-center gap-[5px] px-[10px] py-[22px] text-center">
+                    <User size={22} className="text-[var(--cs-line-strong)]" aria-hidden="true" />
+                    <strong className="text-[13px] font-semibold text-[var(--cs-ink)]">Nothing recorded yet</strong>
+                    <span className="max-w-[34ch] text-[11.5px] leading-[1.5] text-[var(--cs-muted)]">
+                        Start the consultation and chart it here.
+                    </span>
+                    {onManageAttachments && (
+                        <button
+                            type="button"
+                            onClick={() => onManageAttachments(visit)}
+                            className="mt-[4px] flex items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] px-[11px] py-[5px] text-[11.5px] font-semibold text-[var(--cs-teal)] hover:bg-[var(--cs-teal-soft)]"
+                        >
+                            <Paperclip size={12} /> Add attachment
+                        </button>
+                    )}
+                </div>
             </div>
         );
     }
 
     return (
         <div className={"flex min-h-0 flex-1 flex-col overflow-y-auto " + (dense ? "gap-[10px] p-[13px]" : "gap-[12px] p-[15px]")}>
+            {quickFacts}
             <ChipRow label="Reported" items={symptoms} tone="symptom" />
             <ChipRow label="History" items={history} tone="history" />
 
@@ -239,12 +321,6 @@ export function IntakePanel({
                 </div>
             )}
 
-            {visit.visit_count > 1 && (
-                <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-[var(--cs-faint)]">
-                    <FileText size={12} aria-hidden="true" />
-                    {visit.visit_count} previous visit{visit.visit_count - 1 === 1 ? "" : "s"} on file
-                </div>
-            )}
         </div>
     );
 }

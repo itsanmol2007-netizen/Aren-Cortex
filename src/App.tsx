@@ -1032,30 +1032,37 @@ function App() {
   }, [hasActiveConsult, setActivePage, setPatientModalOpen]);
 
   /**
-   * Consult's cold start: the queue, once, if anyone is actually in it.
+   * Consult's standing invariant: never a blank workspace.
    *
-   * A doctor opening Consult is arriving at a clinic that has been taking
-   * patients without them. Landing on an empty workspace with a number in the
-   * header would make finding the first patient a step they have to think
-   * about. Landing on a "create patient" form — which is what Cortex's own
-   * default does — would be worse, because it answers a question the front
-   * desk already answered.
+   * A doctor on the bare consult screen (`activePage === null` — Patients,
+   * Practice, Settings etc. are a legitimate "not consulting right now" and
+   * stay untouched by this) with no active consult and nothing already
+   * covering the screen gets the queue sheet, forced open. Not just on cold
+   * start (2026-09-06: it used to be a once-per-mount check, so ending a
+   * consult any OTHER way — Cancel, or Complete & Next dismissing its own
+   * handover — left the dark header showing nothing at all, no patient name,
+   * no way back in short of a page reload). Opens even with nobody waiting:
+   * the queue sheet's own empty state is a live, useful screen (front desk
+   * additions still show up in it), and it stays open — see its
+   * `dismissable` prop below — so that IS the workspace until somebody
+   * exists to see.
    *
-   * At most once per mount (`coldStart`), never over a consult already in
-   * progress, and never when nobody is waiting — an empty queue sheet on boot
-   * is a modal for nothing.
+   * Idempotent by construction, not a one-shot ref: setting `queueSheetOpen`
+   * makes the condition false on the next render, so this never fights the
+   * doctor's own close (which only succeeds once `dismissable` allows it,
+   * i.e. once a consult is active again).
    */
-  const coldStart = useRef(false);
   useEffect(() => {
     if (!workspace.isConsult || !workspace.ready) return;
-    if (coldStart.current) return;
     if (queue.loading) return;              // wait for a real answer, not the empty first render
-    coldStart.current = true;
-    if (hasActiveConsult) return;           // a resumed draft owns the screen
-    setPatientModalOpen(false);
-    if (queue.waiting.length > 0) setQueueSheetOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace.isConsult, workspace.ready, queue.loading, queue.waiting.length, hasActiveConsult]);
+    if (hasActiveConsult) return;           // a consult already owns the screen
+    // `isFeaturePage` (`activePage !== null`) isn't declared until later in
+    // this component — inlined rather than reordered around it.
+    if (activePage !== null) return;        // Patients/Practice/Settings — a real destination, not idle
+    if (patientModalOpen || transition || queueSheetOpen) return; // something already covers it
+    setQueueSheetOpen(true);
+  }, [workspace.isConsult, workspace.ready, queue.loading, hasActiveConsult,
+      activePage, patientModalOpen, transition, queueSheetOpen]);
 
   // ── The specialty profile ───────────────────────────────────────────────
   // Which intent type this facility elevates into the Primary Recommendation
@@ -2409,6 +2416,11 @@ function App() {
           loading={queue.loading}
           currentVisitId={visitId}
           onClose={() => setQueueSheetOpen(false)}
+          // Locked open while there is no active consult behind it — closing
+          // here would leave the dark header with no patient in it at all.
+          // Dismissable again the moment a consult IS active: closing then
+          // just returns to that patient, never to a blank workspace.
+          dismissable={hasActiveConsult}
           onPick={consultFromQueue}
           onRegisterPatient={registerPatientDirectly}
           onManageAttachments={setAttachmentsVisit}
@@ -2455,11 +2467,13 @@ function App() {
                 : patient ? () => setPatientModalOpen(false) : () => { }
             }
             onConfirm={(p, payment) => { setRegisterRequested(false); return handlePatientConfirm(p, payment); }}
-            // Fee capture is a pure-Cortex thing (see PatientModal's own
-            // header) — Consult's front desk already owns money, so the
-            // manual-register escape hatch it uses here (`registerRequested`)
-            // gets no billing prop and renders exactly as it always did.
-            billing={workspace.isConsult ? undefined : {
+            // Always on, in both workspaces (2026-09-06 — this used to be
+            // Cortex-only). Consult's `registerRequested` escape hatch is the
+            // SAME "the doctor is doing their own intake" situation Cortex
+            // always is — front desk isn't in this loop, by construction, any
+            // time this modal is the one open — so it earns the same rail,
+            // not a separate design decision.
+            billing={{
               hospitalId: identity.hospitalId,
               doctorId: identity.doctorId,
               doctorName: identity.doctorName,

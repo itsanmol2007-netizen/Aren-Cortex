@@ -143,13 +143,14 @@ export interface ConsultLifecycle {
   /**
    * Start a consult from the patient modal, creating the patient if new.
    *
-   * `payment`, when present, is Cortex's own fee capture (`PatientModal`'s
-   * `billing` prop, pure-Cortex clinics only — see its header) — already
-   * fully resolved by the modal itself (visit type, discount, collected or
-   * not) by the time it reaches here. `undefined`/`null` means either the
-   * modal ran with no billing (Consult's manual-register escape hatch) or
-   * this clinic has no fee configured for the doctor; either way nothing is
-   * written, same as front desk's own `payment: null` contract.
+   * `payment`, when present, is the doctor's own fee capture (`PatientModal`'s
+   * `billing` prop — see its header; wired for both Cortex and Consult's
+   * manual-register path, since both mean "the doctor is doing their own
+   * intake") — already fully resolved by the modal itself (visit type,
+   * discount, collected or not) by the time it reaches here. `undefined`/
+   * `null` means this clinic has no fee configured for the doctor; either
+   * way nothing is written, same as front desk's own `payment: null`
+   * contract.
    */
   handlePatientConfirm: (incoming: Patient, payment?: ConfirmedPayment | null) => Promise<void>;
   /** Carry a past visit's chart and medicines into this one. */
@@ -353,17 +354,19 @@ export function useConsultLifecycle({
 
       const visit = await resolveVisitForConsult(dbPatient.id!);
 
-      // ── Solo mode's own fee capture ─────────────────────────────────────
-      // Front desk writes `visit_payments` at intake for Consult; a Cortex
-      // clinic has no front desk, so THIS is the equivalent moment — the
-      // question SESSION-HANDOFF left open ("is the fee captured at
-      // registration or at the end of the consult?"), answered: registration,
-      // same as Consult. `payment` arrives already fully resolved by
-      // `PatientModal` (rule: reception/the doctor never sets the base fee,
-      // only discounts it — `lib/db/payments.ts`'s own header). Fire-and-
-      // forget, never awaited: a fee that fails to write must not fail a
-      // visit that has already been created (rule 4, same contract as
-      // observations/attachments/story).
+      // ── The doctor's own fee capture ─────────────────────────────────────
+      // Front desk writes `visit_payments` at intake for a normal Consult
+      // registration; whenever THIS path runs instead — always for Cortex,
+      // and for Consult's own manual-register escape hatch — the doctor is
+      // doing intake themselves with no front desk in the loop, so this is
+      // the equivalent moment. Answers the question SESSION-HANDOFF left
+      // open for Cortex ("is the fee captured at registration or at the end
+      // of the consult?"): registration, same as front desk. `payment`
+      // arrives already fully resolved by `PatientModal` (rule: reception/
+      // the doctor never sets the base fee, only discounts it —
+      // `lib/db/payments.ts`'s own header). Fire-and-forget, never awaited: a
+      // fee that fails to write must not fail a visit that has already been
+      // created (rule 4, same contract as observations/attachments/story).
       if (payment) {
         recordVisitPayment({
           visitId: visit.id,
@@ -371,7 +374,7 @@ export function useConsultLifecycle({
           doctorId: identity.doctorId,
           actor: { id: identity.userId, name: identity.doctorName, role: "doctor" },
           ...payment,
-        }).catch((err) => console.warn("[cortex] visit payment capture failed (non-fatal):", err));
+        }).catch((err) => console.warn("[payments] visit payment capture failed (non-fatal):", err));
       }
 
       session.setVisitId(null);

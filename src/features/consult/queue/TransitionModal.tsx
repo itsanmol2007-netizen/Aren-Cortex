@@ -137,13 +137,19 @@ export function TransitionModal({
                 title="Nobody is waiting"
                 subtitle={justCompleted ? `${justCompleted}'s prescription is saved` : undefined}
                 onClose={onDismiss}
+                // There is no active consult behind this screen by construction
+                // (see the file header: it only opens over an already-cleared
+                // workspace) — no × in the corner to leave the header blank.
+                // Same doctrine `PatientModal` already applies to itself.
+                dismissable={false}
                 footer={
                     <>
                         <GhostButton onClick={onRegisterPatient}>
                             <UserPlus size={14} /> Register a patient
                         </GhostButton>
-                        <span className="min-w-0 flex-1" />
-                        <PrimaryButton onClick={onDismiss}>Done</PrimaryButton>
+                        <span className="min-w-0 flex-1 text-[11.5px] leading-[1.45] text-[var(--cs-faint)]">
+                            This stays open until the next patient — the desk's or yours.
+                        </span>
                     </>
                 }
             >
@@ -185,7 +191,11 @@ export function TransitionModal({
                 />
             ) : undefined}
             onClose={onDismiss}
-            holdOpen
+            // Same as the empty branch above — no active consult sits behind
+            // this screen, so there is no "leave" that doesn't land on a
+            // blank header. Continuing (with whoever is showing) or
+            // registering a walk-in are the only ways out.
+            dismissable={false}
             footer={
                 confirming ? (
                     // ── The second, progressive step ────────────────────────
@@ -217,7 +227,9 @@ export function TransitionModal({
                     </>
                 ) : (
                     <>
-                        <GhostButton onClick={onDismiss}>Not now</GhostButton>
+                        <GhostButton onClick={onRegisterPatient}>
+                            <UserPlus size={14} /> Register a patient
+                        </GhostButton>
                         <span className="min-w-0 flex-1" />
                         <PrimaryButton onClick={commit}>
                             {aheadOfQueue

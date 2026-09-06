@@ -17,13 +17,16 @@ type PatientModalProps = {
    *  doctor, or when the modal ran with no `billing` prop at all. */
   onConfirm: (patient: Patient, payment?: ConfirmedPayment | null) => void;
   /**
-   * Present only for a pure-Cortex clinic (App.tsx: `workspace.isConsult
-   * ? undefined : {...}`) — a solo practitioner has no front desk to collect
-   * money, so THIS modal is where the fee gets decided, same moment Consult's
-   * `CreateVisitModal` decides it. Consult's own manual-register escape
-   * hatch (`registerRequested`) renders this same component with no
-   * `billing` at all, and gets no payment rail — front desk already owns
-   * that clinic's money.
+   * Always passed today (App.tsx) — a solo Cortex practitioner has no front
+   * desk to collect money, so THIS modal is where the fee gets decided, same
+   * moment Consult's `CreateVisitModal` decides it for a front-desk intake.
+   * Consult's own manual-register escape hatch (`registerRequested`) is the
+   * exact same situation — the doctor doing their own intake, front desk out
+   * of the loop by construction whenever this modal is the one open — so it
+   * gets the identical rail, not a separate decision. Optional (rather than
+   * required) only so a future caller that genuinely has no billing context
+   * to offer degrades safely: the wrapper collapses to `display:contents`
+   * and every field above behaves exactly as it did before this rail existed.
    */
   billing?: { hospitalId: string; doctorId: string; doctorName: string };
 };

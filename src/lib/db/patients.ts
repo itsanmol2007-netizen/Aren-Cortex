@@ -1485,17 +1485,21 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
         paymentByVisit.set(r.visit_id, { status: r.status, total: Number(r.total ?? 0) });
     });
 
+    // `id` is fetched alongside so each row below can exclude ITSELF from its
+    // own patient's history — see `last_visit_at`'s comment on the visit
+    // this builds, a few lines down. Grouped per patient, newest first
+    // (the query's own order), so "the one before this" is just "the first
+    // entry that isn't me."
     const { data: allVisitsForPatients } = await supabase
         .from("visits")
-        .select("patient_id, created_at")
+        .select("id, patient_id, created_at")
         .in("patient_id", patientIds)
         .eq("hospital_id", hospitalId)
         .order("created_at", { ascending: false });
-    const visitCountMap = new Map<string, number>();
-    const lastVisitMap = new Map<string, string>();
+    const visitsByPatient = new Map<string, { id: string; created_at: string }[]>();
     (allVisitsForPatients ?? []).forEach((v: any) => {
-        visitCountMap.set(v.patient_id, (visitCountMap.get(v.patient_id) ?? 0) + 1);
-        if (!lastVisitMap.has(v.patient_id)) lastVisitMap.set(v.patient_id, v.created_at);
+        const list = visitsByPatient.get(v.patient_id);
+        if (list) list.push(v); else visitsByPatient.set(v.patient_id, [v]);
     });
 
     return visits.map((v: any) => {
@@ -1524,8 +1528,18 @@ export async function fetchTodayVisits(hospitalId: string): Promise<TodayVisit[]
                     .filter((r: any) => r.visit_id === v.id)
                     .map((r: any) => symptomById.get(Number(r.symptom_id)))
                     .filter(Boolean) as string[]),
-            visit_count: visitCountMap.get(v.patient_id) ?? 1,
-            last_visit_at: lastVisitMap.get(v.patient_id) ?? v.created_at,
+            // Total on file for this patient, INCLUDING the row being built —
+            // `visit_count > 1` is how every caller (this file's other
+            // fetchers, `VisitDetailModal`, `queueParts.IntakePanel`) already
+            // spots a returning patient, so this one stays consistent with
+            // them rather than inventing a different convention.
+            visit_count: visitsByPatient.get(v.patient_id)?.length ?? 1,
+            // The visit before THIS one — excludes itself, so a patient back
+            // today after months reads as "Last seen 12 Aug", not "Today"
+            // (2026-09-06 fix: this used to include today's own row, which
+            // is why it always read "Today" for anyone actually in today's
+            // queue — the one case this field exists to describe).
+            last_visit_at: (visitsByPatient.get(v.patient_id) ?? []).find((r) => r.id !== v.id)?.created_at ?? null,
             attachment_count: attachmentCountByVisit.get(v.id) ?? 0,
             payment_status: (paymentByVisit.get(v.id)?.status as TodayVisit["payment_status"]) ?? null,
             payment_total: paymentByVisit.get(v.id)?.total ?? null,
