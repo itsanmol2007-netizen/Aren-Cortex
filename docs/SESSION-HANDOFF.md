@@ -1,125 +1,80 @@
-# Session handoff — 2026-09-05 (Parallax, fee capture, and the intake rebuild)
+# Session handoff — 2026-09-06 (Cortex gets its own fee capture)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE.** `cortex-design-dna/*.md`
 and `context/*.md` are stable reference — touch them only when a rule in them
 is actually wrong.
 
-## ⚠ HOW TO VERIFY IN THIS ENVIRONMENT
-
-Windows, Claude desktop app — not the Linux sandbox older handoffs describe.
-
-- `npx tsc -b` and `npm run build` both pass clean. Chunk-size warning is
-  pre-existing (~1.83MB).
-- **The in-app browser reaches the dev server fine.** `npm run dev` on
-  `127.0.0.1:5173`. No proxy, no playwright harness, no throwaway preview file.
-- **But nothing behind the login has been seen rendered.** The agent cannot
-  type a password into a login form. Everything below is verified as: compiles,
-  builds, boots with zero console errors, route guards redirect correctly.
-  **Design-DNA rule 13 is UNSATISFIED for every screen in this handoff.**
-  First job next session: get a human to sign in, then measure.
-
-Test accounts: **Raju Chauhan** (role `admin`, Anmol Homeo) for Parallax; any
-reception login for the intake modal. Ask Anmol for credentials.
-
 ## What this session did
 
-### 1. AREN Parallax — the admin workspace
-Full detail in **`context/parallax-admin.md`**. `/app/admin`, its own
-collapsible rail, seven pages (Overview, Reports, People & Benches, Money,
-Catalogue, Clinic, Plan). Access is derived, never configured —
-`lib/workspace/adminAccess.ts` + `hooks/useAdminAccess.ts`.
+### Cortex's own payment rail — the open question from 2026-09-05, answered
+Last session's handoff flagged this as open: *"Cortex's own patient entry has
+no fee UI… is the fee captured at registration or at the end of the
+consult?"* Answered: **at registration, same moment Consult's front desk
+decides it** — `PatientModal.tsx` (`components/PatientModal.tsx`) now carries
+a persistent payment rail beside its search/create surface, built in Tailwind
+(`components/PatientPaymentRail.tsx`, new file), reusing `lib/db/payments.ts`
+unchanged (that module was already generic, not front-desk-specific).
 
-The product name lives **only** in `lib/workspace/mode.ts` → `ADMIN_BRAND`.
-No new subscription tiers: AREN Polaris stays the only plan.
+- **Not a copy of front desk's `PaymentRail`.** Same job (visit type → fee →
+  collect-or-not → discount, one decision on screen at a time) and the exact
+  same fee maths, but Cortex's own skin: `PatientModal`'s existing pink→violet
+  gradient language (`#f472b6` → `#a855f7`, `.pm-*` in
+  `components-modals.css`) rather than front desk's flat indigo `#5b4fe9`.
+  No doctor picker either — a Cortex visit is always the one signed-in
+  doctor, so the rail only ever shows one doctor's numbers.
+- **Gated on `billing` (App.tsx: `workspace.isConsult ? undefined : {...}`).**
+  Pure Cortex only. Consult's own manual-register escape hatch
+  (`registerRequested`, Ctrl+N while a doctor has a front desk) renders the
+  same `PatientModal` with no `billing` — front desk already owns that
+  clinic's money, so it gets no rail and behaves exactly as before (the
+  wrapper div collapses to `display:contents` in that case — zero layout
+  diff).
+- **Zero added clicks.** The rail is a persistent companion, not a gate —
+  whatever it's currently set to when a search row is clicked, a duplicate is
+  adopted, or "Start consult" is pressed IS what gets recorded (undecided →
+  pending, same "never record an unanswered question as money collected"
+  rule front desk's rail follows). Confirming a patient was already one
+  click; it still is.
+- **Follow-up default, scoped down from front desk's version.** Front desk
+  auto-defaults visit type from the ONE patient in its form. Cortex's search
+  mode shows several candidates before any one is chosen, so there's no
+  single patient to default a toggle to — visit type stays a plain manual
+  control (default "New") until a specific patient is actually clicked, at
+  which point `defaultVisitType` + a batched `fetchPatientVisitStats` (fired
+  whenever the search list changes) decide the CHARGED type silently, unless
+  the doctor already touched the toggle themselves. The duplicate-detected
+  path in "New patient" mode (`matchedPatient`) DOES get the same live
+  auto-default front desk has, because that path — like front desk's own
+  form — already has one specific, identified patient.
+- **The write itself** lives in `useConsultLifecycle.handlePatientConfirm`,
+  fire-and-forget after `resolveVisitForConsult` (rule 4 — a fee that fails
+  to write must never fail a visit that's already committed), via the same
+  `recordVisitPayment` front desk calls. New shared type,
+  `payments.ts`'s `ConfirmedPayment` — what a fully-resolved intake surface
+  hands its caller, decoupled from the `visitId`/`hospitalId`/`doctorId`/
+  `actor` only the caller knows.
+- **No `lib/db/payments.ts` changes beyond the new `ConfirmedPayment` type.**
+  Confirms it was built generically the first time.
 
-### 2. Fees — configuration AND collection
-- **Admin side**: `doctors.consultation_fee` / `follow_up_fee`,
-  `hospitals.gst_enabled` / `gst_percent` / `allow_discount` / `currency`,
-  edited from Parallax → Money.
-- **Desk side**: `lib/db/payments.ts` is the one place fee maths and writes
-  live. `computeFee` is pure. Reception has **no code path that sets a base
-  fee** — it discounts, an admin prices.
-- **Audit**: `visit_payment_events`, append-only (SELECT + INSERT policies, no
-  UPDATE or DELETE). Shown on Parallax → Money as **Fee activity**.
-
-`NULL` fee means "not set", never "free" — an explicit `0` is a free
-consultation and the two stay distinguishable everywhere.
-
-### 3. The intake modal, rebuilt
-`CreateVisitModal.tsx` was rejected twice and is now a two-column surface:
-
-- **Left**: Patient Details (name/phone, age+DOB in one row/gender), Today's
-  Visit (doctor, symptoms), Attachment.
-- **Right**: a persistent **payment rail** (`PaymentRail.tsx`).
-
-What changed and why:
-- **Progressive disclosure.** v1 showed paid/unpaid, four methods, discount
-  type and discount value at once. Anmol: *"this is not airplane cockpit."*
-  The rail now shows one decision at a time — methods appear only after
-  **Collect**, discount only after opening it.
-- **New visit / Follow-up is offered for EVERY patient**, not only returning
-  ones. A clinic's first week is full of people on their fifth visit whom the
-  database has never seen.
-- **Measurements left registration entirely.** Taken later from the queue.
-  `MeasurementsModal` still exists and is still used by Practice.
-- **Attachments** are one `+ Attach document` button with a Computer/Phone
-  menu (`AttachDocumentField.tsx`). Drag-and-drop still works; it is just no
-  longer a 90px advertisement.
-- **Duplicate detection is a dropdown**, floating over the rows beneath rather
-  than growing the form. The "Existing patient? Search…" link is gone — the
-  form already searches as you type.
-- `ObservablePicker` grows with its chips (`min-h`, not a fixed `h-[62px]`).
-- `ModalShell` gained optional `subtitle` and `flushBody`; existing callers are
-  untouched.
-
-**Symptoms stayed a structured `ObservablePicker`, not a free-text box.** The
-reference mockup showed a textarea, but standing rule 3 and the whole
-intake→Synapse handoff depend on `observableIds`. It now *looks* like the
-reference (full width, grows) while still writing structured observables.
-Flagged rather than silently changed either way.
-
-### 4. Two real bugs fixed
-- `Sidebar.tsx` hard-coded "AREN Cortex" while `WorkspaceHeader` beside it read
-  the real product from the clinic row. Every Consult clinic was told it was
-  running Cortex. Both now read `useWorkspaceMode()`.
-- `WorkspaceHeader` gained an optional `brand` prop so Parallax can name itself
-  without forking a second header.
-
-### 5. Anmol Homeo Clinics is genuinely multi-bench
-Was `solo_reception`, `seats = 1`, one doctor. Now `multi_doctor`, `seats = 4`,
-four benches with fees (SK Pandey ₹400, Meera Iyer ₹500, Rajat Verma ₹600,
-Farhana Sheikh ₹700).
-
-### 6. Seed data — REMOVE BEFORE ANY DEMO THAT MATTERS
-Seeded into **Anmol Homeo Clinics only**: 45 patients, 1,380 visits (8 Jul –
-5 Sep), 1,075 prescriptions, 1,136 payments. Every row is tagged:
-
-```sql
-delete from patients where abha_id = 'DEMO-SEED-20260904';
-delete from doctors  where registration_number = 'DEMO-SEED-20260904';
-```
-
-Visits, prescriptions and payments cascade. The clinic's **94 real visits and
-13 real patients are untouched** — they do not carry the tag.
+Files: `src/components/PatientPaymentRail.tsx` (new), `PatientModal.tsx`,
+`hooks/useConsultLifecycle.ts`, `lib/db/payments.ts`, `App.tsx`. `npx tsc -b`
+and `npm run build` both pass clean (pre-existing ~1.86MB chunk-size warning,
+unchanged in kind).
 
 ## What is NOT done
 
-1. **Visual verification of everything.** Top of the next list.
-2. **Cortex's own patient entry has no fee UI.** `components/PatientModal.tsx`
-   is a different modal (search-or-register, its own keyboard flow) and the
-   visit is created in `hooks/useConsultLifecycle.ts` →
-   `resolveVisitForConsult`. **Open product question:** in solo mode the doctor
-   registers and consults in one motion, so is the fee captured at registration
-   or at the end of the consult? Needs Anmol's call before it is built.
-3. **Follow-up fee has no rule for what counts as a follow-up.**
-   `FOLLOW_UP_WINDOW_DAYS = 14` is a DEFAULT the desk overrides; there is no
-   "same complaint" logic and probably should not be.
-4. **Collecting payment later from the visit page** is referenced in the rail's
-   own copy ("Payment can also be collected later from the visit page") but
-   that surface does not exist yet. Build it or change the copy.
-5. **WhatsApp is unchanged and still parked** on Meta credentials. `server/`
-   holds a complete webhook + Cloud API client + booking bot. Verify token is
-   already in `server/.env.example`.
+1. **Visual verification.** Same standing gap as last session — nothing
+   behind login has been seen rendered by an agent in this environment.
+   Measure this rail against a live sign-in before trusting the pixel
+   choices above.
+2. **The search-mode "no default until clicked" tradeoff above** is a
+   judgement call, not a limitation forced by the data — `fetchPatientVisitStats`
+   is already batched per search result, so a future pass COULD surface a
+   small "usually follow-up" hint per row before the click, if that's ever
+   asked for.
+3. **Collecting payment later from a Cortex visit** has the same gap front
+   desk's rail already names in its own copy — no visit-page surface exists
+   yet to revisit an "unpaid" decision after the fact, in either workspace.
 
 ## Traps worth knowing before you edit
 
@@ -127,10 +82,11 @@ Visits, prescriptions and payments cascade. The clinic's **94 real visits and
   nothing. Read with `.replace(/\r\n/g,"\n")`, write back with the reverse.
 - **Bash heredocs mangle box-drawing characters and `₹`.** Use the Write tool
   for anything containing them, or a `.cjs` file written via Write.
-- **`base.css` is unlayered and beats Tailwind utilities.** Front-desk chrome
-  uses the unlayered `fd-*` classes for exactly this reason; admin form
-  controls carry trailing `!`.
+- **`base.css` is unlayered and beats Tailwind utilities** — and so is every
+  other legacy sheet in `styles/` (`components-modals.css`'s `.pm-*`
+  included). A Tailwind width/layout utility on an element that already
+  carries a legacy class from one of these sheets will silently lose to it
+  regardless of source order or specificity math — don't fight it with more
+  Tailwind, either restructure the DOM (this session's `display:contents`
+  trick) or fall back to an inline style.
 - **Supabase MCP refuses multi-statement writes.** Split them.
-- **`add_medicine` was widened** so an admin with no `doctors` row can add a
-  brand (NULL `created_by_doctor_id`). Rule 22 still holds — the composition
-  must already exist.

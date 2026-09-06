@@ -35,6 +35,7 @@ import {
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
+import { recordVisitPayment, type ConfirmedPayment } from "../lib/db/payments";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -139,8 +140,18 @@ export interface ConsultLifecycle {
   /** Re-enter a visit that is already in progress, by its known id — see
    *  this function's own doc comment for why it's not the one above. */
   resumeConsult: (incomingPatient: Patient, visitId: string) => void;
-  /** Start a consult from the patient modal, creating the patient if new. */
-  handlePatientConfirm: (incoming: Patient) => Promise<void>;
+  /**
+   * Start a consult from the patient modal, creating the patient if new.
+   *
+   * `payment`, when present, is Cortex's own fee capture (`PatientModal`'s
+   * `billing` prop, pure-Cortex clinics only — see its header) — already
+   * fully resolved by the modal itself (visit type, discount, collected or
+   * not) by the time it reaches here. `undefined`/`null` means either the
+   * modal ran with no billing (Consult's manual-register escape hatch) or
+   * this clinic has no fee configured for the doctor; either way nothing is
+   * written, same as front desk's own `payment: null` contract.
+   */
+  handlePatientConfirm: (incoming: Patient, payment?: ConfirmedPayment | null) => Promise<void>;
   /** Carry a past visit's chart and medicines into this one. */
   handleRepeatRx: (visit: RealVisit) => void;
   /** Write the consultation, log the decision, and clear the workspace. */
@@ -305,7 +316,7 @@ export function useConsultLifecycle({
     carryForwardFor(incomingPatient.id!);
   }, [session, clearWorkspace, setActivePage, setSidebarOpen, showToast, focusChartSearch, carryForwardFor, prefillFromIntake]);
 
-  const handlePatientConfirm = useCallback(async (incoming: Patient) => {
+  const handlePatientConfirm = useCallback(async (incoming: Patient, payment?: ConfirmedPayment | null) => {
     try {
       let dbPatient: Patient;
 
@@ -341,6 +352,28 @@ export function useConsultLifecycle({
       }
 
       const visit = await resolveVisitForConsult(dbPatient.id!);
+
+      // ── Solo mode's own fee capture ─────────────────────────────────────
+      // Front desk writes `visit_payments` at intake for Consult; a Cortex
+      // clinic has no front desk, so THIS is the equivalent moment — the
+      // question SESSION-HANDOFF left open ("is the fee captured at
+      // registration or at the end of the consult?"), answered: registration,
+      // same as Consult. `payment` arrives already fully resolved by
+      // `PatientModal` (rule: reception/the doctor never sets the base fee,
+      // only discounts it — `lib/db/payments.ts`'s own header). Fire-and-
+      // forget, never awaited: a fee that fails to write must not fail a
+      // visit that has already been created (rule 4, same contract as
+      // observations/attachments/story).
+      if (payment) {
+        recordVisitPayment({
+          visitId: visit.id,
+          hospitalId: identity.hospitalId,
+          doctorId: identity.doctorId,
+          actor: { id: identity.userId, name: identity.doctorName, role: "doctor" },
+          ...payment,
+        }).catch((err) => console.warn("[cortex] visit payment capture failed (non-fatal):", err));
+      }
+
       session.setVisitId(null);
       session.setPatient(dbPatient);
       clearWorkspace();
@@ -361,8 +394,9 @@ export function useConsultLifecycle({
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
-  }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId,
-      setActivePage, showToast, focusChartSearch, carryForwardFor, prefillFromIntake]);
+  }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId, identity.doctorId,
+      identity.userId, identity.doctorName, setActivePage, showToast, focusChartSearch,
+      carryForwardFor, prefillFromIntake]);
 
   const handleRepeatRx = useCallback((visit: RealVisit) => {
     // A past visit stores v1 names ("fever"); the catalogue now speaks

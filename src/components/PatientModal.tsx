@@ -1,14 +1,31 @@
 import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2, CalendarDays } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { searchPatients, findPatientByPhone, type DBPatient } from "../lib/db";
+import { searchPatients, findPatientByPhone, fetchPatientVisitStats, type DBPatient } from "../lib/db";
 import type { Gender, Patient } from "../types";
 import { ageInYears, dobMattersFor, todayIso } from "../lib/growth/age";
 import { useRovingList } from "../hooks/useRovingList";
 import { matches } from "../lib/keyboard/keymap";
+import {
+  computeFee, defaultVisitType, fetchFeeContext, resolveFee,
+  type ConfirmedPayment, type FeeContext, type VisitType,
+} from "../lib/db/payments";
+import { PatientPaymentRail, INITIAL_FEE_STATE, type FeeState } from "./PatientPaymentRail";
 
 type PatientModalProps = {
   onClose: () => void;
-  onConfirm: (patient: Patient) => void;
+  /** `payment` is `undefined`/`null` when this clinic has no fee for the
+   *  doctor, or when the modal ran with no `billing` prop at all. */
+  onConfirm: (patient: Patient, payment?: ConfirmedPayment | null) => void;
+  /**
+   * Present only for a pure-Cortex clinic (App.tsx: `workspace.isConsult
+   * ? undefined : {...}`) — a solo practitioner has no front desk to collect
+   * money, so THIS modal is where the fee gets decided, same moment Consult's
+   * `CreateVisitModal` decides it. Consult's own manual-register escape
+   * hatch (`registerRequested`) renders this same component with no
+   * `billing` at all, and gets no payment rail — front desk already owns
+   * that clinic's money.
+   */
+  billing?: { hospitalId: string; doctorId: string; doctorName: string };
 };
 
 const emptyDraft: Patient = { name: "", age: "", gender: "", phone: "", address: "", dateOfBirth: "" };
@@ -17,10 +34,92 @@ function dbToUiPatient(p: DBPatient): Patient {
   return { id: p.id, name: p.name, age: String(p.age), gender: p.gender as Gender, phone: p.phone, dateOfBirth: p.date_of_birth ?? "" };
 }
 
-export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
+export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps) {
   const [draft, setDraft] = useState<Patient>(emptyDraft);
   const [matchedPatient, setMatchedPatient] = useState<DBPatient | null>(null);
   const [mode, setMode] = useState<"search" | "create">("search");
+
+  // ── Fee capture (pure Cortex only — see `billing`'s own doc comment) ────
+  //
+  // Kept to primitives in dependency arrays throughout this block: `billing`
+  // is a fresh object literal every App.tsx render, and depending on it
+  // directly would refetch on every keystroke elsewhere in the app.
+  const hospitalId = billing?.hospitalId;
+  const feeDoctorId = billing?.doctorId;
+
+  const [feeCtx, setFeeCtx] = useState<FeeContext | null>(null);
+  useEffect(() => {
+    if (!hospitalId) return;
+    let alive = true;
+    fetchFeeContext(hospitalId)
+      .then((ctx) => { if (alive) setFeeCtx(ctx); })
+      // Non-fatal: a doctor must still be able to start a consult when the
+      // fee read fails. The rail simply shows no money controls.
+      .catch((err) => console.warn("[PatientModal] fetchFeeContext failed (non-fatal):", err));
+    return () => { alive = false; };
+  }, [hospitalId]);
+
+  const [fee, setFee] = useState<FeeState>(INITIAL_FEE_STATE);
+  // Once the doctor has touched the visit-type toggle themselves, that
+  // decision wins over any patient-history default computed below.
+  const [feeTouched, setFeeTouched] = useState(false);
+  const handleFeeChange = (next: FeeState) => {
+    if (next.visitType !== fee.visitType) setFeeTouched(true);
+    setFee(next);
+  };
+
+  // Which patients has this modal already looked up visit history for —
+  // additive, never cleared, so a patient looked up once (e.g. surfaced by
+  // an earlier, narrower search) still has an answer if they reappear.
+  const [statsById, setStatsById] = useState<Map<string, { last_visit_at: string | null }>>(new Map());
+
+  const doctorCard = feeCtx?.feesByDoctor.get(feeDoctorId ?? "");
+  const baseFee = feeCtx && feeDoctorId ? resolveFee(doctorCard, fee.visitType) : null;
+  const breakdown = feeCtx && baseFee !== null
+    ? computeFee({
+        base: baseFee,
+        discountKind: fee.discountKind,
+        discountValue: Number(fee.discountValue) || 0,
+        gstEnabled: feeCtx.policy.gstEnabled,
+        gstPercent: feeCtx.policy.gstPercent,
+      })
+    : null;
+
+  /**
+   * The visit type this modal will actually CHARGE for `patientId`, worked
+   * out once at the moment of confirming — never shown speculatively while
+   * several search candidates are still on screen (there is no single
+   * patient yet to look a default up for). A brand-new patient (`undefined`)
+   * or one this modal hasn't fetched history for yet always reads as "new",
+   * same as `defaultVisitType`'s own fallback.
+   */
+  const effectiveVisitType = (patientId: string | undefined): VisitType =>
+    feeTouched ? fee.visitType : defaultVisitType(patientId ? statsById.get(patientId)?.last_visit_at : null);
+
+  const buildPayment = (patientId: string | undefined): ConfirmedPayment | null => {
+    if (!billing || !feeCtx) return null;
+    const visitType = effectiveVisitType(patientId);
+    const base = resolveFee(doctorCard, visitType);
+    if (base === null) return null;
+    const finalBreakdown = computeFee({
+      base,
+      discountKind: fee.discountKind,
+      discountValue: Number(fee.discountValue) || 0,
+      gstEnabled: feeCtx.policy.gstEnabled,
+      gstPercent: feeCtx.policy.gstPercent,
+    });
+    return {
+      visitType,
+      breakdown: finalBreakdown,
+      discountKind: fee.discountKind,
+      discountPercent: fee.discountKind === "percent" ? Number(fee.discountValue) || 0 : null,
+      gstPercent: feeCtx.policy.gstPercent,
+      // "Undecided" saves as pending — the visit starts either way, and an
+      // unanswered money question must never be recorded as money collected.
+      status: fee.status === "paid" ? "paid" : "pending",
+      method: fee.status === "paid" ? fee.method : null,
+    };
+  };
 
   // Search mode state
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,7 +194,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
     // "Use this patient", not "create a second record with the same number".
     // Falling through to handleConfirm here would quietly mint the duplicate
     // the card exists to prevent.
-    if (matchedPatient) { onConfirm(dbToUiPatient(matchedPatient)); return; }
+    if (matchedPatient) { onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id)); return; }
     handleConfirm();
   };
 
@@ -143,6 +242,20 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Batched visit-history lookup for whatever the search box is currently
+  // showing — so confirming ANY one of these rows already knows whether to
+  // default to "New visit" or "Follow-up" the instant it's clicked, with no
+  // second round trip in between. Skipped entirely outside pure Cortex
+  // (`hospitalId` undefined) — no billing, nothing to default.
+  useEffect(() => {
+    if (!hospitalId || searchResults.length === 0) return;
+    let cancelled = false;
+    fetchPatientVisitStats(searchResults.map((r) => r.id))
+      .then((m) => { if (!cancelled) setStatsById((prev) => new Map([...prev, ...m])); })
+      .catch(() => { /* best-effort default only — a miss just means "new" */ });
+    return () => { cancelled = true; };
+  }, [hospitalId, searchResults]);
+
   // Phone change — strip non-digits, check duplicate at 10 digits
   const handlePhoneChange = async (raw: string) => {
     const digits = raw.replace(/\D/g, "").slice(0, 10);
@@ -152,7 +265,16 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
       setPhoneCheckLoading(true);
       try {
         const existing = await findPatientByPhone(digits);
-        if (existing) setMatchedPatient(existing);
+        if (existing) {
+          setMatchedPatient(existing);
+          // Same default-lookup as the search list, for the one specific
+          // patient this duplicate check just identified.
+          if (hospitalId) {
+            fetchPatientVisitStats([existing.id])
+              .then((m) => setStatsById((prev) => new Map([...prev, ...m])))
+              .catch(() => {});
+          }
+        }
       } catch {
         // non-fatal — just skip duplicate check
       } finally {
@@ -165,7 +287,10 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
     const name = draft.name.trim();
     const phone = draft.phone.trim();
     if (!name || !phone || !draft.gender) return;
-    onConfirm({ ...draft, name, phone });
+    // Only reachable with no `matchedPatient` (that branch has its own "Use
+    // this patient" action) — always a genuinely new patient, so there is no
+    // history to default a visit type from.
+    onConfirm({ ...draft, name, phone }, buildPayment(undefined));
   };
 
   const isFormValid = draft.name.trim() && draft.phone.length === 10 && draft.gender;
@@ -174,7 +299,12 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
     <div className="pm-overlay" role="dialog" aria-modal="true" aria-label="Patient intake">
       <button className="pm-backdrop" type="button" onClick={onClose} aria-label="Close" />
 
-      <div className="pm-card" onKeyDown={onCardKeyDown}>
+      {/* `contents` when there's no billing: the wrapper disappears from the
+          box tree entirely, so `.pm-card` centers under `pm-overlay`'s own
+          grid exactly as it always did (Consult's manual-register path).
+          A real flex row only exists once there's a rail to sit beside it. */}
+      <div className={billing ? "flex flex-wrap items-start justify-center gap-4" : "contents"}>
+        <div className="pm-card" onKeyDown={onCardKeyDown}>
         <div className="pm-top-stripe" />
 
         {/* Header — no close button: patient intake is mandatory, not dismissable */}
@@ -266,7 +396,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                     key={p.id}
                     type="button"
                     className="pm-match-row"
-                    onClick={() => onConfirm(dbToUiPatient(p))}
+                    onClick={() => onConfirm(dbToUiPatient(p), buildPayment(p.id))}
                   >
                     <div className="pm-avatar">
                       {p.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
@@ -403,7 +533,7 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
                   </div>
                 </div>
                 <div className="pm-duplicate-actions">
-                  <button type="button" className="pm-btn-primary" onClick={() => onConfirm(dbToUiPatient(matchedPatient))}>
+                  <button type="button" className="pm-btn-primary" onClick={() => onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id))}>
                     Use this patient
                   </button>
                   <button type="button" className="pm-btn-ghost" onClick={() => setMatchedPatient(null)}>
@@ -437,6 +567,18 @@ export function PatientModal({ onClose, onConfirm }: PatientModalProps) {
               </>
             )}
           </div>
+        )}
+        </div>
+
+        {billing && (
+          <PatientPaymentRail
+            state={fee}
+            onChange={handleFeeChange}
+            policy={feeCtx?.policy ?? { currency: "INR", gstEnabled: false, gstPercent: 18, allowDiscount: true }}
+            baseFee={baseFee}
+            breakdown={breakdown}
+            doctorName={billing.doctorName}
+          />
         )}
       </div>
     </div>

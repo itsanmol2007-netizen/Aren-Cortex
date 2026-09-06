@@ -2454,7 +2454,16 @@ function App() {
                 ? () => { setRegisterRequested(false); setPatientModalOpen(false); }
                 : patient ? () => setPatientModalOpen(false) : () => { }
             }
-            onConfirm={(p) => { setRegisterRequested(false); return handlePatientConfirm(p); }}
+            onConfirm={(p, payment) => { setRegisterRequested(false); return handlePatientConfirm(p, payment); }}
+            // Fee capture is a pure-Cortex thing (see PatientModal's own
+            // header) — Consult's front desk already owns money, so the
+            // manual-register escape hatch it uses here (`registerRequested`)
+            // gets no billing prop and renders exactly as it always did.
+            billing={workspace.isConsult ? undefined : {
+              hospitalId: identity.hospitalId,
+              doctorId: identity.doctorId,
+              doctorName: identity.doctorName,
+            }}
           />
         )
       }

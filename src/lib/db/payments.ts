@@ -166,6 +166,25 @@ export function computeFee(opts: {
 
 // ── Writing ────────────────────────────────────────────────────────────────
 
+/**
+ * A fully-resolved payment decision, computed by whichever intake surface
+ * (front desk's `CreateVisitModal`, Cortex's `PatientModal`) has just decided
+ * the visit type and worked the discount/collect flow. The caller who mints
+ * the actual visit row (only THEY know the real `visit_id`) turns this into a
+ * `RecordPaymentInput` by adding `visitId`/`hospitalId`/`doctorId`/`actor` and
+ * calling `recordVisitPayment` — see `useConsultLifecycle.handlePatientConfirm`
+ * for Cortex's caller, `CreateVisitModal`'s `onCreate` contract for front desk's.
+ */
+export interface ConfirmedPayment {
+    visitType: VisitType;
+    breakdown: FeeBreakdown;
+    discountKind: DiscountKind;
+    discountPercent: number | null;
+    gstPercent: number;
+    status: "paid" | "pending";
+    method: PaymentMethod | null;
+}
+
 export interface RecordPaymentInput {
     visitId: string;
     hospitalId: string;
