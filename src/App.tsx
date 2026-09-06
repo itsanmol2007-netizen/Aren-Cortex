@@ -934,10 +934,18 @@ function App() {
     setSidebarOpen(false);
     setPrescriptionEditorOpen(false);
     // Any consult-only overlay must die the moment we leave the consult screen —
-    // it has no business surviving on Patients/Prescriptions/etc.
+    // it has no business surviving on Patients/Prescriptions/etc. Missed
+    // `queueSheetOpen`/`transition` until 2026-09-06: without this, either
+    // one stayed mounted (full-screen, z-[70]) UNDER the page the doctor
+    // just navigated to, and reused the exact "can't reach the sidebar to
+    // leave" bug this same round fixed on `GlobalLogoTrigger` — this is the
+    // other direction of that same promise, torn down rather than worked
+    // around.
     setPatientModalOpen(false);
     setIsReviewOpen(false);
     setActiveConsultGuardOpen(false);
+    setQueueSheetOpen(false);
+    setTransition(null);
   };
 
   const handleSidebarConsult = () => {
@@ -1499,12 +1507,24 @@ function App() {
       {/* Invisible, always-reachable click target that mirrors wherever the
           real logo currently is. Lives outside every header's stacking
           context, so it stays clickable even while the patient modal (or
-          any other overlay) is covering the screen. See component for why. */}
+          any other overlay) is covering the screen. See component for why.
+          2026-09-06: `queueSheetOpen`/`transition` were missing from `active`
+          — those two are full-screen overlays exactly like the three
+          already listed, so a doctor with an empty queue (this modal locked
+          open, by design — see QueueSheet's own `dismissable` prop) had no
+          way to reach the sidebar at all, trigger included. Locking the
+          queue sheet against a stray dismiss was never meant to also lock
+          out real navigation; Settings/Patients/Practice stay reachable via
+          the sidebar precisely because the app-level invariant that keeps
+          this sheet open already exempts a doctor who's actually on one of
+          those pages (see its own comment) — this is the other half of
+          that promise: getting there in the first place. */}
       <GlobalLogoTrigger
         logoRef={logoRef}
         onOpenSidebar={handleOpenSidebar}
         sidebarOpen={sidebarOpen}
-        active={patientModalOpen || isReviewOpen || activeConsultGuardOpen}
+        brand={workspace.brand}
+        active={patientModalOpen || isReviewOpen || activeConsultGuardOpen || queueSheetOpen || !!transition}
       />
 
       {/* Topbar and vitals only render on the consult workspace */}

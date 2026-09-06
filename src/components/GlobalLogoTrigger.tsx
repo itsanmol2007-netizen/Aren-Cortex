@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import logo from "../assets/aren-logo.png";
+import type { ModeBrand } from "../lib/workspace/mode";
 
 type Props = {
     logoRef: React.RefObject<HTMLDivElement>;
     onOpenSidebar: () => void;
     sidebarOpen: boolean;
     active: boolean;
+    /** What the real header behind this ghost trigger is currently saying —
+     *  `useWorkspaceMode().brand`. This used to be hardcoded to "AREN Cortex"
+     *  regardless of workspace (2026-09-06 bug): a Consult clinic's real
+     *  header correctly says "AREN Consult", so the two together — nearly
+     *  the same on-screen position, this one drawn on top at z-index 9998 —
+     *  read as "Cortex" and "Consult" stacked on each other, garbled. Same
+     *  ONE brand object every other surface reads; this stopped being a
+     *  second place naming the product. */
+    brand: ModeBrand;
 };
 
-export function GlobalLogoTrigger({ logoRef, onOpenSidebar, sidebarOpen, active }: Props) {
+export function GlobalLogoTrigger({ logoRef, onOpenSidebar, sidebarOpen, active, brand }: Props) {
     const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
     const pausedRef = useRef(false);
 
@@ -93,10 +103,10 @@ export function GlobalLogoTrigger({ logoRef, onOpenSidebar, sidebarOpen, active 
                 }}
             >
                 <strong style={{ display: "block", fontSize: 15, fontWeight: 750, color: "#e2e8f0", letterSpacing: "-0.2px" }}>
-                    AREN <span style={{ color: "#60a5fa" }}>Cortex</span>
+                    AREN <span style={{ color: "#60a5fa" }}>{brand.product}</span>
                 </strong>
                 <small style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#f0ccf7", marginTop: 1 }}>
-                    Phase 1 workflow
+                    {brand.tagline}
                 </small>
             </div>
         </>

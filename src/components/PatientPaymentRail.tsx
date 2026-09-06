@@ -302,14 +302,22 @@ export function PatientPaymentRail({
     );
 }
 
-/** The rail's own card — its own component so the empty-fee branch and the
- *  full branch can't drift apart on padding or border. */
+/**
+ * The rail's own header + body spacing — NOT a card. `PatientModal` renders
+ * this content AS a column inside its own single `.pm-card`, divided from
+ * the form by nothing more than a hairline — the same shape front desk's
+ * `CreateVisitModal` uses for its rail (one modal, two columns), and the
+ * one this used to get wrong: an independent bordered/shadowed `<aside>`
+ * sitting beside (or, once the form grew taller than the viewport, BELOW
+ * and partly UNDER) the modal read as two unrelated floating cards rather
+ * than one surface, and the resulting overlap silently ate clicks — "Follow-
+ * up"/"Adjust amount" appeared to do nothing because the tap was landing on
+ * whatever was actually on top at that pixel, not this component at all.
+ * Fixed by deleting the card chrome entirely, not by raising a z-index.
+ */
 function RailFrame({ children }: { children: React.ReactNode }) {
     return (
-        <aside
-            aria-label="Payment"
-            className="flex w-[264px] shrink-0 flex-col overflow-y-auto rounded-[18px] border border-black/10 bg-white/95 p-[14px] shadow-[0_8px_24px_rgba(124,58,237,0.08)] max-h-[min(88vh,680px)]"
-        >
+        <div aria-label="Payment" className="flex flex-1 flex-col">
             <div className="mb-[12px] flex items-center gap-[9px]">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-gradient-to-br from-[#fce7f3] to-[#ede9fe] text-[#a855f7]">
                     <Wallet size={15} />
@@ -317,7 +325,7 @@ function RailFrame({ children }: { children: React.ReactNode }) {
                 <span className="text-[15px] font-extrabold tracking-[-0.01em] text-[#0f172a]">Visit fee</span>
             </div>
             {children}
-        </aside>
+        </div>
     );
 }
 

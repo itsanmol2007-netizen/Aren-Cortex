@@ -302,12 +302,21 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
     <div className="pm-overlay" role="dialog" aria-modal="true" aria-label="Patient intake">
       <button className="pm-backdrop" type="button" onClick={onClose} aria-label="Close" />
 
-      {/* `contents` when there's no billing: the wrapper disappears from the
-          box tree entirely, so `.pm-card` centers under `pm-overlay`'s own
-          grid exactly as it always did (Consult's manual-register path).
-          A real flex row only exists once there's a rail to sit beside it. */}
-      <div className={billing ? "flex flex-wrap items-start justify-center gap-4" : "contents"}>
-        <div className="pm-card" onKeyDown={onCardKeyDown}>
+      {/* ONE card, always — never two. `billing` only widens this SAME card
+          and adds a second column inside it (see PatientPaymentRail's own
+          header comment for the version that got this wrong: an independent
+          floating card that read as unrelated to this one, wrapped below the
+          modal on anything less than a very wide window, and silently ate
+          clicks wherever the two happened to overlap). The inline `style`
+          below is deliberate, not a Tailwind class: `.pm-card` is legacy,
+          UNLAYERED CSS (`components-modals.css`) that beats any Tailwind
+          utility regardless of source order — an inline style is the one
+          thing guaranteed to win over it. */}
+      <div
+        className="pm-card"
+        onKeyDown={onCardKeyDown}
+        style={billing ? { width: "min(760px, 96vw)", display: "flex", flexDirection: "column", overflow: "hidden" } : undefined}
+      >
         <div className="pm-top-stripe" />
 
         {/* Header — no close button: patient intake is mandatory, not dismissable */}
@@ -321,6 +330,15 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
           </div>
         </div>
 
+        {/* `contents` when there's no billing: both children below fall
+            back to being direct children of `.pm-card`, exactly as before
+            this rail existed. A real two-column grid only exists once
+            there's a second column to divide from the first. */}
+        <div className={billing
+          ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_252px] overflow-hidden max-[680px]:grid-cols-1"
+          : "contents"}
+        >
+        <div className={billing ? "flex min-h-0 flex-col overflow-y-auto" : "contents"}>
         {/* Mode toggle */}
         <div className="pm-toggle">
           <button type="button" className={`pm-toggle-btn ${mode === "search" ? "active" : ""}`} onClick={() => setMode("search")}>
@@ -574,15 +592,18 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
         </div>
 
         {billing && (
-          <PatientPaymentRail
-            state={fee}
-            onChange={handleFeeChange}
-            policy={feeCtx?.policy ?? { currency: "INR", gstEnabled: false, gstPercent: 18, allowDiscount: true }}
-            baseFee={baseFee}
-            breakdown={breakdown}
-            doctorName={billing.doctorName}
-          />
+          <div className="flex min-h-0 flex-col overflow-y-auto border-l border-black/10 bg-[#fbfaff] p-[14px] max-[680px]:border-l-0 max-[680px]:border-t">
+            <PatientPaymentRail
+              state={fee}
+              onChange={handleFeeChange}
+              policy={feeCtx?.policy ?? { currency: "INR", gstEnabled: false, gstPercent: 18, allowDiscount: true }}
+              baseFee={baseFee}
+              breakdown={breakdown}
+              doctorName={billing.doctorName}
+            />
+          </div>
         )}
+        </div>
       </div>
     </div>
   );
