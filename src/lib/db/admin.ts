@@ -191,11 +191,30 @@ function hourOf(iso: string): number {
     }).format(new Date(iso)));
 }
 
+/**
+ * Narrows every number on this page to ONE doctor.
+ *
+ * Added 2026-09-06 for the doctor's own Overview page. Deliberately an
+ * optional filter on the existing read rather than a second
+ * `fetchDoctorAnalytics`: the series bucketing, the IST day arithmetic, the
+ * previous-period split and the `Metric` shape are the load-bearing parts,
+ * and a parallel implementation of them would drift the first time one is
+ * fixed. What changes with a `doctorId` is five `.eq()` clauses and how
+ * "new patients" is counted — nothing else.
+ */
+export interface AnalyticsScope {
+    /** `doctors.id`. Omitted means the whole clinic, which is what Parallax
+     *  and Clinic Control both want. */
+    doctorId?: string | null;
+}
+
 export async function fetchClinicAnalytics(
     hospitalId: string,
-    range: DateRange
+    range: DateRange,
+    scope: AnalyticsScope = {}
 ): Promise<ClinicAnalytics> {
     const prev = previousRange(range);
+    const doctorId = scope.doctorId || null;
 
     // ONE window covering both periods, split in memory afterwards. Two round
     // trips per table would double the latency to compute a delta that is
@@ -203,34 +222,59 @@ export async function fetchClinicAnalytics(
     const windowStart = startInstant(prev.from);
     const windowEnd = endInstantExclusive(range.to);
 
+    // ── The doctor filter ──────────────────────────────────────────────────
+    //
+    // Three of these reads narrow to one bench and three deliberately do not.
+    // Each query is built and then conditionally narrowed on its own line
+    // rather than through a shared helper: a generic wrapper around
+    // supabase-js's builder defeats its type inference outright (TS2589,
+    // measured), and spelling the filter out is also what makes the three
+    // that are NOT scoped visibly a decision rather than an omission.
+    const visitsQuery = supabase.from("visits")
+        .select("id, status, assigned_doctor_id, patient_id, created_at")
+        .eq("hospital_id", hospitalId)
+        .gte("created_at", windowStart).lt("created_at", windowEnd)
+        .order("created_at", { ascending: true });
+
+    const rxQuery = supabase.from("prescriptions")
+        .select("id, created_at, assigned_doctor_id")
+        .eq("hospital_id", hospitalId)
+        .gte("created_at", windowStart).lt("created_at", windowEnd);
+
+    const payQuery = supabase.from("visit_payments")
+        .select("total, fee, discount, method, collected_at, doctor_id")
+        .eq("hospital_id", hospitalId)
+        .gte("collected_at", windowStart).lt("collected_at", windowEnd)
+        .in("status", ["paid", "pending"]);
+
+    // Live counts ignore the range entirely: "who is waiting right now" is
+    // not a question about last month.
+    const liveQuery = supabase.from("visits")
+        .select("status, assigned_doctor_id")
+        .eq("hospital_id", hospitalId)
+        .gte("created_at", startInstant(clinicToday()));
+
     const [visitsRes, rxRes, payRes, doctorsRes, newPatRes, liveRes, everPaidRes] = await Promise.all([
-        supabase.from("visits")
-            .select("id, status, assigned_doctor_id, patient_id, created_at")
-            .eq("hospital_id", hospitalId)
-            .gte("created_at", windowStart).lt("created_at", windowEnd)
-            .order("created_at", { ascending: true }),
-        supabase.from("prescriptions")
-            .select("id, created_at, assigned_doctor_id")
-            .eq("hospital_id", hospitalId)
-            .gte("created_at", windowStart).lt("created_at", windowEnd),
-        supabase.from("visit_payments")
-            .select("total, fee, discount, method, collected_at, doctor_id")
-            .eq("hospital_id", hospitalId)
-            .gte("collected_at", windowStart).lt("collected_at", windowEnd)
-            .in("status", ["paid", "pending"]),
+        doctorId ? visitsQuery.eq("assigned_doctor_id", doctorId) : visitsQuery,
+        doctorId ? rxQuery.eq("assigned_doctor_id", doctorId) : rxQuery,
+        doctorId ? payQuery.eq("doctor_id", doctorId) : payQuery,
+        // NOT scoped: `benches` is built from this roster, and a scoped call
+        // still needs its own doctor's row present in the map rather than
+        // falling through as an unknown id.
         supabase.from("doctors")
             .select("id, name, specialization, consultation_fee")
             .eq("hospital_id", hospitalId),
+        // NOT scoped: a registration belongs to the CLINIC, not to a bench.
+        // The doctor-scoped meaning is resolved in memory below, against the
+        // visits already fetched.
         supabase.from("patients")
             .select("id, created_at")
             .eq("hospital_id", hospitalId)
             .gte("created_at", windowStart).lt("created_at", windowEnd),
-        // Live counts ignore the range entirely: "who is in the clinic right
-        // now" is not a question about last month.
-        supabase.from("visits")
-            .select("status")
-            .eq("hospital_id", hospitalId)
-            .gte("created_at", startInstant(clinicToday())),
+        doctorId ? liveQuery.eq("assigned_doctor_id", doctorId) : liveQuery,
+        // NOT scoped: `revenueTracked` answers "has this CLINIC ever recorded
+        // a payment". A doctor who has personally collected nothing at a
+        // clinic that bills every day should see ₹0, not "not set up".
         supabase.from("visit_payments")
             .select("id", { count: "exact", head: true })
             .eq("hospital_id", hospitalId),
@@ -325,8 +369,19 @@ export async function fetchClinicAnalytics(
     // "New patient" is a REGISTRATION, not a first visit: it is the number a
     // clinic owner actually watches for growth, and it is one cheap query
     // rather than a first-visit-date lookup per patient.
+    //
+    // Scoped to a doctor, "new patient" has to mean something slightly
+    // different, because a registration belongs to the clinic and not to a
+    // bench: it becomes "registered in this window AND seen by me". Built
+    // from the visits already in hand, so it costs no extra query — and it
+    // is the number a doctor actually means by "new patients I saw".
+    const seenByScope = doctorId
+        ? new Set(visits.map((v) => v.patient_id).filter((id): id is string => !!id))
+        : null;
+
     let curNew = 0, prevNew = 0;
-    for (const p of (newPatRes.data ?? []) as { created_at: string }[]) {
+    for (const p of (newPatRes.data ?? []) as { id: string; created_at: string }[]) {
+        if (seenByScope && !seenByScope.has(p.id)) continue;
         const ymd = ymdOf(p.created_at);
         if (inRange(ymd)) {
             curNew++;
@@ -337,7 +392,7 @@ export async function fetchClinicAnalytics(
 
     // ── Live ───────────────────────────────────────────────────────────────
     let liveWaiting = 0, liveActive = 0;
-    for (const v of (liveRes.data ?? []) as { status: string | null }[]) {
+    for (const v of (liveRes.data ?? []) as { status: string | null; assigned_doctor_id: string | null }[]) {
         const kind = visitStatusKind(v.status ?? "");
         if (kind === "waiting") liveWaiting++;
         else if (kind === "active") liveActive++;
@@ -377,6 +432,34 @@ export async function fetchClinicAnalytics(
         liveActive,
         revenueTracked: !everPaidRes.error && (everPaidRes.count ?? 0) > 0,
     };
+}
+
+/**
+ * How many patients the WHOLE clinic has seen today.
+ *
+ * Context on the doctor's own Overview page, and deliberately nothing more
+ * than that. It is not rendered next to the doctor's own number as a
+ * comparison — "you: 12, clinic: 41" invites a doctor to read their own
+ * page as a scoreboard, which is exactly what the bench table in Parallax is
+ * for and exactly what this page is not. It is one line of context so a solo
+ * doctor's page and a five-bench doctor's page say something true about where
+ * they are standing.
+ *
+ * `head: true` — the count is the whole answer, no rows cross the wire.
+ * Returns 0 on error rather than throwing: a missing context line must not
+ * take a doctor's own numbers down with it.
+ */
+export async function countClinicVisitsToday(hospitalId: string): Promise<number> {
+    const { count, error } = await supabase
+        .from("visits")
+        .select("id", { count: "exact", head: true })
+        .eq("hospital_id", hospitalId)
+        .gte("created_at", `${clinicToday()}T00:00:00.000${IST_OFFSET}`);
+    if (error) {
+        console.error("countClinicVisitsToday:", error.message);
+        return 0;
+    }
+    return count ?? 0;
 }
 
 // ── Who administers this clinic ────────────────────────────────────────────

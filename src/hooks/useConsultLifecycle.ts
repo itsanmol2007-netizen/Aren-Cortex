@@ -36,6 +36,7 @@ import {
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
 import { recordVisitPayment, type ConfirmedPayment } from "../lib/db/payments";
+import { sendPrescription } from "../lib/db/messaging";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -519,6 +520,38 @@ export function useConsultLifecycle({
           console.error("onSaveStory:", e);
           showToast(`Prescription saved, but the story/goals did not: ${e?.message ?? e}`);
         }
+      }
+
+      // ── WhatsApp: the prescription goes to the patient ────────────────
+      //
+      // This is the trigger the whole Communication service hangs off:
+      // "consultation completed → prescription generated → send". It is NOT
+      // awaited and NOT allowed to fail the save, for the same reason the two
+      // writes above are caught — by this line the prescription is already
+      // committed, and a doctor told "save failed" because WhatsApp was slow
+      // would try again and produce a second prescription for one visit.
+      //
+      // Skipped outright when the patient has no phone. The server would
+      // reject that case with a perfectly good message, but a doctor seeing
+      // twenty consultations a day at a clinic that does not collect phone
+      // numbers would get twenty toasts about a thing they already know. A
+      // real failure — no credits, a provider outage — still surfaces, and
+      // every send lands in Communication's activity list either way.
+      const rxPatientId = session.patient?.id ?? null;
+      const rxPatientPhone = (session.patient?.phone ?? "").replace(/\D/g, "");
+      if (rxPatientId && rxPatientPhone.length >= 10 && identity.isReal) {
+        void sendPrescription({
+          prescriptionId: saved.prescriptionId,
+          patientId: rxPatientId,
+          // Sent for completeness; the server resolves the doctor from the
+          // session and ignores this, because a request body cannot be
+          // allowed to name whose credits get spent.
+          doctorId: identity.doctorId,
+        }).catch((e: unknown) => {
+          const message = e instanceof Error ? e.message : "WhatsApp send failed";
+          console.error("[messaging] prescription send failed:", e);
+          showToast(message);
+        });
       }
 
       // The visit is now a completed session of whatever course it belongs to.

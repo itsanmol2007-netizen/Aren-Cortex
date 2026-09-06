@@ -256,7 +256,16 @@ export function HourBars({ byHour }: { byHour: number[] }) {
         <div className="flex flex-col gap-[5px]">
             <div className="flex h-[64px] items-end gap-[3px]">
                 {span.map((b) => (
-                    <div key={b.h} className="group relative flex flex-1 flex-col justify-end" title={`${b.n} at ${label(b.h)}`}>
+                    // `h-full` is load-bearing, not decoration (measured live
+                    // 2026-09-06: every column was 0px tall and no bar drew at
+                    // all, on this page and on Parallax's Overview). The row's
+                    // `items-end` switches off the default stretch, so without
+                    // an explicit height this column is sized to its content —
+                    // and the bar inside it is sized as a PERCENTAGE of that
+                    // content, which resolves against an indefinite height and
+                    // collapses to nothing. The height has to be definite for
+                    // the percentage to mean anything.
+                    <div key={b.h} className="group relative flex h-full flex-1 flex-col justify-end" title={`${b.n} at ${label(b.h)}`}>
                         <div
                             className={
                                 "w-full rounded-t-[3px] transition-colors " +
@@ -327,3 +336,149 @@ export function Ring({ pct, size = 52 }: { pct: number; size?: number }) {
     );
 }
 
+
+// ── Donut ──────────────────────────────────────────────────────────────────
+
+export interface Slice {
+    label: string;
+    value: number;
+    /** A `--cs-*` token name, from the seven. Never a literal hex — a chart is
+     *  not where an eighth colour gets in (colour.md). */
+    token: "blue" | "violet" | "teal" | "amber" | "green" | "red";
+}
+
+const SLICE_COLOR: Record<Slice["token"], string> = {
+    blue: "var(--cs-blue)",
+    violet: "var(--cs-violet)",
+    teal: "var(--cs-teal)",
+    amber: "var(--cs-amber)",
+    green: "var(--cs-green)",
+    red: "var(--cs-red)",
+};
+
+/**
+ * A segmented donut — the composition of one total.
+ *
+ * `Ring` above it is a different chart despite looking similar: that shows ONE
+ * percentage against its own remainder ("78% completed"), this shows several
+ * parts of a whole ("of 41 visits: 22 new, 19 returning"). Using `Ring` twice
+ * side by side to imply a split was the alternative, and two rings do not add
+ * up to anything a reader can see.
+ *
+ * ── Why a donut and not a pie
+ *
+ * The hole carries the total, which is the number a reader wants first and
+ * which a pie has nowhere to put. It also removes the centre wedge tips, where
+ * a full pie's slices become visually indistinguishable at this size.
+ *
+ * ── Why arcs and not a rotated conic-gradient
+ *
+ * CSS `conic-gradient` is one line and cannot draw a gap between segments, so
+ * two adjacent slices in similar tones merge into one shape. These are real
+ * paths with a hairline gap, which is what makes a 3% slice legible at all.
+ *
+ * Degenerate cases, both real: every value zero draws the empty track and the
+ * total, never a full circle of the first colour; a single non-zero slice
+ * draws a complete ring rather than an arc with a seam, because `A` cannot
+ * express a 360° sweep.
+ */
+export function Donut({
+    slices, size = 132, total, totalLabel,
+}: {
+    slices: Slice[];
+    size?: number;
+    /** Shown in the hole. Defaults to the sum — pass it when the total means
+     *  something the slices do not add up to. */
+    total?: number;
+    totalLabel?: string;
+}) {
+    const sum = slices.reduce((n, s) => n + s.value, 0);
+    const shown = total ?? sum;
+
+    const stroke = Math.max(12, Math.round(size * 0.11));
+    const r = (size - stroke) / 2;
+    const cx = size / 2;
+    const cy = size / 2;
+    const c = 2 * Math.PI * r;
+    // One gap per slice, in stroke-dash units, and only where there is more
+    // than one slice to separate.
+    const gap = slices.filter((s) => s.value > 0).length > 1 ? 2 : 0;
+
+    let offset = 0;
+
+    return (
+        <div className="flex min-w-0 items-center gap-[14px]">
+            <svg
+                width={size}
+                height={size}
+                role="img"
+                aria-label={
+                    sum === 0
+                        ? "No data"
+                        : slices.map((s) => `${s.label}: ${s.value}`).join(", ")
+                }
+                className="flex-none"
+            >
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#eef0f5" strokeWidth={stroke} />
+                {sum > 0 && slices.map((s) => {
+                    if (s.value <= 0) return null;
+                    const len = (s.value / sum) * c;
+                    // `strokeDasharray` + a rotated start is how one <circle>
+                    // becomes one arc. Cheaper than a path per slice and it
+                    // keeps the stroke width and linecap identical across all
+                    // of them for free.
+                    const el = (
+                        <circle
+                            key={s.label}
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            fill="none"
+                            stroke={SLICE_COLOR[s.token]}
+                            strokeWidth={stroke}
+                            strokeDasharray={`${Math.max(len - gap, 0.5)} ${c - Math.max(len - gap, 0.5)}`}
+                            strokeDashoffset={-offset}
+                            transform={`rotate(-90 ${cx} ${cy})`}
+                        />
+                    );
+                    offset += len;
+                    return el;
+                })}
+                <text
+                    x="50%" y="50%" textAnchor="middle"
+                    dy={totalLabel ? "-0.2em" : "0.35em"}
+                    className="fill-[var(--cs-ink)] text-[19px] font-bold tabular-nums"
+                >
+                    {shown}
+                </text>
+                {totalLabel && (
+                    <text
+                        x="50%" y="50%" textAnchor="middle" dy="1.1em"
+                        className="fill-[var(--cs-faint)] text-[9.5px] font-semibold uppercase tracking-[0.07em]"
+                    >
+                        {totalLabel}
+                    </text>
+                )}
+            </svg>
+
+            {/* The legend carries the numbers. A donut answers "roughly how
+                much of it" and nothing more precise; a reader who wants the
+                actual count should not have to hover for it. */}
+            <ul className="m-0 flex min-w-0 list-none flex-col gap-[6px] p-0">
+                {slices.map((s) => (
+                    <li key={s.label} className="flex min-w-0 items-center gap-[7px]">
+                        <span
+                            aria-hidden="true"
+                            className="h-[9px] w-[9px] flex-none rounded-[3px]"
+                            style={{ background: SLICE_COLOR[s.token] }}
+                        />
+                        <span className="truncate text-[11.5px] text-[var(--cs-muted)]">{s.label}</span>
+                        <span className="ml-auto flex-none text-[12px] font-bold tabular-nums text-[var(--cs-ink)]">
+                            {s.value}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}

@@ -73,11 +73,26 @@ export function mountWhatsAppWebhook(app, opts = {}) {
     const appSecret = process.env.WHATSAPP_APP_SECRET;
 
     if (!verifyToken) {
-        // Fatal, not a warning: without this, the GET handler below can
-        // never succeed, and Meta will refuse to save the Callback URL.
-        throw new Error(
-            "WHATSAPP_VERIFY_TOKEN is not set. Add it to server/.env before starting the server."
+        // Loud, and it does NOT mount — but it no longer kills the process
+        // (2026-09-06). It used to throw, which was right when this webhook
+        // was the only thing `server/` did. It is not any more: the messaging
+        // service and the credit ledger live here too, and their whole point
+        // is that AREN works with the mock provider before any Meta account
+        // exists. A missing WhatsApp token taking down the credit system with
+        // it would make "the MVP is fully usable while the provider is
+        // plugged in later" false in the most basic way — the server would
+        // not start.
+        //
+        // The original guard's intent survives: nothing is mounted, so the
+        // Callback URL cannot half-work and appear verified. It is stated
+        // once, at boot, where somebody will see it.
+        console.warn(
+            "[whatsapp] WHATSAPP_VERIFY_TOKEN is not set — the webhook is NOT mounted. " +
+            "Inbound WhatsApp messages and delivery-status updates will not arrive. " +
+            "Everything else (messaging, credits, email) runs normally. " +
+            "Set it in server/.env when you connect a real Meta app."
         );
+        return;
     }
     if (!appSecret) {
         console.warn(

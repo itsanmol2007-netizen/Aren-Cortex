@@ -17,6 +17,7 @@ import { useSettingFocusRunner } from "./features/settings/settingsFocus";
 import { useAdminAccess } from "./hooks/useAdminAccess";
 import { PracticePage } from "./features/practice/PracticePage";
 import { CommunicationPage } from "./features/communication/CommunicationPage";
+import { DoctorOverviewPage } from "./features/overview/DoctorOverviewPage";
 import { ClinicPage } from "./features/clinic/ClinicPage";
 import { PrescriptionEditorPage } from "./features/clinic/PrescriptionEditorPage";
 import { ClinicControlPage } from "./features/admin/pages/ClinicControlPage";
@@ -213,7 +214,36 @@ function App() {
 
   const [toast, setToast] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activePage, setActivePage] = useState<SidebarPage | null>(null);
+  /**
+   * Where a doctor lands, and what "not on a feature page" means.
+   *
+   * `"overview"` since 2026-09-06, replacing `null` ("straight into the
+   * consult workspace"). Two things follow from that, and both are
+   * deliberate:
+   *
+   * 1. A doctor's first screen is their own numbers plus one large "Start
+   *    consult" door, rather than a workspace that assumes the first thing
+   *    they want is a patient.
+   * 2. The standing "never a blank workspace" invariant below only fires
+   *    while `activePage === null` — so a doctor sitting on Overview is
+   *    simply not idle in the consult, the invariant does not fire, and
+   *    nothing has to be narrowed or special-cased to accommodate the new
+   *    landing page. Pressing "Start consult" sets this back to `null`,
+   *    which is exactly when the invariant SHOULD take over.
+   */
+  const [activePage, setActivePage] = useState<SidebarPage | null>("overview");
+  /**
+   * A patient name handed to the Patients page's search box by whoever sent
+   * the doctor there — Communication's "View patient" today.
+   *
+   * There is no deep link to a patient RECORD in this app: `PatientsPage`
+   * opens one from a `PatientRecordRow` it already has in hand, and minting
+   * one from an id would mean a new fetch threaded through its whole list
+   * state. Seeding the search is the honest bounded version — the doctor
+   * lands one click from the record instead of in an unrelated list. Cleared
+   * by `handleSidebarNavigate` so an ordinary trip to Patients is unfiltered.
+   */
+  const [patientSearchSeed, setPatientSearchSeed] = useState<string | null>(null);
 
   // Runs a pending "take me to that setting" request after the page it lives
   // on has mounted — scrolls to the control and flashes it. Mounted once,
@@ -930,6 +960,11 @@ function App() {
     if (hasActiveConsult) {
       showToast("Consult paused — saved as draft");
     }
+    // Every navigation clears the seed, INCLUDING one to Patients: a sidebar
+    // click on Patients must not reopen somebody else's name in the search
+    // box. The one caller that wants a seed sets it immediately AFTER this
+    // returns, in the same batch, so its write is the one that lands.
+    setPatientSearchSeed(null);
     setActivePage(page);
     setSidebarOpen(false);
     setPrescriptionEditorOpen(false);
@@ -1600,7 +1635,22 @@ function App() {
         onOpenSidebar={handleOpenSidebar}
         sidebarOpen={sidebarOpen}
         brand={workspace.brand}
-        active={patientModalOpen || isReviewOpen || activeConsultGuardOpen || queueSheetOpen || !!transition}
+        /* 2026-09-06, measured live: `!isFeaturePage` is the load-bearing
+           half of this condition, not a tidy-up. The flags below are STATE,
+           not "something is on screen" — `patientModalOpen` in particular
+           starts life `true` (useConsultSession) so a Cortex clinic opens
+           its intake form on arrival. With Overview as the landing page that
+           flag is still true while the modal itself renders nothing (its own
+           condition is `!workspace.isConsult`), so this ghost painted a
+           second purple pill AND a second "AREN Consult / Front desk queue"
+           label at z-index 9998 directly over the real header's title and
+           subtitle — measured at x=129.6, exactly on top of "Overview".
+           A feature page never needs this trigger anyway: the real header,
+           logo pill included, is right there and reachable. */
+        active={
+          !isFeaturePage &&
+          (patientModalOpen || isReviewOpen || activeConsultGuardOpen || queueSheetOpen || !!transition)
+        }
       />
 
       {/* Topbar and vitals only render on the consult workspace */}
@@ -1696,7 +1746,16 @@ function App() {
       )}
 
       {/* Feature pages */}
-      {activePage === "patients" ? (
+      {activePage === "overview" ? (
+        <DoctorOverviewPage
+          logoRef={logoRef}
+          onOpenSidebar={handleOpenSidebar}
+          /* The sidebar's own Consult action, not a second path into the
+             consult: it already knows a Consult clinic opens the queue and a
+             Cortex clinic opens the patient form. */
+          onStartConsult={handleSidebarConsult}
+        />
+      ) : activePage === "patients" ? (
         <PatientsPage
           onStartConsult={handleStartConsultFromRecord}
           onResumeConsult={resumeConsult}
@@ -1704,6 +1763,7 @@ function App() {
           onOpenSidebar={handleOpenSidebar}
           specialty={specialty}
           onNavigate={handleSidebarNavigate}
+          initialSearch={patientSearchSeed}
         />
       ) : activePage === "settings" ? (
         <SettingsPage
@@ -1741,7 +1801,17 @@ function App() {
              request queue) are per-clinic under RLS, so the page cannot
              fetch anything until identity has resolved a hospital. */
           hospitalId={identity.hospitalId}
+          /* Credits are per DOCTOR, not per clinic — the free allocation is
+             "every doctor receives 5,000", and one bench draining another's
+             balance would be a support ticket on day one. */
+          doctorId={identity.doctorId}
           userId={identity.userId}
+          onViewPatient={(query) => {
+            // Order matters: `handleSidebarNavigate` clears the seed, so the
+            // set has to come after it. Both land in one batch.
+            handleSidebarNavigate("patients");
+            setPatientSearchSeed(query);
+          }}
         />
       ) : activePage === "clinic" ? (
         prescriptionEditorOpen ? (

@@ -1,0 +1,449 @@
+// ---------------------------------------------------------------------------
+// MESSAGING — credits, packages, recharge requests, and the send seam.
+//
+// Standing rule 1: every query the Communication page makes lives here, not in
+// the page. What the page is allowed to know is deliberately narrow — a
+// balance, a price list, a request it can file, and two verbs ("send the
+// prescription", "send the follow-up"). It does not know Meta exists.
+//
+// ── The three things this file will NOT do
+//
+// 1. **It cannot grant credits.** There is no INSERT policy on
+//    `messaging_credit_ledger` for a signed-in user, so there is no function
+//    here that could write one even by mistake. Credits arrive one of two
+//    ways: the FREE_ALLOCATION trigger on `doctors`, or an admin approving a
+//    recharge — both server-side. `createRechargeRequest` files a REQUEST,
+//    and the table's WITH CHECK pins it to 'pending'.
+//
+// 2. **It cannot send.** Sending needs Meta credentials that must never reach
+//    a browser bundle, so `sendPrescription`/`sendFollowUp` are HTTP calls to
+//    `server/`, authenticated with the doctor's own Supabase session. They are
+//    the only two verbs the UI has, and neither names a provider — see
+//    `server/messaging/` for the adapter that does.
+//
+// 3. **It does not compute a balance in JavaScript.** `messaging_credit_
+//    balances` is a view over the ledger. Summing rows here would mean two
+//    definitions of "balance" that can disagree, and the one the doctor sees
+//    would be the one nobody tested.
+// ---------------------------------------------------------------------------
+
+import { supabase } from "../supabase";
+
+/**
+ * Below this, the doctor is warned and AREN is alerted. Mirrors the same
+ * number in `messaging_credit_balances`'s CASE expression — the view is the
+ * authority (support reads it directly), this is the copy the UI phrases its
+ * warning against.
+ */
+export const LOW_CREDIT_THRESHOLD = 100;
+
+/** What one message costs. AREN's own unit, not Meta's — the doctor never
+ *  sees a conversation category or a per-country rate. */
+export const CREDITS_PER_MESSAGE = 1;
+
+// ── Balance ────────────────────────────────────────────────────────────────
+
+export type CreditStatus = "OK" | "LOW_CREDITS" | "EXHAUSTED";
+
+export interface CreditBalance {
+    doctorId: string;
+    doctorName: string | null;
+    /** Spendable right now. */
+    balance: number;
+    /** Everything ever granted — free allocation plus purchases. The
+     *  denominator in "used 301 of 5,000". */
+    granted: number;
+    /** Lifetime MESSAGE_DEBITs, refunds NOT deducted — this is "messages you
+     *  paid for", and a refunded failure was not one of them. */
+    spent: number;
+    refunded: number;
+    lastMovementAt: string | null;
+    status: CreditStatus;
+}
+
+const ZERO_BALANCE = (doctorId: string): CreditBalance => ({
+    doctorId,
+    doctorName: null,
+    balance: 0,
+    granted: 0,
+    spent: 0,
+    refunded: 0,
+    lastMovementAt: null,
+    status: "EXHAUSTED",
+});
+
+/**
+ * One doctor's wallet.
+ *
+ * Returns a zeroed balance rather than throwing when the view has no row —
+ * that happens for a signed-in user with no `doctors` row (the MVP-constant
+ * fallback in `useClinicalIdentity`), and a Communication page that throws
+ * for them would be worse than one that honestly shows nothing to spend.
+ */
+export async function fetchCreditBalance(doctorId: string): Promise<CreditBalance> {
+    const { data, error } = await supabase
+        .from("messaging_credit_balances")
+        .select("doctor_id, doctor_name, balance, granted, spent, refunded, last_movement_at, status")
+        .eq("doctor_id", doctorId)
+        .maybeSingle();
+
+    if (error) throw new Error(`fetchCreditBalance: ${error.message}`);
+    if (!data) return ZERO_BALANCE(doctorId);
+
+    return {
+        doctorId: data.doctor_id as string,
+        doctorName: (data.doctor_name as string | null) ?? null,
+        balance: Number(data.balance ?? 0),
+        granted: Number(data.granted ?? 0),
+        spent: Number(data.spent ?? 0),
+        refunded: Number(data.refunded ?? 0),
+        lastMovementAt: (data.last_movement_at as string | null) ?? null,
+        status: (data.status as CreditStatus) ?? "OK",
+    };
+}
+
+/**
+ * Every doctor at one clinic, for the owner-doctor's and Parallax's view of
+ * "who is running out". Sorted lowest first — the only order this list is
+ * ever read in is "who do we need to call".
+ */
+export async function fetchClinicCreditBalances(hospitalId: string): Promise<CreditBalance[]> {
+    const { data, error } = await supabase
+        .from("messaging_credit_balances")
+        .select("doctor_id, doctor_name, balance, granted, spent, refunded, last_movement_at, status")
+        .eq("hospital_id", hospitalId)
+        .order("balance", { ascending: true });
+
+    if (error) throw new Error(`fetchClinicCreditBalances: ${error.message}`);
+    return (data ?? []).map((d) => ({
+        doctorId: d.doctor_id as string,
+        doctorName: (d.doctor_name as string | null) ?? null,
+        balance: Number(d.balance ?? 0),
+        granted: Number(d.granted ?? 0),
+        spent: Number(d.spent ?? 0),
+        refunded: Number(d.refunded ?? 0),
+        lastMovementAt: (d.last_movement_at as string | null) ?? null,
+        status: (d.status as CreditStatus) ?? "OK",
+    }));
+}
+
+// ── The ledger, read ───────────────────────────────────────────────────────
+
+export type LedgerKind =
+    | "FREE_ALLOCATION" | "PURCHASE" | "MESSAGE_DEBIT" | "REFUND" | "ADMIN_ADJUSTMENT";
+
+export interface LedgerEntry {
+    id: number;
+    kind: LedgerKind;
+    delta: number;
+    note: string | null;
+    messageId: number | null;
+    createdAt: string;
+}
+
+/** Doctor-facing words for a ledger kind. The doctor should never read
+ *  "MESSAGE_DEBIT" — that is the schema's vocabulary, not theirs. */
+export const LEDGER_LABEL: Record<LedgerKind, string> = {
+    FREE_ALLOCATION: "Included with your plan",
+    PURCHASE: "Credits added",
+    MESSAGE_DEBIT: "Message sent",
+    REFUND: "Refunded — message not delivered",
+    ADMIN_ADJUSTMENT: "Adjusted by AREN",
+};
+
+/**
+ * Recent movements on one wallet. Capped: this is a "where did my credits
+ * go" panel, not an accounting export, and an uncapped read of a year of
+ * sends is a slow page for a question nobody asked.
+ */
+export async function fetchCreditLedger(doctorId: string, limit = 40): Promise<LedgerEntry[]> {
+    const { data, error } = await supabase
+        .from("messaging_credit_ledger")
+        .select("id, kind, delta, note, message_id, created_at")
+        .eq("doctor_id", doctorId)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+    if (error) throw new Error(`fetchCreditLedger: ${error.message}`);
+    return (data ?? []).map((r) => ({
+        id: Number(r.id),
+        kind: r.kind as LedgerKind,
+        delta: Number(r.delta),
+        note: (r.note as string | null) ?? null,
+        messageId: r.message_id === null ? null : Number(r.message_id),
+        createdAt: r.created_at as string,
+    }));
+}
+
+// ── Packages ───────────────────────────────────────────────────────────────
+
+export interface CreditPackage {
+    id: number;
+    code: string;
+    label: string;
+    credits: number;
+    amount: number;
+    currency: string;
+}
+
+/**
+ * The price list, from the database.
+ *
+ * Deliberately not a constant in this bundle: AREN changes a price with an
+ * UPDATE and every doctor sees it on their next load, with no release. The
+ * RLS policy already filters to `is_active`, so a retired package disappears
+ * from the buy sheet while every old request still names what it was sold as.
+ */
+export async function fetchCreditPackages(): Promise<CreditPackage[]> {
+    const { data, error } = await supabase
+        .from("messaging_credit_packages")
+        .select("id, code, label, credits, amount, currency")
+        .order("sort_order", { ascending: true });
+
+    if (error) throw new Error(`fetchCreditPackages: ${error.message}`);
+    return (data ?? []).map((p) => ({
+        id: Number(p.id),
+        code: p.code as string,
+        label: p.label as string,
+        credits: Number(p.credits),
+        amount: Number(p.amount),
+        currency: (p.currency as string) ?? "INR",
+    }));
+}
+
+// ── Recharge requests ──────────────────────────────────────────────────────
+
+export type RechargeStatus = "pending" | "approved" | "rejected" | "expired";
+
+export interface RechargeRequest {
+    id: number;
+    /** "RC_12345" — what support quotes back to the doctor. */
+    reference: string;
+    doctorId: string;
+    packageCode: string;
+    packageLabel: string;
+    credits: number;
+    amount: number;
+    currency: string;
+    balanceAtRequest: number;
+    status: RechargeStatus;
+    note: string | null;
+    decisionNote: string | null;
+    createdAt: string;
+    decidedAt: string | null;
+}
+
+/** The one place the human-readable request id is formed. Support, the email
+ *  and the UI all quote the same string because they all call this. */
+export function rechargeReference(id: number): string {
+    return `RC_${id}`;
+}
+
+function toRechargeRequest(r: Record<string, unknown>): RechargeRequest {
+    const id = Number(r.id);
+    return {
+        id,
+        reference: rechargeReference(id),
+        doctorId: r.doctor_id as string,
+        packageCode: r.package_code as string,
+        packageLabel: r.package_label as string,
+        credits: Number(r.credits),
+        amount: Number(r.amount),
+        currency: (r.currency as string) ?? "INR",
+        balanceAtRequest: Number(r.balance_at_request ?? 0),
+        status: r.status as RechargeStatus,
+        note: (r.note as string | null) ?? null,
+        decisionNote: (r.decision_note as string | null) ?? null,
+        createdAt: r.created_at as string,
+        decidedAt: (r.decided_at as string | null) ?? null,
+    };
+}
+
+/**
+ * This doctor's recharge history, newest first.
+ *
+ * Every status, not just pending: the doctor's question is "what happened to
+ * the recharge I asked for last Tuesday", and a list that drops answered
+ * requests cannot answer it. Nothing here is ever deleted — these rows are
+ * the billing history until a payment gateway exists.
+ */
+export async function fetchRechargeRequests(doctorId: string, limit = 20): Promise<RechargeRequest[]> {
+    const { data, error } = await supabase
+        .from("credit_recharge_requests")
+        .select("id, doctor_id, package_code, package_label, credits, amount, currency, balance_at_request, status, note, decision_note, created_at, decided_at")
+        .eq("doctor_id", doctorId)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+    if (error) throw new Error(`fetchRechargeRequests: ${error.message}`);
+    return (data ?? []).map(toRechargeRequest);
+}
+
+export class DuplicateRechargeError extends Error {
+    constructor() {
+        super("You already have a recharge request waiting. We'll be in touch about that one.");
+        this.name = "DuplicateRechargeError";
+    }
+}
+
+/**
+ * File a recharge request. Does NOT add credits — nothing here can.
+ *
+ * `balance_at_request` is captured now rather than derived later because it
+ * is the number that makes the request urgent or routine to whoever reads it,
+ * and by the time a human opens the email it will have moved.
+ *
+ * A second request while one is pending is a UNIQUE violation (23505) by
+ * design, translated here into something the page can show. Pressing the
+ * button twice must not create two things for support to reconcile.
+ */
+export async function createRechargeRequest(opts: {
+    hospitalId: string;
+    doctorId: string;
+    userId: string | null;
+    pack: CreditPackage;
+    currentBalance: number;
+    note?: string;
+}): Promise<RechargeRequest> {
+    const { data, error } = await supabase
+        .from("credit_recharge_requests")
+        .insert({
+            hospital_id: opts.hospitalId,
+            doctor_id: opts.doctorId,
+            requested_by: opts.userId,
+            package_id: opts.pack.id,
+            package_code: opts.pack.code,
+            package_label: opts.pack.label,
+            credits: opts.pack.credits,
+            amount: opts.pack.amount,
+            currency: opts.pack.currency,
+            balance_at_request: opts.currentBalance,
+            status: "pending",
+            note: opts.note?.trim() || null,
+        })
+        .select("id, doctor_id, package_code, package_label, credits, amount, currency, balance_at_request, status, note, decision_note, created_at, decided_at")
+        .single();
+
+    if (error) {
+        if (error.code === "23505") throw new DuplicateRechargeError();
+        throw new Error(`createRechargeRequest: ${error.message}`);
+    }
+
+    const request = toRechargeRequest(data as Record<string, unknown>);
+
+    // Tell AREN. Fire-and-forget on purpose: the request is already durably
+    // in the database, and a doctor must not see "could not submit" because
+    // an SMTP hop was slow. A notification that never sent is recoverable
+    // from `credit_recharge_requests` itself — support's list is the table,
+    // and the email is only the nudge that makes them look at it.
+    void notifySupport("recharge_request", { requestId: request.id }).catch((e) => {
+        console.error("[messaging] recharge notification failed (non-fatal):", e);
+    });
+
+    return request;
+}
+
+// ── The send seam ──────────────────────────────────────────────────────────
+//
+// Everything below crosses into `server/`. The browser holds no provider
+// credential and never will; what it sends is its own Supabase session, and
+// the server decides what that identity is allowed to do.
+
+/**
+ * Where `server/` lives. Dev goes through Vite's `/api` proxy (vite.config.ts);
+ * anywhere else needs `VITE_AREN_API_URL` because the API is a separate origin
+ * from the static bundle. Empty string means "same origin, use the proxy".
+ */
+const API_BASE = (import.meta.env.VITE_AREN_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+async function postAuthed<T>(path: string, body: unknown): Promise<T> {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Your session has expired — sign in again.");
+
+    const res = await fetch(`${API_BASE}${path}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(body),
+    });
+
+    const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } & T | null;
+    if (!res.ok || !json?.ok) {
+        // The server's own message first: it knows whether this was "out of
+        // credits", "no phone number on file" or "template not approved", and
+        // each of those needs a different action from the doctor.
+        throw new Error(json?.message || json?.error || `Request failed (${res.status})`);
+    }
+    return json as T;
+}
+
+export interface SendResult {
+    ok: true;
+    messageId: number;
+    /** Balance AFTER this send, so the header updates without a second read. */
+    balance: number;
+    status: string;
+}
+
+/**
+ * Send a prescription over WhatsApp.
+ *
+ * The frontend's entire vocabulary for messaging, together with
+ * `sendFollowUp`. It names no provider, no template, no phone number
+ * formatting and no credit arithmetic — all of that is
+ * `server/messaging/service.js` and the adapter beneath it, which is what
+ * makes swapping Meta for a BSP a change to one file rather than to this page.
+ */
+export function sendPrescription(opts: {
+    prescriptionId: string;
+    patientId: string;
+    doctorId: string;
+}): Promise<SendResult> {
+    return postAuthed<SendResult>("/api/messaging/prescription", opts);
+}
+
+/** Send a follow-up reminder. Same seam, same silence about the provider. */
+export function sendFollowUp(opts: {
+    patientId: string;
+    doctorId: string;
+    visitId?: string;
+    followUpDate?: string;
+}): Promise<SendResult> {
+    return postAuthed<SendResult>("/api/messaging/follow-up", opts);
+}
+
+/**
+ * Ask the server to email AREN about something operational.
+ *
+ * The page never composes an email, never names a recipient and never sees a
+ * credential — it names an EVENT and the ids behind it, and
+ * `server/email/notify.js` owns what that event's email says. That is the
+ * whole point of a centralized email service: changing the wording of a
+ * low-credit alert must not be a frontend change.
+ */
+export function notifySupport(
+    kind: "recharge_request" | "low_credit" | "support_request",
+    payload: Record<string, unknown>
+): Promise<{ ok: true }> {
+    return postAuthed<{ ok: true }>("/api/support/notify", { kind, ...payload });
+}
+
+// ── Formatting ─────────────────────────────────────────────────────────────
+
+/** "4,999" — credits are always grouped; a bare 4999 reads as a reference
+ *  number rather than an amount. */
+export function formatCredits(n: number): string {
+    return new Intl.NumberFormat("en-IN").format(Math.max(0, Math.round(n)));
+}
+
+/** "₹300" — whole rupees, because every package is priced in them and
+ *  "₹300.00" on a pricing card reads as a bill, not a price. */
+export function formatPrice(amount: number, currency = "INR"): string {
+    return new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency,
+        maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    }).format(amount);
+}

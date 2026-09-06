@@ -54,6 +54,17 @@ interface Props {
      *  before (2026-08-29: "it should now redirect to this page,
      *  Practice"). */
     onNavigate: (page: SidebarPage) => void;
+    /**
+     * A name to open the page already searching for.
+     *
+     * Communication's "View patient" sets this (App.tsx `patientSearchSeed`).
+     * There is no deep link to a patient RECORD — this component opens one
+     * from a `PatientRecordRow` it already holds, and minting one from an id
+     * would need a fetch threaded through this whole list's state. Seeding
+     * the search puts the doctor one click from the record instead of in an
+     * unrelated list, which is the honest bounded version of that button.
+     */
+    initialSearch?: string | null;
 }
 
 /**
@@ -491,7 +502,7 @@ function RightPanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenSidebar, specialty, onNavigate }: Props) {
+export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenSidebar, specialty, onNavigate, initialSearch }: Props) {
     const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
@@ -501,7 +512,10 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
     const [searchResults, setSearchResults] = useState<PatientRecordRow[] | null>(null);
     const [todayLoading, setTodayLoading] = useState(true);
     const [recentLoading, setRecentLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState("");
+    // Seeded once, from the initial prop. Deliberately NOT synced to it
+    // afterwards: the doctor must be able to clear or retype the box, and an
+    // effect that wrote the prop back would fight every keystroke.
+    const [searchQuery, setSearchQuery] = useState(initialSearch ?? "");
     const [filter, setFilter] = useState<PatientFilter | null>(null);
 
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

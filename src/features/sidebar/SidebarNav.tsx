@@ -1,4 +1,5 @@
 import {
+    LayoutList,
     Users,
     MessageSquare,
     Stethoscope,
@@ -38,6 +39,19 @@ import {
 // ---------------------------------------------------------------------------
 
 export type SidebarPage =
+    /**
+     * The doctor's own landing page (2026-09-06). First in this union
+     * because it is the app's initial `activePage` — a doctor now arrives at
+     * their own numbers with one big door into the consult, instead of
+     * straight onto the consult workspace.
+     *
+     * It is a real FEATURE PAGE and not a null activePage, deliberately:
+     * App.tsx's standing "never a blank workspace" invariant only fires when
+     * `activePage === null`, so treating Overview as a page is what keeps
+     * that invariant intact rather than fighting it. See
+     * features/overview/DoctorOverviewPage.tsx's own header.
+     */
+    | "overview"
     | "patients"
     | "communication"
     | "practice"
@@ -106,6 +120,13 @@ export function SidebarNav({ activePage, onNavigate, onConsult, showClinicContro
             label: "Consult",
             icon: <Syringe size={15} />,
             onClick: onConsult,
+        },
+        {
+            type: "page",
+            label: "Overview",
+            icon: <LayoutList size={14} />,
+            page: "overview",
+            tone: "blue",
         },
         {
             type: "page",

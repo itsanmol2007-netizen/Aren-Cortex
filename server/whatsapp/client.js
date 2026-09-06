@@ -29,7 +29,14 @@ const GRAPH_VERSION = "v21.0";
  * Non-fatal: a message that sent successfully must never read as failed
  * because its OWN log row didn't write.
  */
-async function logOutbound({ to, waMessageId, messageType, templateName, preview, patientId, prescriptionId, hospitalId }) {
+async function logOutbound({ to, waMessageId, messageType, templateName, preview, patientId, prescriptionId, hospitalId, skipLog }) {
+    // The messaging service (server/messaging/service.js) writes its OWN
+    // authoritative row BEFORE the send, because a credit debit has to point
+    // at a message id that already exists. When it calls through here, this
+    // log would be a duplicate of that row — same message, two entries in the
+    // doctor's activity list, and only one of them carrying the purpose and
+    // the credit. So it opts out, and owns the row instead.
+    if (skipLog) return;
     try {
         await getSupabase().from("whatsapp_messages").insert({
             direction: "outbound",
@@ -100,7 +107,7 @@ export async function sendTextMessage(to, text, opts = {}) {
     const waMessageId = data.messages[0].id;
     await logOutbound({
         to, waMessageId, messageType: "text", preview: text,
-        patientId: opts.patientId, hospitalId: opts.hospitalId,
+        patientId: opts.patientId, hospitalId: opts.hospitalId, skipLog: opts.skipLog,
     });
     return { waMessageId };
 }
@@ -157,7 +164,7 @@ export async function sendInteractiveButtons(to, bodyText, buttons, opts = {}) {
     await logOutbound({
         to, waMessageId, messageType: "interactive",
         preview: bodyText,
-        patientId: opts.patientId, hospitalId: opts.hospitalId,
+        patientId: opts.patientId, hospitalId: opts.hospitalId, skipLog: opts.skipLog,
     });
     return { waMessageId };
 }
@@ -191,7 +198,7 @@ export async function sendTemplateMessage(to, templateName, languageCode = "en_U
         to, waMessageId, messageType: "template", templateName,
         preview: `template:${templateName}`,
         patientId: opts.patientId, prescriptionId: opts.prescriptionId,
-        hospitalId: opts.hospitalId,
+        hospitalId: opts.hospitalId, skipLog: opts.skipLog,
     });
     return { waMessageId };
 }

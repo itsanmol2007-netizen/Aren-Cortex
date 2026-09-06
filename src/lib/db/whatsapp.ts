@@ -49,7 +49,60 @@ export type DBWhatsAppMessage = {
     status: string;
     error_detail: string | null;
     created_at: string;
+    /** Whose wallet paid for this send. Null on inbound, and on outbound rows
+     *  written before Communication V1. */
+    doctor_id: string | null;
+    /**
+     * AREN's own category — the two the doctor knows about, plus what the
+     * bot itself sends. Deliberately NOT read off `template_name`: that is
+     * Meta's name for an approved template and changes when a template is
+     * re-approved, which must not silently reclassify a year of history.
+     */
+    purpose: WhatsAppPurpose | null;
+    /** Credits this message actually consumed. 0 once a failure is refunded. */
+    credits_charged: number;
 };
+
+export type WhatsAppPurpose = "prescription" | "follow_up" | "reply" | "booking" | "other";
+
+/**
+ * The four delivery states the doctor is shown, collapsed from everything
+ * Meta reports. `accepted`/`sent` are one thing to a doctor ("it left"), and
+ * a status nobody has a mental model for is worse than four they do.
+ */
+export type DeliveryState = "sent" | "delivered" | "read" | "failed" | "pending";
+
+export function deliveryStateOf(status: string): DeliveryState {
+    switch (status) {
+        case "read": return "read";
+        case "delivered": return "delivered";
+        case "sent":
+        case "accepted": return "sent";
+        case "failed":
+        case "undelivered": return "failed";
+        default: return "pending";
+    }
+}
+
+export const DELIVERY_LABEL: Record<DeliveryState, string> = {
+    pending: "Sending",
+    sent: "Sent",
+    delivered: "Delivered",
+    read: "Read",
+    failed: "Failed",
+};
+
+/** What the doctor calls each kind of message. `null` covers rows written
+ *  before V1 stamped a purpose. */
+export function purposeLabel(purpose: WhatsAppPurpose | null): string {
+    switch (purpose) {
+        case "prescription": return "Prescription";
+        case "follow_up": return "Follow-up";
+        case "reply": return "Reply";
+        case "booking": return "Booking";
+        default: return "Message";
+    }
+}
 
 export type WhatsAppThread = {
     /** E.164 without "+", as WhatsApp sends it. The thread's identity. */
@@ -81,7 +134,7 @@ export async function fetchWhatsAppThreads(hospitalId: string): Promise<WhatsApp
         // One string literal, not a concatenation: supabase-js infers the row
         // type by parsing this at the type level, and a `+` expression is
         // opaque to it — the result degrades to GenericStringError[].
-        .select("id, direction, phone, patient_id, prescription_id, wa_message_id, message_type, template_name, body_preview, status, error_detail, created_at")
+        .select("id, direction, phone, patient_id, prescription_id, wa_message_id, message_type, template_name, body_preview, status, error_detail, created_at, doctor_id, purpose, credits_charged")
         .eq("hospital_id", hospitalId)
         .order("created_at", { ascending: false })
         .limit(MESSAGE_WINDOW);
@@ -131,6 +184,84 @@ export async function fetchWhatsAppThreads(hospitalId: string): Promise<WhatsApp
         (a, b) => new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime()
     );
     return threads;
+}
+
+// ── ACTIVITY — what this doctor has SENT ────────────────────────────────────
+//
+// The inbox above answers "who is talking to the clinic". This answers "did
+// my prescription reach Rahul", which is a different question with a
+// different owner: threads are per-CLINIC (one shared WhatsApp number, and a
+// patient replies to the clinic, not to a bench), but a send is per-DOCTOR,
+// because a doctor's own credits paid for it.
+
+export type MessageActivity = {
+    id: number;
+    phone: string;
+    patientId: string | null;
+    patientName: string | null;
+    purpose: WhatsAppPurpose | null;
+    /** Collapsed from Meta's status vocabulary — see `deliveryStateOf`. */
+    state: DeliveryState;
+    /** Meta's own words when a send failed. The doctor sees a plain sentence;
+     *  this is what support needs to act. */
+    errorDetail: string | null;
+    creditsCharged: number;
+    createdAt: string;
+    prescriptionId: string | null;
+};
+
+/**
+ * Outbound messages, newest first.
+ *
+ * `doctorId` is optional and its absence means "this whole clinic", not "no
+ * filter I forgot to apply" — Parallax and the owner-doctor's Clinic Control
+ * both want the clinic-wide answer, and a doctor's own Communication page
+ * passes their id. Capped by the same window the inbox uses, for the same
+ * reason: see MESSAGE_WINDOW.
+ */
+export async function fetchMessageActivity(
+    hospitalId: string,
+    opts: { doctorId?: string | null; limit?: number } = {}
+): Promise<MessageActivity[]> {
+    let query = supabase
+        .from("whatsapp_messages")
+        .select("id, phone, patient_id, prescription_id, purpose, status, error_detail, credits_charged, created_at")
+        .eq("hospital_id", hospitalId)
+        .eq("direction", "outbound")
+        .order("created_at", { ascending: false })
+        .limit(opts.limit ?? MESSAGE_WINDOW);
+
+    // Rows written before V1 carry no doctor_id. Filtering by doctor would
+    // hide a clinic's entire message history on the day this ships, so the
+    // filter is applied only when asked for and the page says whose list it is.
+    if (opts.doctorId) query = query.eq("doctor_id", opts.doctorId);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`fetchMessageActivity: ${error.message}`);
+
+    const rows = (data ?? []) as {
+        id: number; phone: string; patient_id: string | null; prescription_id: string | null;
+        purpose: WhatsAppPurpose | null; status: string; error_detail: string | null;
+        credits_charged: number | null; created_at: string;
+    }[];
+    if (!rows.length) return [];
+
+    const names = await fetchPatientNames(
+        [...new Set(rows.map((r) => r.patient_id).filter((id): id is string => !!id))]
+    );
+
+    return rows.map((r) => ({
+        id: r.id,
+        phone: r.phone,
+        patientId: r.patient_id,
+        patientName: r.patient_id ? names.get(r.patient_id) ?? null : null,
+        purpose: r.purpose,
+        state: deliveryStateOf(r.status),
+        errorDetail: r.error_detail,
+        creditsCharged: Number(r.credits_charged ?? 0),
+        createdAt: r.created_at,
+        prescriptionId: r.prescription_id,
+    }));
 }
 
 async function fetchPatientNames(ids: string[]): Promise<Map<string, string>> {

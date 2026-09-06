@@ -1,121 +1,155 @@
-# Session handoff — 2026-09-06 (Cortex payment rail + Consult blank-canvas — UNRESOLVED)
+# Session handoff — 2026-09-06b (Communication V1 + Doctor Overview)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE.**
 
-## Open, unresolved, top priority for next session
+## The headline: rule 13 was satisfied, for the first time in four sessions
 
-**Consult still shows a blank workspace on reload/re-login.** Reported
-repeatedly this session; NOT fixed despite three attempted fixes (removed a
-`queue.loading` wait, added a standing invariant effect, added a 1.5s
-watchdog). User confirms: persists after a dev-server restart AND after a
-full logout/login — rules out stale cache/HMR as the cause. This is a real
-code bug not yet found.
+A live browser was available this session. The app was signed into with a real
+account (SK Pandey, Anmol Homeo Clinics), every new screen was rendered,
+measured with `getBoundingClientRect()`, and clicked. **Four real bugs came out
+of that pass that no amount of `tsc` would ever have found** — three of them
+pre-existing, one of them mine. They are listed below because each is a worked
+example of exactly what rule 13 exists to catch.
 
-**What's been verified, so the next session doesn't re-walk it:**
-- `RequireAuth` gates the entire app behind a splash (`GateScreen`) until
-  `auth.status === "authed"` — App.tsx cannot mount before then.
-- `loadIdentity()` (`lib/auth.ts`) fetches the hospital row (`clinic_mode`
-  included) and resolves it BEFORE `setState({status:"authed",...})` fires
-  (both the live path and `adoptIdentity`, used by `LoginPage`) — so
-  `workspace.isConsult` should be correct from App.tsx's first render, not a
-  "cortex" fallback that later flips.
-- `main.tsx`'s route tree: `/app/cortex` sits behind `RequireAuth` then
-  `RequireRole allow={["doctor"]}` — no other gate in between.
-- App.tsx has no top-level early-return loading gate of its own.
-- The queue-open invariant's own render condition
-  (`workspace.isConsult && queueSheetOpen`) has nothing else blocking it.
-- Confirmed working via manual triggers (the "Register a patient" button
-  from an empty queue correctly shows PatientModal + payment rail, per a
-  user screenshot this session) — so the MECHANISM works, only the
-  automatic-on-idle path is suspect.
+Getting a browser to work here needed one trick worth writing down: **Chromium
+cannot complete a TLS handshake through this sandbox's egress relay** (the
+tunnel closes mid-ClientHello; `curl` and Node are fine). The way through is a
+throwaway Node relay on `127.0.0.1:8787` that forwards to Supabase via
+`undici`'s `ProxyAgent` with `NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt`,
+then running Vite with `VITE_SUPABASE_URL=http://127.0.0.1:8787`. Nothing in
+the repo depends on it; it lives in the scratchpad. Do this again rather than
+shipping unseen.
 
-**What's now in place to actually catch it, since I ran out of static-
-analysis leads:** a TEMPORARY debug box, `App.tsx` (search
-`blankCanvasDetected`) — renders bottom-left, dark red, only after the
-"should be impossible" state (Consult, ready, no active consult, no
-patient-modal/transition/queue-sheet, not on a feature page) has persisted
-for 2+ full seconds (debounced specifically so it can't be a normal one-
-frame flash during a working load). If the user sees this box, screenshot
-it — that's confirmation the invariant effects are not firing and exactly
-which one to instrument next. If they DON'T see it but still see blank
-canvas, the bug is in a DIFFERENT condition than the four this box checks
-(e.g. `hasActiveConsult` reading true from a stale/bad draft, or the render
-condition for `QueueSheet` itself) — instrument that branch next.
+### The four bugs rendering found
 
-**Remove the debug box (and its `blankCanvasDetected` state/effect) once
-this is actually closed** — it's diagnostic-only, not a feature.
+1. **`GlobalLogoTrigger` painted a duplicate header over the real one.** Its
+   `active` prop is computed from STATE, not from "something is on screen",
+   and `patientModalOpen` starts life `true` (`useConsultSession`). With
+   Overview as the new landing page that flag is still true while the modal
+   renders nothing — so the ghost pill AND a second "AREN Consult / Front desk
+   queue" label drew at z-index 9998 directly over the header's title,
+   measured at x=129.6, exactly on top of "Overview". Fixed by adding
+   `!isFeaturePage` to `active` (App.tsx): a feature page's real header is
+   right there and reachable, so the ghost is never needed on one.
+2. **`HourBars` drew nothing, on this page AND on Parallax's Overview.** Every
+   column measured 0px tall. The row's `items-end` switches off the default
+   stretch, so each column was sized to its content — and the bar inside is a
+   PERCENTAGE of that content, resolving against an indefinite height and
+   collapsing. Fixed with `h-full` on the column (`features/admin/charts.tsx`).
+   **This has presumably been broken since the chart was written.**
+3. **`server/` refused to start without `WHATSAPP_VERIFY_TOKEN`.** Correct when
+   the webhook was all `server/` did; wrong now that the messaging service and
+   the credit ledger live there too, whose entire point is working before a
+   Meta account exists. Now warns loudly and skips mounting the webhook.
+4. **Every authenticated API route hung with no response when the server was
+   misconfigured.** Express 4 does not catch a rejection from an async
+   handler — `getSupabase()` threw and `curl` sat there with no status and no
+   body. `server/auth.js` now answers every request.
 
-**Do not re-attempt another blind timing fix without the debug box's
-output first** — three rounds of that already burned real trust this
-session. Get the screenshot, then fix the specific thing it names.
+## What shipped
 
-## What else this session did (all believed working, unverified live)
+### 1. AREN Communication V1 (the whole spec)
 
-1. **Cortex/Consult self-register payment rail** — `PatientModal.tsx` now
-   carries a payment rail (`PatientPaymentRail.tsx`) as a real column
-   inside its own single card (NOT a second floating card — that was a
-   real regression, found and fixed mid-session: it used to be
-   `flex-wrap`, read as two unrelated cards, wrapped below the modal
-   instead of beside it, and silently ate clicks wherever it overlapped).
-   Wired for both Cortex (always) and Consult's "Register a patient"
-   escape hatch (same situation — doctor doing their own intake).
-2. **Payment decision required before confirming a NEW patient** —
-   Start consult / Use this patient now require Collect or Mark-as-unpaid
-   first when a real fee is configured; the rail highlights itself rather
-   than silently defaulting to pending. Existing-patient search-row clicks
-   stay one-click, untouched.
-3. **"Collected ₹X" reworded** — read as a completed, already-recorded
-   transaction for a decision that writes nothing until a patient is
-   confirmed. Now "Will collect ₹X — once you confirm a patient", plus a
-   permanent footer note on the rail: "Nothing is recorded until you
-   confirm a patient."
-4. **GlobalLogoTrigger** — two real bugs: didn't know about the queue
-   sheet/handover modal (so the sidebar was genuinely unreachable while
-   either was open — "the doctor literally can't do anything"), and had
-   its own third hardcoded "AREN Cortex" string (missed by the 2026-09-05
-   fix that caught the other two), rendered on top of the real header at
-   z-index 9998 — in Consult this read as "Consult"/"Cortex" stacked and
-   garbled. Both fixed.
-5. **Queue sheet / handover modal locking** — `ConsultModal` gained a
-   `dismissable` prop; both surfaces are locked (no ×, Escape/backdrop
-   inert) while no consult is active, so closing them can't land on a
-   blank header. `handleSidebarNavigate` now tears both down when leaving
-   the consult screen (was missing before — SESSION-HANDOFF from earlier
-   this session already covers the detail).
-6. **Queue detail panel** — thinned (~65/35), gained a quick-facts strip
-   (visit count/last-seen/payment status), fixed a real off-by-one bug
-   (`last_visit_at`/`visit_count` used to include the visit being viewed
-   itself), added entrance/cross-fade animation. Also affects front desk's
-   own `VisitRow` tooltip (same underlying fix).
-7. **"Search existing" idle state** — was genuinely blank under the search
-   box until 2+ characters typed. Now shows an icon + short copy.
-8. **Settings search** — indexed the Staff card (existed since 2026-09-03,
-   was never searchable — no anchor, no registry row), added real fuzzy
-   (character-subsequence) matching, fixed the deep-link highlight
-   animation (was fighting a CSS `transition` on the same property as its
-   own hover state, which is why it barely read as a highlight at all).
+Read `docs/context/communication-credits.md` — it is the stable pocket for
+this and covers the five load-bearing decisions. In brief:
 
-**Everything in this list has passed `npx tsc -b` + `npm run build` every
-round, but NONE of it has been seen rendering live by an agent in this
-environment — that gap is now three sessions running.** The unresolved
-item above is the direct, expensive cost of that gap: three rounds of
-plausible-looking fixes for a bug that couldn't actually be reproduced to
-verify against. Next session, if a live browser becomes available at any
-point, spend it here first.
+- **Credit ledger**, not a balance column. Append-only, balance is
+  `sum(delta)`, `LOW_CREDITS`/`EXHAUSTED` is a view CASE and never a stored
+  flag. Every doctor got their 5,000 (all 16 backfilled, verified).
+- **Per-doctor wallet**, granted by a trigger on `doctors`.
+- **A doctor can ask for credits and can never grant them** — no client INSERT
+  policy on the ledger at all; `credit_recharge_requests` pins `status` to
+  `pending` in its `WITH CHECK`.
+- **Debit → send → refund on failure.** A failure is two visible ledger rows,
+  not a number that quietly went back up.
+- **Provider adapter** in AREN's vocabulary (purpose/patient/clinic), with
+  `meta.js` and a `mock.js` that runs the full path.
+- **One email service** (`server/email/`), events not prose, to
+  support@arenode.com via Zoho's India DC.
+- **The page**: credits strip, appointment requests, activity + conversation,
+  Buy Credits modal, coming-soon line. No composer, no send button — both
+  argued in the file header.
+- **Prescriptions send on consult completion** (`useConsultLifecycle`),
+  fire-and-forget, skipped silently when the patient has no phone.
+
+The migration is `supabase/migrations/20260906_messaging_credits.sql` and **is
+already applied to the live project** (four `apply_migration` calls; the file
+is the record).
+
+### 2. The doctor's Overview page
+
+`src/features/overview/DoctorOverviewPage.tsx`, now the initial `activePage`
+in both workspaces. Large "Start consult" door (reusing
+`handleSidebarConsult`, not a second path), then a doctor-scoped summary of
+Parallax's overview: four KPI tiles with deltas, trend chart, a new segmented
+`Donut` ("who you saw"), busiest hours.
+
+**No bench comparison, ever, and multi-doctor changes nothing about this
+page.** A landing page that ranks a doctor against their colleagues is a
+scoreboard they see every sign-in and cannot opt out of. `BenchRow[]` stays
+exclusive to Parallax.
+
+`fetchClinicAnalytics` gained an optional `{ doctorId }` scope rather than
+growing a parallel `fetchDoctorAnalytics` — the IST arithmetic and the
+previous-period split are the load-bearing parts and would drift in a second
+copy. Note the two reads that are deliberately NOT scoped (the doctor roster,
+and `revenueTracked`) and one that changes meaning (new patients becomes
+"registered in this window AND seen by me").
+
+### 3. The blank-canvas bug — closed structurally, not by another timing guess
+
+The previous handoff's top item. Overview is a **feature page**, so
+`activePage !== null` on every cold start and reload: the state that produced
+a blank dark header no longer exists on that path. Pressing "Start consult"
+sets `activePage` to null, which is exactly when the queue-sheet invariant
+should take over — verified live (Start consult → queue sheet opens locked,
+ghost trigger reachable, sidebar → Overview works).
+
+**The temporary `blankCanvasDetected` debug box in App.tsx is still there, on
+purpose.** It never fired during this session's live pass. Remove it once a
+human has used the app for a day and confirms — removing it now on my own
+reasoning is the exact move the last handoff warned against.
+
+## Verified live, and what wasn't
+
+Signed in, rendered, measured and clicked: Overview (real data — 17 seen, 6 Rx,
+₹472), Communication (5,000 credits, all three tabs), Buy Credits modal
+(packages from the DB, "takes you to 5,900"), the full recharge loop
+(request → `approve_credit_recharge` → 5,900 → **reverted, DB left exactly as
+found**: 16 doctors, all at 5,000, zero requests), Start consult → queue sheet
+→ sidebar → back, Patients (search box correctly empty).
+
+**Not exercised**: an actual message send end to end (needs
+`SUPABASE_SERVICE_ROLE_KEY`, which is not in this checkout — `server/.env` is
+gitignored), so the debit/refund path has been proven by SQL and by reading,
+not by a send. `/api/messaging/health` answers `{provider:"mock"}` through the
+Vite proxy, and the auth guards return proper JSON. Also unexercised: the
+"View patient" seed from Communication (this clinic has no sent messages yet).
+
+## Next, in the order I would do it
+
+1. **Run one real send.** Put `SUPABASE_SERVICE_ROLE_KEY` in `server/.env`,
+   `npm run server`, complete a consult for a patient with a phone, and watch
+   `MESSAGE_DEBIT` appear. Then set `MESSAGING_MOCK_FAILURE_RATE=0.5` and watch
+   `REFUND` appear next to it. That is the one path nothing else can prove.
+2. **The follow-up trigger.** `sendFollowUp` works; nothing schedules it.
+   Until something does, the Templates tab's "sent automatically" is a promise.
+3. **An admin queue for recharges.** `approve_credit_recharge()` is called by
+   hand today. Parallax is its natural home.
+4. **Submit the two Meta templates** (`aren_prescription`, `aren_follow_up`).
+   Leave `MESSAGING_PROVIDER` unset until they are approved.
 
 ## Traps worth knowing before you edit
 
-- **These files are CRLF.** A node script matching on `\n` silently does
-  nothing. Read with `.replace(/\r\n/g,"\n")`, write back with the reverse.
-- **`base.css` is unlayered and beats Tailwind utilities** — same for every
-  legacy sheet in `styles/`. A Tailwind class fighting a legacy class on the
-  SAME property loses regardless of source order; use an inline style to
-  override a legacy property, or restructure the DOM instead.
-- **A CSS `animation` and a `transition` on the same property fight** —
-  found live this session (`.cx-setting-flash` vs `.prac-card`'s hover
-  transition). `!important` on the animated property is the fix.
-- **`React.StrictMode` double-invokes effects in dev** — noted while
-  investigating the blank-canvas bug, ruled out as the cause, but worth
-  remembering for the next timing-sensitive effect: dev-only double-run is
-  expected and should still converge, not a bug on its own.
-- **Supabase MCP refuses multi-statement writes.** Split them.
+- **These files are CRLF on Windows.** A node script matching on `\n` silently
+  does nothing there. (This container's checkout is LF — do not "fix" that.)
+- **`base.css` is unlayered and beats Tailwind utilities**, same for every
+  legacy sheet in `styles/`. Use an inline style or restructure the DOM.
+- **A CSS `animation` and a `transition` on the same property fight.**
+- **Supabase MCP refuses multi-statement writes** in `execute_sql`; split them.
+  `apply_migration` handles a whole file fine.
+- **A generic wrapper around a supabase-js query builder defeats its type
+  inference outright** (TS2589, hit while adding the doctor scope). Spell each
+  conditional `.eq()` out on its own line.
+- **Chromium cannot reach the internet through this sandbox's relay.** See the
+  top of this file for the way around it.
