@@ -38,8 +38,38 @@ import { supabase } from "../supabase";
 export const LOW_CREDIT_THRESHOLD = 100;
 
 /** What one message costs. AREN's own unit, not Meta's — the doctor never
- *  sees a conversation category or a per-country rate. */
+ *  sees a conversation category or a per-country rate.
+ *
+ *  Only messages AREN SENDS cost anything. A patient's reply is free, because
+ *  Meta does not charge us for it — that is the whole rule, and the UI must
+ *  never imply otherwise. */
 export const CREDITS_PER_MESSAGE = 1;
+
+/**
+ * How long a doctor must wait before they may withdraw their own recharge
+ * request and raise a fresh one.
+ *
+ * Mirrors the `interval '3 hours'` inside `cancel_credit_recharge()`. The
+ * DATABASE is the authority — this copy only decides when the button appears,
+ * because a button that is visible and then errors is worse than one that
+ * arrives when it can work.
+ */
+export const RECHARGE_CANCEL_AFTER_MS = 3 * 60 * 60 * 1000;
+
+/** Milliseconds until this request may be withdrawn; 0 once it may. */
+export function msUntilCancellable(request: RechargeRequest): number {
+    const age = Date.now() - new Date(request.createdAt).getTime();
+    return Math.max(0, RECHARGE_CANCEL_AFTER_MS - age);
+}
+
+/** "in 2h 10m" — how long a doctor still has to wait. */
+export function formatWait(ms: number): string {
+    if (ms <= 0) return "";
+    const mins = Math.ceil(ms / 60000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 // ── Balance ────────────────────────────────────────────────────────────────
 
@@ -343,6 +373,90 @@ export async function createRechargeRequest(opts: {
     return request;
 }
 
+/**
+ * Withdraw a pending recharge request.
+ *
+ * The three-hour wait is enforced by `cancel_credit_recharge()` itself, not
+ * here — this only surfaces the refusal. A doctor with a browser console can
+ * call the RPC early and will simply be told no.
+ *
+ * Cancelling frees the unique partial index that allows one pending request
+ * per doctor, which is the entire point: a request nobody actioned used to
+ * block the doctor from raising a fresh one.
+ */
+export async function cancelRechargeRequest(requestId: number): Promise<void> {
+    const { error } = await supabase.rpc("cancel_credit_recharge", { p_request_id: requestId });
+    if (error) {
+        // Postgres RAISE messages arrive readable and are written for the
+        // doctor ("A request can only be withdrawn after 3 hours."), so they
+        // are shown rather than replaced with something vaguer.
+        throw new Error(error.message.replace(/^.*?:\s*/, ""));
+    }
+
+    void notifySupport("recharge_cancelled", { requestId }).catch((e) => {
+        console.error("[messaging] cancellation notice failed (non-fatal):", e);
+    });
+}
+
+// ── Usage over time ────────────────────────────────────────────────────────
+
+export interface UsageDay {
+    /** yyyy-mm-dd, clinic-local. */
+    date: string;
+    /** Credits spent that day — MESSAGE_DEBITs, net of refunds, so a day
+     *  whose only send failed reads as 0 rather than 1. */
+    credits: number;
+}
+
+/**
+ * Credits spent per day, oldest first, gaps filled with zeros.
+ *
+ * Zero-filled deliberately: a quiet Sunday must draw as a dip, not vanish and
+ * pull the bar chart's shape out of true. Same rule `DayPoint[]` follows in
+ * the admin analytics.
+ *
+ * Refunds are netted into the day the REFUND was written, not the day of the
+ * debit it reverses. That is a day or two out on a late provider failure, and
+ * the alternative — reaching back to rewrite a past day's total — would make
+ * a chart the doctor already looked at change underneath them.
+ */
+export async function fetchCreditUsage(doctorId: string, days = 14): Promise<UsageDay[]> {
+    // IST, spelled out. `new Date().toISOString()` is wrong here: until
+    // 05:30 IST the UTC date is still yesterday, so "today" would be empty
+    // every morning. Same reasoning as lib/db/admin.ts's date helpers.
+    const dayOf = (iso: string) =>
+        new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date(iso));
+
+    const buckets = new Map<string, number>();
+    const now = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+        buckets.set(dayOf(new Date(now.getTime() - i * 86400000).toISOString()), 0);
+    }
+
+    const since = new Date(now.getTime() - days * 86400000).toISOString();
+    const { data, error } = await supabase
+        .from("messaging_credit_ledger")
+        .select("delta, kind, created_at")
+        .eq("doctor_id", doctorId)
+        .in("kind", ["MESSAGE_DEBIT", "REFUND"])
+        .gte("created_at", since)
+        .order("created_at", { ascending: true });
+
+    if (error) throw new Error(`fetchCreditUsage: ${error.message}`);
+
+    for (const row of (data ?? []) as { delta: number; kind: LedgerKind; created_at: string }[]) {
+        const day = dayOf(row.created_at);
+        if (!buckets.has(day)) continue;
+        // A debit is negative and a refund positive, so spend is the negated
+        // sum of both — one expression rather than a branch per kind.
+        buckets.set(day, buckets.get(day)! - Number(row.delta));
+    }
+
+    return [...buckets.entries()].map(([date, credits]) => ({ date, credits: Math.max(0, credits) }));
+}
+
 // ── The send seam ──────────────────────────────────────────────────────────
 //
 // Everything below crosses into `server/`. The browser holds no provider
@@ -424,7 +538,7 @@ export function sendFollowUp(opts: {
  * low-credit alert must not be a frontend change.
  */
 export function notifySupport(
-    kind: "recharge_request" | "low_credit" | "support_request",
+    kind: "recharge_request" | "recharge_cancelled" | "low_credit" | "support_request",
     payload: Record<string, unknown>
 ): Promise<{ ok: true }> {
     return postAuthed<{ ok: true }>("/api/support/notify", { kind, ...payload });

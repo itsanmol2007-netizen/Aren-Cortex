@@ -69,6 +69,40 @@ function facts(rows) {
     return `<table style="border-collapse:collapse;margin:10px 0 14px">${cells}</table>`;
 }
 
+/**
+ * The band at the top of an actionable email: who, and the reference to quote
+ * back. Both were previously just two more rows in the fact table, which made
+ * them exactly as prominent as "Time" — and they are the only two a reader
+ * needs before deciding whether to act now.
+ */
+function subject_band({ who, sub, ref, tone = "#1268e8", soft = "#eef4fe" }) {
+    return (
+        `<table style="border-collapse:separate;width:100%;background:${esc(soft)};` +
+        `border-radius:10px;margin:0 0 14px"><tr>` +
+        `<td style="padding:12px 14px">` +
+        `<div style="font-size:16px;font-weight:700;color:#111827;line-height:1.3">${esc(who)}</div>` +
+        (sub ? `<div style="font-size:13px;color:#4b5563;margin-top:2px">${esc(sub)}</div>` : "") +
+        `</td>` +
+        (ref
+            ? `<td align="right" style="padding:12px 14px;white-space:nowrap;vertical-align:top">` +
+              `<div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9ca3af">Reference</div>` +
+              `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:700;color:${esc(tone)};margin-top:2px">${esc(ref)}</div>` +
+              `</td>`
+            : "") +
+        `</tr></table>`
+    );
+}
+
+/** The number the whole email is about, stated once and large. */
+function headline_figure(value, label, tone = "#1268e8") {
+    return (
+        `<div style="margin:0 0 14px">` +
+        `<div style="font-size:28px;font-weight:800;color:${esc(tone)};line-height:1.1">${esc(value)}</div>` +
+        `<div style="font-size:12px;color:#6b7280;margin-top:2px">${esc(label)}</div>` +
+        `</div>`
+    );
+}
+
 function heading(text, tone = "#1268e8") {
     return `<p style="margin:0 0 4px;font-size:15px;font-weight:700;color:${esc(tone)}">${esc(text)}</p>`;
 }
@@ -91,31 +125,58 @@ export const TEMPLATES = {
      */
     recharge_request(ctx) {
         return {
-            subject: `AREN — New Credit Recharge Request — ${ctx.doctorName}`,
+            subject: `AREN — Credit Recharge Request — ${ctx.doctorName} (${ctx.reference || "new"})`,
             html: SHELL(
                 heading("Credit recharge request") +
+                subject_band({ who: ctx.doctorName, sub: ctx.clinicName, ref: ctx.reference }) +
+                headline_figure(
+                    `${credits(ctx.credits)} credits · ${rupees(ctx.amount)}`,
+                    ctx.packageLabel ? `Package: ${ctx.packageLabel}` : "Requested"
+                ) +
                 facts([
-                    ["Doctor", ctx.doctorName],
-                    ["Clinic", ctx.clinicName],
-                    ["Requested", `${credits(ctx.credits)} credits`],
-                    ["Amount", rupees(ctx.amount)],
-                    ["Package", ctx.packageLabel],
-                    ["Current balance", `${credits(ctx.balance)} credits`],
-                    ["Request ID", ctx.reference],
-                    ["Time", istTime()],
+                    ["Balance when asked", `${credits(ctx.balance)} credits`],
+                    ["Requested at", istTime()],
+                    ["Doctor note", ctx.note],
                 ]) +
-                (ctx.note ? `<p style="margin:0 0 12px;color:#374151">“${esc(ctx.note)}”</p>` : "") +
-                `<p style="margin:0;color:#374151">Verify the payment, then approve the request so the credits are added automatically.</p>` +
-                footer("Nothing has been credited yet. Approval is what writes the credits.")
+                `<p style="margin:0;color:#374151">Verify the payment, then approve the request — approval is what actually adds the credits.</p>` +
+                footer(
+                    "Nothing has been credited yet. If nobody actions this within 3 hours the doctor " +
+                    "can withdraw it themselves and raise a fresh one."
+                )
             ),
         };
     },
 
     /**
-     * A doctor has crossed the low threshold. Sent so AREN can reach out
-     * BEFORE they run out — the doctor already sees their own warning in the
-     * app, so this email exists purely to make the outreach proactive.
+     * The doctor gave up waiting.
+     *
+     * Its own email rather than a line in a digest, because it means something
+     * specific and time-sensitive: somebody asked, nobody called, and they have
+     * now taken it back. If AREN was mid-conversation about this request, that
+     * conversation is about a request that no longer exists.
      */
+    recharge_cancelled(ctx) {
+        return {
+            subject: `AREN — Recharge Request Withdrawn — ${ctx.doctorName} (${ctx.reference || ""})`,
+            html: SHELL(
+                heading("Recharge request withdrawn", "#b45309") +
+                subject_band({
+                    who: ctx.doctorName, sub: ctx.clinicName, ref: ctx.reference,
+                    tone: "#b45309", soft: "#fef6e7",
+                }) +
+                facts([
+                    ["Had asked for", `${credits(ctx.credits)} credits · ${rupees(ctx.amount)}`],
+                    ["Waited", ctx.waited],
+                    ["Balance now", `${credits(ctx.balance)} credits`],
+                    ["Withdrawn at", istTime()],
+                ]) +
+                `<p style="margin:0;color:#374151">They waited three hours without hearing back and withdrew it. ` +
+                `They can raise a fresh request immediately — if one has already arrived, action that one instead.</p>` +
+                footer("Nothing was charged and no credits moved.")
+            ),
+        };
+    },
+
     low_credit(ctx) {
         return {
             subject: `AREN — Low Messaging Credits — ${ctx.doctorName}`,

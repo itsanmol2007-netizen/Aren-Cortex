@@ -26,13 +26,13 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from "react";
-import { Check, Loader2, Wallet } from "lucide-react";
+import { Check, Loader2, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
 import { PracticeModal } from "../practice/PracticeModal";
 import { EmptyBlock, FormNote, SkeletonRows } from "../clinic/ui";
 import {
-    DuplicateRechargeError, createRechargeRequest, fetchCreditPackages,
-    formatCredits, formatPrice,
+    DuplicateRechargeError, cancelRechargeRequest, createRechargeRequest,
+    fetchCreditPackages, formatCredits, formatPrice, formatWait, msUntilCancellable,
     type CreditPackage, type RechargeRequest,
 } from "../../lib/db/messaging";
 
@@ -50,15 +50,42 @@ interface Props {
     pending: RechargeRequest | null;
     onClose: () => void;
     onRequested: (request: RechargeRequest) => void;
+    /** Reload after a withdrawal — the pending row is gone and the doctor can
+     *  immediately raise a fresh one, which this modal has to reflect. */
+    onWithdrawn?: () => void;
 }
 
 export function BuyCreditsModal({
-    hospitalId, doctorId, userId, currentBalance, pending, onClose, onRequested,
+    hospitalId, doctorId, userId, currentBalance, pending, onClose, onRequested, onWithdrawn,
 }: Props) {
     const [packages, setPackages] = useState<CreditPackage[] | null>(null);
     const [selected, setSelected] = useState<CreditPackage | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [withdrawing, setWithdrawing] = useState(false);
+
+    // How long they still have to wait. Read once per open rather than ticked
+    // every second: nobody sits on this modal watching a countdown, and a
+    // timer that re-renders a dialog once a second for two hours is a battery
+    // cost with no reader.
+    const waitMs = pending ? msUntilCancellable(pending) : 0;
+
+    const withdraw = async () => {
+        if (!pending || withdrawing) return;
+        setWithdrawing(true);
+        setError(null);
+        try {
+            await cancelRechargeRequest(pending.id);
+            toast.success("Request withdrawn — you can raise a new one");
+            onWithdrawn?.();
+            onClose();
+        } catch (e) {
+            // The database's own words. It refuses before three hours even if
+            // this modal somehow offered the button early.
+            setError(e instanceof Error ? e.message : "Could not withdraw the request");
+            setWithdrawing(false);
+        }
+    };
 
     useEffect(() => {
         let alive = true;
@@ -107,13 +134,26 @@ export function BuyCreditsModal({
             dirty={!pending && !!selected}
             footer={
                 pending ? (
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="h-[42px] w-full cursor-pointer rounded-[12px] border border-[var(--cs-line-strong)] bg-[rgba(0,0,0,0.03)] text-[13px] font-semibold text-[var(--cs-muted)]"
-                    >
-                        Close
-                    </button>
+                    <div className="flex w-full items-center gap-[8px]">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="h-[42px] flex-1 cursor-pointer rounded-[12px] border border-[var(--cs-line-strong)] bg-[rgba(0,0,0,0.03)] text-[13px] font-semibold text-[var(--cs-muted)]"
+                        >
+                            Close
+                        </button>
+                        {waitMs <= 0 && (
+                            <button
+                                type="button"
+                                onClick={() => void withdraw()}
+                                disabled={withdrawing}
+                                className="inline-flex h-[42px] flex-none cursor-pointer items-center justify-center gap-[6px] rounded-[12px] border-[1.5px] border-[var(--cs-red)] bg-transparent px-[16px] text-[13px] font-semibold text-[var(--cs-red)] outline-none transition-colors hover:bg-[var(--cs-red-soft)] disabled:opacity-50"
+                            >
+                                {withdrawing ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                                Withdraw
+                            </button>
+                        )}
+                    </div>
                 ) : (
                     <div className="flex w-full items-center gap-[8px]">
                         <button
@@ -157,6 +197,19 @@ export function BuyCreditsModal({
                             </span>
                         </div>
                     </div>
+                    {/* The wait, stated rather than left to be discovered by
+                        pressing a button that errors. Three hours is enforced
+                        by `cancel_credit_recharge()` itself. */}
+                    <p className="m-0 text-[11.5px] leading-[1.5] text-[var(--cs-muted)]">
+                        {waitMs > 0
+                            ? `If you haven't heard from us, you can withdraw this and raise a new one in ${formatWait(waitMs)}.`
+                            : "Nobody has picked this up yet — you can withdraw it and raise a new one."}
+                    </p>
+                    {error && (
+                        <p className="m-0 rounded-[10px] bg-[var(--cs-red-soft)] px-[10px] py-[7px] text-[11.5px] font-medium text-[var(--cs-red)]">
+                            {error}
+                        </p>
+                    )}
                     <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-[14px] gap-y-[5px] text-[12px]">
                         {[
                             ["Package", pending.packageLabel],

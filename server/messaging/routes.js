@@ -112,7 +112,7 @@ export function mountMessagingRoutes(app) {
      * "credits exhausted" one about somebody else. The three below are the
      * only ones a browser has any business raising.
      */
-    const CLIENT_KINDS = new Set(["recharge_request", "support_request", "low_credit"]);
+    const CLIENT_KINDS = new Set(["recharge_request", "recharge_cancelled", "support_request", "low_credit"]);
 
     app.post("/api/support/notify", async (req, res) => {
         const who = await requireClinicUser(req, res);

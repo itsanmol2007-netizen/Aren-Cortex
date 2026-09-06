@@ -49,6 +49,10 @@ export type DBWhatsAppMessage = {
     status: string;
     error_detail: string | null;
     created_at: string;
+    /** When the status last moved. The only timestamp we have for "delivered"
+     *  or "read" — Meta reports each state as a separate webhook that
+     *  overwrites this, so it dates the LATEST step reached and not each one. */
+    updated_at: string | null;
     /** Whose wallet paid for this send. Null on inbound, and on outbound rows
      *  written before Communication V1. */
     doctor_id: string | null;
@@ -134,7 +138,7 @@ export async function fetchWhatsAppThreads(hospitalId: string): Promise<WhatsApp
         // One string literal, not a concatenation: supabase-js infers the row
         // type by parsing this at the type level, and a `+` expression is
         // opaque to it — the result degrades to GenericStringError[].
-        .select("id, direction, phone, patient_id, prescription_id, wa_message_id, message_type, template_name, body_preview, status, error_detail, created_at, doctor_id, purpose, credits_charged")
+        .select("id, direction, phone, patient_id, prescription_id, wa_message_id, message_type, template_name, body_preview, status, error_detail, created_at, updated_at, doctor_id, purpose, credits_charged")
         .eq("hospital_id", hospitalId)
         .order("created_at", { ascending: false })
         .limit(MESSAGE_WINDOW);
@@ -207,6 +211,8 @@ export type MessageActivity = {
     errorDetail: string | null;
     creditsCharged: number;
     createdAt: string;
+    /** When the delivery state last moved — see DBWhatsAppMessage.updated_at. */
+    updatedAt: string | null;
     prescriptionId: string | null;
 };
 
@@ -225,7 +231,7 @@ export async function fetchMessageActivity(
 ): Promise<MessageActivity[]> {
     let query = supabase
         .from("whatsapp_messages")
-        .select("id, phone, patient_id, prescription_id, purpose, status, error_detail, credits_charged, created_at")
+        .select("id, phone, patient_id, prescription_id, purpose, status, error_detail, credits_charged, created_at, updated_at")
         .eq("hospital_id", hospitalId)
         .eq("direction", "outbound")
         .order("created_at", { ascending: false })
@@ -242,7 +248,7 @@ export async function fetchMessageActivity(
     const rows = (data ?? []) as {
         id: number; phone: string; patient_id: string | null; prescription_id: string | null;
         purpose: WhatsAppPurpose | null; status: string; error_detail: string | null;
-        credits_charged: number | null; created_at: string;
+        credits_charged: number | null; created_at: string; updated_at: string | null;
     }[];
     if (!rows.length) return [];
 
@@ -260,6 +266,7 @@ export async function fetchMessageActivity(
         errorDetail: r.error_detail,
         creditsCharged: Number(r.credits_charged ?? 0),
         createdAt: r.created_at,
+        updatedAt: r.updated_at,
         prescriptionId: r.prescription_id,
     }));
 }
@@ -274,6 +281,111 @@ async function fetchPatientNames(ids: string[]): Promise<Map<string, string>> {
         return new Map();
     }
     return new Map((data ?? []).map((p) => [p.id as string, p.name as string]));
+}
+
+/** The few facts the conversation panel's header shows about a patient.
+ *  Deliberately not the full record — this is a header, and the door to the
+ *  record is one click away on the same row. */
+export interface PatientCard {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    age: number | null;
+    gender: string | null;
+}
+
+export async function fetchPatientCard(patientId: string): Promise<PatientCard | null> {
+    const { data, error } = await supabase
+        .from("patients")
+        .select("id, name, phone, age, gender")
+        .eq("id", patientId)
+        .maybeSingle();
+    if (error) {
+        // A header without an age is still a usable header; losing the whole
+        // conversation because one lookup failed is not.
+        console.error("fetchPatientCard:", error.message);
+        return null;
+    }
+    if (!data) return null;
+    return {
+        id: data.id as string,
+        name: (data.name as string | null) ?? null,
+        phone: (data.phone as string | null) ?? null,
+        age: data.age == null ? null : Number(data.age),
+        gender: (data.gender as string | null) ?? null,
+    };
+}
+
+// ── DELIVERY HEALTH ─────────────────────────────────────────────────────────
+
+export interface DeliveryStats {
+    /** Outbound messages in the window. Inbound is never counted: a patient's
+     *  reply is not something AREN delivered, and it costs nothing. */
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    /** Delivered-or-read as a share of everything that left, 0–100. The one
+     *  number a doctor actually wants: "are my messages reaching people". */
+    reachedPct: number;
+    /** Outbound this calendar month, for the header's "messages this month". */
+    monthCount: number;
+}
+
+/**
+ * How well messages are landing.
+ *
+ * Counts, not rows — five `head: true` queries rather than pulling a window of
+ * messages and tallying in JavaScript, because the answer is six integers and
+ * a busy clinic's month should not cross the wire to produce them.
+ *
+ * `read` is a subset of delivered in Meta's model (a read message was
+ * delivered first), but they arrive as separate terminal statuses on the row,
+ * so these buckets are disjoint as stored and `reachedPct` adds the two.
+ */
+export async function fetchDeliveryStats(
+    hospitalId: string,
+    opts: { doctorId?: string | null; days?: number } = {}
+): Promise<DeliveryStats> {
+    const days = opts.days ?? 14;
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    // First of the month in IST, not UTC — "messages this month" flipping a
+    // day early for five and a half hours is the kind of small wrongness
+    // nobody reports and everybody notices.
+    const istNow = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const monthStart = `${istNow.slice(0, 8)}01T00:00:00.000+05:30`;
+
+    const base = () => {
+        let q = supabase
+            .from("whatsapp_messages")
+            .select("id", { count: "exact", head: true })
+            .eq("hospital_id", hospitalId)
+            .eq("direction", "outbound");
+        if (opts.doctorId) q = q.eq("doctor_id", opts.doctorId);
+        return q;
+    };
+
+    const [sentRes, deliveredRes, readRes, failedRes, monthRes] = await Promise.all([
+        base().gte("created_at", since).in("status", ["sent", "accepted", "pending"]),
+        base().gte("created_at", since).eq("status", "delivered"),
+        base().gte("created_at", since).eq("status", "read"),
+        base().gte("created_at", since).in("status", ["failed", "undelivered"]),
+        base().gte("created_at", monthStart),
+    ]);
+
+    const sent = sentRes.count ?? 0;
+    const delivered = deliveredRes.count ?? 0;
+    const read = readRes.count ?? 0;
+    const failed = failedRes.count ?? 0;
+    const total = sent + delivered + read + failed;
+
+    return {
+        sent, delivered, read, failed,
+        reachedPct: total > 0 ? Math.round(((delivered + read) / total) * 100) : 0,
+        monthCount: monthRes.count ?? 0,
+    };
 }
 
 // ── APPOINTMENT REQUESTS ────────────────────────────────────────────────────

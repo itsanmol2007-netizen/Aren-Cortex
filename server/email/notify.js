@@ -105,10 +105,10 @@ async function buildContext(kind, payload) {
     // A recharge alert is about a specific request, and the request row is
     // the authority on what was asked for — re-deriving it from a package
     // code would report today's price for a request filed last week.
-    if (kind === "recharge_request" && payload.requestId) {
+    if ((kind === "recharge_request" || kind === "recharge_cancelled") && payload.requestId) {
         const { data } = await getSupabase()
             .from("credit_recharge_requests")
-            .select("id, doctor_id, hospital_id, package_label, credits, amount, balance_at_request, note")
+            .select("id, doctor_id, hospital_id, package_label, credits, amount, balance_at_request, note, created_at")
             .eq("id", payload.requestId)
             .maybeSingle();
         if (data) {
@@ -126,6 +126,16 @@ async function buildContext(kind, payload) {
                 doctorId: data.doctor_id,
                 hospitalId: data.hospital_id,
             });
+            // How long they waited before giving up — the fact that makes a
+            // withdrawal readable ("waited 4h 20m" is a missed callback;
+            // "waited 3h 1m" is somebody who watched the clock).
+            if (kind === "recharge_cancelled" && data.created_at) {
+                const mins = Math.round((Date.now() - new Date(data.created_at).getTime()) / 60000);
+                ctx.waited = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+                // A withdrawal is about the balance NOW, not the one captured
+                // when they asked — they have been sending in the meantime.
+                if (payload.doctorId) Object.assign(ctx, await resolveBalance(payload.doctorId));
+            }
         }
     }
 

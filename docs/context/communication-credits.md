@@ -106,6 +106,32 @@ status transitioned) — only the WhatsApp hop is simulated.
 `MESSAGING_MOCK_FAILURE_RATE` exists because the refund path can only be
 exercised by a failure, and a failure path that has never run is a guess.
 
+### 6. A patient's reply is FREE, and the UI must never suggest otherwise
+
+Meta charges us to send, not to receive. So an inbound message writes no
+ledger row, carries `credits_charged = 0`, and is excluded from the delivery
+tile's counts.
+
+This is a UI rule as much as a billing one. The first version of this page
+carried a "usage by message type" card that split spend across categories
+*including patient messages* — which charges for something free and teaches a
+doctor to avoid the one thing two-way messaging exists to give them. It was
+replaced by a delivery-health tile ("are my messages reaching people?"), which
+counts outbound only and says the rule in words underneath.
+
+### 7. A doctor can withdraw their own request after three hours
+
+`cancel_credit_recharge(request_id)`. Before this, a request nobody actioned
+also BLOCKED the doctor from raising another, because of the unique partial
+index allowing one pending row each — the only way out was AREN rejecting it.
+
+Three hours, not zero: the point of a request is that a human reads it and
+calls, and instant withdrawal turns the support queue into something that
+churns mid-call. The wait is enforced **in the database**, not by a hidden
+button — and it is an RPC rather than an UPDATE policy because RLS cannot see
+the OLD row, so any policy permissive enough to allow the status change would
+also let a doctor rewrite the `credits` and `amount` they are owed.
+
 ---
 
 ## Tables and functions
@@ -122,6 +148,7 @@ exercised by a failure, and a failure path that has never run is a guess.
 | `debit_messaging_credit()` | Atomic spend. Raises `INSUFFICIENT_CREDITS` rather than returning falsy — a caller must not be able to send by forgetting to read a return value. |
 | `refund_messaging_credit()` | Reverses one debit. Idempotent. |
 | `approve_credit_recharge()` | **The one step a payment gateway will replace.** Everything before and after it stays as it is. |
+| `cancel_credit_recharge()` | The doctor withdrawing their own pending request, 3h+ old. `authenticated` may execute; it re-checks the clinic, the status and the age itself. |
 
 `purpose` is deliberately NOT derived from `template_name`: that is Meta's
 name for an approved template and changes when one is re-approved, which must
@@ -134,6 +161,7 @@ not silently reclassify a year of history.
 | Event | Fired by | Throttle |
 |---|---|---|
 | `recharge_request` | `createRechargeRequest` (browser) → `POST /api/support/notify` | one pending request per doctor, enforced by a unique index |
+| `recharge_cancelled` | `cancelRechargeRequest`, after the doctor withdraws | one per withdrawal; a withdrawal needs a 3h-old pending request |
 | `low_credit` | `maybeAlertLowCredits`, after every successful debit | one per doctor per 24h (`messaging_alert_state`) |
 | `credits_exhausted` | same | once, until the doctor recharges |
 | `message_failed` | `sendMessage` (synchronous failure) **and** `settleFailedDelivery` (async webhook failure) | none — one patient, one email |
@@ -170,18 +198,34 @@ Zoho rate-limits the token endpoint. Do not remove it.
 
 ## The Communication page
 
-`src/features/communication/CommunicationPage.tsx`, Tailwind on `--cs-*`
-(design-DNA §0a). The old `communication.css` was deleted with the old layout.
+`src/features/communication/` — `CommunicationPage.tsx` (layout), `parts.tsx`
+(ring, bars, art, panel shell), `CreditHistoryModal.tsx`, `BuyCreditsModal.tsx`.
+Tailwind on `--cs-*` (design-DNA §0a); the old `communication.css` went with
+the old layout.
 
-Credits strip → appointment requests (when any) → activity list + conversation
-panel → a small dashed "coming soon" line. There is **no send button** and no
-composer, both deliberately:
+Three tiles (credits ring · 14-day usage · delivery health), then a feed and a
+conversation side by side, then a quiet coming-soon strip.
 
-- Sends are triggered by clinical work (`useConsultLifecycle`'s
-  `handleConfirmAndSave`), not by this screen. A send button here would invite
-  messaging a patient with no prescription attached.
-- Replies need Meta's 24-hour window, and a text box that silently cannot send
-  outside it is worse than an honest note.
+**The shell is one viewport tall and does not scroll itself.** The two main
+panels fill what is left and scroll INSIDE themselves. That is what makes them
+the same height with 0 rows, 3 rows or 300 — Anmol, 2026-09-07: *"the size of
+this container should be consistent."* Three states, all designed:
+
+| Rows | What fills the panel |
+|---|---|
+| 0 | `BigEmpty` — the art at full size, one fact, one next action |
+| 1–3 | the rows, plus `FillArt`: the SAME drawing, low opacity, behind them |
+| many | the rows, scrolling |
+
+The middle one is the case that usually gets missed and reads as unfinished.
+It is Practice's `.prac-fill-art` pattern, reused rather than reinvented.
+
+There is **no composer and no send button**, both deliberately: sends are
+triggered by clinical work (`useConsultLifecycle`), and a reply box that
+silently cannot send outside Meta's 24-hour window is worse than an honest
+note. The conversation is "slightly WhatsApp" — tinted ground, outbound right,
+bottom-anchored — and stops short of a clone precisely because a full
+imitation would promise a reply box this version does not have.
 
 ## Where the prescription send is triggered
 
