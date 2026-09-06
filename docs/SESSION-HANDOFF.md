@@ -1,4 +1,4 @@
-# Session handoff — 2026-09-06 (Overview absorbs admin; WhatsApp template redesigned)
+# Session handoff — 2026-09-06 (Overview absorbs admin; WhatsApp template; Create New Patient flow)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE.**
 
@@ -75,25 +75,56 @@ next session should click through as an admin-doctor (toggle the scope,
 promote/demote a colleague, confirm the self-guard) before trusting the UI
 beyond the type-checker.
 
+### 3. Front desk's "Create New Patient" flow — search/create split, payment gates completion
+
+Front desk only (Consult workspace) — `PatientLauncher.tsx` +
+`CreateVisitModal.tsx` + `PaymentRail.tsx`. Cortex's OWN patient
+search/payment (`PatientModal.tsx` / `PatientPaymentRail.tsx`) is a separate,
+independently-built surface and was deliberately left untouched — the brief
+used "Consult" by name, which is this codebase's own word for the front-desk
+workspace specifically.
+
+- **Zero-result search now gets a real empty state** instead of blending
+  into the always-present "Register new patient «name»" row: a centred
+  "Patient '{name}' not found" + a solid "Create a new patient with this
+  name" button. Only replaces the bottom row when `matches.length === 0`;
+  the modest row stays as-is when there ARE matches but none is right.
+- **The searched name already flowed through** — `CreateVisitModal` already
+  took `prefillName` and seeded `name` from it before this round; verified,
+  not rebuilt.
+- **Paid/Not Paid IS the completion action now — no separate "Save & Create
+  Visit" step behind it.** `PaymentRail` gained a `locked` prop; while
+  locked, "Collect"/"Mark as unpaid"/the method buttons are disabled with a
+  one-line reason. `CreateVisitModal`'s `handleFeeChange` watches for the
+  undecided→decided transition and calls `completeVisit` (same fire-and-
+  forget shape "Save" always used) the instant a method is picked or "Mark
+  as unpaid" is clicked — the modal closes in the same tick. The footer's
+  "Save & Create Visit" survives ONLY for a clinic with no fee configured
+  for the assigned doctor, where `PaymentRail` shows no payment controls at
+  all and something has to remain the way out.
+- **The lock condition is the EXISTING `formComplete`**, unchanged: new
+  patient needs name/phone/age/gender **and** the pre-existing symptom
+  requirement; existing patient needs only the symptom requirement (already
+  true the instant one is selected). Anmol's spec described the existing-
+  patient path as unlocking "once selected" without mentioning symptoms —
+  read as emphasis on removing the Done button, not as a request to drop an
+  unrelated, already-required field; flagging this reading rather than
+  silently picking one.
+
+**Verified:** `npx tsc -b --noEmit` clean. **Not browser-verified** — same
+gap as §2, no relay in this container this round.
+
 ## Next, in the order I'd do it
 
-1. **Consult "Create New Patient" flow** (front desk's `PatientLauncher` +
-   `CreateVisitModal` + `PaymentRail`) — Anmol's second ask this round, not
-   yet started when this file was written:
-   - A much more prominent "Patient '{name}' not found → Create New Patient"
-     empty state than today's plain "Register new patient «name»" row.
-   - Preserve the searched name into the New Patient wizard's Patient Name
-     field (this part may already work — `CreateVisitModal` already takes
-     `prefillName` and seeds `name` from it; verify, don't rebuild).
-   - Lock Paid/Not Paid until name+phone+age+gender are filled for a NEW
-     patient; already-selected existing patients unlock it immediately.
-   - Remove the separate "Save & Create Visit" footer button — Paid/Not Paid
-     (`PaymentRail`'s "Collect ₹X" / "Mark as unpaid") becomes the
-     completion action itself, for both flows. Keep SOME completion control
-     for the one edge case `PaymentRail` has no buttons at all (no fee
-     configured for the assigned doctor).
-2. Live-verify the whole admin-doctor layer (see above) — nobody has clicked
-   through it yet.
+1. **Live-verify §2 and §3 above** — nobody has clicked through either this
+   round (toggle the Overview scope, promote/demote a colleague, confirm the
+   self-guard; run through both New/Existing patient paths at front desk,
+   confirm the lock/unlock timing and that "Collect" really does create the
+   visit and close the modal).
+2. If Anmol confirms the existing-patient path should skip the symptom
+   requirement too (see §3's flagged reading), that's a one-line change to
+   `formComplete` in `CreateVisitModal.tsx` — deliberately not made this
+   round without asking.
 3. Decide whether SK Pandey should stay at 76 credits (previous session's
    test data) or be restored; `RC_2` (their pending recharge) is still open.
 4. Everything from the previous handoff's "Next" is still open and untouched

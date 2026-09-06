@@ -36,6 +36,8 @@ export const en = {
     registerNewNamed: 'Register new patient "«q»"',
     registerNew: "Register new patient",
     noMatch: "No matching patients",
+    patientNotFoundTitle: 'Patient "«q»" not found',
+    patientNotFoundAction: "Create a new patient with this name",
 
     statTotal: "Today's Visits",
     statTotalSub: "Today so far",
@@ -556,6 +558,8 @@ export const hinglish: Record<StringKey, string> = {
     registerNewNamed: 'Naya patient add karo "«q»"',
     registerNew: "Naya patient add karo",
     noMatch: "Koi patient nahi mila",
+    patientNotFoundTitle: 'Patient "«q»" nahi mila',
+    patientNotFoundAction: "Isi naam se naya patient banao",
 
     statTotal: "Aaj ke Visits",
     statTotalSub: "Aaj ab tak",

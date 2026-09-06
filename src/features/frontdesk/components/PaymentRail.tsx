@@ -25,11 +25,23 @@
 // tall card and the money ends up below the fold. Beside it, the left column
 // stays short, the total is always visible while the form is filled, and the
 // two halves stop competing for the same vertical space.
+//
+// ── 2026-09-06: Paid/Not Paid IS the completion action now
+//
+// There used to be a separate "Save & Create Visit" button in the modal's
+// footer behind these — Anmol: "remove the separate Done button entirely...
+// Paid/Not Paid is the completion action itself." So clicking "Collect" (once
+// a method is picked) or "Mark as unpaid" now submits the whole registration,
+// and `locked` (new prop) is the one gate stopping that from firing against a
+// patient who was never actually established — a NEW patient still missing
+// name/phone/age/gender, same requirement the form already had, just moved
+// from "blocks the Save button" to "blocks these two buttons" since they are
+// the Save button now.
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
 import {
-    Check, ChevronDown, ClipboardPlus, Clock, CreditCard, Info, Percent, RotateCcw,
+    Check, ChevronDown, ClipboardPlus, Clock, CreditCard, Info, Lock, Percent, RotateCcw,
 } from "lucide-react";
 import type {
     BillingPolicy, DiscountKind, FeeBreakdown, PaymentMethod, VisitType,
@@ -63,7 +75,7 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 ];
 
 export function PaymentRail({
-    state, onChange, policy, baseFee, breakdown, doctorName,
+    state, onChange, policy, baseFee, breakdown, doctorName, locked,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
@@ -72,6 +84,16 @@ export function PaymentRail({
     baseFee: number | null;
     breakdown: FeeBreakdown | null;
     doctorName: string;
+    /**
+     * True while the patient isn't valid yet (a new patient still missing
+     * name/phone/age/gender, or the required symptom). Paid/Not Paid IS the
+     * completion action now — there is no separate Save button behind it any
+     * more — so this is the one gate that keeps a visit from being created
+     * against a patient who was never actually established. `undefined`/
+     * omitted behaves as unlocked, so every other caller of this component
+     * needs no change.
+     */
+    locked?: boolean;
 }) {
     // Local, not lifted: whether a panel is OPEN is chrome, not data. Nothing
     // outside this component needs to know, and the parent re-rendering on
@@ -174,7 +196,15 @@ export function PaymentRail({
             <div className="mt-[14px] flex flex-col gap-[8px]">
                 {decided ? (
                     // Settled. One confirmation strip and a way back — not the
-                    // whole control set again.
+                    // whole control set again. In CreateVisitModal specifically
+                    // this is now momentary at best: the moment `state.status`
+                    // leaves "undecided", the caller's own `onChange` treats
+                    // that as completion and closes the whole modal in the
+                    // same synchronous handler (see PaymentRail's file
+                    // header). Kept rendering in full regardless — this
+                    // component doesn't know how its caller reacts to a
+                    // decision, and a future caller that stays open through
+                    // one (an inline collection widget, say) still needs it.
                     <div
                         className={
                             "flex items-center gap-[9px] rounded-[11px] border-[1.5px] px-[12px] py-[11px] " +
@@ -215,8 +245,9 @@ export function PaymentRail({
                                 <button
                                     key={m.key}
                                     type="button"
+                                    disabled={locked}
                                     onClick={() => { set({ status: "paid", method: m.key }); setCollecting(false); }}
-                                    className="h-[38px] cursor-pointer rounded-[10px] border-[1.5px] border-[#e4e2f0] bg-white text-[13px] font-bold text-[#3b4453] transition-colors hover:border-[#5b4fe9] hover:bg-[#f5f3ff] hover:text-[#4338ca]"
+                                    className="h-[38px] cursor-pointer rounded-[10px] border-[1.5px] border-[#e4e2f0] bg-white text-[13px] font-bold text-[#3b4453] transition-colors hover:border-[#5b4fe9] hover:bg-[#f5f3ff] hover:text-[#4338ca] disabled:cursor-not-allowed"
                                 >
                                     {m.label}
                                 </button>
@@ -232,18 +263,32 @@ export function PaymentRail({
                     </div>
                 ) : (
                     <>
+                        {/* Paid/Not Paid IS the completion action now — no
+                            Save button behind it — so a patient who isn't
+                            valid yet must not be able to reach it at all.
+                            Locked rather than hidden: the doctor/desk should
+                            see exactly what's blocking them, not wonder where
+                            the buttons went. */}
+                        {locked && (
+                            <span className="flex items-center gap-[7px] rounded-[9px] bg-[#f6f5fb] px-[10px] py-[8px] text-[11.5px] leading-[1.4] text-[#6b7280]">
+                                <Lock size={12} className="shrink-0" />
+                                Complete the patient's name, phone, age and sex to continue.
+                            </span>
+                        )}
                         <button
                             type="button"
+                            disabled={locked}
                             onClick={() => setCollecting(true)}
-                            className="flex h-[46px] w-full cursor-pointer items-center justify-center gap-[9px] rounded-[12px] border-0 bg-[#5b4fe9] text-[14.5px] font-bold text-white shadow-[0_4px_14px_rgba(91,79,233,0.34)] transition-[background-color,box-shadow] hover:bg-[#4a3fd4] hover:shadow-[0_5px_18px_rgba(91,79,233,0.46)]"
+                            className="flex h-[46px] w-full cursor-pointer items-center justify-center gap-[9px] rounded-[12px] border-0 bg-[#5b4fe9] text-[14.5px] font-bold text-white shadow-[0_4px_14px_rgba(91,79,233,0.34)] transition-[background-color,box-shadow] hover:bg-[#4a3fd4] hover:shadow-[0_5px_18px_rgba(91,79,233,0.46)] disabled:cursor-not-allowed disabled:shadow-none"
                         >
                             <CreditCard size={17} />
                             Collect {money(breakdown.total)}
                         </button>
                         <button
                             type="button"
+                            disabled={locked}
                             onClick={() => set({ status: "unpaid", method: null })}
-                            className="flex h-[42px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-[#f1f0f7] text-[13.5px] font-bold text-[#4b5563] transition-colors hover:bg-[#e7e5f2] hover:text-[#161d29]"
+                            className="flex h-[42px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-[#f1f0f7] text-[13.5px] font-bold text-[#4b5563] transition-colors hover:bg-[#e7e5f2] hover:text-[#161d29] disabled:cursor-not-allowed"
                         >
                             <Clock size={15} />
                             Mark as unpaid

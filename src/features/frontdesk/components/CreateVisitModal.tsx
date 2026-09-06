@@ -21,12 +21,29 @@ import {
 } from "@/lib/db/payments";
 
 // ---------------------------------------------------------------------------
-// REGISTER PATIENT — the front door, rebuilt 2026-09-05.
+// REGISTER PATIENT — the front door, rebuilt 2026-09-05, payment gating
+// rebuilt 2026-09-06.
 //
 // ── What this modal is for
 //
 // Getting a patient into today's queue with the least possible friction.
 // Information → Visit → Payment → queue entry, and nothing else.
+//
+// ── 2026-09-06: Paid/Not Paid IS the completion action
+//
+// There is no longer a separate "Save & Create Visit" step behind the
+// payment decision (Anmol: "remove the separate Done button entirely...
+// Paid/Not Paid is the completion action itself") — see `completeVisit` /
+// `handleFeeChange` below and `PaymentRail`'s own file header. The one
+// exception is a clinic with no fee configured for the assigned doctor,
+// where `PaymentRail` shows no payment controls at all — the footer keeps
+// "Save & Create Visit" ONLY then.
+//
+// `locked` (passed to `PaymentRail`) is what stops that completion action
+// from being reachable before the patient is actually established: for a
+// NEW patient, name/phone/age/gender (plus the pre-existing symptom
+// requirement, unchanged); for an EXISTING one, selecting them via the
+// launcher's search already satisfies the identity half.
 //
 // ── The two corrections that shaped this version
 //
@@ -317,74 +334,120 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
         return existingPatient;
     };
 
+    // Same shape as `breakdown` above, but for an ARBITRARY fee state rather
+    // than the one currently rendered — needed because completion can now
+    // fire from inside `PaymentRail`'s own `onChange` (see `handleFeeChange`
+    // below), a moment before this component re-renders with the state that
+    // triggered it. Reading the render-scope `breakdown` there would still
+    // reflect the PREVIOUS (undecided) status.
+    const breakdownFor = (f: FeeState) => {
+        const base = feeCtx ? resolveFee(doctorCard, f.visitType) : null;
+        if (!feeCtx || base === null) return null;
+        return computeFee({
+            base,
+            discountKind: f.discountKind,
+            discountValue: Number(f.discountValue) || 0,
+            gstEnabled: feeCtx.policy.gstEnabled,
+            gstPercent: feeCtx.policy.gstPercent,
+        });
+    };
+
     const buildCreateOpts = (
         asExisting: DBPatient | null,
+        feeState: FeeState,
         onSuccess?: (r: { patientName: string; patientId: string; visitId: string }) => void
-    ) => ({
-        existingPatient: asExisting,
-        name,
-        phone,
-        age,
-        dateOfBirth,
-        gender,
-        // Symptoms and volunteered history both land in `visit_observations`;
-        // only symptoms carry into the queue's "Symptoms" column.
-        observableIds: picked.map((s) => s.observableId),
-        symptomNames: picked.filter((c) => c.kind === "symptom").map((c) => c.label),
-        observableDurations: new Map(
-            [...durations].filter(([id]) => picked.some((c) => c.observableId === id))
-        ),
-        // Measurements left registration entirely (see the file header) — the
-        // contract keeps the field so the queue-side flow that will take them
-        // needs no signature change.
-        vitals: {} as Partial<Vitals>,
-        doctorId,
-        doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
-        attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
-        // null when this clinic has no fee for the assigned doctor — nothing
-        // is written and the rail showed no money controls.
-        payment: breakdown
-            ? {
-                visitType: fee.visitType,
-                base: breakdown.base,
-                discount: breakdown.discount,
-                gstAmount: breakdown.gstAmount,
-                total: breakdown.total,
-                discountKind: fee.discountKind,
-                discountPercent: fee.discountKind === "percent" ? Number(fee.discountValue) || 0 : null,
-                gstPercent: feeCtx?.policy.gstPercent ?? 0,
-                // "Undecided" saves as pending: the visit is registered either
-                // way, and an unanswered question must never be recorded as
-                // money collected.
-                status: fee.status === "paid" ? ("paid" as const) : ("pending" as const),
-                method: fee.status === "paid" ? fee.method : null,
-            }
-            : null,
-        onSuccess,
-    });
+    ) => {
+        const bd = breakdownFor(feeState);
+        return {
+            existingPatient: asExisting,
+            name,
+            phone,
+            age,
+            dateOfBirth,
+            gender,
+            // Symptoms and volunteered history both land in `visit_observations`;
+            // only symptoms carry into the queue's "Symptoms" column.
+            observableIds: picked.map((s) => s.observableId),
+            symptomNames: picked.filter((c) => c.kind === "symptom").map((c) => c.label),
+            observableDurations: new Map(
+                [...durations].filter(([id]) => picked.some((c) => c.observableId === id))
+            ),
+            // Measurements left registration entirely (see the file header) — the
+            // contract keeps the field so the queue-side flow that will take them
+            // needs no signature change.
+            vitals: {} as Partial<Vitals>,
+            doctorId,
+            doctorName: doctors.find((d) => d.id === doctorId)?.name ?? "",
+            attachments: stagedAttachments.map((sa) => ({ file: sa.file, attachmentType: sa.attachmentType })),
+            // null when this clinic has no fee for the assigned doctor — nothing
+            // is written and the rail showed no money controls.
+            payment: bd
+                ? {
+                    visitType: feeState.visitType,
+                    base: bd.base,
+                    discount: bd.discount,
+                    gstAmount: bd.gstAmount,
+                    total: bd.total,
+                    discountKind: feeState.discountKind,
+                    discountPercent: feeState.discountKind === "percent" ? Number(feeState.discountValue) || 0 : null,
+                    gstPercent: feeCtx?.policy.gstPercent ?? 0,
+                    // "Undecided" saves as pending: the visit is registered either
+                    // way, and an unanswered question must never be recorded as
+                    // money collected.
+                    status: feeState.status === "paid" ? ("paid" as const) : ("pending" as const),
+                    method: feeState.status === "paid" ? feeState.method : null,
+                }
+                : null,
+            onSuccess,
+        };
+    };
 
-    // Synchronous and instant on purpose (2026-08-24): registering used to
-    // block on 2-3 sequential network round trips with the modal sitting open
-    // the whole time — reported as "very slow".
-    const handleSave = () => {
+    // The one place a registration actually completes. Synchronous and
+    // instant on purpose (2026-08-24): registering used to block on 2-3
+    // sequential network round trips with the modal sitting open the whole
+    // time — reported as "very slow".
+    const completeVisit = (feeState: FeeState) => {
         const asExisting = resolveExisting();
         if (asExisting === undefined) return;
-        onCreate(buildCreateOpts(asExisting));
+        onCreate(buildCreateOpts(asExisting, feeState));
         onClose();
     };
 
+    // 2026-09-06: Paid/Not Paid IS the completion action — there is no
+    // separate Save button behind it any more (see PaymentRail's own file
+    // header). `set()` inside PaymentRail calls this with the FULL next
+    // state on every change; the only transition worth reacting to is
+    // "undecided → decided" (a method picked, or Mark as unpaid), which is
+    // exactly the moment a receptionist has finished answering the one
+    // question standing between here and a created visit. `locked` (passed
+    // to PaymentRail below) is what stops this from being reachable before
+    // the patient is actually valid.
+    const handleFeeChange = (next: FeeState) => {
+        setFee(next);
+        if (fee.status === "undecided" && next.status !== "undecided") {
+            completeVisit(next);
+        }
+    };
+
+    // Kept as the one completion path for a clinic with no fee configured
+    // for this doctor — PaymentRail renders no payment controls at all in
+    // that case (see its own "no fee configured" branch), so something has
+    // to remain the way out. See the footer below: rendered ONLY then.
+    const handleSave = () => completeVisit(fee);
+
     // "Upload from phone" is the one case that CANNOT be fire-and-forget the
-    // way Save is: a visit_gateways row needs a real visit_id, and none exists
-    // until the background create lands. So this closes the form immediately
-    // and opens the QR modal in its own loading state, swapping it for the
-    // real QR once `onSuccess` fires.
+    // way completion above is: a visit_gateways row needs a real visit_id,
+    // and none exists until the background create lands. So this closes the
+    // form immediately and opens the QR modal in its own loading state,
+    // swapping it for the real QR once `onSuccess` fires. Independent of the
+    // payment decision — it already runs its own `resolveExisting()` check.
     const handleUploadFromPhone = () => {
         const asExisting = resolveExisting();
         if (asExisting === undefined) return;
         const patientLabel = asExisting?.name ?? name.trim();
         gateway.beginCreatingVisit(patientLabel);
         onCreate(
-            buildCreateOpts(asExisting, ({ patientId, visitId }) => {
+            buildCreateOpts(asExisting, fee, ({ patientId, visitId }) => {
                 gateway.openForVisit({ visitId, patientId, patientLabel, visitLabel: "" });
             })
         );
@@ -463,13 +526,22 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                     >
                         {t("cancel")}
                     </button>
-                    <button
-                        onClick={handleSave}
-                        className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#5b4fe9] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(91,79,233,0.4),0_0_16px_rgba(91,79,233,0.24)] transition-[background-color,box-shadow] duration-100 hover:bg-[#4a3fd4] hover:shadow-[0_3px_16px_rgba(91,79,233,0.55)]"
-                    >
-                        Save &amp; Create Visit
-                        <ArrowRight size={15} strokeWidth={2.4} />
-                    </button>
+                    {/* Only when there is nothing to charge for this doctor —
+                        PaymentRail then shows no payment controls at all
+                        (its "no fee configured" branch), so this stays the
+                        one way to complete. Everywhere else, Paid/Not Paid
+                        IS the completion action (see PaymentRail's own file
+                        header) and a second button here would be exactly the
+                        separate "Done" step Anmol asked to remove. */}
+                    {baseFee === null && (
+                        <button
+                            onClick={handleSave}
+                            className="flex h-10 items-center gap-[7px] rounded-[10px] bg-[#5b4fe9] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(91,79,233,0.4),0_0_16px_rgba(91,79,233,0.24)] transition-[background-color,box-shadow] duration-100 hover:bg-[#4a3fd4] hover:shadow-[0_3px_16px_rgba(91,79,233,0.55)]"
+                        >
+                            Save &amp; Create Visit
+                            <ArrowRight size={15} strokeWidth={2.4} />
+                        </button>
+                    )}
                 </>
             }
         >
@@ -684,11 +756,12 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 <div className="min-w-0 border-l border-[#eeebf7] bg-[#fbfaff] px-[14px] pb-[15px] pt-[14px] max-[900px]:border-l-0 max-[900px]:border-t">
                     <PaymentRail
                         state={fee}
-                        onChange={setFee}
+                        onChange={handleFeeChange}
                         policy={feeCtx?.policy ?? { currency: "INR", gstEnabled: false, gstPercent: 18, allowDiscount: true }}
                         baseFee={baseFee}
                         breakdown={breakdown}
                         doctorName={doctors.find((d) => d.id === doctorId)?.name ?? ""}
+                        locked={!formComplete}
                     />
                 </div>
             </div>

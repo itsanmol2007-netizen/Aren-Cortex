@@ -147,21 +147,45 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                         <div className="my-1 h-px bg-[#e6e9f0]" />
                     </>
                 )}
-                {/* No "No matching patients" line — the "Register new patient
-                    «name»" row below already says exactly that, and the extra
-                    line was only dead vertical space. */}
-                <div
-                    onMouseEnter={() => setActive(registerIdx)}
-                    onClick={createNew}
-                    className={`flex min-h-[44px] cursor-pointer items-center gap-[11px] px-4 py-3 text-[13.5px] font-semibold text-[#2f6bed] ${
-                        active === registerIdx ? "bg-[rgba(47,107,237,0.08)]" : "hover:bg-[rgba(47,107,237,0.055)]"
-                    }`}
-                >
-                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] bg-[#e0ebfe]">
-                        <Plus size={15} />
-                    </span>
-                    {query.trim() ? t("registerNewNamed", { q: query.trim() }) : t("registerNew")}
-                </div>
+                {matches.length === 0 && query.trim() ? (
+                    // The clear separation Anmol asked for: searching and
+                    // creating are two different actions, and a zero-result
+                    // search should say so in words before offering the way
+                    // out — not blend "create new" in as just another list
+                    // row indistinguishable from a real match.
+                    <div className="flex flex-col items-center gap-[10px] px-5 py-[22px] text-center">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f2f4f8] text-[#8a91a0]">
+                            <Search size={19} />
+                        </div>
+                        <div className="text-[14px] font-semibold text-[#161d29]">
+                            {t("patientNotFoundTitle", { q: query.trim() })}
+                        </div>
+                        <button
+                            type="button"
+                            onMouseEnter={() => setActive(registerIdx)}
+                            onClick={createNew}
+                            className={`mt-[2px] flex h-[42px] cursor-pointer items-center gap-[9px] rounded-[10px] border-0 bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.34)] transition-[background-color,box-shadow] hover:bg-[#1d51c9] hover:shadow-[0_4px_16px_rgba(47,107,237,0.46)] ${
+                                active === registerIdx ? "ring-2 ring-[rgba(47,107,237,0.35)]" : ""
+                            }`}
+                        >
+                            <Plus size={16} strokeWidth={2.6} />
+                            {t("patientNotFoundAction")}
+                        </button>
+                    </div>
+                ) : (
+                    <div
+                        onMouseEnter={() => setActive(registerIdx)}
+                        onClick={createNew}
+                        className={`flex min-h-[44px] cursor-pointer items-center gap-[11px] px-4 py-3 text-[13.5px] font-semibold text-[#2f6bed] ${
+                            active === registerIdx ? "bg-[rgba(47,107,237,0.08)]" : "hover:bg-[rgba(47,107,237,0.055)]"
+                        }`}
+                    >
+                        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] bg-[#e0ebfe]">
+                            <Plus size={15} />
+                        </span>
+                        {query.trim() ? t("registerNewNamed", { q: query.trim() }) : t("registerNew")}
+                    </div>
+                )}
             </div>,
             document.body
         )
