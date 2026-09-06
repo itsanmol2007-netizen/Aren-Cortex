@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Stethoscope, UserCheck, UserX, Users } from "lucide-react";
+import { AlertTriangle, ShieldCheck, ShieldOff, Stethoscope, UserCheck, UserX, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../auth/AuthProvider";
 import { useClinicalIdentity } from "../../../hooks/useClinicalIdentity";
@@ -25,9 +25,9 @@ import { Card, EmptyBlock, RowText, SkeletonRows } from "../../clinic/ui";
 import { ShareBar } from "../charts";
 import { PeriodBar, type PeriodState } from "../PeriodBar";
 import {
-    buildRange, clinicToday, fetchClinicAnalytics, fetchClinicSetup, fetchFeeSettings,
-    formatMoney, formatRangeLabel,
-    type ClinicAnalytics, type ClinicSetup, type FeeSettings,
+    buildRange, clinicToday, fetchClinicAnalytics, fetchClinicSetup, fetchDoctorRoster, fetchFeeSettings,
+    formatMoney, formatRangeLabel, setDoctorClinicAdmin,
+    type ClinicAnalytics, type ClinicSetup, type DoctorRosterRow, type FeeSettings,
 } from "../../../lib/db/admin";
 import { fetchStaff, updateStaffMember, type StaffMember } from "../../../lib/db/staff";
 
@@ -57,8 +57,10 @@ export function PeoplePage() {
     const [setup, setSetup] = useState<ClinicSetup | null>(null);
     const [data, setData] = useState<ClinicAnalytics | null>(null);
     const [fees, setFees] = useState<FeeSettings | null>(null);
+    const [roster, setRoster] = useState<DoctorRosterRow[] | null>(null);
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
+    const [adminBusyId, setAdminBusyId] = useState<string | null>(null);
 
     const range = useMemo(
         () => buildRange(period.preset, { from: period.from, to: period.to }),
@@ -73,6 +75,10 @@ export function PeoplePage() {
         });
         fetchClinicSetup(identity.hospitalId).then(setSetup).catch(() => setSetup(null));
         fetchFeeSettings(identity.hospitalId).then(setFees).catch(() => setFees(null));
+        fetchDoctorRoster(identity.hospitalId).then(setRoster).catch((e: unknown) => {
+            console.error("[people] roster:", e);
+            setRoster(null);
+        });
     }, [identity.ready, identity.hospitalId]);
 
     const loadBenches = useCallback(() => {
@@ -228,26 +234,67 @@ export function PeoplePage() {
                         <EmptyBlock fact="No doctors on file" next="A doctor appears here once they register against this clinic." />
                     ) : (
                         <div className="flex flex-col gap-[6px]">
-                            {data.benches.map((b) => (
-                                <div key={b.doctorId} className="flex min-w-0 flex-col gap-[6px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[10px] py-[9px]">
-                                    <div className="flex min-w-0 items-center gap-[9px]">
-                                        <RowText
-                                            label={b.name}
-                                            sub={[b.specialization, b.consultationFee !== null ? formatMoney(b.consultationFee, currency) : "Fee not set"]
-                                                .filter(Boolean).join(" · ")}
-                                        />
-                                        <span className="ml-auto flex flex-none items-center gap-[14px] text-[12px] tabular-nums text-[var(--cs-muted)]">
-                                            <span><strong className="text-[13px] font-bold text-[var(--cs-ink)]">{b.visits}</strong> seen</span>
-                                            <span>{b.completed} done</span>
-                                            <span>{b.prescriptions} Rx</span>
-                                            {data.revenueTracked && (
-                                                <span className="font-semibold text-[var(--cs-violet)]">{formatMoney(b.revenue, currency)}</span>
+                            {data.benches.map((b) => {
+                                // `data.benches` is a performance read (this
+                                // period's visits/revenue); admin authority
+                                // lives on `roster`, a separate un-ranged
+                                // read — joined here by doctorId rather than
+                                // added to fetchClinicAnalytics, which has no
+                                // reason to know about admin flags.
+                                const r = roster?.find((x) => x.doctorId === b.doctorId);
+                                const adminBusy = adminBusyId === b.doctorId;
+                                return (
+                                    <div key={b.doctorId} className="flex min-w-0 flex-col gap-[6px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[10px] py-[9px]">
+                                        <div className="flex min-w-0 items-center gap-[9px]">
+                                            <RowText
+                                                label={b.name}
+                                                sub={[b.specialization, b.consultationFee !== null ? formatMoney(b.consultationFee, currency) : "Fee not set"]
+                                                    .filter(Boolean).join(" · ")}
+                                            />
+                                            <span className="ml-auto flex flex-none items-center gap-[14px] text-[12px] tabular-nums text-[var(--cs-muted)]">
+                                                <span><strong className="text-[13px] font-bold text-[var(--cs-ink)]">{b.visits}</strong> seen</span>
+                                                <span>{b.completed} done</span>
+                                                <span>{b.prescriptions} Rx</span>
+                                                {data.revenueTracked && (
+                                                    <span className="font-semibold text-[var(--cs-violet)]">{formatMoney(b.revenue, currency)}</span>
+                                                )}
+                                            </span>
+                                            {/* Clinic-admin authority — additive to `users.role`, see
+                                                `adminAccess.ts`. A doctor keeps this flag whether or not
+                                                the clinic ALSO has a dedicated (non-doctor) admin; several
+                                                doctors can carry it at once. */}
+                                            {r && (
+                                                <button
+                                                    type="button"
+                                                    disabled={adminBusy}
+                                                    onClick={async () => {
+                                                        setAdminBusyId(b.doctorId);
+                                                        try {
+                                                            await setDoctorClinicAdmin(b.doctorId, !r.isClinicAdmin);
+                                                            toast.success(`${b.name} is ${r.isClinicAdmin ? "no longer" : "now"} a clinic admin`);
+                                                            loadStaff();
+                                                        } catch (e) {
+                                                            toast.error(e instanceof Error ? e.message : "Could not save that change.");
+                                                        } finally {
+                                                            setAdminBusyId(null);
+                                                        }
+                                                    }}
+                                                    className={
+                                                        "inline-flex flex-none cursor-pointer items-center gap-[5px] rounded-full border px-[10px] py-[4px] text-[10.5px] font-semibold outline-none disabled:opacity-55 " +
+                                                        (r.isClinicAdmin
+                                                            ? "border-[var(--cs-violet)] bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
+                                                            : "border-[var(--cs-line-strong)] text-[var(--cs-muted)] hover:border-[var(--cs-violet)] hover:text-[var(--cs-violet)]")
+                                                    }
+                                                >
+                                                    {r.isClinicAdmin ? <ShieldOff size={12} /> : <ShieldCheck size={12} />}
+                                                    {r.isClinicAdmin ? "Remove admin" : "Make admin"}
+                                                </button>
                                             )}
-                                        </span>
+                                        </div>
+                                        <ShareBar share={b.share} tone="teal" />
                                     </div>
-                                    <ShareBar share={b.share} tone="teal" />
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </Card>

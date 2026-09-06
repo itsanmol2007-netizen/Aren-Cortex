@@ -5,7 +5,6 @@ import {
     Stethoscope,
     Building2,
     HelpCircle,
-    LayoutDashboard,
     Settings,
     Syringe,
 } from "lucide-react";
@@ -56,7 +55,6 @@ export type SidebarPage =
     | "communication"
     | "practice"
     | "clinic"
-    | "admin"
     | "settings"
     | "support";
 
@@ -100,20 +98,9 @@ type SidebarNavProps = {
     activePage: SidebarPage | null;
     onNavigate: (page: SidebarPage) => void;
     onConsult: () => void;
-    /**
-     * Whether this doctor also runs the clinic — true only when nobody is
-     * employed to do it (see `useAdminAccess`, the "embedded" answer).
-     *
-     * This row was briefly UNCONDITIONAL and that was the mistake: a doctor at
-     * a clinic with a real office manager got a nav row about money and staff
-     * that belongs to somebody else, in the middle of a consultation. The rule
-     * above is what earns it a place here at all — it is not a feature being
-     * exposed, it is the second job this particular person actually holds.
-     */
-    showClinicControl?: boolean;
 };
 
-export function SidebarNav({ activePage, onNavigate, onConsult, showClinicControl }: SidebarNavProps) {
+export function SidebarNav({ activePage, onNavigate, onConsult }: SidebarNavProps) {
     const items: NavItem[] = [
         {
             type: "action",
@@ -157,15 +144,6 @@ export function SidebarNav({ activePage, onNavigate, onConsult, showClinicContro
             page: "clinic",
             tone: "indigo",
         },
-        ...(showClinicControl
-            ? [{
-                type: "page" as const,
-                label: "Clinic Control",
-                icon: <LayoutDashboard size={14} />,
-                page: "admin" as const,
-                tone: "indigo" as const,
-            }]
-            : []),
         { type: "divider" },
         {
             type: "page",

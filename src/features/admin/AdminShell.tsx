@@ -22,13 +22,18 @@
 // The choice persists in localStorage — a preference about chrome should
 // survive a reload.
 //
-// ── Two kinds of person stand here
+// ── Who actually lands here
 //
-//   A dedicated admin — signs in and lands here. This IS their app.
-//   An owner-doctor   — arrives through the door on their Clinic Control page,
-//                       on their own session, and needs a way back.
+// A dedicated admin (no `doctors` row) — signs in and lands here. This IS
+// their app.
 //
-// The footer renders one or the other, never both. See `useAdminAccess`.
+// An admin-doctor no longer has a UI door into this page at all (2026-09-06:
+// "do not create a separate Parallax for them... keep them on the same
+// Overview page" — their admin layer lives in Overview instead, see
+// `DoctorOverviewPage.tsx`). `useAdminAccess().access === "embedded"` still
+// admits the ROUTE for one who lands here anyway (a stray link, a bookmark),
+// which is why the "Back to my workspace" footer below still exists — it is
+// a safety valve, not a navigation path this product points anyone toward.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";

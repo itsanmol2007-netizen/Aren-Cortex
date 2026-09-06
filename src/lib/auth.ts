@@ -55,6 +55,9 @@ export type AppDoctorProfile = {
     registration_number: string | null;
     avatar_url: string | null;
     signature_image_url: string | null;
+    /** Clinic-admin authority this doctor personally carries — additive to
+     *  `users.role`, which stays 'doctor'. See adminAccess.ts. */
+    is_clinic_admin: boolean;
 };
 
 export type Identity = {
@@ -135,7 +138,7 @@ export async function loadIdentity(authUserId: string): Promise<IdentityResult> 
             withTimeout(
                 supabase
                     .from("doctors")
-                    .select("id, user_id, name, specialization, qualification, registration_number, avatar_url, signature_image_url")
+                    .select("id, user_id, name, specialization, qualification, registration_number, avatar_url, signature_image_url, is_clinic_admin")
                     .eq("user_id", authUserId)
                     .maybeSingle()
             );

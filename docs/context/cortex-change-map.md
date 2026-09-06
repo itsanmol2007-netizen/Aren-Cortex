@@ -67,7 +67,7 @@ free-text and composition-request fallbacks.
 | The period selector on an admin page | `features/admin/PeriodBar.tsx` — the one place |
 | Consultation fees / GST / desk-discount policy | `features/admin/FeesModal.tsx` writes; `lib/db/admin.ts` → `updateDoctorFees` / `updateBillingPolicy` |
 | Clinic-endorsed labs (and pushing them to doctors) | `lib/db/admin.ts` → `fetchClinicLabs` / `applyClinicLabsToAllDoctors`, `clinic_preferred_labs` table |
-| The owner-doctor’s summarised view inside Cortex | `features/admin/pages/ClinicControlPage.tsx` (rendered by `App.tsx` at `activePage === "admin"`) |
+| An admin-doctor's clinic-management layer inside Cortex/Consult | `features/overview/DoctorOverviewPage.tsx`'s "Clinic management" section — folded in 2026-09-06, `ClinicControlPage.tsx` is gone |
 | Requesting a composition/salt not in the catalogue | `lib/db/synapse.ts` → `requestNewComposition`, `composition_requests` table (a request queue, never a live mint — rule 22) |
 
 **What's NOT covered here:** WHY a file is shaped the way it is (read that

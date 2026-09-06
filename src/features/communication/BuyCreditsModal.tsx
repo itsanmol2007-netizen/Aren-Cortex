@@ -21,7 +21,7 @@
 // Chrome is `PracticeModal` like every other modal in the app
 // (docs/aren-modal-design.md — one modal family, never a one-off look).
 // Violet accent, which is already this codebase's money colour: Parallax's
-// "Collected" tile and every rupee figure on Clinic Control read
+// "Collected" tile and every rupee figure elsewhere in Overview read
 // `--cs-violet`. Not a new hue.
 // ---------------------------------------------------------------------------
 

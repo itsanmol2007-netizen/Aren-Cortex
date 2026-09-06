@@ -41,6 +41,11 @@ export interface ClinicalIdentity {
      * user has a `doctors` row.
      */
     isReal: boolean;
+    /** `doctors.is_clinic_admin` for the signed-in doctor. See
+     *  `lib/workspace/adminAccess.ts` for what this unlocks — this field
+     *  exists mainly for self-guards (an admin cannot demote/deactivate
+     *  themselves), not for deciding page access on its own. */
+    isClinicAdmin: boolean;
     /** identity is still resolving, or nobody is signed in */
     ready: boolean;
 }
@@ -57,6 +62,7 @@ export function useClinicalIdentity(): ClinicalIdentity {
                 specialization: DOCTOR_SPECIALIZATION,
                 userId: null,
                 isReal: false,
+                isClinicAdmin: false,
                 ready: false,
             };
         }
@@ -90,6 +96,7 @@ export function useClinicalIdentity(): ClinicalIdentity {
             specialization: identity.doctor?.specialization ?? DOCTOR_SPECIALIZATION,
             userId: identity.user.id,
             isReal: !!identity.doctor?.id && !!identity.user.hospital_id,
+            isClinicAdmin: !!identity.doctor?.is_clinic_admin,
             ready: true,
         };
     }, [auth]);

@@ -50,25 +50,54 @@ in between. That is why it cannot be a fourth enum value.
 
 `src/lib/workspace/adminAccess.ts` is **pure** (no React, no Supabase) so the
 rule can be read and tested on its own. `hooks/useAdminAccess.ts` supplies its
-two inputs.
+inputs.
 
-| Signed-in role | Clinic has admin/owner users? | `access` | What they get |
-|---|---|---|---|
-| `admin` / `owner` | — | `dedicated` | Parallax is their home at sign-in |
-| `doctor` | **zero** | `embedded` | "Clinic Control" in their clinical sidebar **+ a door into Parallax** |
-| `doctor` | one or more | `none` | Nothing — that job belongs to someone |
-| `reception` | — | `none` | Nothing |
+**2026-09-06 rewrite:** a doctor can now carry clinic-admin authority WHILE
+staying a doctor — `doctors.is_clinic_admin` (migration
+`20260906_doctor_clinic_admin.sql`), additive to `users.role`, which never
+changes for these people. Any number of doctors at one clinic can carry the
+flag ("There can be multiple clinic admins" — Anmol). This is a THIRD input
+to the resolver, alongside role and the dedicated-admin count.
 
-**This is the correction to the first attempt.** Admin Control was briefly an
-unconditional row in the Cortex sidebar; a doctor at a clinic with a real
-office manager got a nav row about money and staff, mid-consultation. The
-condition is what earns it a place at all.
+| Signed-in role | Clinic has admin/owner users? | This doctor's `is_clinic_admin`? | `access` | What they get |
+|---|---|---|---|---|
+| `admin` / `owner` | — | — | `dedicated` | Parallax is their home at sign-in |
+| `doctor` | **zero** | — | `embedded` | Their own Overview's "Clinic management" section |
+| `doctor` | one or more | **true** | `embedded` | Same — the flag alone is enough |
+| `doctor` | one or more | false | `none` | Nothing — that job belongs to someone else |
+| `reception` | — | — | `none` | Nothing |
 
-The owner-doctor reaches the full suite **on their own session** — no second
-login, no role change. `/app/admin` admits `doctor` for exactly this reason,
-and the rail shows "Back to my workspace" instead of a sign-out because they
-are a guest there. That allowance comes back out the moment real `owner`
-accounts exist and a junior doctor should not be reading clinic-wide money.
+**`embedded` no longer carries a door into Parallax.** Before this rewrite it
+did ("Clinic Control" + a "Full [Parallax]" button) — Anmol, 2026-09-06: "do
+not create a separate Parallax for them... keep them on the same Overview
+page, but make the Overview richer." `ClinicControlPage.tsx` is deleted;
+its content (KPIs, fees, bench performance) lives inside
+`DoctorOverviewPage.tsx`'s "Clinic management" section now, reusing the SAME
+cards a plain doctor sees via a scope toggle rather than a second page. See
+`doctor-overview.md`. `canOpenFullSuite()` reflects this — only `dedicated`
+returns true now.
+
+**This resolver shape is the correction to the first attempt (twice over
+now).** Admin Control was briefly an unconditional row in the Cortex
+sidebar; a doctor at a clinic with a real office manager got a nav row about
+money and staff, mid-consultation. Both conditions above (zero dedicated
+admins, OR this doctor's own flag) are what earn a doctor the richer
+Overview at all — a doctor with neither still gets nothing extra.
+
+`/app/admin`'s ROUTE still admits `access === "embedded"` as a safety valve
+(a stray link, a bookmark) — the rail's "Back to my workspace" footer still
+exists for exactly that — but nothing in the product points a doctor toward
+it any more; their home stays their own Overview, on their own session, no
+second login, no role change.
+
+**Granting/revoking `is_clinic_admin`:** `setDoctorClinicAdmin()` in
+`lib/db/admin.ts`, callable from two places — Parallax's People page (a
+dedicated admin managing any doctor) and an admin-doctor's own Overview
+(managing a colleague). Self-guarded the same way `is_active` already is on
+this page: irreversible FROM HERE, not destructive in itself. **Bootstrapping
+the very FIRST admin at a clinic with none at all (no dedicated admin, no
+doctor already flagged) is deliberately NOT a self-service flow** — Anmol,
+when asked: treat it like `owner` today, a manual/operational action.
 
 ## The pages
 
@@ -143,7 +172,10 @@ stay anchored, labels fade and slide 8px.
    `subscription_requests` rows.
 5. **An admin cannot deactivate or demote themselves.** Reversible in
    principle, irreversible *from here* — the surface that could undo it is the
-   one they just lost.
+   one they just lost. Same rule, same reasoning, for a doctor's own
+   `is_clinic_admin` flag (People page and Overview's "Doctors" card both
+   hide the self-service controls on your own row rather than disabling
+   them).
 6. **All queries live in `lib/db/admin.ts`** (standing rule 1). The pages do no
    querying.
 
@@ -190,6 +222,7 @@ replaces the other.
 | `visit_payment_events` | Append-only audit of every desk fee action — who discounted what, when, on whose visit. Actor name and role are denormalised so a receptionist who leaves is still named in last quarter's trail. |
 | `doctors.consultation_fee` / `follow_up_fee` | Nullable. **NULL means "not set", never "free"** — an explicit `0` is a free consultation and the two must stay distinguishable. |
 | `hospitals.gst_enabled` / `gst_percent` / `allow_discount` / `currency` | GST defaults **off** — most small Indian clinics are below the registration threshold and must not print tax they do not owe. |
+| `doctors.is_clinic_admin` | **added 2026-09-06.** Boolean, default false. Additive to `users.role` (stays `'doctor'`) — see this file's resolver section above and `adminAccess.ts`'s header for why it's a separate column rather than a role change. |
 
 ## Open
 

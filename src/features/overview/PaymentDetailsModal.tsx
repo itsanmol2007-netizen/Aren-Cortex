@@ -13,7 +13,7 @@
 //
 // Chrome is `PracticeModal`, like every modal in the app. Violet, because
 // that is already this codebase's money colour (Parallax's "Collected" tile,
-// every rupee figure on Clinic Control) — not a new accent for this one view.
+// every rupee figure an admin doctor sees) — not a new accent for this one view.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from "react";
@@ -156,7 +156,7 @@ export function PaymentDetailsModal({ hospitalId, doctorId, range, onClose }: Pr
                                 <BigEmpty
                                     art={<ConversationArt size={110} />}
                                     fact="No transactions in this period"
-                                    next="Payments recorded at the desk or on Clinic Control show up here."
+                                    next="Payments recorded at the desk show up here."
                                 />
                             ) : (
                                 summary.transactions.map((t) => (

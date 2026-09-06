@@ -32,6 +32,9 @@ export function useAdminAccess(): AdminAccessInfo {
     const hospitalId = auth.status === "authed" ? auth.identity.user.hospital_id : null;
     const role = auth.status === "authed" ? auth.identity.user.role : null;
     const clinicMode = auth.status === "authed" ? auth.identity.hospital.clinic_mode : null;
+    // Irrelevant for any role but 'doctor' — resolveAdminAccess ignores it
+    // otherwise.
+    const isClinicAdminDoctor = auth.status === "authed" ? !!auth.identity.doctor?.is_clinic_admin : false;
 
     const [adminCount, setAdminCount] = useState<number | null>(null);
 
@@ -46,7 +49,7 @@ export function useAdminAccess(): AdminAccessInfo {
     }, [hospitalId]);
 
     const ready = auth.status === "authed" && adminCount !== null;
-    const access = ready ? resolveAdminAccess(role, adminCount) : "none";
+    const access = ready ? resolveAdminAccess(role, adminCount, isClinicAdminDoctor) : "none";
 
     return {
         access,

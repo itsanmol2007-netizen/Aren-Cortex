@@ -13,10 +13,47 @@ Created 2026-09-06 as the new landing page in both workspaces; reworked
 ## What this is, and what it is deliberately not
 
 It answers "how am I doing", scoped to one doctor. It is not Parallax
-(`/app/admin`, clinic-wide, admin/owner only) and not Clinic Control (the
-embedded summarised admin view) — **there is no bench comparison here,
-ever**, and multi-doctor changes nothing about the page. A landing page that
-ranks a doctor against colleagues is a scoreboard they cannot opt out of.
+(`/app/admin`, clinic-wide, admin/owner only, no `doctors` row) — for a PLAIN
+doctor (no admin authority) **there is no bench comparison here, ever**, and
+multi-doctor changes nothing about the page. A landing page that ranks a
+doctor against colleagues, unconditionally, is a scoreboard they cannot opt
+out of.
+
+**2026-09-06 — the admin-doctor layer, and `ClinicControlPage` is gone.**
+Anmol: remove the redundant "Clinic Management" page (`ClinicControlPage.tsx`,
+"Clinic Control" in the sidebar) entirely; the doctor's Overview absorbs its
+job instead of a second page existing to hold it. Read
+`docs/context/parallax-admin.md`'s resolver table before touching any of
+this — the short version:
+
+- `useAdminAccess().access === "embedded"` now means "this DOCTOR has
+  clinic-admin authority", full stop — via `dedicatedAdminCount === 0` (the
+  de-facto owner, as before) OR `doctors.is_clinic_admin` (an individually
+  flagged doctor-admin, new; several can exist at once). Either fact renders
+  the "Clinic management" section at the bottom of this page.
+- It stays additive: the KPI tiles, sparklines, patient-flow chart, "Who you
+  saw" donut and busiest-hours card above it are the EXACT SAME cards a
+  plain doctor sees — an admin doctor's page looks identical until they touch
+  the new scope toggle ("Performance: Overall | You | {other doctors}"),
+  which re-fetches those same cards for the clinic or a chosen colleague
+  instead of adding duplicate cards. Default state (toggle untouched) is
+  pixel-identical to the non-admin page.
+- "Clinic management" (only rendered for an admin doctor) carries: a
+  "Doctors" card — bench roster with each doctor's fee, an admin badge, and a
+  contextual "Manage" control (self-guarded, same rule as PeoplePage: an
+  admin cannot demote/deactivate themselves) exposing "Make/Remove admin" and
+  "Remove / fire" (`updateStaffMember`'s `is_active`); a "Fees" button opening
+  the same `FeesModal` Parallax uses; and, only when the clinic has no active
+  reception staff, a minimal "Request to add staff" card that emails AREN via
+  `notifySupport("support_request", …)` rather than fabricating a staff
+  workflow a solo/Cortex clinic has no use for.
+- No door into Parallax is offered from here any more (`canOpenFullSuite`
+  now only returns true for `dedicated`) — "do not create a separate Parallax
+  for them... keep them on the same Overview page, but make the Overview
+  richer" (Anmol, 2026-09-06). An admin doctor who needs a Parallax-only
+  capability not yet folded in here (medicine catalogue, plan/subscription,
+  GST policy) still reaches it via "View Reports" in Quick Actions or a
+  direct URL — just never a standing nav item.
 
 ## The 2026-09-07 rework
 
@@ -103,9 +140,19 @@ correctly "400" the whole time). Fixed with the Tailwind v4 trailing `!`
 ## Open
 
 - Quick Actions' "View Reports" / "Manage Practice" split is a first pass —
-  nobody has confirmed a multi-bench admin actually wants the reports link
-  from here rather than from Clinic Control.
+  `ClinicControlPage` (the "from Clinic Control" alternative this note used
+  to weigh against) no longer exists, so the reports link's only other
+  candidate now is Parallax's own Reports page, which is what it opens.
 - The reference mock's auto-generated "Tip: usually busiest 5–7 PM" bottom
   bar was deliberately NOT built — it would need synthesizing a claimed RANGE
   from one busiest-hour bucket, which is inventing a fact this page doesn't
   actually have.
+- **Who can grant the FIRST `doctors.is_clinic_admin` at a clinic with zero
+  admins of any kind (no dedicated admin, no doctor already flagged) is not a
+  self-service flow.** Anmol, 2026-09-06, when asked: treat it like `owner`
+  today — a manual/operational action, not a product feature — until asked
+  for otherwise. Once ONE admin exists (dedicated or doctor), they can
+  promote/demote from here (or Parallax's People page) without AREN's help.
+- The "Doctors" card's "Manage" actions are deliberately narrower than
+  Parallax's People page: fee, admin status, activate/deactivate — no full
+  role reassignment (to reception/lab/etc.), which stays Parallax-only.

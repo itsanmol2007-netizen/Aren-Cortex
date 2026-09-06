@@ -12,7 +12,6 @@ type SidebarProps = {
     activePage: SidebarPage | null;
     onNavigate: (page: SidebarPage) => void;
     onConsult: () => void;
-    showClinicControl?: boolean;
     doctor: Doctor;
     /** `doctors.avatar_url` — a public URL (lib/db/clinic.ts's `getPublicUrl`),
      *  so it can be rendered directly and cached by the browser. Falls back to
@@ -29,7 +28,6 @@ export function Sidebar({
     activePage,
     onNavigate,
     onConsult,
-    showClinicControl,
     doctor,
     avatarUrl,
     onOpenProfile,
@@ -169,7 +167,6 @@ export function Sidebar({
                         activePage={activePage}
                         onNavigate={handleNavItemClick}
                         onConsult={handleConsultClick}
-                        showClinicControl={showClinicControl}
                     />
                 </div>
 

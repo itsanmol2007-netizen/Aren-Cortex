@@ -220,7 +220,7 @@ export type MessageActivity = {
  * Outbound messages, newest first.
  *
  * `doctorId` is optional and its absence means "this whole clinic", not "no
- * filter I forgot to apply" — Parallax and the owner-doctor's Clinic Control
+ * filter I forgot to apply" — Parallax and an admin-doctor's Overview
  * both want the clinic-wide answer, and a doctor's own Communication page
  * passes their id. Capped by the same window the inbox uses, for the same
  * reason: see MESSAGE_WINDOW.

@@ -14,13 +14,11 @@ import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { useSettingFocusRunner } from "./features/settings/settingsFocus";
-import { useAdminAccess } from "./hooks/useAdminAccess";
 import { PracticePage } from "./features/practice/PracticePage";
 import { CommunicationPage } from "./features/communication/CommunicationPage";
 import { DoctorOverviewPage } from "./features/overview/DoctorOverviewPage";
 import { ClinicPage } from "./features/clinic/ClinicPage";
 import { PrescriptionEditorPage } from "./features/clinic/PrescriptionEditorPage";
-import { ClinicControlPage } from "./features/admin/pages/ClinicControlPage";
 import { SupportPage } from "./features/support/SupportPage";
 import { ComingSoonPage } from "./components/ComingSoonPage";
 import { useConsultKeyboard } from "./hooks/useConsultKeyboard";
@@ -128,9 +126,6 @@ function App() {
   // their own intake; Consult when a front desk prepares the encounter. Read
   // from `hospitals.clinic_mode`, never chosen — see lib/workspace/mode.ts.
   const workspace = useWorkspaceMode();
-  // Whether this doctor also runs the clinic. Derived, never configured —
-  // see lib/workspace/adminAccess.ts. Only "embedded" earns the sidebar row.
-  const adminAccess = useAdminAccess();
   const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   // One ref per Tab stop of the workspace, in the order STOPS walks them
   // (useConsultKeyboard.ts). The old findings/tests refs are gone with the
@@ -1608,7 +1603,6 @@ function App() {
         activePage={activePage}
         onNavigate={handleSidebarNavigate}
         onConsult={handleSidebarConsult}
-        showClinicControl={adminAccess.access === "embedded"}
         doctor={DOCTOR}
         avatarUrl={doctorProfile?.avatar_url}
         onOpenProfile={() => handleSidebarNavigate("settings")}
@@ -1857,10 +1851,6 @@ function App() {
             onOpenPrescriptionEditor={() => setPrescriptionEditorOpen(true)}
           />
         )
-      ) : activePage === "admin" ? (
-        /* The owner-doctor’s summarised view. It carries a door into the
-           full Parallax suite on the same session — see its own header. */
-        <ClinicControlPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : activePage === "support" ? (
         <SupportPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
       ) : isFeaturePage && comingSoonMeta ? (

@@ -7,18 +7,29 @@
 //
 // ── What this is NOT, and why that matters more than what it is
 //
-// It is not Parallax (`/app/admin`) and it is not Clinic Control. Those two
-// answer "how is my CLINIC doing"; this answers "how am I doing", and the
-// difference is one table: **there is no bench comparison here, ever.** A
-// doctor's own landing page that ranks them against their colleagues is a
-// scoreboard they cannot opt out of and did not ask for, seen every single
-// time they sign in. `BenchRow[]` stays exclusive to Parallax, which only an
-// admin or owner opens deliberately.
+// It is not Parallax (`/app/admin`). That answers "how is my CLINIC doing"
+// for a non-doctor admin/owner with no clinical work of their own; this
+// answers "how am I doing" for a doctor, first and always — a plain doctor
+// (no admin authority) sees ONLY their own numbers, full stop, and a
+// multi-doctor clinic changes NOTHING about that: same page, same scoping,
+// never a bench comparison they didn't ask for and cannot opt out of.
 //
-// The corollary, stated because it is the question everyone asks: a
-// multi-doctor clinic changes NOTHING about this page. Same page, same
-// scoping, their own numbers. Multi-bench does not unlock a comparison view
-// here — that is the whole point of the previous paragraph.
+// ── 2026-09-06: the admin-doctor layer
+//
+// A doctor who is ALSO a clinic admin (`useAdminAccess().access ===
+// "embedded"` — either the de-facto owner of a clinic with nobody else doing
+// the job, or individually flagged `doctors.is_clinic_admin`, and there can
+// be more than one at a clinic) gets everything above PLUS an additional
+// layer appended below it: a scope toggle that lets the SAME cards above
+// represent the whole clinic or any one bench, and a compact bench-
+// management card with the authoritative actions Parallax already has (fees,
+// admin status, activate/deactivate). This is deliberately an ADDITION to
+// the page every doctor already has, not a redesign of it and not a second
+// page — see this file's own "Clinic management" section below, and
+// Anmol's brief: "Normal Overview + additional clinic visibility + additional
+// authority — not: Normal Overview → separate Admin Dashboard → separate
+// Clinic Management." `ClinicControlPage` (the page this replaced) is gone;
+// its content lives here now, folded in rather than duplicated.
 //
 // ── Why it doubles as a fix for the blank-canvas invariant
 //
@@ -47,23 +58,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
     Activity, ArrowRight, CalendarClock, Clock, Clock3, FileText, IndianRupee,
-    MessageCircle, PieChart, Plus, Stethoscope, TrendingUp, Users,
+    MessageCircle, PieChart, Plus, Send, ShieldCheck, ShieldOff, Stethoscope,
+    TrendingUp, UserCog, UserPlus, UserX, Users,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
-import { Card, EmptyBlock, SkeletonRows } from "../clinic/ui";
+import { Card, CardPillButton, EmptyBlock, SkeletonRows } from "../clinic/ui";
 import { Delta, Donut, HourBars, Sparkline, TrendChart, type Slice } from "../admin/charts";
 import { PeriodBar, type PeriodState } from "../admin/PeriodBar";
+import { FeesModal } from "../admin/FeesModal";
 import {
     buildRange, clinicToday, countClinicVisitsToday, fetchClinicAnalytics,
-    fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorVisitRows,
-    formatMoney, formatRangeLabel, previousRange,
-    type ClinicAnalytics, type ClinicSetup,
+    fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorRoster, fetchDoctorVisitRows,
+    fetchFeeSettings, formatMoney, formatRangeLabel, previousRange, setDoctorClinicAdmin,
+    type ClinicAnalytics, type ClinicSetup, type DoctorRosterRow, type FeeSettings,
 } from "../../lib/db/admin";
+import { fetchStaff, updateStaffMember } from "../../lib/db/staff";
+import { notifySupport } from "../../lib/db/messaging";
 import { PaymentDetailsModal } from "./PaymentDetailsModal";
 import { ActivityListModal } from "./ActivityListModal";
 import type { SidebarPage } from "../sidebar/SidebarNav";
@@ -122,6 +138,13 @@ export function DoctorOverviewPage({
     const navigate = useNavigate();
     const today = clinicToday();
 
+    // A doctor with clinic-admin authority — either the de-facto owner of a
+    // clinic nobody else administers, or individually flagged
+    // `doctors.is_clinic_admin` (there can be more than one at a clinic).
+    // Everything under "Clinic management" below is gated on this and
+    // nothing else changes for anyone else.
+    const isAdminDoctor = adminAccess.access === "embedded";
+
     const [period, setPeriod] = useState<PeriodState>({ preset: "7d", from: today, to: today });
     const [data, setData] = useState<ClinicAnalytics | null>(null);
     const [setup, setSetup] = useState<ClinicSetup | null>(null);
@@ -132,6 +155,28 @@ export function DoctorOverviewPage({
     const [paymentOpen, setPaymentOpen] = useState(false);
     const [activityOpen, setActivityOpen] = useState<ActivityKind | null>(null);
 
+    // ── The scope toggle (admin-doctors only) ─────────────────────────────
+    // "" = this doctor's own numbers (the default — an admin's page looks
+    // exactly like everyone else's until they touch the toggle), "overall" =
+    // the whole clinic, anything else = another doctor's `doctors.id`. Plain
+    // doctors never see this control and this state never leaves "".
+    const [viewScope, setViewScope] = useState<string>("");
+    const effectiveDoctorId = !isAdminDoctor
+        ? identity.doctorId
+        : viewScope === "" ? identity.doctorId
+        : viewScope === "overall" ? undefined
+        : viewScope;
+    const viewingSelf = !isAdminDoctor || viewScope === "" || viewScope === identity.doctorId;
+
+    // ── Clinic management (admin-doctors only) ────────────────────────────
+    const [roster, setRoster] = useState<DoctorRosterRow[] | null>(null);
+    const [staffHasReception, setStaffHasReception] = useState<boolean | null>(null);
+    const [fees, setFees] = useState<FeeSettings | null>(null);
+    const [feesOpen, setFeesOpen] = useState(false);
+    const [managingId, setManagingId] = useState<string | null>(null);
+    const [rosterBusyId, setRosterBusyId] = useState<string | null>(null);
+    const [requestingStaff, setRequestingStaff] = useState(false);
+
     const range = useMemo(
         () => buildRange(period.preset, { from: period.from, to: period.to }),
         [period]
@@ -141,12 +186,15 @@ export function DoctorOverviewPage({
         if (!identity.ready) return;
         setLoading(true);
         // The ONE scoping decision on this page, in one place: every number
-        // below is this doctor's.
-        fetchClinicAnalytics(identity.hospitalId, range, { doctorId: identity.doctorId })
+        // below is this doctor's — UNLESS this is an admin doctor who has
+        // moved the scope toggle, in which case it's the clinic's or a
+        // colleague's. `effectiveDoctorId === undefined` means "don't filter
+        // by doctor at all", fetchClinicAnalytics's own "whole clinic" shape.
+        fetchClinicAnalytics(identity.hospitalId, range, { doctorId: effectiveDoctorId })
             .then(setData)
             .catch((e: unknown) => { console.error("[overview]", e); setData(null); })
             .finally(() => setLoading(false));
-    }, [identity.ready, identity.hospitalId, identity.doctorId, range]);
+    }, [identity.ready, identity.hospitalId, effectiveDoctorId, range]);
 
     const loadContext = useCallback(() => {
         if (!identity.ready) return;
@@ -154,16 +202,32 @@ export function DoctorOverviewPage({
         countClinicVisitsToday(identity.hospitalId).then(setClinicToday).catch(() => setClinicToday(null));
     }, [identity.ready, identity.hospitalId]);
 
+    // Roster + fees + staff shape — only an admin doctor's page ever queries
+    // any of this, and it is loaded once per hospital, not per period (none
+    // of it is date-ranged).
+    const loadManagement = useCallback(() => {
+        if (!identity.ready || !isAdminDoctor) return;
+        fetchDoctorRoster(identity.hospitalId).then(setRoster).catch((e: unknown) => {
+            console.error("[overview] roster:", e); setRoster(null);
+        });
+        fetchFeeSettings(identity.hospitalId).then(setFees).catch(() => setFees(null));
+        fetchStaff(identity.hospitalId)
+            .then((rows) => setStaffHasReception(rows.some((s) => s.role === "reception" && s.is_active)))
+            .catch(() => setStaffHasReception(null));
+    }, [identity.ready, identity.hospitalId, isAdminDoctor]);
+
     useEffect(loadAnalytics, [loadAnalytics]);
     useEffect(loadContext, [loadContext]);
+    useEffect(loadManagement, [loadManagement]);
 
-    // No currency fetch here on purpose. `formatMoney` already defaults to
-    // INR, and the only surface that can CHANGE a clinic's currency is
-    // Parallax's billing policy — pulling `fetchFeeSettings` (a doctors +
-    // hospital read) onto a landing page to format one number would cost a
-    // round trip on every sign-in to render the same "₹" in all but a
-    // hypothetical clinic. (Payment Details, opened deliberately rather than
-    // on every load, fetches it anyway for the fee editor.)
+    // No UNCONDITIONAL currency fetch here — `formatMoney` already defaults
+    // to INR, and pulling `fetchFeeSettings` onto every doctor's landing page
+    // to format one number would cost a round trip on every sign-in to render
+    // the same "₹" in all but a hypothetical clinic. `loadManagement` above
+    // is the one exception, and only fires for an admin doctor, who needs the
+    // real fee list anyway for the bench-management card below. (Payment
+    // Details, opened deliberately rather than on every load, fetches its own
+    // copy too, for the same one-doctor fee editor it has always had.)
     const compareLabel = useMemo(() => {
         const p = previousRange(range);
         return p.from === p.to ? "day before" : "previous period";
@@ -190,7 +254,19 @@ export function DoctorOverviewPage({
         ];
     }, [data]);
 
-    const canViewReports = adminAccess.access === "embedded";
+    // Whose numbers the cards below are currently showing, in words — only
+    // ever different from "Your" for an admin doctor who has moved the scope
+    // toggle. A plain doctor's page computes the same "Your"/"you" it always
+    // has.
+    const scopeDoctorName = viewingSelf
+        ? identity.doctorName
+        : roster?.find((d) => d.doctorId === viewScope)?.name ?? "that doctor";
+    const scopePossessive = !isAdminDoctor || viewingSelf
+        ? "Your"
+        : viewScope === "overall" ? "Clinic-wide" : `${scopeDoctorName}'s`;
+    const scopeSubject = !isAdminDoctor || viewingSelf
+        ? "you"
+        : viewScope === "overall" ? "the clinic" : scopeDoctorName;
 
     // Stable across re-renders whenever the range hasn't changed, so
     // ActivityListModal's effect (keyed on this identity) fetches once per
@@ -273,6 +349,47 @@ export function DoctorOverviewPage({
                         <ArrowRight size={15} className="transition-transform group-hover:translate-x-[2px]" />
                     </button>
                 </div>
+
+                {/* ── The scope toggle — admin-doctors only ─────────────────
+                    "Add a simple filter/toggle to the existing charts rather
+                    than creating duplicate charts" (Anmol, 2026-09-06). The
+                    KPI tiles, the flow chart, the donut and the busiest-hours
+                    card below are ALL the same cards a plain doctor sees —
+                    this just changes whose numbers they're reading. Hidden
+                    entirely below two benches: comparing a doctor against
+                    themselves is not a toggle worth showing. */}
+                {isAdminDoctor && roster && roster.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-[6px]">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[var(--cs-label)]">
+                            Performance
+                        </span>
+                        {([
+                            { key: "overall", label: "Overall" },
+                            ...roster.map((d) => ({
+                                key: d.doctorId,
+                                label: d.doctorId === identity.doctorId ? "You" : d.name,
+                            })),
+                        ]).map((o) => {
+                            const on = viewScope === o.key || (viewScope === "" && o.key === identity.doctorId);
+                            return (
+                                <button
+                                    key={o.key}
+                                    type="button"
+                                    onClick={() => setViewScope(o.key)}
+                                    aria-pressed={on}
+                                    className={
+                                        "cursor-pointer rounded-full border px-[11px] py-[4px] text-[11.5px] font-semibold transition-colors outline-none " +
+                                        (on
+                                            ? "border-[var(--cs-violet)] bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
+                                            : "border-[var(--cs-line-strong)] text-[var(--cs-faint)] hover:bg-[#f1f5f9]")
+                                    }
+                                >
+                                    {o.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
 
                 <PeriodBar
                     period={period}
@@ -417,7 +534,7 @@ export function DoctorOverviewPage({
                             <Card
                                 tone="blue"
                                 icon={<TrendingUp size={14} />}
-                                title={chartMetric === "visits" ? "Your patient flow" : "Your collections"}
+                                title={`${scopePossessive} ${chartMetric === "visits" ? "patient flow" : "collections"}`}
                                 subtitle={formatRangeLabel(range)}
                                 action={
                                     <div className="flex items-center gap-[3px]">
@@ -454,7 +571,7 @@ export function DoctorOverviewPage({
                             <Card
                                 tone="teal"
                                 icon={<PieChart size={14} />}
-                                title="Who you saw"
+                                title={viewingSelf ? "Who you saw" : `Who ${scopeSubject} saw`}
                                 subtitle={formatRangeLabel(range)}
                             >
                                 {!data ? (
@@ -545,7 +662,7 @@ export function DoctorOverviewPage({
                             <Card
                                 tone="violet"
                                 icon={<Clock3 size={14} />}
-                                title="When you're busiest"
+                                title={viewingSelf ? "When you're busiest" : `When ${scopeSubject} is busiest`}
                                 subtitle={`Visits by hour · ${formatRangeLabel(range)}`}
                             >
                                 {!data ? (
@@ -579,7 +696,7 @@ export function DoctorOverviewPage({
                                             icon: <MessageCircle size={15} />, label: "Send WhatsApp Message",
                                             sub: "Share reports & follow-ups", onClick: () => onNavigate("communication"),
                                         },
-                                        canViewReports
+                                        isAdminDoctor
                                             ? {
                                                 icon: <TrendingUp size={15} />, label: "View Reports",
                                                 sub: "Detailed analytics", onClick: () => navigate("/app/admin/reports"),
@@ -608,21 +725,201 @@ export function DoctorOverviewPage({
                     </>
                 )}
 
-                {/* One quiet line, at the bottom, where a bench table would
-                    have gone on the admin page. Naming what is deliberately
-                    absent is cheaper than fielding the question. */}
+                {/* One quiet line, saying whose numbers these are. A plain
+                    doctor always reads "your own numbers" — the only thing
+                    that changes here is an admin doctor who has moved the
+                    scope toggle above. */}
                 <p className="m-0 flex items-center gap-[6px] text-[11px] text-[var(--cs-faint)]">
                     <Users size={12} />
-                    These are your own numbers.
-                    {setup && setup.benches > 1
-                        ? " Clinic-wide reporting lives in the clinic dashboard."
-                        : ""}
+                    {viewingSelf
+                        ? "These are your own numbers."
+                        : viewScope === "overall"
+                            ? "These are the whole clinic's numbers."
+                            : `These are ${scopeDoctorName}'s numbers.`}
                     {!data?.revenueTracked && (
                         <span className="inline-flex items-center gap-[3px]">
                             <IndianRupee size={11} /> Payments aren't being recorded at this clinic yet.
                         </span>
                     )}
                 </p>
+
+                {/* ── Clinic management — admin-doctors only ────────────────
+                    Everything ClinicControlPage used to carry on its own
+                    page, folded into Overview instead: who works here, what
+                    they charge, and the authoritative actions Parallax
+                    already has (fees, admin status, activate/deactivate) —
+                    contextual to each doctor's own row rather than a second
+                    dashboard. See this file's own header for the principle. */}
+                {isAdminDoctor && (
+                    <div className="mt-[4px] flex flex-col gap-[10px]">
+                        <span className="flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
+                            <ShieldCheck size={13} /> Clinic management
+                        </span>
+
+                        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-start gap-[12px] max-[980px]:grid-cols-1">
+                            <Card
+                                tone="teal"
+                                icon={<Stethoscope size={14} />}
+                                title="Doctors"
+                                subtitle={roster ? `${roster.length} on file` : "Who works here"}
+                                action={
+                                    fees && (
+                                        <CardPillButton tone="teal" onClick={() => setFeesOpen(true)}>
+                                            Fees
+                                        </CardPillButton>
+                                    )
+                                }
+                            >
+                                {!roster ? (
+                                    <SkeletonRows count={3} />
+                                ) : roster.length === 0 ? (
+                                    <EmptyBlock fact="No doctors on file" next="A doctor appears here once they register against this clinic." />
+                                ) : (
+                                    <div className="flex flex-col gap-[6px]">
+                                        {roster.map((d) => {
+                                            const isSelf = d.doctorId === identity.doctorId;
+                                            const busy = rosterBusyId === d.doctorId;
+                                            const fee = fees?.doctors.find((f) => f.id === d.doctorId)?.consultationFee ?? null;
+                                            return (
+                                                <div
+                                                    key={d.doctorId}
+                                                    className={
+                                                        "flex flex-col gap-[8px] rounded-[10px] border px-[10px] py-[8px] transition-opacity " +
+                                                        (d.isActive ? "border-[var(--cs-line)] bg-[var(--cs-page)]" : "border-dashed border-[var(--cs-line-strong)] opacity-70") +
+                                                        (busy ? " pointer-events-none opacity-50" : "")
+                                                    }
+                                                >
+                                                    <div className="flex min-w-0 items-center gap-[9px]">
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="flex items-center gap-[6px] truncate text-[13px] font-semibold text-[var(--cs-ink)]">
+                                                                {d.name}{isSelf ? " (you)" : ""}
+                                                                {d.isClinicAdmin && (
+                                                                    <span className="rounded-full bg-[var(--cs-violet-soft)] px-[7px] py-[1px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-violet)]">
+                                                                        Admin
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                            <span className="block text-[11px] text-[var(--cs-faint)]">
+                                                                {[d.specialization, fee !== null ? formatMoney(fee) : "Fee not set", !d.isActive ? "Deactivated" : null]
+                                                                    .filter(Boolean).join(" · ")}
+                                                            </span>
+                                                        </span>
+                                                        {!isSelf && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setManagingId(managingId === d.doctorId ? null : d.doctorId)}
+                                                                className="ml-auto flex flex-none cursor-pointer items-center gap-[4px] rounded-full border border-[var(--cs-line-strong)] px-[10px] py-[4px] text-[10.5px] font-semibold text-[var(--cs-muted)] outline-none hover:border-[var(--cs-violet)] hover:text-[var(--cs-violet)]"
+                                                            >
+                                                                <UserCog size={12} /> Manage
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Progressive disclosure, same principle as PaymentRail:
+                                                        the actions don't exist on screen until "Manage" is
+                                                        clicked. Self-guarded the same way PeoplePage already
+                                                        is — irreversible FROM HERE, not destructive in itself. */}
+                                                    {managingId === d.doctorId && !isSelf && (
+                                                        <div className="flex flex-wrap items-center gap-[6px] border-t border-[var(--cs-line)] pt-[8px]">
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    setRosterBusyId(d.doctorId);
+                                                                    try {
+                                                                        await setDoctorClinicAdmin(d.doctorId, !d.isClinicAdmin);
+                                                                        toast.success(`${d.name} is ${d.isClinicAdmin ? "no longer" : "now"} a clinic admin`);
+                                                                        loadManagement();
+                                                                    } catch (e) {
+                                                                        toast.error(e instanceof Error ? e.message : "Could not save that change.");
+                                                                    } finally {
+                                                                        setRosterBusyId(null);
+                                                                    }
+                                                                }}
+                                                                className="inline-flex cursor-pointer items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] px-[10px] py-[4px] text-[10.5px] font-semibold text-[var(--cs-muted)] transition-colors hover:border-[var(--cs-violet)] hover:bg-[var(--cs-violet-soft)] hover:text-[var(--cs-violet)]"
+                                                            >
+                                                                {d.isClinicAdmin ? <ShieldOff size={12} /> : <ShieldCheck size={12} />}
+                                                                {d.isClinicAdmin ? "Remove admin" : "Make admin"}
+                                                            </button>
+                                                            {d.userId && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={async () => {
+                                                                        setRosterBusyId(d.doctorId);
+                                                                        try {
+                                                                            await updateStaffMember(d.userId!, { is_active: !d.isActive });
+                                                                            toast.success(`${d.name} can ${d.isActive ? "no longer" : "now"} sign in`);
+                                                                            loadManagement();
+                                                                        } catch (e) {
+                                                                            toast.error(e instanceof Error ? e.message : "Could not save that change.");
+                                                                        } finally {
+                                                                            setRosterBusyId(null);
+                                                                        }
+                                                                    }}
+                                                                    className={
+                                                                        "inline-flex cursor-pointer items-center gap-[5px] rounded-full border px-[10px] py-[4px] text-[10.5px] font-semibold transition-colors " +
+                                                                        (d.isActive
+                                                                            ? "border-[var(--cs-line-strong)] text-[var(--cs-muted)] hover:border-[var(--cs-red)] hover:bg-[var(--cs-red-soft)] hover:text-[var(--cs-red)]"
+                                                                            : "border-[var(--cs-green)] text-[var(--cs-green)] hover:bg-[var(--cs-green-soft)]")
+                                                                    }
+                                                                >
+                                                                    <UserX size={12} />
+                                                                    {d.isActive ? "Remove / fire" : "Reactivate"}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </Card>
+
+                            {/* ── Add staff — minimal, deliberately ─────────
+                                Anmol, 2026-09-06: a Cortex-shaped clinic with
+                                no staff must not get a fabricated staff-
+                                management workflow — a request that reaches a
+                                human is the whole feature. Hidden once this
+                                clinic already has front-desk staff; it stays
+                                a request channel, not a duplicate of
+                                Parallax's People page. */}
+                            {staffHasReception === false && (
+                                <Card
+                                    tone="violet"
+                                    icon={<UserPlus size={14} />}
+                                    title="Staff"
+                                    subtitle="No front-desk staff on file yet"
+                                >
+                                    <p className="m-0 mb-[9px] text-[11.5px] leading-[1.5] text-[var(--cs-muted)]">
+                                        Need another set of hands at the desk? We'll reach out to help you add one.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        disabled={requestingStaff}
+                                        onClick={async () => {
+                                            setRequestingStaff(true);
+                                            try {
+                                                await notifySupport("support_request", {
+                                                    doctorId: identity.doctorId,
+                                                    topic: "Add staff",
+                                                    message: `${identity.doctorName} requested help adding staff at ${setup?.name ?? "their clinic"}.`,
+                                                });
+                                                toast.success("Sent — AREN will reach out to help add staff.");
+                                            } catch {
+                                                toast.error("Could not send that request. Try again shortly.");
+                                            } finally {
+                                                setRequestingStaff(false);
+                                            }
+                                        }}
+                                        className="inline-flex cursor-pointer items-center gap-[6px] rounded-[10px] border-0 bg-[var(--cs-violet)] px-[12px] py-[8px] text-[12px] font-bold text-white outline-none disabled:opacity-60"
+                                    >
+                                        <Send size={13} /> {requestingStaff ? "Sending…" : "Request to add staff"}
+                                    </button>
+                                </Card>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {paymentOpen && identity.ready && (
@@ -660,6 +957,16 @@ export function DoctorOverviewPage({
                     emptyNext="Prescriptions you write appear here as soon as they're saved."
                     onClose={() => setActivityOpen(null)}
                     onViewPatient={onViewPatient}
+                />
+            )}
+
+            {feesOpen && fees && (
+                <FeesModal
+                    hospitalId={identity.hospitalId}
+                    policy={fees.policy}
+                    doctors={fees.doctors}
+                    onClose={() => setFeesOpen(false)}
+                    onSaved={() => { toast.success("Fees saved"); loadManagement(); }}
                 />
             )}
         </div>

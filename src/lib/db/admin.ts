@@ -204,7 +204,7 @@ function hourOf(iso: string): number {
  */
 export interface AnalyticsScope {
     /** `doctors.id`. Omitted means the whole clinic, which is what Parallax
-     *  and Clinic Control both want. */
+     *  and an admin-doctor's Overview both want. */
     doctorId?: string | null;
 }
 
@@ -467,10 +467,12 @@ export async function countClinicVisitsToday(hospitalId: string): Promise<number
 /**
  * How many people at this clinic hold an administration role.
  *
- * The single input to `resolveAdminAccess` beyond the caller's own role, and
- * the reason a doctor's Clinic Control page appears and disappears on its own
- * as a clinic hires or loses an office manager. `head: true` — the count is
- * the entire answer, no rows need to cross the wire.
+ * One of two inputs to `resolveAdminAccess` beyond the caller's own role (the
+ * other being `doctors.is_clinic_admin` for the signed-in doctor, read
+ * straight off their identity) — together they're the reason a doctor's
+ * Overview grows or loses its admin layer on its own as a clinic hires or
+ * loses an office manager, or as a doctor is promoted/demoted. `head: true` —
+ * the count is the entire answer, no rows need to cross the wire.
  *
  * Fails CLOSED (returns a positive count on error) is NOT what this does, and
  * that is deliberate: an unreadable count returning 0 would hand a doctor the
@@ -491,6 +493,68 @@ export async function countDedicatedAdmins(hospitalId: string): Promise<number> 
         return 0;
     }
     return count ?? 0;
+}
+
+/** One row per doctor, for the admin-doctor's own bench-management card in
+ *  Overview (and Parallax's People page, which writes the same column). Kept
+ *  separate from `fetchClinicAnalytics`'s `benches` — that read is about
+ *  PERFORMANCE in a date range; this one is about WHO can be managed and
+ *  what authority they currently hold, which has no range. */
+export interface DoctorRosterRow {
+    doctorId: string;
+    /** `users.id` — null for a `doctors` row nobody has registered a login
+     *  against yet, in which case there is no account to activate/deactivate
+     *  or promote. */
+    userId: string | null;
+    name: string;
+    specialization: string | null;
+    isClinicAdmin: boolean;
+    /** From the linked `users` row; true when there is none (nothing to
+     *  deactivate, so nothing reads as already-off). */
+    isActive: boolean;
+}
+
+export async function fetchDoctorRoster(hospitalId: string): Promise<DoctorRosterRow[]> {
+    const { data, error } = await supabase
+        .from("doctors")
+        .select("id, name, specialization, is_clinic_admin, user_id, users(is_active)")
+        .eq("hospital_id", hospitalId)
+        .order("name", { ascending: true });
+    if (error) throw new Error(`fetchDoctorRoster: ${error.message}`);
+    return (data ?? []).map((d) => {
+        // A to-one embed comes back as an object with the inferred FK, but
+        // supabase-js's generic types see the relationship as possibly a
+        // list — narrow defensively rather than fighting the generated type.
+        const linkedUser = Array.isArray(d.users) ? d.users[0] : d.users;
+        return {
+            doctorId: d.id,
+            userId: d.user_id,
+            name: d.name ?? "Unnamed doctor",
+            specialization: d.specialization ?? null,
+            isClinicAdmin: !!d.is_clinic_admin,
+            isActive: linkedUser?.is_active ?? true,
+        };
+    });
+}
+
+/**
+ * Grants or revokes a DOCTOR's clinic-admin authority. Additive to
+ * `users.role`, which this never touches — see the migration's own comment
+ * and `adminAccess.ts`'s file header for why.
+ *
+ * Callable from two places: Parallax's People page (a non-doctor admin
+ * managing doctors) and an admin-doctor's own Overview (managing a
+ * colleague) — both go through this one function so the write is in exactly
+ * one place. Neither caller may target THEMSELVES; enforce that at the call
+ * site the same way PeoplePage already guards against self-deactivation
+ * (`is_active`) — irreversible from here for the same reason: the surface
+ * that could undo it is the one they just lost.
+ */
+export async function setDoctorClinicAdmin(doctorId: string, isClinicAdmin: boolean): Promise<void> {
+    const { error } = await supabase.from("doctors")
+        .update({ is_clinic_admin: isClinicAdmin })
+        .eq("id", doctorId);
+    if (error) throw new Error(`setDoctorClinicAdmin: ${error.message}`);
 }
 
 // ── Clinic setup — "what am I actually running, and paying for" ────────────
