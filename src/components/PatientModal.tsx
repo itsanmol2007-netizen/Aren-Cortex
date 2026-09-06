@@ -66,9 +66,25 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
   // Once the doctor has touched the visit-type toggle themselves, that
   // decision wins over any patient-history default computed below.
   const [feeTouched, setFeeTouched] = useState(false);
+  // Surfaced on the rail itself (not a silent block) the moment a doctor
+  // tries to confirm a NEW patient with a real fee on the table but neither
+  // Collect nor Mark as unpaid pressed yet — "just simply create a patient
+  // without asking... confirm if it is paid or not". Existing-patient rows
+  // in Search mode stay the one-click flow they always were; this only
+  // guards the two actions that are already their own deliberate button
+  // (Start consult, Use this patient), not an instant list tap.
+  const [paymentError, setPaymentError] = useState(false);
   const handleFeeChange = (next: FeeState) => {
     if (next.visitType !== fee.visitType) setFeeTouched(true);
+    if (next.status !== "undecided") setPaymentError(false);
     setFee(next);
+  };
+  /** `false` (and the rail highlighted) only when there's a real fee on the
+   *  table and neither Collect nor Mark as unpaid has been chosen yet. */
+  const paymentDecided = () => {
+    if (!billing || baseFee === null) return true;
+    if (fee.status === "undecided") { setPaymentError(true); return false; }
+    return true;
   };
 
   // Which patients has this modal already looked up visit history for —
@@ -197,7 +213,11 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
     // "Use this patient", not "create a second record with the same number".
     // Falling through to handleConfirm here would quietly mint the duplicate
     // the card exists to prevent.
-    if (matchedPatient) { onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id)); return; }
+    if (matchedPatient) {
+      if (!paymentDecided()) return;
+      onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id));
+      return;
+    }
     handleConfirm();
   };
 
@@ -290,6 +310,7 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
     const name = draft.name.trim();
     const phone = draft.phone.trim();
     if (!name || !phone || !draft.gender) return;
+    if (!paymentDecided()) return;
     // Only reachable with no `matchedPatient` (that branch has its own "Use
     // this patient" action) — always a genuinely new patient, so there is no
     // history to default a visit type from.
@@ -350,8 +371,13 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
         </div>
 
         {/* ── SEARCH MODE ── */}
+        {/* `flex-1 min-h-0` alongside the legacy class (no property clash —
+            `.pm-section` never declares its own `flex-grow`) so the idle
+            illustration below can actually center in the space "New
+            patient"'s form fills naturally, instead of sitting flush under
+            the search box with a dead gap under IT. */}
         {mode === "search" && (
-          <div className="pm-section">
+          <div className="pm-section flex-1 min-h-0">
             <div className="pm-search-box">
               {searchLoading
                 ? <Loader2 size={14} className="pm-search-icon pm-spin" />
@@ -399,6 +425,23 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
 
             {searchError && (
               <p className="pm-no-results" style={{ color: "#f87171" }}>{searchError}</p>
+            )}
+
+            {/* The idle state — nothing typed yet. Search mode used to leave
+                this genuinely blank (a tall white gap under the box, most
+                noticeable beside "New patient"'s form filling the same
+                card), which read as unfinished rather than as "type to
+                search". Tailwind, not a new `.pm-*` class — new surface. */}
+            {!searchError && searchQuery.trim().length < 2 && (
+              <div className="flex flex-1 flex-col items-center justify-center gap-[10px] px-[24px] py-[28px] text-center">
+                <div className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#fce7f3] to-[#ede9fe]">
+                  <Search size={28} className="text-[#a855f7]" strokeWidth={1.75} />
+                </div>
+                <strong className="text-[14px] font-bold text-[#0f172a]">Find a patient</strong>
+                <span className="max-w-[30ch] text-[12.5px] leading-[1.55] text-[#64748b]">
+                  Type a name or phone number above to search your records.
+                </span>
+              </div>
             )}
 
             {!searchLoading && searchQuery.length >= 2 && searchResults.length === 0 && !searchError && (
@@ -554,7 +597,14 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
                   </div>
                 </div>
                 <div className="pm-duplicate-actions">
-                  <button type="button" className="pm-btn-primary" onClick={() => onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id))}>
+                  <button
+                    type="button"
+                    className="pm-btn-primary"
+                    onClick={() => {
+                      if (!paymentDecided()) return;
+                      onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id));
+                    }}
+                  >
                     Use this patient
                   </button>
                   <button type="button" className="pm-btn-ghost" onClick={() => setMatchedPatient(null)}>
@@ -600,6 +650,7 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
               baseFee={baseFee}
               breakdown={breakdown}
               doctorName={billing.doctorName}
+              needsDecision={paymentError}
             />
           </div>
         )}

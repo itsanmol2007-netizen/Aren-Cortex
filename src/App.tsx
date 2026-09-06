@@ -1055,6 +1055,22 @@ function App() {
    * `dismissable` prop below — so that IS the workspace until somebody
    * exists to see.
    *
+   * Does NOT wait on `queue.loading` (2026-09-06 fix: it used to). A page
+   * reload for a Consult clinic hits a real race this was causing: while
+   * auth is still resolving, `useWorkspaceMode` answers "cortex" (its own
+   * documented fallback — "the workflow that needs nothing else to exist"),
+   * so `PatientModal` briefly shows (its render condition reads
+   * `!workspace.isConsult`, true under the fallback); the instant auth
+   * resolves to the clinic's REAL "consult" mode, that condition flips false
+   * and `PatientModal` disappears — and this effect, still waiting on the
+   * queue's own network fetch to finish, had not opened the queue sheet YET.
+   * For however long that fetch takes, nothing was mounted at all: the exact
+   * blank canvas this effect exists to prevent, on the one path (a fresh
+   * reload) that most reliably hits it. Fixed by not waiting — `QueueSheet`
+   * already renders its own "Loading…" subtitle and an empty list rather
+   * than assuming empty, so showing it immediately and letting it fill in
+   * is strictly better than showing nothing while we wait to be sure.
+   *
    * Idempotent by construction, not a one-shot ref: setting `queueSheetOpen`
    * makes the condition false on the next render, so this never fights the
    * doctor's own close (which only succeeds once `dismissable` allows it,
@@ -1062,14 +1078,13 @@ function App() {
    */
   useEffect(() => {
     if (!workspace.isConsult || !workspace.ready) return;
-    if (queue.loading) return;              // wait for a real answer, not the empty first render
     if (hasActiveConsult) return;           // a consult already owns the screen
     // `isFeaturePage` (`activePage !== null`) isn't declared until later in
     // this component — inlined rather than reordered around it.
     if (activePage !== null) return;        // Patients/Practice/Settings — a real destination, not idle
     if (patientModalOpen || transition || queueSheetOpen) return; // something already covers it
     setQueueSheetOpen(true);
-  }, [workspace.isConsult, workspace.ready, queue.loading, hasActiveConsult,
+  }, [workspace.isConsult, workspace.ready, hasActiveConsult,
       activePage, patientModalOpen, transition, queueSheetOpen]);
 
   // ── The specialty profile ───────────────────────────────────────────────

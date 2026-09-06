@@ -53,7 +53,7 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 ];
 
 export function PatientPaymentRail({
-    state, onChange, policy, baseFee, breakdown, doctorName,
+    state, onChange, policy, baseFee, breakdown, doctorName, needsDecision,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
@@ -62,6 +62,16 @@ export function PatientPaymentRail({
     baseFee: number | null;
     breakdown: FeeBreakdown | null;
     doctorName: string;
+    /**
+     * True for one render — the moment `PatientModal` tried to confirm a
+     * patient with a real fee still undecided ("just simply create a
+     * patient without asking... confirm if it is paid or not"). Highlights
+     * the Collect/Mark-as-unpaid buttons rather than silently letting the
+     * visit through as pending; clears itself the instant either is
+     * pressed (`PatientModal`'s `handleFeeChange` does that, not this
+     * component — the rail stays a pure display of `state`).
+     */
+    needsDecision?: boolean;
 }) {
     // Chrome, not data — stays local so the parent re-rendering on every
     // keystroke of the patient's name can't collapse an open panel.
@@ -147,7 +157,19 @@ export function PatientPaymentRail({
                 </span>
             </div>
 
-            <div className="mt-[14px] flex flex-col gap-[8px]">
+            {needsDecision && !decided && (
+                <div className="mt-[12px] flex items-center gap-[6px] rounded-[9px] bg-[#fef2f2] px-[10px] py-[7px] text-[11.5px] font-bold text-[#b91c1c]">
+                    <Info size={13} className="shrink-0" />
+                    Mark this visit paid or unpaid to continue
+                </div>
+            )}
+
+            <div
+                className={
+                    "mt-[10px] flex flex-col gap-[8px] rounded-[13px] " +
+                    (needsDecision && !decided ? "outline outline-2 outline-offset-[4px] outline-[#fca5a5]" : "")
+                }
+            >
                 {decided ? (
                     <div
                         className={
