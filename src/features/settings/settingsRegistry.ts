@@ -27,13 +27,21 @@
 // id on the page that owns it. When one is removed, its row goes with it. The
 // test for a row is not "is this configurable" but "would a doctor go looking
 // for this and not know which page it is on".
+//
+// This rule was broken once already: Clinic's Staff card (2026-09-03) shipped
+// with no row here and no anchor on itself, three sessions before anyone
+// noticed — "there are some new things added and can't search for them."
+// Both are fixed now (`clinic.staff` / `clin-card-staff`), but the miss is
+// worth keeping as the standing reminder this comment now is: a feature PR
+// isn't done until this file and the anchor on the new control both land in
+// the SAME change, not a follow-up someone might get to.
 // ---------------------------------------------------------------------------
 
 import type { LucideIcon } from "lucide-react";
 import {
     Activity, Building2, Clock, FlaskConical, Keyboard, Layers,
     MonitorSmartphone, Pill, Printer, Shield, ShieldCheck, Sparkles,
-    Stethoscope, User,
+    Stethoscope, User, Users,
 } from "lucide-react";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
@@ -81,6 +89,17 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         description: "Which days you see patients, and when.",
         keywords: ["hours", "timing", "open", "closed", "schedule", "days", "week", "opening", "shift"],
         page: "clinic", anchor: "clin-card-hours", group: "Clinic", icon: Clock,
+    },
+    {
+        // Added with Consult (2026-09-03) and missed here until 2026-09-06 —
+        // exactly the "new things added and can't search for them" gap this
+        // registry exists to not have. See the file header's own warning.
+        id: "clinic.staff",
+        label: "Staff",
+        description: "Who works at this clinic, their role, and whether they can sign in.",
+        keywords: ["staff", "receptionist", "reception", "front desk", "employee", "team", "user", "users",
+            "role", "access", "permission", "deactivate", "invite", "add staff", "manage staff"],
+        page: "clinic", anchor: "clin-card-staff", group: "Clinic", icon: Users,
     },
 
     {
@@ -192,13 +211,43 @@ export const SETTINGS_INDEX: SettingEntry[] = [
 ];
 
 /**
+ * A character-order subsequence test — every character of `q` has to occur
+ * in `text`, in the same order, not necessarily touching. The standard
+ * lightweight "fuzzy" test (the one fzf/Sublime-style pickers use): "cnslt
+ * hrs" still finds "Consult setup" / "Clinic hours", and a dropped or
+ * doubled letter ("consut", "reciption") still lands on the right row.
+ * Both arguments are assumed already lower-cased by the caller.
+ */
+function isFuzzySubsequence(text: string, q: string): boolean {
+    if (!q) return true;
+    let ti = 0;
+    for (let qi = 0; qi < q.length; qi++) {
+        const ch = q[qi];
+        let found = false;
+        while (ti < text.length) {
+            if (text[ti] === ch) { found = true; ti++; break; }
+            ti++;
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+/**
  * Match a query against the index.
  *
- * Deliberately simple: a case-insensitive substring over label, description
- * and keywords, ranked so a label hit beats a keyword hit beats a description
- * hit. There is no fuzzy matching and no scoring model, because the whole
- * corpus is a dozen rows a doctor can also just read — a ranking algorithm
- * here would be machinery standing in for a list.
+ * A case-insensitive substring over label, description and keywords first —
+ * label beats keyword beats description — and only once none of those three
+ * hit anything does a fuzzy (character-subsequence) pass over label and
+ * keywords run, ranked below every exact hit. 2026-09-06: this used to be
+ * substring-only, on the reasoning that a dozen rows don't need "machinery
+ * standing in for a list" — true for reading the list, wrong for SEARCHING
+ * it, where a typo or a word swapped for its synonym ("recepion", "front
+ * desk staff") used to come back empty. The fuzzy pass is deliberately
+ * gated to a 3-character-minimum query and to label/keywords only (never
+ * the free-text description, which is long enough that a short query
+ * subsequence-matches almost any sentence, returning noise) — see
+ * `isFuzzySubsequence`'s own doc comment for what it does and doesn't catch.
  */
 export function searchSettings(query: string): SettingEntry[] {
     const q = query.trim().toLowerCase();
@@ -207,16 +256,22 @@ export function searchSettings(query: string): SettingEntry[] {
     const scored: { entry: SettingEntry; rank: number }[] = [];
     for (const entry of SETTINGS_INDEX) {
         const label = entry.label.toLowerCase();
+        const keywords = entry.keywords.map((k) => k.toLowerCase());
+
         if (label.includes(q)) {
             scored.push({ entry, rank: label.startsWith(q) ? 0 : 1 });
             continue;
         }
-        if (entry.keywords.some((k) => k.includes(q))) {
+        if (keywords.some((k) => k.includes(q))) {
             scored.push({ entry, rank: 2 });
             continue;
         }
         if (entry.description.toLowerCase().includes(q)) {
             scored.push({ entry, rank: 3 });
+            continue;
+        }
+        if (q.length >= 3 && (isFuzzySubsequence(label, q) || keywords.some((k) => isFuzzySubsequence(k, q)))) {
+            scored.push({ entry, rank: 4 });
         }
     }
     return scored.sort((a, b) => a.rank - b.rank).map((s) => s.entry);

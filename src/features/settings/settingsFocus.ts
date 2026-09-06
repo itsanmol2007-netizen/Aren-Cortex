@@ -35,8 +35,11 @@
 import { useEffect } from "react";
 
 /** How long the highlight stays on the target. Long enough to find it with
- *  your eye after a page transition, short enough not to become decoration. */
-const FLASH_MS = 2400;
+ *  your eye after a page transition, short enough not to become decoration.
+ *  Matches `settings.css`'s `cx-setting-flash` animation (1.3s × 2 = 2.6s)
+ *  plus a hair of margin — removing the class before the animation's own
+ *  last frame finishes cuts the fade-out off mid-motion. */
+const FLASH_MS = 2700;
 
 /** ~1s of animation frames. A card that has not rendered by then is either
  *  behind a slow fetch or does not exist on this page at all; either way,

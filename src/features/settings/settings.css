@@ -10,29 +10,59 @@
    Applied by `settingsFocus.ts` to whatever the Settings search sent the
    doctor to, on ANY page — so it lives here but is deliberately not scoped
    under `.settings-*`. A ring plus a lift, twice, then gone: enough to find
-   with the eye after a page transition, not enough to become decoration. */
+   with the eye after a page transition, not enough to become decoration.
+   2026-09-06: the original version of this ("Right now it's highlighting,
+   but not that much greatly — you can't see that something is even being
+   highlighted") was a box-shadow ring alone, at a modest 0.42 peak opacity,
+   on cards (`.prac-card` among them) that ALSO carry their own
+   `transition: box-shadow` for hover — the two were fighting on the same
+   property, softening exactly the edges (the snap in, the snap out) an eye
+   needs to catch a flash. Fixed with `!important` on the animated property
+   (an animation should already win that fight, but this makes it not a
+   fight at all) and three redundant, compounding cues instead of one
+   subtle one: a background wash (visible even where the ring's spread
+   happens to fall over a light card edge), a bolder two-layer ring, and a
+   brief scale pop on the way in — so a doctor's eye has more than one
+   reason to land here even if one of the three reads faintly on a given
+   background. */
 .cx-setting-flash {
-    animation: cx-setting-flash 1.15s ease-out 2;
+    animation: cx-setting-flash 1.3s cubic-bezier(0.22, 1, 0.36, 1) 2;
     border-radius: var(--cs-radius, 12px);
+    position: relative;
+    z-index: 1;
 }
 
 @keyframes cx-setting-flash {
     0% {
-        box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.42);
+        background-color: rgba(124, 58, 237, 0.16) !important;
+        box-shadow:
+            0 0 0 0 rgba(124, 58, 237, 0.55),
+            0 0 0 0 rgba(124, 58, 237, 0.24) !important;
+        transform: scale(1.015);
     }
 
-    35% {
-        box-shadow: 0 0 0 5px rgba(124, 58, 237, 0.20);
+    30% {
+        background-color: rgba(124, 58, 237, 0.10) !important;
+        box-shadow:
+            0 0 0 4px rgba(124, 58, 237, 0.32),
+            0 0 0 9px rgba(124, 58, 237, 0.14) !important;
+        transform: scale(1);
     }
 
     100% {
-        box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+        background-color: rgba(124, 58, 237, 0) !important;
+        box-shadow:
+            0 0 0 0 rgba(124, 58, 237, 0),
+            0 0 0 0 rgba(124, 58, 237, 0) !important;
+        transform: scale(1);
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .cx-setting-flash {
         animation: none;
-        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
+        background-color: rgba(124, 58, 237, 0.12) !important;
+        box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.4) !important;
+        transform: none;
     }
 }

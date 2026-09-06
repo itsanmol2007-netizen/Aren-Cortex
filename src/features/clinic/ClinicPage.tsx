@@ -606,6 +606,7 @@ export function ClinicPage({
                     desk is a multi-user clinic and had nowhere to manage one. ══ */}
                 <div className="grid grid-cols-1 gap-[12px]">
                     <Card
+                        id="clin-card-staff"
                         tone="violet"
                         icon={<Users size={14} />}
                         title="Staff"
