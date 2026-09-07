@@ -1037,6 +1037,94 @@ export async function fetchNewPatientRows(
     }));
 }
 
+// ── The patient-safe ledger behind a trend chart — CSV export ───────────────
+//
+// 2026-09-08, Anmol, on the Patient-flow/Collections chart: "you should be
+// able to click on this graph, and it will open... a complete list... also
+// an option of exporting that thing as a CSV." What the CSV holds was its
+// own explicit requirement: "just like this patient came into this clinic
+// on this date, paid this much amount or some basic detail, not their
+// actual clinical details which are sensitive."
+//
+// So this is deliberately NOT `fetchDoctorVisitRows` reused — that one
+// exists to answer "who did I see", this one exists to leave the building
+// as a spreadsheet, and the columns a doctor is willing to click a button
+// and hand to someone are narrower than the ones a doctor is willing to
+// glance at on their own screen. One row per visit (a patient who came
+// twice in the window is two rows, same as the chart itself counts them);
+// `amount` is null rather than 0 when nothing was ever marked paid, so a
+// free consultation and an unrecorded one stay visibly different in the
+// export.
+export interface PatientLedgerRow {
+    id: string;
+    patientId: string | null;
+    patientName: string | null;
+    at: string;
+    amount: number | null;
+}
+
+export async function fetchPatientLedgerRows(
+    hospitalId: string,
+    range: DateRange,
+    scope: AnalyticsScope = {},
+    limit = 1000
+): Promise<PatientLedgerRow[]> {
+    let query = supabase
+        .from("visits")
+        .select("id, patient_id, created_at, status, patients ( name )")
+        .eq("hospital_id", hospitalId)
+        .gte("created_at", startInstant(range.from))
+        .lt("created_at", endInstantExclusive(range.to))
+        .order("created_at", { ascending: false })
+        .limit(limit);
+    if (scope.doctorId) query = query.eq("assigned_doctor_id", scope.doctorId);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`fetchPatientLedgerRows: ${error.message}`);
+
+    // Same "a discarded visit is not work the clinic did" rule
+    // `fetchClinicAnalytics`/`fetchDoctorVisitRows` already state — a
+    // discarded visit belongs in nothing derived from this page, the export
+    // included.
+    const rows = (data ?? [])
+        .map((r) => {
+            const row = r as unknown as {
+                id: string; patient_id: string | null; created_at: string; status: string | null;
+                patients?: { name?: string } | null;
+            };
+            return {
+                id: row.id,
+                patientId: row.patient_id,
+                patientName: row.patients?.name ?? null,
+                at: row.created_at,
+                kind: visitStatusKind(row.status ?? ""),
+            };
+        })
+        .filter((r) => r.kind !== "inactive");
+    if (!rows.length) return [];
+
+    const payRes = await supabase
+        .from("visit_payments")
+        .select("visit_id, total, status")
+        .in("visit_id", rows.map((r) => r.id))
+        .eq("status", "paid");
+    if (payRes.error) throw new Error(`fetchPatientLedgerRows (payments): ${payRes.error.message}`);
+    const amountByVisit = new Map<string, number>();
+    for (const p of payRes.data ?? []) {
+        // First paid row wins — same "don't guess at a total, take the first
+        // recorded payment" convention `fetchNewPatientRows` uses.
+        if (!amountByVisit.has(p.visit_id)) amountByVisit.set(p.visit_id, Number(p.total));
+    }
+
+    return rows.map((r) => ({
+        id: r.id,
+        patientId: r.patientId,
+        patientName: r.patientName,
+        at: r.at,
+        amount: amountByVisit.get(r.id) ?? null,
+    }));
+}
+
 // ── Catalogue ──────────────────────────────────────────────────────────────
 
 export interface ClinicLab {

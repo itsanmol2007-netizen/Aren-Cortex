@@ -74,6 +74,7 @@ import { PeriodBar, type PeriodState } from "../admin/PeriodBar";
 import { FeesModal } from "../admin/FeesModal";
 import { PracticeModal } from "../practice/PracticeModal";
 import { PeoplePage } from "../admin/pages/PeoplePage";
+import { TrendDetailModal } from "./TrendDetailModal";
 import {
     buildRange, clinicToday, countClinicVisitsToday, fetchClinicAnalytics,
     fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorRoster, fetchDoctorVisitRows, fetchNewPatientRows,
@@ -155,6 +156,7 @@ export function DoctorOverviewPage({
 
     const [paymentOpen, setPaymentOpen] = useState(false);
     const [activityOpen, setActivityOpen] = useState<ActivityKind | null>(null);
+    const [trendOpen, setTrendOpen] = useState(false);
 
     // ── The scope toggle (admin-doctors only) ─────────────────────────────
     // "" = this doctor's own numbers (the default — an admin's page looks
@@ -550,22 +552,37 @@ export function DoctorOverviewPage({
                                 title={`${scopePossessive} ${chartMetric === "visits" ? "patient flow" : "collections"}`}
                                 subtitle={formatRangeLabel(range)}
                                 action={
-                                    <div className="flex items-center gap-[3px]">
-                                        {(["visits", "revenue"] as const).map((m) => (
+                                    <div className="flex items-center gap-[6px]">
+                                        <div className="flex items-center gap-[3px]">
+                                            {(["visits", "revenue"] as const).map((m) => (
+                                                <button
+                                                    key={m}
+                                                    type="button"
+                                                    onClick={() => setChartMetric(m)}
+                                                    className={
+                                                        "cursor-pointer rounded-full border px-[9px] py-[3px] text-[10.5px] font-semibold outline-none transition-colors " +
+                                                        (chartMetric === m
+                                                            ? "border-[var(--cs-blue)] bg-[var(--cs-blue-soft)] text-[var(--cs-blue)]"
+                                                            : "border-[var(--cs-line-strong)] text-[var(--cs-faint)] hover:bg-[#f1f5f9]")
+                                                    }
+                                                >
+                                                    {m === "visits" ? "Patients" : "Money"}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {/* Same door Parallax's own chart already opens onto its
+                                            Reports table (OverviewPage.tsx's DetailLink) — a modal
+                                            here rather than a route, since a plain doctor has no
+                                            business landing on /app/admin. */}
+                                        {data && !emptyPeriod && (
                                             <button
-                                                key={m}
                                                 type="button"
-                                                onClick={() => setChartMetric(m)}
-                                                className={
-                                                    "cursor-pointer rounded-full border px-[9px] py-[3px] text-[10.5px] font-semibold outline-none transition-colors " +
-                                                    (chartMetric === m
-                                                        ? "border-[var(--cs-blue)] bg-[var(--cs-blue-soft)] text-[var(--cs-blue)]"
-                                                        : "border-[var(--cs-line-strong)] text-[var(--cs-faint)] hover:bg-[#f1f5f9]")
-                                                }
+                                                onClick={() => setTrendOpen(true)}
+                                                className="inline-flex cursor-pointer items-center gap-[2px] rounded-[6px] border-0 bg-transparent px-[4px] py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] outline-none hover:underline"
                                             >
-                                                {m === "visits" ? "Patients" : "Money"}
+                                                Detail <ArrowRight size={11} />
                                             </button>
-                                        ))}
+                                        )}
                                     </div>
                                 }
                             >
@@ -577,7 +594,14 @@ export function DoctorOverviewPage({
                                         next="Pick a wider range, or a different date."
                                     />
                                 ) : (
-                                    <TrendChart points={data.series} metricKey={chartMetric} />
+                                    <button
+                                        type="button"
+                                        onClick={() => setTrendOpen(true)}
+                                        className="cursor-pointer border-0 bg-transparent p-0 text-left outline-none"
+                                        aria-label="Open the detailed list behind this chart"
+                                    >
+                                        <TrendChart points={data.series} metricKey={chartMetric} />
+                                    </button>
                                 )}
                             </Card>
 
@@ -818,6 +842,20 @@ export function DoctorOverviewPage({
                 >
                     <PeoplePage />
                 </PracticeModal>
+            )}
+
+            {trendOpen && data && (
+                <TrendDetailModal
+                    hospitalId={identity.hospitalId}
+                    doctorId={effectiveDoctorId}
+                    metric={chartMetric}
+                    series={data.series}
+                    range={range}
+                    revenueTracked={data.revenueTracked}
+                    currency={fees?.policy.currency ?? "INR"}
+                    subjectLabel={scopePossessive.toLowerCase()}
+                    onClose={() => setTrendOpen(false)}
+                />
             )}
 
             {paymentOpen && identity.ready && (
