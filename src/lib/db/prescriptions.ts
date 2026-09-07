@@ -137,6 +137,28 @@ export type PrescriptionRenderData = {
     } | null;
 };
 
+/**
+ * 2026-09-08: rewritten from a ~12-round-trip CHAIN into three waves of
+ * `Promise.all`, because it was one — reading `rx`, then `visit`, then
+ * `patient`, then `doctor`, then symptoms, then finding names, then
+ * medicines, then medicine names, then composition names, then tests, each
+ * one awaited before the next started. Anmol: "whenever you're clicking
+ * onto that PDF... taking too much long to load... maybe because you're
+ * trying to load all of the things at the same time." The actual problem
+ * was the opposite of "at once" — everything ran one at a time when most of
+ * it doesn't depend on the others. Network latency dominates each round
+ * trip, so collapsing ~12 sequential ones into 3 parallel waves is most of
+ * the win; nothing about the SHAPE of the returned data changes.
+ *
+ * Wave 1: the prescription row — everything else needs its `visit_id` or
+ *         `assigned_doctor_id`.
+ * Wave 2: everything that only needs wave 1's ids, fired together —
+ *         the visit, the doctor, and the raw symptom/finding/medicine/test
+ *         rows (not yet resolved to names).
+ * Wave 3: name resolution for whatever wave 2 actually returned rows for —
+ *         also fired together, since none of these four depend on each
+ *         other.
+ */
 export async function fetchPrescriptionRenderData(prescriptionId: string): Promise<PrescriptionRenderData> {
     const { data: rx, error: rxErr } = await supabase
         .from("prescriptions")
@@ -145,73 +167,49 @@ export async function fetchPrescriptionRenderData(prescriptionId: string): Promi
         .single();
     if (rxErr) throw new Error(`fetchPrescriptionRenderData: ${rxErr.message}`);
 
-    const { data: visit, error: visitErr } = await supabase
-        .from("visits")
-        .select("id, patient_id, vitals, prescription_ref")
-        .eq("id", rx.visit_id)
-        .single();
-    if (visitErr) throw new Error(`fetchPrescriptionRenderData (visit): ${visitErr.message}`);
+    const [visitRes, doctorRes, vsRes, vfRes, pmRes, doRes] = await Promise.all([
+        supabase.from("visits").select("id, patient_id, vitals, prescription_ref").eq("id", rx.visit_id).single(),
+        rx.assigned_doctor_id
+            ? supabase.from("doctors")
+                .select("name, specialization, qualification, registration_number, signature_image_url, avatar_url")
+                .eq("id", rx.assigned_doctor_id)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        supabase.from("visit_symptoms").select("symptom_id").eq("visit_id", rx.visit_id),
+        supabase.from("visit_findings").select("finding_id").eq("visit_id", rx.visit_id),
+        supabase.from("prescription_medicines")
+            .select("id, medicine_id, composition_id, composition_ids, dosage_mg, frequency, duration_days, route, notes, instructions, is_sos, sort_order")
+            .eq("prescription_id", prescriptionId)
+            .order("sort_order", { ascending: true }),
+        supabase.from("diagnostic_orders").select("test_name").eq("prescription_id", prescriptionId),
+    ]);
+    if (visitRes.error) throw new Error(`fetchPrescriptionRenderData (visit): ${visitRes.error.message}`);
+    const visit = visitRes.data;
+    const doctor: PrescriptionRenderData["doctor"] = doctorRes.data ?? null;
+    const pmRows = pmRes.data;
+    const tests = (doRes.data ?? []).map((r: any) => r.test_name).filter(Boolean) as string[];
 
-    const { data: patient, error: patErr } = await supabase
-        .from("patients")
-        .select("id, name, age, gender, phone")
-        .eq("id", visit.patient_id)
-        .single();
-    if (patErr) throw new Error(`fetchPrescriptionRenderData (patient): ${patErr.message}`);
-
-    let doctor: PrescriptionRenderData["doctor"] = null;
-    if (rx.assigned_doctor_id) {
-        const { data: doc } = await supabase
-            .from("doctors")
-            .select("name, specialization, qualification, registration_number, signature_image_url, avatar_url")
-            .eq("id", rx.assigned_doctor_id)
-            .maybeSingle();
-        doctor = doc ?? null;
-    }
-
-    // Presenting complaints + findings, resolved to names (structured entities).
-    const { data: vsRows } = await supabase
-        .from("visit_symptoms")
-        .select("symptom_id")
-        .eq("visit_id", rx.visit_id);
-    const symptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
-    let symptoms: string[] = [];
-    if (symptomIds.length) {
-        const { data: symps } = await supabase.from("symptoms").select("id, name").in("id", symptomIds);
-        symptoms = (symps ?? []).map((s: any) => s.name).filter(Boolean);
-    }
-
-    const { data: vfRows } = await supabase
-        .from("visit_findings")
-        .select("finding_id")
-        .eq("visit_id", rx.visit_id);
-    const findingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
-    let findings: string[] = [];
-    if (findingIds.length) {
-        const { data: finds } = await supabase.from("findings").select("id, name").in("id", findingIds);
-        findings = (finds ?? []).map((f: any) => f.name).filter(Boolean);
-    }
-
-    // Medicines with names + composition labels, in the doctor's order.
-    const { data: pmRows } = await supabase
-        .from("prescription_medicines")
-        .select("id, medicine_id, composition_id, composition_ids, dosage_mg, frequency, duration_days, route, notes, instructions, is_sos, sort_order")
-        .eq("prescription_id", prescriptionId)
-        .order("sort_order", { ascending: true });
-
+    const symptomIds = [...new Set((vsRes.data ?? []).map((r: any) => Number(r.symptom_id)))];
+    const findingIds = [...new Set((vfRes.data ?? []).map((r: any) => Number(r.finding_id)))];
     const medIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
-    const medNameById = new Map<number, string>();
-    if (medIds.length) {
-        const { data: meds } = await supabase.from("medicines").select("id, name").in("id", medIds);
-        (meds ?? []).forEach((m: any) => medNameById.set(m.id, m.name));
-    }
-
     const compIds = [...new Set((pmRows ?? []).flatMap((r: any) => (r.composition_ids ?? []).map(Number)))];
+
+    const [patientRes, sympRes, findRes, medRes, compRes] = await Promise.all([
+        supabase.from("patients").select("id, name, age, gender, phone").eq("id", visit.patient_id).single(),
+        symptomIds.length ? supabase.from("symptoms").select("id, name").in("id", symptomIds) : Promise.resolve({ data: [], error: null }),
+        findingIds.length ? supabase.from("findings").select("id, name").in("id", findingIds) : Promise.resolve({ data: [], error: null }),
+        medIds.length ? supabase.from("medicines").select("id, name").in("id", medIds) : Promise.resolve({ data: [], error: null }),
+        compIds.length ? supabase.from("compositions").select("id, name").in("id", compIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (patientRes.error) throw new Error(`fetchPrescriptionRenderData (patient): ${patientRes.error.message}`);
+    const patient = patientRes.data;
+    const symptoms = (sympRes.data ?? []).map((s: any) => s.name).filter(Boolean);
+    const findings = (findRes.data ?? []).map((f: any) => f.name).filter(Boolean);
+
+    const medNameById = new Map<number, string>();
+    (medRes.data ?? []).forEach((m: any) => medNameById.set(m.id, m.name));
     const compNameById = new Map<number, string>();
-    if (compIds.length) {
-        const { data: comps } = await supabase.from("compositions").select("id, name").in("id", compIds);
-        (comps ?? []).forEach((c: any) => compNameById.set(c.id, c.name));
-    }
+    (compRes.data ?? []).forEach((c: any) => compNameById.set(c.id, c.name));
 
     const medicines: PrescriptionMedicine[] = (pmRows ?? []).map((pm: any, i: number) => ({
         id: `printrx-${pm.id}`,
@@ -239,12 +237,6 @@ export async function fetchPrescriptionRenderData(prescriptionId: string): Promi
         is_sos: !!pm.is_sos,
         sort_order: pm.sort_order ?? i,
     }));
-
-    const { data: doRows } = await supabase
-        .from("diagnostic_orders")
-        .select("test_name")
-        .eq("prescription_id", prescriptionId);
-    const tests = (doRows ?? []).map((r: any) => r.test_name).filter(Boolean) as string[];
 
     return {
         prescriptionId: rx.id,

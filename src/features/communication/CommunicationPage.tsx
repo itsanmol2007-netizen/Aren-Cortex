@@ -48,6 +48,8 @@ import {
     fetchDoctorsByHospital, fetchHospitalCached, fetchPrescriptionRenderData,
     type DBDoctor, type DBHospital, type PrescriptionRenderData,
 } from "../../lib/db";
+import { PracticeModal } from "../practice/PracticeModal";
+import { SkeletonRows } from "../clinic/ui";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { CreditHistoryModal } from "./CreditHistoryModal";
 import {
@@ -1101,6 +1103,22 @@ function ConversationPanel({
                 date={new Date(rxDetail.createdAt)}
                 onClose={() => setViewingRxId(null)}
             />
+        )}
+
+        {/* The wait between the click and `rxDetail` landing — was nothing
+            at all before this (2026-09-08: "there is a skeleton screen...
+            slowly you'll fill those things there"). `fetchPrescriptionRenderData`
+            itself got faster the same round (3 parallel waves instead of a
+            ~12-query chain), but a real network round trip is still a real
+            wait, and a blank click is what actually reads as "stuck". */}
+        {viewingRxId && !rxDetail && (
+            <PracticeModal accent="blue" icon={<FileText size={15} />} eyebrow="Prescription" title="Opening…" onClose={() => setViewingRxId(null)}>
+                <div className="flex flex-col gap-[10px]">
+                    <div className="h-[18px] w-[60%] animate-pulse rounded-[6px] bg-[var(--cs-line)]" />
+                    <div className="h-[12px] w-[40%] animate-pulse rounded-[6px] bg-[var(--cs-line)]" />
+                    <SkeletonRows count={5} />
+                </div>
+            </PracticeModal>
         )}
         </>
     );
