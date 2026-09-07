@@ -1,15 +1,22 @@
 // ---------------------------------------------------------------------------
-// THE HTTP SURFACE — four routes, and nothing clever.
+// THE HTTP SURFACE — three routes, and nothing clever.
 //
 //   POST /api/messaging/prescription   send a prescription
 //   POST /api/messaging/follow-up      send a follow-up
-//   POST /api/support/notify           email AREN about an event
-//   GET  /api/messaging/health         which provider is live, is email wired
+//   GET  /api/messaging/health         which provider is live
 //
 // Every route resolves the caller from their Supabase session (`../auth.js`)
 // and ignores any identity in the request body. `doctorId` in particular is
 // NEVER read from the request: it names whose credits get spent, and a
 // request body is not proof of anything.
+//
+// 2026-09-08: `POST /api/support/notify` moved to the `support-notify`
+// Supabase Edge Function (`supabase/functions/support-notify/index.ts`) —
+// same reasoning as `admin-staff`. `notify()`/`emailConfigured()`
+// (`../email/`) are still used FROM WITHIN this file's own send path
+// (`service.js` alerts on a failed send or low credits) — that internal
+// alerting stays here because it is triggered by the WhatsApp send flow,
+// which itself hasn't moved yet (no Meta credentials to test it with).
 //
 // ── The rate limit, and what it is actually for
 //
@@ -23,8 +30,6 @@
 
 import { requireClinicUser } from "../auth.js";
 import { sendMessage, MessagingError } from "./service.js";
-import { notify } from "../email/notify.js";
-import { emailConfigured } from "../email/zoho.js";
 import { resolveProvider } from "./providers/index.js";
 
 const SEND_WINDOW_MS = 10_000;
@@ -103,48 +108,11 @@ export function mountMessagingRoutes(app) {
     app.post("/api/messaging/prescription", (req, res) => handleSend(req, res, "prescription"));
     app.post("/api/messaging/follow-up", (req, res) => handleSend(req, res, "follow_up"));
 
-    /**
-     * Email AREN about an operational event.
-     *
-     * The `kind` is checked against an allowlist rather than passed through:
-     * `notify` will render any template it has, and an open door here would
-     * let a signed-in doctor trigger a "provider error" alert or a
-     * "credits exhausted" one about somebody else. The three below are the
-     * only ones a browser has any business raising.
-     */
-    const CLIENT_KINDS = new Set(["recharge_request", "recharge_cancelled", "support_request", "low_credit"]);
-
-    app.post("/api/support/notify", async (req, res) => {
-        const who = await requireClinicUser(req, res);
-        if (!who) return;
-
-        const kind = String(req.body?.kind || "");
-        if (!CLIENT_KINDS.has(kind)) {
-            return res.status(400).json({ ok: false, error: "bad_kind", message: "Unknown notification." });
-        }
-
-        try {
-            // Ids come from the session, so an alert can only ever be about
-            // the caller's own clinic and their own wallet.
-            await notify(kind, {
-                ...req.body,
-                kind: undefined,
-                doctorId: who.doctorId,
-                hospitalId: who.hospitalId,
-            });
-            // Always ok: the caller's action (filing a request) already
-            // succeeded in the database, and a failed email is AREN's problem
-            // to see in `support_email_log`, not the doctor's to retry.
-            res.json({ ok: true });
-        } catch (e) {
-            console.error("[support/notify]", e);
-            res.json({ ok: true });
-        }
-    });
-
     /** What is actually wired on this machine. Honest about the mock: a
      *  developer should be able to tell at a glance whether messages are
-     *  reaching WhatsApp or being simulated. */
+     *  reaching WhatsApp or being simulated. Email is no longer this
+     *  server's concern to report on — see `support-notify`'s own health,
+     *  the Edge Function's logs, for that. */
     app.get("/api/messaging/health", (_req, res) => {
         let provider = "unavailable";
         let error = null;
@@ -157,7 +125,6 @@ export function mountMessagingRoutes(app) {
             ok: true,
             provider,
             live: provider === "meta",
-            email: emailConfigured() ? "zoho" : "not_configured",
             ...(error ? { error } : {}),
         });
     });

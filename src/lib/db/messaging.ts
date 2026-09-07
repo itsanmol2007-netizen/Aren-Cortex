@@ -518,16 +518,29 @@ export function sendFollowUp(opts: {
  * Ask the server to email AREN about something operational.
  *
  * The page never composes an email, never names a recipient and never sees a
- * credential — it names an EVENT and the ids behind it, and
- * `server/email/notify.js` owns what that event's email says. That is the
- * whole point of a centralized email service: changing the wording of a
- * low-credit alert must not be a frontend change.
+ * credential — it names an EVENT and the ids behind it, and the
+ * `support-notify` Supabase Edge Function
+ * (`supabase/functions/support-notify/index.ts`) owns what that event's
+ * email says. That is the whole point of a centralized email service:
+ * changing the wording of a low-credit alert must not be a frontend change.
+ *
+ * 2026-09-08: moved off `server/`'s `/api/support/notify` onto that Edge
+ * Function — same reasoning as `createStaffMember` in `lib/db/staff.ts`.
+ * `supabase.functions.invoke` attaches the caller's session automatically.
  */
-export function notifySupport(
+export async function notifySupport(
     kind: "recharge_request" | "recharge_cancelled" | "low_credit" | "support_request",
     payload: Record<string, unknown>
 ): Promise<{ ok: true }> {
-    return postAuthed<{ ok: true }>("/api/support/notify", { kind, ...payload });
+    const { error } = await supabase.functions.invoke("support-notify", { body: { kind, ...payload } });
+    if (error) {
+        // Matches the old route's own contract: a failed or unconfigured
+        // email is never the caller's problem to retry (their recharge
+        // request already succeeded in the database before this ever
+        // runs) — so this is logged, not thrown.
+        console.error("[messaging] support-notify failed (non-fatal):", error.message);
+    }
+    return { ok: true };
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────
