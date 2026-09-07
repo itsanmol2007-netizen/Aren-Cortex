@@ -74,7 +74,7 @@ import { PeriodBar, type PeriodState } from "../admin/PeriodBar";
 import { FeesModal } from "../admin/FeesModal";
 import {
     buildRange, clinicToday, countClinicVisitsToday, fetchClinicAnalytics,
-    fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorRoster, fetchDoctorVisitRows,
+    fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorRoster, fetchDoctorVisitRows, fetchNewPatientRows,
     fetchFeeSettings, formatMoney, formatRangeLabel, previousRange, setDoctorClinicAdmin,
     type ClinicAnalytics, type ClinicSetup, type DoctorRosterRow, type FeeSettings,
 } from "../../lib/db/admin";
@@ -127,7 +127,7 @@ function minutesWaiting(createdAt: string): number {
     return Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 60000));
 }
 
-type ActivityKind = "visits" | "prescriptions";
+type ActivityKind = "visits" | "prescriptions" | "new_patients";
 
 export function DoctorOverviewPage({
     logoRef, onOpenSidebar, onStartConsult, onNavigate, onViewPatient,
@@ -278,6 +278,10 @@ export function DoctorOverviewPage({
     );
     const fetchPrescriptionRows = useCallback(
         () => fetchDoctorPrescriptionRows(identity.hospitalId, identity.doctorId, range),
+        [identity.hospitalId, identity.doctorId, range]
+    );
+    const fetchNewPatientRowsForTile = useCallback(
+        () => fetchNewPatientRows(identity.hospitalId, range, { doctorId: identity.doctorId }),
         [identity.hospitalId, identity.doctorId, range]
     );
 
@@ -433,12 +437,15 @@ export function DoctorOverviewPage({
                     <>
                         {/* ── KPI tiles ────────────────────────────────────
                             Each carries a number, a delta, and a mini trend
-                            line — and three of the four are DOORS: "don't add
-                            a new card when an existing card can become the
-                            entry point to that functionality." New Patients
-                            stays a plain read; there is no deeper screen it
-                            would open onto that Patients Seen doesn't already
-                            cover. */}
+                            line, and all four are DOORS: "don't add a new
+                            card when an existing card can become the entry
+                            point to that functionality." New Patients
+                            (2026-09-08) opens its own list — who registered,
+                            when, and what they paid — via
+                            `fetchNewPatientRows`, not Patients Seen's list:
+                            "seen" and "registered" are different questions
+                            once a returning patient shows up more than once
+                            in the same window. */}
                         <div className="grid grid-cols-4 gap-[10px] max-[1000px]:grid-cols-2">
                             {([
                                 {
@@ -457,7 +464,7 @@ export function DoctorOverviewPage({
                                     spark: data?.series.map((p) => p.newPatients),
                                     sparkColor: "var(--cs-teal)",
                                     accent: false,
-                                    onClick: undefined,
+                                    onClick: () => setActivityOpen("new_patients"),
                                 },
                                 {
                                     key: "rx", label: "Prescriptions",
@@ -956,6 +963,20 @@ export function DoctorOverviewPage({
                     fetcher={fetchPrescriptionRows}
                     emptyFact="Nothing written in this period"
                     emptyNext="Prescriptions you write appear here as soon as they're saved."
+                    onClose={() => setActivityOpen(null)}
+                    onViewPatient={onViewPatient}
+                />
+            )}
+            {activityOpen === "new_patients" && (
+                <ActivityListModal
+                    accent="teal"
+                    icon={<UserPlus size={15} />}
+                    eyebrow="New patients"
+                    title="New patient activity"
+                    range={range}
+                    fetcher={fetchNewPatientRowsForTile}
+                    emptyFact="Nobody new in this period"
+                    emptyNext="New registrations appear here as soon as they're recorded."
                     onClose={() => setActivityOpen(null)}
                     onViewPatient={onViewPatient}
                 />

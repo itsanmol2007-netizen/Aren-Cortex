@@ -960,6 +960,83 @@ export async function fetchDoctorPrescriptionRows(
     });
 }
 
+/**
+ * Every patient who first registered in `range` — the list behind
+ * "New patients" (2026-09-08: that tile used to be a plain read with
+ * nothing behind it, "there is no deeper screen it would open onto that
+ * Patients Seen doesn't already cover" — Anmol asked for one anyway, with
+ * the date they came and what they paid).
+ *
+ * "New" means the same thing `fetchClinicAnalytics` already counts:
+ * registered in the window, and — when scoped to one doctor — actually SEEN
+ * by that doctor within it (a registration belongs to the clinic, not a
+ * bench). `detail` is the first paid amount found for a visit of theirs in
+ * the same window, or null when nothing was ever marked paid — never a
+ * guess at "the" fee, since a patient can have more than one visit type.
+ */
+export async function fetchNewPatientRows(
+    hospitalId: string,
+    range: DateRange,
+    scope: AnalyticsScope = {},
+    limit = 100
+): Promise<DoctorActivityRow[]> {
+    const windowStart = startInstant(range.from);
+    const windowEnd = endInstantExclusive(range.to);
+
+    const patRes = await supabase
+        .from("patients")
+        .select("id, name, created_at")
+        .eq("hospital_id", hospitalId)
+        .gte("created_at", windowStart).lt("created_at", windowEnd)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+    if (patRes.error) throw new Error(`fetchNewPatientRows: ${patRes.error.message}`);
+    let patients = patRes.data ?? [];
+
+    if (scope.doctorId) {
+        const seenRes = await supabase
+            .from("visits")
+            .select("patient_id")
+            .eq("hospital_id", hospitalId)
+            .eq("assigned_doctor_id", scope.doctorId)
+            .gte("created_at", windowStart).lt("created_at", windowEnd);
+        if (seenRes.error) throw new Error(`fetchNewPatientRows (seen): ${seenRes.error.message}`);
+        const seen = new Set((seenRes.data ?? []).map((v) => v.patient_id));
+        patients = patients.filter((p) => seen.has(p.id));
+    }
+    if (!patients.length) return [];
+
+    // First paid amount per patient, resolved through their visits in the
+    // same window — `visit_payments` has no `patient_id` of its own.
+    const patientIds = patients.map((p) => p.id);
+    const visitsRes = await supabase
+        .from("visits")
+        .select("id, patient_id")
+        .in("patient_id", patientIds)
+        .gte("created_at", windowStart).lt("created_at", windowEnd);
+    const visitToPatient = new Map((visitsRes.data ?? []).map((v) => [v.id as string, v.patient_id as string]));
+    const amountByPatient = new Map<string, number>();
+    if (visitToPatient.size) {
+        const payRes = await supabase
+            .from("visit_payments")
+            .select("visit_id, total, status")
+            .in("visit_id", [...visitToPatient.keys()])
+            .eq("status", "paid");
+        for (const row of payRes.data ?? []) {
+            const pid = visitToPatient.get(row.visit_id);
+            if (pid && !amountByPatient.has(pid)) amountByPatient.set(pid, Number(row.total));
+        }
+    }
+
+    return patients.map((p) => ({
+        id: p.id,
+        patientId: p.id,
+        patientName: p.name,
+        at: p.created_at,
+        detail: amountByPatient.has(p.id) ? formatMoney(amountByPatient.get(p.id)!) : null,
+    }));
+}
+
 // ── Catalogue ──────────────────────────────────────────────────────────────
 
 export interface ClinicLab {
