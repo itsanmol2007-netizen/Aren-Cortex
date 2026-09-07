@@ -15,6 +15,32 @@ export function phoneToAuthEmail(phone: string): string {
     return `${digits}@aren.internal`;
 }
 
+/**
+ * The OTHER synthetic address — same phone-derived shape, different domain —
+ * for an account minted from INSIDE the app (server/admin/routes.js's
+ * "Add staff") rather than through the landing site's self-registration
+ * wizard. Must stay byte-identical to that route's own copy of this
+ * function, the same way `phoneToAuthEmail` must match the landing repo's.
+ *
+ * 2026-09-08, Anmol: "we can even change the email phrase slightly... don't
+ * use the same thing with the registration result into the landing page...
+ * we will just look at the internal email, and then you can find out, oh,
+ * it was created by doctors or the person using the software and not us
+ * directly." A distinct domain on the Auth address IS that audit trail —
+ * looking a user up in the Supabase dashboard by email tells you which door
+ * they came through, with no new column and nothing to keep in sync.
+ *
+ * This can NEVER be the only address `signInWithPassword` tries: the login
+ * screen takes a phone number, not "which door did you come through", so it
+ * has no way to pick a domain up front. `LoginPage.tsx` tries
+ * `phoneToAuthEmail` first and falls back to this one only when that attempt
+ * is rejected as invalid credentials — see the comment there.
+ */
+export function phoneToStaffAuthEmail(phone: string): string {
+    const digits = phone.replace(/\D/g, "");
+    return `${digits}@aren-staff.internal`;
+}
+
 // Hard ceiling on every gate query. A hung request must never leave someone
 // staring at a splash — after this, we fail closed to the login screen.
 export const GATE_TIMEOUT_MS = 8000;

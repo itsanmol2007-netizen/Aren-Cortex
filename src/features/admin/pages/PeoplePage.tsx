@@ -17,11 +17,14 @@
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ShieldCheck, ShieldOff, Stethoscope, UserCheck, UserX, Users } from "lucide-react";
+import type { FormEvent } from "react";
+import {
+    AlertTriangle, Eye, EyeOff, ShieldCheck, ShieldOff, Stethoscope, UserCheck, UserPlus, UserX, Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../auth/AuthProvider";
 import { useClinicalIdentity } from "../../../hooks/useClinicalIdentity";
-import { Card, EmptyBlock, RowText, SkeletonRows } from "../../clinic/ui";
+import { Card, CardAction, EmptyBlock, FormError, INPUT_CLASS, RowText, SkeletonRows } from "../../clinic/ui";
 import { ShareBar } from "../charts";
 import { PeriodBar, type PeriodState } from "../PeriodBar";
 import {
@@ -29,7 +32,9 @@ import {
     formatMoney, formatRangeLabel, setDoctorClinicAdmin,
     type ClinicAnalytics, type ClinicSetup, type DoctorRosterRow, type FeeSettings,
 } from "../../../lib/db/admin";
-import { fetchStaff, updateStaffMember, type StaffMember } from "../../../lib/db/staff";
+import {
+    createStaffMember, fetchStaff, updateStaffMember, type NewStaffRole, type StaffMember,
+} from "../../../lib/db/staff";
 
 /** Roles an admin may assign from here. `owner` is absent deliberately —
  *  ownership is a commercial fact AREN sets, not something a clinic hands
@@ -46,6 +51,105 @@ const ROLE_LABEL: Record<string, string> = {
     pharmacist: "Pharmacy",
 };
 
+/**
+ * "Setting the email, number, and password is possible" — a clinic admin
+ * mints a real sign-in for a new doctor, receptionist, or admin from here,
+ * instead of that person registering themselves against the clinic. Posts
+ * to `server/admin/routes.js`, the one place allowed to write a `users` row
+ * that isn't the caller's own.
+ *
+ * Deliberately its own small form rather than a modal: this card already IS
+ * the "manage people" surface, and a modal-over-a-modal (Overview embeds
+ * this whole page in one already, see DoctorOverviewPage.tsx) is one layer
+ * of glass too many.
+ */
+function AddStaffForm({ onCreated }: { onCreated: () => void }) {
+    const [fullName, setFullName] = useState("");
+    const [phone, setPhone] = useState("");
+    const [password, setPassword] = useState("");
+    const [showPw, setShowPw] = useState(false);
+    const [role, setRole] = useState<NewStaffRole>("reception");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const submit = async (e: FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        const digits = phone.replace(/\D/g, "");
+        if (!fullName.trim()) { setError("Enter their name."); return; }
+        if (digits.length !== 10) { setError("Enter a 10-digit phone number."); return; }
+        if (password.length < 8) { setError("Use a password of at least 8 characters."); return; }
+
+        setBusy(true);
+        try {
+            await createStaffMember({ fullName: fullName.trim(), phone: digits, password, role });
+            toast.success(`${fullName.trim()} can now sign in with that phone number.`);
+            setFullName(""); setPhone(""); setPassword(""); setRole("reception");
+            onCreated();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not create that account.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <form
+            onSubmit={submit}
+            className="flex flex-none flex-col gap-[8px] rounded-[10px] border border-dashed border-[var(--cs-line-strong)] bg-[var(--cs-page)] p-[10px]"
+        >
+            <div className="grid grid-cols-2 gap-[8px] max-[520px]:grid-cols-1">
+                <input
+                    aria-label="Full name" placeholder="Full name" value={fullName}
+                    onChange={(e) => setFullName(e.target.value)} disabled={busy} className={INPUT_CLASS}
+                />
+                <input
+                    aria-label="Phone number" placeholder="10-digit phone" inputMode="numeric" value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    disabled={busy} className={INPUT_CLASS}
+                />
+            </div>
+            <div className="grid grid-cols-2 gap-[8px] max-[520px]:grid-cols-1">
+                <div className="relative">
+                    <input
+                        aria-label="Password" type={showPw ? "text" : "password"} placeholder="Password (min. 8 characters)"
+                        value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy}
+                        className={`${INPUT_CLASS} pr-[36px]!`}
+                    />
+                    <button
+                        type="button" onClick={() => setShowPw((v) => !v)} disabled={busy}
+                        aria-label={showPw ? "Hide password" : "Show password"}
+                        className="absolute right-[8px] top-1/2 grid h-[22px] w-[22px] -translate-y-1/2 cursor-pointer place-items-center border-0 bg-transparent p-0 text-[var(--cs-faint)]"
+                    >
+                        {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                </div>
+                <select
+                    aria-label="Role" value={role} disabled={busy}
+                    onChange={(e) => setRole(e.target.value as NewStaffRole)}
+                    className="h-[40px]! rounded-[11px]! border! border-[var(--cs-line)]! bg-[rgba(248,250,252,0.9)]! px-[12px]! text-[13px]! font-medium text-[var(--cs-ink)] outline-none focus:border-[#a855f7]!"
+                >
+                    <option value="reception">Front desk</option>
+                    <option value="doctor">Doctor</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            {error && <FormError message={error} />}
+            <div className="flex items-center gap-[8px]">
+                <button
+                    type="submit" disabled={busy}
+                    className="inline-flex cursor-pointer items-center gap-[6px] rounded-full border-[1.5px] border-[var(--cs-violet)] bg-[var(--cs-violet-soft)] px-[14px] py-[7px] text-[12px] font-semibold text-[var(--cs-violet)] outline-none disabled:opacity-55"
+                >
+                    <UserPlus size={13} /> {busy ? "Creating…" : "Create sign-in"}
+                </button>
+                <span className="text-[10.5px] text-[var(--cs-faint)]">
+                    They sign in with this phone number and password — same login screen as everyone else.
+                </span>
+            </div>
+        </form>
+    );
+}
+
 export function PeoplePage() {
     const identity = useClinicalIdentity();
     const auth = useAuth();
@@ -61,6 +165,7 @@ export function PeoplePage() {
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [adminBusyId, setAdminBusyId] = useState<string | null>(null);
+    const [addingStaff, setAddingStaff] = useState(false);
 
     const range = useMemo(
         () => buildRange(period.preset, { from: period.from, to: period.to }),
@@ -138,16 +243,24 @@ export function PeoplePage() {
                             ? `${active.length} active · ${inactive.length} inactive`
                             : "Everyone with a login at this clinic"
                     }
+                    action={
+                        <CardAction tone="blue" onClick={() => setAddingStaff((v) => !v)}>
+                            <UserPlus size={12} /> {addingStaff ? "Cancel" : "Add staff"}
+                        </CardAction>
+                    }
                     foot={
                         <span className="text-[11px] text-[var(--cs-faint)]">
-                            New staff join by registering against this clinic — accounts are not created here.
+                            Staff can also join on their own by registering against this clinic.
                         </span>
                     }
                 >
+                    {addingStaff && (
+                        <AddStaffForm onCreated={() => { setAddingStaff(false); loadStaff(); }} />
+                    )}
                     {!staff ? (
                         <SkeletonRows count={3} />
                     ) : staff.length === 0 ? (
-                        <EmptyBlock fact="Nobody has a login yet" next="Staff join by registering against this clinic." />
+                        <EmptyBlock fact="Nobody has a login yet" next="Add them above, or they can register against this clinic themselves." />
                     ) : (
                         <div className="flex max-h-[340px] flex-col gap-[6px] overflow-y-auto pr-[2px]">
                             {[...active, ...inactive].map((s) => {

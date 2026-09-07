@@ -32,7 +32,7 @@ import "./practiceModal.css";
 export type PracticeModalAccent = "teal" | "blue" | "violet" | "slate";
 
 export function PracticeModal({
-    accent, icon, eyebrow, title, onClose, children, footer, wide, dirty,
+    accent, icon, eyebrow, title, onClose, children, footer, wide, xl, dirty,
 }: {
     accent: PracticeModalAccent;
     icon: ReactNode;
@@ -43,6 +43,14 @@ export function PracticeModal({
     footer?: ReactNode;
     /** the wider card width, for a modal whose body is a form rather than a list */
     wide?: boolean;
+    /**
+     * 2026-09-08: a whole EXISTING PAGE embedded in a modal (Overview's
+     * "Manage team" opens Parallax's PeoplePage this way) needs real room —
+     * `wide`'s 600px was designed for one form or one list, not a page built
+     * assuming full workspace width. Takes precedence over `wide` when both
+     * are set, since there is no case that wants both.
+     */
+    xl?: boolean;
     /**
      * True once the doctor has typed or picked something a click outside
      * would silently throw away. A click on the backdrop stops closing the
@@ -69,7 +77,7 @@ export function PracticeModal({
             onMouseDown={(e) => { if (e.target === e.currentTarget && !dirty) onClose(); }}
         >
             <div
-                className={`prac-modal is-${accent}${wide ? " is-wide" : ""}`}
+                className={`prac-modal is-${accent}${xl ? " is-xl" : wide ? " is-wide" : ""}`}
                 role="dialog"
                 aria-modal="true"
                 aria-label={title}

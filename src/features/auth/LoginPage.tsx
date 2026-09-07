@@ -17,7 +17,7 @@ import type { FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "../../lib/supabase";
-import { homeRouteForRole, loadIdentity, phoneToAuthEmail, signOutLocal, withTimeout } from "../../lib/auth";
+import { homeRouteForRole, loadIdentity, phoneToAuthEmail, phoneToStaffAuthEmail, signOutLocal, withTimeout } from "../../lib/auth";
 import { useAuth } from "./AuthProvider";
 import type { GateNotice } from "./AuthProvider";
 import { ArenMark } from "./ArenMark";
@@ -97,14 +97,34 @@ export function LoginPage() {
                 const { data, error } = await withTimeout(
                     supabase.auth.signInWithPassword({ email: phoneToAuthEmail(phone), password })
                 );
-                if (error || !data.session) {
+                let session = data.session;
+                let signInError = error;
+
+                // Two synthetic addresses can share the same phone digits —
+                // self-registration's `@aren.internal` and an "Add staff"
+                // account's `@aren-staff.internal` (lib/auth.ts). The phone
+                // box can't know up front which door this person came
+                // through, so a rejection that specifically means "wrong
+                // credentials" (never a network/timeout failure — that stays
+                // MSG.unreachable, not a second guess) gets one retry against
+                // the other address before we tell the doctor it's wrong.
+                const invalid = (e: typeof error) =>
+                    e?.status === 400 || /invalid login credentials/i.test(e?.message ?? "");
+                if ((signInError || !session) && invalid(signInError)) {
+                    const retry = await withTimeout(
+                        supabase.auth.signInWithPassword({ email: phoneToStaffAuthEmail(phone), password })
+                    );
+                    session = retry.data.session;
+                    signInError = retry.error;
+                }
+
+                if (signInError || !session) {
                     // 400 = wrong phone, wrong password, or never registered.
                     // One generic message for all three — don't leak which.
-                    const invalid = error?.status === 400 || /invalid login credentials/i.test(error?.message ?? "");
-                    setBanner({ tone: "error", text: invalid ? MSG.invalid : MSG.unreachable });
+                    setBanner({ tone: "error", text: invalid(signInError) ? MSG.invalid : MSG.unreachable });
                     return;
                 }
-                userId = data.session.user.id;
+                userId = session.user.id;
             } catch {
                 setBanner({ tone: "error", text: MSG.unreachable });
                 return;

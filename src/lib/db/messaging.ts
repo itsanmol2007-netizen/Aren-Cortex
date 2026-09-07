@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
+import { postAuthed } from "../apiClient";
 
 /**
  * Below this, the doctor is warned and AREN is alerted. Mirrors the same
@@ -477,36 +478,6 @@ export async function fetchCreditUsage(doctorId: string, days = 14): Promise<Usa
 // Everything below crosses into `server/`. The browser holds no provider
 // credential and never will; what it sends is its own Supabase session, and
 // the server decides what that identity is allowed to do.
-
-/**
- * Where `server/` lives. Dev goes through Vite's `/api` proxy (vite.config.ts);
- * anywhere else needs `VITE_AREN_API_URL` because the API is a separate origin
- * from the static bundle. Empty string means "same origin, use the proxy".
- */
-const API_BASE = (import.meta.env.VITE_AREN_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
-
-async function postAuthed<T>(path: string, body: unknown): Promise<T> {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Your session has expired — sign in again.");
-
-    const res = await fetch(`${API_BASE}${path}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(body),
-    });
-
-    const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } & T | null;
-    if (!res.ok || !json?.ok) {
-        // The server's own message first: it knows whether this was "out of
-        // credits", "no phone number on file" or "template not approved", and
-        // each of those needs a different action from the doctor.
-        throw new Error(json?.message || json?.error || `Request failed (${res.status})`);
-    }
-    return json as T;
-}
 
 export interface SendResult {
     ok: true;

@@ -21,6 +21,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { mountWhatsAppWebhook } from "./whatsapp/webhook.js";
 import { mountMessagingRoutes } from "./messaging/routes.js";
+import { mountAdminRoutes } from "./admin/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Safe to run after the imports above: neither webhook.js nor client.js
@@ -44,6 +45,10 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 // webhook above these are ordinary JSON endpoints with no signature to check
 // against a raw body.
 mountMessagingRoutes(app);
+
+// Staff creation — needs the same `express.json()` body parsing as the
+// messaging routes, no raw-body signature check like the webhook above.
+mountAdminRoutes(app);
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {

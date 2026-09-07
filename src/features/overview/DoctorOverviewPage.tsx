@@ -61,8 +61,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
     Activity, ArrowRight, CalendarClock, Clock, Clock3, FileText, IndianRupee,
-    MessageCircle, PieChart, Plus, Send, ShieldCheck, ShieldOff, Stethoscope,
-    TrendingUp, UserCog, UserPlus, UserX, Users,
+    MessageCircle, PieChart, Plus, ShieldCheck, Stethoscope,
+    TrendingUp, UserPlus, Users,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
@@ -72,14 +72,14 @@ import { Card, CardPillButton, EmptyBlock, SkeletonRows } from "../clinic/ui";
 import { Delta, Donut, HourBars, Sparkline, TrendChart, type Slice } from "../admin/charts";
 import { PeriodBar, type PeriodState } from "../admin/PeriodBar";
 import { FeesModal } from "../admin/FeesModal";
+import { PracticeModal } from "../practice/PracticeModal";
+import { PeoplePage } from "../admin/pages/PeoplePage";
 import {
     buildRange, clinicToday, countClinicVisitsToday, fetchClinicAnalytics,
     fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorRoster, fetchDoctorVisitRows, fetchNewPatientRows,
-    fetchFeeSettings, formatMoney, formatRangeLabel, previousRange, setDoctorClinicAdmin,
+    fetchFeeSettings, formatMoney, formatRangeLabel, previousRange,
     type ClinicAnalytics, type ClinicSetup, type DoctorRosterRow, type FeeSettings,
 } from "../../lib/db/admin";
-import { fetchStaff, updateStaffMember } from "../../lib/db/staff";
-import { notifySupport } from "../../lib/db/messaging";
 import { PaymentDetailsModal } from "./PaymentDetailsModal";
 import { ActivityListModal } from "./ActivityListModal";
 import type { SidebarPage } from "../sidebar/SidebarNav";
@@ -169,14 +169,21 @@ export function DoctorOverviewPage({
         : viewScope;
     const viewingSelf = !isAdminDoctor || viewScope === "" || viewScope === identity.doctorId;
 
-    // ── Clinic management (admin-doctors only) ────────────────────────────
+    // ── Team (admin-doctors only) ──────────────────────────────────────────
+    // 2026-09-08: this used to be a whole inline "Clinic management" section
+    // — a Doctors roster with its own per-row admin/deactivate actions, plus
+    // a separate "request to add staff" card. Anmol: "just one button beside
+    // doctors... you can manage all the staffs including doctors, their
+    // fees, and their admin thing, and even receptionist thing... or assign
+    // a new user as admin too from the same part." That richer surface
+    // already exists — it's Parallax's PeoplePage — so rather than a second,
+    // thinner copy of the same actions, one button opens THAT page in a
+    // modal. `roster` stays: the scope toggle above still needs doctor names
+    // and the two-bench threshold, both un-ranged reads unrelated to this.
     const [roster, setRoster] = useState<DoctorRosterRow[] | null>(null);
-    const [staffHasReception, setStaffHasReception] = useState<boolean | null>(null);
     const [fees, setFees] = useState<FeeSettings | null>(null);
     const [feesOpen, setFeesOpen] = useState(false);
-    const [managingId, setManagingId] = useState<string | null>(null);
-    const [rosterBusyId, setRosterBusyId] = useState<string | null>(null);
-    const [requestingStaff, setRequestingStaff] = useState(false);
+    const [teamOpen, setTeamOpen] = useState(false);
 
     const range = useMemo(
         () => buildRange(period.preset, { from: period.from, to: period.to }),
@@ -203,18 +210,16 @@ export function DoctorOverviewPage({
         countClinicVisitsToday(identity.hospitalId).then(setClinicToday).catch(() => setClinicToday(null));
     }, [identity.ready, identity.hospitalId]);
 
-    // Roster + fees + staff shape — only an admin doctor's page ever queries
-    // any of this, and it is loaded once per hospital, not per period (none
-    // of it is date-ranged).
+    // Roster + fees — only an admin doctor's page ever queries either, and
+    // both are loaded once per hospital, not per period (neither is
+    // date-ranged). The rest of "who works here" now lives in the Team
+    // modal (PeoplePage), which fetches its own copy on open.
     const loadManagement = useCallback(() => {
         if (!identity.ready || !isAdminDoctor) return;
         fetchDoctorRoster(identity.hospitalId).then(setRoster).catch((e: unknown) => {
             console.error("[overview] roster:", e); setRoster(null);
         });
         fetchFeeSettings(identity.hospitalId).then(setFees).catch(() => setFees(null));
-        fetchStaff(identity.hospitalId)
-            .then((rows) => setStaffHasReception(rows.some((s) => s.role === "reception" && s.is_active)))
-            .catch(() => setStaffHasReception(null));
     }, [identity.ready, identity.hospitalId, isAdminDoctor]);
 
     useEffect(loadAnalytics, [loadAnalytics]);
@@ -751,184 +756,69 @@ export function DoctorOverviewPage({
                     )}
                 </p>
 
-                {/* ── Clinic management — admin-doctors only ────────────────
-                    Everything ClinicControlPage used to carry on its own
-                    page, folded into Overview instead: who works here, what
-                    they charge, and the authoritative actions Parallax
-                    already has (fees, admin status, activate/deactivate) —
-                    contextual to each doctor's own row rather than a second
-                    dashboard. See this file's own header for the principle. */}
+                {/* ── Team — admin-doctors only ─────────────────────────────
+                    2026-09-08: replaces the old "Clinic management" section
+                    (a Doctors roster with per-row admin/deactivate actions,
+                    plus a separate "request staff" card). Anmol: "just one
+                    button beside doctors... manage all the staffs including
+                    doctors, their fees, and their admin thing, and even
+                    receptionist thing... assign a new user as admin too from
+                    the same part" — and named the OLD label a problem in its
+                    own right, colliding with the existing "Clinic" page. One
+                    row: a headcount, a "Fees" pill (unchanged — Fees already
+                    manages "rules" like GST/discount, its own rich surface),
+                    and "Manage team", which opens Parallax's PeoplePage —
+                    already the richer surface this asked for (staff list
+                    with role/activate, and now an "Add staff" form that
+                    mints a real sign-in) — in a modal, rather than a second,
+                    thinner copy of the same actions living here too. */}
                 {isAdminDoctor && (
                     <div className="mt-[4px] flex flex-col gap-[10px]">
                         <span className="flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
-                            <ShieldCheck size={13} /> Clinic management
+                            <ShieldCheck size={13} /> Team
                         </span>
 
-                        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-start gap-[12px] max-[980px]:grid-cols-1">
-                            <Card
-                                tone="teal"
-                                icon={<Stethoscope size={14} />}
-                                title="Doctors"
-                                subtitle={roster ? `${roster.length} on file` : "Who works here"}
-                                action={
-                                    fees && (
-                                        <CardPillButton tone="teal" onClick={() => setFeesOpen(true)}>
-                                            Fees
-                                        </CardPillButton>
-                                    )
-                                }
-                            >
-                                {!roster ? (
-                                    <SkeletonRows count={3} />
-                                ) : roster.length === 0 ? (
-                                    <EmptyBlock fact="No doctors on file" next="A doctor appears here once they register against this clinic." />
-                                ) : (
-                                    <div className="flex flex-col gap-[6px]">
-                                        {roster.map((d) => {
-                                            const isSelf = d.doctorId === identity.doctorId;
-                                            const busy = rosterBusyId === d.doctorId;
-                                            const fee = fees?.doctors.find((f) => f.id === d.doctorId)?.consultationFee ?? null;
-                                            return (
-                                                <div
-                                                    key={d.doctorId}
-                                                    className={
-                                                        "flex flex-col gap-[8px] rounded-[10px] border px-[10px] py-[8px] transition-opacity " +
-                                                        (d.isActive ? "border-[var(--cs-line)] bg-[var(--cs-page)]" : "border-dashed border-[var(--cs-line-strong)] opacity-70") +
-                                                        (busy ? " pointer-events-none opacity-50" : "")
-                                                    }
-                                                >
-                                                    <div className="flex min-w-0 items-center gap-[9px]">
-                                                        <span className="min-w-0 flex-1">
-                                                            <span className="flex items-center gap-[6px] truncate text-[13px] font-semibold text-[var(--cs-ink)]">
-                                                                {d.name}{isSelf ? " (you)" : ""}
-                                                                {d.isClinicAdmin && (
-                                                                    <span className="rounded-full bg-[var(--cs-violet-soft)] px-[7px] py-[1px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-violet)]">
-                                                                        Admin
-                                                                    </span>
-                                                                )}
-                                                            </span>
-                                                            <span className="block text-[11px] text-[var(--cs-faint)]">
-                                                                {[d.specialization, fee !== null ? formatMoney(fee) : "Fee not set", !d.isActive ? "Deactivated" : null]
-                                                                    .filter(Boolean).join(" · ")}
-                                                            </span>
-                                                        </span>
-                                                        {!isSelf && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setManagingId(managingId === d.doctorId ? null : d.doctorId)}
-                                                                className="ml-auto flex flex-none cursor-pointer items-center gap-[4px] rounded-full border border-[var(--cs-line-strong)] px-[10px] py-[4px] text-[10.5px] font-semibold text-[var(--cs-muted)] outline-none hover:border-[var(--cs-violet)] hover:text-[var(--cs-violet)]"
-                                                            >
-                                                                <UserCog size={12} /> Manage
-                                                            </button>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Progressive disclosure, same principle as PaymentRail:
-                                                        the actions don't exist on screen until "Manage" is
-                                                        clicked. Self-guarded the same way PeoplePage already
-                                                        is — irreversible FROM HERE, not destructive in itself. */}
-                                                    {managingId === d.doctorId && !isSelf && (
-                                                        <div className="flex flex-wrap items-center gap-[6px] border-t border-[var(--cs-line)] pt-[8px]">
-                                                            <button
-                                                                type="button"
-                                                                onClick={async () => {
-                                                                    setRosterBusyId(d.doctorId);
-                                                                    try {
-                                                                        await setDoctorClinicAdmin(d.doctorId, !d.isClinicAdmin);
-                                                                        toast.success(`${d.name} is ${d.isClinicAdmin ? "no longer" : "now"} a clinic admin`);
-                                                                        loadManagement();
-                                                                    } catch (e) {
-                                                                        toast.error(e instanceof Error ? e.message : "Could not save that change.");
-                                                                    } finally {
-                                                                        setRosterBusyId(null);
-                                                                    }
-                                                                }}
-                                                                className="inline-flex cursor-pointer items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] px-[10px] py-[4px] text-[10.5px] font-semibold text-[var(--cs-muted)] transition-colors hover:border-[var(--cs-violet)] hover:bg-[var(--cs-violet-soft)] hover:text-[var(--cs-violet)]"
-                                                            >
-                                                                {d.isClinicAdmin ? <ShieldOff size={12} /> : <ShieldCheck size={12} />}
-                                                                {d.isClinicAdmin ? "Remove admin" : "Make admin"}
-                                                            </button>
-                                                            {d.userId && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={async () => {
-                                                                        setRosterBusyId(d.doctorId);
-                                                                        try {
-                                                                            await updateStaffMember(d.userId!, { is_active: !d.isActive });
-                                                                            toast.success(`${d.name} can ${d.isActive ? "no longer" : "now"} sign in`);
-                                                                            loadManagement();
-                                                                        } catch (e) {
-                                                                            toast.error(e instanceof Error ? e.message : "Could not save that change.");
-                                                                        } finally {
-                                                                            setRosterBusyId(null);
-                                                                        }
-                                                                    }}
-                                                                    className={
-                                                                        "inline-flex cursor-pointer items-center gap-[5px] rounded-full border px-[10px] py-[4px] text-[10.5px] font-semibold transition-colors " +
-                                                                        (d.isActive
-                                                                            ? "border-[var(--cs-line-strong)] text-[var(--cs-muted)] hover:border-[var(--cs-red)] hover:bg-[var(--cs-red-soft)] hover:text-[var(--cs-red)]"
-                                                                            : "border-[var(--cs-green)] text-[var(--cs-green)] hover:bg-[var(--cs-green-soft)]")
-                                                                    }
-                                                                >
-                                                                    <UserX size={12} />
-                                                                    {d.isActive ? "Remove / fire" : "Reactivate"}
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </Card>
-
-                            {/* ── Add staff — minimal, deliberately ─────────
-                                Anmol, 2026-09-06: a Cortex-shaped clinic with
-                                no staff must not get a fabricated staff-
-                                management workflow — a request that reaches a
-                                human is the whole feature. Hidden once this
-                                clinic already has front-desk staff; it stays
-                                a request channel, not a duplicate of
-                                Parallax's People page. */}
-                            {staffHasReception === false && (
-                                <Card
-                                    tone="violet"
-                                    icon={<UserPlus size={14} />}
-                                    title="Staff"
-                                    subtitle="No front-desk staff on file yet"
-                                >
-                                    <p className="m-0 mb-[9px] text-[11.5px] leading-[1.5] text-[var(--cs-muted)]">
-                                        Need another set of hands at the desk? We'll reach out to help you add one.
-                                    </p>
-                                    <button
-                                        type="button"
-                                        disabled={requestingStaff}
-                                        onClick={async () => {
-                                            setRequestingStaff(true);
-                                            try {
-                                                await notifySupport("support_request", {
-                                                    doctorId: identity.doctorId,
-                                                    topic: "Add staff",
-                                                    message: `${identity.doctorName} requested help adding staff at ${setup?.name ?? "their clinic"}.`,
-                                                });
-                                                toast.success("Sent — AREN will reach out to help add staff.");
-                                            } catch {
-                                                toast.error("Could not send that request. Try again shortly.");
-                                            } finally {
-                                                setRequestingStaff(false);
-                                            }
-                                        }}
-                                        className="inline-flex cursor-pointer items-center gap-[6px] rounded-[10px] border-0 bg-[var(--cs-violet)] px-[12px] py-[8px] text-[12px] font-bold text-white outline-none disabled:opacity-60"
-                                    >
-                                        <Send size={13} /> {requestingStaff ? "Sending…" : "Request to add staff"}
-                                    </button>
-                                </Card>
+                        <div className="flex flex-wrap items-center gap-[10px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[14px] py-[12px] shadow-[var(--cs-shadow)]">
+                            <span className="grid h-[30px] w-[30px] flex-none place-items-center rounded-[8px] bg-[var(--cs-teal-soft)] text-[var(--cs-teal)]">
+                                <Stethoscope size={14} />
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                <span className="truncate text-[13px] font-semibold text-[var(--cs-ink)]">
+                                    {roster ? `${roster.length} ${roster.length === 1 ? "doctor" : "doctors"} on file` : "Who works here"}
+                                </span>
+                                <span className="text-[11px] text-[var(--cs-faint)]">
+                                    Fees, admin access, front-desk staff — all from one place.
+                                </span>
+                            </span>
+                            {fees && (
+                                <CardPillButton tone="teal" onClick={() => setFeesOpen(true)}>
+                                    Fees
+                                </CardPillButton>
                             )}
+                            <button
+                                type="button"
+                                onClick={() => setTeamOpen(true)}
+                                className="inline-flex flex-none cursor-pointer items-center gap-[6px] rounded-full border-0 bg-[var(--cs-violet)] px-[14px] py-[8px] text-[12px] font-bold text-white outline-none disabled:opacity-60"
+                            >
+                                <UserPlus size={13} /> Manage team
+                            </button>
                         </div>
                     </div>
                 )}
             </div>
+
+            {teamOpen && (
+                <PracticeModal
+                    accent="violet"
+                    icon={<Users size={15} />}
+                    eyebrow="Team"
+                    title={setup ? `Manage ${setup.name}` : "Manage your team"}
+                    onClose={() => setTeamOpen(false)}
+                    xl
+                >
+                    <PeoplePage />
+                </PracticeModal>
+            )}
 
             {paymentOpen && identity.ready && (
                 <PaymentDetailsModal

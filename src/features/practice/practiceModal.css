@@ -46,6 +46,16 @@
     max-height: min(660px, 88vh);
 }
 
+/* 2026-09-08: for embedding a whole existing page (Overview's "Manage
+   team" → PeoplePage) rather than one form or one list — `is-wide`'s 600px
+   crowds a page that assumes full workspace width. Still a bounded panel,
+   never a full-viewport takeover: the page inside keeps its own internal
+   scrolling, this just gives it real room to lay out in. */
+.prac-modal.is-xl {
+    width: min(920px, 96vw);
+    max-height: min(820px, 86vh);
+}
+
 @keyframes prac-modal-rise {
     from { opacity: 0; transform: translateY(8px) scale(0.98); }
     to { opacity: 1; transform: none; }
