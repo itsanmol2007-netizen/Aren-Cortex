@@ -7,12 +7,20 @@
 //      credits for them, and emailing AREN when something needs attention.
 //
 // Both live here for the same reason: they need credentials (Meta's access
-// token, Supabase's service-role key, Zoho's refresh token) that must never
-// reach a browser bundle. Nothing about the frontend build changes because
-// this exists — the Vite dev server proxies /api here (vite.config.ts).
+// token, Zoho's refresh token) that must never reach a browser bundle.
+// Nothing about the frontend build changes because this exists — the Vite
+// dev server proxies /api here (vite.config.ts).
 //
 // Needs server/.env (gitignored — never commit real secrets). Copy
 // server/.env.example to server/.env and fill in the real values.
+//
+// 2026-09-08: staff creation (the third job this used to have, under
+// `admin/`) moved to the `admin-staff` Supabase Edge Function
+// (`supabase/functions/admin-staff/`) — one platform instead of two, and
+// Supabase injects its service-role key automatically instead of it
+// needing a line in this file's own .env. WhatsApp/Zoho stay here because
+// migrating THEM needs real Meta/Zoho credentials only Anmol holds; see
+// docs/SESSION-HANDOFF.md for that as a planned next step, not a dropped one.
 // ---------------------------------------------------------------------------
 
 import { fileURLToPath } from "node:url";
@@ -21,7 +29,6 @@ import dotenv from "dotenv";
 import express from "express";
 import { mountWhatsAppWebhook } from "./whatsapp/webhook.js";
 import { mountMessagingRoutes } from "./messaging/routes.js";
-import { mountAdminRoutes } from "./admin/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Safe to run after the imports above: neither webhook.js nor client.js
@@ -45,10 +52,6 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 // webhook above these are ordinary JSON endpoints with no signature to check
 // against a raw body.
 mountMessagingRoutes(app);
-
-// Staff creation — needs the same `express.json()` body parsing as the
-// messaging routes, no raw-body signature check like the webhook above.
-mountAdminRoutes(app);
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {

@@ -54,9 +54,9 @@ const ROLE_LABEL: Record<string, string> = {
 /**
  * "Setting the email, number, and password is possible" — a clinic admin
  * mints a real sign-in for a new doctor, receptionist, or admin from here,
- * instead of that person registering themselves against the clinic. Posts
- * to `server/admin/routes.js`, the one place allowed to write a `users` row
- * that isn't the caller's own.
+ * instead of that person registering themselves against the clinic. Calls
+ * the `admin-staff` Supabase Edge Function, the one place allowed to write
+ * a `users` row that isn't the caller's own.
  *
  * Deliberately its own small form rather than a modal: this card already IS
  * the "manage people" surface, and a modal-over-a-modal (Overview embeds

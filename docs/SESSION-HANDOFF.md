@@ -1,145 +1,178 @@
-# Session handoff — 2026-09-08, round 2 (staff creation, Team consolidation, chart→CSV)
+# Session handoff — 2026-09-08, round 3 (staff creation moved onto Supabase Edge Functions)
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE.**
 
-Follow-up to the same day's earlier round (four live-use bugs, the
-Communication chat-preview fix, and the PatientModal/PatientPaymentRail
-payment-lock parity fix — Anmol confirmed "Now it's working" on all of
-that). This round is a batch of three optimization/feature requests he gave
-in one long message. **Nothing in this round has been clicked in a
-browser** — same sandbox limitation as before (Chromium can't complete a
-TLS handshake through this proxy; see "Traps" below). Verification here is
-`npx tsc -b --noEmit` (clean) and a full `vite build` (clean) after every
-change, plus reading the real Supabase schema directly via the Supabase MCP
-tools (`list_tables`/`execute_sql` against project `ieimvjprtltancxapuzg`)
-rather than guessing column names. That is real signal, but it is not the
-same as a human clicking through it — say so if asked, don't imply more.
+Continues the same day's round 2 (staff creation, Overview's "Team"
+consolidation, chart→CSV — all still accurate below, unchanged). This round
+is architectural, prompted by Anmol asking how the whole thing deploys: he
+wants to stop running a separate Express process for anything that can
+instead be a Supabase Edge Function ("even further addition where we need
+some more server functions... could directly label supabase"). Staff
+creation moved first, because it needed zero external credentials to do —
+Supabase injects `SUPABASE_SERVICE_ROLE_KEY` into every Edge Function for
+free, which is exactly the thing blocking Anmol locally (`server/.env` was
+never actually filled in).
+
+**This one WAS verified live** — not just `tsc`/`build`, an actual deployed
+function called over real HTTPS. See "How F was verified" below for exactly
+what that means and what it doesn't cover.
 
 ## What shipped, in order
 
-### F. Add staff from inside the app, with a built-in audit trail
+### F (revised) — staff creation is now a Supabase Edge Function, not an Express route
 
-Anmol wanted a clinic admin to create a real sign-in (name, phone, password,
-role) for a new doctor/receptionist/admin, instead of that person
-registering themselves. `users`' RLS policy only allows `INSERT ... WITH
-CHECK id = auth.uid()`, so this had to cross into `server/` for the
-service-role key — new `server/admin/routes.js`, `POST /api/admin/staff`,
-authorized to an owner/admin role OR a doctor with `doctors.is_clinic_admin
-= true` (re-checked server-side, never trusted from the request).
+`server/admin/routes.js` is gone. In its place:
+`supabase/functions/admin-staff/index.ts`, deployed to project
+`ieimvjprtltancxapuzg` (deploy tool: Supabase MCP's `deploy_edge_function`;
+this repo's copy is the source of truth — a code change here needs a
+redeploy, MCP or `supabase functions deploy admin-staff`, to take effect).
 
-The interesting part is the audit trail he asked for: "don't use the same
-[email] ending as the landing page... we'll just look at the internal email
-and find out, oh, it was created by doctors... or not us directly" — with
-no new database column. Self-registration's synthetic Supabase Auth address
-is `<digits>@aren.internal` (`phoneToAuthEmail`, `src/lib/auth.ts` — must
-stay byte-identical to the landing repo's copy). This route mints
-`<digits>@aren-staff.internal` instead (`phoneToStaffAuthEmail`, duplicated
-byte-for-byte in both `src/lib/auth.ts` and `server/admin/routes.js` — the
-two have no shared import path, same reason `phoneToAuthEmail` itself is a
-duplicate of the landing repo's copy).
+Same logic as the Express version, ported to Deno:
+- `callerClient` (anon key + the caller's own Authorization header) resolves
+  who's calling THROUGH RLS — reading their own `users` row is the entire
+  authorization check, not a formality before one. Same two-client split
+  `attachment-upload-url` (the other Edge Function already in this project)
+  uses, for its own equivalent reason.
+- `adminClient` (service-role key — auto-injected, nothing to configure) does
+  the two things RLS forbids from the browser: `auth.admin.createUser`, and
+  writing `users`/`doctors` rows under an id that isn't the caller's own.
+- `phoneToStaffAuthEmail` (`<digits>@aren-staff.internal`) is duplicated
+  byte-for-byte between here and `src/lib/auth.ts`, same reason
+  `phoneToAuthEmail` duplicates the landing repo's copy — no shared import
+  path between a Deno function and this Vite app.
 
-**The catch, and how it's handled:** the login screen only has a phone
-number to work with — it cannot know up front which domain an account was
-minted under. `LoginPage.tsx` tries `phoneToAuthEmail` first and, ONLY on a
-rejection that specifically means invalid credentials (never on a
-network/timeout failure), retries once against `phoneToStaffAuthEmail`
-before showing "phone and password don't match." Two independent Supabase
-Auth identities can exist for the same 10 digits (one self-registered, one
-admin-created) with different passwords — each domain is checked
-independently, so this is not a conflict, just two doors.
+Frontend: `src/lib/db/staff.ts`'s `createStaffMember` now calls
+`supabase.functions.invoke("admin-staff", {body})` instead of `postAuthed`
+against `/api/admin/staff` — the SDK attaches the caller's session
+automatically, no manual bearer header. Error bodies are unwrapped via
+`FunctionsHttpError.context.json()` so the toast still shows the function's
+actual message ("phone already in use"), not a bare HTTP status.
 
-New UI: `PeoplePage.tsx`'s "People" card header has an "Add staff" toggle
-opening `AddStaffForm` inline (name, phone, password with a show/hide
-toggle, role select). Since `PeoplePage` is embedded in TWO places (standing
-Parallax, and now Overview's new Team modal — see E), this one addition
-covers both automatically.
+**`server/`'s remaining job** is WhatsApp + Zoho email only now — both still
+need real external credentials (Meta, Zoho) only Anmol holds, so migrating
+THEM is next, not done. `server/index.js`'s header comment says so. Don't
+delete `server/` — it's still load-bearing for messaging.
 
-`lib/db/messaging.ts`'s `postAuthed` helper (the one existing seam into
-`server/`) was extracted to `src/lib/apiClient.ts` so this second
-server-backed feature doesn't fork it. `lib/db/staff.ts` gained
-`createStaffMember`.
+### How F was verified (read this before trusting "it works")
 
-**Not testable here:** `server/admin/routes.js` needs `SUPABASE_SERVICE_ROLE_KEY`
-and a running `npm run server` to actually exercise — checked with
-`node --check` (syntax only) and against the REAL `users`/`doctors` column
-list (verified live via Supabase MCP, not guessed). The login retry logic
-is read-through-verified against `LoginPage.tsx`'s existing error-shape
-handling, not exercised against a real second-domain account.
+Built a fully disposable test fixture directly against the live project via
+Supabase MCP, exercised the deployed function over real HTTPS, then deleted
+every trace:
+1. Signed up two throwaway Supabase Auth users via the public `/auth/v1/signup`
+   endpoint (real accounts, `@example.com` addresses).
+2. Inserted one disposable `hospitals` row and two `users` rows via
+   `execute_sql` (one `role='admin'`, one `role='reception'`) — this is the
+   ONE step a real admin can't do themselves; it stands in for "an admin
+   already exists at a clinic," which is always true in production.
+3. Called the deployed function over `curl` as each test identity:
+   - Admin, valid input → **200**, real account created, real `users` row
+     with the right hospital/phone/role, AND signed in successfully as
+     `<phone>@aren-staff.internal` with the password it was given —
+     confirming the account is genuinely usable, not just recorded.
+   - No `Authorization` header → **401** (rejected by Supabase's gateway
+     before the function even ran, since `verify_jwt: true`).
+   - Reception (non-admin, non-`is_clinic_admin`) → **403**.
+   - Duplicate phone at the same clinic → **409**.
+   - Invalid role → **400**.
+   - Checked `function_edge_logs` afterward — five requests, five expected
+     status codes, no unhandled exceptions.
+4. Deleted everything: both `users` rows the fixture made plus the one the
+   function created, the test `hospitals` row, and all three `auth.users`
+   rows (identities/sessions/refresh_tokens first, parent row last).
+   Re-queried afterward — zero rows left in any of the three tables.
+
+**What this does NOT cover:** the actual React "Add staff" form
+(`PeoplePage.tsx`'s `AddStaffForm`) submitting through the real browser UI —
+that's still `tsc`/`build`-only verification, same caveat as everything
+else this session. The Edge Function itself, independent of the UI in front
+of it, is now real, live, tested evidence, not a read-through.
+
+## Carried forward from round 2, unchanged
 
 ### E. "Clinic management" renamed to "Team", consolidated to one button
 
-Anmol named the old label a problem in its own right (colliding with the
-existing "Clinic" page) and asked for "just one button beside doctors...
-manage all the staffs including doctors, their fees, and their admin
-thing... assign a new user as admin too from the same part." The section in
-`DoctorOverviewPage.tsx` used to be a Doctors roster with its own per-row
-"Manage" → admin-toggle/deactivate actions, plus a separate "request staff"
-card that only fired an email to AREN. Both are now gone, replaced by one
-row (headcount + the existing "Fees" pill, unchanged, + "Manage team") that
-opens Parallax's `PeoplePage` — already the richer surface asked for,
-INCLUDING the new "Add staff" form from F — inside a new `xl` variant of
-`PracticeModal` (920px/86vh, for embedding a whole page rather than one
-form or list; `practiceModal.css`).
-
-`roster` (the doctor list + count) is KEPT as page state — the admin-doctor
-scope toggle above this section still needs doctor names and the
-two-bench-minimum check, both un-ranged reads unrelated to the removed UI.
+One row (headcount + "Fees" pill, unchanged + "Manage team") replaces a
+Doctors-roster-with-per-row-actions block and a separate "request staff"
+card in `DoctorOverviewPage.tsx`. "Manage team" opens Parallax's
+`PeoplePage` (now carrying the F feature above too) inside a new `xl`
+variant of `PracticeModal` (920px/86vh, `practiceModal.css`) — for
+embedding a whole page rather than one form or list.
 
 ### D. Trend chart → detail list → patient-safe CSV export
 
-"Whenever you're creating a graph, make the user click on that graph...
-show the list of all the collections... also an option of exporting that
-thing as a CSV" — referencing Parallax's own `DetailLink` (chart →
-`/app/admin/reports?tab=...`) pattern. A doctor (admin or not) can't land on
-`/app/admin`, so this is a modal (`TrendDetailModal.tsx`), not a route.
+Clicking the Patient-flow/Collections chart (or a new "Detail →" link)
+opens `TrendDetailModal.tsx`: a day-by-day table reusing `data.series` (no
+extra read), plus a separate "Export as CSV" button that DOES fetch on
+click — `fetchPatientLedgerRows` (`lib/db/admin.ts`), one row per visit,
+`{date, patient name, amount paid}` only, no clinical detail, per Anmol's
+explicit ask. `lib/csv.ts` is a tiny quote/escape/join/download helper, not
+a dependency.
 
-Clicking the chart (or a new "Detail →" link beside the Patients/Money
-toggle) opens a day-by-day table for whichever metric is active — reusing
-`data.series`, the exact scoped rows already fetched to draw the chart, so
-opening it costs no extra read. The CSV button is separate and DOES fetch
-on click: a new, deliberately narrower query,
-`fetchPatientLedgerRows` (`lib/db/admin.ts`) — one row per visit in the
-window, `{date, patient name, amount paid}` only. Anmol was explicit this
-must exclude clinical detail: "just like this patient came into this
-clinic on this date, paid this much amount... not their actual clinical
-details which are sensitive." A tiny generic CSV helper (`lib/csv.ts`,
-quote/escape/join/download) backs it — not worth a dependency.
+## Traps worth knowing before you edit (carried forward + new)
 
-## Traps worth knowing before you edit (carried forward)
-
-- **Chromium cannot complete a TLS handshake through this sandbox's agent
-  proxy.** `curl`/Node's own `https` DO work through it. Don't rediscover
-  this from scratch; ask whether a working relay exists outside this repo
-  first, or do static verification and say so upfront.
+- **Two synthetic-email domains for the same phone number**:
+  `<digits>@aren.internal` (self-registration) and
+  `<digits>@aren-staff.internal` (admin-created). `LoginPage.tsx` tries the
+  first, retries the second ONLY on an invalid-credentials rejection. Keep
+  that retry if you ever touch sign-in — removing it locks out every
+  admin-created account silently.
+- **Edge Function secrets**: `SUPABASE_URL`/`SUPABASE_ANON_KEY`/
+  `SUPABASE_SERVICE_ROLE_KEY` are injected automatically into every
+  function in this project — never set them as function secrets yourself,
+  and never assume a NEW function needs `server/.env` at all. Anything
+  else (a future WhatsApp/Zoho function) DOES need `supabase secrets set`,
+  which only Anmol can do (needs the real Meta/Zoho values).
+- **A function code change needs a redeploy to take effect** — editing
+  `supabase/functions/admin-staff/index.ts` in this repo does nothing to
+  the live function until it's redeployed (MCP `deploy_edge_function` or
+  `supabase functions deploy admin-staff`). Unlike the frontend, there's no
+  build step that pushes this automatically yet.
 - **`doctors.is_clinic_admin` is NOT `users.role`.** Never write `role:
   'admin'` to promote a doctor — they stay `role: 'doctor'` with the flag
-  additive. The new staff route checks BOTH (`role === 'admin'/'owner'` OR
-  `is_clinic_admin`) for exactly this reason.
-- **Two synthetic-email domains now exist for the same phone number**:
-  `<digits>@aren.internal` (self-registration, landing repo) and
-  `<digits>@aren-staff.internal` (admin-created, this round). If you ever
-  touch `LoginPage.tsx`'s sign-in flow again, keep the retry — removing it
-  silently locks out every admin-created account.
+  additive.
+- **Chromium cannot complete a TLS handshake through this sandbox's agent
+  proxy** — `curl`/Node's own `https` DO work through it (this round's
+  entire live-verification pass ran on that fact). Don't rediscover this;
+  do static/API-level verification and say so.
 - **`button:disabled` in this codebase is not decoration-safe** —
   `styles/base.css`'s unlayered rule beats every Tailwind override.
 - **`input, select { padding: 0 9px }`**, same file — icon-in-input layouts
   need the Tailwind `!` bang on padding.
 - Supabase MCP's `execute_sql` refuses multi-statement writes;
-  `apply_migration` handles a whole file fine. Real project id this round:
-  `ieimvjprtltancxapuzg` ("arenode").
+  `apply_migration` handles a whole file fine. Real project id:
+  `ieimvjprtltancxapuzg` ("arenode"), org `bzrjwiuvgaflsqojxgou`, **plan:
+  free**. Six Edge Functions total now: the five pre-existing
+  (`rank-compositions`, `attachment-upload-url`, `attachment-view-url`,
+  `attachment-delete`, `attachment-configure-cors`, `visit-gateway`) plus
+  this round's `admin-staff`.
+- **Free-tier headroom, checked live this round**: DB is 168MB/500MB, but
+  142MB of that is the fixed medicine/composition catalogue — real clinical
+  data (patients/visits/prescriptions/payments) is under 2MB for 1,723
+  visits already recorded. Storage is ~2.7MB/1GB. Auth users: 22/50,000
+  MAU. None of this is close to free-tier limits even at 10x current
+  clinic count — the thing to actually watch is monthly egress/bandwidth,
+  which isn't queryable via SQL (check the Supabase billing dashboard
+  directly, not this file).
 - `node_modules` starts empty in a fresh container; `npm install` first.
 
 ## Next, in the order I'd do it
 
-1. **Get eyes on this live**, all three items above — none have been
-   clicked, same caveat as every round before this one.
-2. If staff creation is exercised live: check the phone-already-in-use
-   conflict message reads sensibly, and that a newly created doctor account
-   actually reaches Cortex (their `doctors` row's other fields — fee,
-   specialization — are left null/unset on creation; PeoplePage's Benches
-   card already handles "Fee not set" but a brand-new doctor should
-   probably be nudged toward setting one before their first consult).
-3. Carried forward, still open from earlier rounds: SK Pandey's 76-credit
+1. **Get eyes on the "Add staff" form live in a browser** — the Edge
+   Function itself is proven; the React form calling it is not.
+2. **Migrate WhatsApp + Zoho email off `server/` too**, same pattern —
+   needs Anmol to gather the real Meta (`WHATSAPP_ACCESS_TOKEN`,
+   `WHATSAPP_APP_SECRET`, `WHATSAPP_PHONE_NUMBER_ID`) and Zoho
+   (`ZOHO_CLIENT_ID/SECRET/REFRESH_TOKEN`) values and set them via
+   `supabase secrets set` (or the dashboard) — I can't fetch or invent
+   these. Once he has them, the port itself is low-risk: `server/`'s only
+   external deps are `express`/`dotenv`/`@supabase/supabase-js`, and even
+   the webhook's `node:crypto` HMAC check should run unchanged on Deno's
+   Node-compat layer.
+3. If staff creation is exercised live with a REAL new doctor: their
+   `doctors` row's fee/specialization are left null on creation — nudge
+   them to set a fee before their first consult (PeoplePage's Benches card
+   already shows "Fee not set", this is just a UX polish, not a bug).
+4. Carried forward, still open from earlier rounds: SK Pandey's 76-credit
    test state, `RC_2`'s pending recharge, the follow-up-message scheduler,
    real Meta template submission, an admin UI for
    `approve_credit_recharge`.

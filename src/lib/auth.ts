@@ -17,10 +17,12 @@ export function phoneToAuthEmail(phone: string): string {
 
 /**
  * The OTHER synthetic address — same phone-derived shape, different domain —
- * for an account minted from INSIDE the app (server/admin/routes.js's
- * "Add staff") rather than through the landing site's self-registration
- * wizard. Must stay byte-identical to that route's own copy of this
- * function, the same way `phoneToAuthEmail` must match the landing repo's.
+ * for an account minted from INSIDE the app (PeoplePage's "Add staff",
+ * handled by the `admin-staff` Supabase Edge Function —
+ * supabase/functions/admin-staff/index.ts) rather than through the landing
+ * site's self-registration wizard. Must stay byte-identical to that
+ * function's own copy of this helper, the same way `phoneToAuthEmail` must
+ * match the landing repo's.
  *
  * 2026-09-08, Anmol: "we can even change the email phrase slightly... don't
  * use the same thing with the registration result into the landing page...

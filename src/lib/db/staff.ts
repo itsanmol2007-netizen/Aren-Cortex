@@ -4,12 +4,13 @@
 // minted from here — staff join by registering against the clinic.
 //
 // `createStaffMember` below is the one exception, and it deliberately does
-// NOT touch `users` directly for that reason: it is an HTTP call to
-// `server/admin/routes.js`, which holds the service-role key needed to both
-// mint the Supabase Auth account and then write its `users`/`doctors` rows
-// under one identity the client could never construct on its own.
+// NOT touch `users` directly for that reason: it calls the `admin-staff`
+// Supabase Edge Function (`supabase/functions/admin-staff/`), which holds
+// the service-role key needed to both mint the Supabase Auth account and
+// then write its `users`/`doctors` rows under one identity the client could
+// never construct on its own.
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../supabase";
-import { postAuthed } from "../apiClient";
 
 export type StaffRole = "doctor" | "reception" | "admin" | "owner";
 
@@ -40,14 +41,20 @@ export async function updateStaffMember(
     if (error) throw new Error(`updateStaffMember: ${error.message}`);
 }
 
-// ── Add staff (2026-09-08) ──────────────────────────────────────────────────
+// ── Add staff (2026-09-08, moved onto Supabase Edge Functions 2026-09-08) ──
 //
 // "Setting the email, number, and password is possible" — Anmol wanted a
 // clinic admin to be able to mint a real sign-in for a new doctor,
 // receptionist, or admin from inside the app, rather than that person
 // registering themselves against the clinic. The `users` INSERT policy
-// above is exactly why this can't be a plain client-side write: it has to
-// cross into `server/`, which alone holds the service-role key.
+// above is exactly why this can't be a plain client-side write.
+//
+// Originally a route on the separate Express `server/` process; moved to
+// the `admin-staff` Edge Function so there's one platform instead of two,
+// and so the service-role key it needs is the one Supabase already injects
+// into every Edge Function for free — no `server/.env` to manage. Verified
+// end-to-end against the live project (disposable test clinic + test admin,
+// created, exercised, deleted — nothing left behind) before this switch.
 
 export type NewStaffRole = "admin" | "doctor" | "reception";
 
@@ -60,6 +67,7 @@ export interface NewStaffInput {
 }
 
 export interface NewStaffResult {
+    ok: true;
     userId: string;
     /** The `<digits>@aren-staff.internal` address this account signs in
      *  with under the hood — shown once, for the admin's own note-taking;
@@ -68,6 +76,34 @@ export interface NewStaffResult {
     authEmail: string;
 }
 
-export function createStaffMember(input: NewStaffInput): Promise<NewStaffResult> {
-    return postAuthed<NewStaffResult>("/api/admin/staff", input);
+interface StaffErrorBody {
+    ok?: false;
+    error?: string;
+    message?: string;
+}
+
+export async function createStaffMember(input: NewStaffInput): Promise<NewStaffResult> {
+    const { data, error } = await supabase.functions.invoke<NewStaffResult>("admin-staff", { body: input });
+
+    if (error) {
+        // The function's own JSON body (`{ok:false, error, message}`) is
+        // what actually says WHY — "that phone number is already in use",
+        // not just "HTTP 409". `FunctionsHttpError` carries the raw
+        // Response as `.context`; anything else (a network failure before
+        // the function even ran) falls back to the generic SDK message.
+        let message = error.message;
+        if (error instanceof FunctionsHttpError) {
+            try {
+                const body = (await error.context.json()) as StaffErrorBody;
+                if (body?.message) message = body.message;
+            } catch {
+                /* non-JSON body — keep the generic message */
+            }
+        }
+        throw new Error(message);
+    }
+    if (!data || data.ok !== true) {
+        throw new Error("Could not create that account.");
+    }
+    return data;
 }
