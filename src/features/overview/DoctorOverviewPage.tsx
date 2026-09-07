@@ -96,10 +96,11 @@ interface Props {
     /** Same nav handler every other Cortex page already receives. Quick
      *  Actions routes through it rather than opening anything of its own. */
     onNavigate: (page: SidebarPage) => void;
-    /** Communication's own pattern, reused: there is no deep link to a
-     *  patient RECORD in this app, so this seeds the Patients page's search
-     *  box and the doctor lands one click from the record. */
-    onViewPatient: (query: string) => void;
+    /** Opens the exact patient record on the Patients page (2026-09-08) —
+     *  `patientId` when the caller has one (the normal case), a name-search
+     *  fallback otherwise. See `PatientsPage`'s own `initialPatientId` doc
+     *  comment. */
+    onViewPatient: (patientId: string | null, name: string | null) => void;
 
     // ── Today's Queue — a READ of App.tsx's own `useConsultQueue`, never a
     // second poll of "who is waiting". Empty and inert in Cortex, where

@@ -102,10 +102,10 @@ interface Props {
     hospitalId: string | null;
     doctorId: string | null;
     userId: string | null;
-    /** Hands a patient's name to the Patients page's search box. There is no
-     *  deep link to a patient record in this app, so the doctor lands on the
-     *  search already filled in, one click from the record. */
-    onViewPatient: (query: string) => void;
+    /** Opens the exact patient record on the Patients page (2026-09-08) —
+     *  `patientId` when this thread/message has one (the normal case), a
+     *  name-search fallback for the rare unlinked thread. */
+    onViewPatient: (patientId: string | null, name: string | null) => void;
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────
@@ -901,10 +901,11 @@ function ConversationPanel({
     thread: WhatsAppThread | null;
     focus: MessageActivity | null;
     patient: PatientCard | null;
-    onViewPatient: (query: string) => void;
+    onViewPatient: (patientId: string | null, name: string | null) => void;
     hospitalId: string | null;
 }) {
     const name = patient?.name ?? thread?.patientName ?? focus?.patientName ?? null;
+    const patientId = patient?.id ?? thread?.patientId ?? focus?.patientId ?? null;
     const phone = thread?.phone ?? focus?.phone ?? null;
     const nothing = !thread && !focus;
 
@@ -975,7 +976,7 @@ function ConversationPanel({
                         {name && (
                             <button
                                 type="button"
-                                onClick={() => onViewPatient(name)}
+                                onClick={() => onViewPatient(patientId, name)}
                                 className="ml-auto inline-flex flex-none cursor-pointer items-center gap-[5px] rounded-[9px] border border-[var(--cs-line-strong)] bg-[var(--cs-card)] px-[11px] py-[6px] text-[11.5px] font-semibold text-[var(--cs-ink)] outline-none transition-colors hover:border-[var(--cs-violet)] hover:text-[var(--cs-violet)]"
                             >
                                 View patient <ExternalLink size={12} />

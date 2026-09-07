@@ -43,6 +43,26 @@ export async function findPatientByPhone(phone: string): Promise<DBPatient | nul
     return data;
 }
 
+/**
+ * One patient, by id — the one lookup `searchPatients`/`findPatientByPhone`
+ * don't cover. Added 2026-09-08 for "View patient" deep links (Communication,
+ * Overview's activity lists): those buttons already know a real `patient_id`
+ * and used to throw it away, seeding a name SEARCH on the Patients page
+ * instead of opening the record directly — Anmol: "you click on view
+ * patient... it takes you one step before... show them the exact patient
+ * profile." `null` means the id doesn't resolve (deleted, or from a stale
+ * row) — callers fall back to a name search rather than showing nothing.
+ */
+export async function fetchPatientById(patientId: string): Promise<DBPatient | null> {
+    const { data, error } = await supabase
+        .from("patients")
+        .select("id, name, age, gender, phone, date_of_birth")
+        .eq("id", patientId)
+        .maybeSingle();
+    if (error) throw new Error(`fetchPatientById: ${error.message}`);
+    return data;
+}
+
 // `hospitalId` is REQUIRED and has no fallback, deliberately. It used to be the
 // `HOSPITAL_ID` constant, which meant every workspace wrote new patients into
 // one specific clinic no matter who was signed in. RLS on `patients` is

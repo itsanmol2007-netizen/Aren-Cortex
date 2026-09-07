@@ -17,10 +17,12 @@ import {
     Zap,
 } from "lucide-react";
 import {
+    fetchPatientById,
     fetchTodayPatients,
     fetchRecentPatients,
     searchPatients,
     setVisitStatus,
+    type DBPatient,
     type PatientRecordRow,
 } from "../../lib/db";
 import type { Patient } from "../../types";
@@ -37,6 +39,37 @@ import "./patients.css";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type View = "list" | "record";
+
+/** A `DBPatient` (a plain row, no visit context) coerced into the shape the
+ *  record view actually needs. Used for a search hit AND for "View patient"'s
+ *  by-id deep link — both are "here is a patient with no specific visit to
+ *  show", not a visit row, so the snapshot renders its own empty state. */
+function stubPatientRow(p: DBPatient): PatientRecordRow {
+    return {
+        patient_id: p.id,
+        patient_name: p.name,
+        age: p.age,
+        gender: p.gender,
+        phone: p.phone,
+        visit_id: "",
+        visit_status: "completed",
+        started_at: null,
+        completed_at: null,
+        symptom_names: [],
+        finding_names: [],
+        medicine_names: [],
+        test_names: [],
+        visit_count: 1,
+        last_visit_at: null,
+        body_sites: [],
+        exercise_names: [],
+        impairment_names: [],
+        story_duration: null,
+        story_mechanism: null,
+        care_plan_session_label: null,
+        care_plan_progress: null,
+    };
+}
 
 interface Props {
     onStartConsult: (patient: Patient) => void;
@@ -55,16 +88,28 @@ interface Props {
      *  Practice"). */
     onNavigate: (page: SidebarPage) => void;
     /**
-     * A name to open the page already searching for.
-     *
-     * Communication's "View patient" sets this (App.tsx `patientSearchSeed`).
-     * There is no deep link to a patient RECORD — this component opens one
-     * from a `PatientRecordRow` it already holds, and minting one from an id
-     * would need a fetch threaded through this whole list's state. Seeding
-     * the search puts the doctor one click from the record instead of in an
-     * unrelated list, which is the honest bounded version of that button.
+     * A name to open the page already searching for. The FALLBACK path for
+     * "View patient" (see `initialPatientId` below) — used only when a
+     * caller genuinely has no id, e.g. a WhatsApp thread whose patient was
+     * never linked to a record.
      */
     initialSearch?: string | null;
+    /**
+     * Open the record for this exact patient, no search step in between.
+     *
+     * 2026-09-08: this used to not exist — every "View patient" button
+     * (Communication, Overview's activity lists) seeded `initialSearch`
+     * instead, even though every one of them already had a real
+     * `patient_id` in hand. Anmol: "you click on view patient... it takes
+     * you one step before... show them the exact patient profile, which is
+     * already stored." Resolved once via `fetchPatientById`, mapped through
+     * the SAME stub-row shape a search hit gets (`stubPatientRow`), then
+     * opened exactly like clicking a row — one entry point, not two ways to
+     * reach a record. Deliberately NOT synced on every prop change, same
+     * reason `initialSearch` isn't: consumed once, so navigating within
+     * Patients afterwards doesn't get yanked back here.
+     */
+    initialPatientId?: string | null;
 }
 
 /**
@@ -502,7 +547,7 @@ function RightPanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenSidebar, specialty, onNavigate, initialSearch }: Props) {
+export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenSidebar, specialty, onNavigate, initialSearch, initialPatientId }: Props) {
     const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
@@ -556,33 +601,7 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
         searchTimer.current = setTimeout(async () => {
             try {
                 const results = await searchPatients(searchQuery.trim());
-                const mapped: PatientRecordRow[] = results.map((p) => ({
-                    patient_id: p.id,
-                    patient_name: p.name,
-                    age: p.age,
-                    gender: p.gender,
-                    phone: p.phone,
-                    visit_id: "",
-                    visit_status: "completed",
-                    started_at: null,
-                    completed_at: null,
-                    symptom_names: [],
-                    finding_names: [],
-                    medicine_names: [],
-                    test_names: [],
-                    visit_count: 1,
-                    last_visit_at: null,
-                    // Search hits a patient, not a visit — no per-visit physio
-                    // fields to show. The snapshot renders its empty state.
-                    body_sites: [],
-                    exercise_names: [],
-                    impairment_names: [],
-                    story_duration: null,
-                    story_mechanism: null,
-                    care_plan_session_label: null,
-                    care_plan_progress: null,
-                }));
-                setSearchResults(mapped);
+                setSearchResults(results.map(stubPatientRow));
             } catch (e) {
                 console.error(e);
             }
@@ -594,6 +613,19 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
         setSelectedRow(row);
         setView("record");
     }, []);
+
+    // "View patient" deep link — see `initialPatientId`'s own doc comment.
+    // Consumed once: a `useRef` guard, not a dependency on the resolved
+    // patient, so re-rendering after the record opens (or the doctor
+    // navigating elsewhere within Patients) can never re-trigger it.
+    const deepLinkConsumed = useRef(false);
+    useEffect(() => {
+        if (deepLinkConsumed.current || !initialPatientId) return;
+        deepLinkConsumed.current = true;
+        fetchPatientById(initialPatientId)
+            .then((p) => { if (p) openRecord(stubPatientRow(p)); })
+            .catch((e: unknown) => console.error("[patients] fetchPatientById failed:", e));
+    }, [initialPatientId, openRecord]);
 
     // Today's Patients' own ⋮ menu — a quick status flip without opening the
     // full record. Optimistic (the card's pill/tint updates immediately);

@@ -228,17 +228,14 @@ function App() {
    */
   const [activePage, setActivePage] = useState<SidebarPage | null>("overview");
   /**
-   * A patient name handed to the Patients page's search box by whoever sent
-   * the doctor there — Communication's "View patient" today.
-   *
-   * There is no deep link to a patient RECORD in this app: `PatientsPage`
-   * opens one from a `PatientRecordRow` it already has in hand, and minting
-   * one from an id would mean a new fetch threaded through its whole list
-   * state. Seeding the search is the honest bounded version — the doctor
-   * lands one click from the record instead of in an unrelated list. Cleared
-   * by `handleSidebarNavigate` so an ordinary trip to Patients is unfiltered.
+   * Where "View patient" (Communication, Overview's activity lists) sends
+   * the doctor — an exact record when the id resolves (the normal case
+   * now, 2026-09-08), a name search as the fallback for the rare caller
+   * with no id (an unlinked WhatsApp thread). See `PatientsPage`'s own
+   * `initialPatientId`/`initialSearch` doc comments. Cleared by
+   * `handleSidebarNavigate` so an ordinary trip to Patients is unfiltered.
    */
-  const [patientSearchSeed, setPatientSearchSeed] = useState<string | null>(null);
+  const [patientRecordSeed, setPatientRecordSeed] = useState<{ id: string | null; name: string | null } | null>(null);
 
   // Runs a pending "take me to that setting" request after the page it lives
   // on has mounted — scrolls to the control and flashes it. Mounted once,
@@ -959,7 +956,7 @@ function App() {
     // click on Patients must not reopen somebody else's name in the search
     // box. The one caller that wants a seed sets it immediately AFTER this
     // returns, in the same batch, so its write is the one that lands.
-    setPatientSearchSeed(null);
+    setPatientRecordSeed(null);
     setActivePage(page);
     setSidebarOpen(false);
     setPrescriptionEditorOpen(false);
@@ -1771,9 +1768,9 @@ function App() {
              Cortex clinic opens the patient form. */
           onStartConsult={handleSidebarConsult}
           onNavigate={handleSidebarNavigate}
-          onViewPatient={(query) => {
+          onViewPatient={(patientId, name) => {
             handleSidebarNavigate("patients");
-            setPatientSearchSeed(query);
+            setPatientRecordSeed({ id: patientId, name });
           }}
           /* Today's Queue mirrors the SAME read the queue sheet already
              polls (`useConsultQueue`, disabled entirely in Cortex) — never a
@@ -1794,7 +1791,8 @@ function App() {
           onOpenSidebar={handleOpenSidebar}
           specialty={specialty}
           onNavigate={handleSidebarNavigate}
-          initialSearch={patientSearchSeed}
+          initialPatientId={patientRecordSeed?.id}
+          initialSearch={patientRecordSeed?.id ? null : patientRecordSeed?.name}
         />
       ) : activePage === "settings" ? (
         <SettingsPage
@@ -1837,11 +1835,11 @@ function App() {
              balance would be a support ticket on day one. */
           doctorId={identity.doctorId}
           userId={identity.userId}
-          onViewPatient={(query) => {
+          onViewPatient={(patientId, name) => {
             // Order matters: `handleSidebarNavigate` clears the seed, so the
             // set has to come after it. Both land in one batch.
             handleSidebarNavigate("patients");
-            setPatientSearchSeed(query);
+            setPatientRecordSeed({ id: patientId, name });
           }}
         />
       ) : activePage === "clinic" ? (

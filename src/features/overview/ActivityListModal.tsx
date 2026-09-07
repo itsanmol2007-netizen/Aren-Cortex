@@ -30,10 +30,10 @@ interface Props {
     emptyFact: string;
     emptyNext: string;
     onClose: () => void;
-    /** Same door Communication's conversation panel uses — no deep link to a
-     *  patient record exists, so this seeds the Patients page's search box
-     *  and the doctor is one click from the record. */
-    onViewPatient: (query: string) => void;
+    /** Opens the exact patient record (2026-09-08) — every row here already
+     *  carries a real `patientId`, so there is no search step in between
+     *  any more. Same door Communication's conversation panel uses. */
+    onViewPatient: (patientId: string | null, name: string | null) => void;
 }
 
 function stamp(iso: string): string {
@@ -110,7 +110,7 @@ export function ActivityListModal({
                             <button
                                 key={r.id}
                                 type="button"
-                                onClick={() => onViewPatient(r.patientName!)}
+                                onClick={() => onViewPatient(r.patientId, r.patientName)}
                                 className="group flex flex-none cursor-pointer items-center gap-[9px] rounded-[9px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[10px] py-[8px] text-left outline-none transition-colors hover:border-[var(--cs-violet)]"
                             >
                                 {inner}
