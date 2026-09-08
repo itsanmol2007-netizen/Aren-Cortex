@@ -145,7 +145,7 @@ const DAY_COPY: Record<string, string> = { today: "Today", tomorrow: "Tomorrow",
  * was worse than any of the layout it saved. A shared constant because three
  * separately-tuned heights is how a row of tiles goes ragged.
  */
-const TILE_H = "h-[178px]";
+const TILE_H = "h-[196px]";
 
 // ── Delivery status pill ───────────────────────────────────────────────────
 
@@ -454,7 +454,7 @@ export function CommunicationPage({
                 }
             />
 
-            <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto px-[40px] pb-[18px] pt-[14px] max-[900px]:px-[12px]">
+            <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[40px] pb-[20px] pt-[16px] max-[900px]:px-[12px]">
 
                 {error && (
                     <div className="flex flex-none items-center gap-[10px] rounded-[var(--cs-radius)] border border-[var(--cs-red)] bg-[var(--cs-red-soft)] px-[14px] py-[10px] text-[12px] font-medium text-[var(--cs-red)]">
@@ -471,10 +471,10 @@ export function CommunicationPage({
                     {/* Credits */}
                     <Panel className={TILE_H} label="Message credits">
                         <PanelHead icon={<Wallet size={13} />} title="Message credits" />
-                        <div className="flex min-h-0 flex-1 items-center gap-[14px] px-[14px] pb-[12px] pt-[8px]">
-                            <CreditRing balance={balance} granted={credits?.granted ?? 0} size={92} />
-                            <div className="flex min-w-0 flex-1 flex-col gap-[6px]">
-                                <span className="text-[12.5px] font-semibold leading-[1.25] text-[var(--cs-ink)]">
+                        <div className="flex min-h-0 flex-1 items-center gap-[16px] px-[16px] pb-[12px] pt-[10px]">
+                            <CreditRing balance={balance} granted={credits?.granted ?? 0} size={104} />
+                            <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
+                                <span className="text-[13.5px] font-semibold leading-[1.3] text-[var(--cs-ink)]">
                                     {credits ? `${formatCredits(credits.spent)} used` : "—"}
                                     <span className="font-normal text-[var(--cs-faint)]">
                                         {credits ? ` of ${formatCredits(credits.granted)}` : ""}
@@ -511,10 +511,10 @@ export function CommunicationPage({
                             title="Credits usage"
                             right={
                                 <span className="flex flex-col items-end leading-[1.15]">
-                                    <span className="text-[15px] font-bold tabular-nums text-[var(--cs-violet)]">
+                                    <span className="text-[17px] font-bold tabular-nums text-[var(--cs-violet)]">
                                         {formatCredits(usageTotal)}
                                     </span>
-                                    <span className="text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--cs-label)]">
+                                    <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--cs-label)]">
                                         last 14 days
                                     </span>
                                 </span>
@@ -556,12 +556,12 @@ export function CommunicationPage({
                         <PanelHead icon={<CheckCheck size={13} />} title="Delivery" />
                         <div className="flex min-h-0 flex-1 flex-col gap-[7px] px-[14px] pb-[12px] pt-[8px]">
                             <div className="flex items-baseline gap-[7px]">
-                                <span className="text-[26px] font-bold leading-none tabular-nums text-[var(--cs-green)]">
+                                <span className="text-[31px] font-extrabold leading-none tabular-nums text-[var(--cs-green)]">
                                     {stats ? `${stats.reachedPct}%` : "—"}
                                 </span>
-                                <span className="text-[11px] text-[var(--cs-faint)]">reached patients · 14 days</span>
+                                <span className="text-[11.5px] text-[var(--cs-faint)]">reached patients · 14 days</span>
                             </div>
-                            <div className="flex flex-col gap-[3px]">
+                            <div className="flex flex-col gap-[4px]">
                                 {([
                                     ["Read", stats?.read ?? 0, "bg-[var(--cs-green)]"],
                                     ["Delivered", stats?.delivered ?? 0, "bg-[#7dd3a0]"],
@@ -728,7 +728,9 @@ export function CommunicationPage({
                 )}
 
                 {/* ── Feed + conversation ──────────────────────────────────── */}
-                <div className="grid min-h-[440px] flex-1 grid-cols-[minmax(300px,0.62fr)_minmax(0,1fr)] gap-[12px] max-[1100px]:grid-cols-1">
+                {/* The message list carries more of the width now — it was the
+                    half a doctor actually scans, and it was the smaller column. */}
+                <div className="grid min-h-[468px] flex-1 grid-cols-[minmax(340px,0.82fr)_minmax(0,1fr)] gap-[14px] max-[1100px]:grid-cols-1">
 
                     <Panel className="min-h-0" label="Messages">
                         <div className="flex flex-none items-center gap-[2px] border-b border-[var(--cs-line)] px-[12px] pt-[10px]">
@@ -738,7 +740,7 @@ export function CommunicationPage({
                                     type="button"
                                     onClick={() => setTab(t.key)}
                                     className={
-                                        "relative cursor-pointer border-0 bg-transparent px-[10px] pb-[9px] pt-[2px] text-[12px] outline-none transition-colors " +
+                                        "relative cursor-pointer border-0 bg-transparent px-[11px] pb-[10px] pt-[3px] text-[13px] outline-none transition-colors " +
                                         (tab === t.key
                                             ? "font-bold text-[var(--cs-violet)] after:absolute after:inset-x-[6px] after:bottom-[-1px] after:h-[2px] after:rounded-full after:bg-[var(--cs-violet)] after:content-['']"
                                             : "font-medium text-[var(--cs-faint)] hover:text-[var(--cs-muted)]")
@@ -749,14 +751,14 @@ export function CommunicationPage({
                             ))}
                         </div>
 
-                        <div className="relative flex-none px-[12px] py-[9px]">
-                            <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-[22px] top-1/2 -translate-y-1/2 text-[var(--cs-faint)]" />
+                        <div className="relative flex-none px-[14px] py-[10px]">
+                            <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-[26px] top-1/2 -translate-y-1/2 text-[var(--cs-faint)]" />
                             <input
                                 type="search"
                                 value={query}
                                 placeholder="Search patient name, message type…"
                                 onChange={(e) => setQuery(e.target.value)}
-                                className="h-[34px]! w-full rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] pl-[30px]! pr-[10px]! text-[12px]! text-[var(--cs-ink)] outline-none focus:border-[var(--cs-violet)]"
+                                className="h-[40px]! w-full rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] pl-[34px]! pr-[12px]! text-[13px]! text-[var(--cs-ink)] outline-none focus:border-[var(--cs-violet)]"
                             />
                         </div>
 
@@ -764,9 +766,9 @@ export function CommunicationPage({
                             shrink inside the panel instead of growing it. */}
                         <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
                             {loading ? (
-                                <div className="flex flex-col gap-[6px] px-[12px] pb-[12px]">
+                                <div className="flex flex-col gap-[6px] px-[12px] pb-[12px] pt-[4px]">
                                     {Array.from({ length: 6 }).map((_, i) => (
-                                        <div key={i} className="h-[52px] animate-pulse rounded-[10px] bg-[#eef0f5]" />
+                                        <div key={i} className="h-[68px] animate-pulse rounded-[10px] bg-[#eef0f5]" />
                                     ))}
                                 </div>
                             ) : visible.length === 0 ? (
@@ -798,36 +800,36 @@ export function CommunicationPage({
                                                         type="button"
                                                         onClick={() => selectRow(row)}
                                                         className={
-                                                            "flex w-full cursor-pointer items-start gap-[10px] border-0 border-l-[3px] px-[12px] py-[9px] text-left outline-none transition-colors " +
+                                                            "flex w-full cursor-pointer items-start gap-[13px] border-0 border-l-[3px] px-[15px] py-[13px] text-left outline-none transition-colors " +
                                                             (on
                                                                 ? "border-l-[var(--cs-violet)] bg-[var(--cs-violet-soft)]"
                                                                 : "border-l-transparent bg-transparent hover:bg-[#f8fafc]")
                                                         }
                                                     >
-                                                        <span className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-[var(--cs-violet-soft)] text-[11.5px] font-bold text-[var(--cs-violet)]">
+                                                        <span className="grid h-[42px] w-[42px] flex-none place-items-center rounded-full bg-[var(--cs-violet-soft)] text-[13px] font-bold text-[var(--cs-violet)]">
                                                             {initials(row.patientName, row.phone)}
                                                         </span>
-                                                        <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                                                        <span className="flex min-w-0 flex-1 flex-col gap-[4px]">
                                                             <span className="flex min-w-0 items-baseline gap-[8px]">
-                                                                <span className="truncate text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                                                <span className="truncate text-[14px] font-bold text-[var(--cs-ink)]">
                                                                     {row.patientName ?? formatWhatsAppPhone(row.phone)}
                                                                 </span>
-                                                                <span className="ml-auto flex-none text-[10.5px] text-[var(--cs-faint)]">
+                                                                <span className="ml-auto flex-none text-[11.5px] text-[var(--cs-faint)]">
                                                                     {shortTime(row.at)}
                                                                 </span>
                                                             </span>
-                                                            <span className="text-[11.5px] font-semibold text-[var(--cs-muted)]">
+                                                            <span className="text-[12.5px] font-semibold text-[var(--cs-muted)]">
                                                                 {row.title}
                                                             </span>
                                                             <span className="flex min-w-0 items-center gap-[8px]">
-                                                                <span className="truncate text-[11px] text-[var(--cs-faint)]">
+                                                                <span className="truncate text-[12px] text-[var(--cs-faint)]">
                                                                     {row.preview}
                                                                 </span>
                                                                 <span className="ml-auto flex-none">
                                                                     {row.state
                                                                         ? <StatusDot state={row.state} />
                                                                         : (
-                                                                            <span className="inline-flex items-center gap-[5px] text-[11px] font-semibold text-[var(--cs-violet)]">
+                                                                            <span className="inline-flex items-center gap-[5px] text-[11.5px] font-semibold text-[var(--cs-violet)]">
                                                                                 <span className="h-[6px] w-[6px] rounded-full bg-[var(--cs-violet)]" />
                                                                                 {row.replyCount === 1 ? "1 reply" : `${row.replyCount} replies`}
                                                                             </span>

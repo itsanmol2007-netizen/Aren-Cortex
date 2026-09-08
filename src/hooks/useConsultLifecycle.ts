@@ -29,13 +29,14 @@ import type { SidebarPage } from "../features/sidebar/SidebarNav";
 import { commitConsultation, type Observable } from "../lib/db/synapse";
 import {
   createPatient, findPatientByPhone, createVisit,
-  findQueuedVisit, markVisitServing,
+  findQueuedVisit, markVisitServing, startConsultVisit,
+  ActiveConsultExistsError, PaymentDecisionRequiredError,
   saveConsult,
   freqSlotToLabel, freqLabelToSlot,
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
-import { recordVisitPayment, type ConfirmedPayment } from "../lib/db/payments";
+import { type ConfirmedPayment } from "../lib/db/payments";
 import { sendPrescription } from "../lib/db/messaging";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
@@ -273,6 +274,10 @@ export function useConsultLifecycle({
       // After clearWorkspace, never before — the reset would wipe them.
       carryForwardFor(incomingPatient.id!);
     } catch (err: any) {
+      if (err instanceof ActiveConsultExistsError) {
+        showToast("You already have a consult in progress — finish or cancel it first");
+        return;
+      }
       showToast(`Error starting consult: ${err.message}`);
     }
   }, [resolveVisitForConsult, session, clearWorkspace, setActivePage, setSidebarOpen,
@@ -363,29 +368,39 @@ export function useConsultLifecycle({
         }
       }
 
-      const visit = await resolveVisitForConsult(dbPatient.id!);
-
-      // ── The doctor's own fee capture ─────────────────────────────────────
-      // Front desk writes `visit_payments` at intake for a normal Consult
-      // registration; whenever THIS path runs instead — always for Cortex,
-      // and for Consult's own manual-register escape hatch — the doctor is
-      // doing intake themselves with no front desk in the loop, so this is
-      // the equivalent moment. Answers the question SESSION-HANDOFF left
-      // open for Cortex ("is the fee captured at registration or at the end
-      // of the consult?"): registration, same as front desk. `payment`
-      // arrives already fully resolved by `PatientModal` (rule: reception/
-      // the doctor never sets the base fee, only discounts it —
-      // `lib/db/payments.ts`'s own header). Fire-and-forget, never awaited: a
-      // fee that fails to write must not fail a visit that has already been
-      // created (rule 4, same contract as observations/attachments/story).
-      if (payment) {
-        recordVisitPayment({
-          visitId: visit.id,
+      // ── One atomic call: resolve/mint the visit, enforce the rules, bill ──
+      //
+      // `start_consult_visit` (RPC) does what `resolveVisitForConsult` +
+      // `recordVisitPayment` used to do across three round trips, in one — and
+      // makes two things impossible rather than merely discouraged:
+      //
+      //   • a SECOND active consult for a doctor who already has one
+      //     (`ActiveConsultExistsError` — the one-serving-per-doctor index), and
+      //   • a visit with NO paid/unpaid decision when the doctor has a
+      //     consultation fee configured (`PaymentDecisionRequiredError`).
+      //
+      // `payment` is `PatientModal`'s already-resolved `ConfirmedPayment`
+      // (visit type, discount, collected-or-not). `null`/`undefined` is only
+      // valid when the doctor has no fee — the RPC rejects it otherwise and
+      // writes nothing, so the modal stays open for the doctor to decide.
+      let visit: Awaited<ReturnType<typeof startConsultVisit>>;
+      try {
+        visit = await startConsultVisit({
+          patientId: dbPatient.id!,
           hospitalId: identity.hospitalId,
           doctorId: identity.doctorId,
-          actor: { id: identity.userId, name: identity.doctorName, role: "doctor" },
-          ...payment,
-        }).catch((err) => console.warn("[payments] visit payment capture failed (non-fatal):", err));
+          payment,
+        });
+      } catch (err) {
+        if (err instanceof PaymentDecisionRequiredError) {
+          showToast("Mark this visit paid or unpaid to start it");
+          return;
+        }
+        if (err instanceof ActiveConsultExistsError) {
+          showToast("You already have a consult in progress — finish or cancel it first");
+          return;
+        }
+        throw err;
       }
 
       session.setVisitId(null);

@@ -32,12 +32,19 @@ import { motion, useReducedMotion } from "motion/react";
 import { useOverlayFocus } from "../../../hooks/useOverlayFocus";
 
 export function ConsultModal({
-    icon, eyebrow, title, subtitle, band, footer, onClose, holdOpen, dismissable = true, children, labelledBy,
+    icon, eyebrow, title, subtitle, band, footer, onClose, holdOpen, dismissable = true, size = "wide", children, labelledBy,
 }: {
     icon: ReactNode;
     eyebrow: string;
     title: string;
     subtitle?: string;
+    /**
+     * `wide` (default) is the two-column surface the queue sheet and handover
+     * need — a patient beside a queue. `compact` is the single-column
+     * `aren-modal-design.md` width (~460px) for the states that carry one
+     * fact and one action: "all caught up", "resume your consult".
+     */
+    size?: "wide" | "compact";
     /** the dark identity band — `PatientBand`, or nothing */
     band?: ReactNode;
     footer?: ReactNode;
@@ -101,7 +108,10 @@ export function ConsultModal({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ type: "spring", stiffness: 420, damping: 34 }}
                 className={
-                    "flex max-h-[min(660px,90vh)] w-[min(760px,100%)] flex-col overflow-hidden rounded-[20px] " +
+                    (size === "compact"
+                        ? "max-h-[min(560px,90vh)] w-[min(460px,100%)] "
+                        : "max-h-[min(660px,90vh)] w-[min(760px,100%)] ") +
+                    "flex flex-col overflow-hidden rounded-[20px] " +
                     "bg-[rgba(255,255,255,0.97)] outline-none " +
                     "shadow-[0_2px_4px_rgba(16,28,46,0.06),0_8px_24px_rgba(16,28,46,0.10),0_32px_80px_rgba(16,28,46,0.18)]"
                 }

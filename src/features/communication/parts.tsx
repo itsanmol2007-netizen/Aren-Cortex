@@ -88,10 +88,10 @@ export function BigEmpty({
     art, fact, next, action,
 }: { art: ReactNode; fact: string; next: string; action?: ReactNode }) {
     return (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[6px] px-[18px] py-[10px] text-center">
-            <div className="mb-[4px]">{art}</div>
-            <strong className="text-[14px] font-semibold text-[var(--cs-ink)]">{fact}</strong>
-            <span className="max-w-[36ch] text-[12px] font-normal leading-[1.5] text-[var(--cs-muted)]">{next}</span>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[8px] px-[22px] py-[12px] text-center">
+            <div className="mb-[6px]">{art}</div>
+            <strong className="text-[16px] font-bold text-[var(--cs-ink)]">{fact}</strong>
+            <span className="max-w-[40ch] text-[13px] font-normal leading-[1.55] text-[var(--cs-muted)]">{next}</span>
             {action}
         </div>
     );
@@ -321,13 +321,13 @@ export function PanelHead({
     icon, title, right,
 }: { icon?: ReactNode; title: string; right?: ReactNode }) {
     return (
-        <div className="flex flex-none items-center gap-[7px] px-[14px] pt-[12px]">
+        <div className="flex flex-none items-center gap-[8px] px-[16px] pt-[14px]">
             {icon && (
-                <span className="grid h-[24px] w-[24px] flex-none place-items-center rounded-[7px] bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]">
+                <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-[7px] bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]">
                     {icon}
                 </span>
             )}
-            <span className="text-[12.5px] font-bold text-[var(--cs-ink)]">{title}</span>
+            <span className="text-[13.5px] font-bold text-[var(--cs-ink)]">{title}</span>
             {right && <span className="ml-auto flex flex-none items-center gap-[6px]">{right}</span>}
         </div>
     );

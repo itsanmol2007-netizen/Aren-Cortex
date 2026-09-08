@@ -129,13 +129,16 @@ export function TransitionModal({
     // ── Nobody left ─────────────────────────────────────────────────────────
     // The end of the day is a real answer, not an empty modal. One fact, one
     // way out (`empty-states.md`), plus the register path for a walk-in.
+    // Compact card, not the 760px queue surface — this carries a single line
+    // and a single action (2026-09-08: the wide version read as one small
+    // sentence stranded in a lot of horizontal white).
     if (!suggested) {
         return (
             <ConsultModal
+                size="compact"
                 icon={<CheckCircle2 size={16} />}
-                eyebrow="Consultation saved"
-                title="Nobody is waiting"
-                subtitle={justCompleted ? `${justCompleted}'s prescription is saved` : undefined}
+                eyebrow={justCompleted ? `${justCompleted} — saved` : "Consultation saved"}
+                title="All caught up"
                 onClose={onDismiss}
                 // There is no active consult behind this screen by construction
                 // (see the file header: it only opens over an already-cleared
@@ -143,24 +146,22 @@ export function TransitionModal({
                 // Same doctrine `PatientModal` already applies to itself.
                 dismissable={false}
                 footer={
-                    <>
-                        <GhostButton onClick={onRegisterPatient}>
-                            <UserPlus size={14} /> Register a patient
-                        </GhostButton>
-                        <span className="min-w-0 flex-1 text-[11.5px] leading-[1.45] text-[var(--cs-faint)]">
-                            This stays open until the next patient — the desk's or yours.
-                        </span>
-                    </>
+                    <PrimaryButton onClick={onRegisterPatient} full>
+                        <UserPlus size={15} /> Register a patient
+                    </PrimaryButton>
                 }
             >
-                <div className="flex flex-1 flex-col items-center justify-center gap-[6px] px-[20px] py-[38px] text-center">
-                    <CheckCircle2 size={26} className="text-[var(--cs-green)]" aria-hidden="true" />
-                    <strong className="text-[14px] font-semibold text-[var(--cs-ink)]">
-                        {completedCount} consultation{completedCount === 1 ? "" : "s"} today
-                    </strong>
-                    <span className="max-w-[38ch] text-[12px] leading-[1.55] text-[var(--cs-muted)]">
-                        The front desk will add the next patient when they arrive.
-                    </span>
+                <div className="flex flex-1 flex-col items-center justify-center gap-[14px] px-[26px] py-[30px] text-center">
+                    <AllCaughtUpArt />
+                    <div className="flex flex-col items-center gap-[5px]">
+                        <strong className="text-[19px] font-extrabold leading-tight tracking-[-0.01em] text-[var(--cs-ink)]">
+                            {completedCount} consultation{completedCount === 1 ? "" : "s"} today
+                        </strong>
+                        <span className="max-w-[30ch] text-[13px] leading-[1.55] text-[var(--cs-muted)]">
+                            The front desk adds the next patient when they arrive — this
+                            stays open until then.
+                        </span>
+                    </div>
                 </div>
             </ConsultModal>
         );
@@ -304,5 +305,24 @@ export function TransitionModal({
                 </div>
             )}
         </ConsultModal>
+    );
+}
+
+/** The "all caught up" spot illustration — a settled green check on a soft
+ *  ring, with a couple of ambient marks so it reads as a small scene rather
+ *  than a bare icon. Pure inline SVG, theme colours only. */
+function AllCaughtUpArt() {
+    return (
+        <svg width="112" height="112" viewBox="0 0 112 112" fill="none" aria-hidden="true">
+            <circle cx="56" cy="56" r="40" fill="var(--cs-green-soft, rgba(34,197,94,0.12))" />
+            <circle cx="56" cy="56" r="40" stroke="var(--cs-green, #16a34a)" strokeOpacity="0.28" strokeWidth="1.5" />
+            <circle cx="56" cy="56" r="27" fill="var(--cs-card, #fff)" />
+            <circle cx="56" cy="56" r="27" stroke="var(--cs-green, #16a34a)" strokeOpacity="0.45" strokeWidth="2" />
+            <path d="M45 56.5 52.5 64 68 47.5" stroke="var(--cs-green, #16a34a)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="94" cy="34" r="3.5" fill="var(--cs-blue, #1268e8)" fillOpacity="0.5" />
+            <circle cx="20" cy="72" r="2.5" fill="var(--cs-blue, #1268e8)" fillOpacity="0.35" />
+            <circle cx="26" cy="30" r="2" fill="var(--cs-green, #16a34a)" fillOpacity="0.45" />
+            <circle cx="90" cy="80" r="2" fill="var(--cs-green, #16a34a)" fillOpacity="0.35" />
+        </svg>
     );
 }

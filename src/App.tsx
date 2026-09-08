@@ -51,6 +51,7 @@ import { useIntakePrefill } from "./features/consult/useIntakePrefill";
 import { useConsultQueue } from "./features/consult/queue/useConsultQueue";
 import { QueueSheet } from "./features/consult/queue/QueueSheet";
 import { TransitionModal } from "./features/consult/queue/TransitionModal";
+import { ResumeConsultPrompt } from "./features/consult/queue/ResumeConsultPrompt";
 import { useWorkspaceMode } from "./hooks/useWorkspaceMode";
 import { logOperationalEvent } from "./lib/db/intake";
 import { GatewaySessionsProvider } from "./features/frontdesk/components/gateway/GatewaySessionsProvider";
@@ -106,6 +107,7 @@ import type { AcceptPayload } from "./features/consult/types";
 import {
   DOCTOR_NAME, DOCTOR_SPECIALIZATION,
   fetchDoctorCached, fetchHospitalCached,
+  fetchActiveConsult, updateVisitStatus,
   type DBDoctor, type DBHospital, type RealVisit,
 } from "./lib/db";
 import { fetchLastExercisePlan } from "./lib/db/exercises";
@@ -978,14 +980,12 @@ function App() {
   const handleSidebarConsult = () => {
     setActivePage(null);
     setSidebarOpen(false);
-    if (!hasActiveConsult) {
-      // In a clinic with a front desk the answer to "start a consultation" is
-      // the queue, not a blank patient form — the patient is already
-      // registered and already waiting. The form is still reachable from
-      // inside the sheet, for when the desk is unavailable.
-      if (workspace.isConsult) setQueueSheetOpen(true);
-      else setPatientModalOpen(true);
-    }
+    if (hasActiveConsult) return;
+    if (!workspace.isConsult) { setPatientModalOpen(true); return; }
+    // Consult: just land on the consult screen. The entry-gate effect below
+    // decides what opens — the resume prompt, the queue, or the register
+    // screen — once it has resolved whether there's a consult to resume.
+    // Forcing anything open here would race that and land on top of it.
   };
 
   // ── Taking a patient from the queue ─────────────────────────────────────
@@ -1089,98 +1089,98 @@ function App() {
   }, [hasActiveConsult, registerPatientDirectlyNow]);
 
   /**
-   * Consult's standing invariant: never a blank workspace.
+   * The consult screen must never sit blank.
    *
-   * A doctor on the bare consult screen (`activePage === null` — Patients,
-   * Practice, Settings etc. are a legitimate "not consulting right now" and
-   * stay untouched by this) with no active consult and nothing already
-   * covering the screen gets the queue sheet, forced open. Not just on cold
-   * start (2026-09-06: it used to be a once-per-mount check, so ending a
-   * consult any OTHER way — Cancel, or Complete & Next dismissing its own
-   * handover — left the dark header showing nothing at all, no patient name,
-   * no way back in short of a page reload). Opens even with nobody waiting:
-   * the queue sheet's own empty state is a live, useful screen (front desk
-   * additions still show up in it), and it stays open — see its
-   * `dismissable` prop below — so that IS the workspace until somebody
-   * exists to see.
+   * When the doctor is on the bare consult workspace (`activePage === null`)
+   * with no consult in memory and nothing already covering it, exactly one
+   * surface opens — IMMEDIATELY, no wait, no flash:
    *
-   * Does NOT wait on `queue.loading` (2026-09-06 fix: it used to). A page
-   * reload for a Consult clinic hits a real race this was causing: while
-   * auth is still resolving, `useWorkspaceMode` answers "cortex" (its own
-   * documented fallback — "the workflow that needs nothing else to exist"),
-   * so `PatientModal` briefly shows (its render condition reads
-   * `!workspace.isConsult`, true under the fallback); the instant auth
-   * resolves to the clinic's REAL "consult" mode, that condition flips false
-   * and `PatientModal` disappears — and this effect, still waiting on the
-   * queue's own network fetch to finish, had not opened the queue sheet YET.
-   * For however long that fetch takes, nothing was mounted at all: the exact
-   * blank canvas this effect exists to prevent, on the one path (a fresh
-   * reload) that most reliably hits it. Fixed by not waiting — `QueueSheet`
-   * already renders its own "Loading…" subtitle and an empty list rather
-   * than assuming empty, so showing it immediately and letting it fill in
-   * is strictly better than showing nothing while we wait to be sure.
+   *   • someone waiting  → the queue sheet
+   *   • nobody waiting   → the register-a-patient screen  (Consult only;
+   *     Cortex's PatientModal is already its always-open default)
    *
-   * Idempotent by construction, not a one-shot ref: setting `queueSheetOpen`
-   * makes the condition false on the next render, so this never fights the
-   * doctor's own close (which only succeeds once `dismissable` allows it,
-   * i.e. once a consult is active again).
+   * Separately, in the background, the DATABASE is asked ONCE per session
+   * whether this doctor left a `serving` / `draft` visit behind that
+   * localStorage did not restore (a logout, another machine). If so,
+   * `ResumeConsultPrompt` takes over — it renders last (on top) and closes
+   * whatever opened above. "Resume on return" is once-per-session on purpose:
+   * a consult parked later today is offered back on the NEXT app load.
    */
-  useEffect(() => {
-    if (!workspace.isConsult || !workspace.ready) return;
-    if (hasActiveConsult) return;           // a consult already owns the screen
-    // `isFeaturePage` (`activePage !== null`) isn't declared until later in
-    // this component — inlined rather than reordered around it.
-    if (activePage !== null) return;        // Patients/Practice/Settings — a real destination, not idle
-    if (patientModalOpen || transition || queueSheetOpen) return; // something already covers it
-    setQueueSheetOpen(true);
-  }, [workspace.isConsult, workspace.ready, hasActiveConsult,
-      activePage, patientModalOpen, transition, queueSheetOpen]);
+  type ResumeRow = Awaited<ReturnType<typeof fetchActiveConsult>>;
+  const [resumeCandidate, setResumeCandidate] = useState<ResumeRow>(null);
+  const resumeCheckedRef = useRef<string | null>(null);
 
   /**
-   * A watchdog on the invariant directly above, not a second copy of it.
+   * Whether a consult overlay is genuinely on screen right now.
    *
-   * Every render-time check I can find says the effect above fires
-   * synchronously the instant `workspace.ready` flips true (auth resolves
-   * fully — hospital row, `clinic_mode` included — BEFORE `RequireAuth`
-   * ever renders this component; there is no cortex-fallback flash to race
-   * against for a real Consult clinic). I have not been able to reproduce a
-   * blank reload against that trace, and I don't have a live browser to
-   * catch whatever I'm missing. Rather than ship another guess as the only
-   * defence, this re-runs the SAME four conditions a beat later and forces
-   * the same outcome if they still hold — a no-op every time the effect
-   * above already did its job, a real fix the one time it didn't for a
-   * reason this comment doesn't know about yet. If this one is ever
-   * observed actually firing, that's the signal the effect above has a
-   * real gap worth finding, not just theorizing about.
+   * `patientModalOpen` alone is NOT that: it defaults `true` (Cortex's "who
+   * is this for?" opening state) and STAYS `true` in Consult even while the
+   * modal is not rendered — only `registerRequested` makes it render there.
+   * Checking the raw flag was the bug behind "blank consult screen until you
+   * navigate away and come back" (navigating away happened to set it false).
    */
+  const consultOverlayShowing =
+    (patientModalOpen && (!workspace.isConsult || registerRequested)) ||
+    isReviewOpen || activeConsultGuardOpen || queueSheetOpen ||
+    !!transition || !!resumeCandidate || !!attachmentsVisit;
+
   useEffect(() => {
     if (!workspace.isConsult || !workspace.ready) return;
-    const t = setTimeout(() => {
-      if (hasActiveConsult || activePage !== null) return;
-      if (patientModalOpen || transition || queueSheetOpen) return;
+    if (hasActiveConsult || activePage !== null) return;
+    if (consultOverlayShowing) return;
+    if (queue.waiting.length > 0) {
       setQueueSheetOpen(true);
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [workspace.isConsult, workspace.ready, hasActiveConsult,
-      activePage, patientModalOpen, transition, queueSheetOpen]);
+    } else {
+      setRegisterRequested(true);
+      setPatientModalOpen(true);
+    }
+  }, [workspace.isConsult, workspace.ready, hasActiveConsult, activePage,
+      consultOverlayShowing, queue.waiting.length]);
 
-  /**
-   * Drives the TEMPORARY debug box rendered near the top of this component's
-   * JSX (2026-09-06). Deliberately its own 2-second debounce, separate from
-   * both invariants above — this must never flash on a normal load (both of
-   * those resolve in well under 2s when they work), only light up once the
-   * "should be impossible" state has genuinely persisted. Remove this
-   * state/effect and the box together once the underlying report is closed.
-   */
-  const [blankCanvasDetected, setBlankCanvasDetected] = useState(false);
   useEffect(() => {
-    const stuck = workspace.isConsult && workspace.ready && !hasActiveConsult &&
-      activePage === null && !patientModalOpen && !transition && !queueSheetOpen;
-    if (!stuck) { setBlankCanvasDetected(false); return; }
-    const t = setTimeout(() => setBlankCanvasDetected(true), 2000);
-    return () => clearTimeout(t);
-  }, [workspace.isConsult, workspace.ready, hasActiveConsult,
-      activePage, patientModalOpen, transition, queueSheetOpen]);
+    if (!workspace.ready || !identity.ready || !identity.doctorId) return;
+    if (activePage !== null) return;                          // not on the consult screen yet
+    if (resumeCheckedRef.current === identity.doctorId) return; // asked once already this session
+    resumeCheckedRef.current = identity.doctorId;
+    if (hasActiveConsult) return;   // localStorage already restored it — nothing to ask
+
+    let cancelled = false;
+    void fetchActiveConsult(identity.doctorId)
+      .then((row) => {
+        // A localStorage restore may have landed while we were asking.
+        if (cancelled || !row || session.patient) return;
+        setResumeCandidate(row);
+        // Give way to the resume prompt — close whatever the rule above opened.
+        setPatientModalOpen(false);
+        setRegisterRequested(false);
+        setQueueSheetOpen(false);
+      })
+      .catch((e) => console.warn("[consult] fetchActiveConsult failed (non-fatal):", e));
+    return () => { cancelled = true; };
+  }, [workspace.ready, identity.ready, identity.doctorId, hasActiveConsult, activePage, session.patient]);
+
+  const resumeActiveConsult = useCallback(() => {
+    const c = resumeCandidate;
+    if (!c) return;
+    setResumeCandidate(null);
+    resumeConsult(
+      {
+        id: c.patient.id, name: c.patient.name, age: c.patient.age,
+        gender: c.patient.gender as Patient["gender"], phone: c.patient.phone,
+        dateOfBirth: c.patient.dateOfBirth,
+      },
+      c.visitId,
+    );
+  }, [resumeCandidate, resumeConsult]);
+
+  const discardActiveConsult = useCallback(async () => {
+    const c = resumeCandidate;
+    if (!c) return;
+    try { await updateVisitStatus(c.visitId, "discarded"); }
+    catch (e) { console.warn("[consult] discard of resume candidate failed:", e); }
+    setResumeCandidate(null);
+    queue.refetch();
+  }, [resumeCandidate, queue]);
 
   // ── The specialty profile ───────────────────────────────────────────────
   // Which intent type this facility elevates into the Primary Recommendation
@@ -1600,21 +1600,6 @@ function App() {
 
   return (
     <div className="app-shell">
-
-      {blankCanvasDetected && (
-        <div
-          style={{
-            position: "fixed", bottom: 12, left: 12, zIndex: 99999,
-            background: "#7c2d12", color: "#fff", fontFamily: "monospace",
-            fontSize: 12, lineHeight: 1.5, padding: "10px 14px", borderRadius: 10,
-            maxWidth: 420, boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
-          }}
-        >
-          <strong>DEBUG — the queue sheet should be open right now and isn't.</strong>
-          <br />This box only appears once that's been true for 2+ seconds —
-          not a normal one-frame flash. Please screenshot it and send it back.
-        </div>
-      )}
 
       <Sidebar
         isOpen={sidebarOpen}
@@ -2570,6 +2555,7 @@ function App() {
             // happens without a real active visit — see the three call sites
             // that set it.
             visitId={visitId!}
+            doctorId={identity.doctorId}
             patientName={patient?.name ?? "this patient"}
             onDiscard={() => {
               resetConsultState();
@@ -2594,6 +2580,7 @@ function App() {
           />
         )
       }
+
       {/* ── The queue, on demand ──────────────────────────────────────────
           Opened from the dark header's Queue control, closed again. Not
           rendered at all in Cortex, where there is no front desk to have a
@@ -2672,9 +2659,32 @@ function App() {
               doctorId: identity.doctorId,
               doctorName: identity.doctorName,
             }}
+            // The "set up your fee" link on the no-fee notice — Overview is
+            // where the fee control lives (Team management → Fees).
+            onSetupFee={() => {
+              setRegisterRequested(false);
+              setPatientModalOpen(false);
+              setActivePage("overview");
+            }}
           />
         )
       }
+
+      {/* ── Resume your consult ───────────────────────────────────────────
+          The DB-backed entry gate: this doctor has a `serving` / `draft`
+          visit that localStorage did not restore (a logout, another
+          machine). Rendered LAST so it sits above the register screen / queue
+          sheet if either opened in the gap before the DB answered. Both
+          products. */}
+      {!isFeaturePage && resumeCandidate && !hasActiveConsult && (
+        <ResumeConsultPrompt
+          patientName={resumeCandidate.patient.name}
+          status={resumeCandidate.status}
+          startedAt={resumeCandidate.startedAt}
+          onResume={resumeActiveConsult}
+          onDiscard={discardActiveConsult}
+        />
+      )}
 
       {
         !isFeaturePage && isReviewOpen && patient && (

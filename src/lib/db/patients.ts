@@ -2,6 +2,7 @@ import { supabase } from "../supabase";
 import type { DBSymptom, DBFinding } from "./reference";
 import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../body/anatomy";
 import { visitStatusKind } from "../../features/patients/visitStatus";
+import type { ConfirmedPayment } from "./payments";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -146,6 +147,41 @@ export async function createVisit(opts: {
     return data;
 }
 
+/**
+ * Raised whenever a second visit would go `serving` for a doctor who already
+ * has one — from `start_consult_visit`'s explicit check, from the
+ * `visits_one_serving_per_doctor` partial unique index, or from
+ * `markVisitServing` below. The rule ("a doctor sees one patient at a time")
+ * is enforced in the database; callers catch this to show the resume prompt
+ * or a plain toast rather than a raw Postgres string.
+ */
+export class ActiveConsultExistsError extends Error {
+    constructor() {
+        super("ACTIVE_CONSULT_EXISTS");
+        this.name = "ActiveConsultExistsError";
+    }
+}
+
+/** Raised by `start_consult_visit` when the doctor has a consultation fee
+ *  configured and no paid/unpaid decision was passed. The visit is NOT
+ *  created — the UI must collect the decision and call again. */
+export class PaymentDecisionRequiredError extends Error {
+    constructor() {
+        super("PAYMENT_DECISION_REQUIRED");
+        this.name = "PaymentDecisionRequiredError";
+    }
+}
+
+function throwConsultRpcError(message: string): never {
+    if (message.includes("ACTIVE_CONSULT_EXISTS") || message.includes("visits_one_serving_per_doctor")) {
+        throw new ActiveConsultExistsError();
+    }
+    if (message.includes("PAYMENT_DECISION_REQUIRED")) {
+        throw new PaymentDecisionRequiredError();
+    }
+    throw new Error(message);
+}
+
 export async function markVisitServing(visitId: string): Promise<DBVisit> {
     const { data, error } = await supabase
         .from("visits")
@@ -156,8 +192,101 @@ export async function markVisitServing(visitId: string): Promise<DBVisit> {
         .eq("id", visitId)
         .select("id, patient_id, assigned_doctor_id, status")
         .single();
-    if (error) throw new Error(`markVisitServing: ${error.message}`);
-    return data;
+    // The one-serving-per-doctor index rejects a second active consult — the
+    // same rule `start_consult_visit` enforces, hit here on the queue-pick
+    // path that resumes a front-desk `waiting` visit directly.
+    if (error) throwConsultRpcError(`markVisitServing: ${error.message}`);
+    return data!;
+}
+
+/**
+ * The doctor-side "start a consult" round trip — one call that resolves or
+ * mints the visit, enforces one-serving-per-doctor and the fee gate, and
+ * records the payment, all atomically (`start_consult_visit` RPC,
+ * `20260908_one_active_consult_and_fee_gate.sql`).
+ *
+ * `payment` is `PatientModal`'s already-resolved `ConfirmedPayment`. Pass
+ * `null`/`undefined` only when the doctor has no consultation fee configured —
+ * the RPC raises `PaymentDecisionRequiredError` otherwise, and nothing is
+ * written.
+ */
+export async function startConsultVisit(opts: {
+    patientId: string;
+    hospitalId: string;
+    doctorId: string;
+    payment?: ConfirmedPayment | null;
+}): Promise<DBVisit> {
+    const { patientId, hospitalId, doctorId, payment } = opts;
+    const { data, error } = await supabase.rpc("start_consult_visit", {
+        p_patient_id: patientId,
+        p_hospital_id: hospitalId,
+        p_doctor_id: doctorId,
+        p_visit_type: payment?.visitType ?? "new",
+        p_pay_status: payment ? payment.status : null,
+        p_pay_method: payment?.method ?? null,
+        p_fee: payment?.breakdown.base ?? 0,
+        p_discount: payment?.breakdown.discount ?? 0,
+        p_discount_kind: payment?.discountKind ?? "none",
+        p_discount_percent: payment?.discountPercent ?? null,
+        p_gst_percent: payment?.gstPercent ?? 0,
+        p_gst_amount: payment?.breakdown.gstAmount ?? 0,
+    });
+    if (error) throwConsultRpcError(`startConsultVisit: ${error.message}`);
+    const row = data as { id: string; patient_id: string; assigned_doctor_id: string; status: string; token_number: number | null };
+    return {
+        id: row.id,
+        patient_id: row.patient_id,
+        assigned_doctor_id: row.assigned_doctor_id,
+        status: row.status,
+        token_number: row.token_number,
+    };
+}
+
+/**
+ * The doctor's own unfinished consult, read from the DB rather than
+ * localStorage — so a logout or a different machine still recovers it. Returns
+ * the most recent `serving` (in the room) or `draft` (parked) visit for this
+ * doctor, with just enough of the patient to hydrate `resumeConsult`. `null`
+ * when there is nothing to resume, which is the normal state.
+ */
+export async function fetchActiveConsult(doctorId: string): Promise<{
+    visitId: string;
+    status: "serving" | "draft";
+    startedAt: string | null;
+    patient: { id: string; name: string; age: string; gender: string; phone: string; dateOfBirth?: string };
+} | null> {
+    const { data, error } = await supabase
+        .from("visits")
+        .select("id, status, started_at, created_at, patients ( id, name, age, gender, phone, date_of_birth )")
+        .eq("assigned_doctor_id", doctorId)
+        .in("status", ["serving", "draft"])
+        .order("started_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    if (error) throw new Error(`fetchActiveConsult: ${error.message}`);
+
+    const rows = (data ?? []) as unknown as {
+        id: string; status: string; started_at: string | null; created_at: string;
+        patients: { id: string; name: string; age: number | string; gender: string; phone: string; date_of_birth: string | null } | null;
+    }[];
+    if (rows.length === 0) return null;
+
+    // Prefer a `serving` row; fall back to the newest `draft`.
+    const chosen = rows.find((r) => r.status === "serving") ?? rows[0];
+    if (!chosen.patients) return null;
+    const p = chosen.patients;
+    return {
+        visitId: chosen.id,
+        status: chosen.status as "serving" | "draft",
+        startedAt: chosen.started_at,
+        patient: {
+            id: p.id,
+            name: p.name,
+            age: String(p.age ?? ""),
+            gender: p.gender ?? "",
+            phone: p.phone ?? "",
+            dateOfBirth: p.date_of_birth ?? undefined,
+        },
+    };
 }
 
 export async function reassignVisitDoctor(visitId: string, doctorId: string): Promise<void> {

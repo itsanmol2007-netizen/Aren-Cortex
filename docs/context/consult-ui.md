@@ -68,6 +68,48 @@ something here once, every chart gets it. Carries the Apple-style header
 treatment (gradient stripe, icon badge) as of 2026-08-17 — see `.pm-*` in
 `components-modals.css` for the reference it was matched to.
 
+## Two structural rules (2026-09-08)
+
+Both products, enforced in the database, not by App.tsx bookkeeping.
+
+- **One active consult per doctor.** `visits_one_serving_per_doctor` partial
+  unique index (`20260908_one_active_consult_and_fee_gate.sql`). A second
+  visit going `serving` raises `unique_violation` → `lib/db/patients.ts`
+  turns it into `ActiveConsultExistsError`. The doctor-side start path is now
+  the `start_consult_visit` RPC (one round trip): resolves today's front-desk
+  `waiting` row or mints a new `serving` one, checks the index, checks the
+  fee gate, writes `visit_payments` — atomically. `handlePatientConfirm`
+  calls it; `handleStartConsultFromRecord` (queue pick) still uses
+  `resolveVisitForConsult` but now catches the same error. Front desk keeps
+  `createVisit`/`markVisitServing`.
+- **Payment gate.** `start_consult_visit` raises `PAYMENT_DECISION_REQUIRED`
+  (nothing written) when the doctor has `doctors.consultation_fee` set and no
+  paid/unpaid decision was passed. `PatientModal`: when a fee is wired the
+  rail's **Collect / Mark as unpaid** buttons ARE the submit (no separate
+  "Start consult" button; a search-result click only *selects*). No fee →
+  no rail, just a one-line "set up your fee" notice.
+
+## Entry gate + never-blank rule (App.tsx, replaced the old invariant + watchdog + debug box)
+
+On the bare consult screen (`activePage === null`, no consult in memory):
+
+- **Immediately** (Consult only — Cortex's PatientModal is already its
+  default): anyone waiting → `QueueSheet`; nobody waiting → `PatientModal`
+  register screen directly, never a locked empty queue sheet. The "is
+  something already covering the screen" check is `consultOverlayShowing`,
+  NOT raw `patientModalOpen` — that flag defaults `true` and stays `true` in
+  Consult while the modal is unrendered (only `registerRequested` renders it).
+  Checking the raw flag was the "blank consult screen until you navigate away
+  and back" bug.
+- **In the background**, once per session per doctor: `fetchActiveConsult`
+  asks the DB for a `serving`/`draft` visit localStorage missed (logout,
+  other machine). If found → `ResumeConsultPrompt` (Resume / Discard, no
+  dismiss), rendered last so it sits on top, and it closes whatever opened
+  meanwhile.
+
+`ActiveConsultGuard`'s "Save as draft" discards any older draft first, so
+parked consults can't pile up.
+
 ## What's NOT covered here
 
 Specialty-specific screen shape (→ `specialties.md`), engine/ranking

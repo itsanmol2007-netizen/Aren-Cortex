@@ -64,10 +64,19 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 ];
 
 export function PatientPaymentRail({
-    state, onChange, policy, baseFee, breakdown, doctorName, needsDecision, lockReason,
+    state, onChange, onCommit, policy, baseFee, breakdown, doctorName, needsDecision, lockReason,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
+    /**
+     * Called the instant the doctor makes the paid/unpaid call — this rail's
+     * two buttons ARE the submit now (`PatientModal` removed its own "Start
+     * consult" button when a fee is on the table). The decision is passed
+     * explicitly rather than read back from `state`, which has not flushed
+     * through React yet at call time. Optional: without it the rail just
+     * records the decision and shows its "Will collect …" summary as before.
+     */
+    onCommit?: (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null }) => void;
     policy: BillingPolicy;
     /** Resolved from the signed-in doctor + visit type. `null` = nothing to charge. */
     baseFee: number | null;
@@ -250,7 +259,11 @@ export function PatientPaymentRail({
                                     key={m.key}
                                     type="button"
                                     disabled={locked}
-                                    onClick={() => { set({ status: "paid", method: m.key }); setCollecting(false); }}
+                                    onClick={() => {
+                                        set({ status: "paid", method: m.key });
+                                        setCollecting(false);
+                                        onCommit?.({ status: "paid", method: m.key });
+                                    }}
                                     className="h-[36px] cursor-pointer rounded-[10px] border border-black/10 bg-white text-[12.5px] font-bold text-[#334155] transition-colors hover:border-[#a855f7] hover:bg-[#faf5ff] hover:text-[#7c3aed] disabled:cursor-not-allowed"
                                 >
                                     {m.label}
@@ -279,7 +292,7 @@ export function PatientPaymentRail({
                         <button
                             type="button"
                             disabled={locked}
-                            onClick={() => set({ status: "unpaid", method: null })}
+                            onClick={() => { set({ status: "unpaid", method: null }); onCommit?.({ status: "unpaid", method: null }); }}
                             className="flex h-[40px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-black/[0.04] text-[13px] font-bold text-[#4b5563] transition-colors hover:bg-black/[0.07] hover:text-[#0f172a] disabled:cursor-not-allowed"
                         >
                             <Clock size={14} />

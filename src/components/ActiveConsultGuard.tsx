@@ -1,11 +1,15 @@
 import { X, AlertTriangle, Stethoscope, Clock, Trash2, FileText, ArrowRight, Activity, Pill } from "lucide-react";
 import { useRef, useState } from "react";
-import { updateVisitStatus } from "@/lib/db";
+import { updateVisitStatus, fetchDraftVisits } from "@/lib/db";
 import { useOverlayFocus } from "@/hooks/useOverlayFocus";
 import { useRovingList } from "@/hooks/useRovingList";
 
 type Props = {
     visitId: string;
+    /** The signed-in doctor. When present, "Save as draft" first discards any
+     *  OTHER parked draft this doctor has — there is only ever one parked
+     *  slot, so parked consults can never pile up (2026-09-08). */
+    doctorId?: string;
     patientName: string;
     patientAge?: number;
     selectedSymptomsCount?: number;
@@ -18,6 +22,7 @@ type Props = {
 
 export function ActiveConsultGuard({
     visitId,
+    doctorId,
     patientName,
     patientAge,
     selectedSymptomsCount = 0,
@@ -94,6 +99,18 @@ export function ActiveConsultGuard({
     const handleSaveDraft = async () => {
         setLoading('draft');
         try {
+            // One parked slot only. Any OTHER draft this doctor left behind is
+            // discarded now, so "five parked consults" cannot happen — the
+            // resume-on-return prompt would only ever surface the newest of
+            // them anyway.
+            if (doctorId) {
+                const existing = await fetchDraftVisits(doctorId).catch(() => []);
+                await Promise.all(
+                    existing
+                        .filter((d) => d.id !== visitId)
+                        .map((d) => updateVisitStatus(d.id, 'discarded').catch(() => { }))
+                );
+            }
             await updateVisitStatus(visitId, 'draft');
             onComplete();
         } catch (error) {

@@ -1,4 +1,4 @@
-import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2, CalendarDays } from "lucide-react";
+import { Search, UserCheck, User, Phone, MapPin, Sparkles, Loader2, CalendarDays, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { searchPatients, findPatientByPhone, fetchPatientVisitStats, type DBPatient } from "../lib/db";
 import type { Gender, Patient } from "../types";
@@ -7,7 +7,7 @@ import { useRovingList } from "../hooks/useRovingList";
 import { matches } from "../lib/keyboard/keymap";
 import {
   computeFee, defaultVisitType, fetchFeeContext, resolveFee,
-  type ConfirmedPayment, type FeeContext, type VisitType,
+  type ConfirmedPayment, type FeeContext, type PaymentMethod, type VisitType,
 } from "../lib/db/payments";
 import { PatientPaymentRail, INITIAL_FEE_STATE, type FeeState } from "./PatientPaymentRail";
 
@@ -29,6 +29,13 @@ type PatientModalProps = {
    * and every field above behaves exactly as it did before this rail existed.
    */
   billing?: { hospitalId: string; doctorId: string; doctorName: string };
+  /**
+   * Take the doctor to where a consultation fee is set (the Overview page's
+   * fee control). Shown as the "set up your fee" link on the one-line notice
+   * that replaces the payment rail when `billing` is present but no fee is
+   * configured for this doctor. Omitted → the notice shows without a link.
+   */
+  onSetupFee?: () => void;
 };
 
 const emptyDraft: Patient = { name: "", age: "", gender: "", phone: "", address: "", dateOfBirth: "" };
@@ -37,10 +44,16 @@ function dbToUiPatient(p: DBPatient): Patient {
   return { id: p.id, name: p.name, age: String(p.age), gender: p.gender as Gender, phone: p.phone, dateOfBirth: p.date_of_birth ?? "" };
 }
 
-export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps) {
+export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: PatientModalProps) {
   const [draft, setDraft] = useState<Patient>(emptyDraft);
   const [matchedPatient, setMatchedPatient] = useState<DBPatient | null>(null);
   const [mode, setMode] = useState<"search" | "create">("search");
+  // Search mode, fee wired: a result-row click SELECTS the patient (lights up
+  // the payment rail) instead of starting the visit outright — the rail's
+  // Paid / Not paid buttons are the only way in, so a visit can never be
+  // created without that decision. Null in every no-fee flow, where a row
+  // click still confirms in one tap.
+  const [selectedPatient, setSelectedPatient] = useState<DBPatient | null>(null);
 
   // ── Fee capture (pure Cortex only — see `billing`'s own doc comment) ────
   //
@@ -51,14 +64,20 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
   const feeDoctorId = billing?.doctorId;
 
   const [feeCtx, setFeeCtx] = useState<FeeContext | null>(null);
+  // Whether the fee read has finished (resolved OR failed). Until it has,
+  // `baseFee` is null for a reason we don't know yet — so the modal must not
+  // flash the "no fee set" notice or the narrow layout at a doctor who does
+  // have a fee. It holds the wide shell until the answer is real.
+  const [feeCtxSettled, setFeeCtxSettled] = useState(false);
   useEffect(() => {
-    if (!hospitalId) return;
+    if (!hospitalId) { setFeeCtxSettled(true); return; }
     let alive = true;
     fetchFeeContext(hospitalId)
       .then((ctx) => { if (alive) setFeeCtx(ctx); })
       // Non-fatal: a doctor must still be able to start a consult when the
       // fee read fails. The rail simply shows no money controls.
-      .catch((err) => console.warn("[PatientModal] fetchFeeContext failed (non-fatal):", err));
+      .catch((err) => console.warn("[PatientModal] fetchFeeContext failed (non-fatal):", err))
+      .finally(() => { if (alive) setFeeCtxSettled(true); });
     return () => { alive = false; };
   }, [hospitalId]);
 
@@ -115,7 +134,13 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
   const effectiveVisitType = (patientId: string | undefined): VisitType =>
     feeTouched ? fee.visitType : defaultVisitType(patientId ? statsById.get(patientId)?.last_visit_at : null);
 
-  const buildPayment = (patientId: string | undefined): ConfirmedPayment | null => {
+  const buildPayment = (
+    patientId: string | undefined,
+    /** The Paid / Not-paid decision, passed explicitly from the rail so it
+     *  does not depend on `fee.status` having flushed through React state
+     *  yet. Omitted → read from `fee.status` (the pre-rail-as-submit path). */
+    decision?: { status: "paid" | "unpaid"; method: PaymentMethod | null },
+  ): ConfirmedPayment | null => {
     if (!billing || !feeCtx) return null;
     const visitType = effectiveVisitType(patientId);
     const base = resolveFee(doctorCard, visitType);
@@ -127,6 +152,8 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
       gstEnabled: feeCtx.policy.gstEnabled,
       gstPercent: feeCtx.policy.gstPercent,
     });
+    const status = decision ? decision.status : fee.status;
+    const method = decision ? decision.method : fee.method;
     return {
       visitType,
       breakdown: finalBreakdown,
@@ -135,9 +162,40 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
       gstPercent: feeCtx.policy.gstPercent,
       // "Undecided" saves as pending — the visit starts either way, and an
       // unanswered money question must never be recorded as money collected.
-      status: fee.status === "paid" ? "paid" : "pending",
-      method: fee.status === "paid" ? fee.method : null,
+      status: status === "paid" ? "paid" : "pending",
+      method: status === "paid" ? method : null,
     };
+  };
+
+  /** True when this doctor has a real consultation fee on the table — the
+   *  payment rail is shown and its Paid / Not-paid buttons ARE the submit.
+   *  False → no rail at all, just the "set up your fee" notice, and the
+   *  flow is the plain one-tap confirm it always was. */
+  const feeWired = !!billing && feeCtxSettled && baseFee !== null;
+  /** `billing` given, fee read still in flight — keep the wide two-column
+   *  shell so it doesn't flash narrow then jump wide when the fee resolves. */
+  const feeResolving = !!billing && !feeCtxSettled;
+  /** The wide layout is live for a real fee AND while we're still finding out. */
+  const wideShell = feeWired || feeResolving;
+
+  /**
+   * The one place a fee-wired visit is actually started: the rail's
+   * Collect / Mark-as-unpaid buttons call this with their decision. Resolves
+   * whichever patient is in play (a selected search result, the phone-
+   * duplicate match, or a valid new-patient draft) and confirms.
+   */
+  const commitWithPayment = (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null }) => {
+    const existing = selectedPatient ?? matchedPatient;
+    if (existing) {
+      onConfirm(dbToUiPatient(existing), buildPayment(existing.id, decision));
+      return;
+    }
+    if (mode === "create" && isFormValid && !matchedPatient) {
+      onConfirm(
+        { ...draft, name: draft.name.trim(), phone: draft.phone.trim() },
+        buildPayment(undefined, decision),
+      );
+    }
   };
 
   // Search mode state
@@ -171,8 +229,24 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
   });
 
   // A fresh query is a fresh list; leaving the cursor on row 3 of the previous
-  // one would put Enter on a patient who is no longer on screen.
-  useEffect(() => { roving.clear(); }, [searchResults, roving]);
+  // one would put Enter on a patient who is no longer on screen. Same reason to
+  // drop a `selectedPatient` that a narrowed search no longer contains.
+  useEffect(() => {
+    roving.clear();
+    setSelectedPatient((s) => (s && searchResults.some((r) => r.id === s.id) ? s : null));
+  }, [searchResults, roving]);
+
+  // Switching tabs abandons a half-made pick.
+  useEffect(() => { setSelectedPatient(null); }, [mode]);
+
+  // A row picked while the fee read was still in flight, which then came back
+  // "no fee": there is no rail to press, so the pick IS the confirm.
+  useEffect(() => {
+    if (feeCtxSettled && !feeWired && selectedPatient) {
+      onConfirm(dbToUiPatient(selectedPatient), null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feeCtxSettled, feeWired, selectedPatient]);
 
   // Focus follows the mode, both ways. Switching to the form with Alt+N and
   // landing on nothing would make the shortcut feel broken even though it
@@ -310,6 +384,12 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
     const name = draft.name.trim();
     const phone = draft.phone.trim();
     if (!name || !phone || !draft.gender) return;
+    // Fee wired (or still finding out): there is no "create" button — the
+    // rail's Paid / Not paid buttons are the only way in. An Enter off the
+    // end of the form nudges that rather than slipping a visit through
+    // undecided.
+    if (feeWired) { setPaymentError(true); return; }
+    if (feeResolving) return;
     if (!paymentDecided()) return;
     // Only reachable with no `matchedPatient` (that branch has its own "Use
     // this patient" action) — always a genuinely new patient, so there is no
@@ -331,7 +411,9 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
   // so there is nothing here to unlock it for.
   const railMissing: string[] = [];
   if (mode === "search") {
-    railMissing.push("a patient");
+    // Unlocked once a result row is picked — the rail's buttons then start
+    // the visit for that patient.
+    if (!selectedPatient) railMissing.push("a patient");
   } else if (!matchedPatient) {
     if (!draft.name.trim()) railMissing.push("name");
     if (draft.phone.length !== 10) railMissing.push("phone number");
@@ -340,7 +422,7 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
   const railLockReason = railMissing.length === 0
     ? undefined
     : mode === "search"
-      ? "Search for or create a patient to continue."
+      ? "Pick a patient from the results to continue."
       : `Add the patient's ${railMissing.join(", ")} to continue.`;
 
   return (
@@ -360,7 +442,7 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
       <div
         className="pm-card"
         onKeyDown={onCardKeyDown}
-        style={billing ? { width: "min(760px, 96vw)", display: "flex", flexDirection: "column", overflow: "hidden" } : undefined}
+        style={wideShell ? { width: "min(760px, 96vw)", display: "flex", flexDirection: "column", overflow: "hidden" } : undefined}
       >
         <div className="pm-top-stripe" />
 
@@ -379,11 +461,11 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
             back to being direct children of `.pm-card`, exactly as before
             this rail existed. A real two-column grid only exists once
             there's a second column to divide from the first. */}
-        <div className={billing
+        <div className={wideShell
           ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_252px] overflow-hidden max-[680px]:grid-cols-1"
           : "contents"}
         >
-        <div className={billing ? "flex min-h-0 flex-col overflow-y-auto" : "contents"}>
+        <div className={wideShell ? "flex min-h-0 flex-col overflow-y-auto" : "contents"}>
         {/* Mode toggle */}
         <div className="pm-toggle">
           <button type="button" className={`pm-toggle-btn ${mode === "search" ? "active" : ""}`} onClick={() => setMode("search")}>
@@ -393,6 +475,23 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
             New patient
           </button>
         </div>
+
+        {/* Fee wired for this clinic but not for this doctor: no payment
+            controls at all, just a nudge to set one up. The visit still
+            starts normally (the RPC writes nothing when there is no fee).
+            Waits for the fee read to settle so it never flashes at a doctor
+            who does have a fee. */}
+        {!!billing && feeCtxSettled && baseFee === null && (
+          <div className="mx-[20px] mt-[12px] flex items-start gap-[8px] rounded-[10px] bg-black/[0.03] px-[11px] py-[9px] text-[12px] leading-[1.45] text-[#64748b]">
+            <Wallet size={14} className="mt-[1px] shrink-0 text-[#94a3b8]" />
+            <span>
+              No consultation fee set for you yet.{" "}
+              {onSetupFee
+                ? <button type="button" onClick={onSetupFee} className="cursor-pointer border-0 bg-transparent p-0 font-semibold text-[#a855f7] underline underline-offset-2 hover:text-[#7c3aed]">Set up your fee →</button>
+                : <span className="text-[#94a3b8]">Ask your clinic admin to add one.</span>}
+            </span>
+          </div>
+        )}
 
         {/* ── SEARCH MODE ── */}
         {/* `flex-1 min-h-0` alongside the legacy class (no property clash —
@@ -479,23 +578,36 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
 
             {searchResults.length > 0 && (
               <div className="pm-match-list" ref={listRef}>
-                {searchResults.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="pm-match-row"
-                    onClick={() => onConfirm(dbToUiPatient(p), buildPayment(p.id))}
-                  >
-                    <div className="pm-avatar">
-                      {p.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="pm-match-info">
-                      <strong>{p.name}</strong>
-                      <span>{p.age}y · {p.gender} · +91 {p.phone}</span>
-                    </div>
-                    <UserCheck size={14} className="pm-match-check" />
-                  </button>
-                ))}
+                {searchResults.map((p) => {
+                  const picked = feeWired && selectedPatient?.id === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="pm-match-row"
+                      aria-pressed={feeWired ? picked : undefined}
+                      style={picked ? { borderColor: "#a855f7", background: "#faf5ff" } : undefined}
+                      onClick={() => {
+                        // Fee wired → pick the patient and let the rail's
+                        // Paid / Not paid buttons start the visit. No fee →
+                        // nothing to decide, confirm in one tap as before.
+                        // Still resolving the fee → treat as "pick", the rail
+                        // (or its absence) sorts itself out a beat later.
+                        if (feeWired || feeResolving) setSelectedPatient(p);
+                        else onConfirm(dbToUiPatient(p), buildPayment(p.id));
+                      }}
+                    >
+                      <div className="pm-avatar">
+                        {p.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="pm-match-info">
+                        <strong>{p.name}</strong>
+                        <span>{p.age}y · {p.gender} · +91 {p.phone}</span>
+                      </div>
+                      <UserCheck size={14} className="pm-match-check" />
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -621,16 +733,24 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
                   </div>
                 </div>
                 <div className="pm-duplicate-actions">
-                  <button
-                    type="button"
-                    className="pm-btn-primary"
-                    onClick={() => {
-                      if (!paymentDecided()) return;
-                      onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id));
-                    }}
-                  >
-                    Use this patient
-                  </button>
+                  {feeWired ? (
+                    // The rail's Paid / Not paid buttons start the visit for
+                    // this matched patient — no separate confirm to slip past.
+                    <span className="text-[11.5px] font-medium leading-[1.4] text-[#64748b]">
+                      Mark this visit paid or unpaid on the right to continue with them.
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pm-btn-primary"
+                      onClick={() => {
+                        if (!paymentDecided()) return;
+                        onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id));
+                      }}
+                    >
+                      Use this patient
+                    </button>
+                  )}
                   <button type="button" className="pm-btn-ghost" onClick={() => setMatchedPatient(null)}>
                     Create new anyway
                   </button>
@@ -655,9 +775,18 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
                 </div>
                 <div className="pm-actions">
                   <button type="button" className="pm-btn-ghost" onClick={onClose}>Cancel</button>
-                  <button type="button" className="pm-btn-primary" disabled={!isFormValid} onClick={handleConfirm}>
-                    Start consult →
-                  </button>
+                  {feeWired ? (
+                    // No "Start consult" button when a fee is on the table —
+                    // the rail's Paid / Not paid buttons are the only way in,
+                    // so a visit can't be created without that decision.
+                    <span className="self-center text-[11.5px] font-medium text-[#64748b]">
+                      {isFormValid ? "Mark paid or unpaid on the right →" : "Fill the required fields"}
+                    </span>
+                  ) : (
+                    <button type="button" className="pm-btn-primary" disabled={!isFormValid} onClick={handleConfirm}>
+                      Start consult →
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -665,18 +794,27 @@ export function PatientModal({ onClose, onConfirm, billing }: PatientModalProps)
         )}
         </div>
 
-        {billing && (
+        {wideShell && billing && (
           <div className="flex min-h-0 flex-col overflow-y-auto border-l border-black/10 bg-[#fbfaff] p-[14px] max-[680px]:border-l-0 max-[680px]:border-t">
-            <PatientPaymentRail
-              state={fee}
-              onChange={handleFeeChange}
-              policy={feeCtx?.policy ?? { currency: "INR", gstEnabled: false, gstPercent: 18, allowDiscount: true }}
-              baseFee={baseFee}
-              breakdown={breakdown}
-              doctorName={billing.doctorName}
-              needsDecision={paymentError}
-              lockReason={railLockReason}
-            />
+            {feeWired ? (
+              <PatientPaymentRail
+                state={fee}
+                onChange={handleFeeChange}
+                onCommit={commitWithPayment}
+                policy={feeCtx?.policy ?? { currency: "INR", gstEnabled: false, gstPercent: 18, allowDiscount: true }}
+                baseFee={baseFee}
+                breakdown={breakdown}
+                doctorName={billing.doctorName}
+                needsDecision={paymentError}
+                lockReason={railLockReason}
+              />
+            ) : (
+              // Fee read still in flight — hold the column, no message yet.
+              <div className="flex flex-1 flex-col gap-[10px] pt-[4px]">
+                <div className="h-[36px] animate-pulse rounded-[10px] bg-black/[0.04]" />
+                <div className="h-[80px] animate-pulse rounded-[10px] bg-black/[0.04]" />
+              </div>
+            )}
           </div>
         )}
         </div>
