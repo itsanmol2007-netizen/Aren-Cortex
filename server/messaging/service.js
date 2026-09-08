@@ -100,13 +100,24 @@ async function loadContext(sb, { doctorId, patientId }) {
 
     return {
         doctorId: doctor.id,
-        doctorName: doctor.name || "your doctor",
+        // The prescription template's body already reads "…from Dr. {{1}}…",
+        // so send the BARE name. About half of doctors type the honorific
+        // into their own profile ("Dr Anmol Pandey"), which printed as
+        // "Dr. Dr Anmol Pandey". Mirrors src/lib/format.ts's `doctorName()`,
+        // which the browser can't share with this process.
+        doctorName: stripHonorific(doctor.name) || "your doctor",
         hospitalId: doctor.hospital_id,
         clinicName: doctor.hospitals?.name || "your clinic",
         patientId: patient.id,
         patientName: patient.name || null,
         phone,
     };
+}
+
+/** "Dr Anmol Pandey" / "dr. Anmol Pandey" -> "Anmol Pandey". Leaves a name
+ *  with no honorific untouched. */
+function stripHonorific(raw) {
+    return String(raw || "").trim().replace(/^d[r]\.?\s+/i, "").trim();
 }
 
 /**

@@ -2658,7 +2658,15 @@ function App() {
                 ? () => { setRegisterRequested(false); setPatientModalOpen(false); }
                 : patient ? () => setPatientModalOpen(false) : () => { }
             }
-            onConfirm={(p, payment) => { setRegisterRequested(false); return handlePatientConfirm(p, payment); }}
+            // Clear `registerRequested` only when a consult actually started.
+            // On a payment-undecided / duplicate-phone / RLS failure the modal
+            // must STAY (the doctor sees the toast and retries or Cancels) —
+            // clearing eagerly dropped them onto a blank screen the "never
+            // blank" guard instantly re-covered with a fresh modal.
+            onConfirm={async (p, payment) => {
+              const started = await handlePatientConfirm(p, payment);
+              if (started) setRegisterRequested(false);
+            }}
             // Always on, in both workspaces (2026-09-06 — this used to be
             // Cortex-only). Consult's `registerRequested` escape hatch is the
             // SAME "the doctor is doing their own intake" situation Cortex

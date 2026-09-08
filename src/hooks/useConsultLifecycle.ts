@@ -154,7 +154,7 @@ export interface ConsultLifecycle {
    * way nothing is written, same as front desk's own `payment: null`
    * contract.
    */
-  handlePatientConfirm: (incoming: Patient, payment?: ConfirmedPayment | null) => Promise<void>;
+  handlePatientConfirm: (incoming: Patient, payment?: ConfirmedPayment | null) => Promise<boolean>;
   /** Carry a past visit's chart and medicines into this one. */
   handleRepeatRx: (visit: RealVisit) => void;
   /**
@@ -394,11 +394,11 @@ export function useConsultLifecycle({
       } catch (err) {
         if (err instanceof PaymentDecisionRequiredError) {
           showToast("Mark this visit paid or unpaid to start it");
-          return;
+          return false;
         }
         if (err instanceof ActiveConsultExistsError) {
           showToast("You already have a consult in progress — finish or cancel it first");
-          return;
+          return false;
         }
         throw err;
       }
@@ -420,8 +420,16 @@ export function useConsultLifecycle({
       session.loadPastVisits(dbPatient.id!, visit.id);
       // After clearWorkspace, never before — the reset would wipe them.
       carryForwardFor(dbPatient.id!);
+      return true;
     } catch (err: any) {
-      showToast(`Error: ${err.message}`);
+      // Leave the modal OPEN on an unexpected failure (a 409, an RLS reject)
+      // so the doctor sees the toast and can retry or Cancel — clearing
+      // `registerRequested` here (the caller only does so on `true`) would
+      // drop them back onto an empty consult screen that the "never blank"
+      // guard immediately re-covers with a fresh modal: the "it won't go
+      // away" churn.
+      showToast(`Could not start the consult: ${err.message}`);
+      return false;
     }
   }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId, identity.doctorId,
       identity.userId, identity.doctorName, setActivePage, showToast, focusChartSearch,
