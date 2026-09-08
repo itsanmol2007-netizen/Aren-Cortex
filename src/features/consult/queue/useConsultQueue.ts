@@ -38,6 +38,11 @@ export interface ConsultQueue {
     /** what reception recorded, per visit id — for the cards */
     previews: Map<string, IntakePreview>;
     loading: boolean;
+    /** true once a REAL fetch has returned at least once — false while
+     *  `waiting`/`serving` reflect only a cached-from-last-time guess (see
+     *  useQueue's own `settled`). Anything that auto-decides UI off queue
+     *  contents should wait for this, not just `!loading`. */
+    settled: boolean;
     refetch: () => void;
 }
 
@@ -57,7 +62,7 @@ export function useConsultQueue(opts: {
     enabled: boolean;
 }): ConsultQueue {
     const { hospitalId, doctorId, multiDoctor, enabled } = opts;
-    const { visits, loading, refetch } = useQueue(enabled ? hospitalId : null);
+    const { visits, loading, settled, refetch } = useQueue(enabled ? hospitalId : null);
 
     const mine = useMemo(() => {
         if (!enabled) return [] as TodayVisit[];
@@ -109,5 +114,12 @@ export function useConsultQueue(opts: {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [previewKey, enabled]);
 
-    return { waiting, serving, completedCount, previews, loading: enabled && loading, refetch };
+    return {
+        waiting, serving, completedCount, previews,
+        loading: enabled && loading,
+        // Disabled (Cortex) is vacuously settled — there is nothing to wait
+        // for, and a caller gating on this should not stall forever.
+        settled: !enabled || settled,
+        refetch,
+    };
 }

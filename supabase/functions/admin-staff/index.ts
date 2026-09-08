@@ -181,6 +181,39 @@ serve(async (req: Request) => {
       }
     }
 
+    // ── Cortex → Consult, the moment a front desk actually exists ─────────
+    // `lib/workspace/mode.ts` derives the whole doctor-vs-desk workspace
+    // split from `hospitals.clinic_mode` and is explicit that this is READ,
+    // never chosen — but nothing else in the app ever WROTE it after
+    // registration, so a solo clinic that hired a receptionist from in here
+    // stayed rendered as Cortex forever (no queue, no Consult chrome) even
+    // though a receptionist now exists and is registering patients. This is
+    // the one write: adding the first reception hire promotes `solo` (or an
+    // unset clinic_mode) to `solo_reception`. Never touches `multi_doctor`
+    // (already a front-desk mode) and never touches anything on a `doctor`/
+    // `admin` hire — only reception staff turns a solo practice into a desk.
+    // Best-effort/non-fatal, same as the `doctors` insert above: the staff
+    // account is already good even if this one read+write fails.
+    if (role === 'reception') {
+      try {
+        const { data: hosp } = await adminClient
+          .from('hospitals')
+          .select('clinic_mode')
+          .eq('id', hospitalId)
+          .maybeSingle();
+        const mode = hosp?.clinic_mode ?? null;
+        if (mode === null || mode === 'solo') {
+          const { error: modeErr } = await adminClient
+            .from('hospitals')
+            .update({ clinic_mode: 'solo_reception' })
+            .eq('id', hospitalId);
+          if (modeErr) console.error('[admin-staff] clinic_mode promotion failed (non-fatal):', modeErr.message);
+        }
+      } catch (e) {
+        console.error('[admin-staff] clinic_mode promotion threw (non-fatal):', e instanceof Error ? e.message : e);
+      }
+    }
+
     return jsonResponse({ ok: true, userId: newUserId, authEmail });
   } catch (err) {
     console.error('[admin-staff]', err);

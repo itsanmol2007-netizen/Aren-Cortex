@@ -537,7 +537,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
             icon={<UserPlus size={19} strokeWidth={2.2} />}
             onClose={onClose}
             dirtyGuard={dirty}
-            maxWidth={936}
+            maxWidth={820}
             flushBody
             footer={
                 <>
@@ -571,19 +571,19 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 below a comfortable reading width on a 1280 screen. */}
             <div
                 onKeyDown={handleFormKeyDown}
-                className="grid grid-cols-[minmax(0,1fr)_292px] items-start gap-0 max-[900px]:grid-cols-1"
+                className="grid grid-cols-[minmax(0,1fr)_258px] items-start gap-0 max-[900px]:grid-cols-1"
             >
                 {/* ── Left: the form ─────────────────────────────────────── */}
-                <div className="min-w-0 px-[19px] pb-[15px] pt-[14px]">
+                <div className="min-w-0 px-[16px] pb-[13px] pt-[12px]">
 
                     {existing && existingPatient ? (
-                        <div className="mb-[14px] flex items-center gap-3 rounded-[12px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-3 py-[10px]">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#efeafd] text-[14px] font-bold text-[#6d28d9]">
+                        <div className="mb-[12px] flex items-center gap-[10px] rounded-[11px] border border-[#e5ddfa] bg-[linear-gradient(135deg,rgba(124,92,240,0.08),rgba(124,92,240,0.02))] px-[10px] py-[9px]">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#efeafd] text-[13px] font-bold text-[#6d28d9]">
                                 {initials(existingPatient.name)}
                             </div>
                             <div className="min-w-0">
-                                <div className="truncate text-[14px] font-bold text-[#161d29]">{existingPatient.name}</div>
-                                <div className="mt-[1px] text-[12px] text-[#5a6472]">
+                                <div className="truncate text-[13px] font-bold text-[#161d29]">{existingPatient.name}</div>
+                                <div className="mt-[1px] text-[11.5px] text-[#5a6472]">
                                     {existingPatient.phone}
                                     {visitStats && visitStats.visit_count > 0 && (
                                         <>
@@ -603,7 +603,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 overlays the rows beneath instead of pushing
                                 them down. */}
                             <div ref={identityRef} className="relative">
-                                <div className="grid grid-cols-2 gap-x-[14px] gap-y-[11px]">
+                                <div className="grid grid-cols-2 gap-x-[12px] gap-y-[10px]">
                                     <Field icon={<UserRound size={13} />} label="Full name" required error={errors.name ? t("errRequired") : undefined}>
                                         <input
                                             ref={nameRef}
@@ -637,6 +637,17 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                         the number. Same row, one decision. */}
                                     <Field icon={<Cake size={13} />} label="Age" required error={errors.age ? t("errRequired") : undefined}>
                                         <div className="flex items-center gap-[8px]">
+                                            {/* `fd-field` sets `width:100%` UNLAYERED, which beats
+                                                a Tailwind `w-[…]` utility on the same element
+                                                regardless of specificity (§13 layer trap) — so a
+                                                fixed width can never live on the input itself here.
+                                                Both cells are sized wrappers instead, exactly like
+                                                AgeInput's own `min-w-0 flex-1` above; the input
+                                                inside each just fills its wrapper. Getting this
+                                                wrong once already starved AgeInput down to ~28px
+                                                (the date field's fd-field width:100% was winning
+                                                over its own w-[152px], so it tried to claim the
+                                                whole row and flex-shrink ate the age field alive). */}
                                             <div className="min-w-0 flex-1">
                                                 <AgeInput
                                                     inputRef={ageRef}
@@ -647,26 +658,28 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                                 />
                                             </div>
                                             <span className="shrink-0 text-[12px] font-medium text-[#a8aeba]">or</span>
-                                            <input
-                                                type="date"
-                                                className="fd-field w-[152px] shrink-0 px-[9px] text-[12.5px]"
-                                                max={todayIso()}
-                                                value={dateOfBirth}
-                                                aria-label={t("fldDob")}
-                                                title={dobMattersFor(Number.parseInt(age, 10)) ? t("fldDobNeeded") : t("fldDob")}
-                                                onChange={(e) => {
-                                                    const dob = e.target.value;
-                                                    setDateOfBirth(dob);
-                                                    // The date is the harder fact; age follows it
-                                                    // rather than being asked twice and allowed
-                                                    // to drift.
-                                                    const derived = ageInYears(dob);
-                                                    if (derived !== null) {
-                                                        setAge(String(derived));
-                                                        setErrors((er) => ({ ...er, age: false }));
-                                                    }
-                                                }}
-                                            />
+                                            <div className="w-[152px] shrink-0">
+                                                <input
+                                                    type="date"
+                                                    className="fd-field px-[9px] text-[12.5px]"
+                                                    max={todayIso()}
+                                                    value={dateOfBirth}
+                                                    aria-label={t("fldDob")}
+                                                    title={dobMattersFor(Number.parseInt(age, 10)) ? t("fldDobNeeded") : t("fldDob")}
+                                                    onChange={(e) => {
+                                                        const dob = e.target.value;
+                                                        setDateOfBirth(dob);
+                                                        // The date is the harder fact; age follows it
+                                                        // rather than being asked twice and allowed
+                                                        // to drift.
+                                                        const derived = ageInYears(dob);
+                                                        if (derived !== null) {
+                                                            setAge(String(derived));
+                                                            setErrors((er) => ({ ...er, age: false }));
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
                                     </Field>
 
@@ -719,7 +732,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                                 )}
                             </div>
 
-                            <div className="my-[16px] h-px bg-[#eeebf7]" />
+                            <div className="my-[14px] h-px bg-[#eeebf7]" />
                         </>
                     )}
 
@@ -738,7 +751,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                         It GROWS as chips wrap rather than scrolling a fixed
                         slot. Structured observables, never free text: the
                         engine and the doctor's chart both read these ids. */}
-                    <Field className="mt-[11px]" icon={<Thermometer size={13} />} label="Symptoms &amp; history" required error={errors.symptoms ? t("errSymptom") : undefined}>
+                    <Field className="mt-[10px]" icon={<Thermometer size={13} />} label="Symptoms &amp; history" required error={errors.symptoms ? t("errSymptom") : undefined}>
                         <ObservablePicker
                             kinds={["symptom", "history"]}
                             inputRef={symptomRef}
@@ -774,7 +787,7 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
                 </div>
 
                 {/* ── Right: the payment rail ────────────────────────────── */}
-                <div className="min-w-0 border-l border-[#eeebf7] bg-[#fbfaff] px-[14px] pb-[15px] pt-[14px] max-[900px]:border-l-0 max-[900px]:border-t">
+                <div className="min-w-0 border-l border-[#eeebf7] bg-[#fbfaff] px-[12px] pb-[13px] pt-[12px] max-[900px]:border-l-0 max-[900px]:border-t">
                     <PaymentRail
                         state={fee}
                         onChange={handleFeeChange}
@@ -795,11 +808,11 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
  *  hierarchy, and two sections do not need shouting to be told apart. */
 function SectionHead({ icon, text, className = "" }: { icon: React.ReactNode; text: string; className?: string }) {
     return (
-        <div className={`mb-[11px] flex items-center gap-[8px] ${className}`}>
-            <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[8px] bg-[#eeecfe] text-[#5b4fe9]">
+        <div className={`mb-[10px] flex items-center gap-[7px] ${className}`}>
+            <span className="flex h-[23px] w-[23px] shrink-0 items-center justify-center rounded-[7px] bg-[#eeecfe] text-[#5b4fe9]">
                 {icon}
             </span>
-            <span className="text-[15.5px] font-extrabold tracking-[-0.01em] text-[#161d29]">{text}</span>
+            <span className="text-[14px] font-extrabold tracking-[-0.01em] text-[#161d29]">{text}</span>
         </div>
     );
 }

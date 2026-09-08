@@ -23,6 +23,17 @@ function cacheKey(hospitalId: string | null): string {
 export function useQueue(hospitalId: string | null) {
     const [visits, setVisits] = useState<TodayVisit[]>(() => readCache<TodayVisit[]>(cacheKey(hospitalId))?.data ?? []);
     const [loading, setLoading] = useState(() => !readCache<TodayVisit[]>(cacheKey(hospitalId)));
+    // `loading` flips false the instant a CACHE hit seeds `visits` — exactly
+    // right for "don't blank the screen while fetching", but wrong for
+    // anything that needs to know the network has actually spoken at least
+    // once. A stale cache (patients who were waiting last time the tab was
+    // open, since served or gone home) can read as a real queue for the one
+    // render before the live fetch corrects it — long enough for a caller
+    // that auto-opens UI off `visits`/`loading` to open the WRONG overlay
+    // and then, because it only ever decides once, never correct itself.
+    // `settled` is the honest signal for that: true only once a real
+    // `fetchTodayVisits` has returned, cache or no cache.
+    const [settled, setSettled] = useState(false);
     const mounted = useRef(true);
 
     const load = useCallback(async (isFirstLoad: boolean) => {
@@ -39,12 +50,13 @@ export function useQueue(hospitalId: string | null) {
         } catch (err) {
             console.warn("useQueue refresh failed (non-fatal):", err);
         } finally {
-            if (isFirstLoad && mounted.current) setLoading(false);
+            if (isFirstLoad && mounted.current) { setLoading(false); setSettled(true); }
         }
     }, [hospitalId]);
 
     useEffect(() => {
         mounted.current = true;
+        setSettled(false);
         // Re-seed from this hospital's own cache the moment we know which
         // hospital it is (covers the identity-resolving -> resolved
         // transition, where hospitalId flips from null to a real id after
@@ -62,5 +74,5 @@ export function useQueue(hospitalId: string | null) {
         };
     }, [load, hospitalId]);
 
-    return { visits, setVisits, loading, refetch: () => load(false) };
+    return { visits, setVisits, loading, settled, refetch: () => load(false) };
 }

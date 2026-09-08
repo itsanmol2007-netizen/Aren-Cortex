@@ -1128,6 +1128,17 @@ function App() {
     if (!workspace.isConsult || !workspace.ready) return;
     if (hasActiveConsult || activePage !== null) return;
     if (consultOverlayShowing) return;
+    // Wait for the queue's OWN real answer, not a cache guess or an empty
+    // array that just hasn't loaded yet (see useQueue's `settled` — `loading`
+    // alone flips false the instant a STALE cache seeds the list, which once
+    // read as "3 people waiting" from last time the tab was open, opened the
+    // queue sheet, then the live fetch landed ~200ms later with the truth —
+    // nobody actually waiting — and there was no way back: this effect only
+    // ever decides once, guarded by `consultOverlayShowing` above, so the
+    // wrong overlay just sat there instead of the right one ever opening.
+    // Waiting for `settled` means the one decision this effect ever makes is
+    // made after the network — not before it, and not on a guess — corrected.
+    if (!queue.settled) return;
     if (queue.waiting.length > 0) {
       setQueueSheetOpen(true);
     } else {
@@ -1135,7 +1146,7 @@ function App() {
       setPatientModalOpen(true);
     }
   }, [workspace.isConsult, workspace.ready, hasActiveConsult, activePage,
-      consultOverlayShowing, queue.waiting.length]);
+      consultOverlayShowing, queue.waiting.length, queue.settled]);
 
   useEffect(() => {
     if (!workspace.ready || !identity.ready || !identity.doctorId) return;
