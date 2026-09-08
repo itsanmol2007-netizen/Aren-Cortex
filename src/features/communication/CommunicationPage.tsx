@@ -38,7 +38,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import {
     AlertTriangle, ArrowRight, CalendarClock, Check, CheckCheck, Clock,
-    ExternalLink, FileText, Loader2, MessageSquare, RefreshCw, Search,
+    ExternalLink, Loader2, MessageSquare, RefreshCw, Search,
     Sparkles, TrendingUp, Wallet, X, XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -48,8 +48,6 @@ import {
     fetchDoctorsByHospital, fetchHospitalCached, fetchPrescriptionRenderData,
     type DBDoctor, type DBHospital, type PrescriptionRenderData,
 } from "../../lib/db";
-import { PracticeModal } from "../practice/PracticeModal";
-import { SkeletonRows } from "../clinic/ui";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { CreditHistoryModal } from "./CreditHistoryModal";
 import {
@@ -1112,15 +1110,53 @@ function ConversationPanel({
             slowly you'll fill those things there"). `fetchPrescriptionRenderData`
             itself got faster the same round (3 parallel waves instead of a
             ~12-query chain), but a real network round trip is still a real
-            wait, and a blank click is what actually reads as "stuck". */}
+            wait, and a blank click is what actually reads as "stuck".
+            2026-09-08, second pass: that skeleton was `PracticeModal` — a
+            480px compact card, centered — swapped out for `ReviewModal`
+            itself (680px, up to 95vh, dark letterhead) the instant
+            `rxDetail` landed. Two completely different modals trading
+            places is its own jolt, worse than the wait it was covering for.
+            This is shaped like the document it precedes instead — same
+            outer shell ReviewModal renders (see that file's own "Modal
+            overlay" comment for why 680px), so opening a prescription is
+            one modal settling in, never two. */}
         {viewingRxId && !rxDetail && (
-            <PracticeModal accent="blue" icon={<FileText size={15} />} eyebrow="Prescription" title="Opening…" onClose={() => setViewingRxId(null)}>
-                <div className="flex flex-col gap-[10px]">
-                    <div className="h-[18px] w-[60%] animate-pulse rounded-[6px] bg-[var(--cs-line)]" />
-                    <div className="h-[12px] w-[40%] animate-pulse rounded-[6px] bg-[var(--cs-line)]" />
-                    <SkeletonRows count={5} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+                <div className="relative flex w-full max-w-[680px] max-h-[95vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                    <div className="flex shrink-0 items-center justify-between px-5 py-3 border-b border-gray-100">
+                        <span className="h-[16px] w-[50px] animate-pulse rounded-[5px] bg-gray-100" />
+                        <span className="text-[15px] font-black text-gray-300">Opening…</span>
+                        <button
+                            onClick={() => setViewingRxId(null)}
+                            className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-hidden bg-gray-50/80 p-3">
+                        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200/80 bg-white p-4 shadow-lg">
+                            {/* Letterhead */}
+                            <div className="h-[100px] animate-pulse rounded-xl bg-gray-100" />
+                            {/* Patient strip */}
+                            <div className="flex items-center gap-3">
+                                <span className="h-9 w-9 flex-none animate-pulse rounded-xl bg-gray-100" />
+                                <span className="h-[18px] w-[40%] animate-pulse rounded-[6px] bg-gray-100" />
+                            </div>
+                            {/* Prescription table */}
+                            <div className="flex flex-col gap-2">
+                                <span className="h-[12px] w-[110px] animate-pulse rounded-[5px] bg-gray-100" />
+                                <div className="h-[64px] animate-pulse rounded-xl bg-gray-100" />
+                                <div className="h-[64px] animate-pulse rounded-xl bg-gray-100" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3 border-t border-gray-100 px-5 py-3">
+                        <span className="h-[16px] w-[70px] animate-pulse rounded-[5px] bg-gray-100" />
+                        <div className="flex-1" />
+                        <span className="h-9 w-[130px] animate-pulse rounded-xl bg-gray-100" />
+                    </div>
                 </div>
-            </PracticeModal>
+            </div>
         )}
         </>
     );

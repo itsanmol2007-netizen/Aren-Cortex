@@ -65,6 +65,7 @@ import {
     TrendingUp, UserPlus, Users,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
+import { formatShortDate } from "../frontdesk/utils";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
@@ -79,7 +80,7 @@ import {
     buildRange, clinicToday, countClinicVisitsToday, fetchClinicAnalytics,
     fetchClinicSetup, fetchDoctorPrescriptionRows, fetchDoctorRoster, fetchDoctorVisitRows, fetchNewPatientRows,
     fetchFeeSettings, formatMoney, formatRangeLabel, previousRange,
-    type ClinicAnalytics, type ClinicSetup, type DoctorRosterRow, type FeeSettings,
+    type ClinicAnalytics, type ClinicSetup, type DoctorActivityRow, type DoctorRosterRow, type FeeSettings,
 } from "../../lib/db/admin";
 import { PaymentDetailsModal } from "./PaymentDetailsModal";
 import { ActivityListModal } from "./ActivityListModal";
@@ -126,6 +127,51 @@ function greetingFor(hour: number): string {
  *  waiting" shape front desk's own queue rows already use. */
 function minutesWaiting(createdAt: string): number {
     return Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 60000));
+}
+
+// ── Skeletons sized to what they become ─────────────────────────────────────
+// `SkeletonRows` (clinic/ui.tsx) is flat 22px bars — right for an actual LIST
+// of text rows, wrong for anything else on this page: it used to stand in
+// for a 132px chart and a 132px donut alike, so both cards visibly JUMPED in
+// height the instant real data replaced the skeleton. Below are three
+// skeletons, each the exact shape/height of what it is standing in for.
+
+/** A queue/recent-patient row's skeleton — same card, same avatar chip, same
+ *  two-line text block, same trailing pill, at the same height as the real
+ *  row it precedes. Shared by Today's Queue and Recent Patients: both rows
+ *  have identical anatomy. */
+function RowSkeleton({ count }: { count: number }) {
+    return (
+        <div className="flex flex-col gap-[6px]">
+            {Array.from({ length: count }).map((_, i) => (
+                <div key={i} className="flex min-w-0 items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[7px]">
+                    <span className="h-[20px] w-[20px] flex-none animate-pulse rounded-full bg-[#e4e7ee]" />
+                    <span className="flex min-w-0 flex-1 flex-col gap-[5px]">
+                        <span className="h-[10px] w-[65%] animate-pulse rounded-[4px] bg-[#e4e7ee]" />
+                        <span className="h-[8px] w-[42%] animate-pulse rounded-[4px] bg-[#eef0f5]" />
+                    </span>
+                    <span className="h-[20px] w-[40px] flex-none animate-pulse rounded-full bg-[#eef0f5]" />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/** TrendChart's own skeleton — one block at TrendChart's own real rendered
+ *  height (132px SVG + its axis-label row below), not four 22px bars
+ *  totalling 106px. */
+function ChartSkeleton({ height = 150 }: { height?: number }) {
+    return <div className="w-full animate-pulse rounded-[10px] bg-[#eef0f5]" style={{ height }} />;
+}
+
+/** Donut's own skeleton — a circle at Donut's own default diameter (132px),
+ *  centered the same way the real donut is. */
+function DonutSkeleton({ size = 132 }: { size?: number }) {
+    return (
+        <div className="flex flex-1 items-center justify-center py-[4px]">
+            <div className="animate-pulse rounded-full bg-[#eef0f5]" style={{ width: size, height: size }} />
+        </div>
+    );
 }
 
 type ActivityKind = "visits" | "prescriptions" | "new_patients";
@@ -227,6 +273,28 @@ export function DoctorOverviewPage({
     useEffect(loadAnalytics, [loadAnalytics]);
     useEffect(loadContext, [loadContext]);
     useEffect(loadManagement, [loadManagement]);
+
+    // ── Recent Patients (Cortex only) ──────────────────────────────────────
+    // Today's Queue's exact opposite number: a Cortex clinic has no front
+    // desk, so the third slot in the chart row below used to render nothing
+    // at all — the grid still reserved that column's width (three FIXED
+    // template columns, only two children), so a Cortex doctor's Overview
+    // showed a column of dead white space exactly where a Consult doctor
+    // sees their queue. "Who did I just see" is the honest equivalent
+    // question for a doctor who does their own intake: no desk to preview,
+    // but there IS always a most-recent patient. Fixed 30-day window,
+    // independent of the page's own period selector — a doctor who just
+    // flipped to "Today" with nobody seen yet should still see who they saw
+    // yesterday, not an empty card that contradicts the one beside it.
+    const [recentPatients, setRecentPatients] = useState<DoctorActivityRow[] | null>(null);
+    useEffect(() => {
+        if (workspace.isConsult || !identity.ready) return;
+        let cancelled = false;
+        fetchDoctorVisitRows(identity.hospitalId, identity.doctorId, buildRange("30d"), 5)
+            .then((rows) => { if (!cancelled) setRecentPatients(rows); })
+            .catch((e: unknown) => { console.error("[overview] recent patients:", e); if (!cancelled) setRecentPatients([]); });
+        return () => { cancelled = true; };
+    }, [workspace.isConsult, identity.ready, identity.hospitalId, identity.doctorId]);
 
     // No UNCONDITIONAL currency fetch here — `formatMoney` already defaults
     // to INR, and pulling `fetchFeeSettings` onto every doctor's landing page
@@ -587,21 +655,34 @@ export function DoctorOverviewPage({
                                 }
                             >
                                 {!data ? (
-                                    <SkeletonRows count={4} />
+                                    <ChartSkeleton />
                                 ) : emptyPeriod ? (
                                     <EmptyBlock
                                         fact="No activity in this period"
                                         next="Pick a wider range, or a different date."
                                     />
                                 ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => setTrendOpen(true)}
-                                        className="cursor-pointer border-0 bg-transparent p-0 text-left outline-none"
-                                        aria-label="Open the detailed list behind this chart"
-                                    >
-                                        <TrendChart points={data.series} metricKey={chartMetric} />
-                                    </button>
+                                    // `relative overflow-hidden` scopes the glow to this
+                                    // one chart, not the whole card (its own action
+                                    // buttons in the header stay unaffected) — a soft
+                                    // blurred wash of the card's own tone sitting under
+                                    // the line, the way a hero chart reads as more than
+                                    // a spreadsheet without turning into decoration.
+                                    <div className="relative overflow-hidden rounded-[10px]">
+                                        <div
+                                            aria-hidden
+                                            className="pointer-events-none absolute inset-x-3 bottom-[14px] h-[46px] rounded-full opacity-[0.55] blur-xl"
+                                            style={{ background: "radial-gradient(ellipse at center, var(--cs-blue) 0%, transparent 70%)" }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setTrendOpen(true)}
+                                            className="relative w-full cursor-pointer border-0 bg-transparent p-0 text-left outline-none"
+                                            aria-label="Open the detailed list behind this chart"
+                                        >
+                                            <TrendChart points={data.series} metricKey={chartMetric} />
+                                        </button>
+                                    </div>
                                 )}
                             </Card>
 
@@ -612,7 +693,7 @@ export function DoctorOverviewPage({
                                 subtitle={formatRangeLabel(range)}
                             >
                                 {!data ? (
-                                    <SkeletonRows count={3} />
+                                    <DonutSkeleton />
                                 ) : data.patients.value === 0 ? (
                                     <EmptyBlock
                                         fact="Nobody yet in this period"
@@ -650,7 +731,7 @@ export function DoctorOverviewPage({
                                     }
                                 >
                                     {queueLoading ? (
-                                        <SkeletonRows count={3} />
+                                        <RowSkeleton count={3} />
                                     ) : queuePreview.length === 0 ? (
                                         <EmptyBlock
                                             fact="Nobody waiting"
@@ -689,6 +770,62 @@ export function DoctorOverviewPage({
                                                     +{queueWaiting.length - queuePreview.length} more patients in queue
                                                 </button>
                                             )}
+                                        </div>
+                                    )}
+                                </Card>
+                            )}
+
+                            {/* ── Recent Patients ───────────────────────────
+                                Cortex only: the third grid column above is a
+                                FIXED template track (`0.9fr`) — with Today's
+                                Queue simply absent for two children instead
+                                of three, that track still reserved its own
+                                width and rendered as dead white space where
+                                a Consult doctor sees their queue. Same slot,
+                                same card shell, the honest equivalent
+                                question for a doctor who does their own
+                                intake: not "who's waiting" (nobody is — this
+                                doctor IS the front desk) but "who did I just
+                                see". */}
+                            {!workspace.isConsult && (
+                                <Card
+                                    tone="blue"
+                                    icon={<Users size={14} />}
+                                    title="Recent patients"
+                                    subtitle={recentPatients === null ? "Loading…" : "Last 30 days"}
+                                >
+                                    {recentPatients === null ? (
+                                        <RowSkeleton count={3} />
+                                    ) : recentPatients.length === 0 ? (
+                                        <EmptyBlock
+                                            fact="No patients yet"
+                                            next="Whoever you see next shows up here."
+                                        />
+                                    ) : (
+                                        <div className="flex flex-col gap-[6px]">
+                                            {recentPatients.map((r) => (
+                                                <button
+                                                    key={r.id}
+                                                    type="button"
+                                                    onClick={() => onViewPatient(r.patientId, r.patientName)}
+                                                    className="flex min-w-0 items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[7px] text-left outline-none transition-colors hover:border-[var(--cs-blue)] hover:bg-[var(--cs-blue-soft)]"
+                                                >
+                                                    <span className="grid h-[20px] w-[20px] flex-none place-items-center rounded-full bg-[var(--cs-blue-soft)] text-[10px] font-bold text-[var(--cs-blue)]">
+                                                        {(r.patientName ?? "?").trim().charAt(0).toUpperCase() || "?"}
+                                                    </span>
+                                                    <span className="flex min-w-0 flex-col gap-[1px]">
+                                                        <span className="truncate text-[12px] font-semibold text-[var(--cs-ink)]">
+                                                            {r.patientName ?? "Unnamed patient"}
+                                                        </span>
+                                                        <span className="text-[10px] text-[var(--cs-faint)]">
+                                                            {r.detail ?? "Visit"} · {formatShortDate(r.at)}
+                                                        </span>
+                                                    </span>
+                                                    <span className="ml-auto flex-none text-[10.5px] font-semibold text-[var(--cs-blue)]">
+                                                        View
+                                                    </span>
+                                                </button>
+                                            ))}
                                         </div>
                                     )}
                                 </Card>

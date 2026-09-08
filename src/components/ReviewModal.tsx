@@ -146,9 +146,9 @@ function DosageDot({ active }: { active: boolean }) {
 function SlotHeader({ icon: Icon, label, sub }: { icon: React.ElementType; label: string; sub: string }) {
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <Icon className="w-3 h-3 text-gray-400" />
-      <span className="text-[9px] font-bold text-gray-500 leading-none">{label}</span>
-      <span className="text-[8px] text-gray-400 leading-none">({sub})</span>
+      <Icon className="w-3 h-3 text-gray-500" />
+      <span className="text-[9px] font-bold text-gray-600 leading-none">{label}</span>
+      <span className="text-[8px] text-gray-500 leading-none">({sub})</span>
     </div>
   );
 }
@@ -167,7 +167,7 @@ function SectionTitle({ icon: Icon, title, accent = "blue" }: { icon: React.Elem
 function PatientField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <p className="text-[8px] font-black tracking-[0.12em] text-gray-400 uppercase leading-none mb-1">{label}</p>
+      <p className="text-[8px] font-black tracking-[0.12em] text-gray-500 uppercase leading-none mb-1">{label}</p>
       <p className={`text-gray-800 font-bold leading-tight ${mono ? "font-mono text-[11px] tracking-wider" : "text-[13px]"}`}>{value}</p>
     </div>
   );
@@ -178,7 +178,7 @@ function VitalChip({ label, value, unit }: { label: string; value: string; unit:
     <div className="flex items-baseline gap-1">
       <span className="text-[9px] font-black text-blue-500 uppercase tracking-wider">{label}</span>
       <span className="text-[13px] font-bold text-gray-800">{value}</span>
-      <span className="text-[9px] text-gray-400">{unit}</span>
+      <span className="text-[9px] text-gray-500">{unit}</span>
     </div>
   );
 }
@@ -436,17 +436,22 @@ export default function ReviewModal({
         </div>
       </div>
 
-      {/* ── Modal overlay ── */}
+      {/* ── Modal overlay ──
+          Scaled ~12% from the original (max-w-3xl/768px -> 680px, m-4 ->
+          m-3) — Anmol: "a lot of empty white space... focus to be on actual
+          content instead of header and footer." The letterhead/footer bands
+          below are trimmed MORE than the content sections for the same
+          reason: this is a document a doctor reviews, not a cover page. */}
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-        <div className="relative w-full max-w-3xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white">
+        <div className="relative w-full max-w-[680px] max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white">
 
           {/* Top bar */}
-          <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-white shrink-0">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-white shrink-0">
             {isPrintMode ? (
               <div className="w-14" aria-hidden />
             ) : (
               <button onClick={onEdit}
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-blue-600 transition-colors">
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors">
                 <Edit2 className="w-3.5 h-3.5" /> Edit
               </button>
             )}
@@ -454,7 +459,7 @@ export default function ReviewModal({
               {isPrintMode ? "Print Prescription" : "Review Prescription"}
             </h2>
             <button onClick={onClose}
-              className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
+              className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -471,11 +476,13 @@ export default function ReviewModal({
             tabIndex={-1}
             className="overflow-y-auto flex-1 bg-gray-50/80 outline-none focus:ring-[3px] focus:ring-blue-100 focus:ring-inset focus:shadow-[inset_0_0_0_1px_#1268e8]"
           >
-            <div className="m-4 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white">
+            <div className="m-3 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white">
 
-              {/* ══ Letterhead ══ */}
+              {/* ══ Letterhead ══ — deliberately the most-compressed band in
+                  this document: it says who prescribed this, once, and then
+                  gets out of the way of what the patient actually needs. */}
               <div
-                className="relative px-8 py-6 overflow-hidden"
+                className="relative px-7 py-4 overflow-hidden"
                 style={{ background: "linear-gradient(135deg, #060d1f 0%, #0d1b35 40%, #120f28 75%, #1a0730 100%)" }}
               >
                 {/* Decorative orbs */}
@@ -498,7 +505,7 @@ export default function ReviewModal({
                           src={headerImage}
                           alt={prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName}
                           onError={() => setLogoError(true)}
-                          className="w-16 h-16 rounded-xl object-cover border-2 shadow-xl"
+                          className="w-14 h-14 rounded-xl object-cover border-2 shadow-xl"
                           style={{ borderColor: "rgba(255,255,255,0.2)" }}
                         />
                       ) : (
@@ -506,13 +513,13 @@ export default function ReviewModal({
                            colour, with the monogram behind them, so a clinic
                            that has not uploaded a logo still gets a mark that is
                            theirs rather than a coloured square. */
-                        <div className="w-16 h-16 rounded-xl flex items-center justify-center relative overflow-hidden shadow-xl"
+                        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative overflow-hidden shadow-xl"
                           style={{ background: rx.base }}>
                           <RxMonogram
                             color={rx.onBase}
                             className="absolute inset-0 w-full h-full opacity-20"
                           />
-                          <span className="relative text-xl font-black" style={{ color: rx.onBase }}>
+                          <span className="relative text-lg font-black" style={{ color: rx.onBase }}>
                             {initials(prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName)}
                           </span>
                         </div>
@@ -523,13 +530,13 @@ export default function ReviewModal({
                   {/* Clinic info */}
                   {showClinicIdentity && (
                     <div className="flex-1 min-w-0">
-                      <h1 className="text-[22px] font-black text-white leading-tight tracking-tight">
+                      <h1 className="text-[19px] font-black text-white leading-tight tracking-tight">
                         {clinicName}
                       </h1>
                       {prescriptionConfig.showClinicAddress && clinicAddress && (
-                        <div className="flex items-start gap-1.5 mt-2">
+                        <div className="flex items-start gap-1.5 mt-1.5">
                           <MapPin className="w-3 h-3 mt-0.5 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+                          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}>
                             {clinicAddress}
                           </p>
                         </div>
@@ -537,14 +544,14 @@ export default function ReviewModal({
                       {prescriptionConfig.showClinicPhone && clinicPhone && (
                         <div className="flex items-center gap-1.5 mt-1">
                           <Phone className="w-3 h-3 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicPhone}</p>
+                          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicPhone}</p>
                         </div>
                       )}
                       {prescriptionConfig.showClinicEmail && clinicEmail && (
-                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicEmail}</p>
+                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicEmail}</p>
                       )}
                       {prescriptionConfig.showWebsite && clinicWebsite && (
-                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicWebsite}</p>
+                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicWebsite}</p>
                       )}
                     </div>
                   )}
@@ -558,19 +565,19 @@ export default function ReviewModal({
                       the row and left-aligned when it IS the letterhead. */}
                   {showDoctorIdentity && (
                     <div className={showClinicIdentity ? "shrink-0 text-right min-w-[155px]" : "flex-1 min-w-0 text-left"}>
-                      <p className="text-[21px] font-black text-white leading-tight tracking-tight">{doctorName}</p>
+                      <p className="text-[18px] font-black text-white leading-tight tracking-tight">{doctorName}</p>
                       {prescriptionConfig.showQualification && doctorQual && (
-                        <p className="text-[14px] font-bold mt-1" style={{ color: accentColor }}>{doctorQual}</p>
+                        <p className="text-[13px] font-bold mt-1" style={{ color: accentColor }}>{doctorQual}</p>
                       )}
                       {prescriptionConfig.showRegistration && doctorReg && (
-                        <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.50)" }}>
+                        <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.58)" }}>
                           Reg. No. {doctorReg}
                         </p>
                       )}
                       {prescriptionConfig.showSpecialty && doctorSpec && (
                         /* Was hardcoded pink, on every clinic's sheet. It takes
                            the clinic's own colour now. */
-                        <span className="inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-black tracking-wide"
+                        <span className="inline-block mt-1.5 px-3 py-1 rounded-full text-[10px] font-black tracking-wide"
                           style={{
                             color: rx.tint,
                             background: `${rx.base}2e`,
@@ -584,12 +591,12 @@ export default function ReviewModal({
                           contact lines in here rather than losing them along
                           with the clinic's name. */}
                       {!showClinicIdentity && prescriptionConfig.showClinicAddress && clinicAddress && (
-                        <p className="text-[11px] leading-relaxed mt-2" style={{ color: "rgba(255,255,255,0.55)" }}>
+                        <p className="text-[11px] leading-relaxed mt-1.5" style={{ color: "rgba(255,255,255,0.62)" }}>
                           {clinicAddress}
                         </p>
                       )}
                       {!showClinicIdentity && prescriptionConfig.showClinicPhone && clinicPhone && (
-                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{clinicPhone}</p>
+                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicPhone}</p>
                       )}
                     </div>
                   )}
@@ -609,15 +616,17 @@ export default function ReviewModal({
                   }} />
               </div>
 
-              {/* ══ Patient strip ══ */}
-              <div className="px-8 py-5 border-b border-gray-100 bg-gradient-to-b from-blue-50/40 to-white">
-                <div className="flex items-center gap-3 mb-4">
+              {/* ══ Patient strip ══ — this and the prescription table below
+                  are the content the header/footer trims above make room
+                  for; sized to read clearly, not to shrink further. */}
+              <div className="px-7 py-4 border-b border-gray-100 bg-gradient-to-b from-blue-50/40 to-white">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="p-2 rounded-xl bg-blue-100/80">
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
                     <p className="text-[9px] font-black tracking-[0.14em] text-blue-500 uppercase leading-none mb-1">Patient</p>
-                    <h3 className="text-[22px] font-black text-gray-900 leading-tight tracking-tight">{patient.name}</h3>
+                    <h3 className="text-[20px] font-black text-gray-900 leading-tight tracking-tight">{patient.name}</h3>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-8 gap-y-3 pl-[52px]">
@@ -626,7 +635,7 @@ export default function ReviewModal({
                   <PatientField label="Date" value={today} />
                   {prescriptionRef ? (
                     <div>
-                      <p className="text-[8px] font-black tracking-[0.12em] text-gray-400 uppercase leading-none mb-1">Ref</p>
+                      <p className="text-[8px] font-black tracking-[0.12em] text-gray-500 uppercase leading-none mb-1">Ref</p>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono text-[12px] font-bold tracking-wider shadow-sm">
                         <Hash className="w-3 h-3" />
                         {prescriptionRef}
@@ -640,7 +649,7 @@ export default function ReviewModal({
 
               {/* ══ Vitals ══ */}
               {vitals && Object.values(vitals).some(Boolean) && (
-                <div className="px-8 py-3 border-b border-blue-100/60 bg-blue-50/40 flex flex-wrap gap-6">
+                <div className="px-7 py-2.5 border-b border-blue-100/60 bg-blue-50/40 flex flex-wrap gap-6">
                   {/* Read from the catalogue rather than hand-listed, since
                       2026-08-16. This was fifteen literal lines, and its twin
                       in PrescriptionDocument was fifteen more — a pair of
@@ -667,11 +676,11 @@ export default function ReviewModal({
 
               {/* ══ Clinical Summary ══ */}
               {(symptoms.length > 0 || findings.length > 0 || storySummary.length > 0 || goalSummary.length > 0) && (
-                <div className="px-8 py-5 border-b border-gray-100">
+                <div className="px-7 py-4 border-b border-gray-100">
                   <SectionTitle icon={FileText} title="Clinical Summary" />
-                  <div className="mt-3 grid grid-cols-2 gap-4">
+                  <div className="mt-2.5 grid grid-cols-2 gap-3">
                     {symptoms.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
                         <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-3">
                           Presenting Complaints
                         </p>
@@ -685,7 +694,7 @@ export default function ReviewModal({
                       </div>
                     )}
                     {findings.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
                         <p className="text-[9px] font-black tracking-[0.12em] text-purple-600 uppercase mb-3">
                           Clinical Findings
                         </p>
@@ -705,7 +714,7 @@ export default function ReviewModal({
                         only: rendered here, in Clinical Summary, and NOT in
                         the printable Rx sections below (plan §5). */}
                     {storySummary.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
                         <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-3">
                           Story
                         </p>
@@ -719,7 +728,7 @@ export default function ReviewModal({
                       </div>
                     )}
                     {goalSummary.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
                         <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-3">
                           Goals
                         </p>
@@ -736,9 +745,10 @@ export default function ReviewModal({
                 </div>
               )}
 
-              {/* ══ Prescription table ══ */}
+              {/* ══ Prescription table ══ — the reason this document exists;
+                  trimmed less than everything around it. */}
               {prescription.length > 0 && (
-                <div className="px-8 py-5 border-b border-gray-100 relative">
+                <div className="px-7 py-4 border-b border-gray-100 relative">
                   {/* The watermark. Held at 4% and pinned behind the table, in
                       the clinic's colour, so the sheet is recognisably theirs
                       at arm's length. Stroke-drawn rather than filled so a
@@ -761,7 +771,7 @@ export default function ReviewModal({
                         <div className="px-3 py-3 text-center text-[9px] font-black tracking-wider text-blue-600 uppercase">#</div>
                         <div className="px-3 py-3 text-[9px] font-black tracking-wider text-blue-600 uppercase">
                           Medicine<br />
-                          <span className="text-gray-400 font-normal normal-case tracking-normal text-[9px]">(Generic)</span>
+                          <span className="text-gray-500 font-normal normal-case tracking-normal text-[9px]">(Generic)</span>
                         </div>
                         <div className="px-2 py-2 text-[9px] font-black tracking-wider text-blue-600 uppercase">
                           <div className="text-center mb-2">Dosage</div>
@@ -784,20 +794,20 @@ export default function ReviewModal({
                         <div key={idx}
                           className={`grid items-center border-b border-gray-100 last:border-0 ${idx % 2 === 1 ? "bg-gray-50/40" : "bg-white"}`}
                           style={{ gridTemplateColumns: "32px 1fr 168px 88px 1fr" }}>
-                          <div className="px-3 py-3.5 flex justify-center">
+                          <div className="px-3 py-3 flex justify-center">
                             <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white bg-blue-600">
                               {idx + 1}
                             </span>
                           </div>
-                          <div className="px-3 py-3.5">
+                          <div className="px-3 py-3">
                             <p className="text-[13px] font-bold text-gray-900 leading-tight">{med.name}</p>
                             {(med.composition || med.dosage_mg) && (
-                              <p className="text-[10px] text-gray-400 mt-0.5">
+                              <p className="text-[10px] text-gray-500 mt-0.5">
                                 {[med.composition, med.dosage_mg ? `${med.dosage_mg}mg` : ""].filter(Boolean).join(" · ")}
                               </p>
                             )}
                           </div>
-                          <div className="px-2 py-3.5">
+                          <div className="px-2 py-3">
                             <div className="grid grid-cols-4 gap-1 justify-items-center">
                               <DosageDot active={m} />
                               <DosageDot active={a} />
@@ -805,15 +815,15 @@ export default function ReviewModal({
                               <DosageDot active={n} />
                             </div>
                           </div>
-                          <div className="px-3 py-3.5 text-center">
+                          <div className="px-3 py-3 text-center">
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-700">
                               <Calendar className="w-3 h-3 text-blue-400 shrink-0" />
                               {med.duration}
                             </span>
                           </div>
-                          <div className="px-3 py-3.5">
+                          <div className="px-3 py-3">
                             {med.instructions && (
-                              <p className="text-[10px] text-gray-500 leading-relaxed italic">{med.instructions}</p>
+                              <p className="text-[10px] text-gray-600 leading-relaxed italic">{med.instructions}</p>
                             )}
                           </div>
                         </div>
@@ -828,16 +838,16 @@ export default function ReviewModal({
                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
                       <div className="w-3 h-3 rounded-full border-2 border-gray-300" /> = Skip
                     </div>
-                    <span className="text-[10px] text-gray-400">M – Morning · A – Afternoon · E – Evening · N – Night</span>
+                    <span className="text-[10px] text-gray-500">M – Morning · A – Afternoon · E – Evening · N – Night</span>
                   </div>
                 </div>
               )}
 
               {/* ══ Investigations ══ */}
               {tests.length > 0 && (
-                <div className="px-8 py-5 border-b border-gray-100">
+                <div className="px-7 py-4 border-b border-gray-100">
                   <SectionTitle icon={FileText} title="Investigations" accent="purple" />
-                  <div className="flex flex-wrap gap-2 mt-3">
+                  <div className="flex flex-wrap gap-2 mt-2.5">
                     {tests.map((t) => (
                       <span key={t}
                         className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
@@ -848,118 +858,135 @@ export default function ReviewModal({
                 </div>
               )}
 
-              {/* ══ Bottom: Signature | QR | Instructions ══ */}
-              <div className="px-8 py-6 grid grid-cols-3 gap-6 border-b border-gray-100 items-end">
+              {/* ══ Bottom: Signature+QR | Instructions ══
+                  Was a flat `grid-cols-3` over up to FIVE children
+                  (signature, QR, therapy, exercise, instructions) — fine
+                  with one or two present, but a physiotherapy consult with
+                  BOTH therapy notes and a home programme pushed a 4th/5th
+                  item onto a SECOND grid row, stranding signature/QR alone
+                  above a mostly-empty row and roughly doubling this
+                  section's height for no reason (real cause of "why do I
+                  have to scroll so much"). Two fixed columns instead:
+                  signature+QR stacked on the left, everything else stacked
+                  in natural reading order on the right — always exactly one
+                  row, however many of the right-hand blocks are present. */}
+              <div className="px-7 py-5 grid grid-cols-[188px_1fr] gap-6 border-b border-gray-100 items-start">
 
-                {/* Signature block. `showSignature: false` drops the image
-                    AND the ruled line, never the prescriber's name. */}
-                <div>
+                <div className="flex flex-col gap-3">
+                  {/* Signature block. `showSignature: false` drops the image
+                      AND the ruled line, never the prescriber's name. */}
                   <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 pt-4 pb-3">
                     {prescriptionConfig.showSignature && (
                       signatureUrl ? (
                         <img src={signatureUrl} alt="Signature"
-                          className="h-14 w-full object-contain object-left mb-3" />
+                          className="h-12 w-full object-contain object-left mb-2.5" />
                       ) : (
-                        <div className="h-14 border-b-2 border-gray-300 mb-3" />
+                        <div className="h-12 border-b-2 border-gray-300 mb-2.5" />
                       )
                     )}
-                    <div className="border-t border-gray-100 pt-2.5">
-                      <p className="text-[14px] font-black text-gray-900 leading-tight">{doctorName}</p>
+                    <div className="border-t border-gray-100 pt-2">
+                      <p className="text-[13px] font-black text-gray-900 leading-tight">{doctorName}</p>
                       {prescriptionConfig.showQualification && doctorQual && (
-                        <p className="text-[12px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
+                        <p className="text-[11px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
                       )}
                       {prescriptionConfig.showRegistration && doctorReg && (
-                        <p className="text-[10px] text-gray-400 leading-tight mt-0.5">Reg. {doctorReg}</p>
+                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5">Reg. {doctorReg}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* QR + follow-up. Bordered, matching the print output's
+                      own treatment, and the SAME caption — this QR encodes
+                      the prescription's own details for verification, not a
+                      link to a live page, so the caption says only what
+                      actually happens on scan. */}
+                  <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                    <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-1">
+                      {qrDataUrl ? (
+                        <img src={qrDataUrl} alt="QR Code" className="w-12 h-12 rounded" />
+                      ) : (
+                        <div className="w-12 h-12 rounded flex items-center justify-center">
+                          <span className="text-[8px] text-gray-400 text-center leading-tight">QR</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[9px] text-gray-500 leading-tight">Scan to verify this prescription</p>
+                      {followUpDays && (
+                        <div className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
+                          Follow-up in {followUpDays} days
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* QR + follow-up. Bordered, matching the print output's own
-                    treatment, and the SAME caption — this QR encodes the
-                    prescription's own details for verification, not a link
-                    to a live page, so the caption says only what actually
-                    happens on scan. */}
-                <div className="flex flex-col items-center gap-2 self-center">
-                  <div className="p-1.5 rounded-lg border border-gray-200">
-                    {qrDataUrl ? (
-                      <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 rounded" />
-                    ) : (
-                      <div className="w-20 h-20 rounded flex items-center justify-center">
-                        <span className="text-[8px] text-gray-300 text-center leading-tight">QR</span>
+                {/* Right column — always one stack, in reading order: what
+                    was done today, then the home programme, then the
+                    instructions the patient leaves with. */}
+                <div className="flex flex-col gap-4">
+                  {/* Delivered in the clinic today — a record of what was
+                      DONE rather than something to do (see IntentType in
+                      engine.ts). Teal, the "examined" colour. */}
+                  {therapyNotes && (
+                    <div>
+                      <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-2">
+                        Therapy Performed
+                      </p>
+                      <div className="space-y-1.5">
+                        {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
+                          <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
+                            <ChevronRight className="w-3 h-3 text-teal-400 mt-0.5 shrink-0" />{line}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* The home programme, between what the clinic did and the
+                      general instructions. A physiotherapy patient's
+                      prescription is mostly this. */}
+                  {exerciseLines.length > 0 && (
+                    <div>
+                      <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2">
+                        Home Exercise Programme
+                      </p>
+                      <div className="space-y-1.5">
+                        {exerciseLines.map((line, i) => (
+                          <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
+                            <ChevronRight className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />{line}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Instructions */}
+                  <div>
+                    <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2">
+                      Important Instructions
+                    </p>
+                    {adviceNotes && (
+                      <div className="mb-2 space-y-1.5">
+                        {adviceNotes.split("\n").filter(Boolean).map((line, i) => (
+                          <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
+                            <ChevronRight className="w-3 h-3 text-pink-400 mt-0.5 shrink-0" />{line}
+                          </p>
+                        ))}
                       </div>
                     )}
-                  </div>
-                  <p className="text-[9px] text-gray-400 text-center leading-tight">Scan to verify<br />this prescription</p>
-                  {followUpDays && (
-                    <div className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-700">
-                      Follow-up in {followUpDays} days
-                    </div>
-                  )}
-                </div>
-
-                {/* Delivered in the clinic today. Its own block, above the
-                    instructions the patient leaves with, because it is a
-                    record of what was DONE rather than something to do — see
-                    IntentType in engine.ts. Teal, the "examined" colour. */}
-                {therapyNotes && (
-                  <div className="mb-4">
-                    <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-2.5">
-                      Therapy Performed
-                    </p>
+                    {/* The doctor's own STANDING advice (Prescription Editor
+                        → Default advice) — the actual config-driven content
+                        that prints, replacing the four pseudo-random canned
+                        lines this block used to show instead (see the
+                        removed `pickInstructions` comment above). */}
                     <div className="space-y-1.5">
-                      {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
-                        <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
-                          <ChevronRight className="w-3 h-3 text-teal-400 mt-0.5 shrink-0" />{line}
+                      {prescriptionConfig.defaultAdvice.filter(Boolean).map((line, i) => (
+                        <p key={i} className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-1.5 shrink-0" />{line}
                         </p>
                       ))}
                     </div>
-                  </div>
-                )}
-
-                {/* The home programme, between what the clinic did and the
-                    general instructions. A physiotherapy patient's
-                    prescription is mostly this. */}
-                {exerciseLines.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2.5">
-                      Home Exercise Programme
-                    </p>
-                    <div className="space-y-1.5">
-                      {exerciseLines.map((line, i) => (
-                        <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
-                          <ChevronRight className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />{line}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Instructions */}
-                <div>
-                  <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2.5">
-                    Important Instructions
-                  </p>
-                  {adviceNotes && (
-                    <div className="mb-2 space-y-1.5">
-                      {adviceNotes.split("\n").filter(Boolean).map((line, i) => (
-                        <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
-                          <ChevronRight className="w-3 h-3 text-pink-400 mt-0.5 shrink-0" />{line}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {/* The doctor's own STANDING advice (Prescription Editor →
-                      Default advice) — the actual config-driven content that
-                      prints, replacing the four pseudo-random canned lines
-                      this block used to show instead (see the removed
-                      `pickInstructions` comment above). */}
-                  <div className="space-y-1.5">
-                    {prescriptionConfig.defaultAdvice.filter(Boolean).map((line, i) => (
-                      <p key={i} className="flex items-start gap-1.5 text-[10px] text-gray-500 leading-relaxed">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-1.5 shrink-0" />{line}
-                      </p>
-                    ))}
                   </div>
                 </div>
               </div>
@@ -969,14 +996,15 @@ export default function ReviewModal({
                   branding strip because it is the clinic speaking, not the
                   product; same placement PrescriptionDocument uses. */}
               {prescriptionConfig.footerNote.trim() && (
-                <div className="px-8 pt-4 text-[10px] text-gray-500 leading-relaxed border-t border-gray-100 whitespace-pre-line">
+                <div className="px-7 pt-3 text-[10px] text-gray-600 leading-relaxed border-t border-gray-100 whitespace-pre-line">
                   {prescriptionConfig.footerNote.trim()}
                 </div>
               )}
 
-              {/* ══ Footer ══ */}
-              <div className="px-8 py-4 bg-gradient-to-r from-gray-50 via-white to-gray-50 flex items-center justify-between border-t border-gray-100">
-                <div className="flex items-center gap-3 text-[9px] text-gray-400">
+              {/* ══ Footer ══ — the other band trimmed hardest: it is
+                  provenance, not something to read. */}
+              <div className="px-7 py-2.5 bg-gradient-to-r from-gray-50 via-white to-gray-50 flex items-center justify-between border-t border-gray-100">
+                <div className="flex items-center gap-3 text-[9px] text-gray-500">
                   <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/80 border border-gray-100">
                     <Lock className="w-2.5 h-2.5" /> Secure
                   </span>
@@ -984,7 +1012,7 @@ export default function ReviewModal({
                     <Shield className="w-2.5 h-2.5" /> Private
                   </span>
                 </div>
-                <p className="text-[9px] text-gray-400">Generated: {today}</p>
+                <p className="text-[9px] text-gray-500">Generated: {today}</p>
                 {/* Deliberate product-branding line, matching
                     PrescriptionDocument's own treatment — reads as a
                     signature, not incidental page text. Was sharing
@@ -1011,8 +1039,8 @@ export default function ReviewModal({
 
           {/* ── Bottom action bar ── */}
           {isPrintMode ? (
-            <div className="shrink-0 px-6 py-3.5 border-t border-gray-100 bg-white flex items-center gap-3">
-              <p className="text-[11.5px] text-gray-400 leading-snug max-w-[320px]">
+            <div className="shrink-0 px-5 py-3 border-t border-gray-100 bg-white flex items-center gap-3">
+              <p className="text-[11.5px] text-gray-500 leading-snug max-w-[320px]">
                 The standard print window handles printer, paper size (A4, A5, Thermal) and copies.
               </p>
               <div className="flex-1" />
@@ -1029,9 +1057,9 @@ export default function ReviewModal({
               </button>
             </div>
           ) : (
-            <div className="shrink-0 px-6 py-3.5 border-t border-gray-100 bg-white flex items-center gap-3">
+            <div className="shrink-0 px-5 py-3 border-t border-gray-100 bg-white flex items-center gap-3">
               <button onClick={onEdit}
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-blue-600 transition-colors">
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors">
                 <Edit2 className="w-3.5 h-3.5" /> Edit
               </button>
               <div className="flex-1" />
@@ -1043,7 +1071,7 @@ export default function ReviewModal({
                     end to end, so the key cap is built from utilities here
                     rather than borrowing consult.css's `.cs-kbd` — mixing the
                     two vocabularies in one component is doctrine rule 7. */}
-                <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold not-italic leading-5 text-gray-400">
+                <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold not-italic leading-5 text-gray-500">
                   Ctrl P
                 </kbd>
               </button>
