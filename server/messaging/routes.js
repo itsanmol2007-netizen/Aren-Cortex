@@ -124,7 +124,7 @@ export function mountMessagingRoutes(app) {
         res.json({
             ok: true,
             provider,
-            live: provider === "meta",
+            live: provider === "meta" || provider === "fast2sms",
             ...(error ? { error } : {}),
         });
     });

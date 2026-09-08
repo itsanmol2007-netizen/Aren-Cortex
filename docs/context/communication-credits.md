@@ -106,6 +106,36 @@ status transitioned) — only the WhatsApp hop is simulated.
 `MESSAGING_MOCK_FAILURE_RATE` exists because the refund path can only be
 exercised by a failure, and a failure path that has never run is a guess.
 
+### 5a. Fast2SMS (BSP) is wired in as a third adapter (2026-09-09)
+
+Fast2SMS's WhatsApp API is a **straight passthrough of Meta's Cloud API** —
+identical request body, identical `{version}/{phone_number_id}/messages` path,
+identical `{ messages: [{ id: "wamid..." }] }` response. So the whole send
+path is shared:
+
+- `server/whatsapp/client.js` gained `whatsappTransport()` — the ONE place
+  the two providers diverge (host + `Authorization: <raw key>` vs
+  `Bearer <token>`), switched by `FAST2SMS_API_KEY` being present. Every
+  send (`sendTextMessage`, `sendInteractiveButtons`, `sendTemplateMessage`,
+  `sendPrescriptionTemplate`) flows through it.
+- `providers/meta.js` was refactored to a `makeCloudApiAdapter(name, configured)`
+  factory; `providers/fast2sms.js` is that factory with a different name and
+  credential check — ~15 lines, no send logic of its own.
+- `resolveProvider()` will **never auto-select `fast2sms`** — going live is an
+  explicit `MESSAGING_PROVIDER=fast2sms`, so that adding the key to run the
+  read-only check can't start real sends on a freshly-approved number.
+- The webhook (`server/whatsapp/webhook.js`) authenticates BSP POSTs by a
+  `?token=<WHATSAPP_WEBHOOK_TOKEN>` query param instead of Meta's
+  `X-Hub-Signature-256` (Fast2SMS signs nothing). Configure the Fast2SMS
+  webhook in **META DIRECT** format so `parseWebhookPayload` still works.
+- `npm run check:whatsapp` (`scripts/check-whatsapp.mjs`) is a read-only
+  probe — WABA health, number quality rating, template approval status,
+  wallet balance. **It sends nothing**, by design: the number was banned
+  once for burst activity during setup.
+
+Still not live: needs `FAST2SMS_API_KEY` + `WHATSAPP_PHONE_NUMBER_ID` in
+`server/.env`, the templates Approved, then `MESSAGING_PROVIDER=fast2sms`.
+
 ### 5b. "Prescription Ready" — the template's actual shape (2026-09-06)
 
 Agreed with Anmol, since these are unsubmitted and someone has to eventually
@@ -316,6 +346,12 @@ consultation about a thing the doctor already knows.
   `VITE_AREN_API_URL` exists for when that changes.
 - **Admin approval has no UI.** `approve_credit_recharge()` is called by hand
   (SQL or a service-role tool). Parallax is the natural home for the queue.
-- **Meta templates are not submitted.** `aren_prescription` / `aren_follow_up`
-  are the configured names; until they are approved, `MESSAGING_PROVIDER`
-  should stay unset so the mock adapter runs.
+- **Templates not yet approved; provider not yet flipped.** `aren_prescription`
+  / `aren_follow_up` (override with `WHATSAPP_TEMPLATE_*`) are the configured
+  names. The Fast2SMS adapter is wired (§5a) but `MESSAGING_PROVIDER` must
+  stay `mock` until `npm run check:whatsapp` shows both templates Approved and
+  the number healthy — then set `MESSAGING_PROVIDER=fast2sms` and send exactly
+  one real test before any volume. Note `server/.env` still carries stale
+  direct-Meta creds (`WHATSAPP_ACCESS_TOKEN` etc.), so auto-select currently
+  resolves to `meta` with a likely-dead token — set `MESSAGING_PROVIDER=mock`
+  explicitly in the meantime.

@@ -40,24 +40,31 @@
 // ---------------------------------------------------------------------------
 
 import { metaAdapter } from "./meta.js";
+import { fast2smsAdapter } from "./fast2sms.js";
 import { mockAdapter } from "./mock.js";
 
 const ADAPTERS = {
     meta: metaAdapter,
+    fast2sms: fast2smsAdapter,
     mock: mockAdapter,
 };
 
 /**
  * Which provider is in play.
  *
- * `MESSAGING_PROVIDER=meta` selects Meta explicitly. With nothing set, the
- * choice is made by whether Meta's credentials actually exist — so a
- * developer with no Meta app gets the mock and a working Communication page,
- * and production with credentials present gets the real thing without a
- * second env var to remember. An explicitly named provider is never
- * second-guessed: if you asked for Meta and its credentials are missing, you
- * get an error, not a silent downgrade to mock that pretends messages were
- * delivered.
+ * `MESSAGING_PROVIDER=fast2sms` (or `meta`, or `mock`) selects one explicitly.
+ * An explicitly named provider is never second-guessed: if you asked for
+ * fast2sms and its credentials are missing, you get an error, not a silent
+ * downgrade to mock that pretends messages were delivered.
+ *
+ * With nothing set, auto-selection is DELIBERATELY conservative — it will
+ * pick `meta` (a direct Meta app whose token is present) or fall back to
+ * `mock`, but it will NOT auto-pick `fast2sms` just because a key is in the
+ * env. Going live through the BSP is an explicit `MESSAGING_PROVIDER=fast2sms`
+ * decision, made only once `npm run check:whatsapp` shows the number healthy
+ * and the templates approved — so that merely adding the key to run that
+ * read-only check can never, by itself, start putting real messages on a
+ * freshly-approved number.
  */
 export function resolveProvider() {
     const named = process.env.MESSAGING_PROVIDER;
@@ -70,5 +77,6 @@ export function resolveProvider() {
         }
         return adapter;
     }
-    return metaAdapter.configured() ? metaAdapter : mockAdapter;
+    if (metaAdapter.configured()) return metaAdapter;
+    return mockAdapter;
 }

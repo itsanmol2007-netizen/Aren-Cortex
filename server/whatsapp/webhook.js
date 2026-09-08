@@ -29,6 +29,17 @@
 //                            once as a warning) rather than blocking you
 //                            tonight while you're still getting the basic
 //                            flow working.
+//
+// ── Behind a BSP (Fast2SMS) ─────────────────────────────────────────────────
+// Fast2SMS does NOT sign its webhook POSTs (no X-Hub-Signature-256) and does
+// NOT do the GET hub.challenge handshake. So when FAST2SMS_API_KEY is set:
+//   * the HMAC check is skipped (there is no signature to check), and
+//   * instead, if WHATSAPP_WEBHOOK_TOKEN is set, every POST must carry it as
+//     `?token=...` on the URL — set that same value in the Fast2SMS
+//     dashboard's webhook URL. Without it the endpoint is unauthenticated
+//     (fine for local ngrok testing, not for a real public host).
+// Configure the Fast2SMS webhook in "META DIRECT" format so its payload
+// matches parseWebhookPayload's expectations (entry[].changes[].value...).
 // ---------------------------------------------------------------------------
 
 import crypto from "node:crypto";
@@ -73,8 +84,12 @@ export function mountWhatsAppWebhook(app, opts = {}) {
     const onEvent = opts.onEvent || defaultOnEvent;
     const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
     const appSecret = process.env.WHATSAPP_APP_SECRET;
+    // A BSP (Fast2SMS) neither signs its POSTs nor runs the GET handshake, so
+    // its presence changes how this endpoint authenticates callers.
+    const bspMode = Boolean(process.env.FAST2SMS_API_KEY);
+    const webhookToken = process.env.WHATSAPP_WEBHOOK_TOKEN;
 
-    if (!verifyToken) {
+    if (!verifyToken && !bspMode) {
         // Loud, and it does NOT mount — but it no longer kills the process
         // (2026-09-06). It used to throw, which was right when this webhook
         // was the only thing `server/` did. It is not any more: the messaging
@@ -96,7 +111,20 @@ export function mountWhatsAppWebhook(app, opts = {}) {
         );
         return;
     }
-    if (!appSecret) {
+    if (bspMode) {
+        if (!webhookToken) {
+            console.warn(
+                "[whatsapp] BSP mode (FAST2SMS_API_KEY set) — Fast2SMS does not sign " +
+                "its webhook POSTs, and WHATSAPP_WEBHOOK_TOKEN is not set, so this " +
+                "endpoint accepts an unauthenticated POST from anyone who knows the " +
+                "URL. Fine for local ngrok testing; set WHATSAPP_WEBHOOK_TOKEN and " +
+                "append ?token=<that value> to the callback URL in the Fast2SMS " +
+                "dashboard before this has a stable public host."
+            );
+        } else {
+            console.log("[whatsapp] BSP mode — POSTs authenticated by ?token= query param");
+        }
+    } else if (!appSecret) {
         console.warn(
             "[whatsapp] WHATSAPP_APP_SECRET is not set — incoming POSTs are NOT " +
             "signature-checked. Fine for tonight's local testing; set this before " +
@@ -132,7 +160,14 @@ export function mountWhatsAppWebhook(app, opts = {}) {
     router.post(path, express.raw({ type: "application/json" }), (req, res) => {
         const rawBody = req.body; // a Buffer, thanks to express.raw above
 
-        if (appSecret && !verifySignature(rawBody, req.get("x-hub-signature-256"), appSecret)) {
+        if (bspMode) {
+            // No signature to check (Fast2SMS sends none). Authenticate on the
+            // shared token instead, when one is configured.
+            if (webhookToken && req.query.token !== webhookToken) {
+                console.warn("[whatsapp] BSP webhook token missing/mismatched — rejecting POST");
+                return res.sendStatus(401);
+            }
+        } else if (appSecret && !verifySignature(rawBody, req.get("x-hub-signature-256"), appSecret)) {
             console.warn("[whatsapp] signature check failed — rejecting POST");
             return res.sendStatus(401);
         }

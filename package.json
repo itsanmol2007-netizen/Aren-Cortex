@@ -20,7 +20,8 @@
     "check:examination": "node scripts/examination-catalogue.mjs",
     "check:duration": "node scripts/duration-catalogue.mjs",
     "server": "node server/index.js",
-    "check:email": "node scripts/check-email.mjs"
+    "check:email": "node scripts/check-email.mjs",
+    "check:whatsapp": "node scripts/check-whatsapp.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

@@ -4,11 +4,27 @@
 // One function you'll actually call: sendPrescriptionTemplate(). Everything
 // else in this file is it figuring out the right HTTP call to the Graph API.
 //
-// Needs, in server/.env (from Meta dashboard -> WhatsApp -> API Setup):
+// Needs, in server/.env — EITHER a direct Meta app:
 //   WHATSAPP_PHONE_NUMBER_ID  — the number you're sending FROM
 //   WHATSAPP_ACCESS_TOKEN     — starts as a 24h temporary token; swap for a
 //                               permanent System User token before this
 //                               needs to run unattended for more than a day
+//
+// OR a BSP (Fast2SMS), whose WhatsApp API is a STRAIGHT PASSTHROUGH of Meta's
+// Cloud API — same JSON body, same `{version}/{phone_number_id}/messages`
+// path, same `{ messages: [{ id: "wamid..." }] }` response:
+//   WHATSAPP_PHONE_NUMBER_ID  — the Phone Number ID Fast2SMS gives you (from
+//                               its "Get WABA & Template Details" call)
+//   FAST2SMS_API_KEY          — your Fast2SMS Dev API key. Its PRESENCE is
+//                               what routes every send below through Fast2SMS
+//                               instead of graph.facebook.com. The key rides
+//                               raw in the Authorization header (no "Bearer").
+//
+// The only things that differ between the two are the host and how the key
+// sits in the Authorization header — see whatsappTransport(). Everything
+// else in this file, and all of providers/meta.js, is shared. There is
+// deliberately ONE code path to the API; a second would be a second place
+// for a credential change to break.
 //
 // ── The one thing that will bite you if you don't know it going in ────────
 // WhatsApp only allows a free-form text message (like a plain "here's your
@@ -21,7 +37,11 @@
 
 import { getSupabase } from "./supabaseClient.js";
 
-const GRAPH_VERSION = "v21.0";
+/** Default Graph version per transport. Meta's path has been pinned at v21.0
+ *  here since this was built; Fast2SMS's docs use v26.0. Either can be
+ *  overridden with WHATSAPP_GRAPH_VERSION when a provider moves the goalposts. */
+const META_GRAPH_VERSION = "v21.0";
+const FAST2SMS_GRAPH_VERSION = "v26.0";
 
 /**
  * Logs an outbound send to `whatsapp_messages` so the status webhook
@@ -59,34 +79,74 @@ async function logOutbound({ to, waMessageId, messageType, templateName, preview
     }
 }
 
-async function callGraphApi(body) {
+/**
+ * Which host + auth to use for a send. The PRESENCE of FAST2SMS_API_KEY is
+ * the switch: with it, every send goes through Fast2SMS's passthrough of the
+ * Cloud API; without it, straight to graph.facebook.com with a Meta token.
+ * The request body and the response shape are identical either way, so this
+ * is the only place the two providers diverge.
+ */
+export function whatsappTransport() {
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-    if (!phoneNumberId || !accessToken) {
-        throw new Error(
-            "WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN not set — check server/.env"
-        );
+    if (!phoneNumberId) {
+        throw new Error("WHATSAPP_PHONE_NUMBER_ID not set — check server/.env");
     }
 
-    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
-    const res = await fetch(url, {
-        method: "POST",
+    const fast2smsKey = process.env.FAST2SMS_API_KEY;
+    if (fast2smsKey) {
+        const version = process.env.WHATSAPP_GRAPH_VERSION || FAST2SMS_GRAPH_VERSION;
+        return {
+            label: "fast2sms",
+            url: `https://www.fast2sms.com/dev/whatsapp/${version}/${phoneNumberId}/messages`,
+            // Fast2SMS wants the key RAW here — no "Bearer " prefix.
+            headers: { Authorization: fast2smsKey, "Content-Type": "application/json" },
+        };
+    }
+
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    if (!accessToken) {
+        throw new Error(
+            "Neither FAST2SMS_API_KEY nor WHATSAPP_ACCESS_TOKEN is set — check server/.env"
+        );
+    }
+    const version = process.env.WHATSAPP_GRAPH_VERSION || META_GRAPH_VERSION;
+    return {
+        label: "meta",
+        url: `https://graph.facebook.com/${version}/${phoneNumberId}/messages`,
         headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
         },
+    };
+}
+
+async function callGraphApi(body) {
+    const t = whatsappTransport();
+    const res = await fetch(t.url, {
+        method: "POST",
+        headers: t.headers,
         body: JSON.stringify(body),
     });
 
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-        // Meta's error body is where the actually-useful message lives
-        // ("re-engagement window expired", "template not approved", a typo'd
-        // phone number) — surface it instead of a bare HTTP status.
-        const detail = data?.error?.message || res.statusText;
-        throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+        // The provider's error body is where the actually-useful message
+        // lives ("re-engagement window expired", "template not approved", a
+        // typo'd phone number). Meta nests it under `error.message`; Fast2SMS
+        // uses a flat `message`. Surface whichever is there, not a bare HTTP
+        // status.
+        const detail = data?.error?.message || data?.message || res.statusText;
+        throw new Error(`WhatsApp send failed (${res.status}) via ${t.label}: ${detail}`);
     }
-    // { messaging_product, contacts: [{ input, wa_id }], messages: [{ id }] }
+    // { messaging_product, contacts: [{ input, wa_id }], messages: [{ id }] }.
+    // Fast2SMS can answer 200 with no message id when it rejects a send at its
+    // own layer (before Meta) — treat a missing id as the failure it is,
+    // rather than letting `undefined` propagate as a message id.
+    if (!data?.messages?.[0]?.id) {
+        const detail =
+            data?.error?.message || data?.message || "provider returned no message id";
+        throw new Error(`WhatsApp send failed via ${t.label}: ${detail}`);
+    }
     return data;
 }
 
@@ -251,6 +311,14 @@ export async function sendPrescriptionTemplate(to, templateName, pdfUrl, patient
             type: "button",
             sub_type: "url",
             index: "0",
+            // Meta's native form for a dynamic URL-button suffix. Fast2SMS is
+            // a passthrough so this should ride straight through, but its own
+            // CTA docs show `{ type: "payload", payload: pdfUrl }` — if a real
+            // button-template send is ever rejected by Fast2SMS with a
+            // component error, that alternate shape is the first thing to try.
+            // Untested either way today: the button variant only fires when
+            // `documentUrl` is present, and prescriptions have no permanent
+            // public host yet (see docs/context/communication-credits.md).
             parameters: [{ type: "text", text: pdfUrl }],
         },
     ], opts);
