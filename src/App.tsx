@@ -870,7 +870,7 @@ function App() {
   // time. Navigation stays here in the shell and is passed in.
   const {
     handleStartConsultFromRecord, resumeConsult, handlePatientConfirm, handleRepeatRx,
-    handleConfirmAndSave, openReview, resetConsultState,
+    handleConfirmAndSave, closeReview, reviewSaved, openReview, resetConsultState,
   } = useConsultLifecycle({
     identity,
     observables,
@@ -2725,15 +2725,19 @@ function App() {
             prescription={prescription}
             tests={selectedTests}
             isSaving={isSaving}
-            saveLabel={workspace.isConsult ? "Complete & Next" : undefined}
+            saveLabel={reviewSaved ? "Complete & Next" : (workspace.isConsult ? "Complete & Next" : undefined)}
+            // Saved-and-sending: the prescription is committed, the WhatsApp
+            // message is on its way, and Review is held open on purpose.
+            sent={reviewSaved}
             onEdit={() => setIsReviewOpen(false)}
             onSave={() => handleConfirmAndSave()}
-            // The dedicated WhatsApp action (2026-09-08) — saves exactly the
-            // same way, and additionally sends the prescription. Plain
-            // "Confirm & Save" above no longer does this on its own; see
-            // handleConfirmAndSave's own doc comment.
-            onSendWhatsApp={() => handleConfirmAndSave({ sendWhatsApp: true })}
-            onClose={() => setIsReviewOpen(false)}
+            // The dedicated WhatsApp action. Saves, sends the prescription,
+            // and DELIBERATELY leaves Review open (`stayOpen`) — the doctor
+            // reads the prescription and confirms the message went before the
+            // screen advances. Closing it (`closeReview`) is then the
+            // "Complete & Next". Plain "Confirm & Save" still never sends.
+            onSendWhatsApp={() => handleConfirmAndSave({ sendWhatsApp: true, stayOpen: true })}
+            onClose={closeReview}
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}
             therapyNotes={therapyNotes}

@@ -283,13 +283,16 @@ export function Panel({
  * and a live button rather than a disabled one.
  */
 export function WhatsAppTemplatePreview({
-    header, body, button, onButtonClick,
+    header, body, footer, button, onButtonClick,
 }: {
     /** The template's HEADER line — bold, top of the bubble. */
     header: string;
     /** The template's BODY — the bulk of the message, with real values
      *  already substituted by the caller (patient/doctor/clinic name). */
     body: ReactNode;
+    /** The template's FOOTER — the small grey line WhatsApp draws under the
+     *  body. Omit for a template with no footer component. */
+    footer?: string;
     /** The template's button label, rendered as WhatsApp itself draws a
      *  template button: a full-width row below a divider, not part of the
      *  bubble's own rounded shape. */
@@ -302,7 +305,8 @@ export function WhatsAppTemplatePreview({
         <div className="overflow-hidden rounded-[12px] border border-[#d9fdd3] bg-[#d9fdd3] shadow-[0_1px_1px_rgba(16,28,46,0.06)]">
             <div className="flex flex-col gap-[4px] px-[11px] pb-[8px] pt-[9px] text-[12px] leading-[1.45] text-[#111b21]">
                 <span className="font-bold">{header}</span>
-                <span>{body}</span>
+                <span className="whitespace-pre-line">{body}</span>
+                {footer && <span className="mt-[2px] text-[11px] text-[#667781]">{footer}</span>}
             </div>
             <button
                 type="button"

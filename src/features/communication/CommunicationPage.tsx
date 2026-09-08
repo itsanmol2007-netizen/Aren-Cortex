@@ -42,6 +42,7 @@ import {
     Sparkles, TrendingUp, Wallet, X, XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { doctorName as formatDoctorName } from "../../lib/format";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import ReviewModal from "../../components/ReviewModal";
 import {
@@ -1015,22 +1016,27 @@ function ConversationPanel({
                             // The real template, not a paraphrase — Anmol,
                             // 2026-09-08: "the chat preview... should be the
                             // exact replica of what message has been sent."
-                            // `body_preview` ("Prescription for Anmol") is a
-                            // plain summary for the activity feed elsewhere on
-                            // this page; a prescription send actually has a
-                            // shape (header/body/button) worth showing here.
+                            // This mirrors `en_prescription_ready03` (approved
+                            // 2026-09-09) component for component: header carries
+                            // the patient name, body reads "from {doctor}" with
+                            // no baked-in "Dr." (the value carries it), footer
+                            // is its own line. `body_preview` stays the plain
+                            // activity-feed summary elsewhere on this page.
                             if (out && m.purpose === "prescription") {
-                                const doctorName = (m.doctor_id && doctorNameById.get(m.doctor_id)) || "your doctor";
+                                const rawDoc = (m.doctor_id && doctorNameById.get(m.doctor_id)) || "";
+                                const doctorName = formatDoctorName(rawDoc) || "your doctor";
                                 const clinicName = hospital?.name || "your clinic";
                                 return (
                                     <div key={m.id} className="flex max-w-[76%] flex-none flex-col gap-[3px] self-end">
                                         <WhatsAppTemplatePreview
-                                            header="Prescription Ready"
+                                            header={`Hi ${name || "there"}, Your Prescription is Ready`}
                                             body={
-                                                <>Hi {name || "there"}, Your prescription from Dr. {doctorName} from {clinicName} is
-                                                ready to view or download. If you have any questions or need help, we're just a message away!
-                                                <br />With care, {clinicName} Arenode</>
+                                                <>Your prescription from <strong>{doctorName}</strong> is ready to view or download.
+                                                {"\n\n"}If you have any questions or need any help with your prescription, we&rsquo;re just a message away
+                                                {"\n\n"}With care, <strong>{clinicName}</strong>. {"❤️‍🩹"}
+                                                {"\n"}Thanks You!</>
                                             }
+                                            footer="Handled Securely by Arenode."
                                             button="View Prescription"
                                             onButtonClick={m.prescription_id ? () => setViewingRxId(m.prescription_id) : undefined}
                                         />

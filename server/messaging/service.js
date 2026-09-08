@@ -100,12 +100,13 @@ async function loadContext(sb, { doctorId, patientId }) {
 
     return {
         doctorId: doctor.id,
-        // The prescription template's body already reads "…from Dr. {{1}}…",
-        // so send the BARE name. About half of doctors type the honorific
-        // into their own profile ("Dr Anmol Pandey"), which printed as
-        // "Dr. Dr Anmol Pandey". Mirrors src/lib/format.ts's `doctorName()`,
-        // which the browser can't share with this process.
-        doctorName: stripHonorific(doctor.name) || "your doctor",
+        // `en_prescription_ready03`'s body is "…from {{1}}…" (no baked-in
+        // honorific), and its own sample for {{1}} is "Dr. Sk Pandey" — so
+        // the value must carry exactly one "Dr. ". Doctors type it (or don't)
+        // inconsistently into their profile, so normalise: strip whatever is
+        // there, add the one canonical prefix. Mirrors src/lib/format.ts's
+        // `doctorName()`, which the browser can't share with this process.
+        doctorName: formatDoctorName(doctor.name),
         hospitalId: doctor.hospital_id,
         clinicName: doctor.hospitals?.name || "your clinic",
         patientId: patient.id,
@@ -114,10 +115,12 @@ async function loadContext(sb, { doctorId, patientId }) {
     };
 }
 
-/** "Dr Anmol Pandey" / "dr. Anmol Pandey" -> "Anmol Pandey". Leaves a name
- *  with no honorific untouched. */
-function stripHonorific(raw) {
-    return String(raw || "").trim().replace(/^d[r]\.?\s+/i, "").trim();
+/** "Anmol Pandey" / "Dr Anmol Pandey" / "dr. Anmol Pandey" -> "Dr. Anmol
+ *  Pandey". Empty -> "your doctor" (a non-empty value is required — Meta
+ *  rejects a template param that is blank). */
+function formatDoctorName(raw) {
+    const bare = String(raw || "").trim().replace(/^d[r]\.?\s+/i, "").trim();
+    return bare ? `Dr. ${bare}` : "your doctor";
 }
 
 /**

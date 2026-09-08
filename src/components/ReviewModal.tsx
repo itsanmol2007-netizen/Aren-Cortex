@@ -98,6 +98,13 @@ interface ReviewModalProps {
    * way — `onSave` is the same call — only the word changes.
    */
   saveLabel?: string;
+  /**
+   * Set once "WhatsApp" has saved the consult and left this modal open on
+   * purpose. The prescription is committed and the message is sending; Edit
+   * and re-save are gone, the WhatsApp button becomes a passive "Sent"
+   * marker, and the primary button is now just "Complete & Next".
+   */
+  sent?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -196,7 +203,7 @@ export default function ReviewModal({
   prescription = [], tests = [],
   followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
   storySummary = [], goalSummary = [],
-  doctor, hospital, vitals, isSaving, saveLabel,
+  doctor, hospital, vitals, isSaving, saveLabel, sent = false,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
 
@@ -391,13 +398,15 @@ export default function ReviewModal({
       if (matches(e, "reviewBack")) {
         e.preventDefault();
         e.stopPropagation();
-        if (!isPrintMode && onEdit) onEdit(); else onClose();
+        // Once saved-and-sending, "back" is the same as the close control:
+        // it advances (Complete & Next), it does not drop to an editable chart.
+        if (!isPrintMode && onEdit && !sent) onEdit(); else onClose();
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFormatPicker, isPrintMode, isSaving, onSave, onEdit, onClose, remembered, format]);
+  }, [showFormatPicker, isPrintMode, isSaving, onSave, onEdit, onClose, remembered, format, sent]);
 
   return (
     <>
@@ -1058,10 +1067,17 @@ export default function ReviewModal({
             </div>
           ) : (
             <div className="shrink-0 px-5 py-3 border-t border-gray-100 bg-white flex items-center gap-3">
-              <button onClick={onEdit}
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors">
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
+              {sent ? (
+                // Saved and sending — nothing here to edit any more.
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-green-600">
+                  <CheckCircle className="w-4 h-4" /> Saved · sending on WhatsApp
+                </span>
+              ) : (
+                <button onClick={onEdit}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors">
+                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                </button>
+              )}
               <div className="flex-1" />
 
               <button onClick={handlePrintClick}
@@ -1076,12 +1092,17 @@ export default function ReviewModal({
                 </kbd>
               </button>
 
-              {onSendWhatsApp && (
+              {onSendWhatsApp && !sent && (
                 <button onClick={onSendWhatsApp} disabled={isSaving}
-                  title="Save this consultation and send the prescription to the patient over WhatsApp"
+                  title="Save this consultation and send the prescription to the patient over WhatsApp. This does NOT close the review — you check it, then Complete & Next."
                   className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                  <MessageCircle className="w-4 h-4" /> Send on WhatsApp
                 </button>
+              )}
+              {onSendWhatsApp && sent && (
+                <span className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700">
+                  <MessageCircle className="w-4 h-4" /> Sent
+                </span>
               )}
 
               <button onClick={onSave} disabled={isSaving}

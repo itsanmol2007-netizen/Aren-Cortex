@@ -23,7 +23,7 @@
 // that silently navigated would be very hard to follow.
 // ---------------------------------------------------------------------------
 
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Patient, PrescriptionMedicine } from "../types";
 import type { SidebarPage } from "../features/sidebar/SidebarNav";
 import { commitConsultation, type Observable } from "../lib/db/synapse";
@@ -168,7 +168,15 @@ export interface ConsultLifecycle {
    * "Confirm & Save" omits it, so the save no longer carries the side
    * effect by default.
    */
-  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean }) => Promise<void>;
+  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => Promise<void>;
+  /** Review's close/back control. Advances ("Complete & Next") when the
+   *  consult was already saved via the WhatsApp button; otherwise just
+   *  closes Review back to the chart. */
+  closeReview: () => void;
+  /** True once "WhatsApp" has saved the consult and left Review open. The
+   *  modal uses it to show the message is on its way and turn its primary
+   *  button into a plain "Complete & Next". */
+  reviewSaved: boolean;
   /** Open Review — refused while a prescribed hard warning is unread. */
   openReview: () => void;
   /** Abandon this consultation and go back to an empty workspace. */
@@ -486,9 +494,41 @@ export function useConsultLifecycle({
     setTimeout(() => session.setRepeatRxBanner(null), 6000);
   }, [observables, chart, plan, session]);
 
-  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean }) => {
+  // Non-null while a consult has been SAVED but Review is deliberately kept
+  // open (the "WhatsApp" button — the doctor wants to see the prescription
+  // and confirm the message went before the screen advances). Holds the seen
+  // patient's name for the handover toast. `closeReview` runs the finish tail
+  // when set; a second "Complete & Next" press just finishes. State (not a
+  // ref) so ReviewModal can flip to its "saved, sending" affordance.
+  const [reviewSavedName, setReviewSavedName] = useState<string | null>(null);
+  const reviewSavedRef = useRef<string | null>(null);
+  const markReviewSaved = (name: string | null) => {
+    reviewSavedRef.current = name;
+    setReviewSavedName(name);
+  };
+
+  /** The close/reset/advance tail shared by a normal save and by closing
+   *  Review after a stay-open (WhatsApp) save. */
+  const finishReview = useCallback((seenName: string | null) => {
+    markReviewSaved(null);
+    session.setIsReviewOpen(false);
+    resetConsultState();
+    onConsultSaved?.(seenName);
+  }, [session, resetConsultState, onConsultSaved]);
+
+  /** Review's close button. If the consult was already saved (WhatsApp path),
+   *  closing IS "Complete & Next"; otherwise it just backs out to the chart. */
+  const closeReview = useCallback(() => {
+    if (reviewSavedRef.current !== null) finishReview(reviewSavedRef.current);
+    else session.setIsReviewOpen(false);
+  }, [finishReview, session]);
+
+  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => {
     const { visitId } = session;
     if (!visitId) { showToast("No active consult to save"); return; }
+    // Already saved via the WhatsApp button and left open — a press on
+    // "Complete & Next" now just finishes. Never save (or send) twice.
+    if (reviewSavedRef.current !== null) { finishReview(reviewSavedRef.current); return; }
     session.setIsSaving(true);
     try {
       const medicineRows: SaveConsultMedicine[] = plan.prescription.map((m, i) => ({
@@ -644,6 +684,19 @@ export function useConsultLifecycle({
       }
 
       const seen = session.patient?.name ?? null;
+
+      // The WhatsApp button asks for the save WITHOUT the screen moving on:
+      // the doctor wants to see the prescription and that the message left.
+      // Review stays open; `closeReview` (or a second press of the primary
+      // button) runs the finish tail. `resetConsultState` must NOT run here
+      // or the still-open modal would render against a wiped workspace.
+      if (opts?.stayOpen) {
+        markReviewSaved(seen);
+        session.setIsSaving(false);
+        showToast("Prescription saved. Sending on WhatsApp — Complete & Next when you're done.");
+        return;
+      }
+
       session.setIsReviewOpen(false);
       resetConsultState();
       showToast("Prescription saved ✓");
@@ -657,7 +710,7 @@ export function useConsultLifecycle({
       session.setIsSaving(false);
     }
   }, [session, plan, chart, ledger, intelligence.result, identity,
-      resetConsultState, showToast, onVisitSaved, onSaveStory, onConsultSaved]);
+      resetConsultState, showToast, onVisitSaved, onSaveStory, onConsultSaved, finishReview]);
 
   const openReview = useCallback(() => {
     const blocking = plan.unreadPrescribedWarnings[0];
@@ -674,6 +727,8 @@ export function useConsultLifecycle({
     handlePatientConfirm,
     handleRepeatRx,
     handleConfirmAndSave,
+    closeReview,
+    reviewSaved: reviewSavedName !== null,
     openReview,
     resetConsultState,
   };
