@@ -1,152 +1,210 @@
-# Session handoff — 2026-09-08, round 6 (Overview empty state, Rx preview redesign, skeleton dimensions)
+# Session handoff — 2026-09-09, WhatsApp go-live + prescription-link + fixes
 
-**Temporary, self-replacing. REWRITE THE WHOLE FILE.**
+**Temporary, self-replacing. REWRITE THE WHOLE FILE next session.**
 
-Continues round 5 (Cortex↔Consult `clinic_mode` fix, front-desk Age field,
-queue-flash race — already merged to `master`). This round is pure UI/visual
-polish, four asks from one message: Cortex Overview's dead empty-queue slot,
-skeletons that don't match their populated dimensions, "Review Prescription"
-needing a scale-down + contrast pass + less scrolling, and Communication's
-"View Prescription" opening a differently-shaped modal while loading.
+This session took WhatsApp sending **live through Fast2SMS**, built the
+public patient-prescription page it links to, moved the inbound webhook to a
+Supabase Edge Function, and fixed a run of bugs. A large redesign task is
+**still open** (see §"THE BIG ONE").
 
-## 1. Cortex Overview's dead white space → Recent Patients
+All Cortex work is committed + pushed to `master` (`687d445` and back to
+`554924b`). Landing-repo work is pushed to `aren-landing-page` `main`
+(`229abc8`). `server/.env` changes are local (gitignored) — listed in §Config.
 
-`DoctorOverviewPage.tsx`'s chart row is `grid-cols-[1.4fr_1fr_0.9fr]` — THREE
-fixed template columns. Today's Queue (`workspace.isConsult &&
-<Card>...</Card>`) was the only thing in that third slot, so in Cortex it
-simply didn't render — the grid still reserved the column's width for two
-children, which is exactly the dead space Anmol saw. Fixed by adding the
-honest Cortex-side equivalent question in an `!workspace.isConsult` sibling:
-**Recent Patients** — last 5 visits via the already-existing
-`fetchDoctorVisitRows`, a fixed last-30-days window (independent of the
-page's own period selector — a doctor who flips to "Today" with nobody seen
-yet should still see yesterday's patients, not a second empty card). Same
-row anatomy as a queue row (avatar chip, name, detail·date, trailing
-action), clicking a row calls the existing `onViewPatient`.
+---
 
-## 2. Skeletons resized to what they become
+## What shipped
 
-`SkeletonRows` (clinic/ui.tsx, flat 22px bars) was standing in for THREE
-different shapes with different real heights — a 132px `TrendChart`, a
-132px `Donut`, and ~37px queue/patient rows — so each card visibly JUMPED
-the instant real data replaced the skeleton. Added three purpose-built
-skeletons local to `DoctorOverviewPage.tsx`: `ChartSkeleton` (one 150px
-block — 132px SVG + TrendChart's own axis-label row), `DonutSkeleton` (a
-132px circle, centered the same way), `RowSkeleton` (the exact row card:
-20px avatar circle, two text lines, trailing pill — shared by Today's
-Queue and Recent Patients, since both rows are identical anatomy). Verified
-side-by-side via a temporary debug route (see §5) — skeleton and populated
-state now occupy the same footprint.
+### 1. WhatsApp is LIVE via Fast2SMS (BSP)
+`554924b` + `f92e3f5` + `5b99291` + `687d445`.
 
-Also added a subtle glow under `TrendChart`: a blurred radial gradient in
-the card's own tone (`var(--cs-blue)`), scoped to `overflow-hidden` on just
-the chart's own wrapper (not the whole card, so the header's metric-toggle
-buttons stay unaffected). Verified visible but not overpowering at
-`opacity-[0.55] blur-xl`, 46px tall, sitting under the line.
+- Fast2SMS's WhatsApp API is a **passthrough of Meta's Cloud API**, so
+  `server/whatsapp/client.js` gained `whatsappTransport()` — switches host +
+  auth on `FAST2SMS_API_KEY`. `providers/fast2sms.js` = `providers/meta.js`'s
+  send under a different name (`makeCloudApiAdapter` factory).
+- `MESSAGING_PROVIDER=fast2sms` is set in `server/.env`. It is **never
+  auto-selected** — going live is that explicit line.
+- **First real send verified** 2026-09-09: message delivered, 1 credit
+  debited, `whatsapp_messages` row logged.
+- `scripts/check-whatsapp.mjs` (`npm run check:whatsapp`) — READ-ONLY probe
+  (WABA health, template approval, wallet). Sends nothing.
+- `scripts/send-test-whatsapp.mjs` — ONE controlled live send (temporarily
+  swaps a test patient's phone, restores it).
+- **Anti-ban:** the sender number was banned once for burst setup activity.
+  Never loop test sends. Fast2SMS's `dlt_manager` template list lags Meta
+  approval ~30–60 min; a send with an unsynced name fails
+  `(404) Template not found`.
 
-## 3. "Review Prescription" (`ReviewModal.tsx`) — scaled down, more contrast, real scroll-length bug fixed
+### 2. Patient prescription link (`arenode.com/prescriptions/<token>`)
+Landing repo `aren-landing-page` + `20260909_prescription_share_token.sql`
+(applied) + `supabase/functions/rx-preview` (deployed, verify_jwt off).
 
-- **Scale**: `max-w-3xl` (768px) → `max-w-[680px]` (~11.5%), outer margin
-  `m-4`→`m-3`. Every section's padding trimmed, but NOT evenly — the
-  letterhead and footer (header/footer, per the ask "focus on content
-  instead of header and footer") were cut hardest (`px-8 py-6`→`px-7 py-4`
-  for the letterhead, `py-4`→`py-2.5` for the footer band), while the
-  patient strip and prescription table — the actual content — were trimmed
-  only lightly (`py-3.5`→`py-3` on medicine rows).
-- **Contrast**: `text-gray-400` (labels/captions) bumped to `text-gray-500`
-  throughout; `text-gray-500` used for actual sentence text (instructions,
-  default advice, footer note) bumped to `text-gray-600`; the dark
-  letterhead's white-on-navy secondary text (`rgba(255,255,255,0.55)`)
-  bumped to `0.62`/`0.58`.
-- **The real "why do I have to scroll so much" bug**: the bottom section
-  (Signature / QR / Therapy / Home Exercise / Instructions) was a flat
-  `grid-cols-3` over up to FIVE children. With one or two present it looked
-  fine; a physiotherapy consult with BOTH therapy notes AND a home exercise
-  programme pushed a 4th/5th item onto a SECOND grid row — signature and QR
-  stranded alone above a half-empty row, roughly doubling this section's
-  height for no reason. Restructured to two FIXED columns: signature+QR
-  stacked on the left, everything else (therapy → exercise → instructions,
-  in reading order) stacked in one right-hand column — always exactly one
-  row, whatever combination of the three is present. This is very likely
-  the actual majority of the "too much scrolling" complaint, not the
-  padding.
-- Verified via a temporary debug route mounting `ReviewModal` directly with
-  mock data carrying BOTH `therapyNotes` and `exerciseLines` (the exact
-  case that triggered the old bug) — confirmed one row, no more
-  stranded/misaligned signature block.
+- `prescriptions.share_token` — opaque per-Rx token, backfilled, unique.
+  `server/messaging/service.js` resolves it and passes it as the template's
+  dynamic-button `{{1}}`.
+- `rx-preview` edge function: `{ token }` → service-role read → sanitised
+  render JSON. Same pattern as `visit-gateway`.
+- Landing page: `app/prescriptions/[token]/page.tsx` (+ `cleanToken()` safety
+  net for Meta's doubled `{{1}}`), `components/rx/RxView.tsx`,
+  `components/rx/api.ts`. **This is the file that must be REPLACED by a
+  verbatim copy of Cortex's `PrescriptionDocument.tsx` — see §THE BIG ONE.**
+- Robots: `/prescriptions/` disallowed (capability URL, like `/portal/gateway/`).
 
-## 4. Communication's "View Prescription" — same-shaped skeleton
+### 3. Inbound webhook → Supabase Edge Function
+`47091bd`. `supabase/functions/whatsapp-webhook` (deployed, verify_jwt off).
+Replaces `server/whatsapp/webhook.js` (server/ has no public home).
 
-Clicking "View Prescription" in a WhatsApp thread opened `PracticeModal`
-(480px, compact, centered) as a loading placeholder, then swapped it for
-`ReviewModal` (680px, up to 95vh, dark letterhead) the instant
-`fetchPrescriptionRenderData` landed — two visually unrelated modals
-trading places, which is what actually read as "a random modal". Replaced
-the loading placeholder with hand-built chrome matching `ReviewModal`'s own
-shell exactly (`max-w-[680px] max-h-[95vh] rounded-2xl`, same top-bar/body/
-footer structure) with pulse blocks shaped like the letterhead/patient-
-strip/table it precedes. `PracticeModal`/`SkeletonRows`/`FileText` imports
-removed from `CommunicationPage.tsx` (no longer used anywhere in that
-file).
+- Parses META DIRECT payload → logs inbound to `whatsapp_messages`
+  (per-clinic patient match by phone) → updates delivery status → refunds
+  on failed/undelivered (ported `settleFailedDelivery`).
+- Auth: `?token=<WHATSAPP_WEBHOOK_TOKEN>` query param (Fast2SMS signs nothing).
+- **User needs to:** set `WHATSAPP_WEBHOOK_TOKEN` as a Supabase function
+  secret, and register the webhook in the Fast2SMS dashboard as **META
+  DIRECT** at
+  `https://ieimvjprtltancxapuzg.supabase.co/functions/v1/whatsapp-webhook?token=<that value>`.
+  NOT tested end-to-end with a real inbound yet (fake payloads verified).
+- **NOT ported:** the "Book appointment" conversation bot (`booking.js`), the
+  patient-wrote-in email alert.
 
-## 5. How all of this was verified without a live browser session
+### 4. Bug fixes
+- **`f92e3f5` — can't register a patient at a 2nd clinic.** `patients.phone`
+  was UNIQUE **globally** → a person known at clinic A 409'd on registration
+  at clinic B. Now unique per `(hospital_id, phone)`
+  (`patients_phone_unique_per_hospital`, applied). Matches the multi-clinic
+  model `routing.js` already assumes.
+- **`f92e3f5` — consult register modal churn.** `handlePatientConfirm` now
+  returns a boolean; App clears `registerRequested` only when a consult
+  actually started. A failed create leaves the modal open with a toast
+  instead of dropping to a blank screen the "never blank" guard re-covers.
+- **`f92e3f5` / `5b99291` — "Dr. Dr Anmol Pandey".** `service.js`
+  `formatDoctorName()` normalises to exactly one "Dr. " (was doubled or
+  bare). `en_prescription_ready03`/`01prescription_ready_en` body is
+  "from {{1}}" with no baked-in "Dr.", sample "Dr. SK Pandey".
+- **`5b99291` — Communication page preview** now mirrors the approved
+  template component-for-component (patient name in header, footer line,
+  `WhatsAppTemplatePreview` gained a `footer` prop).
 
-Chromium still cannot complete a TLS handshake through this sandbox's agent
-proxy to any real host (Supabase, Google Fonts — confirmed again, third
-time now across rounds 5 and 6). Every visual check this round used the
-same workaround as round 5: a temporary `src/DebugPreview.tsx` + a
-`/debug/preview-modal` route in `main.tsx`, mounting the changed component
-directly with mock props/data — zero network calls, so Chromium loads it
-from the local Vite dev server with the proxy never involved. Screenshotted
-before/after each change (the CreateVisitModal fix in round 5 used the same
-technique). **Both files deleted before this commit** — if you find either
-still present, that's a mistake, not a leftover in progress.
+### 5. ReviewModal (`687d445` + `5b99291`)
+- **"Send on WhatsApp" no longer closes Review or advances.** It saves +
+  pushes the message and holds the modal open (`stayOpen`). Primary button
+  becomes "Complete & Next"; closing it (`closeReview`) IS the advance.
+  Guarded against a second save/send. Plain "Confirm & Save" never sends.
+- **Live send feedback:** button shows Sending… (locked) → Sent (locked) →
+  Retry WhatsApp on failure, with a doctor-readable error line above the
+  bar (`friendlyWhatsAppError()` in `useConsultLifecycle.ts`). Retry
+  re-pushes the already-saved prescription.
+- **Action bar back to one line** (tighter paddings, keycaps `hidden lg:`).
+- **Preview footer trimmed** to one "Generated with care, through Arenode".
+- **QR moved** out of the cramped left column to bottom-right; left column is
+  prescriber identity only.
+- **Advice** shows only the doctor's own `adviceNotes` now — the clinic's
+  canned `defaultAdvice` lines were removed from the preview.
 
-## Traps worth knowing before you edit (carried forward + new)
+---
 
-- **A fixed-column-count CSS grid renders dead space for a column whose
-  only child is conditionally absent** — the grid doesn't collapse to fewer
-  tracks just because one child didn't render. Any future "N cards in a
-  row, one of them conditional" layout on this page should either give the
-  conditional slot a real sibling for the other branch (what this round
-  did) or switch to `auto-fit`/`auto-fill` if genuinely optional.
-- **A skeleton's dimensions are part of its correctness, not a nice-to-
-  have** — a generic `SkeletonRows` reused for a chart/donut/table without
-  checking the real component's rendered height WILL cause a visible jump.
-  Check the real height before reusing a skeleton, or build one that
-  matches.
-- **Two loading-vs-loaded states rendering through two DIFFERENT modal
-  components is its own bug class** — worse than a plain unstyled
-  spinner, because the whole modal visibly relocates/resizes when they
-  swap. `ReviewModal` has no exported skeleton of its own (this round's
-  Communication fix hand-built matching chrome instead) — if a THIRD place
-  ever needs to preview-while-loading a prescription, that hand-built shell
-  is worth promoting into a real shared component rather than copied a
-  third time.
-- **`fd-field` (unlayered, `width:100%`) still beats any Tailwind width
-  utility on the same element** (round 5's finding, still true, no new
-  occurrences found this round — this round's edits were all Tailwind-only
-  files outside the front-desk feature, so the trap didn't apply).
-- `node_modules` starts empty in a fresh container; `npm install` first.
-- `git checkout -- package-lock.json` before committing if `npm install`
-  touched it and nothing else needed it to change (harmless `"dev": true`
-  noise on already-resolved optional deps).
+## THE BIG ONE — still to do (the actual task)
 
-## Carried forward, still open
+Anmol's core point: **stop restyling the prescription in a second codebase.**
+`PrescriptionDocument.tsx` (`src/features/prescription/`) is THE canonical
+renderer. Everything else must render *that*, so a QC change (template,
+colour, layout) is ONE edit, not five.
 
-- Zoho real secrets not yet in Supabase (round 4).
-- `clinic_mode` is written in exactly one place (`admin-staff`'s reception
-  hire path, round 5) — a second staff-creation path would need the same
-  promotion.
-- "The models which open, the models which are unnecessary horizontally
-  stretched" — audited every `PracticeModal` call site launched from
-  Overview (PaymentDetailsModal, ActivityListModal, TrendDetailModal,
-  FeesModal): none pass `wide`/`xl`, all already sit at the 480px default,
-  so none of THOSE are oversized. The two modals actually found oversized
-  and fixed across rounds 5–6 are `CreateVisitModal` (936px→820px, round 5)
-  and `ReviewModal` (768px→680px, this round) — if Anmol points at a
-  specific modal still reading as too wide, get a screenshot rather than
-  guessing further; nothing else stood out on inspection.
-- SK Pandey's 76-credit test state, `RC_2`'s pending recharge, the
-  follow-up-message scheduler, real Meta template submission, an admin UI
-  for `approve_credit_recharge` (carried from earlier rounds, untouched).
+1. **Make ReviewModal's visible preview render `<PrescriptionDocument>`** —
+   scaled to fit the modal, with *less margin* (Anmol: "alot of margin").
+   Right now ReviewModal has a parallel hand-built layout AND renders
+   `PrescriptionDocument` hidden for print. Collapse to one.
+2. **The Windows print-preview reference** (screenshots Anmol sent): the QR
+   there is **CENTERED with a border around it** and "looked beautiful" —
+   replicate THAT treatment, not just "QR on the right". This is the tone to
+   match everywhere.
+3. **Landing page** = a **verbatim copy** of `PrescriptionDocument.tsx` (+ its
+   deps: `lib/brand/accent.ts`, the `qrcode` import). Replace the current
+   hand-built `RxView.tsx`. Add a "keep in sync with Cortex" header. Then:
+   - **Mobile layout** (it's an A4/A5 fixed-width doc — needs a responsive
+     wrapper / scale-to-viewport).
+   - **White only. NO dark mode** — Anmol: "not like a gaming PC RGB bill".
+   - **Download button** — print-to-PDF from the phone (browser print, or a
+     client-side jsPDF like Cortex already uses).
+4. **Instruction vs Advice split** — apply to `PrescriptionDocument.tsx` AND
+   the A4/A5 print path (not just the preview, which this session did).
+   Template/library instructions (`prescriptionConfig.defaultAdvice`,
+   `prescription_templates` items) → **removed**. Doctor's `adviceNotes` →
+   kept, **richer visuals**.
+5. **A4 vs A5 print** (`PrintFormatSelector` → `PrescriptionDocument` with
+   `format`): must reflect all the above (QR centered+bordered, trimmed
+   footer, advice-only).
+6. There is a **measurements** question Anmol raised ("there isn't any
+   measurement section... what measurements are added") — clarify whether the
+   canonical doc should show `visit_measurements`; the print doc currently
+   passes `vitals` only.
+
+### Follow-up messages (backend only — DO NOT test)
+- Wire a job / login-time sweep over `prescriptions.follow_up_days` that
+  sends a reminder at a sensible hour before the due date.
+- Needs an **approved template** — Anmol will create it; produce a **sample
+  spec** (body + variables) for him. Do NOT send test messages (ban risk).
+- It **costs credits**, so make it a **doctor opt-in with a cost note**,
+  configured on the **Communication page**. `sendFollowUp` +
+  `WHATSAPP_TEMPLATE_FOLLOW_UP` already exist in the code; nothing triggers
+  them.
+
+### Unresolved: "Ekanki solo clinic getting logged every ~10 seconds"
+Anmol reported this happening "whenever I leave the browser", started
+suddenly. Investigated the DB: `decision_log` / `visits` / `doctor_logs` /
+`operational_events` show **no 10-second periodic write**. Edge-request logs
+show **bursty** traffic (up to ~1300 requests / 5 min) that tracks active
+charting and **goes quiet when idle** (≈10 req / 5 min) — i.e. chattiness
+during charting, possibly a Synapse reference-data re-fetch that isn't
+cached (`signal_intent_rules`, `signals`, `measurement_rules` re-read many
+times per session). **Need Anmol to say exactly WHERE he sees "getting
+logged"** — browser console? Network tab? Supabase dashboard logs? a screen?
+— and the exact repeating text. Then it's a one-pass fix.
+
+---
+
+## Config (server/.env — local, gitignored)
+
+| Key | Value |
+|---|---|
+| `MESSAGING_PROVIDER` | `fast2sms` |
+| `FAST2SMS_API_KEY` | set (Fast2SMS Dev API) |
+| `WHATSAPP_PHONE_NUMBER_ID` | `1349053831618277` (+919128091905, WABA 1468324705121251, CONNECTED, TIER_2K) |
+| `WHATSAPP_TEMPLATE_PRESCRIPTION` | `01prescription_ready_en` (msg_id 32130, Approved; HEADER {{1}}=patient; BODY {{1}}=doctor "Dr. X", {{2}}=clinic; dynamic URL button `.../prescriptions/{{1}}`) |
+| `WHATSAPP_TEMPLATE_LANG` | `en` |
+| `WHATSAPP_WEBHOOK_TOKEN` | set — must match the `?token=` on the Fast2SMS webhook URL |
+| `WHATSAPP_ACCESS_TOKEN` | blank on purpose (superseded by Fast2SMS) |
+
+Supabase project `ieimvjprtltancxapuzg`. Edge functions deployed this
+session: `rx-preview` (v2), `whatsapp-webhook` (v1). Migrations applied:
+`20260909_prescription_share_token`, `patients_phone_unique_per_hospital`.
+
+Approved templates on the WABA: `01prescription_ready_en`,
+`en_prescription_ready02`, `payment_completed`. No follow-up template yet.
+
+---
+
+## Traps
+
+- **`patients.phone` is now unique per clinic, not global.** Any new
+  patient-insert path must pass the right `hospital_id`. `findPatientByPhone`
+  runs under RLS (one hospital) so `.maybeSingle()` is still safe.
+- **Fast2SMS template-list lag** — after Meta approves a template, wait
+  ~30–60 min before pointing `WHATSAPP_TEMPLATE_PRESCRIPTION` at it, or a
+  send 404s "Template not found" (Fast2SMS resolves the name against its own
+  synced copy).
+- **Two prescription layouts exist** (ReviewModal's hand-built preview vs
+  `PrescriptionDocument`). This session edited the preview; they are NOT yet
+  unified. Don't add a THIRD.
+- **`server/` has no public home.** The webhook and any future server route
+  must go to Supabase Edge Functions (the pattern is `visit-gateway` /
+  `rx-preview` / `whatsapp-webhook` — verify_jwt off, token in body/query,
+  service role, re-derive everything).
+- `node_modules` empty in a fresh container — `npm install` first (both
+  repos). `git checkout -- package-lock.json` if `npm install` only added
+  `"dev": true` noise.
+
+## Carried forward, still open (pre-existing)
+
+- Zoho real secrets not in Supabase → `notify()` logs instead of sending.
+- Admin UI for `approve_credit_recharge` (Parallax).
+- `clinic_mode` written in exactly one place (`admin-staff` reception hire).
