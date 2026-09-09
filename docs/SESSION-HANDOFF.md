@@ -1,210 +1,168 @@
-# Session handoff — 2026-09-09, WhatsApp go-live + prescription-link + fixes
+# Session handoff — 2026-09-09 (later), prescription surfaces converged
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE next session.**
 
-This session took WhatsApp sending **live through Fast2SMS**, built the
-public patient-prescription page it links to, moved the inbound webhook to a
-Supabase Edge Function, and fixed a run of bugs. A large redesign task is
-**still open** (see §"THE BIG ONE").
+This session made the three prescription surfaces render the **same
+document**: same section list, same order, same clinic-accent letterhead, same
+centered-and-bordered QR, and the same advice rule. It did **not** collapse
+them into one shared component — the rule here is *copy, don't share modules*
+— so the durable artefact is a written contract:
+**`docs/prescription-render-spec.md`**. Read that first.
 
-All Cortex work is committed + pushed to `master` (`687d445` and back to
-`554924b`). Landing-repo work is pushed to `aren-landing-page` `main`
-(`229abc8`). `server/.env` changes are local (gitignored) — listed in §Config.
-
----
-
-## What shipped
-
-### 1. WhatsApp is LIVE via Fast2SMS (BSP)
-`554924b` + `f92e3f5` + `5b99291` + `687d445`.
-
-- Fast2SMS's WhatsApp API is a **passthrough of Meta's Cloud API**, so
-  `server/whatsapp/client.js` gained `whatsappTransport()` — switches host +
-  auth on `FAST2SMS_API_KEY`. `providers/fast2sms.js` = `providers/meta.js`'s
-  send under a different name (`makeCloudApiAdapter` factory).
-- `MESSAGING_PROVIDER=fast2sms` is set in `server/.env`. It is **never
-  auto-selected** — going live is that explicit line.
-- **First real send verified** 2026-09-09: message delivered, 1 credit
-  debited, `whatsapp_messages` row logged.
-- `scripts/check-whatsapp.mjs` (`npm run check:whatsapp`) — READ-ONLY probe
-  (WABA health, template approval, wallet). Sends nothing.
-- `scripts/send-test-whatsapp.mjs` — ONE controlled live send (temporarily
-  swaps a test patient's phone, restores it).
-- **Anti-ban:** the sender number was banned once for burst setup activity.
-  Never loop test sends. Fast2SMS's `dlt_manager` template list lags Meta
-  approval ~30–60 min; a send with an unsynced name fails
-  `(404) Template not found`.
-
-### 2. Patient prescription link (`arenode.com/prescriptions/<token>`)
-Landing repo `aren-landing-page` + `20260909_prescription_share_token.sql`
-(applied) + `supabase/functions/rx-preview` (deployed, verify_jwt off).
-
-- `prescriptions.share_token` — opaque per-Rx token, backfilled, unique.
-  `server/messaging/service.js` resolves it and passes it as the template's
-  dynamic-button `{{1}}`.
-- `rx-preview` edge function: `{ token }` → service-role read → sanitised
-  render JSON. Same pattern as `visit-gateway`.
-- Landing page: `app/prescriptions/[token]/page.tsx` (+ `cleanToken()` safety
-  net for Meta's doubled `{{1}}`), `components/rx/RxView.tsx`,
-  `components/rx/api.ts`. **This is the file that must be REPLACED by a
-  verbatim copy of Cortex's `PrescriptionDocument.tsx` — see §THE BIG ONE.**
-- Robots: `/prescriptions/` disallowed (capability URL, like `/portal/gateway/`).
-
-### 3. Inbound webhook → Supabase Edge Function
-`47091bd`. `supabase/functions/whatsapp-webhook` (deployed, verify_jwt off).
-Replaces `server/whatsapp/webhook.js` (server/ has no public home).
-
-- Parses META DIRECT payload → logs inbound to `whatsapp_messages`
-  (per-clinic patient match by phone) → updates delivery status → refunds
-  on failed/undelivered (ported `settleFailedDelivery`).
-- Auth: `?token=<WHATSAPP_WEBHOOK_TOKEN>` query param (Fast2SMS signs nothing).
-- **User needs to:** set `WHATSAPP_WEBHOOK_TOKEN` as a Supabase function
-  secret, and register the webhook in the Fast2SMS dashboard as **META
-  DIRECT** at
-  `https://ieimvjprtltancxapuzg.supabase.co/functions/v1/whatsapp-webhook?token=<that value>`.
-  NOT tested end-to-end with a real inbound yet (fake payloads verified).
-- **NOT ported:** the "Book appointment" conversation bot (`booking.js`), the
-  patient-wrote-in email alert.
-
-### 4. Bug fixes
-- **`f92e3f5` — can't register a patient at a 2nd clinic.** `patients.phone`
-  was UNIQUE **globally** → a person known at clinic A 409'd on registration
-  at clinic B. Now unique per `(hospital_id, phone)`
-  (`patients_phone_unique_per_hospital`, applied). Matches the multi-clinic
-  model `routing.js` already assumes.
-- **`f92e3f5` — consult register modal churn.** `handlePatientConfirm` now
-  returns a boolean; App clears `registerRequested` only when a consult
-  actually started. A failed create leaves the modal open with a toast
-  instead of dropping to a blank screen the "never blank" guard re-covers.
-- **`f92e3f5` / `5b99291` — "Dr. Dr Anmol Pandey".** `service.js`
-  `formatDoctorName()` normalises to exactly one "Dr. " (was doubled or
-  bare). `en_prescription_ready03`/`01prescription_ready_en` body is
-  "from {{1}}" with no baked-in "Dr.", sample "Dr. SK Pandey".
-- **`5b99291` — Communication page preview** now mirrors the approved
-  template component-for-component (patient name in header, footer line,
-  `WhatsAppTemplatePreview` gained a `footer` prop).
-
-### 5. ReviewModal (`687d445` + `5b99291`)
-- **"Send on WhatsApp" no longer closes Review or advances.** It saves +
-  pushes the message and holds the modal open (`stayOpen`). Primary button
-  becomes "Complete & Next"; closing it (`closeReview`) IS the advance.
-  Guarded against a second save/send. Plain "Confirm & Save" never sends.
-- **Live send feedback:** button shows Sending… (locked) → Sent (locked) →
-  Retry WhatsApp on failure, with a doctor-readable error line above the
-  bar (`friendlyWhatsAppError()` in `useConsultLifecycle.ts`). Retry
-  re-pushes the already-saved prescription.
-- **Action bar back to one line** (tighter paddings, keycaps `hidden lg:`).
-- **Preview footer trimmed** to one "Generated with care, through Arenode".
-- **QR moved** out of the cramped left column to bottom-right; left column is
-  prescriber identity only.
-- **Advice** shows only the doctor's own `adviceNotes` now — the clinic's
-  canned `defaultAdvice` lines were removed from the preview.
+Cortex changes are uncommitted on `master` (was clean at `8885d64`).
+Landing-repo changes are uncommitted on `Aren LP/aren-landing-page` `main`
+(was `229abc8`). The landing edge function is **edited but NOT deployed** —
+see §Deploy.
 
 ---
 
-## THE BIG ONE — still to do (the actual task)
+## What changed
 
-Anmol's core point: **stop restyling the prescription in a second codebase.**
-`PrescriptionDocument.tsx` (`src/features/prescription/`) is THE canonical
-renderer. Everything else must render *that*, so a QC change (template,
-colour, layout) is ONE edit, not five.
+### 1. `docs/prescription-render-spec.md` — NEW, the source of truth
 
-1. **Make ReviewModal's visible preview render `<PrescriptionDocument>`** —
-   scaled to fit the modal, with *less margin* (Anmol: "alot of margin").
-   Right now ReviewModal has a parallel hand-built layout AND renders
-   `PrescriptionDocument` hidden for print. Collapse to one.
-2. **The Windows print-preview reference** (screenshots Anmol sent): the QR
-   there is **CENTERED with a border around it** and "looked beautiful" —
-   replicate THAT treatment, not just "QR on the right". This is the tone to
-   match everywhere.
-3. **Landing page** = a **verbatim copy** of `PrescriptionDocument.tsx` (+ its
-   deps: `lib/brand/accent.ts`, the `qrcode` import). Replace the current
-   hand-built `RxView.tsx`. Add a "keep in sync with Cortex" header. Then:
-   - **Mobile layout** (it's an A4/A5 fixed-width doc — needs a responsive
-     wrapper / scale-to-viewport).
-   - **White only. NO dark mode** — Anmol: "not like a gaming PC RGB bill".
-   - **Download button** — print-to-PDF from the phone (browser print, or a
-     client-side jsPDF like Cortex already uses).
-4. **Instruction vs Advice split** — apply to `PrescriptionDocument.tsx` AND
-   the A4/A5 print path (not just the preview, which this session did).
-   Template/library instructions (`prescriptionConfig.defaultAdvice`,
-   `prescription_templates` items) → **removed**. Doctor's `adviceNotes` →
-   kept, **richer visuals**.
-5. **A4 vs A5 print** (`PrintFormatSelector` → `PrescriptionDocument` with
-   `format`): must reflect all the above (QR centered+bordered, trimmed
-   footer, advice-only).
-6. There is a **measurements** question Anmol raised ("there isn't any
-   measurement section... what measurements are added") — clarify whether the
-   canonical doc should show `visit_measurements`; the print doc currently
-   passes `vitals` only.
+The section order, the QR treatment, the advice-vs-instructions rule, the
+measurements rule, the accent ramp, the per-surface type scale, and a
+"when you change the document, touch these N places" checklist. Every future
+prescription tweak goes through this file.
 
-### Follow-up messages (backend only — DO NOT test)
-- Wire a job / login-time sweep over `prescriptions.follow_up_days` that
-  sends a reminder at a sensible hour before the due date.
-- Needs an **approved template** — Anmol will create it; produce a **sample
-  spec** (body + variables) for him. Do NOT send test messages (ban risk).
-- It **costs credits**, so make it a **doctor opt-in with a cost note**,
-  configured on the **Communication page**. `sendFollowUp` +
-  `WHATSAPP_TEMPLATE_FOLLOW_UP` already exist in the code; nothing triggers
-  them.
+### 2. Cortex — `src/features/prescription/PrescriptionDocument.tsx` (print/PDF/WhatsApp)
 
-### Unresolved: "Ekanki solo clinic getting logged every ~10 seconds"
-Anmol reported this happening "whenever I leave the browser", started
-suddenly. Investigated the DB: `decision_log` / `visits` / `doctor_logs` /
-`operational_events` show **no 10-second periodic write**. Edge-request logs
-show **bursty** traffic (up to ~1300 requests / 5 min) that tracks active
-charting and **goes quiet when idle** (≈10 req / 5 min) — i.e. chattiness
-during charting, possibly a Synapse reference-data re-fetch that isn't
-cached (`signal_intent_rules`, `signals`, `measurement_rules` re-read many
-times per session). **Need Anmol to say exactly WHERE he sees "getting
-logged"** — browser console? Network tab? Supabase dashboard logs? a screen?
-— and the exact repeating text. Then it's a one-pass fix.
+- **Canned advice dropped.** The `config.defaultAdvice` block is gone from
+  both `StandardDocument` (the "Instructions" section, now renamed **"Advice"**)
+  and `ThermalDocument`. Only the doctor's own `adviceNotes` prints now, with
+  chevron-led lines. `config.defaultAdvice` still exists in the type and the
+  Prescription Editor — it just no longer reaches paper.
+- The QR block (centered, in a bordered frame, caption "Scan to verify this
+  prescription", follow-up pill under it) was already correct — it is the
+  reference the other two now copy. Untouched.
+- Measurements (`MEASURE_FIELDS` over `vitals`) untouched.
+- No `mm` / layout changes. A4, A5, thermal all still render.
 
----
+### 3. Cortex — `src/components/ReviewModal.tsx` (doctor's review preview)
 
-## Config (server/.env — local, gitignored)
+The in-modal preview was a parallel hand-built layout with a **dark
+RGB-gradient letterhead**, decorative orbs and a pink specialty pill. Merged
+toward the paper doc:
 
-| Key | Value |
-|---|---|
-| `MESSAGING_PROVIDER` | `fast2sms` |
-| `FAST2SMS_API_KEY` | set (Fast2SMS Dev API) |
-| `WHATSAPP_PHONE_NUMBER_ID` | `1349053831618277` (+919128091905, WABA 1468324705121251, CONNECTED, TIER_2K) |
-| `WHATSAPP_TEMPLATE_PRESCRIPTION` | `01prescription_ready_en` (msg_id 32130, Approved; HEADER {{1}}=patient; BODY {{1}}=doctor "Dr. X", {{2}}=clinic; dynamic URL button `.../prescriptions/{{1}}`) |
-| `WHATSAPP_TEMPLATE_LANG` | `en` |
-| `WHATSAPP_WEBHOOK_TOKEN` | set — must match the `?token=` on the Fast2SMS webhook URL |
-| `WHATSAPP_ACCESS_TOKEN` | blank on purpose (superseded by Fast2SMS) |
+- **Letterhead is now white** — clinic name in ink, `RxRule` accent underline,
+  solid 3px `accentColor` bottom border. Orbs, gradient, specialty pill gone.
+  `RxRule` added to the `./RxMarks` import.
+- **QR is now centered in a bordered frame** with the caption and the
+  follow-up pill beneath it (was a left-aligned row).
+- Everything else — patient strip, vitals chips, clinical-summary cards, the
+  prescription table, the `SectionTitle` pills — was left as-is on purpose
+  (Anmol: *"don't trash it, I like the cleanness"* — the merge is the
+  letterhead + QR, not a rewrite).
+- The hidden `<PrescriptionDocument>` this modal mounts for the actual print
+  is untouched.
 
-Supabase project `ieimvjprtltancxapuzg`. Edge functions deployed this
-session: `rx-preview` (v2), `whatsapp-webhook` (v1). Migrations applied:
-`20260909_prescription_share_token`, `patients_phone_unique_per_hospital`.
+### 4. Landing — `Aren LP/aren-landing-page`
 
-Approved templates on the WABA: `01prescription_ready_en`,
-`en_prescription_ready02`, `payment_completed`. No follow-up template yet.
+**`supabase/functions/rx-preview/index.ts`** now returns:
+- `measurements: {label,value,unit}[]` — non-empty `visits.vitals`, labelled
+  and ordered via a new `MEASURE_LABELS` constant that **mirrors**
+  `src/features/consult/measures.ts` (`rxLabel`+`unit`+order only). Keep in
+  sync — the spec says so.
+- `medicines[].slots` — the raw `"1-0-1-0"` M/A/E/N string when stored that
+  way, else `null`.
+- `therapyNotes` — from `prescriptions.therapy_notes` (added to the select).
+- `exerciseLines: string[]` — new read of `prescription_exercises` (label,
+  ordered by `sort_order`).
+- `advice` — **no longer falls back** to `default_advice` / a hard-coded
+  default. Doctor's lines only; `[]` when none. (`DEFAULT_ADVICE` const
+  removed.)
+
+**`components/rx/RxView.tsx`** — kept its layout (Anmol likes it), added the
+missing content in the spec's order:
+- **Measurements** section, **M/A/E/N slot dots** on medicines + a legend,
+  **Therapy performed** and **Home exercise programme** sections.
+- **QR moved to a centered bordered frame** (was right-aligned `h-24`).
+- **Download button** (top-right, `.rx-no-print`) → `window.print()`; a
+  `@media print` block renders the card as a plain A4 sheet (chrome hidden,
+  no border/shadow/radius). Phone browsers then offer "Save as PDF".
+- **Forced light** — the shell overrides `--color-*` tokens so a dark-mode
+  visitor still gets a white document ("not like a gaming PC RGB bill").
+
+**`components/rx/api.ts`** — `RxData` extended (`measurements`, `slots`,
+`therapyNotes`, `exerciseLines`); new `RxMeasurement` type.
 
 ---
 
-## Traps
+## OPEN QUESTION — measurements source (needs Anmol)
 
-- **`patients.phone` is now unique per clinic, not global.** Any new
-  patient-insert path must pass the right `hospital_id`. `findPatientByPhone`
-  runs under RLS (one hospital) so `.maybeSingle()` is still safe.
-- **Fast2SMS template-list lag** — after Meta approves a template, wait
-  ~30–60 min before pointing `WHATSAPP_TEMPLATE_PRESCRIPTION` at it, or a
-  send 404s "Template not found" (Fast2SMS resolves the name against its own
-  synced copy).
-- **Two prescription layouts exist** (ReviewModal's hand-built preview vs
-  `PrescriptionDocument`). This session edited the preview; they are NOT yet
-  unified. Don't add a THIRD.
-- **`server/` has no public home.** The webhook and any future server route
-  must go to Supabase Edge Functions (the pattern is `visit-gateway` /
-  `rx-preview` / `whatsapp-webhook` — verify_jwt off, token in body/query,
-  service role, re-derive everything).
-- `node_modules` empty in a fresh container — `npm install` first (both
-  repos). `git checkout -- package-lock.json` if `npm install` only added
-  `"dev": true` noise.
+Every surface reads **`visits.vitals`** (a flat key→value bag) and renders
+each non-empty key via the `MEASURE_FIELDS` catalogue. There is a separate
+**`visit_measurements`** table (`value_num` / `value_text`, per-measurement
+rows, what the engine scores). The prescription currently ignores it.
 
-## Carried forward, still open (pre-existing)
+Anmol raised *"there isn't any measurement section… what measurements are
+added"*. Decide:
+- Is `visits.vitals` the right source for the printed Rx (simple, already
+  wired), or should the doc show `visit_measurements` rows (richer: could
+  carry per-joint ROM, trend-vs-last, the "selected" flag)?
+- If `visits.vitals` stays: is anything the doctor entered **not** landing in
+  `vitals` and therefore silently missing from the Rx? (Worth a spot check
+  with a physio consult that used ROM / girth fields.)
 
+Until this is answered, all three surfaces stay on `visits.vitals`.
+
+---
+
+## Deploy / follow-up
+
+1. **Deploy the edge function** (from `Aren LP/aren-landing-page`, Supabase
+   CLI linked to project `ieimvjprtltancxapuzg`):
+   ```
+   supabase functions deploy rx-preview --no-verify-jwt
+   ```
+   Then smoke-test:
+   ```
+   curl -s -X POST https://ieimvjprtltancxapuzg.supabase.co/functions/v1/rx-preview \
+     -H "Content-Type: application/json" -d '{"token":"<REAL_TOKEN>"}' | head -c 600
+   ```
+   Expect `measurements`, `slots`, `therapyNotes`, `exerciseLines` present and
+   `advice` empty when the doctor wrote none.
+2. **Push the landing site** (Vercel auto-deploys `main`). Open
+   `arenode.com/prescriptions/<real-token>` on a phone-width viewport, check
+   the new sections, the centered QR, and Download → Save as PDF.
+3. **Cortex** — run a consult to the review screen; confirm white letterhead,
+   centered/bordered QR, advice = doctor's words only. Print A4/A5/thermal.
+   `npm run check:measures` still green (verified this session).
+4. Commit both repos.
+
+---
+
+## Carried forward, still open (from the previous handoff)
+
+### WhatsApp is LIVE via Fast2SMS
+`MESSAGING_PROVIDER=fast2sms` in `server/.env` (local, gitignored). First
+real send verified 2026-09-09. Template `01prescription_ready_en` approved.
+`npm run check:whatsapp` = read-only probe. **Anti-ban: never loop test
+sends** — the sender number was banned once for burst activity.
+
+### Inbound webhook → Supabase Edge Function
+`supabase/functions/whatsapp-webhook` deployed (v1), verify_jwt off, auth via
+`?token=<WHATSAPP_WEBHOOK_TOKEN>`. User still needs to set that secret and
+register the webhook in the Fast2SMS dashboard as **META DIRECT**. Not tested
+with a real inbound yet. The "Book appointment" bot and the patient-wrote-in
+email alert were **not** ported.
+
+### Follow-up messages — backend only, DO NOT test (ban risk)
+Wire a job / login-time sweep over `prescriptions.follow_up_days` that sends a
+reminder before the due date. `sendFollowUp` + `WHATSAPP_TEMPLATE_FOLLOW_UP`
+exist; nothing triggers them. Needs an **approved template** — produce a
+sample spec (body + variables) for Anmol, he creates it. Costs credits → make
+it a **doctor opt-in with a cost note** on the Communication page.
+
+### Unresolved: "Ekanki solo clinic getting logged every ~10s when I leave the browser"
+DB shows no 10-second periodic write. Edge-request traffic is **bursty** and
+tracks active charting (up to ~1300 req / 5 min charting, ~10 req / 5 min
+idle) — likely an uncached Synapse reference-data re-fetch (`signal_intent_rules`,
+`signals`, `measurement_rules` re-read many times per session). **Need Anmol
+to say exactly WHERE he sees "getting logged"** — console? Network tab?
+Supabase logs? a screen? — and the exact repeating text.
+
+### Other
 - Zoho real secrets not in Supabase → `notify()` logs instead of sending.
 - Admin UI for `approve_credit_recharge` (Parallax).
-- `clinic_mode` written in exactly one place (`admin-staff` reception hire).
+- `node_modules` empty in a fresh container — `npm install` both repos.

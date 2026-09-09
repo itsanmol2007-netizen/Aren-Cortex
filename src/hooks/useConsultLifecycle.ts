@@ -145,6 +145,17 @@ export interface ConsultLifecycleArgs {
    *  instead of the generic bottom-right toast — see `resumeConsult` below,
    *  the one caller that passes it. */
   showToast: (msg: string, opts?: { variant?: "resume" }) => void;
+  /**
+   * A start-a-consult call hit the one-serving-per-doctor rule
+   * (`ActiveConsultExistsError`) — the doctor already has a `serving`/`draft`
+   * visit open. App.tsx wires this to load that visit and raise the same
+   * `ResumeConsultPrompt` the app shows on cold start, so the doctor gets
+   * Resume / Discard instead of a dead-end toast telling them to "finish or
+   * cancel it" with no way to reach it. Returns `true` if it took over the
+   * recovery (a prompt is now showing), `false`/absent to fall back to the
+   * plain toast.
+   */
+  onActiveConsultCollision?: () => Promise<boolean> | boolean;
   /** put the cursor where a consult actually begins — the chart search box */
   focusChartSearch: () => void;
   setActivePage: (page: SidebarPage | null) => void;
@@ -241,6 +252,7 @@ export function useConsultLifecycle({
   onConsultSaved,
   resetStory,
   showToast,
+  onActiveConsultCollision,
   focusChartSearch,
   setActivePage,
   setSidebarOpen,
@@ -304,13 +316,14 @@ export function useConsultLifecycle({
       carryForwardFor(incomingPatient.id!);
     } catch (err: any) {
       if (err instanceof ActiveConsultExistsError) {
-        showToast("You already have a consult in progress — finish or cancel it first");
+        const handled = await onActiveConsultCollision?.();
+        if (!handled) showToast("You already have a consult in progress — finish or cancel it first");
         return;
       }
       showToast(`Error starting consult: ${err.message}`);
     }
   }, [resolveVisitForConsult, session, clearWorkspace, setActivePage, setSidebarOpen,
-      showToast, focusChartSearch, carryForwardFor, prefillFromIntake]);
+      showToast, onActiveConsultCollision, focusChartSearch, carryForwardFor, prefillFromIntake]);
 
   /**
    * Re-enter a visit that is ALREADY in progress — the Patients page's
@@ -426,7 +439,8 @@ export function useConsultLifecycle({
           return false;
         }
         if (err instanceof ActiveConsultExistsError) {
-          showToast("You already have a consult in progress — finish or cancel it first");
+          const handled = await onActiveConsultCollision?.();
+          if (!handled) showToast("You already have a consult in progress — finish or cancel it first");
           return false;
         }
         throw err;
@@ -461,8 +475,8 @@ export function useConsultLifecycle({
       return false;
     }
   }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId, identity.doctorId,
-      identity.userId, identity.doctorName, setActivePage, showToast, focusChartSearch,
-      carryForwardFor, prefillFromIntake]);
+      identity.userId, identity.doctorName, setActivePage, showToast, onActiveConsultCollision,
+      focusChartSearch, carryForwardFor, prefillFromIntake]);
 
   const handleRepeatRx = useCallback((visit: RealVisit) => {
     // A past visit stores v1 names ("fever"); the catalogue now speaks

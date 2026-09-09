@@ -868,6 +868,13 @@ function App() {
   // writing all of them. Declared last because the learning write records the
   // ranking as the doctor saw it, so it needs the engine's result at render
   // time. Navigation stays here in the shell and is passed in.
+  // Filled in below once `resumeCandidate` state and `fetchActiveConsult` are
+  // in scope. Lets `useConsultLifecycle` (declared here, before that state)
+  // hand a "you already have a consult open" collision to the same
+  // Resume/Discard prompt the app uses on cold start, instead of a dead-end
+  // toast. Default is a no-op that reports "not handled".
+  const activeConsultCollisionRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
+
   const {
     handleStartConsultFromRecord, resumeConsult, handlePatientConfirm, handleRepeatRx,
     handleConfirmAndSave, closeReview, reviewSaved, sendReviewOnWhatsApp, whatsapp: whatsappSend,
@@ -893,6 +900,7 @@ function App() {
       : undefined,
     resetStory: () => { visitStory.reset(); examination.reset(); },
     showToast,
+    onActiveConsultCollision: () => activeConsultCollisionRef.current(),
     focusChartSearch,
     setActivePage,
     setSidebarOpen,
@@ -1193,6 +1201,40 @@ function App() {
     setResumeCandidate(null);
     queue.refetch();
   }, [resumeCandidate, queue]);
+
+  /**
+   * A "start a consult" call was rejected because this doctor already has one
+   * open (`ActiveConsultExistsError` from the one-serving-per-doctor rule).
+   * Load that visit and raise the same `ResumeConsultPrompt` the app shows on
+   * cold start, so the doctor gets Resume / Discard right here instead of a
+   * toast telling them to "finish or cancel it" with no way to reach it — the
+   * actual cause of "I can't create any visit" when a consult was abandoned
+   * (tab closed, crash) leaving a stuck `serving` row. `useConsultLifecycle`
+   * calls this through `activeConsultCollisionRef`. Returns whether it took
+   * over (a prompt is now showing).
+   */
+  const offerActiveConsultResume = useCallback(async (): Promise<boolean> => {
+    if (!identity.doctorId) return false;
+    try {
+      const row = await fetchActiveConsult(identity.doctorId);
+      if (!row) return false;
+      setResumeCandidate(row);
+      // The prompt only renders on the consult screen (`!isFeaturePage`), so a
+      // collision raised from the Patients page has to bring us there.
+      setActivePage(null);
+      setPatientModalOpen(false);
+      setRegisterRequested(false);
+      setQueueSheetOpen(false);
+      return true;
+    } catch (e) {
+      console.warn("[consult] offerActiveConsultResume failed:", e);
+      return false;
+    }
+  }, [identity.doctorId, setActivePage]);
+
+  useEffect(() => {
+    activeConsultCollisionRef.current = offerActiveConsultResume;
+  }, [offerActiveConsultResume]);
 
   // ── The specialty profile ───────────────────────────────────────────────
   // Which intent type this facility elevates into the Primary Recommendation

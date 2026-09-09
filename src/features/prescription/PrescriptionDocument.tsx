@@ -603,23 +603,29 @@ function StandardDocument({
                     </div>
                 )}
 
-                {/* Instructions */}
+                {/* Advice — only the doctor's own words for THIS patient. The
+                    clinic's canned standing lines (`config.defaultAdvice`)
+                    used to print here as grey dots; they were noise on a
+                    document whose whole value is what the prescriber actually
+                    said, so they are gone (Anmol, 2026-09-09). The Prescription
+                    Editor's "Default advice" field still exists — it just no
+                    longer reaches paper, the patient page or the review screen.
+                    The wrapper div stays even when empty so the bottom grid
+                    keeps its cell count. */}
                 <div>
-                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                        Instructions
-                    </div>
-                    {adviceNotes && adviceNotes.split("\n").filter(Boolean).map((line, i) => (
-                        <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>› {line}</div>
-                    ))}
-                    {/* The doctor's STANDING advice — what they said should
-                        appear on every prescription without retyping it per
-                        consult (Prescription Editor → Default advice). These
-                        three strings were hardcoded here until 2026-08-29;
-                        they are now the config's own defaults, so a clinic
-                        that never edits them prints exactly these. */}
-                    {config.defaultAdvice.filter(Boolean).map((line, i) => (
-                        <div key={i} style={{ fontSize: smallSize, color: "#777", marginBottom: 2 }}>• {line}</div>
-                    ))}
+                    {adviceNotes && adviceNotes.trim() && (
+                        <>
+                            <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                                Advice
+                            </div>
+                            {adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean).map((line, i) => (
+                                <div key={i} style={{ fontSize: smallSize, color: "#333", marginBottom: 3, display: "flex", gap: 5, lineHeight: 1.4 }}>
+                                    <span style={{ color: rx.mid, flexShrink: 0 }}>›</span>
+                                    <span>{line}</span>
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -815,11 +821,10 @@ function ThermalDocument({
             {followUpDays && (
                 <div style={{ fontWeight: 700, ...th }}>Follow-up: {followUpDays} days</div>
             )}
+            {/* Doctor's own advice only — the clinic's canned `defaultAdvice`
+                lines were dropped here too (Anmol, 2026-09-09). */}
             {adviceNotes && adviceNotes.split("\n").filter(Boolean).map((line, i) => (
                 <div key={i} style={th}>* {line}</div>
-            ))}
-            {config.defaultAdvice.filter(Boolean).map((line, i) => (
-                <div key={`std-${i}`} style={th}>* {line}</div>
             ))}
             {divider}
 

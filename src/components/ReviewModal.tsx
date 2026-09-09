@@ -14,7 +14,7 @@ import PrescriptionDocument from "../features/prescription/PrescriptionDocument"
 import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
 import { usePrintFormat } from "../features/prescription/usePrintFormat";
 import { accentPalette } from "../lib/brand/accent";
-import { RxMonogram, RxWatermark } from "./RxMarks";
+import { RxMonogram, RxWatermark, RxRule } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import { usePrescriptionConfig } from "../features/prescription/usePrescriptionConfig";
@@ -493,22 +493,19 @@ export default function ReviewModal({
           >
             <div className="m-3 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white">
 
-              {/* ══ Letterhead ══ — deliberately the most-compressed band in
-                  this document: it says who prescribed this, once, and then
-                  gets out of the way of what the patient actually needs. */}
+              {/* ══ Letterhead ══ — white and calm, the same identity band the
+                  printed prescription (`PrescriptionDocument`) and the
+                  patient's web copy (`RxView`) use: clinic name in ink, a
+                  short `RxRule` accent under it, a solid 3px accent border at
+                  the foot. Was a dark RGB-gradient panel with decorative orbs
+                  and a pink specialty pill until 2026-09-09 — Anmol: the
+                  review should look like the document a patient receives, "not
+                  like a gaming PC RGB bill". */}
               <div
-                className="relative px-7 py-4 overflow-hidden"
-                style={{ background: "linear-gradient(135deg, #060d1f 0%, #0d1b35 40%, #120f28 75%, #1a0730 100%)" }}
+                className="relative px-7 py-5 bg-white"
+                style={{ borderBottom: `3px solid ${accentColor}` }}
               >
-                {/* Decorative orbs */}
-                <div className="absolute -top-8 -right-8 w-48 h-48 rounded-full opacity-[0.12]"
-                  style={{ background: "radial-gradient(circle, #7c3aed 0%, transparent 70%)" }} />
-                <div className="absolute -bottom-6 left-1/4 w-40 h-40 rounded-full opacity-[0.08]"
-                  style={{ background: "radial-gradient(circle, #ec4899 0%, transparent 70%)" }} />
-                <div className="absolute top-1/2 -translate-y-1/2 left-1/2 w-64 h-64 rounded-full opacity-[0.04]"
-                  style={{ background: "radial-gradient(circle, #1268e8 0%, transparent 60%)" }} />
-
-                <div className="relative flex items-center gap-6">
+                <div className="flex items-start gap-5">
                   {/* Logo — a SELECTION between the clinic logo and the
                       doctor photo (`prescriptionConfig.profileImage`), same
                       choice the print output honours; "none" drops the image
@@ -520,15 +517,15 @@ export default function ReviewModal({
                           src={headerImage}
                           alt={prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName}
                           onError={() => setLogoError(true)}
-                          className="w-14 h-14 rounded-xl object-cover border-2 shadow-xl"
-                          style={{ borderColor: "rgba(255,255,255,0.2)" }}
+                          className="w-14 h-14 rounded-xl object-cover"
+                          style={{ border: `2px solid ${accentColor}` }}
                         />
                       ) : (
                         /* The fallback crest. Initials over the clinic's own
                            colour, with the monogram behind them, so a clinic
                            that has not uploaded a logo still gets a mark that is
                            theirs rather than a coloured square. */
-                        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative overflow-hidden shadow-xl"
+                        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative overflow-hidden"
                           style={{ background: rx.base }}>
                           <RxMonogram
                             color={rx.onBase}
@@ -545,90 +542,63 @@ export default function ReviewModal({
                   {/* Clinic info */}
                   {showClinicIdentity && (
                     <div className="flex-1 min-w-0">
-                      <h1 className="text-[19px] font-black text-white leading-tight tracking-tight">
+                      <h1 className="text-[20px] font-black leading-tight tracking-tight" style={{ color: "#0d1b35" }}>
                         {clinicName}
                       </h1>
+                      <div className="w-11 mt-1"><RxRule color={rx.mid} /></div>
                       {prescriptionConfig.showClinicAddress && clinicAddress && (
-                        <div className="flex items-start gap-1.5 mt-1.5">
-                          <MapPin className="w-3 h-3 mt-0.5 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}>
-                            {clinicAddress}
-                          </p>
+                        <div className="flex items-start gap-1.5 mt-2">
+                          <MapPin className="w-3 h-3 mt-0.5 shrink-0 text-gray-400" />
+                          <p className="text-[11px] leading-relaxed text-gray-500">{clinicAddress}</p>
                         </div>
                       )}
                       {prescriptionConfig.showClinicPhone && clinicPhone && (
                         <div className="flex items-center gap-1.5 mt-1">
-                          <Phone className="w-3 h-3 shrink-0" style={{ color: "rgba(255,255,255,0.45)" }} />
-                          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicPhone}</p>
+                          <Phone className="w-3 h-3 shrink-0 text-gray-400" />
+                          <p className="text-[11px] text-gray-500">{clinicPhone}</p>
                         </div>
                       )}
                       {prescriptionConfig.showClinicEmail && clinicEmail && (
-                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicEmail}</p>
+                        <p className="text-[11px] text-gray-500 mt-1">{clinicEmail}</p>
                       )}
                       {prescriptionConfig.showWebsite && clinicWebsite && (
-                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicWebsite}</p>
+                        <p className="text-[11px] text-gray-500 mt-1">{clinicWebsite}</p>
                       )}
                     </div>
                   )}
 
                   {/* Divider — only ever between two identities. */}
                   {showClinicIdentity && showDoctorIdentity && (
-                    <div className="w-px self-stretch mx-2 shrink-0" style={{ background: "rgba(255,255,255,0.12)" }} />
+                    <div className="w-px self-stretch mx-1 shrink-0 bg-gray-200" />
                   )}
 
                   {/* Doctor info — right-aligned beside the clinic, filling
                       the row and left-aligned when it IS the letterhead. */}
                   {showDoctorIdentity && (
-                    <div className={showClinicIdentity ? "shrink-0 text-right min-w-[155px]" : "flex-1 min-w-0 text-left"}>
-                      <p className="text-[18px] font-black text-white leading-tight tracking-tight">{doctorName}</p>
+                    <div className={showClinicIdentity ? "shrink-0 text-right min-w-[150px]" : "flex-1 min-w-0 text-left"}>
+                      <p className="text-[17px] font-black leading-tight tracking-tight" style={{ color: "#0d1b35" }}>{doctorName}</p>
                       {prescriptionConfig.showQualification && doctorQual && (
-                        <p className="text-[13px] font-bold mt-1" style={{ color: accentColor }}>{doctorQual}</p>
-                      )}
-                      {prescriptionConfig.showRegistration && doctorReg && (
-                        <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.58)" }}>
-                          Reg. No. {doctorReg}
-                        </p>
+                        <p className="text-[12px] font-bold mt-0.5" style={{ color: rx.ink }}>{doctorQual}</p>
                       )}
                       {prescriptionConfig.showSpecialty && doctorSpec && (
-                        /* Was hardcoded pink, on every clinic's sheet. It takes
-                           the clinic's own colour now. */
-                        <span className="inline-block mt-1.5 px-3 py-1 rounded-full text-[10px] font-black tracking-wide"
-                          style={{
-                            color: rx.tint,
-                            background: `${rx.base}2e`,
-                            border: `1px solid ${rx.base}66`,
-                          }}>
-                          {doctorSpec}
-                        </span>
+                        <p className="text-[11px] text-gray-500 mt-0.5">{doctorSpec}</p>
+                      )}
+                      {prescriptionConfig.showRegistration && doctorReg && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">Reg. No. {doctorReg}</p>
                       )}
                       {/* A doctor-only letterhead still has to say where this
                           was prescribed from — folds the clinic's own enabled
                           contact lines in here rather than losing them along
                           with the clinic's name. */}
                       {!showClinicIdentity && prescriptionConfig.showClinicAddress && clinicAddress && (
-                        <p className="text-[11px] leading-relaxed mt-1.5" style={{ color: "rgba(255,255,255,0.62)" }}>
-                          {clinicAddress}
-                        </p>
+                        <p className="text-[11px] leading-relaxed text-gray-500 mt-1.5">{clinicAddress}</p>
                       )}
                       {!showClinicIdentity && prescriptionConfig.showClinicPhone && clinicPhone && (
-                        <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.62)" }}>{clinicPhone}</p>
+                        <p className="text-[11px] text-gray-500 mt-1">{clinicPhone}</p>
                       )}
                     </div>
                   )}
                 </div>
-
-                {/* ── The accent line ──────────────────────────────────────
-                    This blended the clinic's colour into hardcoded #7c3aed and
-                    #ec4899, so a clinic that chose forest green got green
-                    fading through purple into pink, and every clinic's
-                    prescription came out looking like the same violet house
-                    style. The stored colour is now the only hue in it. */}
-                <div className="absolute bottom-0 left-0 right-0 h-[2px]"
-                  style={{
-                    background:
-                      `linear-gradient(90deg, ${rx.base}00 0%, ${rx.base} 18%, ` +
-                      `${rx.base} 62%, ${rx.base}00 100%)`,
-                  }} />
               </div>
 
               {/* ══ Patient strip ══ — this and the prescription table below
@@ -969,26 +939,32 @@ export default function ReviewModal({
                     </div>
                   )}
 
-                  {/* QR + follow-up — bottom-right, in what used to be empty
-                      space. Matches the A4/A5 print's own placement. */}
-                  <div className="mt-auto flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
-                    <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-1">
+                  {/* QR — centered in a bordered frame, caption under it, the
+                      follow-up pill beneath that. The framed-and-centered
+                      treatment is the one from the printed prescription
+                      (Anmol's Windows print-preview reference: "centered with
+                      a border, looked beautiful"), so the review shows the
+                      same thing. The code encodes the prescription's own
+                      details for a records check, not a link — the caption
+                      says only that. */}
+                  <div className="mt-auto flex flex-col items-center gap-1.5 pt-1">
+                    <div className="rounded-lg border p-1.5" style={{ borderColor: rx.mid }}>
                       {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR Code" className="w-14 h-14 rounded" />
+                        <img src={qrDataUrl} alt="QR Code" className="block w-[72px] h-[72px]" />
                       ) : (
-                        <div className="w-14 h-14 rounded flex items-center justify-center">
+                        <div className="w-[72px] h-[72px] flex items-center justify-center">
                           <span className="text-[8px] text-gray-400">QR</span>
                         </div>
                       )}
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] text-gray-500 leading-tight">Scan to open this prescription</p>
-                      {followUpDays && (
-                        <div className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
-                          Follow-up in {followUpDays} days
-                        </div>
-                      )}
-                    </div>
+                    <p className="text-[9.5px] text-gray-400 text-center leading-tight">
+                      Scan to verify this prescription
+                    </p>
+                    {followUpDays && (
+                      <div className="mt-0.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
+                        Follow-up in {followUpDays} days
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
