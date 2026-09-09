@@ -12,18 +12,27 @@
    If the secret is unset the function still runs (so you can wire it up
    first) but logs a warning on every call — set it before this is real.
 
-   What it does, per event:
-     • message  → resolve the patient by phone (per-clinic), write an
-                  inbound row to whatsapp_messages (the Communication page
-                  reads these).
+   ROUTING (which clinic an inbound belongs to). Every clinic sends from
+   ONE shared WhatsApp number, and the inbound payload carries no clinic
+   id — only the patient's phone. resolveRouting() attributes it, most
+   certain first:
+     1. context.id — the message it replies to / the button it came from
+        → that outbound row's clinic. Exact, no matter how old the thread.
+     2. the clinic that has actually messaged this number before (newest
+        wins if more than one).
+     3. the number is a registered patient at exactly one clinic.
+   Otherwise the row is still written, unattributed — recoverable, never
+   dropped. A conversation-session table + an interactive clinic picker
+   are the real fix for the ambiguous case; this is the safe interim.
+
+   Per event:
+     • message  → route, write an inbound row to whatsapp_messages (the
+                  Communication page reads these).
      • status   → update whatsapp_messages.status by wa_message_id; on
-                  failed/undelivered, refund the credit that was charged
-                  (idempotent — refund_messaging_credit returns the
-                  existing refund rather than paying twice).
+                  failed/undelivered, refund the credit (idempotent).
 
    NOT included: the "Book appointment" conversation bot (booking.js) and
-   the patient-wrote-in email alert. Those can move over later; this is
-   the "replies show up for the doctor" path.
+   the patient-wrote-in email alert.
 
    Route:  GET  /functions/v1/whatsapp-webhook   (optional hub.challenge)
            POST /functions/v1/whatsapp-webhook?token=...
@@ -72,6 +81,8 @@ interface FlatEvent {
   from?: string;
   text?: string | null;
   buttonId?: string | null;
+  /** wa_message_id of the message this one replies to / the button belongs to */
+  contextId?: string | null;
   messageType?: string;
   waMessageId?: string;
   status?: string;
@@ -90,6 +101,7 @@ function parsePayload(payload: Record<string, any>): FlatEvent[] {
           from: msg.from,
           text: readMessageText(msg),
           buttonId: readButtonId(msg),
+          contextId: msg.context?.id ?? null,
           messageType: msg.type,
           waMessageId: msg.id,
           raw: msg,
@@ -109,19 +121,80 @@ function parsePayload(payload: Record<string, any>): FlatEvent[] {
   return out;
 }
 
-/** 0 rows → stranger (null clinic). 1 distinct clinic → resolved. 2+ → left
- *  unattributed rather than guessed. Service role, so no RLS to fight. */
-async function resolvePatient(db: ReturnType<typeof admin>, waPhone: string) {
+/** The registered patient with this phone at a specific clinic, if any.
+ *  patients.phone is unique per (hospital_id, phone). */
+async function patientInClinic(
+  db: ReturnType<typeof admin>,
+  waPhone: string,
+  hospitalId: string,
+): Promise<string | null> {
   const bare = stripCountryCode(waPhone);
   const { data } = await db
     .from("patients")
+    .select("id")
+    .eq("phone", bare)
+    .eq("hospital_id", hospitalId)
+    .maybeSingle();
+  return (data?.id as string | null) ?? null;
+}
+
+/** Which clinic (+ patient) an inbound message belongs to. See the ROUTING
+ *  note at the top of the file. Every failure mode returns nulls rather than
+ *  guessing — the row is still written and can be re-attributed later. */
+async function resolveRouting(
+  db: ReturnType<typeof admin>,
+  ev: FlatEvent,
+): Promise<{ patientId: string | null; hospitalId: string | null }> {
+  const waPhone = ev.from ?? "";
+  if (!waPhone) return { patientId: null, hospitalId: null };
+
+  // 1. Reply context / button — the exact outbound message it responds to.
+  if (ev.contextId) {
+    const { data } = await db
+      .from("whatsapp_messages")
+      .select("hospital_id, patient_id")
+      .eq("wa_message_id", ev.contextId)
+      .maybeSingle();
+    if (data?.hospital_id) {
+      const hospitalId = data.hospital_id as string;
+      return {
+        hospitalId,
+        patientId:
+          (data.patient_id as string | null) ??
+          (await patientInClinic(db, waPhone, hospitalId)),
+      };
+    }
+  }
+
+  // 2. The clinic that has actually messaged this number (newest wins).
+  {
+    const { data } = await db
+      .from("whatsapp_messages")
+      .select("hospital_id")
+      .eq("phone", waPhone)
+      .eq("direction", "outbound")
+      .not("hospital_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data?.hospital_id) {
+      const hospitalId = data.hospital_id as string;
+      return { hospitalId, patientId: await patientInClinic(db, waPhone, hospitalId) };
+    }
+  }
+
+  // 3. Registered as a patient at exactly one clinic.
+  const bare = stripCountryCode(waPhone);
+  const { data: pts } = await db
+    .from("patients")
     .select("id, hospital_id")
     .eq("phone", bare);
-  const candidates = (data ?? []).filter((r: any) => r.hospital_id);
-  const hospitals = [...new Set(candidates.map((r: any) => r.hospital_id))];
-  if (hospitals.length === 1) {
-    return { patientId: candidates[0].id as string, hospitalId: hospitals[0] as string };
+  const withClinic = (pts ?? []).filter((r: any) => r.hospital_id);
+  const clinics = [...new Set(withClinic.map((r: any) => r.hospital_id))];
+  if (clinics.length === 1) {
+    return { hospitalId: clinics[0] as string, patientId: withClinic[0].id as string };
   }
+
   return { patientId: null, hospitalId: null };
 }
 
@@ -163,7 +236,7 @@ async function settleFailedDelivery(
 
 async function handleEvent(db: ReturnType<typeof admin>, ev: FlatEvent) {
   if (ev.kind === "message") {
-    const { patientId, hospitalId } = await resolvePatient(db, ev.from ?? "");
+    const { patientId, hospitalId } = await resolveRouting(db, ev);
     await db.from("whatsapp_messages").insert({
       direction: "inbound",
       phone: ev.from,
@@ -175,8 +248,8 @@ async function handleEvent(db: ReturnType<typeof admin>, ev: FlatEvent) {
       status: "received",
       credits_charged: 0,
     });
-    if (!patientId) {
-      console.warn(`[whatsapp-webhook] inbound from ${ev.from} matched no patient`);
+    if (!hospitalId) {
+      console.warn(`[whatsapp-webhook] inbound from ${ev.from} could not be routed to a clinic`);
     }
     return;
   }
@@ -234,10 +307,6 @@ Deno.serve(async (req) => {
   const db = admin();
   const events = parsePayload(payload);
 
-  // Process before responding — an edge function has no "ack then work"
-  // lifecycle the way a long-lived server does, and the volume here is one
-  // message at a time. Each event is isolated so one failure doesn't sink
-  // the batch.
   for (const ev of events) {
     try {
       await handleEvent(db, ev);

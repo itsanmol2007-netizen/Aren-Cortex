@@ -234,7 +234,7 @@ export function LoginPage() {
                         </a>
                     </p>
                     <p>
-                        Trouble signing in or forgot your password? Write to{" "}
+                        Trouble signing in? Write to{" "}
                         <a href="mailto:care@arenode.com">care@arenode.com</a>
                     </p>
                 </div>

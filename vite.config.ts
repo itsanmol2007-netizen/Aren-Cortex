@@ -2,11 +2,82 @@ import path from "path"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
+import { VitePWA } from "vite-plugin-pwa"
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    VitePWA({
+      // `prompt`, NOT `autoUpdate`: a new build must never reload the tab from
+      // under a doctor mid-consult. The service worker installs quietly, then
+      // `src/pwa.ts` shows a toast and the reload happens only when they tap it.
+      registerType: "prompt",
+      includeAssets: ["apple-icon.png", "icon.svg", "aren-nebula.svg"],
+      // No service worker under `npm run dev` — it fights Vite's HMR and adds
+      // nothing to day-to-day work. Test the real thing with `npm run build &&
+      // npm run preview` (or on the deployed origin), where `dist/sw.js` is
+      // served for real.
+      devOptions: { enabled: false },
+      manifest: {
+        name: "AREN Cortex",
+        short_name: "Cortex",
+        description:
+          "Reception, consultation and prescription for a clinic — one window.",
+        id: "/",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        background_color: "#eef3f8",
+        theme_color: "#0b1733",
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          // Reuses the 512 for the maskable slot. If the Arenode mark ends up
+          // clipped inside the launcher's safe circle, drop in a padded
+          // `icon-512-maskable.png` and point this entry at it.
+          {
+            src: "/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      },
+      workbox: {
+        // Precache the app shell. Everything the built bundle emits, plus the
+        // fonts we self-reference — NOT any Supabase / API response.
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2}"],
+        // The bundle is large (rich clinical UI); default 2 MiB drops chunks
+        // from the precache and they then fail offline.
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        navigateFallback: "/index.html",
+        // Auth lives on Supabase's own origin, and gateway/preview routes are
+        // server-rendered elsewhere — none of that should be served the SPA
+        // shell from cache.
+        navigateFallbackDenylist: [/^\/api\//, /^\/functions\//],
+        runtimeCaching: [
+          {
+            // Google Fonts stylesheet — refresh in the background, serve fast.
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "google-fonts-stylesheets" },
+          },
+          {
+            // The font files themselves — immutable, cache hard so the shell
+            // renders in its real typefaces offline.
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+        cleanupOutdatedCaches: true,
+      },
+    }),
   ],
   resolve: {
     alias: {

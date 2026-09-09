@@ -3,7 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AREN Cortex Phase 1</title>
+    <title>AREN Cortex</title>
+
+    <!-- PWA. vite-plugin-pwa injects <link rel="manifest"> and the SW
+         registration; these are the bits it does not: the installed-app
+         chrome colour, the iOS home-screen icon, and iOS standalone mode
+         (Android reads all of this from the manifest). -->
+    <meta name="theme-color" content="#0b1733" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Cortex" />
     <!-- Front Desk display/UI families (Manrope + Inter). Referenced by the
          frontdesk Tailwind utilities; loaded here so they actually render.
 

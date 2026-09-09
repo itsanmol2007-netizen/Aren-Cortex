@@ -37,7 +37,12 @@ import {
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
 import { type ConfirmedPayment } from "../lib/db/payments";
-import { sendPrescription } from "../lib/db/messaging";
+import {
+  sendPrescription,
+  LOW_CREDIT_THRESHOLD,
+  SOFT_LOW_CREDIT_THRESHOLD,
+  formatCredits,
+} from "../lib/db/messaging";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -555,9 +560,19 @@ export function useConsultLifecycle({
   const pushPrescriptionToWhatsApp = useCallback(async (prescriptionId: string, patientId: string) => {
     setWhatsapp({ phase: "sending" });
     try {
-      await sendPrescription({ prescriptionId, patientId, doctorId: identity.doctorId });
+      const result = await sendPrescription({ prescriptionId, patientId, doctorId: identity.doctorId });
       setWhatsapp({ phase: "sent" });
-      showToast("Prescription sent to the patient on WhatsApp ✓");
+      // Running-low nudge, folded into the success toast. A solo doctor may
+      // never open the Communication page, so the first sign that credits are
+      // running out should not be a send that fails.
+      const b = result?.balance;
+      const nudge =
+        typeof b !== "number" ? ""
+          : b <= 0 ? " — that was your last credit; top up on the Communication page"
+            : b < LOW_CREDIT_THRESHOLD ? ` — ${formatCredits(b)} credits left, top up soon`
+              : b < SOFT_LOW_CREDIT_THRESHOLD ? ` — ${formatCredits(b)} credits left`
+                : "";
+      showToast(`Prescription sent to the patient on WhatsApp ✓${nudge}`);
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : "";
       console.error("[messaging] prescription send failed:", e);

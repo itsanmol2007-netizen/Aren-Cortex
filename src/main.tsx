@@ -1,7 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import App from "./App";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { initPWA } from "./pwa";
 import { FrontDeskPage } from "./features/frontdesk/FrontDeskPage";
 import { PatientsPage } from "./features/frontdesk/PatientsPage";
 import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
@@ -35,13 +37,16 @@ import "./features/sidebar/sidebar.css";
 
 const queryClient = new QueryClient();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
+// Inside the router so the boundary can reset itself on navigation (see
+// AppErrorBoundary's `resetKey`) — a screen that threw shouldn't trap the
+// user there once they've navigated away.
+function RoutedApp() {
+  const location = useLocation();
+  return (
+    <AppErrorBoundary resetKey={location.pathname}>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
             {/* Everything else — every workspace, every future route — sits
                 behind the auth gate. No verified session + active user +
                 active hospital ⇒ nothing renders but the login screen. */}
@@ -84,8 +89,21 @@ createRoot(document.getElementById("root")!).render(
             </Route>
           </Routes>
         </AuthProvider>
+      </AppErrorBoundary>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <RoutedApp />
       </BrowserRouter>
       <Toaster position="bottom-right" richColors />
     </QueryClientProvider>
   </StrictMode>
 );
+
+// Service worker + "new version" prompt. After render so a slow registration
+// never delays first paint.
+initPWA();

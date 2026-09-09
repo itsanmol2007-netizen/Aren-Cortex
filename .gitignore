@@ -10,3 +10,4 @@ server/.env
 
 # Supabase CLI local scratch state (link target, cli version marker) — not source
 supabase/.temp/
+dev-dist

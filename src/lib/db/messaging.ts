@@ -28,7 +28,6 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
-import { postAuthed } from "../apiClient";
 
 /**
  * Below this, the doctor is warned and AREN is alerted. Mirrors the same
@@ -475,9 +474,12 @@ export async function fetchCreditUsage(doctorId: string, days = 14): Promise<Usa
 
 // ── The send seam ──────────────────────────────────────────────────────────
 //
-// Everything below crosses into `server/`. The browser holds no provider
-// credential and never will; what it sends is its own Supabase session, and
-// the server decides what that identity is allowed to do.
+// Sending needs provider credentials that never reach a browser bundle, so
+// this crosses into the `messaging-send` Supabase Edge Function
+// (`supabase/functions/messaging-send/`) — the hosted replacement for the old
+// `server/messaging` Express routes. `supabase.functions.invoke` attaches the
+// caller's session automatically; the function resolves the doctor from that
+// token and ignores anything identity-shaped in the body.
 
 export interface SendResult {
     ok: true;
@@ -488,20 +490,53 @@ export interface SendResult {
 }
 
 /**
+ * Invoke `messaging-send`. Doctor-actionable failures (no credits, no phone,
+ * rate limit) come back as HTTP 200 `{ ok: false, message }` — surfaced to the
+ * caller as an Error carrying that exact message. A 5xx / transport failure
+ * collapses to a generic line.
+ */
+async function invokeSend(
+    purpose: "prescription" | "follow_up",
+    body: Record<string, unknown>,
+): Promise<SendResult> {
+    const { data, error } = await supabase.functions.invoke("messaging-send", {
+        body: { purpose, ...body },
+    });
+    if (error) {
+        let message = "Something went wrong sending that message. Please try again.";
+        try {
+            const b = await (error as { context?: Response }).context?.json?.();
+            if (b && typeof b.message === "string") message = b.message;
+        } catch {
+            /* keep the generic message */
+        }
+        throw new Error(message);
+    }
+    const res = data as SendResult | { ok: false; error: string; message?: string };
+    if (!res || (res as { ok?: boolean }).ok !== true) {
+        throw new Error((res as { message?: string })?.message || "That message could not be sent.");
+    }
+    return res as SendResult;
+}
+
+/**
  * Send a prescription over WhatsApp.
  *
  * The frontend's entire vocabulary for messaging, together with
  * `sendFollowUp`. It names no provider, no template, no phone number
- * formatting and no credit arithmetic — all of that is
- * `server/messaging/service.js` and the adapter beneath it, which is what
- * makes swapping Meta for a BSP a change to one file rather than to this page.
+ * formatting and no credit arithmetic — all of that lives in the
+ * `messaging-send` Edge Function, which is what makes swapping Meta for a BSP
+ * a change to one file rather than to this page.
  */
 export function sendPrescription(opts: {
     prescriptionId: string;
     patientId: string;
     doctorId: string;
 }): Promise<SendResult> {
-    return postAuthed<SendResult>("/api/messaging/prescription", opts);
+    return invokeSend("prescription", {
+        patientId: opts.patientId,
+        prescriptionId: opts.prescriptionId,
+    });
 }
 
 /** Send a follow-up reminder. Same seam, same silence about the provider. */
@@ -511,7 +546,11 @@ export function sendFollowUp(opts: {
     visitId?: string;
     followUpDate?: string;
 }): Promise<SendResult> {
-    return postAuthed<SendResult>("/api/messaging/follow-up", opts);
+    return invokeSend("follow_up", {
+        patientId: opts.patientId,
+        visitId: opts.visitId,
+        followUpDate: opts.followUpDate,
+    });
 }
 
 /**

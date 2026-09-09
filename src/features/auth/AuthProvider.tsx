@@ -185,7 +185,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         registeredDeviceFor.current = uid;
 
         let cancelled = false;
-        void touchThisDevice(uid, hospitalId).then(({ revoked }) => {
+        // `authorize: true` — a verified sign-in on this install clears any
+        // stale `revoked_at` from a past "sign out this device". A still-open
+        // session elsewhere is not what this path checks; a fresh login here
+        // is, by definition, allowed. (See touchThisDevice's own comment.)
+        void touchThisDevice(uid, hospitalId, { authorize: true }).then(({ revoked }) => {
             if (!cancelled && revoked) signOutRevokedDevice();
         });
         return () => { cancelled = true; };
@@ -196,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const uid = state.identity.user.id;
         const hospitalId = state.identity.hospital.id;
 
-        const unwatch = watchThisDeviceRevocation(signOutRevokedDevice);
+        const unwatch = watchThisDeviceRevocation(uid, signOutRevokedDevice);
 
         const recheck = () => { void touchThisDevice(uid, hospitalId).then(({ revoked }) => revoked && signOutRevokedDevice()); };
         const interval = window.setInterval(recheck, DEVICE_RECHECK_MS);

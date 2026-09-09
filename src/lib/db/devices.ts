@@ -141,7 +141,8 @@ export function formFactorLabel(formFactor: string): string {
  */
 export async function touchThisDevice(
     userId: string,
-    hospitalId: string | null
+    hospitalId: string | null,
+    opts: { authorize?: boolean } = {}
 ): Promise<{ revoked: boolean }> {
     const d = describeDevice();
     try {
@@ -157,6 +158,20 @@ export async function touchThisDevice(
                     browser: d.browser,
                     form_factor: d.formFactor,
                     last_seen_at: new Date().toISOString(),
+                    // A fresh, fully-verified sign-in RE-AUTHORISES this install:
+                    // any `revoked_at` left over from an earlier "sign out this
+                    // device" is cleared. Revoking a device ends its current
+                    // session (realtime + the periodic re-check enforce that) —
+                    // it is not a permanent ban, and the person still holds the
+                    // password. Without this, a revoked row keeps getting its
+                    // `last_seen_at` refreshed by every heartbeat but is never
+                    // un-revoked, so every focus / visibility re-check reads
+                    // `revoked: true` and signs the tab out again — an infinite
+                    // logout loop (Ekanki Solo Clinc, revoked 2026-09-02, still
+                    // looping 2026-09-09). Only the boot call passes this; the
+                    // periodic re-check must NOT, or it could never detect a
+                    // genuine later revocation.
+                    ...(opts.authorize ? { revoked_at: null } : {}),
                 },
                 { onConflict: "user_id,device_key" }
             )
@@ -184,7 +199,7 @@ export async function touchThisDevice(
  * fallback for when the channel never connected or dropped silently — see
  * AuthProvider's periodic re-check, which exists for exactly that gap.
  */
-export function watchThisDeviceRevocation(onRevoked: () => void): () => void {
+export function watchThisDeviceRevocation(userId: string, onRevoked: () => void): () => void {
     const key = thisDeviceKey();
     const channel = supabase
         .channel(`user_devices:${key}:${Date.now()}`)
@@ -192,7 +207,14 @@ export function watchThisDeviceRevocation(onRevoked: () => void): () => void {
             "postgres_changes",
             { event: "UPDATE", schema: "public", table: "user_devices", filter: `device_key=eq.${key}` },
             (payload) => {
-                const next = payload.new as { revoked_at: string | null };
+                const next = payload.new as { revoked_at: string | null; user_id: string };
+                // One browser install shares its `device_key` across every
+                // account that has ever signed in on it (localStorage is
+                // per-origin, not per-account), so this key filter also
+                // delivers OTHER accounts' rows. Act only on this user's row —
+                // otherwise revoking one test account's device signs a
+                // different account out of the same browser.
+                if (next.user_id !== userId) return;
                 if (next.revoked_at != null) onRevoked();
             }
         )
