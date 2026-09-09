@@ -870,7 +870,8 @@ function App() {
   // time. Navigation stays here in the shell and is passed in.
   const {
     handleStartConsultFromRecord, resumeConsult, handlePatientConfirm, handleRepeatRx,
-    handleConfirmAndSave, closeReview, reviewSaved, openReview, resetConsultState,
+    handleConfirmAndSave, closeReview, reviewSaved, sendReviewOnWhatsApp, whatsapp: whatsappSend,
+    openReview, resetConsultState,
   } = useConsultLifecycle({
     identity,
     observables,
@@ -2729,14 +2730,16 @@ function App() {
             // Saved-and-sending: the prescription is committed, the WhatsApp
             // message is on its way, and Review is held open on purpose.
             sent={reviewSaved}
+            whatsappPhase={whatsappSend.phase}
+            whatsappError={whatsappSend.message}
             onEdit={() => setIsReviewOpen(false)}
             onSave={() => handleConfirmAndSave()}
-            // The dedicated WhatsApp action. Saves, sends the prescription,
-            // and DELIBERATELY leaves Review open (`stayOpen`) — the doctor
-            // reads the prescription and confirms the message went before the
-            // screen advances. Closing it (`closeReview`) is then the
-            // "Complete & Next". Plain "Confirm & Save" still never sends.
-            onSendWhatsApp={() => handleConfirmAndSave({ sendWhatsApp: true, stayOpen: true })}
+            // The dedicated WhatsApp action. Saves + pushes the message and
+            // DELIBERATELY leaves Review open — the doctor sees the
+            // prescription and the send's outcome before the screen advances.
+            // Closing (`closeReview`) is then the "Complete & Next". Later
+            // presses retry only the push. Plain "Confirm & Save" never sends.
+            onSendWhatsApp={sendReviewOnWhatsApp}
             onClose={closeReview}
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}

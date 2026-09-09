@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import {
-  X, Edit2, Printer, MessageCircle, CheckCircle,
+  X, Edit2, Printer, MessageCircle, CheckCircle, Loader2,
   User, Calendar, AlertCircle, Sun, Sunrise, Sunset,
-  Moon, MapPin, Phone, Shield, Lock, ChevronRight,
+  Moon, MapPin, Phone, ChevronRight,
   FileText, Hash,
 } from "lucide-react";
 import { freqLabelToSlot, freqSlotToLabel } from "../lib/db";
@@ -105,6 +105,11 @@ interface ReviewModalProps {
    * marker, and the primary button is now just "Complete & Next".
    */
   sent?: boolean;
+  /** Live state of the WhatsApp push, for the button's label / lock / retry. */
+  whatsappPhase?: "idle" | "sending" | "sent" | "error";
+  /** Doctor-readable failure line, shown above the action bar when the push
+   *  errored. */
+  whatsappError?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -204,6 +209,7 @@ export default function ReviewModal({
   followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
   storySummary = [], goalSummary = [],
   doctor, hospital, vitals, isSaving, saveLabel, sent = false,
+  whatsappPhase = "idle", whatsappError,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
 
@@ -881,58 +887,31 @@ export default function ReviewModal({
                   row, however many of the right-hand blocks are present. */}
               <div className="px-7 py-5 grid grid-cols-[188px_1fr] gap-6 border-b border-gray-100 items-start">
 
-                <div className="flex flex-col gap-3">
-                  {/* Signature block. `showSignature: false` drops the image
-                      AND the ruled line, never the prescriber's name. */}
-                  <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 pt-4 pb-3">
-                    {prescriptionConfig.showSignature && (
-                      signatureUrl ? (
-                        <img src={signatureUrl} alt="Signature"
-                          className="h-12 w-full object-contain object-left mb-2.5" />
-                      ) : (
-                        <div className="h-12 border-b-2 border-gray-300 mb-2.5" />
-                      )
+                {/* LEFT — prescriber identity only. Signature + name + creds,
+                    nothing else crammed here; the QR moved to the right where
+                    there is room (matches the A4/A5 print layout). */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 pt-4 pb-3">
+                  {prescriptionConfig.showSignature && (
+                    signatureUrl ? (
+                      <img src={signatureUrl} alt="Signature"
+                        className="h-12 w-full object-contain object-left mb-2.5" />
+                    ) : (
+                      <div className="h-12 border-b-2 border-gray-300 mb-2.5" />
+                    )
+                  )}
+                  <div className="border-t border-gray-100 pt-2">
+                    <p className="text-[13px] font-black text-gray-900 leading-tight">{doctorName}</p>
+                    {prescriptionConfig.showQualification && doctorQual && (
+                      <p className="text-[11px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
                     )}
-                    <div className="border-t border-gray-100 pt-2">
-                      <p className="text-[13px] font-black text-gray-900 leading-tight">{doctorName}</p>
-                      {prescriptionConfig.showQualification && doctorQual && (
-                        <p className="text-[11px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
-                      )}
-                      {prescriptionConfig.showRegistration && doctorReg && (
-                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5">Reg. {doctorReg}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* QR + follow-up. Bordered, matching the print output's
-                      own treatment, and the SAME caption — this QR encodes
-                      the prescription's own details for verification, not a
-                      link to a live page, so the caption says only what
-                      actually happens on scan. */}
-                  <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
-                    <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-1">
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR Code" className="w-12 h-12 rounded" />
-                      ) : (
-                        <div className="w-12 h-12 rounded flex items-center justify-center">
-                          <span className="text-[8px] text-gray-400 text-center leading-tight">QR</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[9px] text-gray-500 leading-tight">Scan to verify this prescription</p>
-                      {followUpDays && (
-                        <div className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
-                          Follow-up in {followUpDays} days
-                        </div>
-                      )}
-                    </div>
+                    {prescriptionConfig.showRegistration && doctorReg && (
+                      <p className="text-[10px] text-gray-500 leading-tight mt-0.5">Reg. {doctorReg}</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Right column — always one stack, in reading order: what
-                    was done today, then the home programme, then the
-                    instructions the patient leaves with. */}
+                {/* Right column — the advice the patient leaves with, then
+                    (bottom-right, in the empty space) the QR + follow-up. */}
                 <div className="flex flex-col gap-4">
                   {/* Delivered in the clinic today — a record of what was
                       DONE rather than something to do (see IntentType in
@@ -970,78 +949,71 @@ export default function ReviewModal({
                     </div>
                   )}
 
-                  {/* Instructions */}
-                  <div>
-                    <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2">
-                      Important Instructions
-                    </p>
-                    {adviceNotes && (
-                      <div className="mb-2 space-y-1.5">
-                        {adviceNotes.split("\n").filter(Boolean).map((line, i) => (
-                          <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
-                            <ChevronRight className="w-3 h-3 text-pink-400 mt-0.5 shrink-0" />{line}
+                  {/* Advice — ONLY what the doctor wrote for this patient.
+                      The clinic's canned/standing lines used to print under
+                      here as small grey dots; they were noise on a document
+                      whose whole value is the doctor's own words, so they're
+                      gone (Anmol, 2026-09-09). Richer, chevron-led lines. */}
+                  {adviceNotes && adviceNotes.trim() && (
+                    <div>
+                      <p className="text-[9px] font-black tracking-[0.12em] uppercase mb-2" style={{ color: accentColor }}>
+                        Doctor&rsquo;s Advice
+                      </p>
+                      <div className="space-y-2">
+                        {adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean).map((line, i) => (
+                          <p key={i} className="flex items-start gap-2 text-[11.5px] text-gray-800 font-medium leading-relaxed">
+                            <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accentColor }} />{line}
                           </p>
                         ))}
                       </div>
-                    )}
-                    {/* The doctor's own STANDING advice (Prescription Editor
-                        → Default advice) — the actual config-driven content
-                        that prints, replacing the four pseudo-random canned
-                        lines this block used to show instead (see the
-                        removed `pickInstructions` comment above). */}
-                    <div className="space-y-1.5">
-                      {prescriptionConfig.defaultAdvice.filter(Boolean).map((line, i) => (
-                        <p key={i} className="flex items-start gap-1.5 text-[10px] text-gray-600 leading-relaxed">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-1.5 shrink-0" />{line}
-                        </p>
-                      ))}
+                    </div>
+                  )}
+
+                  {/* QR + follow-up — bottom-right, in what used to be empty
+                      space. Matches the A4/A5 print's own placement. */}
+                  <div className="mt-auto flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                    <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-1">
+                      {qrDataUrl ? (
+                        <img src={qrDataUrl} alt="QR Code" className="w-14 h-14 rounded" />
+                      ) : (
+                        <div className="w-14 h-14 rounded flex items-center justify-center">
+                          <span className="text-[8px] text-gray-400">QR</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-500 leading-tight">Scan to open this prescription</p>
+                      {followUpDays && (
+                        <div className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
+                          Follow-up in {followUpDays} days
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* The clinic's own closing line (Prescription Editor → Footer
-                  note) — an emergency number, a timing note. Sits above the
-                  branding strip because it is the clinic speaking, not the
-                  product; same placement PrescriptionDocument uses. */}
+                  note) — an emergency number, a timing note. */}
               {prescriptionConfig.footerNote.trim() && (
                 <div className="px-7 pt-3 text-[10px] text-gray-600 leading-relaxed border-t border-gray-100 whitespace-pre-line">
                   {prescriptionConfig.footerNote.trim()}
                 </div>
               )}
 
-              {/* ══ Footer ══ — the other band trimmed hardest: it is
-                  provenance, not something to read. */}
-              <div className="px-7 py-2.5 bg-gradient-to-r from-gray-50 via-white to-gray-50 flex items-center justify-between border-t border-gray-100">
-                <div className="flex items-center gap-3 text-[9px] text-gray-500">
-                  <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/80 border border-gray-100">
-                    <Lock className="w-2.5 h-2.5" /> Secure
-                  </span>
-                  <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/80 border border-gray-100">
-                    <Shield className="w-2.5 h-2.5" /> Private
+              {/* ══ Footer ══ — one line, provenance only. The "Secure /
+                  Private / Generated: <date>" badges were removed (Anmol,
+                  2026-09-09: "just unnecessary data"). */}
+              <div className="px-7 py-3 flex items-center justify-center border-t border-gray-100">
+                <div className="flex items-center gap-[7px]">
+                  {isBranded && !arenLogoError && (
+                    <img src={arenLogo} alt="" onError={() => setArenLogoError(true)}
+                      className="w-[15px] h-[15px] object-contain" />
+                  )}
+                  <span className="text-[9px] font-bold tracking-[0.02em]" style={{ color: "#5b7fc7" }}>
+                    Generated with care, through Arenode
                   </span>
                 </div>
-                <p className="text-[9px] text-gray-500">Generated: {today}</p>
-                {/* Deliberate product-branding line, matching
-                    PrescriptionDocument's own treatment — reads as a
-                    signature, not incidental page text. Was sharing
-                    `logoError` (the CLINIC logo's own load-failure flag) for
-                    this completely unrelated image, so a clinic whose OWN
-                    logo failed to load also lost this one for no reason —
-                    split into its own state. `aren-logo-w.png` is the
-                    light-background mark (no baked-in dark square) imported
-                    the same Vite-processed way PrescriptionDocument does. */}
-                {isBranded && (
-                  <div className="mt-2 flex items-center gap-[7px]">
-                    {!arenLogoError ? (
-                      <img src={arenLogo} alt="" onError={() => setArenLogoError(true)}
-                        className="w-[16px] h-[16px] object-contain" />
-                    ) : null}
-                    <span className="text-[8.5px] font-bold tracking-[0.02em]" style={{ color: "#5b7fc7" }}>
-                      Generated with care, through Arenode
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -1066,54 +1038,63 @@ export default function ReviewModal({
               </button>
             </div>
           ) : (
-            <div className="shrink-0 px-5 py-3 border-t border-gray-100 bg-white flex items-center gap-3">
-              {sent ? (
-                // Saved and sending — nothing here to edit any more.
-                <span className="flex items-center gap-1.5 text-sm font-semibold text-green-600">
-                  <CheckCircle className="w-4 h-4" /> Saved · sending on WhatsApp
-                </span>
-              ) : (
-                <button onClick={onEdit}
-                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors">
-                  <Edit2 className="w-3.5 h-3.5" /> Edit
+            <div className="shrink-0 border-t border-gray-100 bg-white">
+              {whatsappPhase === "error" && whatsappError && (
+                <div className="flex items-start gap-2 px-5 pt-2.5 text-[12.5px] leading-snug text-red-600">
+                  <AlertCircle className="mt-[1px] w-3.5 h-3.5 shrink-0" />
+                  <span>{whatsappError}</span>
+                </div>
+              )}
+              {/* One row, no wrapping — every control keeps its full label,
+                  the paddings and the keycaps are what give. */}
+              <div className="flex items-center gap-2 px-4 py-2.5 whitespace-nowrap">
+                {sent ? (
+                  <span className="flex items-center gap-1.5 text-[13px] font-semibold text-green-600">
+                    <CheckCircle className="w-4 h-4" /> Saved
+                  </span>
+                ) : (
+                  <button onClick={onEdit}
+                    className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-500 hover:text-blue-600 transition-colors">
+                    <Edit2 className="w-3.5 h-3.5" /> Edit
+                  </button>
+                )}
+                <div className="flex-1" />
+
+                <button onClick={handlePrintClick}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                  <Printer className="w-4 h-4" /> Print / PDF
+                  <kbd className="hidden lg:inline rounded border border-gray-200 bg-gray-50 px-1 text-[10.5px] font-semibold not-italic leading-4 text-gray-500">Ctrl P</kbd>
                 </button>
-              )}
-              <div className="flex-1" />
 
-              <button onClick={handlePrintClick}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-                <Printer className="w-4 h-4" /> Print / Save PDF
-                {/* The chord, on the control it fires. This modal is Tailwind
-                    end to end, so the key cap is built from utilities here
-                    rather than borrowing consult.css's `.cs-kbd` — mixing the
-                    two vocabularies in one component is doctrine rule 7. */}
-                <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold not-italic leading-5 text-gray-500">
-                  Ctrl P
-                </kbd>
-              </button>
+                {onSendWhatsApp && (() => {
+                  const label =
+                    whatsappPhase === "sending" ? "Sending…"
+                    : whatsappPhase === "sent" ? "Sent"
+                    : whatsappPhase === "error" ? "Retry WhatsApp"
+                    : "Send on WhatsApp";
+                  const locked = isSaving || whatsappPhase === "sending" || whatsappPhase === "sent";
+                  return (
+                    <button onClick={onSendWhatsApp} disabled={locked}
+                      title="Save and send the prescription to the patient on WhatsApp. Review stays open — you check it, then Complete & Next."
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-[13px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                      {whatsappPhase === "sending"
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : whatsappPhase === "sent"
+                          ? <CheckCircle className="w-4 h-4" />
+                          : <MessageCircle className="w-4 h-4" />}
+                      {label}
+                    </button>
+                  );
+                })()}
 
-              {onSendWhatsApp && !sent && (
-                <button onClick={onSendWhatsApp} disabled={isSaving}
-                  title="Save this consultation and send the prescription to the patient over WhatsApp. This does NOT close the review — you check it, then Complete & Next."
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  <MessageCircle className="w-4 h-4" /> Send on WhatsApp
+                <button onClick={onSave} disabled={isSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
+                  <CheckCircle className="w-4 h-4" />
+                  {isSaving ? "Saving…" : (saveLabel ?? "Confirm & Save")}
+                  <kbd className="hidden lg:inline rounded border border-white/25 bg-white/15 px-1 text-[10.5px] font-semibold not-italic leading-4 text-white/80">Ctrl ⏎</kbd>
                 </button>
-              )}
-              {onSendWhatsApp && sent && (
-                <span className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-sm font-semibold text-green-700">
-                  <MessageCircle className="w-4 h-4" /> Sent
-                </span>
-              )}
-
-              <button onClick={onSave} disabled={isSaving}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
-                <CheckCircle className="w-4 h-4" />
-                {isSaving ? "Saving..." : (saveLabel ?? "Confirm & Save")}
-                <kbd className="rounded border border-white/25 bg-white/15 px-1.5 text-[11px] font-semibold not-italic leading-5 text-white/80">
-                  Ctrl ⏎
-                </kbd>
-              </button>
+              </div>
             </div>
           )}
         </div>

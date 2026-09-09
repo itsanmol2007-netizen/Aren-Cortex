@@ -45,6 +45,21 @@ import type { ConsultSession } from "./useConsultSession";
 import type { ConsultPlan } from "./useConsultPlan";
 import type { ConsultIntelligence } from "./useConsultIntelligence";
 
+/** Turn whatever the send path threw into one plain sentence a doctor can
+ *  act on. The server's `MessagingError` messages are already written for a
+ *  doctor; this catches the rest (network, unknown 5xx) and the common
+ *  keyword cases so the modal never shows a stack-trace-shaped string. */
+function friendlyWhatsAppError(raw: string): string {
+  const s = (raw || "").toLowerCase();
+  if (s.includes("credit")) return "Out of messaging credits. Top up on the Communication page, then resend.";
+  if (s.includes("no phone") || s.includes("number on file")) return "This patient has no WhatsApp number on file. Add one on their record, then resend.";
+  if (s.includes("phone") || s.includes("recipient")) return "That WhatsApp number didn't work. Check it on the patient's record and resend.";
+  if (s.includes("template")) return "The prescription message isn't available right now — this is on us. Try again shortly.";
+  if (s.includes("could not deliver") || s.includes("refund")) return "WhatsApp couldn't deliver this. Your credit was refunded — check the number and resend.";
+  if (s.includes("failed to fetch") || s.includes("network")) return "No connection to the server. Check your internet and resend.";
+  return raw && raw.length > 0 && raw.length < 140 ? raw : "The prescription couldn't be sent right now. Your credit is safe — try again in a moment.";
+}
+
 export interface ConsultLifecycleArgs {
   identity: ClinicalIdentity;
   /** the catalogue, for canonicalising a past visit's v1 names */
@@ -177,6 +192,12 @@ export interface ConsultLifecycle {
    *  modal uses it to show the message is on its way and turn its primary
    *  button into a plain "Complete & Next". */
   reviewSaved: boolean;
+  /** "Send on WhatsApp": first press saves the consult and pushes the
+   *  message (Review stays open); later presses retry just the push. */
+  sendReviewOnWhatsApp: () => Promise<void>;
+  /** Live state of the WhatsApp push, for the button. `error.message` is
+   *  already written for a doctor to read. */
+  whatsapp: { phase: "idle" | "sending" | "sent" | "error"; message?: string };
   /** Open Review — refused while a prescribed hard warning is unread. */
   openReview: () => void;
   /** Abandon this consultation and go back to an empty workspace. */
@@ -502,15 +523,39 @@ export function useConsultLifecycle({
   // ref) so ReviewModal can flip to its "saved, sending" affordance.
   const [reviewSavedName, setReviewSavedName] = useState<string | null>(null);
   const reviewSavedRef = useRef<string | null>(null);
-  const markReviewSaved = (name: string | null) => {
+  const savedRxIdRef = useRef<string | null>(null);
+  const markReviewSaved = (name: string | null, prescriptionId: string | null) => {
     reviewSavedRef.current = name;
+    savedRxIdRef.current = prescriptionId;
     setReviewSavedName(name);
   };
+
+  // The WhatsApp send's own live state, so ReviewModal's button can show
+  // "Sending…", lock while the backend works, and come back with a
+  // doctor-readable error (and a Retry) only when it actually failed.
+  const [whatsapp, setWhatsapp] = useState<{ phase: "idle" | "sending" | "sent" | "error"; message?: string }>({ phase: "idle" });
+
+  /** The one place a prescription is actually pushed to WhatsApp, awaited so
+   *  the button can reflect it. Never throws — the caller only cares about
+   *  the state it sets. */
+  const pushPrescriptionToWhatsApp = useCallback(async (prescriptionId: string, patientId: string) => {
+    setWhatsapp({ phase: "sending" });
+    try {
+      await sendPrescription({ prescriptionId, patientId, doctorId: identity.doctorId });
+      setWhatsapp({ phase: "sent" });
+      showToast("Prescription sent to the patient on WhatsApp ✓");
+    } catch (e: unknown) {
+      const raw = e instanceof Error ? e.message : "";
+      console.error("[messaging] prescription send failed:", e);
+      setWhatsapp({ phase: "error", message: friendlyWhatsAppError(raw) });
+    }
+  }, [identity.doctorId, showToast]);
 
   /** The close/reset/advance tail shared by a normal save and by closing
    *  Review after a stay-open (WhatsApp) save. */
   const finishReview = useCallback((seenName: string | null) => {
-    markReviewSaved(null);
+    markReviewSaved(null, null);
+    setWhatsapp({ phase: "idle" });
     session.setIsReviewOpen(false);
     resetConsultState();
     onConsultSaved?.(seenName);
@@ -522,6 +567,23 @@ export function useConsultLifecycle({
     if (reviewSavedRef.current !== null) finishReview(reviewSavedRef.current);
     else session.setIsReviewOpen(false);
   }, [finishReview, session]);
+
+  // handleConfirmAndSave is defined below; this ref lets the WhatsApp button
+  // call it without a declaration cycle.
+  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => Promise<void>) | null>(null);
+
+  /** ReviewModal's "Send on WhatsApp" button. First press: save the consult
+   *  and push the message, keeping Review open. Later presses (after a send
+   *  error) just retry the push against the already-saved prescription — no
+   *  re-save, no duplicate. */
+  const sendReviewOnWhatsApp = useCallback(async () => {
+    if (savedRxIdRef.current) {
+      const pid = session.patient?.id;
+      if (pid) await pushPrescriptionToWhatsApp(savedRxIdRef.current, pid);
+      return;
+    }
+    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true });
+  }, [session.patient, pushPrescriptionToWhatsApp]);
 
   const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => {
     const { visitId } = session;
@@ -618,23 +680,16 @@ export function useConsultLifecycle({
       // regardless of intent; it doesn't any more.)
       const rxPatientId = session.patient?.id ?? null;
       const rxPatientPhone = (session.patient?.phone ?? "").replace(/\D/g, "");
-      if (opts?.sendWhatsApp) {
-        if (rxPatientId && rxPatientPhone.length >= 10 && identity.isReal) {
-          void sendPrescription({
-            prescriptionId: saved.prescriptionId,
-            patientId: rxPatientId,
-            // Sent for completeness; the server resolves the doctor from the
-            // session and ignores this, because a request body cannot be
-            // allowed to name whose credits get spent.
-            doctorId: identity.doctorId,
-          }).catch((e: unknown) => {
-            const message = e instanceof Error ? e.message : "WhatsApp send failed";
-            console.error("[messaging] prescription send failed:", e);
-            showToast(message);
-          });
-        } else if (!rxPatientPhone) {
-          showToast("No phone number on file for this patient — nothing to send.");
-        }
+      // The send itself is AWAITED here now (only reached via the WhatsApp
+      // button, always `stayOpen`), so the button can show "Sending…", stay
+      // locked while the backend works, and surface a doctor-readable error
+      // with a Retry only if it truly failed. The prescription is already
+      // committed by this line, so a send failure never rolls the save back
+      // — it just flips `whatsapp` to "error".
+      if (opts?.sendWhatsApp && rxPatientId && rxPatientPhone.length >= 10 && identity.isReal) {
+        await pushPrescriptionToWhatsApp(saved.prescriptionId, rxPatientId);
+      } else if (opts?.sendWhatsApp && !rxPatientPhone) {
+        setWhatsapp({ phase: "error", message: "This patient has no WhatsApp number on file. Add one on their record, then resend." });
       }
 
       // The visit is now a completed session of whatever course it belongs to.
@@ -691,9 +746,11 @@ export function useConsultLifecycle({
       // button) runs the finish tail. `resetConsultState` must NOT run here
       // or the still-open modal would render against a wiped workspace.
       if (opts?.stayOpen) {
-        markReviewSaved(seen);
+        markReviewSaved(seen, saved.prescriptionId);
         session.setIsSaving(false);
-        showToast("Prescription saved. Sending on WhatsApp — Complete & Next when you're done.");
+        // The WhatsApp push above already toasted its own result (or the
+        // modal shows the error). Just confirm the save here.
+        if (!opts.sendWhatsApp) showToast("Prescription saved ✓");
         return;
       }
 
@@ -710,7 +767,8 @@ export function useConsultLifecycle({
       session.setIsSaving(false);
     }
   }, [session, plan, chart, ledger, intelligence.result, identity,
-      resetConsultState, showToast, onVisitSaved, onSaveStory, onConsultSaved, finishReview]);
+      resetConsultState, showToast, onVisitSaved, onSaveStory, onConsultSaved, finishReview, pushPrescriptionToWhatsApp]);
+  handleConfirmAndSaveRef.current = handleConfirmAndSave;
 
   const openReview = useCallback(() => {
     const blocking = plan.unreadPrescribedWarnings[0];
@@ -729,6 +787,11 @@ export function useConsultLifecycle({
     handleConfirmAndSave,
     closeReview,
     reviewSaved: reviewSavedName !== null,
+    /** "Send on WhatsApp" — first press saves + pushes; later presses retry
+     *  the push only. */
+    sendReviewOnWhatsApp,
+    /** Live state of that push, for the button's label / lock / error line. */
+    whatsapp,
     openReview,
     resetConsultState,
   };
