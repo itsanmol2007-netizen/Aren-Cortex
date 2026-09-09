@@ -325,7 +325,7 @@ export function PatientPaymentRail({
                     </button>
 
                     {discountOpen && (
-                        <div className="mt-[4px] flex flex-col gap-[7px] rounded-[11px] bg-black/[0.025] p-[10px]">
+                        <div className="mt-[4px] flex flex-col gap-[7px] rounded-[11px] bg-black/[0.025] p-[10px] transition-all duration-200">
                             <div className="flex items-center gap-[7px]">
                                 <input
                                     type="number"

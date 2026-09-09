@@ -54,6 +54,43 @@ export interface FeeContext {
     feesByDoctor: Map<string, DoctorFeeCard>;
 }
 
+import { getOverviewCache, setOverviewCache } from "../../features/overview/overviewCache";
+
+interface SerializedFeeContext {
+    policy: BillingPolicy;
+    feesByDoctor: Record<string, DoctorFeeCard>;
+}
+
+export function cacheFeeContext(hospitalId: string, ctx: FeeContext): void {
+    const obj: Record<string, DoctorFeeCard> = {};
+    ctx.feesByDoctor.forEach((v, k) => {
+        obj[k] = v;
+        const hasFee = v.consultationFee !== null || v.followUpFee !== null;
+        setOverviewCache(`fee_setup.${hospitalId}.${k}`, hasFee);
+    });
+    setOverviewCache<SerializedFeeContext>(`fee_context.${hospitalId}`, {
+        policy: ctx.policy,
+        feesByDoctor: obj,
+    });
+}
+
+export function getCachedFeeContext(hospitalId: string): FeeContext | null {
+    const raw = getOverviewCache<SerializedFeeContext>(`fee_context.${hospitalId}`);
+    if (!raw) return null;
+    const map = new Map<string, DoctorFeeCard>();
+    if (raw.feesByDoctor) {
+        Object.entries(raw.feesByDoctor).forEach(([k, v]) => map.set(k, v));
+    }
+    return {
+        policy: raw.policy,
+        feesByDoctor: map,
+    };
+}
+
+export function getFeeSetupStatus(hospitalId: string, doctorId: string): boolean | null {
+    return getOverviewCache<boolean>(`fee_setup.${hospitalId}.${doctorId}`);
+}
+
 /**
  * Everything the intake modal needs to price a visit, in one read.
  *
@@ -87,7 +124,7 @@ export async function fetchFeeContext(hospitalId: string): Promise<FeeContext> {
         });
     }
 
-    return {
+    const ctx: FeeContext = {
         policy: {
             currency: h?.currency ?? "INR",
             gstEnabled: h?.gst_enabled ?? false,
@@ -96,6 +133,8 @@ export async function fetchFeeContext(hospitalId: string): Promise<FeeContext> {
         },
         feesByDoctor,
     };
+    cacheFeeContext(hospitalId, ctx);
+    return ctx;
 }
 
 /**

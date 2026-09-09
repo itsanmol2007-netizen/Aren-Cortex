@@ -1291,11 +1291,14 @@ function RetireMenu({ label, onPick, onDismiss }: {
     return (
         <div
             ref={ref}
-            className="cx-retire absolute left-0 top-[calc(100%+6px)] z-50 w-[232px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white p-1 shadow-[0_12px_28px_rgba(16,28,46,0.16)]"
+            className="cx-retire absolute left-0 top-[calc(100%+6px)] z-50 w-[272px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white p-1.5 shadow-[0_12px_28px_rgba(16,28,46,0.16)]"
             role="menu"
             aria-label={`Remove ${label}`}
         >
-            <p className="px-2 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)]">
+            <p
+                className="px-2 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)] truncate"
+                title={`Remove “${label}”`}
+            >
                 Remove “{label}”
             </p>
             <button
@@ -1305,7 +1308,7 @@ function RetireMenu({ label, onPick, onDismiss }: {
                 onClick={() => onPick("today")}
             >
                 Not today
-                <span className="block text-[11px] font-medium text-[var(--cs-faint)]">
+                <span className="block text-[11px] font-medium leading-[1.35] text-[var(--cs-faint)]">
                     Still has it — just not relevant now
                 </span>
             </button>
@@ -1316,7 +1319,7 @@ function RetireMenu({ label, onPick, onDismiss }: {
                 onClick={() => onPick("resolved")}
             >
                 No longer has it
-                <span className="block text-[11px] font-medium text-[var(--cs-faint)]">
+                <span className="block text-[11px] font-medium leading-[1.35] text-[var(--cs-faint)]">
                     Resolved — stops carrying forward
                 </span>
             </button>
@@ -1327,7 +1330,7 @@ function RetireMenu({ label, onPick, onDismiss }: {
                 onClick={() => onPick("refuted")}
             >
                 Recorded in error
-                <span className="block text-[11px] font-medium text-[var(--cs-faint)]">
+                <span className="block text-[11px] font-medium leading-[1.35] text-[var(--cs-faint)]">
                     Was never true — stops carrying forward
                 </span>
             </button>

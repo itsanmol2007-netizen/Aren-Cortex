@@ -69,8 +69,8 @@ Anmol's brief came with two hard exclusions and one organising idea:
   |---|---|
   | Patients seen | `ActivityListModal` (visits) |
   | Prescriptions | `ActivityListModal` (prescriptions) |
-  | Collected | `PaymentDetailsModal` — totals, transactions, and the consultation-fee editor at the bottom |
-  | New patients | nothing — no deeper screen it would open onto that Patients Seen doesn't already cover |
+  | Collected | `PaymentDetailsModal` when revenue tracked; `FeesModal` directly when "Not set up" |
+  | New patients | `ActivityListModal` (new registrations) |
 
   Each tile also carries a `Sparkline` (`features/admin/charts.tsx`) built
   from `data.series`, fixed-pixel and un-measured unlike every OTHER chart in

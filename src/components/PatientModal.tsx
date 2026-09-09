@@ -6,7 +6,7 @@ import { ageInYears, dobMattersFor, todayIso } from "../lib/growth/age";
 import { useRovingList } from "../hooks/useRovingList";
 import { matches } from "../lib/keyboard/keymap";
 import {
-  computeFee, defaultVisitType, fetchFeeContext, resolveFee,
+  computeFee, defaultVisitType, fetchFeeContext, getCachedFeeContext, getFeeSetupStatus, resolveFee,
   type ConfirmedPayment, type FeeContext, type PaymentMethod, type VisitType,
 } from "../lib/db/payments";
 import { PatientPaymentRail, INITIAL_FEE_STATE, type FeeState } from "./PatientPaymentRail";
@@ -63,12 +63,18 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
   const hospitalId = billing?.hospitalId;
   const feeDoctorId = billing?.doctorId;
 
-  const [feeCtx, setFeeCtx] = useState<FeeContext | null>(null);
-  // Whether the fee read has finished (resolved OR failed). Until it has,
-  // `baseFee` is null for a reason we don't know yet — so the modal must not
-  // flash the "no fee set" notice or the narrow layout at a doctor who does
-  // have a fee. It holds the wide shell until the answer is real.
-  const [feeCtxSettled, setFeeCtxSettled] = useState(false);
+  const initialFeeCtx = hospitalId ? getCachedFeeContext(hospitalId) : null;
+  const initialFeeSetup = (hospitalId && feeDoctorId) ? getFeeSetupStatus(hospitalId, feeDoctorId) : null;
+
+  const [feeCtx, setFeeCtx] = useState<FeeContext | null>(initialFeeCtx);
+  // Whether the fee read has finished (resolved OR failed). Synchronously initialized
+  // from local cache when available so no-fee doctors land in compact mode on frame 1.
+  const [feeCtxSettled, setFeeCtxSettled] = useState<boolean>(() => {
+    if (!hospitalId) return true;
+    if (initialFeeCtx !== null) return true;
+    if (initialFeeSetup === false) return true;
+    return false;
+  });
   useEffect(() => {
     if (!hospitalId) { setFeeCtxSettled(true); return; }
     let alive = true;
@@ -442,12 +448,12 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
       <div
         className="pm-card"
         onKeyDown={onCardKeyDown}
-        style={wideShell ? { width: "min(760px, 96vw)", display: "flex", flexDirection: "column", overflow: "hidden" } : undefined}
+        style={wideShell ? { width: "min(760px, 96vw)", height: "min(576px, 90vh)", display: "flex", flexDirection: "column", overflow: "hidden" } : undefined}
       >
         <div className="pm-top-stripe" />
 
         {/* Header — no close button: patient intake is mandatory, not dismissable */}
-        <div className="pm-header">
+        <div className="pm-header shrink-0">
           <div className="pm-header-left">
             <div className="pm-header-icon"><Sparkles size={14} /></div>
             <div>
@@ -465,9 +471,9 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
           ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_252px] overflow-hidden max-[680px]:grid-cols-1"
           : "contents"}
         >
-        <div className={wideShell ? "flex min-h-0 flex-col overflow-y-auto" : "contents"}>
-        {/* Mode toggle */}
-        <div className="pm-toggle">
+        <div className={wideShell ? "flex min-h-0 flex-col overflow-hidden" : "contents"}>
+        {/* Mode toggle — pinned at the top so it never scrolls out of view */}
+        <div className="pm-toggle shrink-0">
           <button type="button" className={`pm-toggle-btn ${mode === "search" ? "active" : ""}`} onClick={() => setMode("search")}>
             Search existing
           </button>
@@ -475,6 +481,8 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
             New patient
           </button>
         </div>
+
+        <div className={wideShell ? "flex flex-1 min-h-0 flex-col overflow-y-auto pb-[14px]" : "contents"}>
 
         {/* Fee wired for this clinic but not for this doctor: no payment
             controls at all, just a nudge to set one up. The visit still
@@ -500,7 +508,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
             patient"'s form fills naturally, instead of sitting flush under
             the search box with a dead gap under IT. */}
         {mode === "search" && (
-          <div className="pm-section flex-1 min-h-0">
+          <div key="search" className="pm-section flex-1 min-h-0 pm-tab-content">
             <div className="pm-search-box">
               {searchLoading
                 ? <Loader2 size={14} className="pm-search-icon pm-spin" />
@@ -615,7 +623,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
 
         {/* ── CREATE MODE ── */}
         {mode === "create" && (
-          <div className="pm-section" ref={formRef}>
+          <div key="create" className="pm-section pm-tab-content" ref={formRef}>
 
             <div className="pm-field">
               <label className="pm-label">
@@ -773,25 +781,19 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                     onKeyDown={advance}
                   />
                 </div>
-                <div className="pm-actions">
-                  <button type="button" className="pm-btn-ghost" onClick={onClose}>Cancel</button>
-                  {feeWired ? (
-                    // No "Start consult" button when a fee is on the table —
-                    // the rail's Paid / Not paid buttons are the only way in,
-                    // so a visit can't be created without that decision.
-                    <span className="self-center text-[11.5px] font-medium text-[#64748b]">
-                      {isFormValid ? "Mark paid or unpaid on the right →" : "Fill the required fields"}
-                    </span>
-                  ) : (
+                {!feeWired && (
+                  <div className="pm-actions">
+                    <button type="button" className="pm-btn-ghost" onClick={onClose}>Cancel</button>
                     <button type="button" className="pm-btn-primary" disabled={!isFormValid} onClick={handleConfirm}>
                       Start consult →
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </>
             )}
           </div>
         )}
+        </div>
         </div>
 
         {wideShell && billing && (
@@ -809,10 +811,34 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                 lockReason={railLockReason}
               />
             ) : (
-              // Fee read still in flight — hold the column, no message yet.
-              <div className="flex flex-1 flex-col gap-[10px] pt-[4px]">
-                <div className="h-[36px] animate-pulse rounded-[10px] bg-black/[0.04]" />
-                <div className="h-[80px] animate-pulse rounded-[10px] bg-black/[0.04]" />
+              // Fee read still in flight — full skeleton loader matching rail structure to avoid sizing jump.
+              <div className="flex flex-1 flex-col gap-[12px] pt-[2px]">
+                <div className="mb-[4px] flex items-center gap-[9px]">
+                  <div className="h-[30px] w-[30px] animate-pulse rounded-[9px] bg-black/[0.06]" />
+                  <div className="h-[18px] w-[90px] animate-pulse rounded-[6px] bg-black/[0.06]" />
+                </div>
+                <div className="grid grid-cols-2 gap-[6px]">
+                  <div className="h-[36px] animate-pulse rounded-[10px] bg-black/[0.05]" />
+                  <div className="h-[36px] animate-pulse rounded-[10px] bg-black/[0.05]" />
+                </div>
+                <div className="my-[6px] flex flex-col gap-[8px]">
+                  <div className="flex justify-between">
+                    <div className="h-[14px] w-[100px] animate-pulse rounded bg-black/[0.04]" />
+                    <div className="h-[14px] w-[50px] animate-pulse rounded bg-black/[0.04]" />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="h-[14px] w-[80px] animate-pulse rounded bg-black/[0.04]" />
+                    <div className="h-[14px] w-[40px] animate-pulse rounded bg-black/[0.04]" />
+                  </div>
+                </div>
+                <div className="h-px bg-black/[0.06]" />
+                <div className="my-[2px] flex items-baseline justify-between">
+                  <div className="h-[16px] w-[50px] animate-pulse rounded bg-black/[0.06]" />
+                  <div className="h-[24px] w-[70px] animate-pulse rounded bg-black/[0.06]" />
+                </div>
+                <div className="mt-[4px] h-[32px] animate-pulse rounded-[9px] bg-black/[0.04]" />
+                <div className="mt-[6px] h-[44px] animate-pulse rounded-[12px] bg-black/[0.07]" />
+                <div className="h-[40px] animate-pulse rounded-[12px] bg-black/[0.04]" />
               </div>
             )}
           </div>

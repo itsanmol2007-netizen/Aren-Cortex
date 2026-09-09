@@ -136,6 +136,8 @@ function minutesWaiting(createdAt: string): number {
 // height the instant real data replaced the skeleton. Below are three
 // skeletons, each the exact shape/height of what it is standing in for.
 
+import { getOverviewCache, setOverviewCache } from "./overviewCache";
+
 /** A queue/recent-patient row's skeleton — same card, same avatar chip, same
  *  two-line text block, same trailing pill, at the same height as the real
  *  row it precedes. Shared by Today's Queue and Recent Patients: both rows
@@ -146,11 +148,11 @@ function RowSkeleton({ count }: { count: number }) {
             {Array.from({ length: count }).map((_, i) => (
                 <div key={i} className="flex min-w-0 items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[7px]">
                     <span className="h-[20px] w-[20px] flex-none animate-pulse rounded-full bg-[#e4e7ee]" />
-                    <span className="flex min-w-0 flex-1 flex-col gap-[5px]">
-                        <span className="h-[10px] w-[65%] animate-pulse rounded-[4px] bg-[#e4e7ee]" />
-                        <span className="h-[8px] w-[42%] animate-pulse rounded-[4px] bg-[#eef0f5]" />
+                    <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                        <span className="h-[11px] w-[65%] animate-pulse rounded-[4px] bg-[#e4e7ee]" />
+                        <span className="h-[9px] w-[40%] animate-pulse rounded-[4px] bg-[#eef0f5]" />
                     </span>
-                    <span className="h-[20px] w-[40px] flex-none animate-pulse rounded-full bg-[#eef0f5]" />
+                    <span className="h-[14px] w-[28px] flex-none animate-pulse rounded bg-[#eef0f5]" />
                 </div>
             ))}
         </div>
@@ -158,9 +160,9 @@ function RowSkeleton({ count }: { count: number }) {
 }
 
 /** TrendChart's own skeleton — one block at TrendChart's own real rendered
- *  height (132px SVG + its axis-label row below), not four 22px bars
+ *  height (132px SVG + its axis-label row below = 152px), not four 22px bars
  *  totalling 106px. */
-function ChartSkeleton({ height = 150 }: { height?: number }) {
+function ChartSkeleton({ height = 152 }: { height?: number }) {
     return <div className="w-full animate-pulse rounded-[10px] bg-[#eef0f5]" style={{ height }} />;
 }
 
@@ -170,6 +172,29 @@ function DonutSkeleton({ size = 132 }: { size?: number }) {
     return (
         <div className="flex flex-1 items-center justify-center py-[4px]">
             <div className="animate-pulse rounded-full bg-[#eef0f5]" style={{ width: size, height: size }} />
+        </div>
+    );
+}
+
+/** HourBars' own skeleton — vertical bars matching HourBars rendered layout. */
+function HourBarsSkeleton() {
+    return (
+        <div className="flex flex-col gap-[8px] pt-[8px]">
+            <div className="flex h-[100px] items-end justify-between gap-[5px] px-[4px]">
+                {[45, 70, 30, 85, 100, 75, 50, 90, 65, 55, 35, 25].map((h, i) => (
+                    <div key={i} className="flex h-full flex-1 flex-col items-center justify-end">
+                        <div
+                            className="w-full animate-pulse rounded-[4px] bg-[#eef0f5]"
+                            style={{ height: `${h}%` }}
+                        />
+                    </div>
+                ))}
+            </div>
+            <div className="flex justify-between px-[2px]">
+                <div className="h-[10px] w-[28px] animate-pulse rounded bg-[#eef0f5]" />
+                <div className="h-[10px] w-[28px] animate-pulse rounded bg-[#eef0f5]" />
+                <div className="h-[10px] w-[28px] animate-pulse rounded bg-[#eef0f5]" />
+            </div>
         </div>
     );
 }
@@ -194,21 +219,13 @@ export function DoctorOverviewPage({
     const isAdminDoctor = adminAccess.access === "embedded";
 
     const [period, setPeriod] = useState<PeriodState>({ preset: "7d", from: today, to: today });
-    const [data, setData] = useState<ClinicAnalytics | null>(null);
-    const [setup, setSetup] = useState<ClinicSetup | null>(null);
-    const [clinicToday_, setClinicToday] = useState<number | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [chartMetric, setChartMetric] = useState<"visits" | "revenue">("visits");
 
-    const [paymentOpen, setPaymentOpen] = useState(false);
-    const [activityOpen, setActivityOpen] = useState<ActivityKind | null>(null);
-    const [trendOpen, setTrendOpen] = useState(false);
+    const range = useMemo(
+        () => buildRange(period.preset, { from: period.from, to: period.to }),
+        [period]
+    );
 
     // ── The scope toggle (admin-doctors only) ─────────────────────────────
-    // "" = this doctor's own numbers (the default — an admin's page looks
-    // exactly like everyone else's until they touch the toggle), "overall" =
-    // the whole clinic, anything else = another doctor's `doctors.id`. Plain
-    // doctors never see this control and this state never leaves "".
     const [viewScope, setViewScope] = useState<string>("");
     const effectiveDoctorId = !isAdminDoctor
         ? identity.doctorId
@@ -217,82 +234,163 @@ export function DoctorOverviewPage({
         : viewScope;
     const viewingSelf = !isAdminDoctor || viewScope === "" || viewScope === identity.doctorId;
 
-    // ── Team (admin-doctors only) ──────────────────────────────────────────
-    // 2026-09-08: this used to be a whole inline "Clinic management" section
-    // — a Doctors roster with its own per-row admin/deactivate actions, plus
-    // a separate "request to add staff" card. Anmol: "just one button beside
-    // doctors... you can manage all the staffs including doctors, their
-    // fees, and their admin thing, and even receptionist thing... or assign
-    // a new user as admin too from the same part." That richer surface
-    // already exists — it's Parallax's PeoplePage — so rather than a second,
-    // thinner copy of the same actions, one button opens THAT page in a
-    // modal. `roster` stays: the scope toggle above still needs doctor names
-    // and the two-bench threshold, both un-ranged reads unrelated to this.
-    const [roster, setRoster] = useState<DoctorRosterRow[] | null>(null);
-    const [fees, setFees] = useState<FeeSettings | null>(null);
-    const [feesOpen, setFeesOpen] = useState(false);
-    const [teamOpen, setTeamOpen] = useState(false);
+    const rangeKey = `${period.preset}_${period.from}_${period.to}`;
 
-    const range = useMemo(
-        () => buildRange(period.preset, { from: period.from, to: period.to }),
-        [period]
-    );
+    const [data, setData] = useState<ClinicAnalytics | null>(null);
+    const [setup, setSetup] = useState<ClinicSetup | null>(() => {
+        if (!identity.ready) return null;
+        return getOverviewCache<ClinicSetup>(`setup.${identity.hospitalId}`);
+    });
+    const [clinicToday_, setClinicToday] = useState<number | null>(() => {
+        if (!identity.ready) return null;
+        return getOverviewCache<number>(`today_count.${identity.hospitalId}`);
+    });
+    const [loading, setLoading] = useState(true);
+    const [chartMetric, setChartMetric] = useState<"visits" | "revenue">("visits");
+
+    const [paymentOpen, setPaymentOpen] = useState(false);
+    const [activityOpen, setActivityOpen] = useState<ActivityKind | null>(null);
+    const [trendOpen, setTrendOpen] = useState(false);
+
+    const [roster, setRoster] = useState<DoctorRosterRow[] | null>(() => {
+        if (!identity.ready || !isAdminDoctor) return null;
+        return getOverviewCache<DoctorRosterRow[]>(`roster.${identity.hospitalId}`);
+    });
+
+    useEffect(() => {
+        if (identity.ready && isAdminDoctor) {
+            const cached = getOverviewCache<DoctorRosterRow[]>(`roster.${identity.hospitalId}`);
+            if (cached) setRoster(cached);
+        }
+    }, [identity.ready, identity.hospitalId, isAdminDoctor]);
+
+    const [fees, setFees] = useState<FeeSettings | null>(() => {
+        if (!identity.ready || !isAdminDoctor) return null;
+        return getOverviewCache<FeeSettings>(`fees.${identity.hospitalId}`);
+    });
+    const [feesOpen, setFeesOpen] = useState(false);
+    const handleMoneyTileClick = useCallback(async () => {
+        if (!identity.ready) return;
+        if (data?.revenueTracked) {
+            setPaymentOpen(true);
+        } else {
+            if (!fees) {
+                try {
+                    const res = await fetchFeeSettings(identity.hospitalId);
+                    setFees(res);
+                    setOverviewCache(`fees.${identity.hospitalId}`, res);
+                } catch (e) {
+                    console.error("[overview] Failed to load fee settings:", e);
+                }
+            }
+            setFeesOpen(true);
+        }
+    }, [identity.ready, identity.hospitalId, data?.revenueTracked, fees]);
+
+    const [teamOpen, setTeamOpen] = useState(false);
 
     const loadAnalytics = useCallback(() => {
         if (!identity.ready) return;
-        setLoading(true);
-        // The ONE scoping decision on this page, in one place: every number
-        // below is this doctor's — UNLESS this is an admin doctor who has
-        // moved the scope toggle, in which case it's the clinic's or a
-        // colleague's. `effectiveDoctorId === undefined` means "don't filter
-        // by doctor at all", fetchClinicAnalytics's own "whole clinic" shape.
+        const cacheKey = `analytics.${identity.hospitalId}.${rangeKey}.${effectiveDoctorId || 'overall'}`;
+        const cached = getOverviewCache<ClinicAnalytics>(cacheKey);
+        if (cached) {
+            setData(cached);
+        } else {
+            setLoading(true);
+        }
+
         fetchClinicAnalytics(identity.hospitalId, range, { doctorId: effectiveDoctorId })
-            .then(setData)
-            .catch((e: unknown) => { console.error("[overview]", e); setData(null); })
+            .then((res) => {
+                setData(res);
+                setOverviewCache(cacheKey, res);
+            })
+            .catch((e: unknown) => {
+                console.error("[overview]", e);
+                if (!cached) setData(null);
+            })
             .finally(() => setLoading(false));
-    }, [identity.ready, identity.hospitalId, effectiveDoctorId, range]);
+    }, [identity.ready, identity.hospitalId, effectiveDoctorId, range, rangeKey]);
 
     const loadContext = useCallback(() => {
         if (!identity.ready) return;
-        fetchClinicSetup(identity.hospitalId).then(setSetup).catch(() => setSetup(null));
-        countClinicVisitsToday(identity.hospitalId).then(setClinicToday).catch(() => setClinicToday(null));
+        const setupKey = `setup.${identity.hospitalId}`;
+        const cachedSetup = getOverviewCache<ClinicSetup>(setupKey);
+        if (cachedSetup) setSetup(cachedSetup);
+
+        fetchClinicSetup(identity.hospitalId)
+            .then((res) => {
+                setSetup(res);
+                setOverviewCache(setupKey, res);
+            })
+            .catch(() => { if (!cachedSetup) setSetup(null); });
+
+        const todayKey = `today_count.${identity.hospitalId}`;
+        const cachedToday = getOverviewCache<number>(todayKey);
+        if (cachedToday !== null) setClinicToday(cachedToday);
+
+        countClinicVisitsToday(identity.hospitalId)
+            .then((res) => {
+                setClinicToday(res);
+                setOverviewCache(todayKey, res);
+            })
+            .catch(() => { if (cachedToday === null) setClinicToday(null); });
     }, [identity.ready, identity.hospitalId]);
 
-    // Roster + fees — only an admin doctor's page ever queries either, and
-    // both are loaded once per hospital, not per period (neither is
-    // date-ranged). The rest of "who works here" now lives in the Team
-    // modal (PeoplePage), which fetches its own copy on open.
     const loadManagement = useCallback(() => {
         if (!identity.ready || !isAdminDoctor) return;
-        fetchDoctorRoster(identity.hospitalId).then(setRoster).catch((e: unknown) => {
-            console.error("[overview] roster:", e); setRoster(null);
-        });
-        fetchFeeSettings(identity.hospitalId).then(setFees).catch(() => setFees(null));
+        const rosterKey = `roster.${identity.hospitalId}`;
+        const cachedRoster = getOverviewCache<DoctorRosterRow[]>(rosterKey);
+        if (cachedRoster) setRoster(cachedRoster);
+
+        fetchDoctorRoster(identity.hospitalId)
+            .then((res) => {
+                setRoster(res);
+                setOverviewCache(rosterKey, res);
+            })
+            .catch((e: unknown) => {
+                console.error("[overview] roster:", e);
+                if (!cachedRoster) setRoster(null);
+            });
+
+        const feesKey = `fees.${identity.hospitalId}`;
+        const cachedFees = getOverviewCache<FeeSettings>(feesKey);
+        if (cachedFees) setFees(cachedFees);
+
+        fetchFeeSettings(identity.hospitalId)
+            .then((res) => {
+                setFees(res);
+                setOverviewCache(feesKey, res);
+            })
+            .catch(() => { if (!cachedFees) setFees(null); });
     }, [identity.ready, identity.hospitalId, isAdminDoctor]);
 
     useEffect(loadAnalytics, [loadAnalytics]);
     useEffect(loadContext, [loadContext]);
     useEffect(loadManagement, [loadManagement]);
 
-    // ── Recent Patients (Cortex only) ──────────────────────────────────────
-    // Today's Queue's exact opposite number: a Cortex clinic has no front
-    // desk, so the third slot in the chart row below used to render nothing
-    // at all — the grid still reserved that column's width (three FIXED
-    // template columns, only two children), so a Cortex doctor's Overview
-    // showed a column of dead white space exactly where a Consult doctor
-    // sees their queue. "Who did I just see" is the honest equivalent
-    // question for a doctor who does their own intake: no desk to preview,
-    // but there IS always a most-recent patient. Fixed 30-day window,
-    // independent of the page's own period selector — a doctor who just
-    // flipped to "Today" with nobody seen yet should still see who they saw
-    // yesterday, not an empty card that contradicts the one beside it.
-    const [recentPatients, setRecentPatients] = useState<DoctorActivityRow[] | null>(null);
+    const [recentPatients, setRecentPatients] = useState<DoctorActivityRow[] | null>(() => {
+        if (workspace.isConsult || !identity.ready) return null;
+        return getOverviewCache<DoctorActivityRow[]>(`recent.${identity.hospitalId}.${identity.doctorId}`);
+    });
+
     useEffect(() => {
         if (workspace.isConsult || !identity.ready) return;
         let cancelled = false;
+        const recentKey = `recent.${identity.hospitalId}.${identity.doctorId}`;
+        const cachedRecent = getOverviewCache<DoctorActivityRow[]>(recentKey);
+        if (cachedRecent) setRecentPatients(cachedRecent);
+
         fetchDoctorVisitRows(identity.hospitalId, identity.doctorId, buildRange("30d"), 5)
-            .then((rows) => { if (!cancelled) setRecentPatients(rows); })
-            .catch((e: unknown) => { console.error("[overview] recent patients:", e); if (!cancelled) setRecentPatients([]); });
+            .then((rows) => {
+                if (!cancelled) {
+                    setRecentPatients(rows);
+                    setOverviewCache(recentKey, rows);
+                }
+            })
+            .catch((e: unknown) => {
+                console.error("[overview] recent patients:", e);
+                if (!cancelled && !cachedRecent) setRecentPatients([]);
+            });
         return () => { cancelled = true; };
     }, [workspace.isConsult, identity.ready, identity.hospitalId, identity.doctorId]);
 
@@ -374,15 +472,30 @@ export function DoctorOverviewPage({
                         : identity.doctorName
                 }
                 rightSlot={
-                    data && (
-                        <button type="button" className="ws-stat-pill" onClick={onStartConsult}>
-                            <span className="ws-stat-icon"><Activity size={12} /></span>
-                            <span className="ws-stat-text">
-                                <span className="ws-stat-value">{data.liveWaiting}</span>
-                                <span className="ws-stat-label">waiting for you</span>
-                            </span>
-                        </button>
-                    )
+                    <div className="flex items-center gap-[8px]">
+                        {setup && (
+                            <div className="ws-stat-pill px-[12px] py-[6px]">
+                                <div className="flex items-center gap-[6px] whitespace-nowrap text-white/90">
+                                    <span className="text-[12px] font-bold text-white">{setup.modeLabel}</span>
+                                    {clinicToday_ !== null && (
+                                        <>
+                                            <span className="text-[11px] text-white/40">·</span>
+                                            <span className="text-[11.5px] font-medium text-white/70">{clinicToday_} seen clinic-wide today</span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        {data && (
+                            <button type="button" className="ws-stat-pill" onClick={onStartConsult}>
+                                <span className="ws-stat-icon"><Activity size={12} /></span>
+                                <span className="ws-stat-text">
+                                    <span className="ws-stat-value">{data.liveWaiting}</span>
+                                    <span className="ws-stat-label">waiting for you</span>
+                                </span>
+                            </button>
+                        )}
+                    </div>
                 }
             />
 
@@ -430,66 +543,42 @@ export function DoctorOverviewPage({
                     </button>
                 </div>
 
-                {/* ── The scope toggle — admin-doctors only ─────────────────
-                    "Add a simple filter/toggle to the existing charts rather
-                    than creating duplicate charts" (Anmol, 2026-09-06). The
-                    KPI tiles, the flow chart, the donut and the busiest-hours
-                    card below are ALL the same cards a plain doctor sees —
-                    this just changes whose numbers they're reading. Hidden
-                    entirely below two benches: comparing a doctor against
-                    themselves is not a toggle worth showing. */}
-                {isAdminDoctor && roster && roster.length > 1 && (
-                    <div className="flex flex-wrap items-center gap-[6px]">
-                        <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[var(--cs-label)]">
-                            Performance
-                        </span>
-                        {([
-                            { key: "overall", label: "Overall" },
-                            ...roster.map((d) => ({
-                                key: d.doctorId,
-                                label: d.doctorId === identity.doctorId ? "You" : d.name,
-                            })),
-                        ]).map((o) => {
-                            const on = viewScope === o.key || (viewScope === "" && o.key === identity.doctorId);
-                            return (
-                                <button
-                                    key={o.key}
-                                    type="button"
-                                    onClick={() => setViewScope(o.key)}
-                                    aria-pressed={on}
-                                    className={
-                                        "cursor-pointer rounded-full border px-[11px] py-[4px] text-[11.5px] font-semibold transition-colors outline-none " +
-                                        (on
-                                            ? "border-[var(--cs-violet)] bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
-                                            : "border-[var(--cs-line-strong)] text-[var(--cs-faint)] hover:bg-[#f1f5f9]")
-                                    }
-                                >
-                                    {o.label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-
                 <PeriodBar
                     period={period}
                     range={range}
                     onChange={setPeriod}
                     onRefresh={loadAnalytics}
                     busy={loading}
-                >
-                    {/* Clinic CONTEXT, never a comparison — see the file
-                        header. A sentence on the period bar, not a tile
-                        beside the doctor's own count. */}
-                    {setup && (
-                        <span className="mr-[2px] flex flex-none items-center gap-[8px] whitespace-nowrap border-r border-[var(--cs-line)] pr-[10px] text-[11px] text-[var(--cs-faint)]">
-                            <span className="font-semibold text-[var(--cs-muted)]">{setup.modeLabel}</span>
-                            {clinicToday_ !== null && (
-                                <span>{clinicToday_} seen clinic-wide today</span>
-                            )}
-                        </span>
-                    )}
-                </PeriodBar>
+                    scopeSlot={
+                        isAdminDoctor ? (
+                            <div className="flex items-center gap-[6px]">
+                                <span className="flex items-center gap-[4px] text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--cs-violet)] whitespace-nowrap">
+                                    <Users size={13} className="text-[var(--cs-violet)]" /> Performance:
+                                </span>
+                                {roster && roster.length > 1 ? (
+                                    <select
+                                        value={viewScope === "" ? identity.doctorId : viewScope}
+                                        onChange={(e) => setViewScope(e.target.value)}
+                                        aria-label="Filter doctor performance"
+                                        className="h-[28px] cursor-pointer rounded-[6px] border border-[var(--cs-violet)]/40 bg-[var(--cs-card)] px-[8px] text-[11px] font-semibold text-[var(--cs-violet)] outline-none hover:border-[var(--cs-violet)] focus:border-[var(--cs-violet)] transition-colors"
+                                    >
+                                        <option value="overall">All Doctors (Clinic-wide)</option>
+                                        <option value={identity.doctorId}>You ({identity.doctorName})</option>
+                                        {roster
+                                            .filter((d) => d.doctorId !== identity.doctorId)
+                                            .map((d) => (
+                                                <option key={d.doctorId} value={d.doctorId}>
+                                                    {d.name}
+                                                </option>
+                                            ))}
+                                    </select>
+                                ) : !roster ? (
+                                    <div className="h-[28px] w-[130px] animate-pulse rounded-[6px] bg-[#e4e7ee]" />
+                                ) : null}
+                            </div>
+                        ) : undefined
+                    }
+                />
 
                 {neverSeenAnyone ? (
                     // A brand-new doctor. One bold fact, one short next
@@ -525,7 +614,7 @@ export function DoctorOverviewPage({
                             {([
                                 {
                                     key: "patients", label: "Patients seen",
-                                    value: data ? String(data.patients.value) : "—",
+                                    value: data ? String(data.patients.value) : null,
                                     metric: data?.patients,
                                     spark: data?.series.map((p) => p.visits),
                                     sparkColor: "var(--cs-blue)",
@@ -534,7 +623,7 @@ export function DoctorOverviewPage({
                                 },
                                 {
                                     key: "new", label: "New patients",
-                                    value: data ? String(data.newPatients.value) : "—",
+                                    value: data ? String(data.newPatients.value) : null,
                                     metric: data?.newPatients,
                                     spark: data?.series.map((p) => p.newPatients),
                                     sparkColor: "var(--cs-teal)",
@@ -543,7 +632,7 @@ export function DoctorOverviewPage({
                                 },
                                 {
                                     key: "rx", label: "Prescriptions",
-                                    value: data ? String(data.prescriptions.value) : "—",
+                                    value: data ? String(data.prescriptions.value) : null,
                                     metric: data?.prescriptions,
                                     spark: data?.series.map((p) => p.prescriptions),
                                     sparkColor: "var(--cs-teal)",
@@ -552,48 +641,36 @@ export function DoctorOverviewPage({
                                 },
                                 {
                                     key: "money", label: "Collected",
-                                    // revenueTracked === false means the
-                                    // CLINIC has never recorded a payment at
-                                    // all. "Not set up" is the truth; ₹0 would
-                                    // be a claim about earnings nobody made.
-                                    value: !data ? "—" : data.revenueTracked ? formatMoney(data.revenue.value) : "Not set up",
+                                    value: !data ? null : data.revenueTracked ? formatMoney(data.revenue.value) : "Not set up",
                                     metric: data?.revenueTracked ? data.revenue : undefined,
                                     spark: data?.revenueTracked ? data.series.map((p) => p.revenue) : undefined,
                                     sparkColor: "var(--cs-violet)",
                                     accent: true,
-                                    // Clickable even when nothing is tracked
-                                    // yet — Payment Details is also where a
-                                    // doctor sets their fee for the first
-                                    // time, which is the natural way OUT of
-                                    // "Not set up", not a dead end.
-                                    onClick: identity.ready ? () => setPaymentOpen(true) : undefined,
+                                    onClick: identity.ready ? handleMoneyTileClick : undefined,
                                 },
                             ] as const).map((k) => {
-                                // A plain `<div>` for "New patients" (no
-                                // onClick), NOT a `disabled` `<button>` —
-                                // measured live 2026-09-07: `styles/base.css`
-                                // carries an unlayered `button:disabled {
-                                // opacity: ... }` rule (a documented trap,
-                                // cortex-gotchas.md) that beats every Tailwind
-                                // utility on this element regardless of
-                                // source order, and washed the tile's number
-                                // out to a pale grey no `text-[var(--cs-ink)]`
-                                // override could reach. A tile with nothing to
-                                // open has no reason to be a `<button>` at
-                                // all — this sidesteps the cascade fight
-                                // entirely instead of fighting it.
                                 const inner = (
                                     <>
                                         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
                                             <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">{k.label}</span>
-                                            <span className={`truncate text-[23px] font-bold leading-[1.12] tabular-nums ${k.accent ? "text-[var(--cs-violet)]" : "text-[var(--cs-ink)]"}`}>
-                                                {k.value}
-                                            </span>
-                                            {k.metric && <Delta metric={k.metric} compareLabel={compareLabel} />}
+                                            {k.value !== null ? (
+                                                <span className={`truncate text-[23px] font-bold leading-[1.12] tabular-nums ${k.accent ? "text-[var(--cs-violet)]" : "text-[var(--cs-ink)]"}`}>
+                                                    {k.value}
+                                                </span>
+                                            ) : (
+                                                <span className="my-[3px] h-[22px] w-[45px] animate-pulse rounded bg-[#e4e7ee]" />
+                                            )}
+                                            {k.metric ? (
+                                                <Delta metric={k.metric} compareLabel={compareLabel} />
+                                            ) : !data ? (
+                                                <span className="mt-[2px] h-[12px] w-[65px] animate-pulse rounded bg-[#eef0f5]" />
+                                            ) : null}
                                         </div>
-                                        {k.spark && k.spark.length > 1 && (
+                                        {k.spark && k.spark.length > 1 ? (
                                             <Sparkline values={k.spark} stroke={k.sparkColor} />
-                                        )}
+                                        ) : !data ? (
+                                            <div className="h-[28px] w-[56px] animate-pulse rounded bg-[#eef0f5]" />
+                                        ) : null}
                                     </>
                                 );
                                 const tileClass =
@@ -840,7 +917,7 @@ export function DoctorOverviewPage({
                                 subtitle={`Visits by hour · ${formatRangeLabel(range)}`}
                             >
                                 {!data ? (
-                                    <SkeletonRows count={3} />
+                                    <HourBarsSkeleton />
                                 ) : data.byHour.every((n) => n === 0) ? (
                                     <EmptyBlock
                                         fact="No visits in this period"
@@ -1053,7 +1130,12 @@ export function DoctorOverviewPage({
                     policy={fees.policy}
                     doctors={fees.doctors}
                     onClose={() => setFeesOpen(false)}
-                    onSaved={() => { toast.success("Fees saved"); loadManagement(); }}
+                    onSaved={() => {
+                        toast.success("Fees saved");
+                        loadManagement();
+                        loadAnalytics();
+                        setOverviewCache(`fee_context.${identity.hospitalId}`, null);
+                    }}
                 />
             )}
         </div>

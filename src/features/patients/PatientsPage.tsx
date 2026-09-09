@@ -34,6 +34,7 @@ import { PatientRecord } from "./PatientRecord";
 import { PatientsList, PatientsSearchBar } from "./PatientsList";
 import { visitStatusKind } from "./visitStatus";
 import { deriveRanked, RankedBarList } from "./RankedBarList";
+import { getPatientsCache, setPatientsCache } from "./patientsCache";
 import "./patients.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -555,8 +556,8 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
     const [todayRows, setTodayRows] = useState<PatientRecordRow[]>([]);
     const [recentRows, setRecentRows] = useState<PatientRecordRow[]>([]);
     const [searchResults, setSearchResults] = useState<PatientRecordRow[] | null>(null);
-    const [todayLoading, setTodayLoading] = useState(true);
-    const [recentLoading, setRecentLoading] = useState(true);
+    const [todayLoading, setTodayLoading] = useState<boolean>(true);
+    const [recentLoading, setRecentLoading] = useState<boolean>(true);
     // Seeded once, from the initial prop. Deliberately NOT synced to it
     // afterwards: the doctor must be able to clear or retype the box, and an
     // effect that wrote the prop back would fight every keystroke.
@@ -565,31 +566,41 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
 
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Both queries are scoped to the signed-in doctor. Until identity resolves
-    // there is no id to ask for, and asking with the wrong one is what used to
-    // render another clinic's records — so this waits rather than guessing.
-    //
-    // Fired together (still one round trip's worth of wait, not two back to
-    // back) but resolved INDEPENDENTLY — each `.then` clears only its own
-    // loading flag the moment its own query lands, instead of one combined
-    // `Promise.all().finally()` holding the whole page (Today's carousel
-    // included) hostage to whichever of the two happens to be slower this
-    // load. "Why is Patient Page so slow... instead of loading and trying
-    // to show everything at once" (2026-08-29) — see `buildPatientRecordRows`
-    // in `lib/db/patients.ts` for the bigger half of this fix: each of
-    // these two calls used to run its OWN ~10 queries one at a time too.
     useEffect(() => {
         if (!identity.ready) return;
+
+        let cancelled = false;
+
+        // Reset loading state on mount so skeletons show for Today, All Patients & Sidebar
         setTodayLoading(true);
         setRecentLoading(true);
+
+        // Smart Sequential DB Loading: Fetch Today's Patients first
         fetchTodayPatients(identity.doctorId)
-            .then(setTodayRows)
+            .then((rows) => {
+                if (cancelled) return;
+                setTodayRows(rows);
+                setPatientsCache(`today.${identity.doctorId}`, rows);
+            })
             .catch(console.error)
-            .finally(() => setTodayLoading(false));
-        fetchRecentPatients(identity.doctorId)
-            .then(setRecentRows)
-            .catch(console.error)
-            .finally(() => setRecentLoading(false));
+            .finally(() => {
+                if (cancelled) return;
+                setTodayLoading(false);
+
+                // Then fetch Recent Patients sequentially
+                fetchRecentPatients(identity.doctorId)
+                    .then((rows) => {
+                        if (cancelled) return;
+                        setRecentRows(rows);
+                        setPatientsCache(`recent.${identity.doctorId}`, rows);
+                    })
+                    .catch(console.error)
+                    .finally(() => {
+                        if (!cancelled) setRecentLoading(false);
+                    });
+            });
+
+        return () => { cancelled = true; };
     }, [identity.ready, identity.doctorId]);
 
     useEffect(() => {
@@ -764,7 +775,7 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
                         todayRows={todayRows}
                         recentRows={recentRows}
                         specialty={specialty}
-                        loading={todayLoading || recentLoading}
+                        loading={todayLoading && recentLoading}
                         activeFilter={filter}
                         onSetFilter={setFilter}
                         onNewPatient={() => { /* wire in next session */ }}

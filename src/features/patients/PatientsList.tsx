@@ -169,12 +169,20 @@ function SkeletonTodayCard() {
             <div className="prec-today-card-top">
                 <SkeletonAvatar size={34} />
             </div>
-            <SkeletonBlock width="70%" height={16} style={{ marginTop: 12 }} />
-            <SkeletonBlock width="50%" height={12} style={{ marginTop: 6 }} />
-            <SkeletonBlock width="85%" height={12} style={{ marginTop: 8 }} />
-            <div className="prec-today-footer" style={{ marginTop: 12 }}>
-                <SkeletonBlock width={50} height={12} />
-                <SkeletonBlock width={70} height={22} style={{ borderRadius: 11 }} />
+            <div className="prec-today-name">
+                <SkeletonBlock width="75%" height={12} />
+            </div>
+            <div className="prec-today-sub">
+                <SkeletonBlock width="45%" height={10} />
+            </div>
+            <div className="prec-today-chief" style={{ background: "rgba(18, 104, 232, 0.05)", border: "1px solid rgba(18, 104, 232, 0.12)" }}>
+                <SkeletonBlock width="80%" height={10} />
+            </div>
+            <div className="prec-today-footer">
+                <div className="prec-today-time">
+                    <SkeletonBlock width={36} height={10} />
+                </div>
+                <SkeletonBlock width={44} height={16} style={{ borderRadius: 20 }} />
             </div>
         </div>
     );
@@ -185,32 +193,43 @@ function SkeletonTableRow() {
         <tr className="prec-table-row prec-table-row--skeleton">
             <td className="prec-table-cell prec-table-cell--patient">
                 <div className="prec-table-patient-inner">
-                    <SkeletonAvatar size={32} />
-                    <div className="prec-table-patient-info" style={{ gap: 4 }}>
-                        <SkeletonBlock width={120} height={14} />
-                        <SkeletonBlock width={80} height={11} />
+                    <div className="prec-table-avatar-wrap">
+                        <SkeletonAvatar size={32} />
+                    </div>
+                    <div className="prec-table-patient-info">
+                        <span className="prec-table-patient-name">
+                            <SkeletonBlock width={110} height={13} />
+                        </span>
+                        <span className="prec-table-patient-meta">
+                            <SkeletonBlock width={70} height={10} style={{ marginTop: 2 }} />
+                        </span>
                     </div>
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--snapshot">
-                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                    <SkeletonBlock width={70} height={20} style={{ borderRadius: 10 }} />
-                    <SkeletonBlock width={60} height={20} style={{ borderRadius: 10 }} />
-                    <SkeletonBlock width={50} height={20} style={{ borderRadius: 10 }} />
+                <div className="prec-snapshot-cell">
+                    <div className="prec-snapshot-chips">
+                        <SkeletonBlock width={65} height={16} style={{ borderRadius: 4 }} />
+                        <SkeletonBlock width={55} height={16} style={{ borderRadius: 4 }} />
+                    </div>
+                    <SkeletonBlock width={120} height={10} style={{ marginTop: 3 }} />
                 </div>
-                <SkeletonBlock width={140} height={11} />
             </td>
             <td className="prec-table-cell prec-table-cell--visit">
-                <SkeletonBlock width={50} height={14} />
-                <SkeletonBlock width={30} height={10} style={{ marginTop: 2 }} />
+                <SkeletonBlock width={55} height={13} />
+                <SkeletonBlock width={35} height={10} style={{ marginTop: 3 }} />
             </td>
             <td className="prec-table-cell prec-table-cell--count">
-                <SkeletonBlock width={20} height={16} />
-                <SkeletonBlock width={28} height={9} style={{ marginTop: 2 }} />
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <SkeletonBlock width={16} height={13} />
+                    <SkeletonBlock width={26} height={9} style={{ marginTop: 2 }} />
+                </div>
             </td>
             <td className="prec-table-cell prec-table-cell--status">
-                <SkeletonBlock width={65} height={22} style={{ borderRadius: 11 }} />
-                <SkeletonBlock width={40} height={10} style={{ marginTop: 2 }} />
+                <div className="prec-table-status-wrap">
+                    <SkeletonBlock width={55} height={18} style={{ borderRadius: 20 }} />
+                    <SkeletonBlock width={38} height={10} style={{ marginTop: 2 }} />
+                </div>
             </td>
             <td className="prec-table-cell prec-table-cell--arrow">
                 <SkeletonBlock width={14} height={14} />
@@ -219,19 +238,12 @@ function SkeletonTableRow() {
     );
 }
 
-/** Split from one combined `PatientsSkeleton` (2026-08-29) so each section
- *  can clear ITS OWN skeleton the moment its own fetch resolves — Today and
- *  Recent are two independent queries now (see `fetchTodayPatients`/
- *  `fetchRecentPatients`'s callers in `PatientsPage`), so a page that
- *  waited for the slower of the two before showing either was the "loading
- *  everything at once" complaint made real: whichever finished first sat
- *  fully built, invisible, behind a single shared flag. */
 function TodaySkeleton() {
     return (
         <div className="prec-list-section">
             <div className="prec-section-header">
-                <SkeletonBlock width={130} height={18} />
-                <SkeletonBlock width={28} height={20} style={{ borderRadius: 10 }} />
+                <span className="prec-section-title">Today's Patients</span>
+                <span className="prec-skeleton" style={{ width: 24, height: 16, borderRadius: 10 }} />
             </div>
             <div className="prec-today-scroll">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -246,8 +258,8 @@ function RecentSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
     return (
         <div className="prec-list-section">
             <div className="prec-section-header">
-                <SkeletonBlock width={100} height={18} />
-                <SkeletonBlock width={28} height={20} style={{ borderRadius: 10 }} />
+                <span className="prec-section-title">All Patients</span>
+                <span className="prec-skeleton" style={{ width: 28, height: 16, borderRadius: 10 }} />
             </div>
             <div className="prec-table-wrap">
                 <table className="prec-table">
