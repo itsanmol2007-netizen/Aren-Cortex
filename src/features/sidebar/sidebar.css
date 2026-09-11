@@ -277,33 +277,38 @@
     object-fit: contain;
 }
 
-/* The classic AREN treatment, unchanged from `.ws-logo-text` — it IS that
-   block, moved. The branding was never the problem; having two of it was. */
+/* Re-cut 2026-09-11 to match Front Desk's own wordmark exactly — Anmol:
+   "look in frontdesk, how AREN Frontdesk is written into the top header, i
+   need the same style here." That treatment (`Header` in
+   `features/frontdesk/components/WorkspaceShell.tsx`) is ONE line, not a
+   stacked lockup: "AREN" and the product name sit side by side, same size,
+   same weight, split only by colour — Manrope 800 at 15px, -0.01em tracking,
+   white then a workspace tint. Cortex's own first attempt here (stacked,
+   small-caps-ish, two different sizes) was a caption under the mark, not a
+   wordmark; this is the same word Front Desk uses, in the same voice. */
 .rail-brand-text {
     display: flex;
-    flex-direction: column;
-    line-height: 1;
-    gap: 3px;
+    align-items: baseline;
+    gap: 5px;
+    line-height: 1.15;
     min-width: 0;
+    font-family: Manrope, sans-serif;
 }
 
-/* Both lines bumped 2026-09-11 — "the AREN Cortex [wordmark]... so much
-   muted and small" (Anmol). This is the one piece of branding left in the
-   whole app (the headers carry none of their own any more, see `.rail-head`'s
-   note above); it needed to read as the app's name, not a caption under the
-   mark. */
 .rail-brand-name {
-    font-size: 14.5px;
+    font-size: 15px;
     font-weight: 800;
-    letter-spacing: 0.06em;
+    letter-spacing: -0.01em;
     color: #ffffff;
 }
 
+/* Front Desk's dawn pink (`#f0abc8`) is that workspace's tint — Cortex's is
+   violet, the same one the mark's own glow already uses. */
 .rail-brand-product {
-    font-size: 11.5px;
-    font-weight: 650;
-    letter-spacing: 0.04em;
-    color: rgba(210, 188, 255, 1);
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: #cfa8ff;
 }
 
 .rail-brand:hover .rail-brand-mark {
