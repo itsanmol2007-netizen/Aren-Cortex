@@ -294,10 +294,12 @@ export function ClinicPage({
                 }
             />
 
-            {/* One scroll region. The 56px gutter is the same one Practice and
-                Patients already take inside `.app-shell`'s single container
-                width — not a third number invented for this page. */}
-            <div className="flex w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[56px] pb-[44px] pt-[15px] max-[900px]:px-[12px]">
+            {/* One scroll region. 40px, was 56 — Anmol, 2026-09-11: "a lot of
+                horizontal space between the sidebar and this... decrease it,
+                not very much." Practice keeps its own 56px unchanged (told
+                explicitly not to touch that page); Overview made the same
+                call to a narrower gutter earlier for the same reason. */}
+            <div className="flex w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[40px] pb-[36px] pt-[14px] max-[900px]:px-[12px]">
 
                 {/* ══ ONE identity surface, two halves ═══════════════════════
                     Not two cards side by side: they share the border, the
