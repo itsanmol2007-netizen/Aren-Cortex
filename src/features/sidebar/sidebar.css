@@ -25,7 +25,7 @@
     /* How wide the brand lockup PAINTS. The rail is still --rail-w wide in
        the layout; this element overhangs into the space both headers leave
        clear for it (see `.app-shell .ws-header-inner` in workspace-header.css
-       and `.app-shell>.topbar-unified` in layout.css). Change it here and
+       in workspace-header.css). Change it here and
        those two follow automatically. */
     --brand-w: 186px;
 
@@ -40,16 +40,54 @@
     --nav-line: #e8e7f2;
 }
 
-/* The header the rail starts beneath. The consult topbar is its own height
-   (it carries a patient identity and vitals; every other page's header does
-   not), so the shell declares which one is showing and the rail reads it
-   rather than guessing. */
+/* The height is a REGISTERED custom property, which is the whole reason the
+   transition works at all.
+ 
+   An ordinary CSS variable cannot be transitioned — it flips, and everything
+   reading it jumps. Registering it with `@property` and a `<length>` syntax
+   makes the VARIABLE itself animatable, so `.app-shell` eases the value and
+   every element that reads it follows for free.
+ 
+   That distinction is load-bearing here, not a nicety. Each page mounts its
+   own `WorkspaceHeader`, so navigating to the consult DESTROYS one header
+   element and creates another — and a brand-new element has no previous
+   height to transition from. It pops. Animating the variable on the
+   `.app-shell` ancestor, which never unmounts, means the freshly mounted
+   header reads a value that is already mid-flight and lands on the end of the
+   same curve. The rail's head, the nav panel and the consult shell all ride
+   the same animation for the same reason.
+ 
+   Browsers without `@property` (older Safari) simply switch instantly, which
+   is what this did before and is a fine floor. */
+@property --app-header-h {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 64px;
+}
+
+/* ── One header height, declared once, animated everywhere ─────────────────
+   There is a single dark header in this product now (`WorkspaceHeader`) and
+   the consult simply needs more room in it — a patient identity, a strip of
+   past visits and four controls do not fit in the height a page NAME needs.
+   Before 2026-09-11 that was solved with a second header of its own tone,
+   composition and height, and switching pages swapped one for the other:
+   "that makes it terrible when switching the app."
+
+   So: one variable. The shell says which height is in play, and everything
+   that lines up with the header — the header itself, the rail's brand head,
+   the nav panel and its scrim — reads it and TRANSITIONS to it. Moving
+   between the consult and any other page eases the band open or closed
+   instead of cutting between two different headers. A CSS variable cannot be
+   transitioned, but the properties that resolve from it can, which is why
+   every one of those elements declares its own `transition`. */
 .app-shell {
     --app-header-h: 64px;
+    --header-ease: 320ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: --app-header-h var(--header-ease);
 }
 
 .app-shell.is-consult {
-    --app-header-h: 72px;
+    --app-header-h: 84px;
 }
 
 /* ── The rail ──────────────────────────────────────────────── */
@@ -129,8 +167,8 @@
 
    What works is neither a slab nor a box: the SAME dark as the header it
    meets, no hairline at all, and a bloom around the mark deliberately
-   CONTINUED into the header by `.ws-header::before` / `.topbar-unified::before`
-   instead of stopping at this element's edge. The light crosses the junction,
+   CONTINUED into the header by `.ws-header::before` instead of stopping at
+   this element's edge. The light crosses the junction,
    so there is no junction. Change the bloom here and change it there too, or
    the seam comes back. */
 .rail-head {
@@ -168,33 +206,11 @@
     box-sizing: border-box;
 }
 
-.app-shell.is-consult .rail-head::before {
-    background:
-        radial-gradient(76px 54px at 46% 48%,
-            rgba(139, 92, 246, 0.24) 0%,
-            rgba(124, 58, 237, 0.11) 45%,
-            transparent 82%),
-        #0d1b35;
-    border-bottom: none;
-    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.30);
-}
-
-/* The consult topbar's gradient stripe runs along the top of the band; the
-   lockup sits on top of it, so it carries its own matching segment or the
-   stripe would appear to start 186px in. */
-.app-shell.is-consult .rail-head::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: var(--brand-w);
-    height: 3px;
-    background: linear-gradient(90deg, #f472b6 0%, #ea6fc8 60%, #d06ad8 100%);
-    box-shadow: 0 1px 12px rgba(168, 85, 247, 0.55);
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
-    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
-    pointer-events: none;
-}
+/* No consult variant any more. There used to be one, because the consult had
+   a header of its own dark (`#0d1b35`) and its own gradient stripe, and this
+   corner had to match whichever was up. Both are gone — one header, one dark,
+   one stripe — so the head has one appearance too. That is the point of the
+   merge, stated in CSS: there is nothing left here to switch on. */
 
 /* ── The lockup itself ─────────────────────────────────────────────────────
    One button: the mark, the word AREN, the product name. Pressing it opens
@@ -675,6 +691,7 @@ body.overlay-open .rail-logo {
 .nav-scrim {
     position: fixed;
     inset: 0;
+    transition: opacity 200ms ease;
     z-index: calc(var(--rail-z) + 1);
     background: rgba(23, 28, 48, 0.24);
     backdrop-filter: blur(3px);
@@ -689,7 +706,6 @@ body.overlay-open .rail-logo {
             #000 var(--app-header-h));
     opacity: 0;
     pointer-events: none;
-    transition: opacity 200ms ease;
 }
 
 .nav-scrim.is-open {

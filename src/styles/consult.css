@@ -242,15 +242,15 @@
 .cs-shell {
     display: flex;
     flex-direction: column;
-    /* Tracks the chrome above: the topbar (72) plus this shell's own 8px top
-       margin. It lost the topbar's 14px top margin on 2026-09-11, when the
-       topbar went full-bleed and flush to the top of the viewport to line its
-       logo up with every other page's header. Deliberately a couple of px
-       conservative rather than exact — a shell slightly too SHORT only adds a
-       little scroll to `.cs-work`, while one slightly too tall pushes its
-       bottom edge past the viewport, and only one of those two errors is
-       invisible. */
-    height: calc(100vh - 84px);
+    /* Tracks the chrome above by READING it rather than restating it: the
+       header's own height variable plus this shell's 8px top margin and a
+       couple of px of slack. It used to be a hard-coded number, which had to
+       be re-derived by hand every time the header above it changed — twice in
+       one day on 2026-09-11. Deliberately a shade conservative: a shell
+       slightly too SHORT only adds a little scroll to `.cs-work`, while one
+       slightly too tall pushes its bottom edge past the viewport, and only
+       one of those two errors is invisible. */
+    height: calc(100vh - var(--app-header-h, 84px) - 12px);
     /* The 1720px cap that used to sit on `.app-shell` — see layout.css for why
        it had to move off the shell when the nav rail arrived. */
     max-width: 1720px;

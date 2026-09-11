@@ -1,8 +1,8 @@
 import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pill, Stethoscope, Plus, Users } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient } from "../types";
 import { useClinicShape } from "../hooks/useClinicShape";
+import { WorkspaceHeader } from "./WorkspaceHeader";
 import { ActionButton } from "./ActionButton";
 import { formatVisitDate } from "./PastVisitCard";
 import type { RealVisit } from "../lib/db";
@@ -81,29 +81,13 @@ export function PatientHeader({
   onOpenVisit, sessionLabels,
   onOpenQueue, queueCount = 0, nextToken,
 }: PatientHeaderProps) {
-  // "Cortex" or "Consult" — read, not passed, exactly as `WorkspaceHeader`
-  // does it. The word and the line under it are the whole of the branding
-  // difference; the header's shape, colour and type scale do not move.
-  const { brand, frontDesk } = useClinicShape();
+  const { frontDesk } = useClinicShape();
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [isStuck, setIsStuck] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setIsStuck(!entry.isIntersecting),
-      { threshold: 1.0 }
-    );
-    obs.observe(sentinel);
-    return () => obs.disconnect();
-  }, []);
 
   const updateArrows = () => {
     const el = scrollRef.current;
@@ -140,79 +124,13 @@ export function PatientHeader({
   };
 
   return (
-    <>
-      <div ref={sentinelRef} style={{ height: 1, marginBottom: -1 }} aria-hidden="true" />
-
-      <header className={`topbar-unified${isStuck ? " is-stuck" : ""}`}>
-        <div className="topbar-stripe" aria-hidden="true" />
-
-        <svg className="topbar-atmo" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1400 72" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <radialGradient id="bloom-a" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#f472b6" stopOpacity="0.32" />
-              <stop offset="100%" stopColor="#f472b6" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="bloom-b" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#a855f7" stopOpacity="0.26" />
-              <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="bloom-c" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity="0.24" />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="arc-ribbon-1" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#f472b6" stopOpacity="0" />
-              <stop offset="30%" stopColor="#a855f7" stopOpacity="0.30" />
-              <stop offset="70%" stopColor="#6366f1" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="arc-ribbon-2" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#a855f7" stopOpacity="0" />
-              <stop offset="40%" stopColor="#f472b6" stopOpacity="0.20" />
-              <stop offset="100%" stopColor="#f472b6" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="arc-ribbon-3" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity="0" />
-              <stop offset="50%" stopColor="#a855f7" stopOpacity="0.16" />
-              <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="gleam-h" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="white" stopOpacity="0" />
-              <stop offset="35%" stopColor="white" stopOpacity="0.07" />
-              <stop offset="65%" stopColor="white" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="white" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <ellipse cx="100" cy="-5" rx="160" ry="80" fill="url(#bloom-a)" />
-          <ellipse cx="500" cy="95" rx="260" ry="110" fill="url(#bloom-b)" />
-          <ellipse cx="1050" cy="10" rx="220" ry="85" fill="url(#bloom-c)" />
-          <ellipse cx="1380" cy="85" rx="180" ry="80" fill="url(#bloom-a)" />
-          <path d="M-20,58 C180,30 360,68 560,44 C760,20 920,62 1100,40 C1250,24 1350,44 1420,36" fill="none" stroke="url(#arc-ribbon-1)" strokeWidth="1.6" />
-          <path d="M-20,64 C140,46 300,70 480,55 C660,40 820,66 1000,52 C1160,38 1300,58 1420,50" fill="none" stroke="url(#arc-ribbon-2)" strokeWidth="1.2" />
-          <path d="M-20,68 C100,54 260,72 440,60 C620,48 780,70 960,58 C1120,46 1280,64 1420,56" fill="none" stroke="url(#arc-ribbon-3)" strokeWidth="1.0" />
-          <path d="M0,54 C180,34 360,64 560,46 C760,28 920,60 1100,44 C1250,30 1340,48 1400,42 L1400,72 L0,72 Z" fill="rgba(168,85,247,0.055)" />
-          <path d="M0,60 C140,46 300,68 480,56 C660,44 820,64 1000,54 C1160,44 1300,60 1400,54 L1400,72 L0,72 Z" fill="rgba(244,114,182,0.038)" />
-          <circle cx="268" cy="14" r="1.8" fill="rgba(168,85,247,0.70)" />
-          <circle cx="296" cy="38" r="1.5" fill="rgba(168,85,247,0.55)" />
-          <circle cx="252" cy="55" r="1.7" fill="rgba(99,102,241,0.60)" />
-          <circle cx="318" cy="20" r="1.3" fill="rgba(244,114,182,0.60)" />
-          <circle cx="308" cy="60" r="1.2" fill="rgba(168,85,247,0.50)" />
-          <circle cx="338" cy="42" r="1.6" fill="rgba(99,102,241,0.55)" />
-          <line x1="268" y1="14" x2="296" y2="38" stroke="rgba(168,85,247,0.26)" strokeWidth="0.9" />
-          <line x1="296" y1="38" x2="252" y2="55" stroke="rgba(99,102,241,0.22)" strokeWidth="0.9" />
-          <line x1="296" y1="38" x2="338" y2="42" stroke="rgba(168,85,247,0.22)" strokeWidth="0.9" />
-          <line x1="318" y1="20" x2="338" y2="42" stroke="rgba(99,102,241,0.18)" strokeWidth="0.8" />
-          <line x1="252" y1="55" x2="308" y2="60" stroke="rgba(168,85,247,0.18)" strokeWidth="0.8" />
-          <rect x="0" y="18" width="1400" height="1" fill="url(#gleam-h)" />
-          <rect x="195" y="0" width="55" height="72" fill="rgba(168,85,247,0.06)" />
-        </svg>
-
-        {/* No brand block here. The lockup — mark and wordmark both — is
-            drawn by the nav rail (`.rail-brand`), which outranks every
-            overlay, so it survives a modal scrim instead of vanishing under
-            one. This topbar just leaves room for it. */}
-        <div className="tb-divider" aria-hidden="true" />
-
+    <WorkspaceHeader
+      /* Taller, because this header carries a patient and not a page name —
+         and it ARRIVES at that height rather than appearing at it. See
+         `tall` in WorkspaceHeader.tsx. */
+      tall
+      identitySlot={
+        <>
         {/* Patient identity */}
         <div className="tb-patient-identity">
           <div className="tb-identity-orb" aria-hidden="true" />
@@ -230,9 +148,9 @@ export function PatientHeader({
           </div>
         </div>
 
-        <div className="tb-divider" aria-hidden="true" />
-
-        {/* Past visits strip */}
+        </>
+      }
+      centerSlot={
         <div className="tb-visits-zone">
           <span className="tb-visits-label">Past visits</span>
           {pastVisitsLoading ? (
@@ -293,8 +211,8 @@ export function PatientHeader({
             </>
           )}
         </div>
-
-        {/* Actions */}
+      }
+      rightSlot={
         <div className="tb-actions">
           {/* Consult replaces "+ Patient" with the Queue. Cortex keeps it:
               in a solo clinic the doctor IS the front desk, and taking that
@@ -327,8 +245,7 @@ export function PatientHeader({
             {frontDesk ? "Complete & Next" : "Review Rx"}
           </button>
         </div>
-      </header>
-
-    </>
+      }
+    />
   );
 }

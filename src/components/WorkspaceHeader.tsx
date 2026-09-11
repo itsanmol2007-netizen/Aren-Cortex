@@ -19,8 +19,8 @@ interface Props {
      */
     logoRef?: RefObject<HTMLDivElement>;
     onOpenSidebar?: () => void;
-    title: string;
-    subtitle: string;
+    title?: string;
+    subtitle?: string;
     rightSlot?: ReactNode;
     /**
      * Centred between the page identity and `rightSlot`. Added 2026-08-31 for
@@ -42,9 +42,31 @@ interface Props {
      * be naming the wrong product. Still one header component, not two.
      */
     brand?: Brand;
+    /**
+     * Replaces the default title/subtitle block.
+     *
+     * The consult screen's identity is an avatar, a status label, a patient
+     * name and a line of demographics — not two strings — so it hands the
+     * whole cluster in rather than trying to squeeze itself into `title` and
+     * `subtitle`. The CHROME stays shared (this file); the CONTENT stays the
+     * page's own. That split is the entire reason the consult was able to
+     * stop carrying a second header.
+     */
+    identitySlot?: ReactNode;
+    /**
+     * Taller, for a header that has to hold more than a page name.
+     *
+     * Only the consult uses it. It is not a different header — same ink, same
+     * nebula, same type, same lockup beside it — it just has more room, and
+     * it ARRIVES at that room: the height is a CSS variable on `.app-shell`
+     * and both this element and the nav rail's head transition to it, so
+     * moving between the consult and any other page reads as the band easing
+     * open rather than two different headers swapping.
+     */
+    tall?: boolean;
 }
 
-export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot, brand: brandOverride }: Props) {
+export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot, brand: brandOverride, identitySlot, tall }: Props) {
     /**
      * "Cortex" or "Consult", read rather than passed.
      *
@@ -58,7 +80,7 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
     const brand = brandOverride ?? derivedBrand;
 
     return (
-        <header className="ws-header">
+        <header className={`ws-header${tall ? " is-tall" : ""}`}>
             {/* Nebula asset — inline img, bypasses Vite CSS asset resolution entirely */}
             <img
                 src="/aren-nebula.svg"
@@ -103,10 +125,12 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
                 )}
 
                 {/* Workspace identity */}
-                <div className="ws-header-identity">
-                    <span className="ws-header-title">{title}</span>
-                    <span className="ws-header-subtitle">{subtitle}</span>
-                </div>
+                {identitySlot ?? (
+                    <div className="ws-header-identity">
+                        <span className="ws-header-title">{title}</span>
+                        <span className="ws-header-subtitle">{subtitle}</span>
+                    </div>
+                )}
 
                 {centerSlot && (
                     <div className="ws-header-center">

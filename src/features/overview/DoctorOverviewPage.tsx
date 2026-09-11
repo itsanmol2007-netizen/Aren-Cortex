@@ -494,7 +494,12 @@ export function DoctorOverviewPage({
                 }
             />
 
-            <div className="flex w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[56px] pb-[44px] pt-[15px] max-[900px]:px-[12px]">
+            <div /* 56px -> 30px, 2026-09-11. With a 60px nav rail now holding the left
+   edge, a 56px gutter on top of it left a band of dead white between
+   the rail and the first card that was wider than most of the cards'
+   own padding. Still a real gutter — the content does not touch either
+   boundary — just not a margin big enough to read as a mistake. */
+                className="flex w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[30px] pb-[44px] pt-[15px] max-[900px]:px-[12px]">
 
                 {/* ── Greeting + compact action ────────────────────────────
                     Replaces what used to be a full-width blue banner.

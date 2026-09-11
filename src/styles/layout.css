@@ -31,119 +31,30 @@
     padding-left: var(--rail-w);
 }
 
-/* The consult topbar stopped being an inset rounded card (`margin: 0 18px;
-   margin-top: 14px; border-radius: 12px 12px 0 0`) on 2026-09-11 — Anmol:
-   "that dark header will match at least the horizontal size of other dark
-   headers because they are completely filled." */
-.app-shell>.topbar-unified {
-    margin: 0;
-    border-radius: 0;
-    /* Room for the nav rail's brand lockup, which overhangs into this margin
-       — see `.rail-brand` in features/sidebar/sidebar.css. */
-    padding-left: calc(var(--brand-w) - var(--rail-w));
-}
+/* ── The consult's own topbar is gone (2026-09-11) ────────────────────────
+   `.topbar-unified` and everything that dressed it — its gradient stripe, its
+   hand-drawn `.topbar-atmo` SVG, its stuck shadow, its own dark — were
+   deleted along with the markup. There is ONE dark header in this product
+   now (`components/WorkspaceHeader.tsx`), and the consult renders its patient
+   identity, past-visit strip and controls into that header's slots instead of
+   carrying a second one.
 
-.workflow {
-    margin: 0 18px;
-}
+   Anmol, 2026-09-11: "the consult page header is with different tone,
+   different design... that makes it terrible when switching the app because
+   first of all they are vertically of different height too, and they have
+   different composition too."
 
-
-/* ════════════════════════════════════════════════════════════
-   TOPBAR
-   ════════════════════════════════════════════════════════════ */
-
-.topbar-unified {
-    position: relative;
-    display: flex;
-    align-items: stretch;
-    height: 72px;
-    overflow: hidden;
-    border-radius: 12px 12px 0 0;
-
-    background:
-        radial-gradient(ellipse 340px 150px at 20% -30%,
-            rgba(244, 114, 182, 0.12) 0%, transparent 70%),
-        radial-gradient(ellipse 420px 200px at 55% 130%,
-            rgba(139, 92, 246, 0.11) 0%, transparent 65%),
-        radial-gradient(ellipse 280px 160px at 90% -15%,
-            rgba(99, 102, 241, 0.12) 0%, transparent 60%),
-        linear-gradient(135deg,
-            #0d1b35 0%,
-            #120f28 38%,
-            #170d27 62%,
-            #0b1525 100%);
-
-    box-shadow:
-        0 4px 32px rgba(8, 16, 44, 0.30),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.30),
-        0 6px 40px rgba(99, 102, 241, 0.06);
-}
-
-.topbar-unified {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-}
-
-.topbar-unified.is-stuck {
-    box-shadow:
-        0 6px 40px rgba(8, 16, 44, 0.48),
-        0 2px 0 rgba(168, 85, 247, 0.18),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.35),
-        0 8px 48px rgba(99, 102, 241, 0.10);
-}
-
-.topbar-stripe {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
-    box-shadow:
-        0 1px 12px rgba(168, 85, 247, 0.55),
-        0 2px 24px rgba(244, 114, 182, 0.20);
-    z-index: 2;
-    pointer-events: none;
-}
-
-.topbar-atmo {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 0;
-    pointer-events: none;
-}
-
-/* The topbar's brand block is gone — the whole lockup (mark and wordmark)
-   is drawn by the nav rail now, above every overlay, so it survives a modal
-   scrim instead of vanishing under one. See `.rail-brand` in
-   features/sidebar/sidebar.css. */
-
-/* The same bloom the feature-page header carries, for the same reason: the
-   glow around the mark must not stop at the rail's edge, or the corner reads
-   as two elements instead of one lockup. See `.ws-header::before`. */
-.topbar-unified::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 200px;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1;
-    background:
-        radial-gradient(160px 66px at 0% 48%,
-            rgba(139, 92, 246, 0.20) 0%,
-            rgba(124, 58, 237, 0.09) 42%,
-            transparent 78%);
-}
+   The `.tb-*` rules below survive, because they style that CONTENT — the
+   avatar, the visit chips, the actions — which is still the consult's own and
+   still belongs to it. What died is the box it used to sit in. */
 
 /* ── Dividers ─────────────────────────────────────────────── */
 .tb-divider {
     width: 1px;
-    align-self: stretch;
+    /* Was `align-self: stretch` against a 72px bar of its own. `.ws-header-
+       inner` centres its children, so a fixed height is what keeps this the
+       same mark as `.ws-header-divider` next to it. */
+    height: 30px;
     background: linear-gradient(to bottom,
             transparent 0%,
             rgba(255, 255, 255, 0.09) 30%,
@@ -151,17 +62,19 @@
             transparent 100%);
     flex-shrink: 0;
     z-index: 1;
-    margin: 10px 0;
+    margin: 0 4px;
 }
 
 /* ── Patient identity ─────────────────────────────────────── */
 .tb-patient-identity {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 13px;
-    padding: 0 22px;
+    /* No left padding any more — `.ws-header-inner` already holds the gutter
+       (and, in Cortex, the room the brand lockup overhangs into). */
+    padding: 0 18px 0 0;
     flex-shrink: 0;
     overflow: visible;
 }
@@ -1271,12 +1184,6 @@
        padding at every width now — the gutters that narrow screens actually
        need belong to the content (`.workflow`, `.cs-shell`), which already
        have them. */
-
-    .topbar-unified {
-        height: auto;
-        flex-wrap: wrap;
-        padding-bottom: 10px;
-    }
 
     .tb-divider {
         display: none;
