@@ -18,12 +18,36 @@
        one viewport on a short window instead of collapsing to fit whatever
        content happens to be there. This page has ONE scroll region (the
        whole body), unlike Patients' `.prec-page` — no independently-
-       scrolling columns here that would need a hard `dvh` ceiling instead. */
-    min-height: 100vh;
+       scrolling columns here that would need a hard `dvh` ceiling instead.
+
+       NO `overflow` HERE — that used to live on this rule (to clip the
+       watermark below), and it is the reason `WorkspaceHeader`'s own
+       `position: sticky` silently stopped working: ANY ancestor with
+       `overflow` other than `visible` becomes a sticky element's reference
+       scrollport, per spec, whether or not it actually scrolls anything.
+       `.prac-page` never scrolls itself (the body does — see above), so the
+       header ended up "sticky" relative to a box that never moves, which in
+       practice reads as not sticky at all — it scrolls away with everything
+       else. 2026-09-11: fixed by moving the ONE thing here that needed
+       clipping (`.prac-bg-mark`'s deliberate corner bleed) into its own
+       `.prac-bg-clip` wrapper below, so this element — the header's actual
+       sticky ancestor — stays `overflow: visible`. */
     background: var(--cs-page);
-    /* Every card/section sits above the watermark below, regardless of
-       DOM/paint order. */
+    min-height: 100vh;
+}
+
+/* The ONLY thing on this page that needs clipping — `.prac-bg-mark` bleeds
+   20px past the top-right corner on purpose (see its own comment) — gets
+   its own box to clip, instead of `.prac-page` doing it and taking the
+   sticky header down with it. Sized to match `.prac-page` exactly
+   (`inset: 0`), so the bleed lands in the identical spot it always did;
+   this is a structural fix, not a visual one. */
+.prac-bg-clip {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
     overflow: hidden;
+    pointer-events: none;
 }
 
 /* `PracticeCanvasArt`'s node scatter — canvas texture, not content.

@@ -2141,8 +2141,17 @@ export function PracticePage({
                 the earlier attempt (the AREN mark's letterform at 520px)
                 didn't survive being cropped at the corner. Sits behind
                 every card (`.prac-body` gets `z-index:1` for exactly
-                this). */}
-            <PracticeCanvasArt />
+                this). Wrapped in `.prac-bg-clip` — its own clipping box —
+                rather than letting `.prac-page` itself clip the bleed:
+                `overflow` on the page root broke `WorkspaceHeader`'s
+                `position: sticky` (any ancestor with non-visible overflow
+                becomes a sticky element's scroll reference, whether or not
+                that ancestor scrolls), which is why the header used to
+                scroll away with the page. See `.prac-bg-clip` in
+                practice.css. */}
+            <div className="prac-bg-clip">
+                <PracticeCanvasArt />
+            </div>
             <WorkspaceHeader
                 title="Practice"
                 subtitle="Tune Cortex to the way you practice"
