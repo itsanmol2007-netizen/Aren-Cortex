@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import App from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { initPWA } from "./pwa";
+import { installSessionTrace } from "./lib/diagnostics/sessionTrace";
 import { FrontDeskPage } from "./features/frontdesk/FrontDeskPage";
 import { PatientsPage } from "./features/frontdesk/PatientsPage";
 import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
@@ -106,4 +107,8 @@ createRoot(document.getElementById("root")!).render(
 
 // Service worker + "new version" prompt. After render so a slow registration
 // never delays first paint.
+
+// Before anything else renders: a crash during the first paint is exactly
+// the one a support request most needs to carry. See sessionTrace.ts.
+installSessionTrace();
 initPWA();

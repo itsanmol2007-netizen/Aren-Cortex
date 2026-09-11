@@ -141,6 +141,63 @@
     color: rgba(196, 167, 250, 0.94);
 }
 
+/* ── Room for the rail's brand lockup ──────────────────────────
+   In Cortex the header carries no brand block of its own: the lockup is drawn
+   by the nav rail (`.rail-brand`, sidebar.css), which overhangs into this
+   header's left margin because it is the one surface that outranks every
+   overlay in the app. This is the margin it overhangs into — `--brand-w`
+   minus the rail's own width, plus the header's normal 20px gutter.
+
+   Scoped to `.app-shell` on purpose: AREN Parallax renders this same header
+   OUTSIDE that shell, still with its own logo pill, because its rail has no
+   head to hold one. Same component, two arrangements. */
+.app-shell .ws-header-inner {
+    padding-left: calc(var(--brand-w) - var(--rail-w) + 20px);
+}
+
+/* ── Wordmark — retired 2026-09-11, kept for Parallax's pill ────
+   The mark lives in the nav rail's head, one column to the left; these are
+   the words that finish it. Same type treatment as `.ws-logo-text` inside the
+   Parallax pill — it IS that block, without the pill, because here the pill's
+   job (hold the logo, be the nav trigger) belongs to the rail. */
+
+.ws-wordmark {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+    gap: 3px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    /* Sits just inside the rail's own bloom, so mark and words share one pool
+       of light rather than being two lit things near each other. */
+    padding-left: 2px;
+}
+
+/* ── The bloom the lockup sits in, continued ───────────────────
+   The rail's brand block and this header are two elements painting one dark
+   band. A lit lockup on one side of that boundary with flat ink on the other
+   is what made the corner read as "disconnected... with that white line thing
+   in between" (Anmol, 2026-09-11). The hairline is gone (it was the rail's own
+   light border running up behind the dark corner) and this is the rest of the
+   fix: the violet glow does not stop where the lockup ends, it keeps going
+   into the header and fades out. One pool of light, no junction. */
+.ws-header::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 190px;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    background:
+        radial-gradient(160px 62px at 0% 46%,
+            rgba(139, 92, 246, 0.30) 0%,
+            rgba(124, 58, 237, 0.13) 42%,
+            transparent 80%);
+}
+
 /* ── Divider ───────────────────────────────────────────────── */
 
 .ws-header-divider {

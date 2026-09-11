@@ -69,7 +69,9 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
 
             <div className={`ws-header-inner${centerSlot ? " has-center" : ""}`}>
 
-                {onOpenSidebar && (
+                {onOpenSidebar ? (
+                    /* Parallax's arrangement: the whole pill, logo included,
+                       because its rail has no head of its own to hold one. */
                     <>
                         <div
                             ref={logoRef}
@@ -89,6 +91,15 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
 
                         <div className="ws-header-divider" />
                     </>
+                ) : (
+                    /* Cortex's arrangement: nothing here at all. The whole
+                       lockup — mark AND wordmark — is drawn by the nav rail
+                       (`.rail-brand`), which sits above every overlay in the
+                       app, so the branding is visible at all times instead of
+                       disappearing under the next scrim. This header simply
+                       leaves room for it (`.app-shell .ws-header-inner`'s
+                       padding-left in workspace-header.css). */
+                    null
                 )}
 
                 {/* Workspace identity */}

@@ -10,6 +10,7 @@ import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import ReviewModal from "./components/ReviewModal";
 import { Sidebar } from "./features/sidebar/Sidebar";
 import { NavRail } from "./features/sidebar/NavRail";
+import { notePage } from "./lib/diagnostics/sessionTrace";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -1141,6 +1142,33 @@ function App() {
     (patientModalOpen && (!clinic.frontDesk || registerRequested)) ||
     isReviewOpen || activeConsultGuardOpen || queueSheetOpen ||
     !!transition || !!resumeCandidate || !!attachmentsVisit;
+
+  /**
+   * The nav rail sits ABOVE the modals (see NavRail.tsx) so navigation is
+   * never locked out. The cost of that is what this class pays: while a
+   * full-screen overlay veils and blurs the workspace, an unveiled rail is
+   * the only thing on screen still at full contrast, and it stops reading as
+   * part of the app — it reads as pasted on top of a screenshot of the app.
+   *
+   * `consultOverlayShowing`, not the raw flags — it already knows that
+   * `patientModalOpen` can be `true` while nothing is rendered (see its own
+   * comment above). The nav panel is deliberately NOT in it: that panel is
+   * the thing you are looking at, so veiling its own rail would be backwards.
+   */
+  /* Where the doctor has been, for a support request to carry. Page names
+     only — never what was on the page. See sessionTrace.ts's own rules. */
+  useEffect(() => {
+    notePage(activePage ?? "consult");
+  }, [activePage]);
+
+  useEffect(() => {
+    // `activePage === null` rather than `isFeaturePage`, which is declared
+    // several hundred lines below this and would be read from the dependency
+    // array during render — a temporal dead zone, not a style choice.
+    const veiled = activePage === null && consultOverlayShowing;
+    document.body.classList.toggle("overlay-open", veiled);
+    return () => document.body.classList.remove("overlay-open");
+  }, [activePage, consultOverlayShowing]);
 
   useEffect(() => {
     if (!clinic.frontDesk || !clinic.ready) return;

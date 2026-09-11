@@ -22,6 +22,12 @@
     /* (60 - 36) / 2 = 12 — a badge centred in the rail */
     --badge: 36px;
     --panel-w: 252px;
+    /* How wide the brand lockup PAINTS. The rail is still --rail-w wide in
+       the layout; this element overhangs into the space both headers leave
+       clear for it (see `.app-shell .ws-header-inner` in workspace-header.css
+       and `.app-shell>.topbar-unified` in layout.css). Change it here and
+       those two follow automatically. */
+    --brand-w: 186px;
 
     /* Above the modals, on purpose — see NavRail.tsx's header. Toasts
        (2147483647) still win, which is right: a toast is a message about
@@ -62,11 +68,28 @@
 
     background:
         linear-gradient(180deg, #ffffff 0%, #fcfbff 45%, #f8f7fe 100%);
-    border-right: 1px solid var(--nav-line);
-    box-shadow: 1px 0 0 rgba(99, 102, 241, 0.03);
 
     /* Tooltips escape to the right — nothing here may clip them. */
     overflow: visible;
+}
+
+/* The rail's right edge, drawn only BELOW the head.
+ 
+   It was `border-right` on the rail itself, which is a full-height line — so
+   the light `--nav-line` ran straight up through the dark brand corner and
+   put a bright vertical rule between the mark and the header. That is the
+   "white line thing in between" (Anmol, 2026-09-11): not a seam between two
+   darks at all, but the light rail's own border in the wrong place. A
+   pseudo-element can start where the light part of the rail starts. */
+.nav-rail::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: var(--app-header-h);
+    bottom: 0;
+    width: 1px;
+    background: var(--nav-line);
+    pointer-events: none;
 }
 
 /* ── The rail's head: the logo, and the dark that finishes the header ──────
@@ -83,60 +106,140 @@
    The two headers are not the same dark, so this matches whichever is up:
    `.ws-header` is `#050916` with a vignette; the consult topbar's gradient
    starts at `#0d1b35`. The `.app-shell` class (set in App.tsx) says which. */
+/* ── The head: the corner the brand lives in ───────────────────────────────
+   This is the leftmost 60px of the dark band that runs across the top of
+   every screen. The header owns the rest of that band; this strip owns the
+   corner, and the brand mark sits in it — lined up with the nav icons below,
+   at the screen's edge, where a logo belongs. The WORDMARK that finishes the
+   lockup is the first thing in the header beside it (`.ws-wordmark`,
+   `.tb-wordmark`).
+
+   This has been wrong twice, in opposite directions. Both notes stay so the
+   third attempt does not undo the second:
+
+   1. **Flat.** A solid slab of `#050916` beside a header carrying a nebula
+      and a vignette. The logo's own violet glow had nothing to bloom into and
+      died on flat ink — worst with a modal up, where the scrim lifts the
+      header toward grey and leaves the slab as the hardest thing on screen.
+
+   2. **Detached.** Fixing (1) with a strong local bloom, plus a hairline at
+      the junction, made the corner read as a separate lit box shoved against
+      the header: "it's looking disconnected from the dark header, with that
+      white line thing in between" (Anmol, 2026-09-11).
+
+   What works is neither a slab nor a box: the SAME dark as the header it
+   meets, no hairline at all, and a bloom around the mark deliberately
+   CONTINUED into the header by `.ws-header::before` / `.topbar-unified::before`
+   instead of stopping at this element's edge. The light crosses the junction,
+   so there is no junction. Change the bloom here and change it there too, or
+   the seam comes back. */
 .rail-head {
     position: relative;
     z-index: 2;
     flex-shrink: 0;
     height: var(--app-header-h);
-    display: grid;
-    place-items: center;
-    background: #050916;
-    border-bottom: 1px solid rgba(147, 51, 234, 0.22);
+    /* 60px in the layout, `--brand-w` on screen — the overhang is painted by
+       the background, which is why it is declared on a full-width ::before
+       rather than on the box itself. */
+    overflow: visible;
 }
 
-.app-shell.is-consult .rail-head {
-    background: #0d1b35;
-    border-bottom-color: rgba(0, 0, 0, 0.30);
-}
-
-/* A deliberate hairline at the junction, so the tiny residual difference
-   between two darks reads as a divider rather than as a seam. The headers
-   already use this exact treatment internally (`.ws-header-divider`,
-   `.tb-divider`). */
-.rail-head::after {
+/* The painted overhang FADES OUT at its right edge rather than stopping at
+   one. When nothing is over the app the two darks match and the edge would be
+   invisible either way — but the moment a modal scrim blurs the header behind
+   it, an unblurred rectangle with a hard edge appears pasted on top of it.
+   A 52px fade means the block has no edge to notice, in either state. */
+.rail-head::before {
     content: "";
     position: absolute;
-    right: 0;
-    top: 12px;
-    bottom: 12px;
-    width: 1px;
-    background: linear-gradient(to bottom,
-            transparent,
-            rgba(255, 255, 255, 0.10) 30%,
-            rgba(255, 255, 255, 0.10) 70%,
-            transparent);
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: var(--brand-w);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
+    background:
+        radial-gradient(76px 54px at 46% 48%,
+            rgba(139, 92, 246, 0.26) 0%,
+            rgba(124, 58, 237, 0.12) 45%,
+            transparent 82%),
+        #050916;
+    border-bottom: 1px solid rgba(147, 51, 234, 0.22);
+    box-sizing: border-box;
 }
 
-/* The one logo in the product. It never moves, on any page, in any state —
-   which is the whole reason the expanded panel could stop carrying a second
-   one and animating between the two.
- 
-   The recipe is `.ws-logo-pill`'s (workspace-header.css), deliberately: a dark
-   translucent tile with a violet edge and a soft outer glow. NOT a filled
-   violet pill, which is what this was for its first half hour — `aren-logo.png`
-   is opaque and carries its own near-black ground, so it covered the gradient
-   completely and the logo read as a dark square lost against a dark header.
-   The glow is what makes it a lit badge; the mark itself supplies the dark. */
-.rail-logo {
+.app-shell.is-consult .rail-head::before {
+    background:
+        radial-gradient(76px 54px at 46% 48%,
+            rgba(139, 92, 246, 0.24) 0%,
+            rgba(124, 58, 237, 0.11) 45%,
+            transparent 82%),
+        #0d1b35;
+    border-bottom: none;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.30);
+}
+
+/* The consult topbar's gradient stripe runs along the top of the band; the
+   lockup sits on top of it, so it carries its own matching segment or the
+   stripe would appear to start 186px in. */
+.app-shell.is-consult .rail-head::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--brand-w);
+    height: 3px;
+    background: linear-gradient(90deg, #f472b6 0%, #ea6fc8 60%, #d06ad8 100%);
+    box-shadow: 0 1px 12px rgba(168, 85, 247, 0.55);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
+    pointer-events: none;
+}
+
+/* ── The lockup itself ─────────────────────────────────────────────────────
+   One button: the mark, the word AREN, the product name. Pressing it opens
+   the labelled panel, which drops out from directly beneath it.
+
+   `position: absolute` and `--brand-w` wide: the rail's column is only 60px,
+   but the lockup needs room for its words, so it overhangs to the right over
+   the header's left margin. The headers leave exactly that much clear, and
+   nothing of theirs is ever underneath it.
+
+   The mark's own tile is `.ws-logo-pill`'s recipe (workspace-header.css) —
+   dark translucent, violet edge, soft outer glow. NOT a filled violet pill:
+   `aren-logo.png` is opaque and carries its own near-black ground, so a
+   gradient behind it is invisible and the mark reads as a dark square lost on
+   a dark header. The glow is what makes it a lit badge; the art supplies the
+   dark. */
+.rail-brand {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: var(--brand-w);
+    z-index: 3;
+
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 0 14px 0 10px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.rail-brand-mark {
     display: grid;
     place-items: center;
+    flex-shrink: 0;
     width: 40px;
     height: 40px;
     padding: 5px;
     border-radius: 12px;
     border: 1px solid rgba(139, 92, 246, 0.45);
     background: rgba(5, 9, 22, 0.76);
-    cursor: pointer;
     overflow: hidden;
     box-shadow:
         0 0 0 1px rgba(139, 92, 246, 0.10),
@@ -146,13 +249,37 @@
     transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.rail-logo img {
+.rail-brand-mark img {
     width: 100%;
     height: 100%;
     object-fit: contain;
 }
 
-.rail-logo:hover {
+/* The classic AREN treatment, unchanged from `.ws-logo-text` — it IS that
+   block, moved. The branding was never the problem; having two of it was. */
+.rail-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+    gap: 3px;
+    min-width: 0;
+}
+
+.rail-brand-name {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.10em;
+    color: rgba(255, 255, 255, 0.97);
+}
+
+.rail-brand-product {
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    color: rgba(196, 167, 250, 0.94);
+}
+
+.rail-brand:hover .rail-brand-mark {
     transform: translateY(-1px);
     border-color: rgba(167, 139, 250, 0.70);
     box-shadow:
@@ -162,13 +289,16 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
-.rail-logo:focus-visible {
+.rail-brand:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.45);
+}
+
+.rail-brand:focus-visible .rail-brand-mark {
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.55);
 }
 
 /* Pressed, while the panel hangs off it. */
-.nav-open .rail-logo {
+.nav-open .rail-brand-mark {
     border-color: rgba(192, 132, 252, 0.90);
     box-shadow:
         0 0 0 2px rgba(168, 85, 247, 0.40),
@@ -180,6 +310,70 @@
 /* The rail's own items start below the head. */
 .nav-rail > .rail-item:first-of-type {
     margin-top: 12px;
+}
+
+/* ── The rail, while an overlay owns the workspace ─────────────────────────
+   The rail outranks the modals on purpose — that is what keeps navigation
+   reachable when a locked queue sheet or the patient modal covers everything
+   (see NavRail.tsx). The cost is that it is then the ONLY surface still at
+   full contrast while the rest of the screen is veiled and blurred, and a
+   bright white column against a washed-out app does not read as "still
+   live" — it reads as pasted on.
+
+   So it takes a share of the same veil. Half the strength the modal's own
+   scrim uses (`.pm-overlay`, rgba(8,16,35,.45)): enough to sit in the same
+   air, nowhere near enough to look disabled. No blur — the rail is the one
+   thing that must stay sharp enough to aim at.
+
+   `pointer-events: none` is load-bearing: this must not become a pane that
+   swallows the clicks the rail exists to accept. Driven by `body.overlay-open`
+   (App.tsx), which reads `consultOverlayShowing`, not the raw modal flags. */
+.nav-rail-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: rgba(8, 16, 35, 0.22);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+}
+
+body.overlay-open .nav-rail-veil {
+    opacity: 1;
+}
+
+/* ELEVATION is the other half, and the more important half. A veil alone
+   cannot make the rail match the header beside it, because the two move in
+   opposite directions: the modal's scrim BLURS the header, which lifts it
+   toward the bright page underneath, while a veil can only darken. Chasing a
+   match was always going to leave a step at the junction.
+
+   So stop chasing it and state the truth instead — the rail IS above the
+   overlay, and things above other things cast shadows. With a real edge
+   shadow the brightness difference stops reading as a mismatch and starts
+   reading as depth, which is what it actually is. */
+body.overlay-open .nav-rail {
+    box-shadow:
+        10px 0 34px rgba(8, 16, 35, 0.30),
+        2px 0 0 rgba(8, 16, 35, 0.10);
+}
+
+.nav-rail {
+    transition: box-shadow 240ms ease;
+}
+
+/* The logo keeps its own light through the veil. It is the way OUT of
+   whatever is covering the screen, so it is the one thing that should not
+   look dimmed along with everything else. */
+body.overlay-open .rail-logo {
+    position: relative;
+    z-index: 6;
+    border-color: rgba(167, 139, 250, 0.62);
+    box-shadow:
+        0 0 0 1px rgba(139, 92, 246, 0.18),
+        0 0 26px rgba(139, 92, 246, 0.44),
+        0 0 60px rgba(168, 85, 247, 0.20),
+        inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
 /* While the panel is up it covers the rail exactly. Hiding the rail's own
@@ -463,7 +657,21 @@
    ════════════════════════════════════════════════════════════ */
 
 /* A light scrim, not a blackout. The doctor's own workspace stays legible
-   behind it — this panel is an aid, not a mode. */
+   behind it — this panel is an aid, not a mode.
+ 
+   ── Why it starts below the header ────────────────────────────────────────
+   It used to cover the viewport edge to edge, which meant opening the panel
+   dimmed the brand along with everything else: "opening the sidebar hides the
+   logo on the top itself" (Anmol, 2026-09-11). The mark is the thing the
+   panel hangs off — the control you just pressed — so dimming it is exactly
+   backwards, and a brand that disappears whenever a doctor navigates is not
+   "always visible" in any sense worth the word.
+ 
+   The mask is what fixes it without giving anything up: the element still
+   spans `inset: 0`, so a click ANYWHERE — the header included — still closes
+   the panel. The mask only stops it PAINTING (and blurring: a mask clips the
+   backdrop-filter too) over the top strip. Click target unchanged, brand
+   untouched. */
 .nav-scrim {
     position: fixed;
     inset: 0;
@@ -471,6 +679,14 @@
     background: rgba(23, 28, 48, 0.24);
     backdrop-filter: blur(3px);
     -webkit-backdrop-filter: blur(3px);
+    mask-image: linear-gradient(to bottom,
+            transparent 0,
+            transparent var(--app-header-h),
+            #000 var(--app-header-h));
+    -webkit-mask-image: linear-gradient(to bottom,
+            transparent 0,
+            transparent var(--app-header-h),
+            #000 var(--app-header-h));
     opacity: 0;
     pointer-events: none;
     transition: opacity 200ms ease;

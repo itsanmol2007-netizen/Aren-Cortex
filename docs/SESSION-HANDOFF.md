@@ -148,15 +148,91 @@ is display-only, `plans.code` is the stable key.
 - **AREN Constellation** got a tagline and `sort_order: 20`, so Polaris (10)
   now leads a plan list instead of trailing the expensive one.
 
+## Second pass — branding, feedback, and the support record
+
+**The brand lockup came back, and moved.** Stripping the header logo to fix
+"two logos" took the AREN wordmark with it, which was wrong: "do we even have
+branding of Aren Cortex which was before, the classic branding style common in
+all our products, I need that, and it should be always visible."
+
+It now lives in `NavRail`'s head (`.rail-brand`) — mark AND wordmark, one
+element, drawn by the rail rather than by either header. That is not a
+cosmetic choice: the rail is the only surface in the app that outranks every
+overlay, so the branding survives a modal scrim and the nav panel's own scrim
+instead of going dark under them. It paints `--brand-w` wide, overhanging into
+a margin both headers leave clear (`.app-shell .ws-header-inner`,
+`.app-shell>.topbar-unified`). Parallax is untouched — it still passes
+`logoRef`/`onOpenSidebar` and gets the whole pill, because its rail has no head.
+
+Three faults fixed in the corner, worth keeping straight because two of them
+pull against each other:
+
+1. **The white line** was never a seam between two darks. It was the rail's own
+   light `border-right` running full height, straight up through the dark brand
+   corner. It is a pseudo-element starting at `--app-header-h` now.
+2. **Flat / no depth under a modal** — a solid slab beside a header carrying a
+   nebula. The head has its own bloom, and `.ws-header::before` /
+   `.topbar-unified::before` CONTINUE that bloom past the junction so the light
+   crosses it. Change one, change the other.
+3. **Disconnected** — the painted overhang now fades out over its last 52px
+   (`mask-image`) instead of ending at a hard edge, which only showed once a
+   modal blurred the header behind it.
+
+The nav scrim is masked to start below the header, so opening the panel no
+longer dims the brand — it still spans `inset: 0`, so click-anywhere-to-close
+is unchanged; it just does not PAINT over the top strip.
+
+**The rail acknowledges overlays.** `body.overlay-open` (App.tsx, from
+`consultOverlayShowing`) gives it a light veil and a real edge shadow. A veil
+alone could never match the header beside it — the modal's scrim blurs, which
+lifts the header toward the page underneath, while a veil only darkens — so it
+states the truth instead: the rail is above, and things above cast shadows.
+
+**Sending narrates.** `SendingProgress` in SupportPage.tsx: a bar that eases
+toward 92% and stops there (only the real response takes it to 100% — a bar
+that fills and then waits converts "slow" into "stuck"), and a line that names
+the real server-side stage. Anmol: "humans just need a beautiful architecture
+feedback system, and they will wait."
+
+**Diagnostics earn their place.** `Language` and `Connection: online` are gone
+— one is never the answer in an English-only product, the other is a tautology
+in a request that arrived. What replaced them: the **build sha** (injected by
+`vite.config.ts`'s `define`), the **page they came from** and their route in,
+**recent runtime errors**, **service-worker state** (a `registerType: "prompt"`
+app lets a doctor sit on a stale bundle forever and never know), **network
+quality**, and viewport with DPR. `src/lib/diagnostics/sessionTrace.ts` holds
+the two ring buffers; it is memory-only and never records patient data.
+
+**`support_requests` is the record now.** New table (migration
+`20260911_support_requests.sql`), written by the edge function under the
+service role, readable by the clinic that filed it, writable by nobody else.
+The row is written BEFORE the email on purpose: a Zoho outage costs the
+notification and never the request. The doctor gets the reference back
+(`SR_41`) and the email carries it in its subject.
+
+**The caller-supplied `to` is gone** — see below; it is fixed, not open.
+
+Verified live: a real request through the real form wrote `support_requests`
+#1 (`email_status: sent`, doctor and clinic resolved server-side, full
+diagnostics stored) and delivered to support@arenode.com. Edge function is at
+version 10.
+
 ## Still open
 
-- **`support-notify` takes a caller-supplied `to`** (`const to = (body?.to as
+- ~~**`support-notify` takes a caller-supplied `to`**~~ (`const to = (body?.to as
   string) || …`, inherited from the Express route it was ported from). Nothing
   in the app passes it, but any authenticated user could, which makes AREN's
   own Zoho mailbox able to send arbitrary HTML to an arbitrary address. Worth
-  closing: drop the override, or allow-list it. Not changed here because it is
-  pre-existing behaviour and removing it silently could break an unseen caller.
-- **The send is slow.** In the live test the button sat on "Sending…" for more
-  than six seconds — a Zoho token exchange plus the send, on a cold function
-  instance. Honest, but long. Worth either warming the token or saying
-  something after ~4s.
+  closing: drop the override, or allow-list it. **Fixed 2026-09-11** — the
+  recipient is `SUPPORT_NOTIFY_EMAIL` or `support@arenode.com`, full stop.
+- ~~**The send is slow.**~~ Still slow (a Zoho token exchange on a cold
+  function), but no longer silent — see `SendingProgress` above. Warming the
+  token would still be worth doing if it ever gets worse.
+- **Nothing writes `support_requests.status` yet.** The column, its check
+  constraint and the open-tickets index are there for the support dashboard /
+  Zenith panel to drive; today every row stays `open`.
+- **The rail's overlay veil only knows about consult overlays.**
+  `consultOverlayShowing` does not cover feature-page modals (FeesModal,
+  PaymentDetailsModal…), so the rail stays at full contrast over those. Fixing
+  it properly means those modals reporting their own state up, which none of
+  them do yet.

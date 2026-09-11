@@ -1,4 +1,5 @@
 import arenLogo from "../../assets/aren-logo.png";
+import { useClinicShape } from "../../hooks/useClinicShape";
 import { NAV_DESTINATIONS, CONSULT_ACTION, startsGroup, type SidebarPage } from "./SidebarNav";
 import { ConstellationWash } from "./ConstellationWash";
 
@@ -63,6 +64,12 @@ export function NavRail({
     onOpenProfile,
     onOpenPanel,
 }: Props) {
+    /* Read, not passed. The product name is a fact about the signed-in clinic
+       and this component is always inside <AuthProvider> — the same move
+       `WorkspaceHeader` already makes rather than threading a prop down for a
+       word that never varies within a session. */
+    const { brand } = useClinicShape();
+
     const initials = doctorName
         ? doctorName.split(" ").filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase()
         : "DR";
@@ -73,18 +80,38 @@ export function NavRail({
             aria-label="Main navigation"
             data-nav-keep
         >
-            {/* The head: dark, the header's own dark, so the band across the
-                top of the screen reads as one piece. See `.rail-head`. */}
+            {/* ── The brand lockup ──────────────────────────────────────
+                Mark AND wordmark, drawn here rather than in either header.
+
+                It is here for one reason: this is the only surface in the app
+                that outranks every overlay. In the header, the wordmark went
+                dark under the first modal scrim that opened over it, and the
+                whole block vanished when the nav panel's own scrim covered
+                the top strip — "opening the sidebar hides the logo on the top
+                itself" (Anmol, 2026-09-11). Branding that disappears whenever
+                a doctor does anything is not visible, it is intermittent.
+
+                So it belongs to neither: not a header element, not a sidebar
+                element, but the corner both of them meet in. The element is
+                60px wide in the layout (the rail's own width) and paints
+                `--brand-w` wide, overhanging into the header's left margin,
+                which the headers leave clear for it. */}
             <div className="rail-head">
                 <button
                     type="button"
-                    className="rail-logo"
+                    className="rail-brand"
                     onClick={onOpenPanel}
                     aria-label="Open navigation"
                     aria-expanded={expanded}
                     title="Menu"
                 >
-                    <img src={arenLogo} alt="AREN" />
+                    <span className="rail-brand-mark">
+                        <img src={arenLogo} alt="" />
+                    </span>
+                    <span className="rail-brand-text">
+                        <span className="rail-brand-name">AREN</span>
+                        <span className="rail-brand-product">{brand.product}</span>
+                    </span>
                 </button>
             </div>
 
@@ -137,6 +164,11 @@ export function NavRail({
             <div className="rail-quiet" aria-hidden="true">
                 <ConstellationWash />
             </div>
+
+            {/* Takes a share of the modal scrim so the rail sits in the same
+                air as the screen it is floating over — see `.nav-rail-veil`.
+                Last child, above everything, and click-through. */}
+            <div className="nav-rail-veil" aria-hidden="true" />
 
             <div className="rail-foot">
                 <button

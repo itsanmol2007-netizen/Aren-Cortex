@@ -1,10 +1,35 @@
+import { execSync } from "node:child_process"
 import path from "path"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { VitePWA } from "vite-plugin-pwa"
 
+/**
+ * Which code is this, exactly.
+ *
+ * Stamped into the bundle so a support request can say it without asking the
+ * doctor to know — "it's broken" and "it's broken on build 7a82341, four days
+ * old" are different tickets. Read by `lib/diagnostics/`.
+ *
+ * Falls back rather than failing: a build from a tarball with no `.git`, or a
+ * machine without git on PATH, still builds — it just reports "unknown".
+ */
+function buildStamp(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 export default defineConfig({
+  define: {
+    __BUILD_SHA__: JSON.stringify(buildStamp()),
+    __BUILT_AT__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     tailwindcss(),

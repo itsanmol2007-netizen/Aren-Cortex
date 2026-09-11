@@ -302,6 +302,90 @@ input#supp-reply-to:focus {
     box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.14);
 }
 
+/* ── Sending ───────────────────────────────────────────────────────────────
+   Replaces the button while the request is in flight. See `SendingProgress`
+   in SupportPage.tsx for why a bar and a changing line, and for the two rules
+   that keep both honest. */
+.supp-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding: 15px 16px;
+    border: 1px solid rgba(18, 104, 232, 0.20);
+    border-radius: 12px;
+    background: rgba(18, 104, 232, 0.035);
+}
+
+.supp-progress-track {
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(18, 104, 232, 0.12);
+    overflow: hidden;
+}
+
+.supp-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #4b91f7 0%, #1268e8 60%, #7c5cf0 100%);
+    /* Matches the 120ms tick in SupportPage's clock, so the bar glides
+       between samples instead of stepping. */
+    transition: width 200ms cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: 0 0 10px rgba(18, 104, 232, 0.45);
+}
+
+/* The sheen is what separates "working" from "hung" at a glance, and it is
+   the one part of this that is decoration rather than information. */
+.supp-progress-fill::after {
+    content: "";
+    display: block;
+    height: 100%;
+    width: 40%;
+    margin-left: auto;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: supp-sheen 1400ms ease-in-out infinite;
+}
+
+@keyframes supp-sheen {
+    0% { transform: translateX(-260%); }
+    100% { transform: translateX(160%); }
+}
+
+.supp-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #3b4a63;
+    min-height: 18px;
+}
+
+.supp-progress-line {
+    animation: supp-line-in 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes supp-line-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.supp-progress-row svg {
+    color: #1268e8;
+    flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .supp-progress-fill::after,
+    .supp-progress-line,
+    .supp-spin {
+        animation: none;
+    }
+
+    .supp-progress-fill {
+        transition: none;
+    }
+}
+
 /* ── Send ──────────────────────────────────────────────────────────────── */
 .supp-send-row {
     display: flex;
@@ -438,6 +522,23 @@ input#supp-reply-to:focus {
 
 .supp-sent strong {
     color: #2f3748;
+}
+
+.supp-sent-ref {
+    margin: 2px 0 0;
+    padding: 5px 13px;
+    border: 1px solid #e3e7f1;
+    border-radius: 999px;
+    background: #f7f9fd;
+    font-size: 11.5px;
+    color: #7b8396;
+}
+
+.supp-sent-ref strong {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: #1268e8;
+    letter-spacing: 0.02em;
 }
 
 .supp-again {

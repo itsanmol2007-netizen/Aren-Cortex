@@ -620,7 +620,7 @@ export interface SupportRequest {
  * form must never produce — they would sit and wait for an answer to a
  * message nobody received. So this one throws, and the page says so.
  */
-export async function sendSupportRequest(req: SupportRequest): Promise<void> {
+export async function sendSupportRequest(req: SupportRequest): Promise<{ reference: string | null }> {
     const { data, error } = await supabase.functions.invoke("support-notify", {
         body: { kind: "support_request", ...req },
     });
@@ -639,6 +639,9 @@ export async function sendSupportRequest(req: SupportRequest): Promise<void> {
     if (data && typeof data === "object" && "skipped" in data) {
         throw new Error("Support email is not configured on the server yet.");
     }
+    // `SR_41` — the row in `support_requests`. Worth showing the doctor: it
+    // turns "we got it" from a reassurance into something they can quote.
+    return { reference: (data as { reference?: string | null } | null)?.reference ?? null };
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────

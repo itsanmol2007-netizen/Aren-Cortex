@@ -275,36 +275,48 @@ const TEMPLATES: Record<string, (ctx: Ctx) => { subject: string; html: string }>
       : {};
 
     return {
-      subject: `AREN Support — ${ctx.topic || 'Request'} — ${ctx.doctorName} (${ctx.clinicName})`,
+      subject: `AREN Support ${ctx.requestRef ? `[${ctx.requestRef}] ` : ''}\u2014 ${ctx.topic || 'Request'} \u2014 ${ctx.doctorName} (${ctx.clinicName})`,
       html: SHELL(
         heading('Support request') +
         subjectBand({
           who: String(ctx.doctorName),
-          sub: String(ctx.clinicName),
-          ref: ctx.topic ? String(ctx.topic) : null,
+          sub: `${ctx.clinicName}${ctx.topic ? ` \u00b7 ${ctx.topic}` : ''}`,
+          ref: (ctx.requestRef as string | null) ?? null,
         }) +
         (words
           ? `<div style="margin:0 0 14px;padding:14px 16px;background:#f9fafb;border-left:3px solid #1268e8;border-radius:0 8px 8px 0;` +
             `font-size:15px;line-height:1.6;color:#111827;white-space:pre-wrap">${esc(words)}</div>`
-          : `<p style="margin:0 0 14px;color:#6b7280;font-style:italic">No message — the topic above is the whole request.</p>`) +
+          : `<p style="margin:0 0 14px;color:#6b7280;font-style:italic">No message \u2014 the topic above is the whole request.</p>`) +
         (areas.length
           ? `<p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af">Affected</p>` +
             `<p style="margin:0 0 14px;color:#374151;font-weight:600">${areas.map((a) => esc(a)).join(' &middot; ')}</p>`
           : '') +
         // The reply address is the one ACTIONABLE thing in the mail, so it
         // gets its own line and a real mailto: link. It cannot go through
-        // `facts()` — that helper escapes every value, which is exactly what
+        // `facts()` \u2014 that helper escapes every value, which is exactly what
         // you want for the diagnostics below and exactly what would print an
         // anchor tag as literal text here.
         (ctx.replyTo
           ? `<p style="margin:0 0 14px;font-size:14px;color:#374151">Reply to ` +
             `<a href="mailto:${esc(ctx.replyTo)}" style="color:#1268e8;font-weight:700">${esc(ctx.replyTo)}</a></p>`
-          : `<p style="margin:0 0 14px;font-size:14px;color:#6b7280">No reply address given — reply via the clinic record.</p>`) +
+          : `<p style="margin:0 0 14px;font-size:14px;color:#6b7280">No reply address given \u2014 reply via the clinic record.</p>`) +
+        // Everything below is for whoever picks this up, in the order they
+        // need it: when, who to look up in the database, what the wallet says
+        // (half of "my messages are failing" is an empty one), then the
+        // browser facts the doctor should never have had to type.
         facts([
           ['Sent', istTime()],
+          ['Message credits', ctx.doctorId ? `${credits(ctx.balance)} left \u00b7 ${credits(ctx.spent)} sent` : null],
+          ['Doctor id', ctx.doctorId as string],
+          ['Clinic id', ctx.hospitalId as string],
           ...Object.entries(diag).map(([k, v]) => [k, v] as [string, unknown]),
         ]) +
-        footerNote('Sent from Help & Support inside AREN Cortex. The doctor and clinic above were resolved from their signed-in session, not typed in.')
+        footerNote(
+          (ctx.requestRef
+            ? `Logged as ${ctx.requestRef} in support_requests \u2014 that row is the record, this email is only the notification. `
+            : 'NOT logged to support_requests \u2014 the row failed to write, so this email is the only copy. ') +
+          'The doctor and clinic above were resolved from their signed-in session, not typed in.'
+        )
       ),
     };
   },
@@ -385,6 +397,23 @@ async function record(adminClient: ReturnType<typeof createClient>, args: {
   }
 }
 
+/** Mark on the request row whether its notification actually went out. */
+async function stampRequest(
+  adminClient: ReturnType<typeof createClient>,
+  id: number | null,
+  status: 'sent' | 'failed',
+  error: string | null,
+) {
+  if (id === null) return;
+  try {
+    await adminClient.from('support_requests')
+      .update({ email_status: status, email_error: error })
+      .eq('id', id);
+  } catch (e) {
+    console.error('[support-notify] could not stamp request (non-fatal):', e instanceof Error ? e.message : e);
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -432,8 +461,54 @@ serve(async (req: Request) => {
       ctx = { ...payload, doctorName: 'Unknown doctor', clinicName: 'Unknown clinic' };
     }
 
-    const { subject, html } = TEMPLATES[kind](ctx);
-    const to = (body?.to as string) || Deno.env.get('SUPPORT_NOTIFY_EMAIL') || 'support@arenode.com';
+    // ── The record, written BEFORE the notification ───────────────────────
+    //
+    // Order matters and is the whole point of the table. `support_requests`
+    // is the record of what a doctor asked; the email is how AREN finds out
+    // about it. Writing the row first means a Zoho outage costs the
+    // notification and never the request — the support dashboard still has
+    // it, and it can be chased. The other order would quietly put the mailbox
+    // back in charge of the truth.
+    //
+    // A failure here is logged and does NOT abort: an email with no row is
+    // worse than nothing, but much better than a doctor being told their
+    // request failed when we could still tell somebody.
+    let requestRowId: number | null = null;
+    if (kind === 'support_request') {
+      try {
+        const { data, error } = await adminClient
+          .from('support_requests')
+          .insert({
+            hospital_id: me.hospital_id,
+            doctor_id: doctorRow?.id ?? null,
+            user_id: userData.user.id,
+            topic: String(body?.topic ?? 'Request').slice(0, 200),
+            areas: Array.isArray(body?.areas) ? (body.areas as string[]).slice(0, 20).map((a) => String(a).slice(0, 120)) : [],
+            // Capped, not because anyone will legitimately write this much,
+            // but because nothing else caps it.
+            message: body?.message ? String(body.message).slice(0, 8000) : null,
+            reply_to: body?.replyTo ? String(body.replyTo).slice(0, 320) : null,
+            diagnostics: (body?.diagnostics && typeof body.diagnostics === 'object') ? body.diagnostics : {},
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+        requestRowId = data.id as number;
+        ctx.requestRef = `SR_${requestRowId}`;
+      } catch (e) {
+        console.error('[support-notify] could not record support_request:', e instanceof Error ? e.message : e);
+      }
+    }
+
+    // AREN's own mailbox, and ONLY AREN's own mailbox.
+    //
+    // This used to read `(body?.to as string) || …`, inherited from the
+    // Express route it was ported from. Any signed-in user could therefore
+    // hand it a recipient, which made AREN's authenticated Zoho account able
+    // to send attacker-chosen HTML to an attacker-chosen address over AREN's
+    // own domain and reputation. Nothing in the product ever passed it.
+    // Removed 2026-09-11.
+    const to = Deno.env.get('SUPPORT_NOTIFY_EMAIL') || 'support@arenode.com';
 
     // Same rule as the original: a caller's own action (filing a recharge
     // request, say) already succeeded before this ever runs, so a failed
@@ -447,14 +522,20 @@ serve(async (req: Request) => {
     try {
       await sendZohoMail({ to, subject, html, fromName: FROM_NAME });
       await record(adminClient, { kind, to, subject, status: 'sent', ctx });
+      await stampRequest(adminClient, requestRowId, 'sent', null);
     } catch (e) {
-      console.error(`[support-notify] send failed for ${kind}:`, e instanceof Error ? e.message : e);
-      await record(adminClient, { kind, to, subject, status: 'failed', error: e instanceof Error ? e.message : String(e), ctx });
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error(`[support-notify] send failed for ${kind}:`, detail);
+      await record(adminClient, { kind, to, subject, status: 'failed', error: detail, ctx });
+      // The request itself is still filed and still answerable — the row says
+      // so, rather than leaving a support team to wonder whether the doctor
+      // was ever told anything.
+      await stampRequest(adminClient, requestRowId, 'failed', detail);
     }
 
-    // Always ok, matching the original route exactly — see the comment
-    // just above.
-    return jsonResponse({ ok: true });
+    // Always ok for the CALLER's purposes — but the reference goes back, so
+    // a page that wants to show "we've logged this as SR_41" can.
+    return jsonResponse({ ok: true, reference: requestRowId ? `SR_${requestRowId}` : null });
   } catch (err) {
     console.error('[support-notify]', err);
     return jsonResponse({ ok: false, error: 'server_error', message: err instanceof Error ? err.message : 'Something went wrong.' }, 500);

@@ -38,6 +38,9 @@
 .app-shell>.topbar-unified {
     margin: 0;
     border-radius: 0;
+    /* Room for the nav rail's brand lockup, which overhangs into this margin
+       — see `.rail-brand` in features/sidebar/sidebar.css. */
+    padding-left: calc(var(--brand-w) - var(--rail-w));
 }
 
 .workflow {
@@ -113,10 +116,29 @@
     pointer-events: none;
 }
 
-/* The topbar's brand block (`.tb-brand`, `.tb-logo-pill`, `.tb-brand-text`)
-   was deleted on 2026-09-11 along with the markup that used it. The product
-   has one logo now and it lives in the nav rail's head — see
-   features/sidebar/sidebar.css's `.rail-logo`. */
+/* The topbar's brand block is gone — the whole lockup (mark and wordmark)
+   is drawn by the nav rail now, above every overlay, so it survives a modal
+   scrim instead of vanishing under one. See `.rail-brand` in
+   features/sidebar/sidebar.css. */
+
+/* The same bloom the feature-page header carries, for the same reason: the
+   glow around the mark must not stop at the rail's edge, or the corner reads
+   as two elements instead of one lockup. See `.ws-header::before`. */
+.topbar-unified::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 200px;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    background:
+        radial-gradient(160px 66px at 0% 48%,
+            rgba(139, 92, 246, 0.20) 0%,
+            rgba(124, 58, 237, 0.09) 42%,
+            transparent 78%);
+}
 
 /* ── Dividers ─────────────────────────────────────────────── */
 .tb-divider {

@@ -12,10 +12,15 @@
 
 import { registerSW } from "virtual:pwa-register";
 import { toast } from "sonner";
+import { noteServiceWorker, noteUpdateWaiting } from "./lib/diagnostics/sessionTrace";
 
 export function initPWA(): void {
     const updateSW = registerSW({
         onNeedRefresh() {
+            // Also recorded for diagnostics: a doctor who never taps Reload is
+            // running old code, which explains a whole class of "it's still
+            // broken" without anyone having to ask. See sessionTrace.ts.
+            noteUpdateWaiting();
             toast("A new version of Cortex is ready", {
                 description: "Reload when you're between patients to pick it up.",
                 duration: Infinity,
@@ -33,6 +38,7 @@ export function initPWA(): void {
             // Re-check for a new build hourly while a tab stays open for a long
             // clinic day, so a shipped fix doesn't wait for a manual reload.
             if (!registration) return;
+            noteServiceWorker(registration);
             setInterval(() => void registration.update(), 60 * 60 * 1000);
         },
     });

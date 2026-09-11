@@ -207,12 +207,10 @@ export function PatientHeader({
           <rect x="195" y="0" width="55" height="72" fill="rgba(168,85,247,0.06)" />
         </svg>
 
-        {/* No logo here. The one logo in the product lives in the nav
-            rail's head (features/sidebar/NavRail.tsx), at the top-left corner
-            of the screen on every page including this one — the rail paints
-            that corner in this topbar's own dark so the band still reads as
-            one piece. A second pill here was the "two logos" problem the
-            2026-09-11 nav rebuild existed to remove. */}
+        {/* No brand block here. The lockup — mark and wordmark both — is
+            drawn by the nav rail (`.rail-brand`), which outranks every
+            overlay, so it survives a modal scrim instead of vanishing under
+            one. This topbar just leaves room for it. */}
         <div className="tb-divider" aria-hidden="true" />
 
         {/* Patient identity */}
