@@ -126,7 +126,21 @@ type PatientFilter =
 
 // ── Header stats pills ────────────────────────────────────────────────────────
 
-function PatientHeaderStats({ total, active, completed }: { total: number; active: number; completed: number }) {
+function PatientHeaderStats({ total, active, completed, loading }: { total: number; active: number; completed: number; loading?: boolean }) {
+    if (loading) {
+        return (
+            <>
+                <div className="ws-stat-pill">
+                    <div className="prec-skeleton" style={{ width: 14, height: 12, borderRadius: 3 }} />
+                    <span className="ws-stat-label">Today</span>
+                </div>
+                <div className="ws-stat-pill">
+                    <div className="prec-skeleton" style={{ width: 14, height: 12, borderRadius: 3 }} />
+                    <span className="ws-stat-label">Done</span>
+                </div>
+            </>
+        );
+    }
     return (
         <>
             <div className="ws-stat-pill">
@@ -153,9 +167,9 @@ function PatientHeaderStats({ total, active, completed }: { total: number; activ
 /** "1h 42m" from real started_at/completed_at pairs; null when none finished today. */
 function averageVisitMinutes(rows: PatientRecordRow[]): string | null {
     const durations = rows
-        .filter((r) => r.started_at && r.completed_at)
-        .map((r) => (new Date(r.completed_at as string).getTime() - new Date(r.started_at as string).getTime()) / 60000)
-        .filter((mins) => mins > 0 && mins < 24 * 60); // guard against a bad clock producing a nonsense outlier
+        .filter((r) => r.started_at && r.completed_at && r.visit_status === "completed")
+        .map((r) => Math.round((new Date(r.completed_at as string).getTime() - new Date(r.started_at as string).getTime()) / 60000))
+        .filter((d) => d > 0 && d < 1440);
     if (!durations.length) return null;
     const avg = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
     const h = Math.floor(avg / 60);
@@ -167,8 +181,8 @@ function averageVisitMinutes(rows: PatientRecordRow[]): string | null {
 
 /** A skeleton block matching whatever width/height the caller needs — same
  *  shimmer as PatientsList.tsx's, not a second animation to keep in sync. */
-function PanelSkeletonBlock({ width, height = 12 }: { width: string | number; height?: number }) {
-    return <div className="prec-skeleton" style={{ width, height, borderRadius: 4 }} />;
+function PanelSkeletonBlock({ width, height = 12, style }: { width: string | number; height?: number; style?: React.CSSProperties }) {
+    return <div className="prec-skeleton" style={{ width, height, borderRadius: 4, ...style }} />;
 }
 
 /**
@@ -192,8 +206,9 @@ function RightPanelSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
                         <div className="prec-summary-grid">
                             {[0, 1, 2, 3].map((i) => (
                                 <div key={i} className="prec-summary-cell">
-                                    <PanelSkeletonBlock width={24} height={20} />
-                                    <PanelSkeletonBlock width="70%" height={9} />
+                                    <PanelSkeletonBlock width={14} height={14} style={{ borderRadius: "50%" }} />
+                                    <PanelSkeletonBlock width={28} height={20} style={{ borderRadius: 4, marginTop: 4, marginBottom: 4 }} />
+                                    <PanelSkeletonBlock width="75%" height={9} style={{ borderRadius: 3 }} />
                                 </div>
                             ))}
                         </div>
@@ -220,9 +235,16 @@ function RightPanelSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
                                 ))}
                             </div>
                         ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                                {[0, 1, 2].map((i) => (
-                                    <PanelSkeletonBlock key={i} width={`${90 - i * 12}%`} />
+                            <div className="prec-complaint-list">
+                                {[0, 1, 2, 3, 4].map((i) => (
+                                    <div key={i} className="prec-complaint-row" style={{ alignItems: "center", gap: 8, padding: "4px 0" }}>
+                                        <PanelSkeletonBlock width={10} height={11} style={{ borderRadius: 2 }} />
+                                        <PanelSkeletonBlock width={i === 0 ? 90 : i === 1 ? 110 : i === 2 ? 75 : i === 3 ? 120 : 80} height={12} style={{ borderRadius: 3 }} />
+                                        <div className="prec-complaint-bar-wrap" style={{ flex: 1, margin: "0 6px" }}>
+                                            <div className="prec-skeleton" style={{ width: `${100 - i * 18}%`, height: 6, borderRadius: 3 }} />
+                                        </div>
+                                        <PanelSkeletonBlock width={10} height={11} style={{ borderRadius: 2 }} />
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -236,10 +258,19 @@ function RightPanelSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
                         <ListChecks size={13} className="prec-panel-card-icon" />
                         <span className="prec-panel-card-title">{isPhysio ? "Common Conditions" : "Top Prescribed Medicines"}</span>
                     </div>
-                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                        {[0, 1, 2, 3].map((i) => (
-                            <PanelSkeletonBlock key={i} width={`${88 - i * 10}%`} />
-                        ))}
+                    <div className="prec-panel-card-body">
+                        <div className="prec-complaint-list">
+                            {[0, 1, 2, 3, 4].map((i) => (
+                                <div key={i} className="prec-complaint-row" style={{ alignItems: "center", gap: 8, padding: "4px 0" }}>
+                                    <PanelSkeletonBlock width={10} height={11} style={{ borderRadius: 2 }} />
+                                    <PanelSkeletonBlock width={i === 0 ? 115 : i === 1 ? 95 : i === 2 ? 105 : i === 3 ? 90 : 75} height={12} style={{ borderRadius: 3 }} />
+                                    <div className="prec-complaint-bar-wrap" style={{ flex: 1, margin: "0 6px" }}>
+                                        <div className="prec-skeleton" style={{ width: `${100 - i * 18}%`, height: 6, borderRadius: 3 }} />
+                                    </div>
+                                    <PanelSkeletonBlock width={10} height={11} style={{ borderRadius: 2 }} />
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -269,9 +300,8 @@ function RightPanelSkeleton({ specialty }: { specialty: SpecialtyProfile }) {
                         <Zap size={13} className="prec-panel-card-icon prec-panel-card-icon--green" />
                         <span className="prec-panel-card-title">Quick Actions</span>
                     </div>
-                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <PanelSkeletonBlock width="100%" height={28} />
-                        <PanelSkeletonBlock width="100%" height={28} />
+                    <div className="prec-panel-card-body">
+                        <PanelSkeletonBlock width="100%" height={38} style={{ borderRadius: 8 }} />
                     </div>
                 </div>
             </div>
@@ -740,6 +770,7 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
                         total={todayRows.length}
                         active={activeToday}
                         completed={completedToday}
+                        loading={todayLoading}
                     />
                 }
             />

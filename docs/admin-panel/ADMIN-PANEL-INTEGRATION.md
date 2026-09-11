@@ -1,5 +1,9 @@
 # Master Control (admin panel) — integration reference
 
+> **Read `MASTER-CONTROL-PLAN.md` (same folder) first** — it's the scope and
+> build order (decided with Anmol 2026-09-10). This file is the database
+> reference it points back to: table shapes, RLS state, RPCs.
+
 Written 2026-08-29 for building the admin/master-control panel as a
 **separate codebase** against the same Supabase project Cortex/Front
 Desk use. This file is the handoff: what tables exist, what already

@@ -64,7 +64,7 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 ];
 
 export function PatientPaymentRail({
-    state, onChange, onCommit, policy, baseFee, breakdown, doctorName, needsDecision, lockReason,
+    state, onChange, onCommit, policy, baseFee, breakdown, doctorName, needsDecision, lockReason, isSubmitting = false,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
@@ -82,31 +82,11 @@ export function PatientPaymentRail({
     baseFee: number | null;
     breakdown: FeeBreakdown | null;
     doctorName: string;
-    /**
-     * True for one render — the moment `PatientModal` tried to confirm a
-     * patient with a real fee still undecided ("just simply create a
-     * patient without asking... confirm if it is paid or not"). Highlights
-     * the Collect/Mark-as-unpaid buttons rather than silently letting the
-     * visit through as pending; clears itself the instant either is
-     * pressed (`PatientModal`'s `handleFeeChange` does that, not this
-     * component — the rail stays a pure display of `state`).
-     */
     needsDecision?: boolean;
-    /**
-     * Set while there's no real patient to attach this plan to yet — nobody
-     * searched/matched/typed enough of a new patient's identity (2026-09-08:
-     * Anmol, from a screenshot of "Search existing" with nothing typed and
-     * the rail already showing a confirmed-looking "Will collect ₹472 /
-     * Cash — once you confirm a patient": *"why the fuck is this still
-     * possible?"*). Nothing was ever actually WRITTEN in that state — this
-     * rail only ever builds a plan `onConfirm` carries — but a deciding-
-     * looking control with no patient behind it reads as broken regardless.
-     * Disables Collect/Mark-as-unpaid/the method buttons and shows why,
-     * same pattern as front desk's `PaymentRail`'s `lockReason`.
-     */
     lockReason?: string;
+    isSubmitting?: boolean;
 }) {
-    const locked = !!lockReason;
+    const locked = !!lockReason || isSubmitting;
     // Chrome, not data — stays local so the parent re-rendering on every
     // keystroke of the patient's name can't collapse an open panel.
     const [collecting, setCollecting] = useState(false);

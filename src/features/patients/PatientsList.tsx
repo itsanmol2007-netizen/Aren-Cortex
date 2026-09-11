@@ -166,6 +166,9 @@ function SkeletonTodayCard() {
     return (
         <div className="prec-today-card prec-today-card--skeleton">
             <div className="prec-today-card-topbar" aria-hidden="true" />
+            <div className="prec-today-menu-btn" style={{ position: "absolute", top: 6, right: 5, zIndex: 3, border: "1px solid rgba(15, 23, 42, 0.08)", background: "#fff" }}>
+                <SkeletonBlock width={12} height={12} style={{ borderRadius: 2 }} />
+            </div>
             <div className="prec-today-card-top">
                 <SkeletonAvatar size={34} />
             </div>
@@ -180,9 +183,9 @@ function SkeletonTodayCard() {
             </div>
             <div className="prec-today-footer">
                 <div className="prec-today-time">
-                    <SkeletonBlock width={36} height={10} />
+                    <SkeletonBlock width={38} height={10} />
                 </div>
-                <SkeletonBlock width={44} height={16} style={{ borderRadius: 20 }} />
+                <SkeletonBlock width={54} height={18} style={{ borderRadius: 20 }} />
             </div>
         </div>
     );
@@ -201,7 +204,7 @@ function SkeletonTableRow() {
                             <SkeletonBlock width={110} height={13} />
                         </span>
                         <span className="prec-table-patient-meta">
-                            <SkeletonBlock width={70} height={10} style={{ marginTop: 2 }} />
+                            <SkeletonBlock width={80} height={10} style={{ marginTop: 2 }} />
                         </span>
                     </div>
                 </div>
@@ -209,26 +212,26 @@ function SkeletonTableRow() {
             <td className="prec-table-cell prec-table-cell--snapshot">
                 <div className="prec-snapshot-cell">
                     <div className="prec-snapshot-chips">
-                        <SkeletonBlock width={65} height={16} style={{ borderRadius: 4 }} />
-                        <SkeletonBlock width={55} height={16} style={{ borderRadius: 4 }} />
+                        <SkeletonBlock width={60} height={16} style={{ borderRadius: 4 }} />
+                        <SkeletonBlock width={50} height={16} style={{ borderRadius: 4 }} />
                     </div>
-                    <SkeletonBlock width={120} height={10} style={{ marginTop: 3 }} />
+                    <SkeletonBlock width={130} height={10} style={{ marginTop: 3 }} />
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--visit">
-                <SkeletonBlock width={55} height={13} />
-                <SkeletonBlock width={35} height={10} style={{ marginTop: 3 }} />
+                <SkeletonBlock width={50} height={13} />
+                <SkeletonBlock width={40} height={10} style={{ marginTop: 3 }} />
             </td>
             <td className="prec-table-cell prec-table-cell--count">
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <SkeletonBlock width={16} height={13} />
-                    <SkeletonBlock width={26} height={9} style={{ marginTop: 2 }} />
+                    <SkeletonBlock width={14} height={14} />
+                    <SkeletonBlock width={28} height={9} style={{ marginTop: 2 }} />
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--status">
                 <div className="prec-table-status-wrap">
-                    <SkeletonBlock width={55} height={18} style={{ borderRadius: 20 }} />
-                    <SkeletonBlock width={38} height={10} style={{ marginTop: 2 }} />
+                    <SkeletonBlock width={62} height={18} style={{ borderRadius: 20 }} />
+                    <SkeletonBlock width={42} height={10} style={{ marginTop: 2 }} />
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--arrow">

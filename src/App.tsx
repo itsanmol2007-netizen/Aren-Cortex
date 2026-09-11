@@ -1202,6 +1202,30 @@ function App() {
     queue.refetch();
   }, [resumeCandidate, queue]);
 
+  const handleCancelConsult = useCallback(async () => {
+    const currentVisitId = visitId;
+    if (currentVisitId) {
+      try {
+        await updateVisitStatus(currentVisitId, "discarded");
+      } catch (err) {
+        console.warn("[consult] Failed to discard visit on cancel:", err);
+      }
+    }
+    if (resumeCandidate) {
+      if (resumeCandidate.visitId !== currentVisitId) {
+        try {
+          await updateVisitStatus(resumeCandidate.visitId, "discarded");
+        } catch (err) {
+          console.warn("[consult] Failed to discard resume candidate on cancel:", err);
+        }
+      }
+      setResumeCandidate(null);
+    }
+    resetConsultState();
+    queue.refetch();
+    showToast("Consult canceled");
+  }, [visitId, resumeCandidate, resetConsultState, queue, showToast]);
+
   /**
    * A "start a consult" call was rejected because this doctor already has one
    * open (`ActiveConsultExistsError` from the one-serving-per-doctor rule).
@@ -1718,7 +1742,7 @@ function App() {
             }
           }}
           onReviewRx={openReview}
-          onCancelConsult={resetConsultState}
+          onCancelConsult={handleCancelConsult}
           onOpenSidebar={handleOpenSidebar}
           isSidebarOpen={sidebarOpen}
           pastVisits={meaningfulPastVisits}

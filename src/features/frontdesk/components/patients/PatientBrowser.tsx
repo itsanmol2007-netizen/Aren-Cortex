@@ -260,18 +260,38 @@ function PatientRow({
     );
 }
 
-// Skeleton rows (frozen rule: skeletons, never spinners).
+// Skeleton rows (pixel-by-pixel match to PatientRow layout).
 function SkeletonRows() {
     return (
         <div aria-hidden className="animate-pulse motion-reduce:animate-none">
             {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 border-t border-[#f2f3f7] px-4 py-[11px]">
-                    <div className="h-[38px] w-[38px] rounded-[11px] bg-[#eef0f5]" />
-                    <div>
-                        <div className="h-[13px] w-[55%] rounded bg-[#eef0f5]" />
-                        <div className="mt-[7px] h-[10px] w-[75%] rounded bg-[#f2f3f7]" />
+                <div
+                    key={i}
+                    className="group grid w-full grid-cols-[38px_minmax(0,1fr)_auto_14px] items-center gap-3 border-t border-l-[3px] border-t-[#f2f3f7] border-l-transparent px-4 py-[11px]"
+                >
+                    {/* Avatar chip */}
+                    <div className="h-[38px] w-[38px] shrink-0 rounded-[11px] bg-[#eef0f5]" />
+
+                    {/* Patient Name + Phone/Gender/Age line */}
+                    <div className="min-w-0">
+                        <div
+                            className="h-[14px] rounded-[4px] bg-[#eef0f5]"
+                            style={{ width: `${Math.floor(42 + (i % 3) * 16)}%` }}
+                        />
+                        <div
+                            className="mt-[4px] h-[12px] rounded-[4px] bg-[#f2f3f7]"
+                            style={{ width: `${Math.floor(65 + (i % 2) * 15)}%` }}
+                        />
                     </div>
-                    <div className="h-[10px] w-[52px] rounded bg-[#f2f3f7]" />
+
+                    {/* Last Visit column */}
+                    <div className="flex flex-col items-end gap-[3px]">
+                        <div className="h-[9px] w-[54px] rounded-[3px] bg-[#eef0f5]" />
+                        <div className="h-[12px] w-[64px] rounded-[4px] bg-[#f2f3f7]" />
+                    </div>
+
+                    {/* Chevron icon slot */}
+                    <div className="h-[14px] w-[14px] rounded-[4px] bg-[#f2f3f7] opacity-40" />
                 </div>
             ))}
         </div>

@@ -184,6 +184,23 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
   /** The wide layout is live for a real fee AND while we're still finding out. */
   const wideShell = feeWired || feeResolving;
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingInfo, setSubmittingInfo] = useState<{ title: string; subtitle: string } | null>(null);
+
+  const triggerConfirm = async (patient: Patient, payment?: ConfirmedPayment | null, customTitle?: string) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setSubmittingInfo({
+      title: customTitle ?? `Starting visit for ${patient.name || "patient"}...`,
+      subtitle: "Registering details & preparing consultation workspace...",
+    });
+    try {
+      await onConfirm(patient, payment);
+    } catch (e) {
+      setIsSubmitting(false);
+    }
+  };
+
   /**
    * The one place a fee-wired visit is actually started: the rail's
    * Collect / Mark-as-unpaid buttons call this with their decision. Resolves
@@ -191,15 +208,22 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
    * duplicate match, or a valid new-patient draft) and confirms.
    */
   const commitWithPayment = (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null }) => {
+    if (isSubmitting) return;
     const existing = selectedPatient ?? matchedPatient;
     if (existing) {
-      onConfirm(dbToUiPatient(existing), buildPayment(existing.id, decision));
+      triggerConfirm(
+        dbToUiPatient(existing),
+        buildPayment(existing.id, decision),
+        `Starting visit for ${existing.name}...`
+      );
       return;
     }
     if (mode === "create" && isFormValid && !matchedPatient) {
-      onConfirm(
-        { ...draft, name: draft.name.trim(), phone: draft.phone.trim() },
+      const trimmedName = draft.name.trim();
+      triggerConfirm(
+        { ...draft, name: trimmedName, phone: draft.phone.trim() },
         buildPayment(undefined, decision),
+        `Creating patient record for ${trimmedName}...`
       );
     }
   };
@@ -387,6 +411,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
   };
 
   const handleConfirm = () => {
+    if (isSubmitting) return;
     const name = draft.name.trim();
     const phone = draft.phone.trim();
     if (!name || !phone || !draft.gender) return;
@@ -400,7 +425,11 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
     // Only reachable with no `matchedPatient` (that branch has its own "Use
     // this patient" action) — always a genuinely new patient, so there is no
     // history to default a visit type from.
-    onConfirm({ ...draft, name, phone }, buildPayment(undefined));
+    triggerConfirm(
+      { ...draft, name, phone },
+      buildPayment(undefined),
+      `Creating patient record for ${name}...`
+    );
   };
 
   const isFormValid = draft.name.trim() && draft.phone.length === 10 && draft.gender;
@@ -596,13 +625,14 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                       aria-pressed={feeWired ? picked : undefined}
                       style={picked ? { borderColor: "#a855f7", background: "#faf5ff" } : undefined}
                       onClick={() => {
+                        if (isSubmitting) return;
                         // Fee wired → pick the patient and let the rail's
                         // Paid / Not paid buttons start the visit. No fee →
                         // nothing to decide, confirm in one tap as before.
                         // Still resolving the fee → treat as "pick", the rail
                         // (or its absence) sorts itself out a beat later.
                         if (feeWired || feeResolving) setSelectedPatient(p);
-                        else onConfirm(dbToUiPatient(p), buildPayment(p.id));
+                        else triggerConfirm(dbToUiPatient(p), buildPayment(p.id), `Starting visit for ${p.name}...`);
                       }}
                     >
                       <div className="pm-avatar">
@@ -752,8 +782,13 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                       type="button"
                       className="pm-btn-primary"
                       onClick={() => {
+                        if (isSubmitting) return;
                         if (!paymentDecided()) return;
-                        onConfirm(dbToUiPatient(matchedPatient), buildPayment(matchedPatient.id));
+                        triggerConfirm(
+                          dbToUiPatient(matchedPatient),
+                          buildPayment(matchedPatient.id),
+                          `Starting visit for ${matchedPatient.name}...`
+                        );
                       }}
                     >
                       Use this patient
@@ -784,7 +819,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                 {!feeWired && (
                   <div className="pm-actions">
                     <button type="button" className="pm-btn-ghost" onClick={onClose}>Cancel</button>
-                    <button type="button" className="pm-btn-primary" disabled={!isFormValid} onClick={handleConfirm}>
+                    <button type="button" className="pm-btn-primary" disabled={!isFormValid || isSubmitting} onClick={handleConfirm}>
                       Start consult →
                     </button>
                   </div>
@@ -809,6 +844,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                 doctorName={billing.doctorName}
                 needsDecision={paymentError}
                 lockReason={railLockReason}
+                isSubmitting={isSubmitting}
               />
             ) : (
               // Fee read still in flight — full skeleton loader matching rail structure to avoid sizing jump.
@@ -841,6 +877,24 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                 <div className="h-[40px] animate-pulse rounded-[12px] bg-black/[0.04]" />
               </div>
             )}
+          </div>
+        )}
+
+        {isSubmitting && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-[20px] bg-white/94 backdrop-blur-md transition-opacity duration-200">
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-[#f472b6] to-[#a855f7] p-0.5 shadow-lg shadow-purple-500/20">
+              <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-white">
+                <Loader2 size={24} className="animate-spin text-[#a855f7]" />
+              </div>
+            </div>
+            <div className="flex flex-col items-center gap-1 text-center px-6">
+              <h4 className="m-0 text-[16px] font-extrabold text-[#0f172a] tracking-tight">
+                {submittingInfo?.title ?? "Creating visit..."}
+              </h4>
+              <p className="m-0 text-[12.5px] font-medium text-[#64748b]">
+                {submittingInfo?.subtitle ?? "Finalizing patient record and starting consult..."}
+              </p>
+            </div>
           </div>
         )}
         </div>
