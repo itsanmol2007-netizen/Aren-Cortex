@@ -1,665 +1,775 @@
 /* ============================================================
-   SIDEBAR — AREN Cortex
-   Overlay panel. Logo morphs in from topbar on open.
-   Blue = operational, Purple = atmospheric
+   NAVIGATION — AREN Cortex
+   A permanent light rail at the viewport's left edge, and the
+   same rail expanded into a labelled panel over the content.
+
+   Rebuilt 2026-09-11. The previous file dressed a 272px drawer
+   in deep navy (#050916) and a purple nebula wash — a
+   self-consistent dark panel dropped onto a light app, which
+   is exactly how it read.
+
+   THE ONE CONTRACT IN THIS FILE: the rail and the panel put
+   their icon badges at the same size and the same distance from
+   the left edge. `--rail-pad` and `--badge` are shared by both
+   for that reason. Break it and the panel visibly jumps off the
+   rail as it opens.
    ============================================================ */
 
-/* ── Backdrop ─────────────────────────────────────────────── */
-.sidebar-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    background: rgba(6, 8, 18, 0.72);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 240ms ease;
+:root {
+    /* Geometry shared by the rail and the panel. */
+    --rail-w: 60px;
+    --rail-pad: 12px;
+    /* (60 - 36) / 2 = 12 — a badge centred in the rail */
+    --badge: 36px;
+    --panel-w: 252px;
+
+    /* Above the modals, on purpose — see NavRail.tsx's header. Toasts
+       (2147483647) still win, which is right: a toast is a message about
+       something that already happened and must never be navigated under. */
+    --rail-z: 10000;
+
+    /* Ink */
+    --nav-ink: #384054;
+    --nav-ink-soft: #6b7385;
+    --nav-line: #e8e7f2;
 }
 
-.sidebar-backdrop.is-open {
-    opacity: 1;
-    pointer-events: all;
+/* The header the rail starts beneath. The consult topbar is its own height
+   (it carries a patient identity and vitals; every other page's header does
+   not), so the shell declares which one is showing and the rail reads it
+   rather than guessing. */
+.app-shell {
+    --app-header-h: 64px;
 }
 
-/* ── Panel ────────────────────────────────────────────────── */
-/* Same deep-navy base the workspace header uses (#050916, see
-   workspace-header.css's own header comment) instead of this panel's own
-   separate navy gradient — one dark base across the product, not two. */
-.sidebar-panel {
+.app-shell.is-consult {
+    --app-header-h: 72px;
+}
+
+/* ── The rail ──────────────────────────────────────────────── */
+.nav-rail {
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 201;
-    width: 272px;
-    height: 100vh;
-    background-color: #050916;
-    background-image:
-        radial-gradient(ellipse 200px 260px at 50% -20px,
-            rgba(4, 8, 18, 0.0) 0%,
-            rgba(4, 8, 18, 0.55) 100%);
-    border-right: 1px solid rgba(147, 51, 234, 0.22);
+    bottom: 0;
+    width: var(--rail-w);
+    z-index: var(--rail-z);
+
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    align-items: stretch;
+    padding: 0 0 12px;
 
-    transform: translateX(-100%);
-    opacity: 0;
-    transition:
-        transform 280ms cubic-bezier(0.32, 0.72, 0, 1),
-        opacity 220ms ease;
-    will-change: transform, opacity;
-}
-
-.sidebar-panel.is-open {
-    transform: translateX(0);
-    opacity: 1;
-}
-
-/* ── Nebula wash — same palette as aren-nebula.svg, built for this panel's
-   own tall proportions rather than a crop of the header's wide asset. See
-   Sidebar.tsx's comment on why. Bright core near the logo (echoes the
-   header's own bright point near its logo pill), two softer blooms further
-   down so the glow doesn't just sit in a band at the top and vanish. ──── */
-.sidebar-nebula-wash {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 0;
     background:
-        radial-gradient(480px 320px at 18% 0%, rgba(232, 121, 249, 0.16) 0%, rgba(168, 85, 247, 0.10) 35%, transparent 70%),
-        radial-gradient(360px 420px at 85% 8%, rgba(147, 51, 234, 0.20) 0%, rgba(124, 58, 237, 0.08) 45%, transparent 75%),
-        radial-gradient(420px 380px at 10% 55%, rgba(109, 40, 217, 0.14) 0%, transparent 70%),
-        radial-gradient(380px 340px at 90% 82%, rgba(79, 70, 229, 0.12) 0%, transparent 70%);
-}
+        linear-gradient(180deg, #ffffff 0%, #fcfbff 45%, #f8f7fe 100%);
+    border-right: 1px solid var(--nav-line);
+    box-shadow: 1px 0 0 rgba(99, 102, 241, 0.03);
 
-/* ── Right edge glow line ─────────────────────────────────── */
-.sidebar-panel::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 1px;
-    height: 100%;
-    background: linear-gradient(to bottom,
-            rgba(147, 51, 234, 0.45) 0%,
-            rgba(168, 85, 247, 0.28) 35%,
-            rgba(168, 85, 247, 0.10) 70%,
-            transparent 100%);
-    pointer-events: none;
-    z-index: 2;
-}
-
-/* ── Header zone ──────────────────────────────────────────── */
-.sidebar-header {
-    flex-shrink: 0;
-    padding: 0 16px;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    position: relative;
-    z-index: 1;
+    /* Tooltips escape to the right — nothing here may clip them. */
     overflow: visible;
-    /* allow logo to escape during morph */
 }
 
-.sidebar-header::after {
+/* ── The rail's head: the logo, and the dark that finishes the header ──────
+   Every page's dark header now starts at the rail's right edge (see
+   layout.css for why nothing breaks out of the padded shell any more). On its
+   own that would leave a light 60px square at the top-left corner, beside the
+   header, which reads as a rendering fault.
+
+   So the rail paints that square in the header's own dark. The eye reads one
+   continuous dark band across the full width of the screen, with the logo at
+   its left end where it has always been — without a single pixel of any page's
+   layout having to escape its own box.
+
+   The two headers are not the same dark, so this matches whichever is up:
+   `.ws-header` is `#050916` with a vignette; the consult topbar's gradient
+   starts at `#0d1b35`. The `.app-shell` class (set in App.tsx) says which. */
+.rail-head {
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+    height: var(--app-header-h);
+    display: grid;
+    place-items: center;
+    background: #050916;
+    border-bottom: 1px solid rgba(147, 51, 234, 0.22);
+}
+
+.app-shell.is-consult .rail-head {
+    background: #0d1b35;
+    border-bottom-color: rgba(0, 0, 0, 0.30);
+}
+
+/* A deliberate hairline at the junction, so the tiny residual difference
+   between two darks reads as a divider rather than as a seam. The headers
+   already use this exact treatment internally (`.ws-header-divider`,
+   `.tb-divider`). */
+.rail-head::after {
     content: "";
     position: absolute;
-    bottom: 0;
-    left: 16px;
-    right: 16px;
-    height: 1px;
-    background: linear-gradient(to right,
+    right: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 1px;
+    background: linear-gradient(to bottom,
             transparent,
-            rgba(168, 85, 247, 0.50) 25%,
-            rgba(99, 102, 241, 0.40) 65%,
+            rgba(255, 255, 255, 0.10) 30%,
+            rgba(255, 255, 255, 0.10) 70%,
             transparent);
 }
 
-/* ── Logo pill — morphs in from topbar ────────────────────── */
-/*
-   On open, JS sets on the panel:
-     --morph-dx:    X offset from sidebar logo to topbar logo center
-     --morph-dy:    Y offset from sidebar logo to topbar logo center
-     --morph-scale: size ratio (topbarLogoWidth / sidebarLogoWidth)
-
-   The .sidebar-logo-pill starts at the topbar logo position
-   (via translateX/Y + scale) and animates to its natural
-   position (translate 0, scale 1) = the morph effect.
-*/
-/* Recipe matches .ws-logo-pill (workspace-header.css) — same border color,
-   glow, backdrop-blur — so the morph lands on something that reads as the
-   SAME pill continuing, not a different one taking over. */
-.sidebar-logo-pill {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+/* The one logo in the product. It never moves, on any page, in any state —
+   which is the whole reason the expanded panel could stop carrying a second
+   one and animating between the two.
+ 
+   The recipe is `.ws-logo-pill`'s (workspace-header.css), deliberately: a dark
+   translucent tile with a violet edge and a soft outer glow. NOT a filled
+   violet pill, which is what this was for its first half hour — `aren-logo.png`
+   is opaque and carries its own near-black ground, so it covered the gradient
+   completely and the logo read as a dark square lost against a dark header.
+   The glow is what makes it a lit badge; the mark itself supplies the dark. */
+.rail-logo {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 5px;
+    border-radius: 12px;
+    border: 1px solid rgba(139, 92, 246, 0.45);
     background: rgba(5, 9, 22, 0.76);
-    border: 1px solid rgba(139, 92, 246, 0.42);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    cursor: pointer;
     overflow: hidden;
-    flex-shrink: 0;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     box-shadow:
         0 0 0 1px rgba(139, 92, 246, 0.10),
-        0 0 22px rgba(139, 92, 246, 0.30),
-        0 0 48px rgba(168, 85, 247, 0.12),
+        0 0 22px rgba(139, 92, 246, 0.32),
+        0 0 48px rgba(168, 85, 247, 0.14),
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
-
-    /* Default: invisible so it doesn't flash before morph */
-    opacity: 0;
-    transform: translate(var(--morph-dx, 0px), var(--morph-dy, 0px)) scale(var(--morph-scale, 1));
+    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.sidebar-logo-pill img {
-    width: 22px;
-    height: 22px;
+.rail-logo img {
+    width: 100%;
+    height: 100%;
     object-fit: contain;
 }
 
-/* When is-morphing is added by JS, animate from topbar → sidebar. A small
-   scale overshoot at 78% (1.06×, past the final 1×) before settling gives
-   the landing a soft "pop" rather than a hard stop — the one thing added
-   to an already-good effect ("make it even better"), everything else about
-   the morph (the JS measuring/delta math in Sidebar.tsx) is unchanged. */
-@keyframes logo-morph-in {
-    0% {
-        opacity: 0.85;
-        transform: translate(var(--morph-dx), var(--morph-dy)) scale(var(--morph-scale));
-        border-radius: 9px;
-        box-shadow:
-            0 0 0 rgba(168, 85, 247, 0),
-            0 2px 8px rgba(0, 0, 0, 0.35);
-    }
-
-    40% {
-        opacity: 1;
-    }
-
-    78% {
-        transform: translate(0, 0) scale(1.06);
-        box-shadow:
-            0 0 24px rgba(168, 85, 247, 0.45),
-            0 0 8px rgba(99, 102, 241, 0.32),
-            inset 0 1px 0 rgba(255, 255, 255, 0.09);
-    }
-
-    100% {
-        opacity: 1;
-        transform: translate(0, 0) scale(1);
-        border-radius: 10px;
-        box-shadow:
-            0 0 18px rgba(168, 85, 247, 0.35),
-            0 0 5px rgba(99, 102, 241, 0.28),
-            inset 0 1px 0 rgba(255, 255, 255, 0.09);
-    }
-}
-
-.sidebar-logo-pill.is-morphing {
-    animation: logo-morph-in 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-/* ── Brand text ───────────────────────────────────────────── */
-.sidebar-brand-text {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-
-.sidebar-brand-text strong {
-    font-size: 13.5px;
-    font-weight: 700;
-    /* Full white — this is the product name, needs to be sharp */
-    color: rgba(255, 255, 255, 0.97);
-    letter-spacing: 0.01em;
-    line-height: 1;
-}
-
-.sidebar-brand-text strong span {
-    color: #a855f7;
-}
-
-/* "PHASE 1 WORKFLOW" — was 0.35, now legible */
-.sidebar-brand-text small {
-    font-size: 9px;
-    /* Bumped from 0.35 → 0.62 so it's actually readable */
-    color: rgba(255, 255, 255, 0.62);
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    line-height: 1;
-}
-
-/* ── Close button ─────────────────────────────────────────── */
-.sidebar-close-btn {
-    margin-left: auto;
-    width: 28px;
-    height: 28px;
-    border-radius: 7px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    /* Was 0.55, now clearly visible */
-    color: rgba(255, 255, 255, 0.72);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: background 150ms ease, color 150ms ease,
-        border-color 150ms ease, box-shadow 150ms ease;
-    flex-shrink: 0;
-}
-
-.sidebar-close-btn:hover {
-    background: rgba(239, 68, 68, 0.14);
-    border-color: rgba(239, 68, 68, 0.35);
-    color: rgba(239, 68, 68, 0.95);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.18);
-}
-
-/* ── Scrollable nav body ───────────────────────────────────── */
-.sidebar-nav-body {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 10px 0 18px;
-    position: relative;
-    z-index: 1;
-    /* The nav used to sit as a ~350px stack at the top of a ~1000px panel —
-       "they're all looking crammed up with the top half of the sidebar"
-       (2026-08-31). Bigger tiles (below) fix most of it. The rest is dealt
-       with at the END of the nav rather than between its groups: see
-       `.sidebar-divider.is-tail`, which drops Help & Support to the bottom.
-       `display: flex` here is what gives that `margin-top: auto` a height to
-       push against. */
-    display: flex;
-    flex-direction: column;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(99, 102, 241, 0.30) transparent;
-}
-
-.sidebar-nav-body::-webkit-scrollbar {
-    width: 3px;
-}
-
-.sidebar-nav-body::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.sidebar-nav-body::-webkit-scrollbar-thumb {
-    background: rgba(99, 102, 241, 0.30);
-    border-radius: 2px;
-}
-
-/* The nav element `SidebarNav` renders. Its OWN height, not the body's — the
-   list ends where the list ends, and whatever panel is left over stays below
-   it as plain background above the doctor pill. */
-.sidebar-nav-body > nav {
-    display: flex;
-    flex-direction: column;
-    flex: none;
-    min-height: 0;
-}
-
-/* ── Divider ──────────────────────────────────────────────── */
-/* A LINE, and nothing but a line.
-//
-   Two wrong shapes preceded this one, both from the same bad idea — that the
-   divider should absorb the panel's leftover height so the nav groups spread
-   down it. First it painted its gradient on a box grown to 76px, giving three
-   grey slabs. Then the box went transparent and drew a centred hairline, which
-   removed the slabs but left the height: "there is consultation communication,
-   and then there is some space, and then we have practice clinic, and then
-   some space and then settings. It's looking unfinished" (2026-09-01).
-
-   Dark empty space between groups does not read as breathing room, it reads
-   as something failing to load. The divider is now a fixed hairline with an
-   ordinary margin, and the leftover height is dealt with ONCE, deliberately,
-   by `.sidebar-divider.is-tail` below. */
-.sidebar-divider {
-    flex: none;
-    height: 1px;
-    margin: 9px 14px;
-    background: linear-gradient(to right,
-            transparent,
-            rgba(255, 255, 255, 0.11) 20%,
-            rgba(255, 255, 255, 0.11) 80%,
-            transparent);
-}
-
-/* The tail divider — above Help & Support — gets a slightly wider margin and
-   nothing else. It was briefly `margin-top: auto`, which pinned the utility
-   row to the bottom of the panel and simply moved the complaint: one 400px
-   band of dark instead of three 44px ones. The leftover height belongs BELOW
-   the whole nav, where an unfilled list is ordinary, not inside it, where it
-   reads as something that failed to render. */
-.sidebar-divider.is-tail {
-    margin-top: 13px;
-    margin-bottom: 11px;
-}
-
-/* ── Nav items ────────────────────────────────────────────── */
-.sidebar-nav-item {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    width: 100%;
-    padding: 0 14px 0 16px;
-    /* 40 -> 52 (2026-08-31): see `.sidebar-nav-body`'s note. `flex: none` so a
-       tile is its own height and never stretches to fill the panel. */
-    height: 52px;
-    flex: none;
-    margin: 0 8px;
-    width: calc(100% - 16px);
-    border: none;
-    border-radius: 10px;
-    background: transparent;
-    /* Was 0.55 — bumped to 0.78 so nav items are clearly readable */
-    color: rgba(255, 255, 255, 0.78);
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    cursor: pointer;
-    text-align: left;
-    position: relative;
-    transition: color 140ms ease, background 140ms ease;
-}
-
-.sidebar-nav-item:hover {
-    color: rgba(255, 255, 255, 0.97);
-    background: rgba(255, 255, 255, 0.06);
-}
-
-/* Log out moved to Settings, 2026-08-11 — see features/settings/. Nothing in
-   the sidebar reads .variant-logout / [data-logout] anymore. */
-
-/* ── Consult action — Blue = operational ─────────────────── */
-.sidebar-nav-item.variant-action {
-    color: #fff;
-    font-weight: 650;
-    font-size: 14.5px;
-    margin: 2px 8px 2px;
-    width: calc(100% - 16px);
-    border-radius: 11px;
-    padding: 0 14px;
-    height: 56px;
-    background: linear-gradient(135deg,
-            rgba(18, 104, 232, 0.28) 0%,
-            rgba(99, 102, 241, 0.20) 100%);
-    border: 1px solid rgba(18, 104, 232, 0.42);
+.rail-logo:hover {
+    transform: translateY(-1px);
+    border-color: rgba(167, 139, 250, 0.70);
     box-shadow:
-        0 0 16px rgba(18, 104, 232, 0.22),
-        inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    letter-spacing: 0.01em;
-}
-
-.sidebar-nav-item.variant-action .sidebar-nav-icon {
-    color: #5fa3ff;
-}
-
-.sidebar-nav-item.variant-action:hover {
-    background: linear-gradient(135deg,
-            rgba(18, 104, 232, 0.40) 0%,
-            rgba(99, 102, 241, 0.30) 100%);
-    border-color: rgba(18, 104, 232, 0.62);
-    color: #fff;
-    box-shadow:
-        0 0 24px rgba(18, 104, 232, 0.32),
+        0 0 0 1px rgba(139, 92, 246, 0.22),
+        0 0 28px rgba(139, 92, 246, 0.52),
+        0 0 56px rgba(168, 85, 247, 0.22),
         inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
-/* ── Active page ─────────────────────────────────────────── */
-.sidebar-nav-item.is-active {
-    color: rgba(255, 255, 255, 0.97);
-    background: rgba(99, 102, 241, 0.13);
+.rail-logo:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.45);
 }
 
-.sidebar-nav-item.is-active .sidebar-nav-icon {
-    color: #a855f7;
+/* Pressed, while the panel hangs off it. */
+.nav-open .rail-logo {
+    border-color: rgba(192, 132, 252, 0.90);
+    box-shadow:
+        0 0 0 2px rgba(168, 85, 247, 0.40),
+        0 0 30px rgba(168, 85, 247, 0.60),
+        0 0 60px rgba(168, 85, 247, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-/* Fully rounded and inset since the tile itself became a rounded, inset
-   block (2026-08-31) — a square-edged bar at `left: 0` now pokes out past
-   the tile's own 10px corner. */
-.sidebar-nav-item.is-active::before {
-    content: "";
+/* The rail's own items start below the head. */
+.nav-rail > .rail-item:first-of-type {
+    margin-top: 12px;
+}
+
+/* While the panel is up it covers the rail exactly. Hiding the rail's own
+   hover tooltips stops a stray one drawing on top of the panel's labels. */
+.nav-rail.is-under-panel .rail-item::after {
+    display: none;
+}
+
+/* The quiet zone: whatever rail is left between the last destination and the
+   doctor's avatar. It grows and shrinks with the viewport, and the
+   constellation inside it is centred and free to be clipped — it is
+   atmosphere, so a short screen losing a star costs nothing. */
+.rail-quiet {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.rail-constellation {
     position: absolute;
-    left: 4px;
-    top: 11px;
-    bottom: 11px;
-    width: 3px;
-    border-radius: 3px;
-    background: linear-gradient(to bottom, #a855f7, #6366f1);
-    box-shadow: 0 0 8px rgba(168, 85, 247, 0.65);
+    left: 0;
+    right: 0;
+    bottom: 6px;
+    width: 100%;
+    height: 150px;
+    pointer-events: none;
 }
 
-/* ── Nav icons ──────────────────────────────────────────── */
-.sidebar-nav-icon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    /* Was 0.35 — now clearly visible at 0.60 */
-    color: rgba(255, 255, 255, 0.60);
-    transition: color 140ms ease;
+.rail-group {
     display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.sidebar-nav-item:hover .sidebar-nav-icon {
-    color: rgba(255, 255, 255, 0.85);
-}
-
-/* ── Icon badges — depth instead of a bare flat glyph ─────────────────────
-   A monoline icon alone, 14px on a dark panel, reads thin and interchangeable
-   at a glance — closer to a flat emoji than a considered icon. Same lucide
-   icons (never swapping the library), but each sits in a small filled,
-   tinted, gently glowing chip — the same "icon gets a colored badge" move
-   already used elsewhere in this app (.prec-panel-card-icon's tone
-   variants, the doctor-initials avatar), just adapted for a dark panel:
-   a soft gradient fill, a 1px tone-colored border, and a subtle outer glow
-   plus inset highlight for real dimensionality, not a flat rectangle. ──── */
-
-.sidebar-nav-icon-badge {
-    width: 32px;
-    height: 32px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: filter 140ms ease, transform 140ms ease;
-}
-
-.sidebar-nav-item:hover .sidebar-nav-icon-badge {
-    transform: translateY(-1px);
-}
-
-.sidebar-nav-icon-badge.tone-blue {
-    background: linear-gradient(155deg, rgba(59, 130, 246, 0.28), rgba(29, 78, 216, 0.14));
-    border: 1px solid rgba(96, 165, 250, 0.38);
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10);
-    color: #93c5fd;
-}
-
-/* Replaces the original tone-teal/tone-purple/tone-amber 2026-08-24 — those
-   three plus tone-blue/tone-slate read as five unrelated hues (green, blue,
-   purple, orange, grey), reported as "a mixture of color... like a
-   rainbow". One indigo tone now covers both configuration destinations
-   (Practice, Clinic) — a blue-violet a shade past tone-blue rather than a
-   different hue family, same spectrum the app's own topbar gradient already
-   spans (blue → indigo → violet, `.topbar-atmo` in PatientHeader.tsx). See
-   the `tone` prop's own comment in SidebarNav.tsx. */
-.sidebar-nav-icon-badge.tone-indigo {
-    background: linear-gradient(155deg, rgba(99, 102, 241, 0.28), rgba(67, 56, 202, 0.15));
-    border: 1px solid rgba(129, 140, 248, 0.40);
-    box-shadow: 0 0 10px rgba(99, 102, 241, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10);
-    color: #a5b4fc;
-}
-
-.sidebar-nav-icon-badge.tone-slate {
-    background: linear-gradient(155deg, rgba(148, 163, 184, 0.22), rgba(71, 85, 105, 0.14));
-    border: 1px solid rgba(203, 213, 225, 0.28);
-    box-shadow: 0 0 8px rgba(148, 163, 184, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09);
-    color: #cbd5e1;
-}
-
-.sidebar-nav-item.is-active .sidebar-nav-icon-badge {
-    filter: brightness(1.25) saturate(1.15);
-}
-
-/* ── Help & Support — a utility, not a destination ────────────────────────
-   Anmol's mockup sets it apart with a "?" and less visual weight than the
-   six real jobs above it: smaller, more muted, no active-state left bar
-   treatment competing with the real nav for attention. */
-.sidebar-nav-item.variant-utility {
-    height: 42px;
-    font-size: 12.5px;
-    color: rgba(255, 255, 255, 0.52);
-    font-weight: 450;
-}
-
-.sidebar-nav-item.variant-utility:hover {
-    color: rgba(255, 255, 255, 0.80);
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.sidebar-nav-item.variant-utility .sidebar-nav-icon {
-    width: 14px;
-    height: 14px;
-    color: rgba(255, 255, 255, 0.42);
-}
-
-.sidebar-nav-item.variant-utility:hover .sidebar-nav-icon {
-    color: rgba(255, 255, 255, 0.65);
-}
-
-/* ── Footer ──────────────────────────────────────────────── */
-.sidebar-footer {
-    flex-shrink: 0;
-    padding: 12px 14px;
-    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    flex-direction: column;
     position: relative;
     z-index: 1;
 }
 
-/* A real control now, not a readout — it opens the doctor's own profile
-   (2026-08-31). Full width so it reads as the panel's footer rather than a
-   floating chip, and it grew with the nav tiles above it. */
-.sidebar-doctor-pill {
+.rail-slot {
     display: flex;
-    align-items: center;
-    gap: 11px;
-    width: 100%;
-    padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.055);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 12px;
-    text-align: left;
-    cursor: pointer;
-    transition: background 140ms ease, border-color 140ms ease;
+    flex-direction: column;
 }
 
-.sidebar-doctor-pill:hover {
-    background: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.20);
+.rail-foot {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+    padding-top: 10px;
 }
 
-.sidebar-doctor-pill:focus-visible {
-    outline: none;
-    border-color: rgba(168, 85, 247, 0.55);
-    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.25);
+.rail-foot::before {
+    content: "";
+    height: 1px;
+    margin: 0 var(--rail-pad) 10px;
+    background: linear-gradient(to right, transparent, var(--nav-line) 25%, var(--nav-line) 75%, transparent);
 }
 
-.sidebar-doctor-chevron {
-    margin-left: auto;
-    flex-shrink: 0;
-    color: rgba(255, 255, 255, 0.30);
-    transition: color 140ms ease, transform 140ms ease;
-}
-
-.sidebar-doctor-pill:hover .sidebar-doctor-chevron {
-    color: rgba(255, 255, 255, 0.62);
-    transform: translateX(2px);
-}
-
-/* Holds either two initials or the doctor's real photo — `overflow: hidden`
-   is what lets the <img> fill the same rounded square the initials use, so
-   the footer's shape never changes with whether a photo exists. */
-.sidebar-doctor-avatar {
-    width: 38px;
-    height: 38px;
-    overflow: hidden;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #1268e8, #6366f1);
+/* ── A rail item ───────────────────────────────────────────── */
+.rail-item {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: 0.03em;
-    flex-shrink: 0;
-    box-shadow: 0 0 12px rgba(18, 104, 232, 0.40);
+    width: 100%;
+    height: 48px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.sidebar-doctor-photo {
+.rail-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--badge);
+    height: var(--badge);
+    border-radius: 11px;
+    color: var(--nav-ink-soft);
+    transition:
+        background 150ms ease,
+        color 150ms ease,
+        box-shadow 150ms ease,
+        transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Idle carries a whisper of its own tone rather than flat grey — the rail is
+   on screen permanently, and seven identical grey glyphs is what "dull" looks
+   like. Kept at ~7% so it reads as warmth, not as seven competing colours. */
+.rail-item.tone-blue .rail-badge {
+    background: rgba(59, 130, 246, 0.07);
+    color: #5b7ca6;
+}
+
+.rail-item.tone-indigo .rail-badge {
+    background: rgba(99, 102, 241, 0.07);
+    color: #6d70ad;
+}
+
+.rail-item.tone-slate .rail-badge {
+    background: rgba(100, 116, 139, 0.07);
+    color: #6b7385;
+}
+
+.rail-item:hover .rail-badge {
+    transform: translateY(-1px);
+}
+
+.rail-item.tone-blue:hover .rail-badge {
+    background: rgba(59, 130, 246, 0.14);
+    color: #2563eb;
+}
+
+.rail-item.tone-indigo:hover .rail-badge {
+    background: rgba(99, 102, 241, 0.14);
+    color: #4f46e5;
+}
+
+.rail-item.tone-slate:hover .rail-badge {
+    background: rgba(100, 116, 139, 0.14);
+    color: #475569;
+}
+
+.rail-item:focus-visible {
+    outline: none;
+}
+
+.rail-item:focus-visible .rail-badge {
+    box-shadow: 0 0 0 3px rgba(124, 92, 240, 0.30);
+}
+
+/* ── Active ────────────────────────────────────────────────── */
+/* The one place the rail goes fully saturated. A filled badge plus a short
+   bar in the left gutter: the bar is what survives peripheral vision, the
+   fill is what reads when you look straight at it. */
+.rail-item.is-active .rail-badge {
+    color: #fff;
+}
+
+.rail-item.tone-blue.is-active .rail-badge {
+    background: linear-gradient(150deg, #4b91f7 0%, #2563eb 100%);
+    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.rail-item.tone-indigo.is-active .rail-badge {
+    background: linear-gradient(150deg, #8b8ef5 0%, #5457e5 100%);
+    box-shadow: 0 3px 10px rgba(84, 87, 229, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.rail-item.tone-slate.is-active .rail-badge {
+    background: linear-gradient(150deg, #94a3b8 0%, #5b6878 100%);
+    box-shadow: 0 3px 10px rgba(91, 104, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.rail-item.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 13px;
+    bottom: 13px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: linear-gradient(to bottom, #a855f7, #6366f1);
+}
+
+/* ── The consult action — the brand's own violet, always filled ── */
+.rail-item.is-action .rail-badge {
+    background: linear-gradient(145deg, #a855f7 0%, #6366f1 100%);
+    color: #fff;
+    box-shadow:
+        0 4px 12px rgba(139, 92, 246, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.rail-item.is-action:hover .rail-badge {
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(139, 92, 246, 0.44),
+        inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+
+/* ── Help & Support — a utility, not a destination ─────────── */
+.rail-item.is-utility {
+    height: 42px;
+}
+
+.rail-item.is-utility .rail-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: transparent;
+    color: #9aa1b1;
+}
+
+.rail-item.is-utility:hover .rail-badge {
+    background: rgba(100, 116, 139, 0.10);
+    color: #5b6878;
+}
+
+.rail-item.is-utility.is-active .rail-badge {
+    background: rgba(100, 116, 139, 0.14);
+    color: #475569;
+}
+
+/* ── The doctor ────────────────────────────────────────────── */
+.rail-item.is-avatar {
+    height: 46px;
+}
+
+.rail-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1268e8, #6366f1);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    box-shadow: 0 2px 8px rgba(18, 104, 232, 0.30);
+    transition: transform 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 150ms ease;
+}
+
+.rail-avatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
 }
 
-.sidebar-doctor-info {
+.rail-item.is-avatar:hover .rail-avatar {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(18, 104, 232, 0.40);
+}
+
+/* ── Dividers ──────────────────────────────────────────────── */
+.rail-divider {
+    height: 1px;
+    margin: 7px var(--rail-pad);
+    background: linear-gradient(to right, transparent, var(--nav-line) 25%, var(--nav-line) 75%, transparent);
+}
+
+/* ── Tooltips ──────────────────────────────────────────────── */
+/* A collapsed rail is icons, and icons are a guess until they are named. The
+   panel names them permanently; this names one on hover, which is what a
+   doctor who already knows the app actually needs. */
+.rail-item::after {
+    content: attr(data-label);
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%) translateX(-4px);
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #1b2135;
+    color: #f2f4f9;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: 0 6px 20px rgba(12, 18, 38, 0.28);
+    transition: opacity 130ms ease, transform 130ms ease;
+    z-index: 2;
+}
+
+.rail-item:hover::after,
+.rail-item:focus-visible::after {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+}
+
+/* ════════════════════════════════════════════════════════════
+   THE EXPANDED PANEL
+   ════════════════════════════════════════════════════════════ */
+
+/* A light scrim, not a blackout. The doctor's own workspace stays legible
+   behind it — this panel is an aid, not a mode. */
+.nav-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--rail-z) + 1);
+    background: rgba(23, 28, 48, 0.24);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+}
+
+.nav-scrim.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.nav-panel {
+    position: fixed;
+    top: var(--app-header-h);
+    left: 0;
+    bottom: 0;
+    width: var(--panel-w);
+    z-index: calc(var(--rail-z) + 2);
+
+    display: flex;
+    flex-direction: column;
+    padding: 12px 0 12px;
+
+    background:
+        linear-gradient(180deg, #ffffff 0%, #fcfbff 45%, #f8f7fe 100%);
+    border-right: 1px solid var(--nav-line);
+    box-shadow:
+        10px 0 40px rgba(20, 26, 52, 0.10),
+        1px 0 0 rgba(99, 102, 241, 0.05);
+
+    /* Closed: pulled back behind its own left edge and faded. It never slides
+       from -100% like the old drawer did — it is the rail widening, and the
+       rail is already there. */
+    transform: translateX(-12px);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        transform 220ms cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 160ms ease;
+    will-change: transform, opacity;
+}
+
+.nav-panel.is-open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.panel-slot {
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-foot {
+    display: flex;
+    flex-direction: column;
+    padding-top: 10px;
+}
+
+.panel-foot::before {
+    content: "";
+    height: 1px;
+    margin: 0 var(--rail-pad) 8px;
+    background: linear-gradient(to right, transparent, var(--nav-line) 20%, var(--nav-line) 80%, transparent);
+}
+
+.panel-divider {
+    height: 1px;
+    margin: 7px var(--rail-pad);
+    background: linear-gradient(to right, transparent, var(--nav-line) 20%, var(--nav-line) 80%, transparent);
+}
+
+/* ── A panel item ──────────────────────────────────────────── */
+/* `padding-left: var(--rail-pad)` and a `--badge` badge: the same two numbers
+   the rail uses. That is the alignment contract — the icon does not move when
+   this opens, only the label appears beside it. */
+.panel-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    height: 48px;
+    padding: 0 10px 0 calc(var(--rail-pad) - 4px);
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--nav-ink);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease;
+}
+
+.panel-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--badge);
+    height: var(--badge);
+    border-radius: 11px;
+    flex-shrink: 0;
+    color: var(--nav-ink-soft);
+    transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.panel-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.panel-item.tone-blue .panel-badge {
+    background: rgba(59, 130, 246, 0.09);
+    color: #3b73c4;
+}
+
+.panel-item.tone-indigo .panel-badge {
+    background: rgba(99, 102, 241, 0.09);
+    color: #5a5dc0;
+}
+
+.panel-item.tone-slate .panel-badge {
+    background: rgba(100, 116, 139, 0.09);
+    color: #64748b;
+}
+
+.panel-item:hover {
+    background: rgba(99, 102, 241, 0.055);
+}
+
+.panel-item:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(124, 92, 240, 0.28);
+}
+
+.panel-item.is-active {
+    background: rgba(99, 102, 241, 0.10);
+    color: #2f2a6b;
+    font-weight: 700;
+}
+
+.panel-item.is-active .panel-badge {
+    color: #fff;
+}
+
+.panel-item.tone-blue.is-active .panel-badge {
+    background: linear-gradient(150deg, #4b91f7 0%, #2563eb 100%);
+    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.panel-item.tone-indigo.is-active .panel-badge {
+    background: linear-gradient(150deg, #8b8ef5 0%, #5457e5 100%);
+    box-shadow: 0 3px 10px rgba(84, 87, 229, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.panel-item.tone-slate.is-active .panel-badge {
+    background: linear-gradient(150deg, #94a3b8 0%, #5b6878 100%);
+    box-shadow: 0 3px 10px rgba(91, 104, 120, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+/* ── The consult action ────────────────────────────────────── */
+.panel-item.is-action {
+    color: #2b2352;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.panel-item.is-action .panel-badge {
+    background: linear-gradient(145deg, #a855f7 0%, #6366f1 100%);
+    color: #fff;
+    box-shadow:
+        0 4px 12px rgba(139, 92, 246, 0.32),
+        inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.panel-item.is-action:hover {
+    background: rgba(139, 92, 246, 0.09);
+}
+
+/* ── Help & Support ────────────────────────────────────────── */
+.panel-item.is-utility {
+    height: 42px;
+    font-size: 12.5px;
+    font-weight: 550;
+    color: #8b92a3;
+}
+
+.panel-item.is-utility .panel-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    margin-left: 2px;
+    background: transparent;
+    color: #9aa1b1;
+}
+
+.panel-item.is-utility:hover {
+    color: #5b6878;
+}
+
+.panel-item.is-utility:hover .panel-badge {
+    background: rgba(100, 116, 139, 0.10);
+    color: #5b6878;
+}
+
+/* ── The doctor ────────────────────────────────────────────── */
+.panel-doctor {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: calc(100% - 16px);
+    margin: 6px 8px 0;
+    padding: 9px 10px;
+    border: 1px solid var(--nav-line);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.85);
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.panel-doctor:hover {
+    background: #fff;
+    border-color: rgba(124, 92, 240, 0.30);
+    box-shadow: 0 4px 14px rgba(20, 26, 52, 0.07);
+}
+
+.panel-doctor:focus-visible {
+    outline: none;
+    border-color: rgba(124, 92, 240, 0.55);
+    box-shadow: 0 0 0 3px rgba(124, 92, 240, 0.22);
+}
+
+.panel-doctor-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #1268e8, #6366f1);
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    box-shadow: 0 2px 8px rgba(18, 104, 232, 0.28);
+}
+
+.panel-doctor-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.panel-doctor-info {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
 }
 
-.sidebar-doctor-name {
-    font-size: 12px;
-    font-weight: 600;
-    /* Was 0.82 — fine, leaving it */
-    color: rgba(255, 255, 255, 0.92);
+.panel-doctor-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--nav-ink);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* "General" — was 0.35 → now 0.60 so it reads clearly */
-.sidebar-doctor-spec {
+.panel-doctor-spec {
     font-size: 10.5px;
-    color: rgba(255, 255, 255, 0.60);
+    font-weight: 500;
+    color: #98a0b0;
     text-transform: capitalize;
     letter-spacing: 0.02em;
 }
 
-/* ── Topbar logo: fade+shift out when sidebar opens ──────── */
-.tb-logo-pill {
-    cursor: pointer;
-    transition:
-        opacity 200ms ease,
-        transform 240ms cubic-bezier(0.32, 0.72, 0, 1);
+.panel-doctor-chevron {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: #c3c8d4;
+    transition: color 140ms ease, transform 140ms ease;
 }
 
-.tb-logo-pill:hover {
-    opacity: 0.82;
-    transform: scale(0.96);
-}
-
-.topbar-unified.is-sidebar-open .tb-logo-pill {
-    opacity: 0;
-    transform: translateX(-10px) scale(0.88);
-    pointer-events: none;
+.panel-doctor:hover .panel-doctor-chevron {
+    color: #7c5cf0;
+    transform: translateX(2px);
 }
 
 /* ── Coming soon page ─────────────────────────────────────── */
+/* Unchanged in substance; recoloured for a light page, since it is no longer
+   rendered over anything dark. */
 .coming-soon-page {
     flex: 1;
     display: flex;
@@ -675,27 +785,25 @@
     width: 54px;
     height: 54px;
     border-radius: 14px;
-    background: rgba(99, 102, 241, 0.10);
-    border: 1px solid rgba(99, 102, 241, 0.24);
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.20);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgba(168, 85, 247, 0.85);
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.14);
+    color: #7c5cf0;
+    box-shadow: 0 4px 18px rgba(99, 102, 241, 0.10);
 }
 
-/* Was 0.78 — bumped to full white */
 .coming-soon-title {
     font-size: 16px;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.92);
+    color: #2b3042;
     margin: 0;
 }
 
-/* Was 0.35 — bumped to 0.58 */
 .coming-soon-sub {
     font-size: 12.5px;
-    color: rgba(255, 255, 255, 0.58);
+    color: #7b8296;
     margin: 0;
     max-width: 260px;
     line-height: 1.65;
@@ -706,9 +814,18 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(192, 132, 252, 0.90);
-    background: rgba(168, 85, 247, 0.12);
-    border: 1px solid rgba(168, 85, 247, 0.28);
+    color: #7c5cf0;
+    background: rgba(168, 85, 247, 0.09);
+    border: 1px solid rgba(168, 85, 247, 0.22);
     border-radius: 20px;
     padding: 4px 14px;
+}
+
+/* ── Narrow screens ───────────────────────────────────────── */
+@media (max-width: 1120px) {
+    :root {
+        --rail-w: 52px;
+        --rail-pad: 9px;
+        --badge: 34px;
+    }
 }

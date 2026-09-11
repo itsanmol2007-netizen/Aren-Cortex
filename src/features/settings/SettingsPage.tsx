@@ -116,8 +116,6 @@ const CHART_LABEL: Record<ChartKind, string> = {
 const TERMS_URL = "https://www.arenode.com/terms";
 
 interface SettingsPageProps {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     hospitalId: string;
     /** Needed by the health probes and the local draft check. */
     doctorId: string;
@@ -948,7 +946,7 @@ function AccountModal({
 // ── The page ────────────────────────────────────────────────────────────────
 
 export function SettingsPage({
-    logoRef, onOpenSidebar, hospitalId, doctorId, hospitalProfile, doctorProfile,
+    hospitalId, doctorId, hospitalProfile, doctorProfile,
     doctorName, onNavigate, onSpecialtyChanged,
 }: SettingsPageProps) {
     const logout = useLogout();
@@ -1166,8 +1164,6 @@ export function SettingsPage({
     if (view === "health") {
         return (
             <HealthPage
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 onBack={() => setView("settings")}
                 hospitalId={hospitalId}
                 doctorId={doctorId}
@@ -1179,8 +1175,6 @@ export function SettingsPage({
     return (
         <div className="flex min-h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Settings"
                 subtitle="Find any setting, and the few that live only here"
                 centerSlot={<MasterSearch onPick={openSetting} />}

@@ -92,15 +92,23 @@ src/
   features/prescription/PrescriptionDocument.tsx  — what the patient actually receives (print/PDF/WhatsApp)
   features/settings/SettingsPage.tsx  — specialty switch (doctor self-service, temporary) + logout
   features/patients/  — PatientsPage + PatientRecord (built). features/practice/PracticePage.tsx
-    — pinned medicines, real. features/sidebar/ — Sidebar +
-    SidebarNav, six real destinations (Consult action, Patients, Communication, Practice,
+    — pinned medicines, real. features/sidebar/ — SidebarNav (the registry: one
+    list of destinations, DATA not a component), NavRail (the permanent light
+    icon rail, always on screen, one click per destination), Sidebar (that same
+    rail expanded into a labelled overlay panel, opened by the header logo) and
+    ConstellationWash (the shared mark in the rail's quiet zone). Rebuilt
+    2026-09-11 — see aren-technical-atlas.md §9a. Six real destinations (Consult
+    action, Overview, Patients, Communication, Practice,
     Clinic, Settings) + Help & Support utility — "Prescriptions" and
     "Investigations" are deliberately NOT pages (see SidebarNav.tsx's header for why); their
     0-byte stub folders were deleted, not left as dead placeholders. features/communication/
     CommunicationPage.tsx and features/clinic/ClinicPage.tsx are dedicated
     coming-soon pages, own illustration + own copy — genuinely still not built (no data
     model behind either), just no longer the generic ComingSoonPage. features/support/
-    SupportPage.tsx is real: mailto:/tel: cards, not a stub. App.tsx's
+    SupportPage.tsx is real, and as of 2026-09-11 it is a request FORM (topic →
+    affected areas → free text) that emails support@arenode.com through the
+    `support-notify` edge function, with the contact cards demoted to its
+    footer — see features/support/supportTopics.ts. App.tsx's
     COMING_SOON_META now stays empty, kept only as the fallback for a future destination
     with no page yet. See `cortex-open-crosscutting.md` for the full reasoning on all three.
   styles/

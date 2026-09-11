@@ -98,8 +98,6 @@ interface CachedPage {
 const pageCache = new Map<string, CachedPage>();
 
 interface Props {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     hospitalId: string | null;
     doctorId: string | null;
     userId: string | null;
@@ -202,7 +200,7 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 export function CommunicationPage({
-    logoRef, onOpenSidebar, hospitalId, doctorId, userId, onViewPatient,
+    hospitalId, doctorId, userId, onViewPatient,
 }: Props) {
     const [tab, setTab] = useState<Tab>("all");
     const [query, setQuery] = useState("");
@@ -421,8 +419,6 @@ export function CommunicationPage({
     return (
         <div className="flex h-screen flex-col overflow-hidden bg-[var(--cs-page)]">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Communication"
                 subtitle="WhatsApp conversations, patient messages & follow-ups"
                 rightSlot={

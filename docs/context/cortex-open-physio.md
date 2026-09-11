@@ -117,7 +117,7 @@ not physio-specific), see `cortex-open-crosscutting.md`.
   `visitStatusKind()` doesn't call "inactive" (reusing that shared
   categorisation, not a second exclusion list), and `PatientRecord.tsx`
   surfaces the non-completed ones with an honest "N visits not yet finished
-  in Consult" notice instead of silently excluding them. This makes the
+  yet" notice instead of silently excluding them. This makes the
   page correct regardless of whether the 86 stuck rows ever get cleaned up
   — the cleanup question above is now genuinely just data hygiene, not a
   UI-correctness blocker.
@@ -339,7 +339,7 @@ not physio-specific), see `cortex-open-crosscutting.md`.
   parent with no explicit height makes a percentage height on the child
   compute to `auto` — silently did nothing, and the page shrank to fit its
   own content instead of filling the screen. Invisible on Patients (enough
-  rows to exceed the viewport regardless) and on Consult (never used
+  rows to exceed the viewport regardless) and on the consult (never used
   `height: 100%` at all — it just grows and the whole page scrolls), which
   is exactly why those two "looked fine" and the screenshot was Support.
   Fixed on Communication/Clinic/Support (built the same day) and,

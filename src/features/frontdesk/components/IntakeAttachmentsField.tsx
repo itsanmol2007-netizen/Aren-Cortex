@@ -8,7 +8,7 @@ import { UploadFromPhoneButton } from "./gateway/UploadFromPhoneButton";
 // none exists until CreateVisitModal's Save actually creates the visit — so
 // this field only collects File + AttachmentType pairs locally; the actual
 // upload (uploadAttachment() from lib/db/attachments.ts — the exact same
-// entry point Consult's AttachmentsCard and VisitAttachmentsModal call, same
+// entry point the consult screen's AttachmentsCard and VisitAttachmentsModal call, same
 // compression, same edge functions, same B2 bucket) happens once the new
 // visit_id comes back from onCreate, right before the modal closes.
 //

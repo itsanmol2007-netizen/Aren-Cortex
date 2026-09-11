@@ -190,10 +190,8 @@ function HealthSkeleton() {
 }
 
 export function HealthPage({
-    logoRef, onOpenSidebar, onBack, hospitalId, doctorId, clinicName,
+    onBack, hospitalId, doctorId, clinicName,
 }: {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     onBack: () => void;
     hospitalId: string;
     doctorId: string;
@@ -251,8 +249,6 @@ export function HealthPage({
     return (
         <div className="flex min-h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="System Health"
                 subtitle="What's working, and what to do if something isn't"
                 rightSlot={<BackButton label="Settings" onClick={onBack} />}

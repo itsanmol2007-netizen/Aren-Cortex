@@ -25,7 +25,7 @@ import { I18nProvider, useT } from "./i18n/i18n";
 // happening today?", Patients asks "tell me about this patient", this room
 // asks "which prescriptions need my attention?" Find the paper, print it,
 // hand it over, go back. Rendering and printing are delegated wholesale to
-// Consult's ReviewModal pipeline — one prescription renderer in the product.
+// the consult screen's ReviewModal pipeline — one prescription renderer in the product.
 export function PrintRxPage() {
     return (
         <I18nProvider>
@@ -209,7 +209,7 @@ function PrintRxInner() {
                 </div>
             </div>
 
-            {/* Consult's exact review/print pipeline, opened read-only. The
+            {/* the consult screen's exact review/print pipeline, opened read-only. The
                 document carries its original prescription date — a reprint is
                 a faithful copy, not a new prescription. */}
             {modal && detail && (

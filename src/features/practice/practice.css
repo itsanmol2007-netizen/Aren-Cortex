@@ -748,7 +748,7 @@
    "Don't make it feel like an Excel list" was the ask; a molecule on its
    own IS a flat list, so this pairs it with the real brands that carry it
    (fetchPinnedMedicineDetails' join), the same "identity has two lines"
-   rule RecommendationsCard's MedicineIdentity already follows in Consult —
+   rule RecommendationsCard's MedicineIdentity already follows on the consult —
    not copied verbatim (that component also carries rank bars, guard
    flags, brand-switching — all consult-only), just the same shape. */
 .prac-row.is-medicine {
@@ -965,7 +965,7 @@
 /* One of four intent-type tags on a term row — the SAME hexes
    SuggestionsCard's `.cs-sug-kind.is-*` already uses for the identical
    meaning, so "Investigation" reads as the same shade of blue whether it's
-   a row in Consult or a tag here. */
+   a row on the consult screen or a tag here. */
 .prac-term-kind {
     flex: none;
     /* Fixed, not content-width — "Investigation" and "Advice" are different

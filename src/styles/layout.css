@@ -3,18 +3,41 @@
    v4 — Step 5d: 65/35 medicine workspace + bottom strip
    ============================================================ */
 
+/* The shell used to be `max-width: 1720px; margin: 0 auto` — a centred column.
+   The nav rail is anchored to the VIEWPORT's left edge (it has to be: it
+   outranks the modals and cannot be carried by whichever page is mounted), so
+   a centred shell would drift away from it on any screen wider than 1720px.
+   The cap moved inward to the thing it was actually protecting — the consult's
+   own working area, `.cs-shell`.
+
+   ── Why the gutter is padding here and nothing breaks out of it ───────────
+   The first version of this did the opposite: the shell was padded and each
+   dark header pulled itself back across the gutter with a negative margin, so
+   the header spanned the whole viewport and the rail started beneath it. It
+   looked right on most pages and was silently broken on Patient Records,
+   whose root is `height: 100dvh; overflow: hidden` (it has to be — two
+   independently scrolling columns need a bounded box). `overflow: hidden`
+   clips a negative margin, so the logo was sliced in half. Any future page
+   that bounds its own scroll would have hit the same thing.
+
+   So: nothing escapes. Every page, header included, lives inside the padded
+   box and starts at the rail's right edge — which also means every dark
+   header is exactly the same width as every other one, the thing Anmol asked
+   for (2026-09-11). The strip of dark ABOVE the rail that makes the header
+   read as full-bleed is painted by the rail itself (`.rail-head` in
+   sidebar.css), where no page's overflow can reach it. */
 .app-shell {
-    max-width: 1720px;
-    margin: 0 auto;
     padding: 0 0 24px;
+    padding-left: var(--rail-w);
 }
 
+/* The consult topbar stopped being an inset rounded card (`margin: 0 18px;
+   margin-top: 14px; border-radius: 12px 12px 0 0`) on 2026-09-11 — Anmol:
+   "that dark header will match at least the horizontal size of other dark
+   headers because they are completely filled." */
 .app-shell>.topbar-unified {
-    margin: 0 18px;
-}
-
-.app-shell>.topbar-unified {
-    margin-top: 14px;
+    margin: 0;
+    border-radius: 0;
 }
 
 .workflow {
@@ -90,56 +113,10 @@
     pointer-events: none;
 }
 
-/* ── Brand ────────────────────────────────────────────────── */
-.tb-brand {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 18px;
-    flex-shrink: 0;
-}
-
-.tb-logo-pill {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    place-items: center;
-    border-radius: 9px;
-    background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
-    overflow: hidden;
-    flex-shrink: 0;
-    box-shadow:
-        0 2px 10px rgba(168, 85, 247, 0.45),
-        inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.tb-logo-pill img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
-.tb-brand-text strong {
-    display: block;
-    font-size: 15px;
-    font-weight: 750;
-    color: #e2e8f0;
-    letter-spacing: -0.2px;
-}
-
-.tb-brand-text strong span {
-    color: #60a5fa;
-}
-
-.tb-brand-text small {
-    display: block;
-    font-size: 10px;
-    font-weight: 600;
-    color: #f0ccf7;
-    margin-top: 1px;
-}
+/* The topbar's brand block (`.tb-brand`, `.tb-logo-pill`, `.tb-brand-text`)
+   was deleted on 2026-09-11 along with the markup that used it. The product
+   has one logo now and it lives in the nav rail's head — see
+   features/sidebar/sidebar.css's `.rail-logo`. */
 
 /* ── Dividers ─────────────────────────────────────────────── */
 .tb-divider {
@@ -486,7 +463,7 @@
 }
 
 
-/* ── Queue control (Consult only) ─────────────────────────────
+/* ── Queue control (front-desk clinics only) ──────────────────
    Replaces "+ Patient" in the dark header when the clinic has a front
    desk. Same 34px height, same radius, same weight as `.tb-review-btn`
    and `.tb-cancel-btn` beside it — this is the third member of an
@@ -1262,9 +1239,16 @@
         min-width: 0;
     }
 
-    .app-shell {
-        padding: 10px;
-    }
+    /* This breakpoint used to set `.app-shell { padding: 10px }`, from the era
+       when the topbar was an inset rounded card and a narrow screen wanted a
+       margin around it. Two things went wrong with it once the chrome went
+       full-bleed: the shorthand silently reset the `padding-left` above, so
+       every narrow-screen page slid underneath the rail; and the 10px top and
+       right inset detached the dark header from the rail's dark head, breaking
+       the one continuous band across the top. The shell keeps its normal
+       padding at every width now — the gutters that narrow screens actually
+       need belong to the content (`.workflow`, `.cs-shell`), which already
+       have them. */
 
     .topbar-unified {
         height: auto;

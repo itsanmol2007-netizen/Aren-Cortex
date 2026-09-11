@@ -117,7 +117,7 @@ export interface ConsultChart {
   /** Seed carried-forward conditions at the start of a consult. */
   carryForward: (labels: string[]) => void;
   /**
-   * Put the front desk's intake onto a fresh chart — Consult's whole opening
+   * Put the front desk's intake onto a fresh chart — the whole opening
    * move. See `useIntakePrefill`.
    *
    * Additive like `carryForward`, never a replace: it runs alongside
@@ -424,7 +424,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
   }, []);
 
   /**
-   * Consult's opening state — what the front desk already recorded.
+   * The opening state — what the front desk already recorded.
    *
    * Routed by the observable's own `kind`, exactly the way
    * `handleObservableToggle` routes a doctor's own pick: a history chip

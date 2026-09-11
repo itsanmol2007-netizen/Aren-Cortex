@@ -447,7 +447,7 @@ Not now: `commissions` + payout batches (§5), any CSV-import staging tables
 
 **Resolved 2026-09-10:**
 
-- **Pricing** — Polaris (single-doctor) ₹18,000 tax-inclusive; multi-doctor
+- **Pricing** — Polaris (single-doctor) ₹18,000 tax-inclusive; Constellation (multi-doctor)
   plan ₹25,000 tax-inclusive (add the `plans` row). All-inclusive, no separate
   tax line. Discounts are normal, especially early. (§4)
 - **Proof storage** — **AWS S3**, not Supabase Storage. The keys already exist

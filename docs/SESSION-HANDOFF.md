@@ -1,37 +1,127 @@
-# Session handoff — 2026-09-09 (latest), doctor credentials caching & PatientModal layout
+# Session handoff — 2026-09-11, Consult retired + navigation rebuilt
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE next session.**
 
-This session added browser session credentials caching for doctors and clinics, eliminated layout shifts / transition shrink animations on `PatientModal` for no-fee doctors, fixed top mode-toggle tab clipping, and connected the "Not set up" Collected KPI tile on `DoctorOverviewPage` directly to `FeesModal`.
+Three things happened, and the first is the one that matters beyond this
+session: **AREN Consult no longer exists as a product.** There is one doctor's
+workspace and it is Cortex. The permanent record of that decision is in
+`aren-technical-atlas.md` §9a — read that, not this file, if you are picking
+up the reasoning later.
 
-Cortex changes are uncommitted on `master` (`src/lib/db/payments.ts`, `src/components/PatientModal.tsx`, `src/features/overview/DoctorOverviewPage.tsx`, `docs/context/doctor-overview.md`).
+The other two: navigation became a permanent light rail instead of a
+click-the-logo drawer, and Help & Support became a real form instead of two
+`mailto:` cards.
 
----
-
-## What changed
-
-### 1. Doctor & Fee Session Credentials Caching (`src/lib/db/payments.ts`, `src/features/overview/overviewCache.ts`)
-
-- Added `cacheFeeContext(hospitalId, ctx)` to automatically store clinic billing policies and per-doctor fee setup statuses (`fee_setup.${hospitalId}.${doctorId}`) in `overviewCache` (`localStorage` + memory).
-- Added synchronous helper functions `getCachedFeeContext(hospitalId)` and `getFeeSetupStatus(hospitalId, doctorId)` to allow frame 1 instant reads without waiting for database queries.
-
-### 2. Zero-Shift `PatientModal` Frame 1 Mounting & Layout Fixes (`src/components/PatientModal.tsx`)
-
-- **Instant Frame 1 Compact Mode**: `PatientModal` now reads `getCachedFeeContext` and `getFeeSetupStatus` synchronously on mount. If no fee is configured for the doctor, `feeCtxSettled` initializes to `true` and `wideShell` initializes to `false` on frame 1. This completely eliminates the initial wide-screen shell render and late shrink transition animation.
-- **Pinned Mode Toggle Header**: Pinned `pm-header` and `pm-toggle` (*"Search existing"* / *"New patient"*) to the top with `shrink-0` above the scrollable form body. The mode toggle tabs stay 100% visible at all times and can never get pushed up or hidden under the header when filling out the form.
-- **Removed Cancel Button & Footer Hint Text**: Conditionally removed the `pm-actions` footer (Cancel button and text beside it) when `feeWired` is true, reclaiming ~45px of vertical space at the bottom of the left column.
-- **Expanded Container Height**: Increased two-column modal card height from `min(540px, 88vh)` to `min(576px, 90vh)` (~6.6% increase), providing generous breathing room for all 5 form fields without vertical clipping.
-
-### 3. Direct FeesModal Launcher from Overview Page (`src/features/overview/DoctorOverviewPage.tsx`)
-
-- Bound the **Collected** KPI tile click handler (`handleMoneyTileClick`):
-  - If `data.revenueTracked` is `true`: Opens `PaymentDetailsModal`.
-  - If `data.revenueTracked` is `false` (**"Not set up"**): Dynamically loads fee settings if missing and launches `FeesModal` (*"CLINIC BILLING Consultation fees"*) directly.
-- On saving fees in `FeesModal`, invalidates cached fee context (`fee_context.${hospitalId}`) and refreshes analytics so subsequent opens immediately reflect the new fees.
+Everything below landed on `claude/latest-commit-details-vwb2bj`.
 
 ---
 
-## Verification & Status
+## 1. Consult is gone. One workspace, Cortex.
 
-- **Type Check**: `npx tsc --noEmit` passed with 0 errors.
-- **Dev Servers**: `npm run dev` and `npm run server` running cleanly.
+Anmol: *"the line is already getting blurred... for a doctor it doesn't matter
+if he has a receptionist or not, it will be Cortex."*
+
+- `lib/workspace/mode.ts` → **`lib/workspace/clinicShape.ts`**
+  (`modeForClinic`→`hasFrontDesk`, `MODE_BRAND`→`CORTEX_BRAND`,
+  `ModeBrand`→`Brand`).
+- `hooks/useWorkspaceMode.ts` → **`hooks/useClinicShape.ts`**
+  (`isConsult`→`frontDesk`).
+- Every call site updated (App.tsx, PatientHeader, WorkspaceHeader,
+  DoctorOverviewPage, Sidebar, useAdminAccess). Comments and user-visible
+  copy swept too — "in Consult yet" on the Patient Record timeline is now
+  "hasn't been finished yet".
+
+**No behaviour changed.** `hospitals.clinic_mode` is still read the same way
+and still decides the same things — queue vs registration form, "Complete &
+Next" vs "Review Rx", which Overview tiles show. It just stopped naming a
+second product while doing it.
+
+## 2. Navigation: a permanent rail, and the panel that expands off it
+
+The complaint: *"when you have to switch pages you literally have to first
+click on that logo and then click on the pages from the sidebar... and the
+sidebar is looking so much dull, so bulky — the whole page has a light theme
+and the sidebar has a dark theme."*
+
+New shape, in `features/sidebar/`:
+
+| File | Is |
+|---|---|
+| `SidebarNav.tsx` | **The registry.** Data, not a component — `NAV_DESTINATIONS` + `startsGroup()`. Both surfaces render from it, so they cannot drift. |
+| `NavRail.tsx` | The permanent 60px light rail. Always on screen, one click per destination, hover tooltips. |
+| `Sidebar.tsx` | That same rail expanded to 252px with labels, as an **overlay** — nothing reflows. |
+| `ConstellationWash.tsx` | The mark in the rail's quiet zone. |
+| `sidebar.css` | Both surfaces. `--rail-w` / `--rail-pad` / `--badge` are shared **on purpose**. |
+
+Load-bearing details a later session will otherwise break:
+
+- **The alignment contract.** The panel's icon badges are the same size and the
+  same distance from the left edge as the rail's. That is the whole "it
+  widened" illusion. Change one without the other and the panel jumps open.
+- **The rail outranks the modals** (`--rail-z: 10000`). That is deliberate and
+  it is what let `components/GlobalLogoTrigger.tsx` be **deleted** — an
+  invisible button that polled `getBoundingClientRect()` every 400ms so
+  navigation stayed reachable under a full-screen overlay. A rail that is
+  always visible and always on top is the honest version of that.
+- **The logo stays in the dark header**, one logo, never moves. Clicking it
+  opens the panel; the panel hangs underneath it. The JS logo-morph (measuring
+  two rects, animating a delta) is gone with the second logo it needed.
+- **Clicking anywhere closes it**, plus Escape. It is an aid, not a mode.
+- The rail is only in the doctor's workspace. Front desk keeps
+  `features/frontdesk/components/NavRail.tsx` (which this was modelled on) and
+  Parallax keeps `AdminShell`'s.
+
+**The consult topbar went full-bleed** to make the logo land in the same place
+on every screen — it was an inset rounded card (`margin: 0 18px`, `margin-top:
+14px`, `border-radius: 12px 12px 0 0`), it is now flush and square like every
+`ws-header`. Consequences, both in `layout.css`/`consult.css`:
+
+- `.app-shell` lost `max-width: 1720px; margin: 0 auto` (a centred shell drifts
+  away from a viewport-anchored rail on wide screens). The cap moved to
+  `.cs-shell`, which is what it was protecting.
+- Both headers pull back across the rail's gutter with a negative margin.
+- `.cs-shell`'s height maths went `100vh - 92px` → `100vh - 84px` (the
+  topbar's 14px top margin is gone; 8px of its own remains).
+
+## 3. Help & Support is a real form
+
+`features/support/` — `SupportPage.tsx` + `supportTopics.ts`. Topic → affected
+areas (faults only) → free text, emailed to support@arenode.com through the
+existing `support-notify` edge function.
+
+- `lib/db/messaging.ts` gained **`sendSupportRequest()`**, which **throws** —
+  unlike `notifySupport()`, which swallows. The distinction is written up in
+  its own doc comment and matters: every other kind is an alert about a row
+  that already exists, but here **the email IS the action**, and telling a
+  doctor "got it" over a message nobody received is the one failure a support
+  form must not have.
+- Identity is resolved server-side from the session (the page cannot claim to
+  be another doctor). The browser facts ride along via `collectDiagnostics()`.
+  **No patient data is ever included.**
+
+## 4. Plan rename (database)
+
+`plans.code='multi'`: **"AREN Nova" → "AREN Constellation"** (₹25,000/yr,
+unchanged). Polaris untouched. Applied directly to the live row — `plans.name`
+is display-only, `plans.code` is the stable key.
+
+---
+
+## Status
+
+- `npx tsc --noEmit` — clean.
+- Walked in a real browser signed in as the test doctor: Overview, Patients,
+  Communication, Practice, Clinic, Settings, Help & Support, the consult
+  screen, rail collapsed + expanded, tooltips. No console errors.
+
+## Still open
+
+- **The `support-notify` edge function is NOT redeployed.** The richer email
+  template (doctor's words first, affected areas, diagnostics table) is
+  committed but the deployed function still runs the old three-fact version.
+  The form works either way — the extra payload fields are simply ignored
+  until it ships. Deploy when ready.
+- **AREN Constellation has no `tagline`** in `plans`; Polaris does. Worth a
+  line of copy before that plan is shown to anyone.
+- `plans.sort_order` puts Constellation (0) ahead of Polaris (10). Probably
+  backwards for a pricing page — left alone, nobody asked.

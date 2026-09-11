@@ -45,8 +45,6 @@ import {
 import type { DBDoctor, DBHospital } from "../../lib/db";
 
 interface Props {
-    logoRef: React.RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     hospitalId: string;
     hospital: DBHospital | null;
     doctor: DBDoctor | null;
@@ -171,7 +169,7 @@ function ControlGroup({
 // ── The page ───────────────────────────────────────────────────────────────
 
 export function PrescriptionEditorPage({
-    logoRef, onOpenSidebar, hospitalId, hospital, doctor, onBack,
+    hospitalId, hospital, doctor, onBack,
 }: Props) {
     const [config, setConfig] = useState<PrescriptionConfig>(DEFAULT_PRESCRIPTION_CONFIG);
     const [loaded, setLoaded] = useState(false);
@@ -237,8 +235,6 @@ export function PrescriptionEditorPage({
     return (
         <div className="relative flex min-h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Prescription Pad"
                 subtitle="Everything that appears on your printed prescription"
                 rightSlot={<BackButton label="Back to Clinic" onClick={onBack} />}

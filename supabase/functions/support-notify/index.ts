@@ -251,13 +251,60 @@ const TEMPLATES: Record<string, (ctx: Ctx) => { subject: string; html: string }>
       ),
     };
   },
+  /**
+   * Rewritten 2026-09-11, when Help & Support stopped being two `mailto:`
+   * cards and became a real form (features/support/SupportPage.tsx).
+   *
+   * The old version was three facts and a paragraph, which was right for what
+   * it received. This one is built to be ACTIONED FROM THE MAILBOX: the
+   * subject line alone says who and what, the doctor's own words come first
+   * at full size (they are the message — everything else is metadata about
+   * it), then the triage areas, then the browser/session facts as a quiet
+   * table nobody has to read unless the words above it were not enough.
+   *
+   * `replyTo` is rendered as a mailto: link rather than set as a real
+   * Reply-To header: the send goes out on AREN's own Zoho mailbox, and a
+   * header claiming a doctor-supplied address would be a spoofable field on
+   * outbound mail AREN owns. One click either way; no forged header.
+   */
   support_request(ctx) {
+    const areas = Array.isArray(ctx.areas) ? (ctx.areas as string[]) : [];
+    const words = String(ctx.message ?? '').trim();
+    const diag = (ctx.diagnostics && typeof ctx.diagnostics === 'object')
+      ? (ctx.diagnostics as Record<string, unknown>)
+      : {};
+
     return {
-      subject: `AREN — Support Request — ${ctx.clinicName}`,
+      subject: `AREN Support — ${ctx.topic || 'Request'} — ${ctx.doctorName} (${ctx.clinicName})`,
       html: SHELL(
         heading('Support request') +
-        facts([['Doctor', ctx.doctorName as string], ['Clinic', ctx.clinicName as string], ['Subject', ctx.topic as string], ['Time', istTime()]]) +
-        (ctx.message ? `<p style="margin:0;color:#374151">${esc(ctx.message)}</p>` : '')
+        subjectBand({
+          who: String(ctx.doctorName),
+          sub: String(ctx.clinicName),
+          ref: ctx.topic ? String(ctx.topic) : null,
+        }) +
+        (words
+          ? `<div style="margin:0 0 14px;padding:14px 16px;background:#f9fafb;border-left:3px solid #1268e8;border-radius:0 8px 8px 0;` +
+            `font-size:15px;line-height:1.6;color:#111827;white-space:pre-wrap">${esc(words)}</div>`
+          : `<p style="margin:0 0 14px;color:#6b7280;font-style:italic">No message — the topic above is the whole request.</p>`) +
+        (areas.length
+          ? `<p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af">Affected</p>` +
+            `<p style="margin:0 0 14px;color:#374151;font-weight:600">${areas.map((a) => esc(a)).join(' &middot; ')}</p>`
+          : '') +
+        // The reply address is the one ACTIONABLE thing in the mail, so it
+        // gets its own line and a real mailto: link. It cannot go through
+        // `facts()` — that helper escapes every value, which is exactly what
+        // you want for the diagnostics below and exactly what would print an
+        // anchor tag as literal text here.
+        (ctx.replyTo
+          ? `<p style="margin:0 0 14px;font-size:14px;color:#374151">Reply to ` +
+            `<a href="mailto:${esc(ctx.replyTo)}" style="color:#1268e8;font-weight:700">${esc(ctx.replyTo)}</a></p>`
+          : `<p style="margin:0 0 14px;font-size:14px;color:#6b7280">No reply address given — reply via the clinic record.</p>`) +
+        facts([
+          ['Sent', istTime()],
+          ...Object.entries(diag).map(([k, v]) => [k, v] as [string, unknown]),
+        ]) +
+        footerNote('Sent from Help & Support inside AREN Cortex. The doctor and clinic above were resolved from their signed-in session, not typed in.')
       ),
     };
   },

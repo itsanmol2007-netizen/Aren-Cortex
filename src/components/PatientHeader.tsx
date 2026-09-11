@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pill, Stethoscope, 
 import { useState, useEffect, useRef } from "react";
 import logo from "../assets/aren-logo.png";
 import type { Doctor, Patient } from "../types";
-import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
+import { useClinicShape } from "../hooks/useClinicShape";
 import { ActionButton } from "./ActionButton";
 import { formatVisitDate } from "./PastVisitCard";
 import type { RealVisit } from "../lib/db";
@@ -29,9 +29,6 @@ type PatientHeaderProps = {
   onOpenPatientModal: () => void;
   onReviewRx: () => void;
   onCancelConsult: () => void;
-  onOpenSidebar: () => void;
-  isSidebarOpen: boolean;
-  logoRef: React.RefObject<HTMLDivElement>;
   pastVisits?: RealVisit[];
   pastVisitsLoading?: boolean;
   /**
@@ -50,10 +47,10 @@ type PatientHeaderProps = {
    */
   sessionLabels?: Map<string, string>;
   /**
-   * ── Consult's own controls (2026-09-03) ─────────────────────────────────
+   * ── Front-desk controls (2026-09-03) ────────────────────────────────────
    *
    * All optional, all absent in Cortex, which is what keeps that header
-   * byte-identical to what it always was. In Consult:
+   * byte-identical to what it always was. With a front desk:
    *
    *   · `onOpenQueue` puts a Queue control in the header. A doctor does not
    *     need to watch the queue while consulting — they need to be able to
@@ -61,7 +58,7 @@ type PatientHeaderProps = {
    *     pinned to the screen.
    *   · `queueCount` / `nextToken` are what that control says without being
    *     opened: how many are waiting, and who is next.
-   *   · `onOpenPatientModal` STILL EXISTS in Consult but is no longer wired
+   *   · `onOpenPatientModal` STILL EXISTS with a front desk but is not wired
    *     to a header button — registering a patient moved into the queue
    *     sheet, where it belongs as the exception it is (receptionist away,
    *     walk-in). It is not removed; see `QueueSheet`'s header.
@@ -80,16 +77,14 @@ type PatientHeaderProps = {
 export function PatientHeader({
   patient, doctor,
   onOpenPatientModal, onReviewRx, onCancelConsult,
-  onOpenSidebar, isSidebarOpen,
   pastVisits = [], pastVisitsLoading = false,
   onOpenVisit, sessionLabels,
   onOpenQueue, queueCount = 0, nextToken,
-  logoRef,
 }: PatientHeaderProps) {
   // "Cortex" or "Consult" — read, not passed, exactly as `WorkspaceHeader`
   // does it. The word and the line under it are the whole of the branding
   // difference; the header's shape, colour and type scale do not move.
-  const { brand, isConsult } = useWorkspaceMode();
+  const { brand, frontDesk } = useClinicShape();
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelTimer, setCancelTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [isStuck, setIsStuck] = useState(false);
@@ -148,7 +143,7 @@ export function PatientHeader({
     <>
       <div ref={sentinelRef} style={{ height: 1, marginBottom: -1 }} aria-hidden="true" />
 
-      <header className={`topbar-unified${isStuck ? " is-stuck" : ""}${isSidebarOpen ? " is-sidebar-open" : ""}`}>
+      <header className={`topbar-unified${isStuck ? " is-stuck" : ""}`}>
         <div className="topbar-stripe" aria-hidden="true" />
 
         <svg className="topbar-atmo" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1400 72" xmlns="http://www.w3.org/2000/svg">
@@ -212,29 +207,12 @@ export function PatientHeader({
           <rect x="195" y="0" width="55" height="72" fill="rgba(168,85,247,0.06)" />
         </svg>
 
-        {/* Brand — purely visual here now. The actual click target that opens
-            the sidebar is GlobalLogoTrigger (rendered at the App level), which
-            tracks this element's position but lives outside this header's
-            stacking context so it stays clickable under any overlay. */}
-        <div className="tb-brand">
-          <div
-            ref={logoRef}
-            className="tb-logo-pill"
-            onClick={onOpenSidebar}
-            role="button"
-            tabIndex={0}
-            aria-label="Open navigation menu"
-            title="Open menu"
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpenSidebar(); }}
-          >
-            <img src={logo} alt="AREN Logo" />
-          </div>
-          <div className="tb-brand-text">
-            <strong>AREN <span>{brand.product}</span></strong>
-            <small>{brand.tagline}</small>
-          </div>
-        </div>
-
+        {/* No logo here. The one logo in the product lives in the nav
+            rail's head (features/sidebar/NavRail.tsx), at the top-left corner
+            of the screen on every page including this one — the rail paints
+            that corner in this topbar's own dark so the band still reads as
+            one piece. A second pill here was the "two logos" problem the
+            2026-09-11 nav rebuild existed to remove. */}
         <div className="tb-divider" aria-hidden="true" />
 
         {/* Patient identity */}
@@ -323,7 +301,7 @@ export function PatientHeader({
           {/* Consult replaces "+ Patient" with the Queue. Cortex keeps it:
               in a solo clinic the doctor IS the front desk, and taking that
               button away would remove the only way to start a consultation. */}
-          {isConsult && onOpenQueue ? (
+          {frontDesk && onOpenQueue ? (
             <button
               type="button"
               className="tb-queue-btn"
@@ -348,7 +326,7 @@ export function PatientHeader({
           {/* Same button, same guard, same modal — it just says what actually
               happens next in a clinic with a queue behind the door. */}
           <button type="button" className="tb-review-btn" onClick={onReviewRx}>
-            {isConsult ? "Complete & Next" : "Review Rx"}
+            {frontDesk ? "Complete & Next" : "Review Rx"}
           </button>
         </div>
       </header>

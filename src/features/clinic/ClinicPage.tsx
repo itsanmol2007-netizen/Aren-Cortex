@@ -61,8 +61,6 @@ import type { DBDoctor, DBHospital } from "../../lib/db";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 
 interface Props {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     /** Loaded once in App.tsx — the same two rows Consult and the prescription
      *  renderer already read. This page edits them; it keeps no second copy. */
     hospital: DBHospital | null;
@@ -108,7 +106,7 @@ function IdentityFact({ icon, value }: { icon: ReactNode; value: string | null |
 // ── The page ───────────────────────────────────────────────────────────────
 
 export function ClinicPage({
-    logoRef, onOpenSidebar, hospital, doctor,
+    hospital, doctor,
     onHospitalChange, onDoctorChange, onNavigate, onOpenPrescriptionEditor,
 }: Props) {
     const identity = useClinicalIdentity();
@@ -233,8 +231,6 @@ export function ClinicPage({
     return (
         <div className="relative flex min-h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Clinic"
                 subtitle="Your clinic, your profile and what your patients see"
                 rightSlot={

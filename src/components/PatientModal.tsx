@@ -19,8 +19,8 @@ type PatientModalProps = {
   /**
    * Always passed today (App.tsx) — a solo Cortex practitioner has no front
    * desk to collect money, so THIS modal is where the fee gets decided, same
-   * moment Consult's `CreateVisitModal` decides it for a front-desk intake.
-   * Consult's own manual-register escape hatch (`registerRequested`) is the
+   * moment the front desk's `CreateVisitModal` decides it for its own intake.
+   * The front-desk flow's own manual-register escape hatch (`registerRequested`) is the
    * exact same situation — the doctor doing their own intake, front desk out
    * of the loop by construction whenever this modal is the one open — so it
    * gets the identical rail, not a separate decision. Optional (rather than

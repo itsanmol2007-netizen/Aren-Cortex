@@ -589,6 +589,50 @@ export async function notifySupport(
     return { ok: true };
 }
 
+/** What the Help & Support page collects. See `SupportPage.tsx`. */
+export interface SupportRequest {
+    /** the chosen topic's label — "Something isn't working", etc. */
+    topic: string;
+    /** which parts of the app it's about; empty when the topic has no areas */
+    areas: string[];
+    /** the doctor's own words. Always allowed, sometimes the only thing said. */
+    message: string;
+    /** how to reach them back, prefilled from their profile */
+    replyTo: string;
+    /** browser/session facts, gathered by the page — see `collectDiagnostics` */
+    diagnostics: Record<string, string>;
+}
+
+/**
+ * File a support request — and, unlike `notifySupport` above, TELL THE CALLER
+ * whether it actually went.
+ *
+ * The difference is not stylistic. Every other kind this function family
+ * sends is an alert ABOUT something that already happened in the database:
+ * the doctor's recharge request is filed whether or not AREN's mailbox is
+ * reachable, so swallowing a mail failure is right — it is AREN's problem to
+ * notice in `support_email_log`, not a failure to report back to a doctor
+ * whose action succeeded.
+ *
+ * A support request has no such database row behind it. **The email IS the
+ * action.** Swallowing the error here would show a doctor "we've got it"
+ * over a message that was never sent, which is the one outcome a support
+ * form must never produce — they would sit and wait for an answer to a
+ * message nobody received. So this one throws, and the page says so.
+ */
+export async function sendSupportRequest(req: SupportRequest): Promise<void> {
+    const { data, error } = await supabase.functions.invoke("support-notify", {
+        body: { kind: "support_request", ...req },
+    });
+    if (error) throw new Error(error.message || "Could not reach AREN support.");
+    // The function answers `{ ok: true, skipped: "not_configured" }` when the
+    // mailbox credentials are missing on the server. That is a silent
+    // non-delivery, which for this kind is a failure like any other.
+    if (data && typeof data === "object" && "skipped" in data) {
+        throw new Error("Support email is not configured on the server yet.");
+    }
+}
+
 // ── Formatting ─────────────────────────────────────────────────────────────
 
 /** "4,999" — credits are always grouped; a bare 4999 reads as a reference

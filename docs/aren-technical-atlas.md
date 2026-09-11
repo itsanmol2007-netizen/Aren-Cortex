@@ -617,6 +617,54 @@ The "does the clinic work right now?" subsystem (built 2026-07-20/21). See also
 - **Doctor presence (heartbeat)** — Cortex writes `doctors.last_seen` via `src/hooks/useDoctorHeartbeat.ts` (30s + immediate, mounted in `App.tsx`); reception derives Online/Away/Offline in `DoctorsCard`. DB writer: `updateDoctorLastSeen` (patients.ts).
 - **Real doctor requests** — `useDoctorRequests` + `subscribeDoctorRequests`/`fetchDoctorRequests`/`acknowledgeDoctorRequest` (patients.ts) against the `doctor_requests` table with Realtime; the old simulator is gone.
 
+## 9a. Decisions on record
+
+### 2026-09-11 — Consult is retired. There is one doctor's workspace, and it is Cortex.
+
+Anmol, closing a question he had been carrying for months: *"the line is
+already getting blurred, and the best option is to completely drop the idea of
+Consult. For a doctor, it doesn't matter if he has a receptionist or not —
+it will be Cortex."*
+
+**What the split was.** `hospitals.clinic_mode` decided which of two product
+names a doctor was shown: `solo` → "AREN Cortex", `solo_reception`/
+`multi_doctor` → "AREN Consult". Same screen, same engine, same plan, same
+prescription, same save path. The only real difference was where the encounter
+came from — reception preparing a patient, or the doctor typing one in.
+
+**Why it went.** That difference was already handled where it actually lives,
+and handled well: *somebody waiting → the doctor gets the queue; nobody waiting
+→ the doctor gets the registration form.* That is one rule, not two products.
+A solo practice simply never has anyone in its queue, so it only ever sees the
+second half of the same rule. Carrying a second name for it bought nothing and
+cost a recurring class of bug — one surface saying "Cortex" while the surface
+two inches above it said "Consult" (fixed 2026-09-06 on `GlobalLogoTrigger`,
+again on the sidebar drawer, and it would have kept happening).
+
+**What replaced it.** `lib/workspace/mode.ts` → `lib/workspace/clinicShape.ts`,
+`useWorkspaceMode` → `useClinicShape`. The same column is still read, still
+derived, still never chosen by a doctor; it just answers a smaller and honest
+question — **does somebody else do intake here?** (`frontDesk`). That boolean
+gates a queue, a "Complete & Next" button and a few Overview tiles. `MODE_BRAND`
+(a two-entry lookup) became `CORTEX_BRAND` (a constant), because a constant
+cannot disagree with the header above it.
+
+**Nothing about behaviour changed.** Every queue, gate and front-desk handoff
+works exactly as before. This was a naming amputation, not a refactor of the
+workflow.
+
+**The three names that remain**, one per genuinely different job:
+`Cortex` (the doctor's workspace) · `Front Desk` (reception's) ·
+`Parallax` (clinic administration).
+
+### 2026-09-11 — The multi-doctor plan is AREN Constellation.
+
+`plans.code='multi'` was "AREN Nova"; it is **AREN Constellation** now
+(₹25,000/year, unchanged). `AREN Polaris` (`code='solo'`, ₹18,000/year) is
+unchanged. Renamed in the database, which is the only place a plan name is
+allowed to live — nothing branches on `plans.name`, `plans.code` is the stable
+key (see `lib/db/subscriptions.ts`).
+
 ## 10. Deeper charts
 
 - `aren-cortex-atlas.md` — ★ the Cortex-only companion to this document: consult lifecycle, the intelligence layer, the three styling vocabularies, overlay doctrine, the full defect ledger, and a "where do I change X?" table. Read it before any doctor-facing work.

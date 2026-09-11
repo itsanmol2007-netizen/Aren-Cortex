@@ -13,7 +13,7 @@ import { countDedicatedAdmins } from "../lib/db/admin";
 import {
     canOpenFullSuite, resolveAdminAccess, type AdminAccess,
 } from "../lib/workspace/adminAccess";
-import { shapeLabel } from "../lib/workspace/mode";
+import { shapeLabel } from "../lib/workspace/clinicShape";
 
 export interface AdminAccessInfo {
     access: AdminAccess;

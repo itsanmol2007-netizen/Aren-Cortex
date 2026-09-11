@@ -21,7 +21,7 @@ until Part 5.
 ## How it fits together
 
 ```
- Doctor taps "WhatsApp" in Consult
+ Doctor taps "WhatsApp" on the consult screen
         │
         ▼
  server/messaging/service.js

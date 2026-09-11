@@ -45,16 +45,16 @@ overlay that binds an un-modified key **must** take focus when it opens
 (`useOverlayFocus`) and must be in `isAnyModalOpen`, or the binding is dead
 on arrival (keystroke goes to whatever's behind the scrim).
 
-Not Consult-only: the `"practice"` scope (2026-08-29) extends the same
+Not consult-only: the `"practice"` scope (2026-08-29) extends the same
 table to the Practice page's Preferred Medicines card — Ctrl+K/"/" to
 focus its search, ↑↓+Enter to walk results, via the same `useRovingList`
 mechanism `ConditionsCard` uses. `App.tsx`'s `useConsultKeyboard` stays
-Consult-only (its `STOPS`/refs are all consult panels and it runs
+consult-only (its `STOPS`/refs are all consult panels and it runs
 unconditionally regardless of which page is showing, so its own bindings
 mostly no-op harmlessly while Practice is up); Practice's own listener is
 a small `useEffect` local to `PreferredMedicinesCard`, scoped for free by
 only existing in the DOM while that card is mounted, gated on a
-Practice-local `anyModalOpen` the same way `isAnyModalOpen` gates Consult's.
+Practice-local `anyModalOpen` the same way `isAnyModalOpen` gates the consult's.
 Adding the same treatment to another Practice card (Labs, Companions) is
 the same three pieces: a scope entry + bindings in `keymap.ts`, a
 `useRovingList` wired to that card's own result rows, and the
@@ -70,7 +70,7 @@ treatment (gradient stripe, icon badge) as of 2026-08-17 — see `.pm-*` in
 
 ## Two structural rules (2026-09-08)
 
-Both products, enforced in the database, not by App.tsx bookkeeping.
+Every clinic shape, enforced in the database, not by App.tsx bookkeeping.
 
 - **One active consult per doctor.** `visits_one_serving_per_doctor` partial
   unique index (`20260908_one_active_consult_and_fee_gate.sql`). A second
@@ -93,12 +93,13 @@ Both products, enforced in the database, not by App.tsx bookkeeping.
 
 On the bare consult screen (`activePage === null`, no consult in memory):
 
-- **Immediately** (Consult only — Cortex's PatientModal is already its
-  default): anyone waiting → `QueueSheet`; nobody waiting → `PatientModal`
-  register screen directly, never a locked empty queue sheet. The "is
-  something already covering the screen" check is `consultOverlayShowing`,
-  NOT raw `patientModalOpen` — that flag defaults `true` and stays `true` in
-  Consult while the modal is unrendered (only `registerRequested` renders it).
+- **Immediately** (front-desk clinics only — a solo clinic's PatientModal is
+  already its default): anyone waiting → `QueueSheet`; nobody waiting →
+  `PatientModal` register screen directly, never a locked empty queue sheet.
+  The "is something already covering the screen" check is
+  `consultOverlayShowing`, NOT raw `patientModalOpen` — that flag defaults
+  `true` and stays `true` at a front-desk clinic while the modal is unrendered
+  (only `registerRequested` renders it).
   Checking the raw flag was the "blank consult screen until you navigate away
   and back" bug.
 - **In the background**, once per session per doctor: `fetchActiveConsult`

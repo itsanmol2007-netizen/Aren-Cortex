@@ -50,7 +50,7 @@ interface ReviewModalProps {
    * all) needs no change.
    */
   onSendWhatsApp?: (language: RxLanguage) => void;
-  // "review": Consult's edit/confirm flow (default, unchanged).
+  // "review": the consult screen's edit/confirm flow (default, unchanged).
   // "print":  Print RX's read-only reprint surface — no Edit, no Save; the
   //           primary action is printing. One rendering pipeline, two doors.
   mode?: "review" | "print";

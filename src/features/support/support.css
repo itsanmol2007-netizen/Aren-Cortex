@@ -3,6 +3,9 @@
    operational colour (`--cs-blue` in consult.css) — this page is a working
    feature, not a placeholder, and reuses the "real action" hue rather than
    a "someday" one.
+
+   Rebuilt 2026-09-11 around a real request form; the two contact cards it
+   used to BE are now the quiet footer under it.
 ──────────────────────────────────────────────────────────────────────────── */
 
 .supp-page {
@@ -24,86 +27,484 @@
 .supp-body {
     flex: 1;
     overflow-y: auto;
-    padding: 56px 20px 20px;
-    max-width: 480px;
+    /* Wider than the 480px the two-card version used: this page carries a
+       form now, and a 480px column would put the topic cards in a single
+       cramped stack. */
+    padding: 34px 20px 40px;
+    max-width: 720px;
     margin: 0 auto;
     width: 100%;
     display: flex;
     flex-direction: column;
-    /* §11, 2026-08-24 — was `justify-content: center`, vertically centring
-       three short lines of content inside a full `min-height: 100vh` box.
-       Technically correct (doctrine: an empty state should be short and
-       centred in whatever space is left) but this page is not empty, it is
-       just SHORT — and centring a small card in a full screen reads exactly
-       like the "halfway rendered" bug this same box's `min-height` fix was
-       written to solve, one layer up: roughly half the viewport as visible
-       blank space above the card and the same again below it. Top-aligned
-       instead, with a fixed top offset rather than a centred one, so the
-       page reads as "here is the content" the way every other real page in
-       the app does — the blank space below (unavoidable on a page this
-       short, on a tall screen) now reads as trailing room, not as a missing
-       half of the page. */
-    gap: 20px;
+    /* §11, 2026-08-24 — top-aligned, never vertically centred. Centring a
+       small card in a full screen reads exactly like the "halfway rendered"
+       bug this box's `min-height` fix was written to solve one layer up. */
+    gap: 22px;
 }
 
-.supp-hero {
+/* ── The form card ─────────────────────────────────────────────────────── */
+.supp-form {
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+    background: #fff;
+    border: 1px solid #e6e8f0;
+    border-radius: 16px;
+    padding: 26px 26px 28px;
+    box-shadow: 0 1px 2px rgba(20, 30, 50, 0.04), 0 10px 30px rgba(20, 30, 50, 0.035);
+}
+
+.supp-step {
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+}
+
+.supp-step-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+}
+
+/* A numbered step, not a heading with a number typed into it — the numbers
+   renumber themselves when the "which part" step is skipped (see
+   SupportPage.tsx), and a doctor who never sees step 2 should see 1 then 2,
+   not 1 then 3. */
+.supp-step-num {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: 7px;
+    background: rgba(18, 104, 232, 0.10);
+    color: #1268e8;
+    font-size: 11.5px;
+    font-weight: 800;
+}
+
+.supp-step-head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 750;
+    color: #1c2333;
+    letter-spacing: -0.01em;
+    /* base.css uppercases every bare `h2` — that rule was written for the
+       consult's panel captions ("POSSIBLE CONDITIONS"), where a shouted label
+       is the point. These are questions asked of a doctor ("What happened,
+       and what were you doing just before it?"), and a question in caps reads
+       as an accusation. */
+    text-transform: none;
+}
+
+.supp-step-head p {
+    margin: 3px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #79819a;
+}
+
+/* ── Topic cards ───────────────────────────────────────────────────────── */
+.supp-topics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+}
+
+/* "Something else" is the fifth of five — it takes the full last row rather
+   than sitting in a half-width box with a hole beside it. It is a real
+   option, so it gets a whole row like a real option. */
+.supp-topics > :last-child {
+    grid-column: 1 / -1;
+}
+
+.supp-topic {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 12px 13px;
+    border: 1px solid #e6e8f0;
+    border-radius: 13px;
+    background: #fcfcfe;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.supp-topic:hover {
+    border-color: #c9d3e6;
+    background: #fff;
+}
+
+.supp-topic:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.22);
+}
+
+.supp-topic.is-on {
+    border-color: #1268e8;
+    background: rgba(18, 104, 232, 0.045);
+    box-shadow: 0 0 0 1px #1268e8, 0 4px 14px rgba(18, 104, 232, 0.12);
+}
+
+.supp-topic-icon {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(18, 104, 232, 0.08);
+    color: #3b7ae0;
+    transition: background 140ms ease, color 140ms ease;
+}
+
+.supp-topic.is-on .supp-topic-icon {
+    background: linear-gradient(150deg, #4b91f7, #1268e8);
+    color: #fff;
+    box-shadow: 0 3px 9px rgba(18, 104, 232, 0.30);
+}
+
+.supp-topic-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.supp-topic-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #232a3b;
+}
+
+.supp-topic-hint {
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: #858da3;
+}
+
+.supp-topic-tick {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    background: #1268e8;
+    color: #fff;
+    opacity: 0;
+    transform: scale(0.6);
+    transition: opacity 140ms ease, transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.supp-topic.is-on .supp-topic-tick {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* ── Area chips ────────────────────────────────────────────────────────── */
+.supp-areas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.supp-area {
+    padding: 7px 13px;
+    border: 1px solid #e0e4ef;
+    border-radius: 999px;
+    background: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #5a6379;
+    cursor: pointer;
+    transition: border-color 130ms ease, background 130ms ease, color 130ms ease;
+}
+
+.supp-area:hover {
+    border-color: #bfcbe2;
+    color: #2f3748;
+}
+
+.supp-area:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.22);
+}
+
+.supp-area.is-on {
+    border-color: transparent;
+    background: linear-gradient(150deg, #4b91f7, #1268e8);
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(18, 104, 232, 0.26);
+}
+
+/* ── Free text ─────────────────────────────────────────────────────────── */
+textarea.supp-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 13px 14px;
+    border: 1px solid #e0e4ef;
+    border-radius: 12px;
+    background: #fcfcfe;
+    font: inherit;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #232a3b;
+    resize: vertical;
+    min-height: 120px;
+    transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+textarea.supp-textarea:focus {
+    outline: none;
+    background: #fff;
+    border-color: #1268e8;
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.14);
+}
+
+textarea.supp-textarea::placeholder {
+    color: #a8afc0;
+}
+
+.supp-reply {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.supp-reply label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #5a6379;
+    flex-shrink: 0;
+}
+
+input#supp-reply-to {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 12px;
+    border: 1px solid #e0e4ef;
+    border-radius: 10px;
+    background: #fcfcfe;
+    font: inherit;
+    font-size: 13px;
+    color: #232a3b;
+    transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+input#supp-reply-to:focus {
+    outline: none;
+    background: #fff;
+    border-color: #1268e8;
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.14);
+}
+
+/* ── Send ──────────────────────────────────────────────────────────────── */
+.supp-send-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.supp-send {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border: none;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #2b7ef0 0%, #1268e8 100%);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(18, 104, 232, 0.28);
+    transition: transform 140ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.supp-send:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(18, 104, 232, 0.36);
+}
+
+.supp-send:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.supp-send-note {
+    font-size: 12px;
+    color: #98a0b2;
+}
+
+.supp-spin {
+    animation: supp-spin 900ms linear infinite;
+}
+
+@keyframes supp-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.supp-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 11px 13px;
+    border: 1px solid rgba(220, 38, 38, 0.24);
+    border-radius: 11px;
+    background: rgba(220, 38, 38, 0.05);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #9b2c2c;
+}
+
+.supp-error svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.supp-error a {
+    color: #9b2c2c;
+    font-weight: 700;
+}
+
+.supp-attached {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: #8b93a6;
+}
+
+.supp-attached svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #4a9a6a;
+}
+
+/* ── Sent ──────────────────────────────────────────────────────────────── */
+.supp-sent {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 8px;
-    padding: 0 12px;
+    gap: 10px;
+    background: #fff;
+    border: 1px solid #e6e8f0;
+    border-radius: 16px;
+    padding: 44px 30px 38px;
+    box-shadow: 0 1px 2px rgba(20, 30, 50, 0.04), 0 10px 30px rgba(20, 30, 50, 0.035);
 }
 
-.supp-hero-title {
-    margin: 6px 0 0;
-    font-size: 16px;
-    font-weight: 750;
-    color: #1e293b;
+.supp-sent-tick {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(150deg, #34d399, #059669);
+    color: #fff;
+    box-shadow: 0 6px 20px rgba(5, 150, 105, 0.32);
+    margin-bottom: 4px;
 }
 
-.supp-hero-sub {
+.supp-sent h2 {
     margin: 0;
-    max-width: 340px;
-    font-size: 12.5px;
-    line-height: 1.6;
-    color: #64748b;
+    font-size: 19px;
+    font-weight: 750;
+    color: #1c2333;
+    letter-spacing: -0.015em;
 }
 
-.supp-cards {
+.supp-sent p {
+    margin: 0;
+    max-width: 400px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: #6e7688;
+}
+
+.supp-sent strong {
+    color: #2f3748;
+}
+
+.supp-again {
+    margin-top: 8px;
+    padding: 9px 18px;
+    border: 1px solid #dde2ee;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #4a5468;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+}
+
+.supp-again:hover {
+    border-color: #bfcbe2;
+    background: #f8fafd;
+}
+
+/* ── Direct contact, under everything ──────────────────────────────────── */
+.supp-direct {
     display: flex;
     flex-direction: column;
+    gap: 9px;
+}
+
+.supp-direct-label {
+    font-size: 10.5px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #98a0b2;
+    padding-left: 2px;
+}
+
+.supp-direct-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
 
 .supp-card {
     display: flex;
     align-items: center;
-    gap: 12px;
-    background: #ffffff;
-    border: 1px solid #d0d8e8;
-    border-radius: 12px;
-    padding: 14px 16px;
+    gap: 11px;
+    padding: 12px 14px;
+    border: 1px solid #e6e8f0;
+    border-radius: 13px;
+    background: #fff;
     text-decoration: none;
-    transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 
 .supp-card:hover {
-    border-color: #1268e8;
-    box-shadow: 0 4px 16px -8px rgba(18, 104, 232, 0.35);
+    border-color: #c9d3e6;
     transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(20, 30, 50, 0.06);
 }
 
 .supp-card-icon {
+    display: grid;
+    place-items: center;
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
     border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #eef4ff;
-    color: #1268e8;
+    background: rgba(18, 104, 232, 0.08);
+    color: #3b7ae0;
 }
 
 .supp-card-text {
@@ -115,31 +516,29 @@
 
 .supp-card-label {
     font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    font-weight: 750;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #94a3b8;
+    color: #98a0b2;
 }
 
 .supp-card-value {
-    font-size: 13.5px;
-    font-weight: 650;
-    color: #1e293b;
+    font-size: 13px;
+    font-weight: 700;
+    color: #232a3b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.supp-docs {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 11px 14px;
-    border-radius: 9px;
-    background: #eaeef5;
-    color: #64748b;
-    font-size: 11.5px;
-    line-height: 1.5;
-}
+/* ── Narrow ────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+    .supp-topics,
+    .supp-direct-cards {
+        grid-template-columns: 1fr;
+    }
 
-.supp-docs svg {
-    flex-shrink: 0;
-    color: #94a3b8;
+    .supp-form {
+        padding: 20px 16px 22px;
+    }
 }

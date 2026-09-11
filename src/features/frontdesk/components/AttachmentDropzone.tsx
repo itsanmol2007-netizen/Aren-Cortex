@@ -5,7 +5,7 @@ import { useT } from "../i18n/i18n";
 
 // Front Desk's one attachment entry point — drop a file or click to browse,
 // matching the reference intake screenshot (2026-08-23) exactly. Reception
-// isn't making the clinical xray/scan/lab-report distinction Consult's
+// isn't making the clinical xray/scan/lab-report distinction the consult screen's
 // AttachmentsCard asks a doctor to pick FIRST (that distinction drives the
 // compression profile — compress.ts still needs some type, so one is
 // inferred here from the file's mime type). Good enough for what reception

@@ -781,7 +781,7 @@ export async function fetchPatientVisits(
 ): Promise<RealVisit[]> {
     // Used to filter to status="completed" only. That silently dropped every
     // visit still `serving`/`waiting` — for a patient whose most recent visit
-    // hasn't been finished in Consult yet, this page showed a flat empty
+    // hasn't been finished yet, this page showed a flat empty
     // timeline/trend graph while the Overview row (a different query) still
     // showed a nonzero visit count, an unexplained mismatch that just reads
     // as broken. Found 2026-08-23 after Anmol reported the page looking

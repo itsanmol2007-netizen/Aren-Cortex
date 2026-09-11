@@ -18,7 +18,7 @@
 // from facts the database already holds — the signed-in person's role,
 // whether the clinic employs anybody whose job is administration, and
 // whether THIS doctor personally carries admin authority — exactly the way
-// `modeForClinic` derives Cortex vs Consult from `clinic_mode` rather than
+// `hasFrontDesk` derives the clinic's shape from `clinic_mode` rather than
 // offering it as a switch. Rule 19: when two things must agree, make one read
 // the other.
 //

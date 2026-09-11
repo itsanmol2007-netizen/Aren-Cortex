@@ -39,7 +39,7 @@ free-text and composition-request fallbacks.
 | What a prescription PRINTS (letterhead, footer, standing advice) | `src/features/clinic/PrescriptionEditorPage.tsx` writes the config; `features/prescription/PrescriptionDocument.tsx` renders it. Never the other way round. |
 | Clinic information / doctor profile / opening hours forms | `src/features/clinic/ClinicModals.tsx` |
 | The specimen patient + medicines both Rx previews show | `src/features/clinic/samplePrescription.ts` — one file, both surfaces |
-| How the config reaches a REAL printed prescription | `features/prescription/usePrescriptionConfig.ts`, loaded inside `ReviewModal` (the one door Consult / Patient Record / Print RX all print through) |
+| How the config reaches a REAL printed prescription | `features/prescription/usePrescriptionConfig.ts`, loaded inside `ReviewModal` (the one door the consult / Patient Record / Print RX all print through) |
 | Logo/photo compression before upload | `lib/image/compress.ts` — the one place |
 | The shared logo/photo picker UI | `features/clinic/ui.tsx` → `ImagePicker` |
 | Black & white printing | `PrescriptionConfig.printMode`, read in `PrescriptionDocument.tsx`'s `StandardDocument` (thermal is unaffected — already monochrome) |
@@ -58,8 +58,11 @@ free-text and composition-request fallbacks.
 | The fee strip on the intake form | `features/frontdesk/components/FeeSection.tsx`; state flows through `CreateVisitModal` → `useVisitActions.createNewVisit` |
 | What counts as a follow-up | `lib/db/payments.ts` → `FOLLOW_UP_WINDOW_DAYS` / `defaultVisitType` — a DEFAULT the desk always overrides |
 | The fee audit trail | `visit_payment_events` (append-only: no UPDATE/DELETE policy exists); read by `fetchPaymentAudit`, shown on Parallax → Money |
+| Whether this clinic has a front desk (a queue to receive) | `lib/workspace/clinicShape.ts` → `hasFrontDesk` / `hooks/useClinicShape.ts` → `frontDesk`. It gates a queue and a button, never a product name — Consult was retired 2026-09-11, atlas §9a |
+| A nav destination — adding, renaming, reordering, regrouping | `features/sidebar/SidebarNav.tsx` → `NAV_DESTINATIONS`, **the one list**. The rail and the expanded panel both render from it and cannot drift; dividers come from the `group` field via `startsGroup()`, never a second list |
+| How the nav LOOKS (rail width, badge size, tones, the panel) | `features/sidebar/sidebar.css`. `--rail-w`/`--rail-pad`/`--badge` are shared by rail and panel on purpose — the panel is the rail widened, and changing one without the other makes it visibly jump open |
 | Who sees the admin workspace at all | `lib/workspace/adminAccess.ts` (pure rule) + `hooks/useAdminAccess.ts` — never a per-page check |
-| The admin product name, or a clinic-shape label | `lib/workspace/mode.ts` → `ADMIN_BRAND` / `SHAPE_LABEL` — the one place |
+| The admin product name, or a clinic-shape label | `lib/workspace/clinicShape.ts` → `ADMIN_BRAND` / `SHAPE_LABEL` — the one place |
 | Anything Parallax QUERIES | `lib/db/admin.ts` — the pages do no querying (rule 1) |
 | An admin page, or adding one | `src/features/admin/pages/*` + its route in `main.tsx` + a row in `AdminShell.tsx`’s `NAV` |
 | The admin rail (width, collapse, persistence) | `features/admin/AdminShell.tsx` — mirrors `frontdesk/components/NavRail.tsx`, keep them animating alike |
@@ -67,7 +70,7 @@ free-text and composition-request fallbacks.
 | The period selector on an admin page | `features/admin/PeriodBar.tsx` — the one place |
 | Consultation fees / GST / desk-discount policy | `features/admin/FeesModal.tsx` writes; `lib/db/admin.ts` → `updateDoctorFees` / `updateBillingPolicy` |
 | Clinic-endorsed labs (and pushing them to doctors) | `lib/db/admin.ts` → `fetchClinicLabs` / `applyClinicLabsToAllDoctors`, `clinic_preferred_labs` table |
-| An admin-doctor's clinic-management layer inside Cortex/Consult | `features/overview/DoctorOverviewPage.tsx`'s "Clinic management" section — folded in 2026-09-06, `ClinicControlPage.tsx` is gone |
+| An admin-doctor's clinic-management layer inside Cortex | `features/overview/DoctorOverviewPage.tsx`'s "Clinic management" section — folded in 2026-09-06, `ClinicControlPage.tsx` is gone |
 | Requesting a composition/salt not in the catalogue | `lib/db/synapse.ts` → `requestNewComposition`, `composition_requests` table (a request queue, never a live mint — rule 22) |
 
 **What's NOT covered here:** WHY a file is shaped the way it is (read that

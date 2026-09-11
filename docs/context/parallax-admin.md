@@ -10,8 +10,9 @@ became its own workspace.
 
 ## What Parallax is
 
-The third workspace, beside Cortex (doctor does own intake) and Consult (front
-desk prepares the encounter). Parallax answers a question neither of them can:
+The third workspace, beside Cortex (the doctor's own, whether or not a front
+desk prepares the encounter) and Front Desk (reception's). Parallax answers a
+question neither of those can:
 **"how is my clinic doing, who works here, and what are we charging?"**
 
 It is **not** a clinical surface. It never shows a chart, a diagnosis, a
@@ -22,9 +23,10 @@ visit ids (Anmol, 2026-09-04: names and money yes, clinical detail no).
 
 ## The name lives in one constant
 
-`src/lib/workspace/mode.ts` → `ADMIN_BRAND`. That file's header already claimed
-to be "the only place either product name is written down"; the admin product
-joins it rather than starting a second convention. Renaming Parallax is that
+`src/lib/workspace/clinicShape.ts` → `ADMIN_BRAND`. That file is the only
+place a product name is written down; the admin product lives there rather
+than starting a second convention. (It was `mode.ts` until 2026-09-11, when
+the Cortex/Consult split was retired — atlas §9a.) Renaming Parallax is that
 object and nothing else.
 
 "Parallax": measuring a subject by comparing it from two viewpoints. The whole
@@ -32,8 +34,10 @@ page compares — this period against the one before, this bench against that
 one. Alternate on record if it is ever changed: **Azimuth**.
 
 `SHAPE_LABEL` in the same file holds the human words for clinic shapes. There
-is **no four-tier subscription ladder** — AREN Polaris remains the only plan
-(Anmol, 2026-09-04). These are internal vocabulary and display strings.
+is **no four-tier subscription ladder** (Anmol, 2026-09-04) — two plans only:
+**AREN Polaris** (single-doctor) and **AREN Constellation** (multi-doctor,
+renamed from "Nova" 2026-09-11). Clinic shapes are internal vocabulary and
+display strings; they are not the plans.
 
 | Stored `clinic_mode` | Shown |
 |---|---|
@@ -115,7 +119,7 @@ nested route rendering a body only — the shell owns the dark header.
 | `plan` | `pages/PlanPage.tsx` | Subscription facts; every action writes a *request* |
 
 Plus `pages/ClinicControlPage.tsx` — the embedded summarised view, rendered
-inside Cortex/Consult at `activePage === "admin"`, **not** a Parallax route.
+inside Cortex at `activePage === "admin"`, **not** a Parallax route.
 
 ## The rail and the scroll model
 

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
 import {
     Activity,
     CheckCircle,
@@ -78,8 +77,6 @@ interface Props {
      *  `useConsultLifecycle.resumeConsult`'s own doc comment for why this is
      *  a distinct function from `onStartConsult` above, not a call to it. */
     onResumeConsult: (patient: Patient, visitId: string) => void;
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     specialty: SpecialtyProfile;
     /** Same nav handler `PracticePage`/`SidebarNav` already use — "Manage
      *  Templates" in Quick Actions routes through it to `"practice"`, the
@@ -578,7 +575,7 @@ function RightPanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenSidebar, specialty, onNavigate, initialSearch, initialPatientId }: Props) {
+export function PatientsPage({ onStartConsult, onResumeConsult, specialty, onNavigate, initialSearch, initialPatientId }: Props) {
     const identity = useClinicalIdentity();
     const [view, setView] = useState<View>("list");
     const [selectedRow, setSelectedRow] = useState<PatientRecordRow | null>(null);
@@ -748,8 +745,6 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
                 specialty={specialty}
                 onBack={goBack}
                 onStartConsult={onStartConsult}
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
             />
         );
     }
@@ -761,8 +756,6 @@ export function PatientsPage({ onStartConsult, onResumeConsult, logoRef, onOpenS
     return (
         <div className="prec-page">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Patients"
                 subtitle="Clinical Overview & Patient Browser"
                 rightSlot={

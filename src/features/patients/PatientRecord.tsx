@@ -23,7 +23,6 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
-import type { RefObject } from "react";
 import {
     AlertCircle,
     ArrowDown,
@@ -479,11 +478,9 @@ interface PatientRecordProps {
     specialty: SpecialtyProfile;
     onBack: () => void;
     onStartConsult: (patient: Patient) => void;
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
 }
 
-export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef, onOpenSidebar }: PatientRecordProps) {
+export function PatientRecord({ row, specialty, onBack, onStartConsult }: PatientRecordProps) {
     const identity = useClinicalIdentity();
     const [visits, setVisits] = useState<RealVisit[]>([]);
     const [loading, setLoading] = useState(true);
@@ -531,7 +528,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
     const completedVisits = useMemo(() => visits.filter((v) => v.status === "completed"), [visits]);
     // `fetchPatientVisits` now returns every non-discarded status (see its own
     // header) rather than silently dropping anything not yet `completed` —
-    // this is what still hasn't finished in Consult. Trends/frequency counts
+    // this is what still hasn't been finished. Trends/frequency counts
     // stay on `completedVisits` only (a mid-consult vitals set isn't a
     // trustworthy reading), but the timeline surfaces these rather than
     // leaving `row.visit_count` (which counts every status) unexplained
@@ -633,8 +630,6 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
     return (
         <div className="prec-page">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Patient Record"
                 subtitle="Clinical History & Continuity"
                 // New Consult moved up here 2026-08-31 — it used to sit alone
@@ -840,8 +835,8 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                             <Clock size={16} />
                                             <span>
                                                 {inProgressVisits.length === 1
-                                                    ? "1 visit hasn't been finished in Consult yet"
-                                                    : `${inProgressVisits.length} visits haven't been finished in Consult yet`}
+                                                    ? "1 visit hasn't been finished yet"
+                                                    : `${inProgressVisits.length} visits haven't been finished yet`}
                                                 {" — it'll appear below once completed."}
                                             </span>
                                         </div>
@@ -865,7 +860,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                                             </p>
                                             <p className="prec-timeline-empty-sub">
                                                 {inProgressVisits.length > 0
-                                                    ? "It'll appear here the moment it's completed in Consult."
+                                                    ? "It'll appear here the moment the consult is completed."
                                                     : "Once a consult is completed, it'll build the timeline here."}
                                             </p>
                                             {inProgressVisits.length === 0 && (
@@ -1059,7 +1054,7 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult, logoRef,
                 screen's longitudinal band opens. Reused, not forked, but in
                 its LIGHT tone here: this page and the graph modal it drills
                 in from are both light surfaces, and the dark tone (correct
-                where it drops out of Consult's dark patient header) read as a
+                where it drops out of the consult screen's dark patient header) read as a
                 different application landing on top of them. See
                 `PastVisitCard.tsx`'s "Two tones" header. */}
             {activeVisit && (

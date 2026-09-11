@@ -31,7 +31,7 @@
 //    the `add_doctor_preferred_labs` migration's header for the "Lab Node"
 //    framing this is a foundation for, not the whole of.
 //  * Prescription Templates — `prescription_templates` / `_items`; applying
-//    one in Consult (CaseSheet's search) still runs every item through the
+//    one on the consult screen (CaseSheet's search) still runs every item through
 //    normal guarded accept path — see useConsultPlan's `handleApplyTemplate`.
 //  * Add New Medicine      — `addMedicine` RPC (already built for Consult's
 //    `AddMedicineSheet`, reused here): composition-anchored, never mints a
@@ -98,8 +98,6 @@ import type { SidebarPage } from "../sidebar/SidebarNav";
 import "./practice.css";
 
 interface Props {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     /** Resolved once in App.tsx from `hospitals.specialty_profile` — the
      *  Consultation Defaults card reads it, never re-derives it. */
     specialty: SpecialtyProfile;
@@ -1431,7 +1429,7 @@ function MeasurementsModal({
             <p className="prac-soon">
                 On by default for {specialtyLabel}. Uncheck the ones you rarely use, or add any
                 other field from the full catalogue below — every field stays one tap away from
-                "+ Add" in Consult regardless of whether it's checked here.
+                "+ Add" on the consult screen regardless of whether it's checked here.
             </p>
             <div className="prac-measure-grid">
                 {fields.map((f) => (
@@ -1801,7 +1799,7 @@ function ManageTermsModal({
  *   * author — add a brand-new pairing between two EXISTING intents this
  *     practice picked from search, never a newly invented intent.
  * Every suggestion this produces still carries the engine's own guard
- * verdict in Consult and is never added automatically — see
+ * verdict on the consult screen and is never added automatically — see
  * `applyHospitalCompanionPrefs` (companions.ts) for the safety rule that
  * makes this true underneath the UI.
  */
@@ -2034,7 +2032,7 @@ function CompanionsModal({
 // ===========================================================================
 
 export function PracticePage({
-    logoRef, onOpenSidebar, specialty, onNavigate,
+    specialty, onNavigate,
     preferredLabs, onPreferredLabsChange, measurePrefs, onMeasurePrefsChange,
     templates, onTemplatesChange, observables,
 }: Props) {
@@ -2146,8 +2144,6 @@ export function PracticePage({
                 this). */}
             <PracticeCanvasArt />
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Practice"
                 subtitle="Tune Cortex to the way you practice"
                 rightSlot={

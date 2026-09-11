@@ -82,7 +82,7 @@ Anmol's brief came with two hard exclusions and one organising idea:
   + a pill button) — the door into the consult is still first on the page,
   just no longer the loudest thing on it.
 
-- **Today's Queue** (Consult only — hidden entirely in Cortex, which has no
+- **Today's Queue** (front-desk clinics only — hidden entirely at a solo clinic, which has no
   front desk to have queued anyone) is a straight READ of App.tsx's own
   `useConsultQueue`, threaded down as props (`queueWaiting`, `queueLoading`,
   `onOpenQueue`, `onStartFromQueueRow`) — never a second poll of "who is

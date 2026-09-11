@@ -13,7 +13,7 @@ import { useGatewaySessions } from "./gateway/GatewaySessionsProvider";
 
 // Visit-level attachments, reached from a queue row's ⋮ menu. Shows what's
 // already on this visit and lets reception add more — the exact same
-// pipeline Consult's AttachmentsCard uses end to end (lib/db/attachments.ts:
+// pipeline the consult screen's AttachmentsCard uses end to end (lib/db/attachments.ts:
 // listAttachments / uploadAttachment / getViewUrl / deleteAttachment — same
 // compression, same attachment-upload-url / -view-url / -delete edge
 // functions, same B2 bucket, same visit_attachments table). This modal is

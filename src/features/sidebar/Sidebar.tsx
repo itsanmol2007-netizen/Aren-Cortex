@@ -1,10 +1,44 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
-import { ChevronRight, X } from "lucide-react";
-import logo from "../../assets/aren-logo.png";
-import { SidebarNav, type SidebarPage } from "./SidebarNav";
+import { useEffect, useRef } from "react";
+import { ChevronRight } from "lucide-react";
+import { NAV_DESTINATIONS, CONSULT_ACTION, startsGroup, type SidebarPage } from "./SidebarNav";
+import { ConstellationWash } from "./ConstellationWash";
 import type { Doctor } from "../../types";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
-import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
+
+// ---------------------------------------------------------------------------
+// THE EXPANDED PANEL — the rail, with the labels showing.
+//
+// Rewritten 2026-09-11. What this used to be: a 272px dark-navy drawer with
+// its own nebula wash, its own logo that flew in from the topbar on a
+// measured JS morph, and a near-opaque scrim over the whole app. Anmol:
+// "sidebar is looking so much dull... so much bulky, the whole page have a
+// light theme and the sidebar has a dark theme." It was a well-built panel
+// belonging to a different product than the one it opened over.
+//
+// Three things changed, and only the third is cosmetic:
+//
+// 1. **It is no longer the way to navigate.** `NavRail` is. This panel exists
+//    to put NAMES on the rail's icons — for a doctor still learning the app,
+//    or checking where they are. Nothing is reachable only from here, which
+//    is why closing it is as cheap as clicking anywhere.
+//
+// 2. **It opens under the header, not over it.** The logo that opens it stays
+//    exactly where it is, lit, in the dark header above — so the panel reads
+//    as dropping out of the logo rather than replacing the screen. That
+//    retired the whole morph apparatus (measuring two rects, computing a
+//    transform delta, animating a logo between them): there is no second
+//    logo to fly, because there is no second logo.
+//
+// 3. It is light, and it carries the constellation instead of the nebula.
+//
+// ── The alignment contract ────────────────────────────────────────────────
+// This panel covers the rail exactly, and its icon badges sit at the same
+// size and the same distance from the left edge as the rail's. That is the
+// entire trick: the badges do not move, the labels slide out beside them,
+// and it reads as one surface widening rather than a drawer arriving. The
+// shared numbers live in sidebar.css as `--rail-w`/`--rail-pad`/`--badge`;
+// change them in one place or the panel will jump off the rail when it opens.
+// ---------------------------------------------------------------------------
 
 type SidebarProps = {
     isOpen: boolean;
@@ -19,7 +53,6 @@ type SidebarProps = {
     avatarUrl?: string | null;
     /** Opens the doctor's own profile — the footer pill is the way in. */
     onOpenProfile: () => void;
-    logoRef: React.RefObject<HTMLDivElement>;
 };
 
 export function Sidebar({
@@ -31,19 +64,10 @@ export function Sidebar({
     doctor,
     avatarUrl,
     onOpenProfile,
-    logoRef,
 }: SidebarProps) {
     const panelRef = useRef<HTMLElement>(null);
-    const sidebarLogoRef = useRef<HTMLDivElement>(null);
 
-    // The drawer used to hard-code "AREN Cortex" / "Phase 1 workflow" while
-    // WorkspaceHeader two inches above it read the real product name from the
-    // clinic row — so every Consult clinic opened this panel and was told it
-    // was running Cortex. Same source as the header now (rule 19: when two
-    // things must agree, make one read the other, never both).
-    const { brand } = useWorkspaceMode();
-
-    // Escape to close
+    // Escape closes, like every other overlay in the app.
     useEffect(() => {
         if (!isOpen) return;
         const handler = (e: KeyboardEvent) => {
@@ -53,64 +77,30 @@ export function Sidebar({
         return () => window.removeEventListener("keydown", handler);
     }, [isOpen, onClose]);
 
-    // Takes focus on the panel while open, hands it back to whatever opened
-    // it (the logo, or the launch trigger) on close — see useOverlayFocus.ts.
-    // This drawer previously had Escape but never took focus at all, so a
-    // doctor who opened it another way than clicking would land with the
-    // keyboard still pointed at the workspace behind it.
+    // Takes focus while open, hands it back to whatever opened it (the header
+    // logo) on close — see useOverlayFocus.ts. Without this a doctor who
+    // opened it from the keyboard would land with the keyboard still pointed
+    // at the workspace behind it.
     useOverlayFocus(panelRef, isOpen);
-
-    // JS morph: when sidebar opens, measure topbar logo rect,
-    // compute the transform delta from sidebar logo position to topbar logo,
-    // set it as CSS vars, add class to trigger the animation.
-    useLayoutEffect(() => {
-        if (!panelRef.current || !sidebarLogoRef.current || !logoRef.current) return;
-
-        if (isOpen) {
-            // Measure the topbar logo (where the morph starts)
-            const srcRect = logoRef.current.getBoundingClientRect();
-            // Measure the sidebar logo (where it will land)
-            const dstRect = sidebarLogoRef.current.getBoundingClientRect();
-
-            // Delta: how far the sidebar logo needs to travel FROM topbar logo
-            const dx = srcRect.left + srcRect.width / 2 - (dstRect.left + dstRect.width / 2);
-            const dy = srcRect.top + srcRect.height / 2 - (dstRect.top + dstRect.height / 2);
-            // Scale: topbar logo pill is ~32px, sidebar is ~36px
-            const scaleFrom = srcRect.width / dstRect.width;
-
-            panelRef.current.style.setProperty("--morph-dx", `${dx}px`);
-            panelRef.current.style.setProperty("--morph-dy", `${dy}px`);
-            panelRef.current.style.setProperty("--morph-scale", `${scaleFrom}`);
-
-            // Trigger morph by adding class on next frame (so CSS vars are set first)
-            requestAnimationFrame(() => {
-                sidebarLogoRef.current?.classList.add("is-morphing");
-            });
-        } else {
-            // Remove morph class when closing so it resets cleanly
-            sidebarLogoRef.current?.classList.remove("is-morphing");
-        }
-    }, [isOpen, logoRef]);
 
     const doctorInitials = doctor.name
         ? doctor.name.split(" ").filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase()
         : "DR";
 
-    const handleNavItemClick = (page: SidebarPage) => {
+    const go = (page: SidebarPage) => {
         onNavigate(page);
-        onClose();
-    };
-
-    const handleConsultClick = () => {
-        onConsult();
         onClose();
     };
 
     return (
         <>
-            {/* Backdrop */}
+            {/* Click anywhere = close. Deliberately a light scrim with a small
+                blur, not the near-black wash the dark drawer used: this panel
+                is an aid, not a mode, and blacking out the doctor's own
+                workspace to show them seven labels was most of why the old one
+                felt heavy. */}
             <div
-                className={`sidebar-backdrop${isOpen ? " is-open" : ""}`}
+                className={`nav-scrim${isOpen ? " is-open" : ""}`}
                 onClick={onClose}
                 aria-hidden="true"
             />
@@ -118,83 +108,76 @@ export function Sidebar({
             <aside
                 ref={panelRef}
                 tabIndex={-1}
-                className={`sidebar-panel cx-kbd-surface${isOpen ? " is-open" : ""}`}
+                className={`nav-panel cx-kbd-surface${isOpen ? " is-open" : ""}`}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Navigation menu"
+                aria-label="Navigation"
+                data-nav-keep
             >
-                {/* Same COLORS as the workspace header's nebula asset
-                    (aren-nebula.svg's own gradient stops — #9333ea/#a855f7/
-                    #c084fc/#6d28d9/#4f46e5 blooms on a #040812→#060a18 base),
-                    not the literal file: that asset is a 1400×64 wide bar
-                    built for a short header strip, and forcing it into a
-                    272px-wide, 100vh-tall panel (by cropping or rotating)
-                    either zoomed into a meaningless sliver or needed fragile
-                    transform math for a worse result than just building the
-                    same palette at the panel's own proportions. This is a
-                    genuine "same visual language" match — same hues, same
-                    soft-bloom-on-dark-navy technique — replacing the old
-                    hand-drawn constellation (dots + connecting lines), which
-                    was a different, more literally "space/sci-fi" motif in
-                    the same color family and the more likely reason the
-                    panel read as a different design system next to the
-                    header it opens from. */}
-                <div className="sidebar-nebula-wash" aria-hidden="true" />
+                <button
+                    type="button"
+                    className="panel-item is-action"
+                    onClick={() => { onConsult(); onClose(); }}
+                >
+                    <span className="panel-badge"><CONSULT_ACTION.icon size={18} strokeWidth={2} /></span>
+                    <span className="panel-label">{CONSULT_ACTION.label}</span>
+                </button>
 
-                {/* Header */}
-                <div className="sidebar-header">
-                    {/* This is the logo that morphs in from the topbar logo */}
-                    <div ref={sidebarLogoRef} className="sidebar-logo-pill">
-                        <img src={logo} alt="AREN Logo" />
-                    </div>
-                    <div className="sidebar-brand-text">
-                        <strong>AREN <span>{brand.product}</span></strong>
-                        <small>{brand.tagline}</small>
-                    </div>
-                    <button
-                        type="button"
-                        className="sidebar-close-btn"
-                        onClick={onClose}
-                        aria-label="Close navigation"
-                    >
-                        <X size={13} />
-                    </button>
+                <div className="panel-divider" />
+
+                {NAV_DESTINATIONS.map((d, i) => {
+                    const Icon = d.icon;
+                    return (
+                        <div key={d.page} className="panel-slot">
+                            {startsGroup(d, NAV_DESTINATIONS[i - 1]) && <div className="panel-divider" />}
+                            <button
+                                type="button"
+                                className={`panel-item tone-${d.tone}${d.utility ? " is-utility" : ""}${activePage === d.page ? " is-active" : ""}`}
+                                onClick={() => go(d.page)}
+                                aria-current={activePage === d.page ? "page" : undefined}
+                            >
+                                <span className="panel-badge"><Icon size={d.utility ? 16 : 17} strokeWidth={2} /></span>
+                                <span className="panel-label">{d.label}</span>
+                            </button>
+                        </div>
+                    );
+                })}
+
+                {/* The same quiet zone, with the same constellation in the
+                    same place — the panel is ~190px wider, so the mark simply
+                    stays left-aligned where the rail drew it. A doctor opening
+                    this sees the stars sit still while the labels arrive,
+                    which is the "one surface widening" idea stated once more
+                    at the bottom of the panel. */}
+                <div className="rail-quiet" aria-hidden="true">
+                    <ConstellationWash />
                 </div>
 
-                {/* Nav */}
-                <div className="sidebar-nav-body">
-                    <SidebarNav
-                        activePage={activePage}
-                        onNavigate={handleNavItemClick}
-                        onConsult={handleConsultClick}
-                    />
-                </div>
-
-                {/* Doctor footer — the doctor's real photo when there is one,
-                    and a way IN to their own profile rather than a static
-                    readout. Two initials in a coloured square is what an
-                    account has before it has a face; once `avatar_url` is
-                    set, showing it instead is both more recognisable and
-                    free (a public URL the browser caches — see
-                    lib/db/profileCache.ts for why the ROW is cached but the
-                    bytes deliberately are not). */}
-                <div className="sidebar-footer">
+                <div className="panel-foot">
+                    {/* The doctor's real photo when there is one, and a way IN
+                        to their own profile rather than a static readout. Two
+                        initials in a coloured square is what an account has
+                        before it has a face; once `avatar_url` is set, showing
+                        it instead is both more recognisable and free (a public
+                        URL the browser caches — see lib/db/profileCache.ts for
+                        why the ROW is cached but the bytes deliberately are
+                        not). */}
                     <button
                         type="button"
-                        className="sidebar-doctor-pill"
+                        className="panel-doctor"
                         onClick={() => { onOpenProfile(); onClose(); }}
                         aria-label={`${doctor.name} — open your profile`}
                     >
-                        <div className="sidebar-doctor-avatar">
+                        <span className="panel-doctor-avatar">
                             {avatarUrl
-                                ? <img src={avatarUrl} alt="" className="sidebar-doctor-photo" />
+                                ? <img src={avatarUrl} alt="" />
                                 : doctorInitials}
-                        </div>
-                        <div className="sidebar-doctor-info">
-                            <span className="sidebar-doctor-name">{doctor.name}</span>
-                            <span className="sidebar-doctor-spec">{doctor.specialty || "General"}</span>
-                        </div>
-                        <ChevronRight size={15} className="sidebar-doctor-chevron" />
+                        </span>
+                        <span className="panel-doctor-info">
+                            <span className="panel-doctor-name">{doctor.name}</span>
+                            <span className="panel-doctor-spec">{doctor.specialty || "General"}</span>
+                        </span>
+                        <ChevronRight size={15} className="panel-doctor-chevron" />
                     </button>
                 </div>
             </aside>

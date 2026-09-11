@@ -47,7 +47,7 @@ import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
 import { useLogout } from "../auth/useLogout";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
-import { ADMIN_BRAND } from "../../lib/workspace/mode";
+import { ADMIN_BRAND } from "../../lib/workspace/clinicShape";
 
 const NAV_STORAGE_KEY = "aren.parallax.nav";
 const RAIL_W = 58;

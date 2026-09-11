@@ -538,7 +538,7 @@ button.prec-trend-card.is-clickable:hover {
     font-style: italic;
 }
 
-/* A visit that hasn't been finished in Consult yet is real and shouldn't be
+/* A visit that hasn't been finished yet is real and shouldn't be
    silently invisible — this is why `row.visit_count` (every status) and the
    timeline below (completed only) can legitimately disagree.
    Sized up 2026-08-31 — Anmol: "its size should be dependent on how much big

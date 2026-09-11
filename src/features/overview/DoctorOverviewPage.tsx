@@ -33,7 +33,7 @@
 //
 // ── Why it doubles as a fix for the blank-canvas invariant
 //
-// App.tsx has a standing invariant: in Consult, with no active consult and no
+// App.tsx has a standing invariant: with a front desk, no active consult and no
 // feature page open, the queue sheet is forced open so the doctor never lands
 // on a bare dark header. A default landing page collides with that — and the
 // resolution chosen is the honest one: Overview IS a feature page
@@ -56,7 +56,6 @@
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { RefObject } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -67,7 +66,7 @@ import {
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { formatShortDate } from "../frontdesk/utils";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
-import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
+import { useClinicShape } from "../../hooks/useClinicShape";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
 import { Card, CardPillButton, EmptyBlock, SkeletonRows } from "../clinic/ui";
 import { Delta, Donut, HourBars, Sparkline, TrendChart, type Slice } from "../admin/charts";
@@ -88,10 +87,8 @@ import type { SidebarPage } from "../sidebar/SidebarNav";
 import type { TodayVisit } from "../../lib/db";
 
 interface Props {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     /** The sidebar's own Consult action, reused rather than reimplemented —
-     *  it already knows that a Consult clinic opens the queue and a Cortex
+     *  it already knows that a front-desk clinic opens the queue and a Cortex
      *  clinic opens the patient form, and a second path into the consult
      *  would be a second place for that rule to drift. */
     onStartConsult: () => void;
@@ -202,11 +199,11 @@ function HourBarsSkeleton() {
 type ActivityKind = "visits" | "prescriptions" | "new_patients";
 
 export function DoctorOverviewPage({
-    logoRef, onOpenSidebar, onStartConsult, onNavigate, onViewPatient,
+    onStartConsult, onNavigate, onViewPatient,
     queueWaiting, queueLoading, onOpenQueue, onStartFromQueueRow,
 }: Props) {
     const identity = useClinicalIdentity();
-    const workspace = useWorkspaceMode();
+    const clinic = useClinicShape();
     const adminAccess = useAdminAccess();
     const navigate = useNavigate();
     const today = clinicToday();
@@ -369,12 +366,12 @@ export function DoctorOverviewPage({
     useEffect(loadManagement, [loadManagement]);
 
     const [recentPatients, setRecentPatients] = useState<DoctorActivityRow[] | null>(() => {
-        if (workspace.isConsult || !identity.ready) return null;
+        if (clinic.frontDesk || !identity.ready) return null;
         return getOverviewCache<DoctorActivityRow[]>(`recent.${identity.hospitalId}.${identity.doctorId}`);
     });
 
     useEffect(() => {
-        if (workspace.isConsult || !identity.ready) return;
+        if (clinic.frontDesk || !identity.ready) return;
         let cancelled = false;
         const recentKey = `recent.${identity.hospitalId}.${identity.doctorId}`;
         const cachedRecent = getOverviewCache<DoctorActivityRow[]>(recentKey);
@@ -392,7 +389,7 @@ export function DoctorOverviewPage({
                 if (!cancelled && !cachedRecent) setRecentPatients([]);
             });
         return () => { cancelled = true; };
-    }, [workspace.isConsult, identity.ready, identity.hospitalId, identity.doctorId]);
+    }, [clinic.frontDesk, identity.ready, identity.hospitalId, identity.doctorId]);
 
     // No UNCONDITIONAL currency fetch here — `formatMoney` already defaults
     // to INR, and pulling `fetchFeeSettings` onto every doctor's landing page
@@ -463,8 +460,6 @@ export function DoctorOverviewPage({
     return (
         <div className="relative flex min-h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title="Overview"
                 subtitle={
                     setup
@@ -784,12 +779,12 @@ export function DoctorOverviewPage({
                             </Card>
 
                             {/* ── Today's Queue ─────────────────────────────
-                                Consult only: a Cortex clinic has no front
+                                Front desk only: a solo clinic has no front
                                 desk and nothing waiting to preview — the
                                 doctor's own "Start Consultation" already IS
                                 their intake. Reuses the exact read the queue
                                 sheet polls; see the Props doc comment. */}
-                            {workspace.isConsult && (
+                            {clinic.frontDesk && (
                                 <Card
                                     tone="violet"
                                     icon={<CalendarClock size={14} />}
@@ -858,13 +853,13 @@ export function DoctorOverviewPage({
                                 Queue simply absent for two children instead
                                 of three, that track still reserved its own
                                 width and rendered as dead white space where
-                                a Consult doctor sees their queue. Same slot,
+                                a front-desk doctor sees their queue. Same slot,
                                 same card shell, the honest equivalent
                                 question for a doctor who does their own
                                 intake: not "who's waiting" (nobody is — this
                                 doctor IS the front desk) but "who did I just
                                 see". */}
-                            {!workspace.isConsult && (
+                            {!clinic.frontDesk && (
                                 <Card
                                     tone="blue"
                                     icon={<Users size={14} />}

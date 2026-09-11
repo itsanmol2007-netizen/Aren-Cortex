@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
-// CONSULT'S OPENING STATE — the front desk's work, on the doctor's chart.
+// THE CONSULT'S OPENING STATE — the front desk's work, on the doctor's chart.
 //
-// The one seam between the two halves of a Consult clinic. Reception records
+// The one seam between the two halves of a front-desk clinic. Reception records
 // the patient, their complaints, volunteered history, sometimes a BP and a
 // weight; the doctor opens the visit and it is already there, marked as the
 // desk's, fully editable, already ranked.

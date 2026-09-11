@@ -1,12 +1,24 @@
 import type { ReactNode, RefObject } from "react";
 import arenLogo from "../assets/aren-logo.png";
-import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
-import type { ModeBrand } from "../lib/workspace/mode";
+import { useClinicShape } from "../hooks/useClinicShape";
+import type { Brand } from "../lib/workspace/clinicShape";
 import "../styles/workspace-header.css";
 
 interface Props {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
+    /**
+     * Renders the brand pill on the left of the header, and clicking it calls
+     * `onOpenSidebar`.
+     *
+     * OPTIONAL since 2026-09-11, and the doctor's workspace no longer passes
+     * either one: its logo lives in the nav rail's head now, permanently, and
+     * a second pill three inches to the right would be the "two logos"
+     * problem this rebuild existed to remove. AREN Parallax still passes
+     * them — its rail is a different thing (in-flow, expands by width) and
+     * its header logo is genuinely the only way to toggle it. One header
+     * component, two arrangements, rather than two header components.
+     */
+    logoRef?: RefObject<HTMLDivElement>;
+    onOpenSidebar?: () => void;
     title: string;
     subtitle: string;
     rightSlot?: ReactNode;
@@ -25,11 +37,11 @@ interface Props {
      * Every clinical page leaves this alone and gets "Cortex"/"Consult" read
      * from the clinic row. The admin suite passes ADMIN_BRAND, because the
      * workspace someone is standing in is not always the workspace their
-     * clinic is served — an admin at a Consult clinic is in Parallax, and a
-     * header that said "AREN Consult" over a staff roster would be naming the
-     * wrong product. Still one header component, not two.
+     * clinic is served — an admin doctor is in Parallax while their clinic runs
+     * Cortex, and a header that said "AREN Cortex" over a staff roster would
+     * be naming the wrong product. Still one header component, not two.
      */
-    brand?: ModeBrand;
+    brand?: Brand;
 }
 
 export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, rightSlot, centerSlot, brand: brandOverride }: Props) {
@@ -38,11 +50,11 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
      *
      * Twelve pages render this header, and every one of them would otherwise
      * have to thread the same prop down to say the same word. The mode is a
-     * fact about the signed-in clinic (`lib/workspace/mode.ts`), the header is
+     * fact about the signed-in clinic (`lib/workspace/clinicShape.ts`), the header is
      * always inside <AuthProvider>, so it reads the fact itself — the same
      * move `useClinicalIdentity` already makes for "which doctor".
      */
-    const { brand: derivedBrand } = useWorkspaceMode();
+    const { brand: derivedBrand } = useClinicShape();
     const brand = brandOverride ?? derivedBrand;
 
     return (
@@ -57,24 +69,27 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
 
             <div className={`ws-header-inner${centerSlot ? " has-center" : ""}`}>
 
-                {/* Logo pill — sidebar trigger */}
-                <div
-                    ref={logoRef}
-                    className="ws-logo-pill"
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Open navigation"
-                    onClick={onOpenSidebar}
-                    onKeyDown={(e) => e.key === "Enter" && onOpenSidebar()}
-                >
-                    <img src={arenLogo} alt="AREN" className="ws-logo-img" />
-                    <div className="ws-logo-text">
-                        <span className="ws-logo-name">AREN</span>
-                        <span className="ws-logo-sub">{brand.product}</span>
-                    </div>
-                </div>
+                {onOpenSidebar && (
+                    <>
+                        <div
+                            ref={logoRef}
+                            className="ws-logo-pill"
+                            role="button"
+                            tabIndex={0}
+                            aria-label="Open navigation"
+                            onClick={onOpenSidebar}
+                            onKeyDown={(e) => e.key === "Enter" && onOpenSidebar()}
+                        >
+                            <img src={arenLogo} alt="AREN" className="ws-logo-img" />
+                            <div className="ws-logo-text">
+                                <span className="ws-logo-name">AREN</span>
+                                <span className="ws-logo-sub">{brand.product}</span>
+                            </div>
+                        </div>
 
-                <div className="ws-header-divider" />
+                        <div className="ws-header-divider" />
+                    </>
+                )}
 
                 {/* Workspace identity */}
                 <div className="ws-header-identity">

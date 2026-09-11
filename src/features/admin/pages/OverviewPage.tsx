@@ -16,7 +16,7 @@
 //
 // ── This is its own workspace, deliberately
 //
-// It is NOT a page in the Cortex/Consult sidebar. It was, briefly, and that
+// It is NOT a page in the Cortex sidebar. It was, briefly, and that
 // was wrong on its own terms: the clinical sidebar's rule is "a destination
 // per JOB the doctor does with the patient in front of them", and "how is my
 // clinic performing" is a different person's job even when it is the same

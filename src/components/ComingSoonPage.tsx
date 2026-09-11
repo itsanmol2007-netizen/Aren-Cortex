@@ -1,16 +1,11 @@
-import type { RefObject } from "react";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 
 interface ComingSoonPageProps {
-    logoRef: RefObject<HTMLDivElement>;
-    onOpenSidebar: () => void;
     title: string;
     subtitle: string;
 }
 
 export function ComingSoonPage({
-    logoRef,
-    onOpenSidebar,
     title,
     subtitle,
 }: ComingSoonPageProps) {
@@ -25,8 +20,6 @@ export function ComingSoonPage({
         // since it stays as the fallback for the next sidebar destination.
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
             <WorkspaceHeader
-                logoRef={logoRef}
-                onOpenSidebar={onOpenSidebar}
                 title={title}
                 subtitle={subtitle}
             />

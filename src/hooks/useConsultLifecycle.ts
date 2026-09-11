@@ -183,9 +183,9 @@ export interface ConsultLifecycle {
    * Start a consult from the patient modal, creating the patient if new.
    *
    * `payment`, when present, is the doctor's own fee capture (`PatientModal`'s
-   * `billing` prop — see its header; wired for both Cortex and Consult's
-   * manual-register path, since both mean "the doctor is doing their own
-   * intake") — already fully resolved by the modal itself (visit type,
+   * `billing` prop — see its header; wired for the solo path and for the
+   * manual-register escape hatch, since both mean "the doctor is doing
+   * their own intake") — already fully resolved by the modal itself (visit type,
    * discount, collected or not) by the time it reaches here. `undefined`/
    * `null` means this clinic has no fee configured for the doctor; either
    * way nothing is written, same as front desk's own `payment: null`

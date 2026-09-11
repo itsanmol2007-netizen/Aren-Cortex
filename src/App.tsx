@@ -9,7 +9,7 @@ import { ActiveConsultGuard } from "./components/ActiveConsultGuard";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import ReviewModal from "./components/ReviewModal";
 import { Sidebar } from "./features/sidebar/Sidebar";
-import { GlobalLogoTrigger } from "./components/GlobalLogoTrigger";
+import { NavRail } from "./features/sidebar/NavRail";
 import type { SidebarPage } from "./features/sidebar/SidebarNav";
 import { PatientsPage } from "./features/patients/PatientsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -52,7 +52,7 @@ import { useConsultQueue } from "./features/consult/queue/useConsultQueue";
 import { QueueSheet } from "./features/consult/queue/QueueSheet";
 import { TransitionModal } from "./features/consult/queue/TransitionModal";
 import { ResumeConsultPrompt } from "./features/consult/queue/ResumeConsultPrompt";
-import { useWorkspaceMode } from "./hooks/useWorkspaceMode";
+import { useClinicShape } from "./hooks/useClinicShape";
 import { logOperationalEvent } from "./lib/db/intake";
 import { GatewaySessionsProvider } from "./features/frontdesk/components/gateway/GatewaySessionsProvider";
 import { GatewayQrModal } from "./features/frontdesk/components/gateway/GatewayQrModal";
@@ -124,11 +124,11 @@ import { fetchLastExercisePlan } from "./lib/db/exercises";
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {};
 
 function App() {
-  // ★ Which workspace this clinic is served. Cortex when the doctor does
-  // their own intake; Consult when a front desk prepares the encounter. Read
-  // from `hospitals.clinic_mode`, never chosen — see lib/workspace/mode.ts.
-  const workspace = useWorkspaceMode();
-  const logoRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+  // ★ The shape of this clinic — does somebody else do intake here? Read
+  // from `hospitals.clinic_mode`, never chosen. It gates a queue and a
+  // button, not a product: there is one workspace and it is Cortex. See
+  // lib/workspace/clinicShape.ts.
+  const clinic = useClinicShape();
   // One ref per Tab stop of the workspace, in the order STOPS walks them
   // (useConsultKeyboard.ts). The old findings/tests refs are gone with the
   // panels they pointed at.
@@ -211,6 +211,15 @@ function App() {
 
   const [toast, setToast] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  /* The header logo lights up while the panel hangs off it. A body class
+     rather than a prop: twelve pages render `WorkspaceHeader`, and every one
+     of them would otherwise have to thread the same boolean down to say the
+     same thing. */
+  useEffect(() => {
+    document.body.classList.toggle("nav-open", sidebarOpen);
+    return () => document.body.classList.remove("nav-open");
+  }, [sidebarOpen]);
   /**
    * Where a doctor lands, and what "not on a feature page" means.
    *
@@ -361,9 +370,9 @@ function App() {
     // before the doctor has had a chance to glance at what's there. Cortex
     // starts from nothing, so the search box is exactly where the cursor
     // should land.
-    if (workspace.isConsult) return;
+    if (clinic.frontDesk) return;
     window.setTimeout(() => chartSearchRef.current?.focus(), 0);
-  }, [workspace.isConsult]);
+  }, [clinic.frontDesk]);
 
   // ★ Ranking + the catalogue. `observables` IS the catalogue in v2 (handoff
   // §16): symptoms, examination findings and patient history are one table
@@ -427,8 +436,8 @@ function App() {
   const queue = useConsultQueue({
     hospitalId: identity.ready ? identity.hospitalId : null,
     doctorId: identity.doctorId,
-    multiDoctor: workspace.multiDoctor,
-    enabled: workspace.isConsult && identity.ready,
+    multiDoctor: clinic.multiDoctor,
+    enabled: clinic.frontDesk && identity.ready,
   });
 
   const [queueSheetOpen, setQueueSheetOpen] = useState(false);
@@ -443,14 +452,14 @@ function App() {
   const [attachmentsVisit, setAttachmentsVisit] = useState<TodayVisit | null>(null);
 
   /**
-   * ── Why the patient modal needs a second flag in Consult ────────────────
+   * ── Why the patient modal needs a second flag with a front desk ─────────
    *
    * `session.patientModalOpen` starts TRUE and `session.reset()` sets it back
    * to true, because in Cortex "no patient" means "ask who the patient is" —
    * that modal is how a solo doctor begins, and on a cold start it is the
    * whole screen.
    *
-   * In Consult it is the wrong question twice over: on boot the answer is the
+   * With a front desk it is the wrong question twice over: on boot it is the
    * queue, and after a save it would open behind the handover modal. But
    * registering someone directly must stay reachable (receptionist away,
    * walk-in), so the flag cannot simply be forced off either.
@@ -460,9 +469,9 @@ function App() {
    */
   const [registerRequested, setRegisterRequested] = useState(false);
 
-  // ★ Consult's opening state — the front desk's intake, read back onto the
+  // ★ The front desk's intake, read back onto the
   // chart at the moment a consult starts. A no-op in Cortex (nobody else
-  // touched the visit); in Consult it is the whole handoff, and on a RESUMED
+  // touched the visit); with a front desk it is the whole handoff, and on a RESUMED
   // visit in either mode it is the chart read-back `resumeConsult` used to
   // list as a known gap. Layer 1: it only needs the chart.
   const prefillFromIntake = useIntakePrefill(chart);
@@ -895,7 +904,7 @@ function App() {
     // always did; Consult opens the handover onto a workspace that is already
     // clear. The queue is re-read first so the modal cannot open showing the
     // patient who has just been seen still waiting.
-    onConsultSaved: workspace.isConsult
+    onConsultSaved: clinic.frontDesk
       ? (name) => { queue.refetch(); setTransition({ justCompleted: name }); }
       : undefined,
     resetStory: () => { visitStory.reset(); examination.reset(); },
@@ -990,7 +999,7 @@ function App() {
     setActivePage(null);
     setSidebarOpen(false);
     if (hasActiveConsult) return;
-    if (!workspace.isConsult) { setPatientModalOpen(true); return; }
+    if (!clinic.frontDesk) { setPatientModalOpen(true); return; }
     // Consult: just land on the consult screen. The entry-gate effect below
     // decides what opens — the resume prompt, the queue, or the register
     // screen — once it has resolved whether there's a consult to resume.
@@ -1105,7 +1114,7 @@ function App() {
    * surface opens — IMMEDIATELY, no wait, no flash:
    *
    *   • someone waiting  → the queue sheet
-   *   • nobody waiting   → the register-a-patient screen  (Consult only;
+   *   • nobody waiting   → the register-a-patient screen  (front desk only;
    *     Cortex's PatientModal is already its always-open default)
    *
    * Separately, in the background, the DATABASE is asked ONCE per session
@@ -1123,18 +1132,18 @@ function App() {
    * Whether a consult overlay is genuinely on screen right now.
    *
    * `patientModalOpen` alone is NOT that: it defaults `true` (Cortex's "who
-   * is this for?" opening state) and STAYS `true` in Consult even while the
+   * is this for?" opening state) and STAYS `true` with a front desk while the
    * modal is not rendered — only `registerRequested` makes it render there.
    * Checking the raw flag was the bug behind "blank consult screen until you
    * navigate away and come back" (navigating away happened to set it false).
    */
   const consultOverlayShowing =
-    (patientModalOpen && (!workspace.isConsult || registerRequested)) ||
+    (patientModalOpen && (!clinic.frontDesk || registerRequested)) ||
     isReviewOpen || activeConsultGuardOpen || queueSheetOpen ||
     !!transition || !!resumeCandidate || !!attachmentsVisit;
 
   useEffect(() => {
-    if (!workspace.isConsult || !workspace.ready) return;
+    if (!clinic.frontDesk || !clinic.ready) return;
     if (hasActiveConsult || activePage !== null) return;
     if (consultOverlayShowing) return;
     // Wait for the queue's OWN real answer, not a cache guess or an empty
@@ -1154,11 +1163,11 @@ function App() {
       setRegisterRequested(true);
       setPatientModalOpen(true);
     }
-  }, [workspace.isConsult, workspace.ready, hasActiveConsult, activePage,
+  }, [clinic.frontDesk, clinic.ready, hasActiveConsult, activePage,
       consultOverlayShowing, queue.waiting.length, queue.settled]);
 
   useEffect(() => {
-    if (!workspace.ready || !identity.ready || !identity.doctorId) return;
+    if (!clinic.ready || !identity.ready || !identity.doctorId) return;
     if (activePage !== null) return;                          // not on the consult screen yet
     if (resumeCheckedRef.current === identity.doctorId) return; // asked once already this session
     resumeCheckedRef.current = identity.doctorId;
@@ -1177,7 +1186,7 @@ function App() {
       })
       .catch((e) => console.warn("[consult] fetchActiveConsult failed (non-fatal):", e));
     return () => { cancelled = true; };
-  }, [workspace.ready, identity.ready, identity.doctorId, hasActiveConsult, activePage, session.patient]);
+  }, [clinic.ready, identity.ready, identity.doctorId, hasActiveConsult, activePage, session.patient]);
 
   const resumeActiveConsult = useCallback(() => {
     const c = resumeCandidate;
@@ -1677,7 +1686,7 @@ function App() {
     : null;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isFeaturePage ? "is-feature" : "is-consult"}`}>
 
       <Sidebar
         isOpen={sidebarOpen}
@@ -1688,45 +1697,19 @@ function App() {
         doctor={DOCTOR}
         avatarUrl={doctorProfile?.avatar_url}
         onOpenProfile={() => handleSidebarNavigate("settings")}
-        logoRef={logoRef}
       />
 
-      {/* Invisible, always-reachable click target that mirrors wherever the
-          real logo currently is. Lives outside every header's stacking
-          context, so it stays clickable even while the patient modal (or
-          any other overlay) is covering the screen. See component for why.
-          2026-09-06: `queueSheetOpen`/`transition` were missing from `active`
-          — those two are full-screen overlays exactly like the three
-          already listed, so a doctor with an empty queue (this modal locked
-          open, by design — see QueueSheet's own `dismissable` prop) had no
-          way to reach the sidebar at all, trigger included. Locking the
-          queue sheet against a stray dismiss was never meant to also lock
-          out real navigation; Settings/Patients/Practice stay reachable via
-          the sidebar precisely because the app-level invariant that keeps
-          this sheet open already exempts a doctor who's actually on one of
-          those pages (see its own comment) — this is the other half of
-          that promise: getting there in the first place. */}
-      <GlobalLogoTrigger
-        logoRef={logoRef}
-        onOpenSidebar={handleOpenSidebar}
-        sidebarOpen={sidebarOpen}
-        brand={workspace.brand}
-        /* 2026-09-06, measured live: `!isFeaturePage` is the load-bearing
-           half of this condition, not a tidy-up. The flags below are STATE,
-           not "something is on screen" — `patientModalOpen` in particular
-           starts life `true` (useConsultSession) so a Cortex clinic opens
-           its intake form on arrival. With Overview as the landing page that
-           flag is still true while the modal itself renders nothing (its own
-           condition is `!workspace.isConsult`), so this ghost painted a
-           second purple pill AND a second "AREN Consult / Front desk queue"
-           label at z-index 9998 directly over the real header's title and
-           subtitle — measured at x=129.6, exactly on top of "Overview".
-           A feature page never needs this trigger anyway: the real header,
-           logo pill included, is right there and reachable. */
-        active={
-          !isFeaturePage &&
-          (patientModalOpen || isReviewOpen || activeConsultGuardOpen || queueSheetOpen || !!transition)
-        }
+      {/* The permanent rail. Rendered next to the panel, not inside it: the
+          panel comes and goes, the rail never does. */}
+      <NavRail
+        activePage={activePage}
+        onNavigate={handleSidebarNavigate}
+        onConsult={handleSidebarConsult}
+        expanded={sidebarOpen}
+        onOpenPanel={handleOpenSidebar}
+        doctorName={DOCTOR.name}
+        avatarUrl={doctorProfile?.avatar_url}
+        onOpenProfile={() => handleSidebarNavigate("settings")}
       />
 
       {/* Topbar and vitals only render on the consult workspace */}
@@ -1743,24 +1726,21 @@ function App() {
           }}
           onReviewRx={openReview}
           onCancelConsult={handleCancelConsult}
-          onOpenSidebar={handleOpenSidebar}
-          isSidebarOpen={sidebarOpen}
           pastVisits={meaningfulPastVisits}
           pastVisitsLoading={pastVisitsLoading}
           onOpenVisit={(visit, x) => setActiveVisit({ visit, x })}
           sessionLabels={carePlan.sessionLabels}
-          // Consult only — in Cortex these are undefined and the header keeps
+          // Front desk only — at a solo clinic these are undefined and the header keeps
           // its "+ Patient" button exactly as it was.
-          onOpenQueue={workspace.isConsult ? () => setQueueSheetOpen(true) : undefined}
+          onOpenQueue={clinic.frontDesk ? () => setQueueSheetOpen(true) : undefined}
           queueCount={queue.waiting.length}
           nextToken={queue.waiting[0] ? padToken(queue.waiting[0].token_number) : null}
-          logoRef={logoRef}
         />
       )}
 
       {/* The shared past-visit detail, opened by the header's chips AND by the
           band's Last Visit card / timeline rows. One view, two ways in — its
-          dark tone (the default) is Consult's own, deliberately unchanged. */}
+          dark tone (the default) is deliberately unchanged. */}
       {activeVisit && (
         <PastVisitCard
           visit={activeVisit.visit}
@@ -1824,10 +1804,8 @@ function App() {
       {/* Feature pages */}
       {activePage === "overview" ? (
         <DoctorOverviewPage
-          logoRef={logoRef}
-          onOpenSidebar={handleOpenSidebar}
           /* The sidebar's own Consult action, not a second path into the
-             consult: it already knows a Consult clinic opens the queue and a
+             consult: it already knows a front-desk clinic opens the queue and a
              Cortex clinic opens the patient form. */
           onStartConsult={handleSidebarConsult}
           onNavigate={handleSidebarNavigate}
@@ -1850,8 +1828,6 @@ function App() {
         <PatientsPage
           onStartConsult={handleStartConsultFromRecord}
           onResumeConsult={resumeConsult}
-          logoRef={logoRef}
-          onOpenSidebar={handleOpenSidebar}
           specialty={specialty}
           onNavigate={handleSidebarNavigate}
           initialPatientId={patientRecordSeed?.id}
@@ -1859,8 +1835,6 @@ function App() {
         />
       ) : activePage === "settings" ? (
         <SettingsPage
-          logoRef={logoRef}
-          onOpenSidebar={handleOpenSidebar}
           hospitalId={identity.hospitalId}
           doctorId={identity.doctorId}
           hospitalProfile={hospitalProfile}
@@ -1873,8 +1847,6 @@ function App() {
         />
       ) : activePage === "practice" ? (
         <PracticePage
-          logoRef={logoRef}
-          onOpenSidebar={handleOpenSidebar}
           observables={observables}
           specialty={specialty}
           onNavigate={handleSidebarNavigate}
@@ -1887,8 +1859,6 @@ function App() {
         />
       ) : activePage === "communication" ? (
         <CommunicationPage
-          logoRef={logoRef}
-          onOpenSidebar={handleOpenSidebar}
           /* Both scoped reads on this page (the inbox and the appointment
              request queue) are per-clinic under RLS, so the page cannot
              fetch anything until identity has resolved a hospital. */
@@ -1908,8 +1878,6 @@ function App() {
       ) : activePage === "clinic" ? (
         prescriptionEditorOpen ? (
           <PrescriptionEditorPage
-            logoRef={logoRef}
-            onOpenSidebar={handleOpenSidebar}
             hospitalId={identity.hospitalId}
             hospital={hospitalProfile}
             doctor={doctorProfile}
@@ -1917,8 +1885,6 @@ function App() {
           />
         ) : (
           <ClinicPage
-            logoRef={logoRef}
-            onOpenSidebar={handleOpenSidebar}
             hospital={hospitalProfile}
             doctor={doctorProfile}
             /* Clinic EDITS the same two rows every other surface reads —
@@ -1935,11 +1901,16 @@ function App() {
           />
         )
       ) : activePage === "support" ? (
-        <SupportPage logoRef={logoRef} onOpenSidebar={handleOpenSidebar} />
+        <SupportPage
+          /* Prefilled, not asked for: `doctors.email` is already on file, and
+             a support form that makes a doctor type their own address is
+             asking them for something AREN can see. Editable, because the
+             address they want a REPLY at is not always the one on file. */
+          doctorEmail={doctorProfile?.email}
+          clinicName={hospitalProfile?.name}
+        />
       ) : isFeaturePage && comingSoonMeta ? (
         <ComingSoonPage
-          logoRef={logoRef}
-          onOpenSidebar={handleOpenSidebar}
           title={comingSoonMeta.title}
           subtitle={comingSoonMeta.subtitle}
         />
@@ -2666,7 +2637,7 @@ function App() {
           reading Patients or Practice can still be asked to take the next
           patient, and `consultFromQueue` navigates back to the workspace
           itself. */}
-      {workspace.isConsult && queueSheetOpen && (
+      {clinic.frontDesk && queueSheetOpen && (
         <QueueSheet
           waiting={queue.waiting}
           serving={queue.serving}
@@ -2687,11 +2658,11 @@ function App() {
       )}
 
       {/* ── The handover ──────────────────────────────────────────────────
-          Opens on a successful save in Consult, over an already-cleared
+          Opens on a successful save with a front desk, over an already-cleared
           workspace. Owns its own 10-second continuation; everything it can
           decide it hands back through `consultFromQueue`, the same entry
           point the queue sheet uses. */}
-      {workspace.isConsult && transition && (
+      {clinic.frontDesk && transition && (
         <TransitionModal
           waiting={queue.waiting}
           previews={queue.previews}
@@ -2704,7 +2675,7 @@ function App() {
         />
       )}
 
-      {workspace.isConsult && attachmentsVisit && (
+      {clinic.frontDesk && attachmentsVisit && (
         <GatewaySessionsProvider>
           <VisitAttachmentsModal visit={attachmentsVisit} onClose={() => setAttachmentsVisit(null)} />
           <GatewayQrModal />
@@ -2717,11 +2688,11 @@ function App() {
         // `registerRequested`). Its close is also reachable unconditionally
         // there — in Cortex a patient-less workspace has nothing behind this
         // modal to go back to, which is why that branch still refuses to close;
-        // in Consult there is a queue behind it.
-        !isFeaturePage && patientModalOpen && (!workspace.isConsult || registerRequested) && (
+        // with a front desk there is a queue behind it.
+        !isFeaturePage && patientModalOpen && (!clinic.frontDesk || registerRequested) && (
           <PatientModal
             onClose={
-              workspace.isConsult
+              clinic.frontDesk
                 ? () => { setRegisterRequested(false); setPatientModalOpen(false); }
                 : patient ? () => setPatientModalOpen(false) : () => { }
             }
@@ -2735,7 +2706,7 @@ function App() {
               if (started) setRegisterRequested(false);
             }}
             // Always on, in both workspaces (2026-09-06 — this used to be
-            // Cortex-only). Consult's `registerRequested` escape hatch is the
+            // solo-only). The `registerRequested` escape hatch is the
             // SAME "the doctor is doing their own intake" situation Cortex
             // always is — front desk isn't in this loop, by construction, any
             // time this modal is the one open — so it earns the same rail,
@@ -2793,7 +2764,7 @@ function App() {
             prescription={prescription}
             tests={selectedTests}
             isSaving={isSaving}
-            saveLabel={reviewSaved ? "Complete & Next" : (workspace.isConsult ? "Complete & Next" : undefined)}
+            saveLabel={reviewSaved ? "Complete & Next" : (clinic.frontDesk ? "Complete & Next" : undefined)}
             // Saved-and-sending: the prescription is committed, the WhatsApp
             // message is on its way, and Review is held open on purpose.
             sent={reviewSaved}
