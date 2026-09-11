@@ -16,14 +16,30 @@
 
    Route:  POST /functions/v1/messaging-send
    Body:   { purpose: "prescription" | "follow_up",
-             patientId, prescriptionId?, visitId?, documentUrl?, followUpDate? }
+             patientId, prescriptionId?, visitId?, documentUrl?, followUpDate?,
+             language?: "en" | "hi" | "hi-Latn" }
    Reply:  200 { ok: true, messageId, status, balance, provider }
            200 { ok: false, error, message }   ← doctor-actionable (no credits,
-                                                  no phone, rate limit, …)
+                                                  no phone, rate limit, the
+                                                  language's template not
+                                                  configured yet, …)
            5xx { ok: false, error: "server_error", message }   ← a bug
+
+   ── Multilingual prescriptions (2026-09-11) ────────────────────────────────
+   `language` picks which APPROVED WhatsApp template gets used — never a
+   machine translation of anything. Hindi and Hinglish need their own Meta
+   template (same {{1}}/{{2}} shape as the English one — see
+   WHATSAPP_TEMPLATE_PRESCRIPTION_HI / _HI_LATN below) submitted and
+   APPROVED by Anmol first. Until that env var is set for a language,
+   `resolveTemplate` throws a clean, doctor-facing MessagingError BEFORE
+   anything is written — no row, no credit touched, and definitely no send
+   attempted in an unapproved template. Nothing in this file sets those
+   secrets or sends a non-English message on its own.
 ------------------------------------------------------------------- */
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.45.4";
+
+type RxLanguage = "en" | "hi" | "hi-Latn";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -111,6 +127,18 @@ function formatDoctorName(raw: string | null): string {
   return bare ? `Dr. ${bare}` : "your doctor";
 }
 
+/** The Devanagari name the doctor/admin confirmed once (Clinic page,
+ *  `doctors.name_hi` / `hospitals.name_hi` — migration
+ *  `20260911_hindi_display_names`), used for the WhatsApp template's own
+ *  {{1}}/{{2}} when sending in Hindi. Falls back to `latin` when nothing has
+ *  been confirmed yet — never guessed at send time. Mirrors `hiName()` in
+ *  the Cortex repo's lib/i18n/prescriptionLabels.ts; this repo copies it
+ *  rather than sharing a module. */
+function hiName(language: RxLanguage, latin: string, nameHi: string | null): string {
+  if (language === "hi" && nameHi && nameHi.trim()) return nameHi.trim();
+  return latin;
+}
+
 function normalisePhone(raw: string | null): string | null {
   if (!raw) return null;
   const digits = String(raw).replace(/\D/g, "");
@@ -168,6 +196,7 @@ async function callGraphApi(body: unknown): Promise<{ messages: Array<{ id: stri
 interface OutMessage {
   to: string;
   purpose: "prescription" | "follow_up";
+  language: RxLanguage;
   patientName: string | null;
   clinicName: string;
   doctorName: string;
@@ -175,16 +204,44 @@ interface OutMessage {
   followUpDate: string | null;
 }
 
-function templateFor(purpose: OutMessage["purpose"]) {
-  if (purpose === "prescription") {
+/**
+ * Which approved Meta template + language code to send. English always has
+ * one (the long-standing default). Hindi/Hinglish only have one once Anmol
+ * has submitted it to Meta AND set the matching env var — see the file
+ * header. No fallback to English when the requested language is missing:
+ * a doctor who picked Hindi and got an English message back would not
+ * notice the substitution until the patient did.
+ */
+function resolveTemplate(purpose: OutMessage["purpose"], language: RxLanguage) {
+  if (purpose !== "prescription") {
+    // No follow-up template is approved in any language yet (pre-existing —
+    // see server/messaging/providers/meta.js's own note); language selection
+    // isn't wired for this purpose.
+    return {
+      name: Deno.env.get("WHATSAPP_TEMPLATE_FOLLOW_UP") || "aren_follow_up",
+      language: Deno.env.get("WHATSAPP_TEMPLATE_LANG") || "en",
+    };
+  }
+
+  if (language === "en") {
     return {
       name: Deno.env.get("WHATSAPP_TEMPLATE_PRESCRIPTION") || "en_prescription_ready02",
       language: Deno.env.get("WHATSAPP_TEMPLATE_LANG") || "en",
     };
   }
+
+  const suffix = language === "hi" ? "_HI" : "_HI_LATN";
+  const name = Deno.env.get(`WHATSAPP_TEMPLATE_PRESCRIPTION${suffix}`);
+  if (!name) {
+    const label = language === "hi" ? "Hindi" : "Hinglish";
+    throw new MessagingError(
+      `The ${label} prescription template isn't approved and configured yet. Switch back to English, or ask support to finish setting it up.`,
+      "template_not_configured",
+    );
+  }
   return {
-    name: Deno.env.get("WHATSAPP_TEMPLATE_FOLLOW_UP") || "aren_follow_up",
-    language: Deno.env.get("WHATSAPP_TEMPLATE_LANG") || "en",
+    name,
+    language: Deno.env.get(`WHATSAPP_TEMPLATE_LANG${suffix}`) || (language === "hi" ? "hi" : "en"),
   };
 }
 
@@ -251,7 +308,7 @@ async function providerSend(m: OutMessage): Promise<{ providerMessageId: string;
     throw new Error(`MESSAGING_PROVIDER="${name}" is not a known provider (meta, fast2sms, mock)`);
   }
 
-  const { name: templateName, language } = templateFor(m.purpose);
+  const { name: templateName, language: templateLang } = resolveTemplate(m.purpose, m.language);
   try {
     const data = await callGraphApi({
       messaging_product: "whatsapp",
@@ -259,7 +316,7 @@ async function providerSend(m: OutMessage): Promise<{ providerMessageId: string;
       type: "template",
       template: {
         name: templateName,
-        language: { code: language },
+        language: { code: templateLang },
         components: buildComponents(m),
       },
     });
@@ -276,12 +333,16 @@ async function loadContext(
   db: SupabaseClient,
   doctorId: string,
   patientId: string,
+  language: RxLanguage,
 ) {
   const [doctorRes, patientRes] = await Promise.all([
-    db.from("doctors").select("id, name, hospital_id, hospitals(name)").eq("id", doctorId).maybeSingle(),
+    db.from("doctors").select("id, name, name_hi, hospital_id, hospitals(name, name_hi)").eq("id", doctorId).maybeSingle(),
     db.from("patients").select("id, name, phone, hospital_id").eq("id", patientId).maybeSingle(),
   ]);
-  const doctor = doctorRes.data as { id: string; name: string | null; hospital_id: string; hospitals?: { name?: string } | null } | null;
+  const doctor = doctorRes.data as {
+    id: string; name: string | null; name_hi: string | null; hospital_id: string;
+    hospitals?: { name?: string; name_hi?: string | null } | null;
+  } | null;
   const patient = patientRes.data as { id: string; name: string | null; phone: string | null; hospital_id: string | null } | null;
 
   if (!doctor) throw new MessagingError("We could not find your doctor profile.", "no_doctor");
@@ -298,11 +359,20 @@ async function loadContext(
     );
   }
 
+  // Devanagari names win in Hindi mode ONLY once confirmed on the Clinic page
+  // (hiName falls back to Latin otherwise) — "Dr. " is skipped on the
+  // Devanagari branch since a confirmed name_hi already reads exactly as the
+  // doctor wants it to, honorific included if they wrote one in.
+  const doctorName = language === "hi" && doctor.name_hi?.trim()
+    ? doctor.name_hi.trim()
+    : formatDoctorName(doctor.name);
+  const clinicName = hiName(language, doctor.hospitals?.name || "your clinic", doctor.hospitals?.name_hi ?? null);
+
   return {
     doctorId: doctor.id,
-    doctorName: formatDoctorName(doctor.name),
+    doctorName,
     hospitalId: doctor.hospital_id,
-    clinicName: doctor.hospitals?.name || "your clinic",
+    clinicName,
     patientId: patient.id,
     patientName: patient.name || null,
     phone,
@@ -337,6 +407,7 @@ interface SendInput {
   doctorId: string;
   patientId: string;
   purpose: "prescription" | "follow_up";
+  language: RxLanguage;
   prescriptionId: string | null;
   visitId: string | null;
   documentUrl: string | null;
@@ -346,7 +417,13 @@ interface SendInput {
 async function sendMessage(db: SupabaseClient, input: SendInput) {
   const cost = 1; // every message is one credit today
 
-  const ctx = await loadContext(db, input.doctorId, input.patientId);
+  // Fail fast on a language whose template isn't configured — BEFORE any
+  // row is written or credit touched. Doing this check only inside
+  // providerSend (further down, after the debit) would mean a doctor who
+  // picks Hindi before it's approved gets charged and refunded for nothing.
+  resolveTemplate(input.purpose, input.language);
+
+  const ctx = await loadContext(db, input.doctorId, input.patientId, input.language);
 
   const before = await currentBalance(db, ctx.doctorId);
   if (before < cost) {
@@ -411,6 +488,7 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
     const result = await providerSend({
       to: ctx.phone,
       purpose: input.purpose,
+      language: input.language,
       patientName: ctx.patientName,
       clinicName: ctx.clinicName,
       doctorName: ctx.doctorName,
@@ -495,10 +573,15 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "no_patient", message: "No patient was named." });
     }
 
+    const languageRaw = String(body.language ?? "en");
+    const language: RxLanguage =
+      languageRaw === "hi" || languageRaw === "hi-Latn" ? languageRaw : "en";
+
     const result = await sendMessage(db, {
       doctorId: who.doctorId, // from the session, never the body
       patientId,
       purpose,
+      language,
       prescriptionId: (body.prescriptionId as string | null) || null,
       visitId: (body.visitId as string | null) || null,
       documentUrl: (body.documentUrl as string | null) || null,

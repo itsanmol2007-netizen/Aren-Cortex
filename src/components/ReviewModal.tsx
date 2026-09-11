@@ -18,12 +18,15 @@ import { RxMonogram, RxWatermark, RxRule } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import { usePrescriptionConfig } from "../features/prescription/usePrescriptionConfig";
+import { rxLabels, hiName, localizeTiming, localizeMeasureLabel, RX_LANGUAGE_OPTIONS, type RxLanguage } from "../lib/i18n/prescriptionLabels";
 import arenLogo from "../assets/aren-logo-w.png";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DoctorShape {
   name: string;
+  /** Devanagari name, confirmed once — see lib/i18n/prescriptionLabels.ts's `hiName()`. */
+  name_hi?: string | null;
   specialization: string | null;
   qualification: string | null;
   registration_number: string | null;
@@ -46,7 +49,7 @@ interface ReviewModalProps {
    * so Print RX's reprint surface (`mode="print"`, no button for this at
    * all) needs no change.
    */
-  onSendWhatsApp?: () => void;
+  onSendWhatsApp?: (language: RxLanguage) => void;
   // "review": Consult's edit/confirm flow (default, unchanged).
   // "print":  Print RX's read-only reprint surface — no Edit, no Save; the
   //           primary action is printing. One rendering pipeline, two doors.
@@ -231,6 +234,18 @@ export default function ReviewModal({
   // silently lost its footer attribution for no connected reason.
   const [arenLogoError, setArenLogoError] = useState(false);
   const [showFormatPicker, setShowFormatPicker] = useState(false);
+  /** Which language the DOCUMENT (this preview, the print/PDF, the WhatsApp
+   *  send) renders in. English until the doctor picks otherwise, every time —
+   *  this is a per-prescription choice, not a saved preference, so a Hindi
+   *  send to one patient never leaks into the next patient's default. */
+  const [language, setLanguage] = useState<RxLanguage>("en");
+  const t = rxLabels(language);
+  // Typography — see the matching comment in PrescriptionDocument.tsx. Arial/
+  // the app's default sans have no real Devanagari shaping; this review IS
+  // meant to look like the document the patient receives, so it gets the
+  // same font + extra line-height, not the tight Latin-tuned spacing.
+  const isDevanagari = language === "hi";
+  const docFontFamily = isDevanagari ? "'Noto Sans Devanagari', 'Inter', sans-serif" : undefined;
 
   const { format, remembered, choose } = usePrintFormat();
   /**
@@ -243,23 +258,31 @@ export default function ReviewModal({
    * behaviour exactly; printing is always a later, explicit click.
    */
   const prescriptionConfig = usePrescriptionConfig(hospital?.id);
-  const accentColor = hospital?.accent_color ?? "#1268e8";
   /**
-   * The clinic's colour, as a usable ramp. One stored hex cannot serve a
-   * heading, a hairline and a tinted band at once, and the clinic picks the
-   * hex, so the tones have to be derived rather than chosen. `ink` is contrast
-   * clamped against white: brand expression stops where legibility starts on a
-   * document that gets printed. See lib/brand/accent.ts.
+   * The one clinic accent, for every clinic — no longer `hospital.accent_color`.
+   * A clinic could pick white and the whole letterhead border/watermark would
+   * vanish into the white page (Anmol, 2026-09-11: "a useless complexity").
+   * One fixed, tested-legible blue removes both the picker and the failure
+   * mode; `PrescriptionDocument` made the same change.
    */
-  const rx = accentPalette(hospital?.accent_color);
+  const accentColor = "#1268e8";
+  /**
+   * The accent as a usable ramp. `ink` is contrast-clamped against white:
+   * legible on a document that gets printed regardless of the base hue. See
+   * lib/brand/accent.ts. `accentPalette()` with no argument already resolves
+   * to this same fixed colour — its own fallback.
+   */
+  const rx = accentPalette();
   const isPrintMode = mode === "print";
   const today = formatDate(date);
 
-  const doctorName = doctor?.name ?? "Dr. —";
+  // Devanagari names, confirmed once (Clinic page) and stored on
+  // doctors.name_hi / hospitals.name_hi — never guessed at render time.
+  const doctorName = hiName(language, doctor?.name ?? "Dr. —", doctor?.name_hi);
   const doctorQual = doctor?.qualification ?? "";
   const doctorReg = doctor?.registration_number ?? "";
   const doctorSpec = doctor?.specialization ?? "";
-  const clinicName = hospital?.name ?? "Clinic";
+  const clinicName = hiName(language, hospital?.name ?? "Clinic", hospital?.name_hi);
   const clinicAddress = hospital?.address ?? "";
   const clinicPhone = hospital?.phone ?? "";
   const clinicLogo = hospital?.logo_url;
@@ -446,6 +469,7 @@ export default function ReviewModal({
             vitals={vitals}
             format={format}
             date={date}
+            language={language}
             config={prescriptionConfig}
           />
         </div>
@@ -479,6 +503,43 @@ export default function ReviewModal({
             </button>
           </div>
 
+          {/* ── Document language ── picks the language of the DOCUMENT
+              itself — this preview, the print/PDF, and (via onSendWhatsApp)
+              which approved WhatsApp template gets used. English by default,
+              every time; never saved as a preference (see the `language`
+              state comment). The doctor's own words — advice, therapy notes,
+              patient/medicine names — are never touched, in any language. */}
+          <div className="flex items-center gap-2 px-5 py-2 border-b border-gray-100 bg-white shrink-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Language
+            </span>
+            <div className="flex items-center gap-1">
+              {RX_LANGUAGE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setLanguage(opt.value)}
+                  className={`px-2.5 py-1 rounded-full text-[12px] font-semibold transition-colors ${language === opt.value
+                    ? "text-white"
+                    : "text-gray-600 hover:bg-gray-100"
+                    }`}
+                  style={language === opt.value ? { background: accentColor } : undefined}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {/* The clinic/doctor NAME only switches to Devanagari once one is
+                confirmed on the Clinic page (name_hi) — never guessed. Say so
+                here rather than leaving a doctor wondering why the letterhead
+                is still in Latin script right after picking Hindi. */}
+            {language === "hi" && !doctor?.name_hi?.trim() && !hospital?.name_hi?.trim() && (
+              <span className="text-[10.5px] text-amber-600">
+                Clinic/doctor name isn't set in Hindi yet — add it on the Clinic page.
+              </span>
+            )}
+          </div>
+
           {/* Scrollable body. `tabIndex={-1}` is programmatic focus only —
               never a Tab stop. The focus ring IS shown, deliberately — see
               `.cx-kbd-surface` in consult.css for why an overlay's landing
@@ -491,7 +552,10 @@ export default function ReviewModal({
             tabIndex={-1}
             className="overflow-y-auto flex-1 bg-gray-50/80 outline-none focus:ring-[3px] focus:ring-blue-100 focus:ring-inset focus:shadow-[inset_0_0_0_1px_#1268e8]"
           >
-            <div className="m-3 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white">
+            <div
+              className="m-3 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white"
+              style={docFontFamily ? { fontFamily: docFontFamily, lineHeight: 1.6 } : undefined}
+            >
 
               {/* ══ Letterhead ══ — white and calm, the same identity band the
                   printed prescription (`PrescriptionDocument`) and the
@@ -542,7 +606,10 @@ export default function ReviewModal({
                   {/* Clinic info */}
                   {showClinicIdentity && (
                     <div className="flex-1 min-w-0">
-                      <h1 className="text-[20px] font-black leading-tight tracking-tight" style={{ color: "#0d1b35" }}>
+                      <h1
+                        className="text-[20px] font-black leading-tight tracking-tight"
+                        style={{ color: "#0d1b35", ...(isDevanagari ? { fontSize: 22, lineHeight: 1.4, letterSpacing: "normal" } : null) }}
+                      >
                         {clinicName}
                       </h1>
                       <div className="w-11 mt-1"><RxRule color={rx.mid} /></div>
@@ -576,7 +643,10 @@ export default function ReviewModal({
                       the row and left-aligned when it IS the letterhead. */}
                   {showDoctorIdentity && (
                     <div className={showClinicIdentity ? "shrink-0 text-right min-w-[150px]" : "flex-1 min-w-0 text-left"}>
-                      <p className="text-[17px] font-black leading-tight tracking-tight" style={{ color: "#0d1b35" }}>{doctorName}</p>
+                      <p
+                        className="text-[17px] font-black leading-tight tracking-tight"
+                        style={{ color: "#0d1b35", ...(isDevanagari ? { fontSize: 19, lineHeight: 1.4, letterSpacing: "normal" } : null) }}
+                      >{doctorName}</p>
                       {prescriptionConfig.showQualification && doctorQual && (
                         <p className="text-[12px] font-bold mt-0.5" style={{ color: rx.ink }}>{doctorQual}</p>
                       )}
@@ -584,7 +654,7 @@ export default function ReviewModal({
                         <p className="text-[11px] text-gray-500 mt-0.5">{doctorSpec}</p>
                       )}
                       {prescriptionConfig.showRegistration && doctorReg && (
-                        <p className="text-[10px] text-gray-400 mt-0.5">Reg. No. {doctorReg}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{t.regNo} {doctorReg}</p>
                       )}
                       {/* A doctor-only letterhead still has to say where this
                           was prescribed from — folds the clinic's own enabled
@@ -610,24 +680,24 @@ export default function ReviewModal({
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-[9px] font-black tracking-[0.14em] text-blue-500 uppercase leading-none mb-1">Patient</p>
+                    <p className="text-[9px] font-black tracking-[0.14em] text-blue-500 uppercase leading-none mb-1">{t.patient}</p>
                     <h3 className="text-[20px] font-black text-gray-900 leading-tight tracking-tight">{patient.name}</h3>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-8 gap-y-3 pl-[52px]">
-                  <PatientField label="Age / Sex" value={`${patient.age}Y / ${patient.gender}`} />
-                  {patient.phone && <PatientField label="Phone" value={patient.phone} />}
-                  <PatientField label="Date" value={today} />
+                  <PatientField label={t.ageSex} value={`${patient.age}Y / ${patient.gender}`} />
+                  {patient.phone && <PatientField label={t.phone} value={patient.phone} />}
+                  <PatientField label={t.date} value={today} />
                   {prescriptionRef ? (
                     <div>
-                      <p className="text-[8px] font-black tracking-[0.12em] text-gray-500 uppercase leading-none mb-1">Ref</p>
+                      <p className="text-[8px] font-black tracking-[0.12em] text-gray-500 uppercase leading-none mb-1">{t.ref}</p>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono text-[12px] font-bold tracking-wider shadow-sm">
                         <Hash className="w-3 h-3" />
                         {prescriptionRef}
                       </span>
                     </div>
                   ) : visitId ? (
-                    <PatientField label="Ref" value={"#" + visitId.slice(0, 8).toUpperCase()} mono />
+                    <PatientField label={t.ref} value={"#" + visitId.slice(0, 8).toUpperCase()} mono />
                   ) : null}
                 </div>
               </div>
@@ -653,7 +723,7 @@ export default function ReviewModal({
                   {MEASURE_FIELDS.map((f) => {
                     const value = vitals[f.key];
                     return value ? (
-                      <VitalChip key={f.key} label={f.printLabel} value={value} unit={f.unit} />
+                      <VitalChip key={f.key} label={localizeMeasureLabel(f.key, f.printLabel, language)} value={value} unit={f.unit} />
                     ) : null;
                   })}
                 </div>
@@ -667,7 +737,7 @@ export default function ReviewModal({
                     {symptoms.length > 0 && (
                       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
                         <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-3">
-                          Presenting Complaints
+                          {t.complaints}
                         </p>
                         <ul className="space-y-2">
                           {symptoms.map((s) => (
@@ -681,7 +751,7 @@ export default function ReviewModal({
                     {findings.length > 0 && (
                       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
                         <p className="text-[9px] font-black tracking-[0.12em] text-purple-600 uppercase mb-3">
-                          Clinical Findings
+                          {t.findings}
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {findings.map((f) => (
@@ -745,7 +815,7 @@ export default function ReviewModal({
                     className="pointer-events-none absolute right-6 top-8 w-[132px] h-[132px] opacity-[0.04]"
                   />
                   <div className="relative">
-                    <SectionTitle icon={() => <RxIcon />} title="Prescription" />
+                    <SectionTitle icon={() => <RxIcon />} title={t.prescription} />
                   </div>
 
                   <div className="relative mt-3 rounded-xl border border-gray-200/80 overflow-hidden">
@@ -755,7 +825,7 @@ export default function ReviewModal({
                         style={{ gridTemplateColumns: "32px 1fr 168px 88px 1fr" }}>
                         <div className="px-3 py-3 text-center text-[9px] font-black tracking-wider text-blue-600 uppercase">#</div>
                         <div className="px-3 py-3 text-[9px] font-black tracking-wider text-blue-600 uppercase">
-                          Medicine<br />
+                          {t.colMedicine}<br />
                           <span className="text-gray-500 font-normal normal-case tracking-normal text-[9px]">(Generic)</span>
                         </div>
                         <div className="px-2 py-2 text-[9px] font-black tracking-wider text-blue-600 uppercase">
@@ -767,8 +837,8 @@ export default function ReviewModal({
                             <SlotHeader icon={Moon} label="Night" sub="N" />
                           </div>
                         </div>
-                        <div className="px-3 py-3 text-center text-[9px] font-black tracking-wider text-blue-600 uppercase">Duration</div>
-                        <div className="px-3 py-3 text-[9px] font-black tracking-wider text-blue-600 uppercase">Instructions</div>
+                        <div className="px-3 py-3 text-center text-[9px] font-black tracking-wider text-blue-600 uppercase">{t.colDuration}</div>
+                        <div className="px-3 py-3 text-[9px] font-black tracking-wider text-blue-600 uppercase">{t.colInstructions}</div>
                       </div>
                     </div>
 
@@ -803,12 +873,14 @@ export default function ReviewModal({
                           <div className="px-3 py-3 text-center">
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-700">
                               <Calendar className="w-3 h-3 text-blue-400 shrink-0" />
-                              {med.duration}
+                              {/* Structured, system-generated value — see PrescriptionDocument's
+                                  matching comment. Never the doctor's own words. */}
+                              {med.duration_days != null ? t.durationDays(med.duration_days) : med.duration}
                             </span>
                           </div>
                           <div className="px-3 py-3">
                             {med.instructions && (
-                              <p className="text-[10px] text-gray-600 leading-relaxed italic">{med.instructions}</p>
+                              <p className="text-[10px] text-gray-600 leading-relaxed italic">{localizeTiming(med.instructions, language)}</p>
                             )}
                           </div>
                         </div>
@@ -818,12 +890,12 @@ export default function ReviewModal({
 
                   <div className="flex items-center gap-5 mt-2.5 px-1">
                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                      <div className="w-3 h-3 rounded-full bg-blue-600" /> = Take
+                      <div className="w-3 h-3 rounded-full bg-blue-600" /> = {t.takeLabel}
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                      <div className="w-3 h-3 rounded-full border-2 border-gray-300" /> = Skip
+                      <div className="w-3 h-3 rounded-full border-2 border-gray-300" /> = {t.skipLabel}
                     </div>
-                    <span className="text-[10px] text-gray-500">M – Morning · A – Afternoon · E – Evening · N – Night</span>
+                    <span className="text-[10px] text-gray-500">{t.freqLegend}</span>
                   </div>
                 </div>
               )}
@@ -831,12 +903,12 @@ export default function ReviewModal({
               {/* ══ Investigations ══ */}
               {tests.length > 0 && (
                 <div className="px-7 py-4 border-b border-gray-100">
-                  <SectionTitle icon={FileText} title="Investigations" accent="purple" />
+                  <SectionTitle icon={FileText} title={t.investigations} accent="purple" />
                   <div className="flex flex-wrap gap-2 mt-2.5">
-                    {tests.map((t) => (
-                      <span key={t}
+                    {tests.map((test) => (
+                      <span key={test}
                         className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                        {t}
+                        {test}
                       </span>
                     ))}
                   </div>
@@ -875,7 +947,7 @@ export default function ReviewModal({
                       <p className="text-[11px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
                     )}
                     {prescriptionConfig.showRegistration && doctorReg && (
-                      <p className="text-[10px] text-gray-500 leading-tight mt-0.5">Reg. {doctorReg}</p>
+                      <p className="text-[10px] text-gray-500 leading-tight mt-0.5">{t.regNo} {doctorReg}</p>
                     )}
                   </div>
                 </div>
@@ -889,7 +961,7 @@ export default function ReviewModal({
                   {therapyNotes && (
                     <div>
                       <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-2">
-                        Therapy Performed
+                        {t.therapyPerformed}
                       </p>
                       <div className="space-y-1.5">
                         {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
@@ -907,7 +979,7 @@ export default function ReviewModal({
                   {exerciseLines.length > 0 && (
                     <div>
                       <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2">
-                        Home Exercise Programme
+                        {t.homeExercise}
                       </p>
                       <div className="space-y-1.5">
                         {exerciseLines.map((line, i) => (
@@ -927,7 +999,7 @@ export default function ReviewModal({
                   {adviceNotes && adviceNotes.trim() && (
                     <div>
                       <p className="text-[9px] font-black tracking-[0.12em] uppercase mb-2" style={{ color: accentColor }}>
-                        Doctor&rsquo;s Advice
+                        {t.advice}
                       </p>
                       <div className="space-y-2">
                         {adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean).map((line, i) => (
@@ -958,11 +1030,11 @@ export default function ReviewModal({
                       )}
                     </div>
                     <p className="text-[9.5px] text-gray-400 text-center leading-tight">
-                      Scan to verify this prescription
+                      {t.qrCaption}
                     </p>
                     {followUpDays && (
                       <div className="mt-0.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
-                        Follow-up in {followUpDays} days
+                        {t.followUp(followUpDays)}
                       </div>
                     )}
                   </div>
@@ -981,13 +1053,26 @@ export default function ReviewModal({
                   Private / Generated: <date>" badges were removed (Anmol,
                   2026-09-09: "just unnecessary data"). */}
               <div className="px-7 py-3 flex items-center justify-center border-t border-gray-100">
-                <div className="flex items-center gap-[7px]">
+                {/* English: mark beside one line, centered. Hindi/Hinglish:
+                    Anmol's own two-line quote — the mark sits ABOVE it as its
+                    own small lockup rather than pinned beside just the first
+                    line, which read as orphaned from the second once the
+                    quote wrapped (Anmol, 2026-09-11: "isolated logo
+                    placement"). One stacked, centered unit instead. */}
+                <div className={`flex gap-[4px] ${isDevanagari ? "flex-col items-center" : "items-center gap-[7px]"}`}>
                   {isBranded && !arenLogoError && (
                     <img src={arenLogo} alt="" onError={() => setArenLogoError(true)}
-                      className="w-[15px] h-[15px] object-contain" />
+                      className="w-[15px] h-[15px] object-contain shrink-0" />
                   )}
-                  <span className="text-[9px] font-bold tracking-[0.02em]" style={{ color: "#5b7fc7" }}>
-                    Generated with care, through Arenode
+                  <span
+                    className="font-bold whitespace-pre-line text-center"
+                    style={{
+                      color: "#5b7fc7", fontSize: isDevanagari ? 11 : 9,
+                      letterSpacing: isDevanagari ? "normal" : "0.02em",
+                      lineHeight: isDevanagari ? 1.5 : 1.3,
+                    }}
+                  >
+                    {t.footerCredit}
                   </span>
                 </div>
               </div>
@@ -1050,7 +1135,7 @@ export default function ReviewModal({
                     : "Send on WhatsApp";
                   const locked = isSaving || whatsappPhase === "sending" || whatsappPhase === "sent";
                   return (
-                    <button onClick={onSendWhatsApp} disabled={locked}
+                    <button onClick={() => onSendWhatsApp(language)} disabled={locked}
                       title="Save and send the prescription to the patient on WhatsApp. Review stays open — you check it, then Complete & Next."
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-[13px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                       {whatsappPhase === "sending"

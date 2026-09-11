@@ -43,6 +43,7 @@ import {
   SOFT_LOW_CREDIT_THRESHOLD,
   formatCredits,
 } from "../lib/db/messaging";
+import type { RxLanguage } from "../lib/i18n/prescriptionLabels";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -58,6 +59,11 @@ function friendlyWhatsAppError(raw: string): string {
   const s = (raw || "").toLowerCase();
   if (s.includes("credit")) return "Out of messaging credits. Top up on the Communication page, then resend.";
   if (s.includes("no phone") || s.includes("number on file")) return "This patient has no WhatsApp number on file. Add one on their record, then resend.";
+  // A Hindi/Hinglish template that isn't approved-and-configured yet — this
+  // exact sentence is `messaging-send`'s own, and it already tells the
+  // doctor what to do. Checked before the generic "template" case below,
+  // which would otherwise flatten it to a vague "this is on us".
+  if (s.includes("isn't approved and configured")) return raw;
   if (s.includes("phone") || s.includes("recipient")) return "That WhatsApp number didn't work. Check it on the patient's record and resend.";
   if (s.includes("template")) return "The prescription message isn't available right now — this is on us. Try again shortly.";
   if (s.includes("could not deliver") || s.includes("refund")) return "WhatsApp couldn't deliver this. Your credit was refunded — check the number and resend.";
@@ -199,7 +205,7 @@ export interface ConsultLifecycle {
    * "Confirm & Save" omits it, so the save no longer carries the side
    * effect by default.
    */
-  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => Promise<void>;
+  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => Promise<void>;
   /** Review's close/back control. Advances ("Complete & Next") when the
    *  consult was already saved via the WhatsApp button; otherwise just
    *  closes Review back to the chart. */
@@ -210,7 +216,7 @@ export interface ConsultLifecycle {
   reviewSaved: boolean;
   /** "Send on WhatsApp": first press saves the consult and pushes the
    *  message (Review stays open); later presses retry just the push. */
-  sendReviewOnWhatsApp: () => Promise<void>;
+  sendReviewOnWhatsApp: (language: RxLanguage) => Promise<void>;
   /** Live state of the WhatsApp push, for the button. `error.message` is
    *  already written for a doctor to read. */
   whatsapp: { phase: "idle" | "sending" | "sent" | "error"; message?: string };
@@ -557,10 +563,10 @@ export function useConsultLifecycle({
   /** The one place a prescription is actually pushed to WhatsApp, awaited so
    *  the button can reflect it. Never throws — the caller only cares about
    *  the state it sets. */
-  const pushPrescriptionToWhatsApp = useCallback(async (prescriptionId: string, patientId: string) => {
+  const pushPrescriptionToWhatsApp = useCallback(async (prescriptionId: string, patientId: string, language: RxLanguage = "en") => {
     setWhatsapp({ phase: "sending" });
     try {
-      const result = await sendPrescription({ prescriptionId, patientId, doctorId: identity.doctorId });
+      const result = await sendPrescription({ prescriptionId, patientId, doctorId: identity.doctorId, language });
       setWhatsapp({ phase: "sent" });
       // Running-low nudge, folded into the success toast. A solo doctor may
       // never open the Communication page, so the first sign that credits are
@@ -599,22 +605,25 @@ export function useConsultLifecycle({
 
   // handleConfirmAndSave is defined below; this ref lets the WhatsApp button
   // call it without a declaration cycle.
-  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => Promise<void>) | null>(null);
+  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => Promise<void>) | null>(null);
 
   /** ReviewModal's "Send on WhatsApp" button. First press: save the consult
    *  and push the message, keeping Review open. Later presses (after a send
    *  error) just retry the push against the already-saved prescription — no
-   *  re-save, no duplicate. */
-  const sendReviewOnWhatsApp = useCallback(async () => {
+   *  re-save, no duplicate. `language` is whatever ReviewModal's own picker
+   *  is set to right now — English unless the doctor changed it, and a
+   *  retry re-sends in whichever language is currently selected, not
+   *  whatever the first attempt used. */
+  const sendReviewOnWhatsApp = useCallback(async (language: RxLanguage) => {
     if (savedRxIdRef.current) {
       const pid = session.patient?.id;
-      if (pid) await pushPrescriptionToWhatsApp(savedRxIdRef.current, pid);
+      if (pid) await pushPrescriptionToWhatsApp(savedRxIdRef.current, pid, language);
       return;
     }
-    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true });
+    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true, language });
   }, [session.patient, pushPrescriptionToWhatsApp]);
 
-  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean }) => {
+  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => {
     const { visitId } = session;
     if (!visitId) { showToast("No active consult to save"); return; }
     // Already saved via the WhatsApp button and left open — a press on
@@ -716,7 +725,7 @@ export function useConsultLifecycle({
       // committed by this line, so a send failure never rolls the save back
       // — it just flips `whatsapp` to "error".
       if (opts?.sendWhatsApp && rxPatientId && rxPatientPhone.length >= 10 && identity.isReal) {
-        await pushPrescriptionToWhatsApp(saved.prescriptionId, rxPatientId);
+        await pushPrescriptionToWhatsApp(saved.prescriptionId, rxPatientId, opts.language ?? "en");
       } else if (opts?.sendWhatsApp && !rxPatientPhone) {
         setWhatsapp({ phase: "error", message: "This patient has no WhatsApp number on file. Add one on their record, then resend." });
       }

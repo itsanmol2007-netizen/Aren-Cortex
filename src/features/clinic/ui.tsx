@@ -25,8 +25,9 @@
 
 import { useId, useRef } from "react";
 import type { ReactNode } from "react";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Languages } from "lucide-react";
 import { compressImage, formatBytes, type CompressedImage } from "../../lib/image/compress";
+import { suggestDevanagari } from "../../lib/i18n/hindiTransliterate";
 
 // ── The one cascade trap on this codebase, and how these files dodge it ────
 // `src/styles/base.css` is UNLAYERED and styles bare elements:
@@ -339,6 +340,79 @@ export function Field({
                 onChange={(e) => onChange(e.target.value)}
                 className={INPUT_CLASS}
             />
+        </div>
+    );
+}
+
+/**
+ * A Devanagari name field that suggests itself — for exactly the problem an
+ * English keyboard has with Hindi (Anmol, 2026-09-11): "how do I even type
+ * this." No separate typing step: `sourceName` is the Latin name field
+ * already on the same form (Clinic name / Doctor name) — as the admin types
+ * THAT, a Devanagari guess appears live right here, automatically. One
+ * click ("Use this") copies it into this field. Nothing is forced: the
+ * field is a plain, always-editable text input, so typing directly (or
+ * pasting from a phone's own Hindi keyboard) works exactly the same as
+ * accepting the suggestion.
+ *
+ * The guess is never silently written for them — it sits in its own chip
+ * beside the button until "Use this" is pressed, and never overwrites
+ * something already typed into this field just because `sourceName` changed
+ * again afterward.
+ *
+ * The guess itself is `suggestDevanagari()` — a curated dictionary of common
+ * Indian names first, a phonetic engine as a rough fallback second. See that
+ * file's header for why plain phonetic transliteration alone was not good
+ * enough to ship. It gets common names right and an uncommon one close
+ * enough to hand-fix — never assume it is already correct.
+ */
+export function HindiNameField({
+    id, label, value, placeholder, onChange, sourceName,
+}: {
+    id: string;
+    label: string;
+    value: string;
+    placeholder?: string;
+    onChange: (v: string) => void;
+    /** The Latin name field already on this form — the live source the
+     *  suggestion is derived from. */
+    sourceName: string;
+}) {
+    const suggestion = sourceName.trim() ? suggestDevanagari(sourceName.trim()) : "";
+    // Nothing to suggest once it already matches — pressing "Use this" again
+    // would be a no-op, so the button just isn't there to press.
+    const showSuggestion = suggestion && suggestion !== value;
+
+    return (
+        <div className="flex min-w-0 flex-col gap-[5px]">
+            <label htmlFor={id} className="text-[11px] font-semibold text-[var(--cs-muted)]">{label}</label>
+            <input
+                id={id}
+                type="text"
+                value={value}
+                placeholder={placeholder}
+                onChange={(e) => onChange(e.target.value)}
+                className={INPUT_CLASS}
+            />
+            {showSuggestion && (
+                <div className="flex items-center gap-[8px]">
+                    <Languages size={12} className="shrink-0 text-[#a855f7]" />
+                    <span className="min-w-0 flex-1 truncate rounded-[9px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[10px] py-[6px] text-[14px] text-[var(--cs-ink)]">
+                        {suggestion}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => onChange(suggestion)}
+                        className="shrink-0 rounded-[9px] bg-[#a855f7] px-[11px] py-[7px] text-[11.5px] font-semibold text-white hover:bg-[#9333ea]"
+                    >
+                        Use this
+                    </button>
+                </div>
+            )}
+            <FormNote>
+                A guess from the name above — check it before using it, or type/paste
+                your own (a phone's Hindi keyboard works well for this).
+            </FormNote>
         </div>
     );
 }

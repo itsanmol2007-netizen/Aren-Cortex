@@ -129,6 +129,7 @@ export type PrescriptionRenderData = {
     vitals: Vitals | null;
     doctor: {
         name: string;
+        name_hi: string | null;
         specialization: string | null;
         qualification: string | null;
         registration_number: string | null;
@@ -171,7 +172,7 @@ export async function fetchPrescriptionRenderData(prescriptionId: string): Promi
         supabase.from("visits").select("id, patient_id, vitals, prescription_ref").eq("id", rx.visit_id).single(),
         rx.assigned_doctor_id
             ? supabase.from("doctors")
-                .select("name, specialization, qualification, registration_number, signature_image_url, avatar_url")
+                .select("name, name_hi, specialization, qualification, registration_number, signature_image_url, avatar_url")
                 .eq("id", rx.assigned_doctor_id)
                 .maybeSingle()
             : Promise.resolve({ data: null, error: null }),

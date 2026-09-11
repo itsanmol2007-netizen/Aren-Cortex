@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
+import type { RxLanguage } from "../i18n/prescriptionLabels";
 
 /**
  * Below this, the doctor is warned and AREN is alerted. Mirrors the same
@@ -532,10 +533,16 @@ export function sendPrescription(opts: {
     prescriptionId: string;
     patientId: string;
     doctorId: string;
+    /** Which approved WhatsApp template to send — "en" until the doctor
+     *  picks otherwise on ReviewModal's language control. `messaging-send`
+     *  refuses (cleanly, no send attempted) if the matching template for
+     *  that language hasn't been configured yet — see its own comment. */
+    language?: RxLanguage;
 }): Promise<SendResult> {
     return invokeSend("prescription", {
         patientId: opts.patientId,
         prescriptionId: opts.prescriptionId,
+        language: opts.language ?? "en",
     });
 }
 

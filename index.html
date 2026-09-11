@@ -42,6 +42,19 @@
       href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap"
       rel="stylesheet"
     />
+    <!-- Devanagari for Hindi prescriptions (PrescriptionDocument.tsx,
+         ReviewModal.tsx) — a first-class typeface, not a fallback
+         substitution. Arial (the print doc's Latin face) has no Devanagari
+         glyphs at all; without this the browser falls back to whatever
+         Devanagari font the OS happens to have, with no guarantee of correct
+         conjunct/matra shaping. Noto Sans Devanagari is Google's own
+         production font for the script — full shaping support, and it pairs
+         visually with a plain grotesque sans the way Arial/Inter already do.
+         400/500/600/700 to cover body text through headings. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>

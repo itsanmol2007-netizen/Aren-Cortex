@@ -7,7 +7,18 @@ import type { PrescriptionMedicine, Vitals } from "../../types";
 import { MEASURE_FIELDS } from "../consult/measures";
 import type { PrintFormat } from "./usePrintFormat";
 import { DEFAULT_PRESCRIPTION_CONFIG, type PrescriptionConfig } from "../../lib/db/clinic";
+import { rxLabels, hiName, localizeTiming, localizeMeasureLabel, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
 import arenLogo from "../../assets/aren-logo-w.png";
+
+/**
+ * The one clinic accent, for every clinic. This used to read
+ * `hospital.accent_color` — a clinic could pick white and the entire
+ * letterhead border, section rules and watermark would vanish into the
+ * white page (Anmol, 2026-09-11: "a useless complexity"). One fixed,
+ * tested-legible blue removes both the picker and the failure mode; nothing
+ * below reads `hospital.accent_color` any more.
+ */
+const FIXED_ACCENT = "#1268e8";
 
 /**
  * A fixed, deliberately hue-less ramp for `config.printMode === "monochrome"`
@@ -28,6 +39,8 @@ const MONOCHROME_PALETTE: AccentPalette = {
 
 interface DoctorShape {
     name: string;
+    /** Devanagari name, confirmed once — see lib/i18n/prescriptionLabels.ts's `hiName()`. */
+    name_hi?: string | null;
     specialization: string | null;
     qualification: string | null;
     registration_number: string | null;
@@ -61,6 +74,14 @@ export interface PrescriptionDocumentProps {
     // Document date — defaults to today. Reprints (Print RX) pass the
     // original prescription date so the paper stays historically true.
     date?: Date;
+    /**
+     * Which language the document's own chrome (section headings, the
+     * M/A/E/N legend, the QR caption, the footer line) renders in. Defaults
+     * to English. Never touches the doctor's own words — advice notes,
+     * therapy notes, medicine and patient names print exactly as typed in
+     * every language. See `lib/i18n/prescriptionLabels.ts`.
+     */
+    language?: RxLanguage;
     /**
      * The clinic's own prescription configuration — what the Prescription
      * Editor (features/clinic/PrescriptionEditorPage.tsx) writes into
@@ -123,34 +144,56 @@ function StandardDocument({
     vitals,
     format,
     date,
+    language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    const lang: RxLanguage = language ?? "en";
+    const t = rxLabels(lang);
+    // Typography — a first-class design requirement for Hindi, not a fallback
+    // font substitution. Arial has no real Devanagari shaping; whatever the
+    // OS falls back to renders conjuncts/matras badly and compresses the
+    // line-height. Noto Sans Devanagari (loaded in index.html) gets proper
+    // shaping, and Devanagari genuinely needs MORE vertical room than Latin
+    // text at the same font-size — matras and conjuncts extend above and
+    // below the baseline further than Latin ascenders/descenders do, so a
+    // line-height tuned for Arial clips them. Never compress Hindi to fit
+    // the English layout; the container adapts, not the script.
+    const isDevanagari = lang === "hi";
+    const docFontFamily = isDevanagari
+        ? "'Noto Sans Devanagari', 'Arial', sans-serif"
+        : "'Arial', sans-serif";
+    const docLineHeight = isDevanagari ? 1.6 : 1.3;
     const monochrome = config.printMode === "monochrome";
-    const accentColor = monochrome ? MONOCHROME_PALETTE.base : (hospital?.accent_color ?? "#1268e8");
+    const accentColor = monochrome ? MONOCHROME_PALETTE.base : FIXED_ACCENT;
     /**
-     * The clinic's colour as a usable ramp. THIS is the document the patient
-     * actually receives: it renders off-screen and feeds print, PDF and
-     * WhatsApp. The on-screen review preview is a different component, and
-     * styling that one alone changed nothing a patient ever sees.
+     * The one clinic accent, as a usable ramp. THIS is the document the
+     * patient actually receives: it renders off-screen and feeds print, PDF
+     * and WhatsApp. The on-screen review preview is a different component,
+     * and styling that one alone changed nothing a patient ever sees.
      *
-     * `ink` is contrast-clamped against white, because this lands on cheap
-     * stock out of a clinic laser printer and a pale brand colour must not
-     * produce unreadable headings. See lib/brand/accent.ts.
+     * `ink` is contrast-clamped against white — see lib/brand/accent.ts.
+     * `accentPalette()` with no argument already resolves to `FIXED_ACCENT`
+     * (its own fallback), called bare here rather than passed the constant
+     * so there is exactly one definition of "the accent" in this file.
      *
      * In `monochrome` mode the whole ramp is swapped for a fixed neutral one
      * (see `MONOCHROME_PALETTE`'s own comment for why that isn't simply
      * `accentPalette("#000000")`) — every render below reads the colour
      * through `rx`/`accentColor`, so this one swap is the entire effect.
      */
-    const rx = monochrome ? MONOCHROME_PALETTE : accentPalette(hospital?.accent_color);
+    const rx = monochrome ? MONOCHROME_PALETTE : accentPalette();
     const today = formatDate(date);
 
-    const doctorName = doctor?.name ?? "Doctor";
+    // Devanagari names, confirmed once by the doctor/admin (Clinic page) and
+    // stored on `doctors.name_hi` / `hospitals.name_hi` — never guessed at
+    // render time. `hiName` falls back to the Latin name outside Hindi, and
+    // inside Hindi when nothing has been confirmed yet.
+    const doctorName = hiName(lang, doctor?.name ?? "Doctor", doctor?.name_hi);
     const doctorQual = doctor?.qualification ?? "";
     const doctorReg = doctor?.registration_number ?? "";
     const doctorSpec = doctor?.specialization ?? "";
-    const clinicName = hospital?.name ?? "Clinic";
+    const clinicName = hiName(lang, hospital?.name ?? "Clinic", hospital?.name_hi);
     const clinicAddress = hospital?.address ?? "";
     const clinicPhone = hospital?.phone ?? "";
     const signatureUrl = doctor?.signature_image_url;
@@ -209,9 +252,15 @@ function StandardDocument({
             ? { width: "210mm", minHeight: "297mm", padding: "16mm 18mm" }
             : { width: "148mm", minHeight: "210mm", padding: "10mm 12mm" };
 
-    const headingSize = format === "a4" ? "22px" : "18px";
-    const bodySize = format === "a4" ? "11px" : "9.5px";
-    const smallSize = format === "a4" ? "9px" : "8px";
+    // Devanagari reads visibly smaller/lighter than Latin at the same pixel
+    // size — lower x-height ratio, thinner default stroke contrast in most
+    // sans faces. A ~12% bump is what makes Hindi text carry the same visual
+    // WEIGHT as the Latin headline sizes these were tuned for, rather than
+    // reading as a smaller, secondary script next to it.
+    const scale = (px: number) => `${isDevanagari ? Math.round(px * 1.12) : px}px`;
+    const headingSize = scale(format === "a4" ? 22 : 18);
+    const bodySize = scale(format === "a4" ? 11 : 9.5);
+    const smallSize = scale(format === "a4" ? 9 : 8);
 
     useEffect(() => {
         async function gen() {
@@ -243,7 +292,8 @@ function StandardDocument({
             style={{
                 ...pageStyle,
                 backgroundColor: "#ffffff",
-                fontFamily: "'Arial', sans-serif",
+                fontFamily: docFontFamily,
+                lineHeight: docLineHeight,
                 color: "#111111",
                 boxSizing: "border-box",
                 position: "relative",
@@ -305,7 +355,7 @@ function StandardDocument({
                 {/* Clinic info */}
                 {showClinicIdentity && (
                     <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: headingSize, fontWeight: 900, letterSpacing: "-0.01em", color: "#0d1b35", lineHeight: 1.15 }}>
+                        <div style={{ fontSize: headingSize, fontWeight: 900, letterSpacing: isDevanagari ? "normal" : "-0.01em", color: "#0d1b35", lineHeight: isDevanagari ? 1.4 : 1.15 }}>
                             {clinicName}
                         </div>
                         {/* The one deliberate SVG flourish on the page: a
@@ -360,7 +410,7 @@ function StandardDocument({
                             <div style={{ fontSize: smallSize, color: "#777", marginTop: 2 }}>{doctorSpec}</div>
                         )}
                         {config.showRegistration && doctorReg && (
-                            <div style={{ fontSize: smallSize, color: "#999", marginTop: 2 }}>Reg. No. {doctorReg}</div>
+                            <div style={{ fontSize: smallSize, color: "#999", marginTop: 2 }}>{t.regNo} {doctorReg}</div>
                         )}
                         {/* A doctor-only letterhead still has to say where this
                             was prescribed from — the clinic's contact block is
@@ -382,11 +432,11 @@ function StandardDocument({
                 background: stripBg, border: `1px solid ${stripBorder}`,
                 borderRadius: 8, padding: "8px 12px", marginBottom: 10,
             }}>
-                <PatientCell label="Patient" value={patient.name} bold />
-                <PatientCell label="Age / Sex" value={`${patient.age}Y / ${patient.gender}`} />
-                {patient.phone && <PatientCell label="Phone" value={patient.phone} />}
-                <PatientCell label="Date" value={today} />
-                {prescriptionRef && <PatientCell label="Ref" value={prescriptionRef} mono />}
+                <PatientCell label={t.patient} value={patient.name} bold />
+                <PatientCell label={t.ageSex} value={`${patient.age}Y / ${patient.gender}`} />
+                {patient.phone && <PatientCell label={t.phone} value={patient.phone} />}
+                <PatientCell label={t.date} value={today} />
+                {prescriptionRef && <PatientCell label={t.ref} value={prescriptionRef} mono />}
             </div>
 
             {/* ── Vitals ── */}
@@ -401,7 +451,7 @@ function StandardDocument({
                     {MEASURE_FIELDS.map((f) => {
                         const value = vitals[f.key];
                         return value ? (
-                            <VitalItem key={f.key} label={f.rxLabel} value={value} unit={f.unit} labelColor={rx.ink} />
+                            <VitalItem key={f.key} label={localizeMeasureLabel(f.key, f.rxLabel, lang)} value={value} unit={f.unit} labelColor={rx.ink} />
                         ) : null;
                     })}
                 </div>
@@ -413,7 +463,7 @@ function StandardDocument({
                     {symptoms.length > 0 && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
                             <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                                Presenting Complaints
+                                {t.complaints}
                             </div>
                             {symptoms.map((s) => (
                                 <div key={s} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>• {s}</div>
@@ -423,7 +473,7 @@ function StandardDocument({
                     {findings.length > 0 && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
                             <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                                Clinical Findings
+                                {t.findings}
                             </div>
                             {findings.map((f) => (
                                 <div key={f} style={{ fontSize: bodySize, color: "#c0392b", marginBottom: 2 }}>⚠ {f}</div>
@@ -441,7 +491,7 @@ function StandardDocument({
                         fontWeight: 900, color: "#0d1b35", fontStyle: "italic",
                         borderBottom: `2px solid ${accentColor}`, paddingBottom: 4, marginBottom: 8,
                     }}>
-                        ℞ Prescription
+                        ℞ {t.prescription}
                     </div>
 
                     {/* Medicine table */}
@@ -449,13 +499,13 @@ function StandardDocument({
                         <thead>
                             <tr style={{ background: tableHeadBg }}>
                                 <th style={thStyle}>#</th>
-                                <th style={{ ...thStyle, textAlign: "left" }}>Medicine</th>
+                                <th style={{ ...thStyle, textAlign: "left" }}>{t.colMedicine}</th>
                                 <th style={thStyle}>M</th>
                                 <th style={thStyle}>A</th>
                                 <th style={thStyle}>E</th>
                                 <th style={thStyle}>N</th>
-                                <th style={thStyle}>Duration</th>
-                                <th style={{ ...thStyle, textAlign: "left" }}>Instructions</th>
+                                <th style={thStyle}>{t.colDuration}</th>
+                                <th style={{ ...thStyle, textAlign: "left" }}>{t.colInstructions}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -476,9 +526,16 @@ function StandardDocument({
                                         <td style={dotTd}><Dot active={a} color={dotColor} /></td>
                                         <td style={dotTd}><Dot active={e} color={dotColor} /></td>
                                         <td style={dotTd}><Dot active={n} color={dotColor} /></td>
-                                        <td style={{ ...tdStyle, textAlign: "center", whiteSpace: "nowrap" }}>{med.duration}</td>
+                                        {/* Duration + instructions are SYSTEM-GENERATED, STRUCTURED
+                                            values — never doctor free text (see the file header) —
+                                            so they compose from the raw data (duration_days; the
+                                            4-value timing enum) instead of printing the pre-formatted
+                                            English string. */}
+                                        <td style={{ ...tdStyle, textAlign: "center", whiteSpace: "nowrap" }}>
+                                            {med.duration_days != null ? t.durationDays(med.duration_days) : med.duration}
+                                        </td>
                                         <td style={tdStyle}>
-                                            <span style={{ color: "#555", fontStyle: "italic" }}>{med.instructions}</span>
+                                            <span style={{ color: "#555", fontStyle: "italic" }}>{localizeTiming(med.instructions, lang)}</span>
                                         </td>
                                     </tr>
                                 );
@@ -487,7 +544,7 @@ function StandardDocument({
                     </table>
 
                     <div style={{ fontSize: smallSize, color: "#999", marginBottom: 10 }}>
-                        M = Morning · A = Afternoon · E = Evening · N = Night &nbsp;|&nbsp; ● = Take &nbsp; ○ = Skip
+                        {t.freqLegend} &nbsp;|&nbsp; {t.dotLegend}
                     </div>
                 </>
             )}
@@ -496,7 +553,7 @@ function StandardDocument({
             {tests.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                        Investigations
+                        {t.investigations}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {tests.map((t) => (
@@ -531,7 +588,7 @@ function StandardDocument({
                     )}
                     <div style={{ fontSize: format === "a4" ? "12px" : "10px", fontWeight: 900, color: "#111" }}>{doctorName}</div>
                     {config.showQualification && doctorQual && <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink }}>{doctorQual}</div>}
-                    {config.showRegistration && doctorReg && <div style={{ fontSize: smallSize, color: "#999" }}>Reg. {doctorReg}</div>}
+                    {config.showRegistration && doctorReg && <div style={{ fontSize: smallSize, color: "#999" }}>{t.regNo} {doctorReg}</div>}
                 </div>
 
                 {/* QR + Follow-up. The QR itself is a bordered box now,
@@ -562,7 +619,7 @@ function StandardDocument({
                         page in this product yet, so the caption says only
                         what actually happens when it's scanned. */}
                     <div style={{ fontSize: "7.5px", color: "#999", textAlign: "center", lineHeight: 1.35 }}>
-                        Scan to verify this prescription
+                        {t.qrCaption}
                     </div>
                     {followUpDays && (
                         <div style={{
@@ -570,7 +627,7 @@ function StandardDocument({
                             background: followUpBg, border: `1px solid ${followUpBorder}`,
                             borderRadius: 999, padding: "2px 10px", marginTop: 2,
                         }}>
-                            Follow-up in {followUpDays} days
+                            {t.followUp(followUpDays)}
                         </div>
                     )}
                 </div>
@@ -581,7 +638,7 @@ function StandardDocument({
                 {therapyNotes && (
                     <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                            Therapy Performed
+                            {t.therapyPerformed}
                         </div>
                         {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
                             <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>› {line}</div>
@@ -595,7 +652,7 @@ function StandardDocument({
                 {exerciseLines.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                            Home Exercise Programme
+                            {t.homeExercise}
                         </div>
                         {exerciseLines.map((line, i) => (
                             <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>{i + 1}. {line}</div>
@@ -616,7 +673,7 @@ function StandardDocument({
                     {adviceNotes && adviceNotes.trim() && (
                         <>
                             <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                                Advice
+                                {t.advice}
                             </div>
                             {adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean).map((line, i) => (
                                 <div key={i} style={{ fontSize: smallSize, color: "#333", marginBottom: 3, display: "flex", gap: 5, lineHeight: 1.4 }}>
@@ -648,13 +705,26 @@ function StandardDocument({
                 `aren-logo.png` would look like a stray tile on white paper. */}
             {isBranded && (
                 <div style={{ marginTop: 22 }}>
+                    {/* English: one line, mark beside it, vertically centered —
+                        unchanged. Hindi/Hinglish: the mark sits ABOVE the
+                        two-line quote as its own small lockup, both centered
+                        as one block — a mark pinned beside just the FIRST of
+                        two lines read as orphaned from the second; stacking
+                        reads as one deliberate signature regardless of how
+                        many lines the quote takes. */}
                     <div style={{
-                        display: "flex", justifyContent: "flex-end", alignItems: "center",
-                        gap: 7, marginBottom: 10,
+                        display: "flex", flexDirection: isDevanagari ? "column" : "row",
+                        justifyContent: "flex-end", alignItems: "center",
+                        gap: isDevanagari ? 4 : 7, marginBottom: 10,
                     }}>
                         <img src={arenLogo} alt="" style={{ width: 15, height: 15, objectFit: "contain" }} />
-                        <span style={{ fontSize: "8.5px", color: "#5b7fc7", fontWeight: 700, letterSpacing: "0.02em" }}>
-                            Generated with care, through Arenode
+                        <span style={{
+                            fontSize: isDevanagari ? "10px" : "8.5px", color: "#5b7fc7", fontWeight: 700,
+                            letterSpacing: isDevanagari ? "normal" : "0.02em",
+                            whiteSpace: "pre-line", lineHeight: isDevanagari ? 1.5 : 1.3,
+                            textAlign: "center",
+                        }}>
+                            {t.footerCredit}
                         </span>
                     </div>
                     <div style={{ borderTop: "1px solid #eee" }} />
@@ -680,13 +750,21 @@ function ThermalDocument({
     doctor,
     hospital,
     date,
+    language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
 }: PrescriptionDocumentProps) {
+    const lang: RxLanguage = language ?? "en";
+    const t = rxLabels(lang);
+    const isDevanagari = lang === "hi";
+    // Courier New has no Devanagari glyphs at all — the Latin characters in a
+    // line stay monospace, Devanagari falls back to Noto Sans Devanagari for
+    // proper shaping rather than whatever the OS happens to substitute.
+    const thermalFontFamily = "'Courier New', 'Noto Sans Devanagari', monospace";
     const today = formatDate(date);
-    const doctorName = doctor?.name ?? "Doctor";
+    const doctorName = hiName(lang, doctor?.name ?? "Doctor", doctor?.name_hi);
     const doctorQual = doctor?.qualification ?? "";
     const doctorReg = doctor?.registration_number ?? "";
-    const clinicName = hospital?.name ?? "Clinic";
+    const clinicName = hiName(lang, hospital?.name ?? "Clinic", hospital?.name_hi);
     const clinicPhone = hospital?.phone ?? "";
     const signatureUrl = doctor?.signature_image_url;
     // Thermal honours the SAME config, not a parallel set of rules — the
@@ -696,10 +774,10 @@ function ThermalDocument({
     const showDoctorIdentity = config.identityMode !== "clinic";
 
     const th: React.CSSProperties = {
-        fontFamily: "'Courier New', monospace",
+        fontFamily: thermalFontFamily,
         fontSize: "9px",
         color: "#000",
-        lineHeight: 1.5,
+        lineHeight: isDevanagari ? 1.7 : 1.5,
     };
 
     const divider = (
@@ -711,8 +789,9 @@ function ThermalDocument({
             width: "76mm",
             padding: "4mm 4mm",
             background: "#fff",
-            fontFamily: "'Courier New', monospace",
+            fontFamily: thermalFontFamily,
             fontSize: "9px",
+            lineHeight: isDevanagari ? 1.7 : 1.5,
             color: "#000",
             boxSizing: "border-box",
         }}>
@@ -729,21 +808,21 @@ function ThermalDocument({
                 <div style={{ textAlign: "center", fontWeight: 700, fontSize: "10px" }}>{doctorName}</div>
             )}
             {config.showQualification && doctorQual && <div style={{ textAlign: "center", fontSize: "8px" }}>{doctorQual}</div>}
-            {config.showRegistration && doctorReg && <div style={{ textAlign: "center", fontSize: "8px" }}>Reg: {doctorReg}</div>}
+            {config.showRegistration && doctorReg && <div style={{ textAlign: "center", fontSize: "8px" }}>{t.regNo} {doctorReg}</div>}
             {divider}
 
             {/* Patient */}
-            <div style={th}><b>Patient:</b> {patient.name}</div>
-            <div style={th}><b>Age/Sex:</b> {patient.age}Y / {patient.gender}</div>
-            {patient.phone && <div style={th}><b>Phone:</b> {patient.phone}</div>}
-            <div style={th}><b>Date:</b> {today}</div>
-            {prescriptionRef && <div style={th}><b>Ref:</b> {prescriptionRef}</div>}
+            <div style={th}><b>{t.patient}:</b> {patient.name}</div>
+            <div style={th}><b>{t.ageSex}:</b> {patient.age}Y / {patient.gender}</div>
+            {patient.phone && <div style={th}><b>{t.phone}:</b> {patient.phone}</div>}
+            <div style={th}><b>{t.date}:</b> {today}</div>
+            {prescriptionRef && <div style={th}><b>{t.ref}:</b> {prescriptionRef}</div>}
             {divider}
 
             {/* Complaints */}
             {symptoms.length > 0 && (
                 <>
-                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>Complaints</div>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.complaints}</div>
                     {symptoms.map((s) => <div key={s} style={th}>- {s}</div>)}
                     {divider}
                 </>
@@ -752,16 +831,16 @@ function ThermalDocument({
             {/* Findings */}
             {findings.length > 0 && (
                 <>
-                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>Findings</div>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.findings}</div>
                     {findings.map((f) => <div key={f} style={th}>! {f}</div>)}
                     {divider}
                 </>
             )}
 
-            {/* Rx */}
+            {/* Rx — the ℞ code itself stays universal; the heading word does not. */}
             {prescription.length > 0 && (
                 <>
-                    <div style={{ fontWeight: 900, fontSize: "11px", fontStyle: "italic", marginBottom: 4 }}>Rx</div>
+                    <div style={{ fontWeight: 900, fontSize: "11px", fontStyle: "italic", marginBottom: 4 }}>℞ {t.prescription}</div>
                     {prescription.map((med, idx) => {
                         const [m, a, e, n] = resolveSlot(med.frequency);
                         const slots = [m && "M", a && "A", e && "E", n && "N"].filter(Boolean).join("-");
@@ -778,8 +857,8 @@ function ThermalDocument({
                                     </div>
                                 )}
                                 <div style={{ fontSize: "8px", paddingLeft: 10 }}>
-                                    {slots} · {med.duration}
-                                    {med.instructions && ` · ${med.instructions}`}
+                                    {slots} · {med.duration_days != null ? t.durationDays(med.duration_days) : med.duration}
+                                    {med.instructions && ` · ${localizeTiming(med.instructions, lang)}`}
                                 </div>
                             </div>
                         );
@@ -791,8 +870,8 @@ function ThermalDocument({
             {/* Tests */}
             {tests.length > 0 && (
                 <>
-                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>Investigations</div>
-                    {tests.map((t) => <div key={t} style={th}>- {t}</div>)}
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.investigations}</div>
+                    {tests.map((test) => <div key={test} style={th}>- {test}</div>)}
                     {divider}
                 </>
             )}
@@ -819,7 +898,7 @@ function ThermalDocument({
 
             {/* Follow-up + advice */}
             {followUpDays && (
-                <div style={{ fontWeight: 700, ...th }}>Follow-up: {followUpDays} days</div>
+                <div style={{ fontWeight: 700, ...th }}>{t.followUp(followUpDays)}</div>
             )}
             {/* Doctor's own advice only — the clinic's canned `defaultAdvice`
                 lines were dropped here too (Anmol, 2026-09-09). */}

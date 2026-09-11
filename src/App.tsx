@@ -2778,6 +2778,7 @@ function App() {
             patient={patient}
             doctor={{
               name: doctorProfile?.name ?? DOCTOR_NAME,
+              name_hi: doctorProfile?.name_hi ?? null,
               specialization: doctorProfile?.specialization ?? DOCTOR_SPECIALIZATION,
               qualification: doctorProfile?.qualification ?? null,
               registration_number: doctorProfile?.registration_number ?? null,

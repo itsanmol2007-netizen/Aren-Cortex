@@ -18,7 +18,7 @@
 import { useEffect, useState } from "react";
 import { Building2, Clock, Plus, Stethoscope } from "lucide-react";
 import { PracticeModal } from "../practice/PracticeModal";
-import { Field, FieldRow, FormError, FormNote, ImagePicker, RemoveButton } from "./ui";
+import { Field, FieldRow, FormError, FormNote, HindiNameField, ImagePicker, RemoveButton } from "./ui";
 import type { CompressedImage } from "../../lib/image/compress";
 import {
     WEEKDAYS, replaceClinicHours, updateClinicProfile, updateDoctorProfile,
@@ -68,6 +68,7 @@ export function EditClinicModal({
     onSaved: (patch: ClinicProfilePatch) => void;
 }) {
     const [name, setName] = useState(hospital?.name ?? "");
+    const [nameHi, setNameHi] = useState(hospital?.name_hi ?? "");
     const [clinicType, setClinicType] = useState(hospital?.clinic_type ?? "");
     const [facilityType, setFacilityType] = useState(hospital?.facility_type ?? "");
     const [tagline, setTagline] = useState(hospital?.tagline ?? "");
@@ -90,6 +91,7 @@ export function EditClinicModal({
 
     const dirty =
         name !== (hospital?.name ?? "") ||
+        nameHi !== (hospital?.name_hi ?? "") ||
         clinicType !== (hospital?.clinic_type ?? "") ||
         facilityType !== (hospital?.facility_type ?? "") ||
         tagline !== (hospital?.tagline ?? "") ||
@@ -114,6 +116,7 @@ export function EditClinicModal({
                 : logoRemoved ? null : undefined;
             const patch: ClinicProfilePatch = {
                 name: name.trim(),
+                name_hi: orNull(nameHi),
                 clinic_type: orNull(clinicType),
                 facility_type: orNull(facilityType),
                 tagline: orNull(tagline),
@@ -164,6 +167,15 @@ export function EditClinicModal({
                     />
                 </div>
                 <Field id="clin-name" label="Clinic name" value={name} onChange={setName} />
+                {/* Confirmed ONCE, stored forever — a Hindi prescription reads
+                    this instead of guessing a transliteration every time (see
+                    the name_hi migration + docs/prescription-render-spec.md).
+                    Left blank, Hindi prescriptions print the Latin name above. */}
+                <HindiNameField
+                    id="clin-name-hi" label="Clinic name in Hindi (देवनागरी)" value={nameHi}
+                    placeholder="e.g. एकांकी सोलो क्लिनिक — used on Hindi prescriptions"
+                    onChange={setNameHi} sourceName={name}
+                />
                 <FieldRow>
                     <Field
                         id="clin-type" label="Clinic type" value={clinicType}
@@ -216,6 +228,7 @@ export function EditDoctorModal({
     onSaved: (patch: DoctorProfilePatch) => void;
 }) {
     const [name, setName] = useState(doctor?.name ?? "");
+    const [nameHi, setNameHi] = useState(doctor?.name_hi ?? "");
     const [qualification, setQualification] = useState(doctor?.qualification ?? "");
     const [specialization, setSpecialization] = useState(doctor?.specialization ?? "");
     const [registration, setRegistration] = useState(doctor?.registration_number ?? "");
@@ -229,6 +242,7 @@ export function EditDoctorModal({
 
     const dirty =
         name !== (doctor?.name ?? "") ||
+        nameHi !== (doctor?.name_hi ?? "") ||
         qualification !== (doctor?.qualification ?? "") ||
         specialization !== (doctor?.specialization ?? "") ||
         registration !== (doctor?.registration_number ?? "") ||
@@ -245,6 +259,7 @@ export function EditDoctorModal({
                 : photoRemoved ? null : undefined;
             const patch: DoctorProfilePatch = {
                 name: name.trim(),
+                name_hi: orNull(nameHi),
                 qualification: orNull(qualification),
                 specialization: orNull(specialization),
                 registration_number: orNull(registration),
@@ -289,6 +304,13 @@ export function EditDoctorModal({
                     />
                 </div>
                 <Field id="clin-doc-name" label="Name" value={name} onChange={setName} />
+                {/* Confirmed ONCE, stored forever — see the matching field on
+                    the Clinic information modal for why. */}
+                <HindiNameField
+                    id="clin-doc-name-hi" label="Name in Hindi (देवनागरी)" value={nameHi}
+                    placeholder="e.g. डॉ. अनमोल पाण्डेय — used on Hindi prescriptions"
+                    onChange={setNameHi} sourceName={name}
+                />
                 <Field
                     id="clin-doc-qual" label="Qualification" value={qualification}
                     placeholder="e.g. MBBS, MD" onChange={setQualification}

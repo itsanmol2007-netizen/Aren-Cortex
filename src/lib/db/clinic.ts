@@ -42,6 +42,11 @@ export type ClinicProfilePatch = {
     email: string | null;
     website: string | null;
     tagline: string | null;
+    /** Devanagari name — a transliteration the doctor/admin confirms once,
+     *  never generated per-request. See `docs/prescription-render-spec.md`
+     *  and the `name_hi` migration. Optional in the patch: absent leaves it
+     *  alone; `null` explicitly clears it (back to "not set"). */
+    name_hi?: string | null;
     /**
      * Present ONLY on a save that actually changed the logo (a new upload, or
      * an explicit remove) — see `EditClinicModal`. Omitted (not merely
@@ -80,6 +85,8 @@ export type DoctorProfilePatch = {
      *  from the phone number; writing here never touches that. Optional in
      *  the patch so a save that isn't about the email leaves it alone. */
     email?: string | null;
+    /** Devanagari name — same rule as `ClinicProfilePatch.name_hi`. */
+    name_hi?: string | null;
     /** Same rule as `ClinicProfilePatch.logo_url` — present only when this
      *  save actually changed the photo. */
     avatar_url?: string | null;

@@ -1,32 +1,27 @@
 // ---------------------------------------------------------------------------
-// THE CLINIC'S ACCENT, turned into a usable palette.
+// THE PRESCRIPTION ACCENT, turned into a usable palette.
 //
-// `hospitals.accent_color` is one hex, chosen by the clinic at registration.
-// It is brand identity, and the prescription is the one artefact of this
-// product a patient carries out of the building and keeps, so it is the place
-// that colour should actually mean something.
+// Until 2026-09-11 this ramp was built from `hospitals.accent_color` — a hex
+// the clinic chose at registration. Removed (Anmol): a clinic that picked
+// white (or anything close to the paper) made its own letterhead border,
+// watermark and QR frame vanish into the page — "a useless complexity", not
+// a brand feature worth the failure mode. Every caller now calls
+// `accentPalette()` bare, which resolves to this file's own `FALLBACK` — one
+// fixed, tested-legible accent for every clinic's prescription, everywhere
+// (`PrescriptionDocument`, `ReviewModal`, the landing repo's `RxView`).
 //
-// ── What was wrong ─────────────────────────────────────────────────────────
-// The accent was read in three places and CONTRADICTED in one of them:
+// The function still takes an optional hex and still derives a full ramp from
+// it — that machinery is generic and correct, just unused for now. If a
+// non-clinic use case ever needs a ramp from an arbitrary colour, it's here.
 //
-//   background: linear-gradient(90deg, transparent, ${accent} 25%,
-//                               #7c3aed 50%, #ec4899 75%, transparent)
-//
-// A clinic that picked forest green got green fading into purple and pink.
-// The specialisation pill was hardcoded pink outright. So every clinic's
-// prescription came out looking like the same violet house style no matter
-// what they chose, which is the opposite of what the field is for.
-//
-// ── Why a derived ramp rather than the raw hex ─────────────────────────────
+// ── Why a derived ramp rather than one flat colour ──────────────────────────
 // One hex cannot do the work of a palette. A heading, a hairline and a tinted
-// band need three different lightnesses of the same hue, and picking them by
-// hand per clinic is not possible when the clinic picks the colour.
+// band need three different lightnesses of the same hue.
 //
-// So the ramp is computed in HSL from the stored value, with one hard rule:
-// INK IS CLAMPED FOR CONTRAST. A clinic that chooses pale yellow must not get
-// pale yellow headings, because a prescription is a semi-legal document that
-// ends up on cheap white stock out of a clinic laser printer. Brand expression
-// stops where legibility starts.
+// So the ramp is computed in HSL from the base value, with one hard rule:
+// INK IS CLAMPED FOR CONTRAST — a prescription is a semi-legal document that
+// ends up on cheap white stock out of a clinic laser printer, and legibility
+// comes before anything else.
 // ---------------------------------------------------------------------------
 
 export interface AccentPalette {

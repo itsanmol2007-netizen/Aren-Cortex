@@ -532,10 +532,15 @@ export type DBDoctor = {
     // column is added, include `last_seen` in DOCTOR_COLUMNS and reception
     // presence lights up automatically.
     last_seen?: string | null;
+    /** Devanagari name, confirmed by the doctor/admin once (2026-09-11,
+     *  multilingual prescriptions) — never generated per-request. NULL until
+     *  set; every Hindi renderer falls back to the Latin `name`. Edited from
+     *  the Clinic page's Doctor profile modal. */
+    name_hi: string | null;
 };
 
 const DOCTOR_COLUMNS =
-    "id, name, specialization, qualification, registration_number, phone, email, signature_image_url, hospital_id, avatar_url, availability_status, last_seen";
+    "id, name, name_hi, specialization, qualification, registration_number, phone, email, signature_image_url, hospital_id, avatar_url, availability_status, last_seen";
 
 export async function fetchDoctor(doctorId: string): Promise<DBDoctor | null> {
     const { data, error } = await supabase
@@ -655,12 +660,17 @@ export type DBHospital = {
     website: string | null;
     clinic_type: string | null;
     facility_type: string | null;
+    /** Devanagari name, confirmed by the doctor/admin once (2026-09-11,
+     *  multilingual prescriptions) — never generated per-request. NULL until
+     *  set; every Hindi renderer falls back to the Latin `name`. Edited from
+     *  the Clinic page's Clinic information modal. */
+    name_hi: string | null;
 };
 
 export async function fetchHospital(hospitalId: string): Promise<DBHospital | null> {
     const { data, error } = await supabase
         .from("hospitals")
-        .select("id, name, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded, specialty_profile, website, clinic_type, facility_type")
+        .select("id, name, name_hi, city, state, phone, email, address, tagline, logo_url, accent_color, is_branded, specialty_profile, website, clinic_type, facility_type")
         .eq("id", hospitalId)
         .maybeSingle();
     if (error) throw new Error(`fetchHospital: ${error.message}`);
