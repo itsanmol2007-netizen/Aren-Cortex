@@ -86,7 +86,18 @@ export function SupportPage({ doctorEmail, clinicName }: Props) {
     const [activeCount, setActiveCount] = useState<number | null>(null);
 
     return (
-        <div className="flex h-dvh flex-col overflow-hidden bg-[#f0f2f7]">
+        // NO `overflow-hidden` HERE — it used to live on this root, and it is
+        // why the header scrolled away with the page ("the top header should
+        // remain consistent", Anmol, 2026-09-11): `WorkspaceHeader` is
+        // `position: sticky`, and ANY ancestor with non-visible overflow
+        // becomes a sticky descendant's reference scrollport per spec,
+        // whether or not that ancestor itself ever visibly scrolls. This root
+        // doesn't need it anyway — every mode below (`NewRequestForm`,
+        // `TicketsView`) already bounds and scrolls its own content
+        // (`flex-1 overflow-y-auto`/`min-h-0`), so nothing here relied on the
+        // root clipping anything. Same bug, same fix as `.prac-page` in
+        // practice.css.
+        <div className="flex h-dvh flex-col bg-[#f0f2f7]">
             <WorkspaceHeader
                 title="Help & Support"
                 subtitle={mode === "new" ? "Tell us what you need — a real person reads every one" : "Your clinic's requests, and our replies"}

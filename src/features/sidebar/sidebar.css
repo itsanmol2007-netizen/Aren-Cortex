@@ -26,8 +26,11 @@
        the layout; this element overhangs into the space both headers leave
        clear for it (see `.app-shell .ws-header-inner` in workspace-header.css
        in workspace-header.css). Change it here and
-       those two follow automatically. */
-    --brand-w: 186px;
+       those two follow automatically.
+       200px, was 186 — grown 2026-09-11 alongside the mark/text sizes below
+       ("so much muted and small", Anmol) so the bigger lockup has room to
+       breathe instead of crowding its own right edge. */
+    --brand-w: 200px;
 
     /* Above the modals, on purpose — see NavRail.tsx's header. Toasts
        (2147483647) still win, which is right: a toast is a message about
@@ -237,7 +240,7 @@
 
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 12px;
     padding: 0 14px 0 10px;
     border: none;
     background: transparent;
@@ -250,9 +253,12 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    padding: 5px;
+    /* 44px, was 40 — the one piece of chrome that is on screen every second
+       the app is open; it was reading as a small dark chip next to the
+       nebula rather than the mark of the thing the doctor is using. */
+    width: 44px;
+    height: 44px;
+    padding: 6px;
     border-radius: 12px;
     border: 1px solid rgba(139, 92, 246, 0.45);
     background: rgba(5, 9, 22, 0.76);
@@ -281,18 +287,23 @@
     min-width: 0;
 }
 
+/* Both lines bumped 2026-09-11 — "the AREN Cortex [wordmark]... so much
+   muted and small" (Anmol). This is the one piece of branding left in the
+   whole app (the headers carry none of their own any more, see `.rail-head`'s
+   note above); it needed to read as the app's name, not a caption under the
+   mark. */
 .rail-brand-name {
-    font-size: 12px;
+    font-size: 14.5px;
     font-weight: 800;
-    letter-spacing: 0.10em;
-    color: rgba(255, 255, 255, 0.97);
+    letter-spacing: 0.06em;
+    color: #ffffff;
 }
 
 .rail-brand-product {
-    font-size: 9.5px;
-    font-weight: 500;
-    letter-spacing: 0.07em;
-    color: rgba(196, 167, 250, 0.94);
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    color: rgba(210, 188, 255, 1);
 }
 
 .rail-brand:hover .rail-brand-mark {

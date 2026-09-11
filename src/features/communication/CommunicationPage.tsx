@@ -417,7 +417,14 @@ export function CommunicationPage({
     const waitMs = pendingRecharge ? msUntilCancellable(pendingRecharge) : 0;
 
     return (
-        <div className="flex h-screen flex-col overflow-hidden bg-[var(--cs-page)]">
+        // NO `overflow-hidden` HERE — see the identical note in
+        // `SupportPage.tsx`/`practice.css`: it makes this root the sticky
+        // reference scrollport for `WorkspaceHeader` below, which un-sticks
+        // it from the viewport the instant the document is ever a pixel
+        // taller than the screen. The content div right below already scrolls
+        // itself (`flex-1 min-h-0 overflow-y-auto`), so the root never needed
+        // to clip anything.
+        <div className="flex h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
                 title="Communication"
                 subtitle="WhatsApp conversations, patient messages & follow-ups"

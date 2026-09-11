@@ -26,7 +26,17 @@
        Communication/Practice/Clinic already carry their own version of this
        fix and are unaffected by this change. */
     height: 100dvh;
-    overflow: hidden;
+    /* NO `overflow` HERE — it used to be `hidden`, and it is why
+       `WorkspaceHeader`'s `position: sticky` (its direct child, two lines
+       below in Patients/PatientRecord) could silently un-stick from the
+       viewport: any ancestor with non-visible overflow becomes a sticky
+       descendant's reference scrollport per spec, whether or not that
+       ancestor itself ever scrolls. `.prec-page-body` right below already
+       does the real clipping (`overflow: hidden`, with `.prec-main-col`/
+       `.prec-right-col` scrolling independently inside it) — this root
+       never needed a second layer of it. Found 2026-09-11 alongside the
+       identical fix in practice.css/CommunicationPage.tsx/SupportPage.tsx/
+       AdminShell.tsx — same bug, same cause, five places. */
     background: #f0f2f7;
     color: var(--text);
     scrollbar-gutter: stable;

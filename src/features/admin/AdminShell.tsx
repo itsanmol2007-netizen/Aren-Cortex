@@ -129,7 +129,13 @@ export function AdminShell() {
     const isVisitingDoctor = access.access === "embedded";
 
     return (
-        <div className="flex h-screen flex-col overflow-hidden bg-[var(--cs-page)]">
+        // NO `overflow-hidden` HERE — same bug as `SupportPage.tsx`/
+        // `CommunicationPage.tsx`: it makes this root the sticky reference
+        // scrollport for `WorkspaceHeader` below, un-sticking it from the
+        // viewport. Unneeded anyway — the nav (`overflow-y-auto`) and
+        // `<main>` (`overflow-hidden`) below already bound and clip
+        // themselves.
+        <div className="flex h-screen flex-col bg-[var(--cs-page)]">
             <div className="shrink-0">
                 <WorkspaceHeader
                     logoRef={logoRef}
