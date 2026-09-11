@@ -731,8 +731,21 @@ export function CommunicationPage({
 
                 {/* ── Feed + conversation ──────────────────────────────────── */}
                 {/* The message list carries more of the width now — it was the
-                    half a doctor actually scans, and it was the smaller column. */}
-                <div className="grid min-h-[468px] flex-1 grid-cols-[minmax(340px,0.82fr)_minmax(0,1fr)] gap-[14px] max-[1100px]:grid-cols-1">
+                    half a doctor actually scans, and it was the smaller column.
+
+                    `min-h` alone used to be the whole story — a floor with no
+                    ceiling. Both panels below already carry their own
+                    `min-h-0 flex-1 overflow-y-auto` scroll region, but that
+                    only ever activates when an ANCESTOR actually stops
+                    growing; with nothing capping this row, it just grew with
+                    the thread instead, and the doctor scrolled the whole
+                    PAGE to read old messages rather than the thread
+                    scrolling in place. Anmol, 2026-09-11: "you can't
+                    generally scroll through the chat... the chat should have
+                    its own scrolling." `max-h` gives it the ceiling `min-h`
+                    was missing — same fixed range on every screen, past
+                    which the panels' own scrollbars take over. */}
+                <div className="grid min-h-[468px] max-h-[640px] flex-1 grid-cols-[minmax(340px,0.82fr)_minmax(0,1fr)] gap-[14px] max-[1100px]:grid-cols-1">
 
                     <Panel className="min-h-0" label="Messages">
                         <div className="flex flex-none items-center gap-[2px] border-b border-[var(--cs-line)] px-[12px] pt-[10px]">
