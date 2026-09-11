@@ -212,8 +212,15 @@ export function PaymentDetailsModal({ hospitalId, doctorId, range, onClose }: Pr
                                                 }
                                             >
                                                 {/* Method only means anything once it's actually paid — a
-                                                    pending row has none yet, so it stays just "pending". */}
-                                                {t.status === "paid" && t.method ? `${t.status} · ${t.method}` : t.status}
+                                                    pending row has none yet, so it stays just "pending".
+                                                    A split names both methods rather than just the first —
+                                                    "cash · upi" alone would silently hide where the other
+                                                    half of the money went. */}
+                                                {t.status === "paid" && t.method
+                                                    ? t.splitMethod
+                                                        ? `${t.status} · ${t.method} + ${t.splitMethod}`
+                                                        : `${t.status} · ${t.method}`
+                                                    : t.status}
                                             </span>
                                         </span>
                                     </div>

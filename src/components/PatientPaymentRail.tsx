@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-    Check, ChevronDown, Clock, CreditCard, Info, Lock, Percent, RotateCcw, Wallet,
+    Check, ChevronDown, Clock, CreditCard, Info, Lock, Percent, RotateCcw, Split, Wallet,
 } from "lucide-react";
 import type {
     BillingPolicy, DiscountKind, FeeBreakdown, PaymentMethod, VisitType,
@@ -38,6 +38,22 @@ import type {
 
 export type PayStatus = "undecided" | "paid" | "unpaid";
 
+/** Two methods, two amounts, one total — the whole shape a split payment
+ *  needs. `firstAmount + secondAmount` always equals the total being
+ *  collected; the rail enforces that by deriving one from the other rather
+ *  than ever letting both be typed independently. Three-way splits don't
+ *  exist here — Anmol's own spec was two ("you click on that UPI card, and
+ *  that will automatically convert into something where you can insert
+ *  thing... adjusted with 100 INR"), and every extra method is one more
+ *  reconciliation question a receptionist actually has to answer at the
+ *  till, not fewer. */
+export interface SplitPayment {
+    firstMethod: PaymentMethod;
+    firstAmount: number;
+    secondMethod: PaymentMethod;
+    secondAmount: number;
+}
+
 export interface FeeState {
     visitType: VisitType;
     discountKind: DiscountKind;
@@ -46,6 +62,12 @@ export interface FeeState {
     discountValue: string;
     status: PayStatus;
     method: PaymentMethod | null;
+    /** Set only when `method` was collected across two methods at once —
+     *  `method` itself stays the FIRST portion's method, so every other
+     *  reader of `FeeState` (the "Will collect ₹472" summary, the eventual
+     *  DB write) that only ever looked at `method` still gets a real,
+     *  correct answer instead of `null`; this is the second portion. */
+    split: SplitPayment | null;
 }
 
 export const INITIAL_FEE_STATE: FeeState = {
@@ -54,6 +76,7 @@ export const INITIAL_FEE_STATE: FeeState = {
     discountValue: "",
     status: "undecided",
     method: null,
+    split: null,
 };
 
 const METHODS: { key: PaymentMethod; label: string }[] = [
@@ -65,6 +88,7 @@ const METHODS: { key: PaymentMethod; label: string }[] = [
 
 export function PatientPaymentRail({
     state, onChange, onCommit, policy, baseFee, breakdown, doctorName, needsDecision, lockReason, isSubmitting = false,
+    containerRef: externalRailRef,
 }: {
     state: FeeState;
     onChange: (next: FeeState) => void;
@@ -76,7 +100,7 @@ export function PatientPaymentRail({
      * through React yet at call time. Optional: without it the rail just
      * records the decision and shows its "Will collect …" summary as before.
      */
-    onCommit?: (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null }) => void;
+    onCommit?: (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null; split?: SplitPayment | null }) => void;
     policy: BillingPolicy;
     /** Resolved from the signed-in doctor + visit type. `null` = nothing to charge. */
     baseFee: number | null;
@@ -85,12 +109,52 @@ export function PatientPaymentRail({
     needsDecision?: boolean;
     lockReason?: string;
     isSubmitting?: boolean;
+    /** Handed down by `PatientModal` so IT can focus the rail's first
+     *  control the instant a patient is selected off the roving search list
+     *  — "you click enter, and then automatically highlight to the payment
+     *  rail" (Anmol). Same DOM node the arrow-key handler below already
+     *  walks; exposing it is simpler than a second imperative API. */
+    containerRef?: React.RefObject<HTMLDivElement | null>;
 }) {
     const locked = !!lockReason || isSubmitting;
     // Chrome, not data — stays local so the parent re-rendering on every
     // keystroke of the patient's name can't collapse an open panel.
     const [collecting, setCollecting] = useState(false);
     const [discountOpen, setDiscountOpen] = useState(false);
+    // The split sub-flow's own scratch state — local for the same reason
+    // `collecting` is: it's mid-decision chrome, not a fact worth round-
+    // tripping through the parent until the doctor actually confirms it.
+    const [splitting, setSplitting] = useState(false);
+    const [splitFirstMethod, setSplitFirstMethod] = useState<PaymentMethod>("cash");
+    const [splitSecondMethod, setSplitSecondMethod] = useState<PaymentMethod>("upi");
+    const [splitFirstAmount, setSplitFirstAmount] = useState("");
+
+    // ── Arrow-key travel across the rail's own controls ─────────────────────
+    // "you simply click on down arrow, patient is selected, you click enter,
+    // and then automatically highlight to the payment rail... select payment
+    // method... by side arrows" (Anmol). Real <button>s already answer Enter/
+    // Space on their own — the only thing missing was arrows moving focus
+    // BETWEEN them, so this walks whichever buttons are actually visible
+    // right now (visit type, then Collect/Mark-unpaid or the method grid or
+    // the split sub-form, depending on where the doctor is in the flow) in
+    // DOM order. Left/Up = back, Right/Down = forward, and it wraps rather
+    // than falling off the end — one small ring, not a cliff.
+    const internalRailRef = useRef<HTMLDivElement>(null);
+    const railRef = externalRailRef ?? internalRailRef;
+    const onRailKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+        // Never steal arrows from a text input (the split amount field) —
+        // there, Left/Right mean "move the cursor," not "change focus."
+        if ((e.target as HTMLElement).tagName === "INPUT") return;
+        const focusable = Array.from(
+            railRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []
+        );
+        const i = focusable.indexOf(document.activeElement as HTMLButtonElement);
+        if (i === -1) return;
+        e.preventDefault();
+        const dir = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
+        focusable[(i + dir + focusable.length) % focusable.length]?.focus();
+    };
 
     const set = (patch: Partial<FeeState>) => onChange({ ...state, ...patch });
 
@@ -145,7 +209,7 @@ export function PatientPaymentRail({
     const decided = state.status !== "undecided";
 
     return (
-        <RailFrame>
+        <RailFrame rootRef={railRef} onKeyDown={onRailKeyDown}>
             {visitTypeControl}
 
             <div className="mt-[14px] flex flex-col gap-[7px]">
@@ -216,7 +280,9 @@ export function PatientPaymentRail({
                             </span>
                             <span className="block text-[11px] text-[#64748b]">
                                 {state.status === "paid"
-                                    ? `${METHODS.find((m) => m.key === state.method)?.label ?? "Cash"} — once you confirm a patient`
+                                    ? state.split
+                                        ? `${METHODS.find((m) => m.key === state.split!.firstMethod)?.label} ${money(state.split.firstAmount)} + ${METHODS.find((m) => m.key === state.split!.secondMethod)?.label} ${money(state.split.secondAmount)} — once you confirm a patient`
+                                        : `${METHODS.find((m) => m.key === state.method)?.label ?? "Cash"} — once you confirm a patient`
                                     : "Recorded once you confirm a patient"}
                             </span>
                         </span>
@@ -224,12 +290,131 @@ export function PatientPaymentRail({
                             type="button"
                             aria-label="Change payment"
                             title="Change"
-                            onClick={() => { set({ status: "undecided", method: null }); setCollecting(false); }}
+                            onClick={() => { set({ status: "undecided", method: null, split: null }); setCollecting(false); setSplitting(false); }}
                             className="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[8px] text-[#94a3b8] transition-colors hover:bg-white hover:text-[#334155]"
                         >
                             <RotateCcw size={13} />
                         </button>
                     </div>
+                ) : collecting && splitting ? (
+                    // ── Split: pick two methods, type one amount, the other
+                    // balances itself. "you click on split... it asks what
+                    // way to split... you click on UPI, and then you enter
+                    // 400 there, and then you click on credit card... that
+                    // will automatically be adjusted with 100 INR" (Anmol).
+                    (() => {
+                        const total = breakdown.total;
+                        const firstAmt = Math.max(0, Math.min(total, Math.round(Number(splitFirstAmount) || 0)));
+                        const secondAmt = Math.max(0, total - firstAmt);
+                        const validFirst = splitFirstAmount.trim() !== "" && firstAmt > 0 && firstAmt < total;
+                        const confirmSplit = () => {
+                            if (!validFirst) return;
+                            const split: SplitPayment = {
+                                firstMethod: splitFirstMethod, firstAmount: firstAmt,
+                                secondMethod: splitSecondMethod, secondAmount: secondAmt,
+                            };
+                            set({ status: "paid", method: splitFirstMethod, split });
+                            setCollecting(false);
+                            setSplitting(false);
+                            onCommit?.({ status: "paid", method: splitFirstMethod, split });
+                        };
+                        return (
+                            <div className="flex flex-col gap-[9px]">
+                                <span className="text-[11.5px] font-bold text-[#334155]">Split {money(total)} across two methods</span>
+
+                                <div className="flex flex-col gap-[5px]">
+                                    <span className="text-[10.5px] font-semibold text-[#94a3b8]">First method</span>
+                                    <div className="grid grid-cols-4 gap-[5px]">
+                                        {METHODS.map((m) => (
+                                            <button
+                                                key={m.key}
+                                                type="button"
+                                                aria-pressed={splitFirstMethod === m.key}
+                                                onClick={() => {
+                                                    setSplitFirstMethod(m.key);
+                                                    // The two sides can never be the same method —
+                                                    // bump the second one out of the way rather than
+                                                    // silently letting "Cash + Cash" through.
+                                                    if (m.key === splitSecondMethod) {
+                                                        setSplitSecondMethod(METHODS.find((x) => x.key !== m.key)!.key);
+                                                    }
+                                                }}
+                                                className={
+                                                    "h-[32px] cursor-pointer rounded-[8px] border text-[11.5px] font-bold transition-colors " +
+                                                    (splitFirstMethod === m.key
+                                                        ? "border-[#a855f7] bg-[#f5ecff] text-[#7c3aed]"
+                                                        : "border-black/10 bg-white text-[#64748b] hover:border-[#d8b4fe]")
+                                                }
+                                            >
+                                                {m.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="relative">
+                                        <span className="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-[12.5px] font-bold text-[#94a3b8]">
+                                            {policy.currency === "INR" ? "₹" : ""}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={total - 1}
+                                            inputMode="numeric"
+                                            autoFocus
+                                            value={splitFirstAmount}
+                                            onChange={(e) => setSplitFirstAmount(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === "Enter") confirmSplit(); }}
+                                            placeholder={`Amount via ${METHODS.find((m) => m.key === splitFirstMethod)?.label}`}
+                                            aria-label={`Amount collected via ${METHODS.find((m) => m.key === splitFirstMethod)?.label}`}
+                                            className="h-[36px] w-full rounded-[9px] border border-black/10 bg-white pl-[24px] pr-[10px] text-[13px] font-bold text-[#0f172a] outline-none focus:border-[#a855f7] focus:shadow-[0_0_0_3px_rgba(168,85,247,0.12)]"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-[5px]">
+                                    <span className="text-[10.5px] font-semibold text-[#94a3b8]">
+                                        Second method — the rest, {money(secondAmt)}
+                                    </span>
+                                    <div className="grid grid-cols-4 gap-[5px]">
+                                        {METHODS.map((m) => (
+                                            <button
+                                                key={m.key}
+                                                type="button"
+                                                disabled={m.key === splitFirstMethod}
+                                                aria-pressed={splitSecondMethod === m.key}
+                                                onClick={() => setSplitSecondMethod(m.key)}
+                                                className={
+                                                    "h-[32px] cursor-pointer rounded-[8px] border text-[11.5px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-30 " +
+                                                    (splitSecondMethod === m.key
+                                                        ? "border-[#a855f7] bg-[#f5ecff] text-[#7c3aed]"
+                                                        : "border-black/10 bg-white text-[#64748b] hover:border-[#d8b4fe]")
+                                                }
+                                            >
+                                                {m.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-[8px]">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSplitting(false)}
+                                        className="cursor-pointer self-start border-0 bg-transparent p-0 text-[11.5px] font-semibold text-[#94a3b8] hover:text-[#334155]"
+                                    >
+                                        Back
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={!validFirst}
+                                        onClick={confirmSplit}
+                                        className="ml-auto flex h-[34px] cursor-pointer items-center gap-[6px] rounded-[9px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] px-[14px] text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        <Check size={13} /> Confirm split
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()
                 ) : collecting ? (
                     <div className="flex flex-col gap-[8px]">
                         <span className="text-[11.5px] font-bold text-[#334155]">How was it paid?</span>
@@ -240,7 +425,7 @@ export function PatientPaymentRail({
                                     type="button"
                                     disabled={locked}
                                     onClick={() => {
-                                        set({ status: "paid", method: m.key });
+                                        set({ status: "paid", method: m.key, split: null });
                                         setCollecting(false);
                                         onCommit?.({ status: "paid", method: m.key });
                                     }}
@@ -250,6 +435,25 @@ export function PatientPaymentRail({
                                 </button>
                             ))}
                         </div>
+                        {/* Split lives BELOW the four methods, its own full-width
+                            row — Anmol described it as a fifth option in the same
+                            breath as the methods themselves, not a buried
+                            "advanced" toggle: "we already asked if we are
+                            collecting this in UPI cash or something, this will
+                            be a simple option of split payment." */}
+                        <button
+                            type="button"
+                            disabled={locked}
+                            onClick={() => {
+                                setSplitFirstAmount("");
+                                setSplitFirstMethod("cash");
+                                setSplitSecondMethod("upi");
+                                setSplitting(true);
+                            }}
+                            className="flex h-[34px] w-full cursor-pointer items-center justify-center gap-[6px] rounded-[10px] border border-dashed border-black/15 bg-transparent text-[12px] font-bold text-[#64748b] transition-colors hover:border-[#a855f7] hover:text-[#7c3aed] disabled:cursor-not-allowed"
+                        >
+                            <Split size={13} /> Split across two methods
+                        </button>
                         <button
                             type="button"
                             onClick={() => setCollecting(false)}
@@ -272,7 +476,7 @@ export function PatientPaymentRail({
                         <button
                             type="button"
                             disabled={locked}
-                            onClick={() => { set({ status: "unpaid", method: null }); onCommit?.({ status: "unpaid", method: null }); }}
+                            onClick={() => { set({ status: "unpaid", method: null, split: null }); onCommit?.({ status: "unpaid", method: null }); }}
                             className="flex h-[40px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-black/[0.04] text-[13px] font-bold text-[#4b5563] transition-colors hover:bg-black/[0.07] hover:text-[#0f172a] disabled:cursor-not-allowed"
                         >
                             <Clock size={14} />
@@ -383,9 +587,18 @@ export function PatientPaymentRail({
  * whatever was actually on top at that pixel, not this component at all.
  * Fixed by deleting the card chrome entirely, not by raising a z-index.
  */
-function RailFrame({ children }: { children: React.ReactNode }) {
+function RailFrame({
+    children, rootRef, onKeyDown,
+}: {
+    children: React.ReactNode;
+    /** Set only by the fee-wired return — the no-fee one has nothing to
+     *  arrow between beyond the visit-type toggle, which Tab already
+     *  reaches fine. */
+    rootRef?: React.RefObject<HTMLDivElement | null>;
+    onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+}) {
     return (
-        <div aria-label="Payment" className="flex flex-1 flex-col">
+        <div aria-label="Payment" className="flex flex-1 flex-col" ref={rootRef} onKeyDown={onKeyDown}>
             <div className="mb-[12px] flex items-center gap-[9px]">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-gradient-to-br from-[#fce7f3] to-[#ede9fe] text-[#a855f7]">
                     <Wallet size={15} />

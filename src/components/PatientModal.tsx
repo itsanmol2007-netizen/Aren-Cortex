@@ -9,7 +9,7 @@ import {
   computeFee, defaultVisitType, fetchFeeContext, getCachedFeeContext, getFeeSetupStatus, resolveFee,
   type ConfirmedPayment, type FeeContext, type PaymentMethod, type VisitType,
 } from "../lib/db/payments";
-import { PatientPaymentRail, INITIAL_FEE_STATE, type FeeState } from "./PatientPaymentRail";
+import { PatientPaymentRail, INITIAL_FEE_STATE, type FeeState, type SplitPayment } from "./PatientPaymentRail";
 
 type PatientModalProps = {
   onClose: () => void;
@@ -144,8 +144,8 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
     patientId: string | undefined,
     /** The Paid / Not-paid decision, passed explicitly from the rail so it
      *  does not depend on `fee.status` having flushed through React state
-     *  yet. Omitted → read from `fee.status` (the pre-rail-as-submit path). */
-    decision?: { status: "paid" | "unpaid"; method: PaymentMethod | null },
+     *  yet. Omitted → read from `fee.status`/`fee.split` (the pre-rail-as-submit path). */
+    decision?: { status: "paid" | "unpaid"; method: PaymentMethod | null; split?: SplitPayment | null },
   ): ConfirmedPayment | null => {
     if (!billing || !feeCtx) return null;
     const visitType = effectiveVisitType(patientId);
@@ -160,6 +160,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
     });
     const status = decision ? decision.status : fee.status;
     const method = decision ? decision.method : fee.method;
+    const split = decision ? (decision.split ?? null) : fee.split;
     return {
       visitType,
       breakdown: finalBreakdown,
@@ -170,6 +171,12 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
       // unanswered money question must never be recorded as money collected.
       status: status === "paid" ? "paid" : "pending",
       method: status === "paid" ? method : null,
+      // One row still — `visit_payments` is `unique(visit_id)`. A split's
+      // second portion rides along on the SAME row (`split_method`/
+      // `split_amount`), never a second insert; see that column's own
+      // comment (`20260911_split_payment.sql`).
+      splitMethod: status === "paid" && split ? split.secondMethod : null,
+      splitAmount: status === "paid" && split ? split.secondAmount : null,
     };
   };
 
@@ -207,7 +214,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
    * whichever patient is in play (a selected search result, the phone-
    * duplicate match, or a valid new-patient draft) and confirms.
    */
-  const commitWithPayment = (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null }) => {
+  const commitWithPayment = (decision: { status: "paid" | "unpaid"; method: PaymentMethod | null; split?: SplitPayment | null }) => {
     if (isSubmitting) return;
     const existing = selectedPatient ?? matchedPatient;
     if (existing) {
@@ -251,6 +258,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
   const listRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
   const roving = useRovingList({
     containerRef: listRef,
     rowSelector: ".pm-match-row",
@@ -277,6 +285,21 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feeCtxSettled, feeWired, selectedPatient]);
+
+  // "you click enter, and then automatically highlight to the payment rail.
+  // It will ask for which payment method or maybe like follow up or new
+  // visit. You can select it by side arrows" (Anmol). A row picked while
+  // fee-wired lights up the rail instead of confirming outright (see
+  // `pm-match-row`'s own onClick) — the moment that happens, hand focus
+  // straight to the rail's first control so the arrow keys the doctor is
+  // already using keep working with no mouse reach in between.
+  useEffect(() => {
+    if (!(feeWired && selectedPatient)) return;
+    const t = window.setTimeout(() => {
+      railRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [feeWired, selectedPatient]);
 
   // Focus follows the mode, both ways. Switching to the form with Alt+N and
   // landing on nothing would make the shortcut feel broken even though it
@@ -845,6 +868,7 @@ export function PatientModal({ onClose, onConfirm, billing, onSetupFee }: Patien
                 needsDecision={paymentError}
                 lockReason={railLockReason}
                 isSubmitting={isSubmitting}
+                containerRef={railRef}
               />
             ) : (
               // Fee read still in flight — full skeleton loader matching rail structure to avoid sizing jump.

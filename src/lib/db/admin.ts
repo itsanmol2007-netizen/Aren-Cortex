@@ -250,7 +250,7 @@ export async function fetchClinicAnalytics(
     // /`fetchDoctorPaymentSummary` below never had, because that one always
     // split on status. 2026-09-11.
     const payQuery = supabase.from("visit_payments")
-        .select("total, fee, discount, method, collected_at, doctor_id")
+        .select("total, fee, discount, method, split_method, split_amount, collected_at, doctor_id")
         .eq("hospital_id", hospitalId)
         .gte("collected_at", windowStart).lt("collected_at", windowEnd)
         .eq("status", "paid");
@@ -354,8 +354,9 @@ export async function fetchClinicAnalytics(
 
     // ── Money ──────────────────────────────────────────────────────────────
     let curRev = 0, prevRev = 0;
-    for (const p of (payRes.data ?? []) as { total: number | string | null; fee: number | string | null; discount: number | string | null; method: string | null; collected_at: string; doctor_id: string | null }[]) {
+    for (const p of (payRes.data ?? []) as { total: number | string | null; fee: number | string | null; discount: number | string | null; method: string | null; split_method: string | null; split_amount: number | string | null; collected_at: string; doctor_id: string | null }[]) {
         const amount = Number(p.total ?? 0);
+        const splitAmount = p.split_amount === null ? 0 : Number(p.split_amount);
         const ymd = ymdOf(p.collected_at);
         if (inRange(ymd)) {
             curRev += amount;
@@ -364,9 +365,16 @@ export async function fetchClinicAnalytics(
                 pt.revenue += amount;
                 pt.gross += Number(p.fee ?? 0);
                 pt.discount += Number(p.discount ?? 0);
-                if (p.method === "cash") pt.cash += amount;
-                else if (p.method === "upi") pt.upi += amount;
-                else if (p.method === "card") pt.card += amount;
+                // A split's first portion is `amount - splitAmount` — the
+                // amount never stored directly, see `visit_payments`'s
+                // `split_method` column comment.
+                const firstPortion = splitAmount ? amount - splitAmount : amount;
+                if (p.method === "cash") pt.cash += firstPortion;
+                else if (p.method === "upi") pt.upi += firstPortion;
+                else if (p.method === "card") pt.card += firstPortion;
+                if (p.split_method === "cash") pt.cash += splitAmount;
+                else if (p.split_method === "upi") pt.upi += splitAmount;
+                else if (p.split_method === "card") pt.card += splitAmount;
             }
             const b = p.doctor_id ? bench.get(p.doctor_id) : undefined;
             if (b) b.revenue += amount;
@@ -790,6 +798,11 @@ export interface PaymentTransaction {
     amount: number;
     status: string;
     method: string | null;
+    /** Set only for a split payment — the second method, and how much of
+     *  `amount` went through it (see `visit_payments.split_method`'s own
+     *  comment). The first portion is `amount - splitAmount`. */
+    splitMethod: string | null;
+    splitAmount: number | null;
 }
 
 export interface DoctorPaymentSummary {
@@ -824,7 +837,7 @@ export async function fetchDoctorPaymentSummary(
 ): Promise<DoctorPaymentSummary> {
     const { data, error } = await supabase
         .from("visit_payments")
-        .select("id, visit_id, total, status, method, collected_at, visits ( patients ( id, name ) )")
+        .select("id, visit_id, total, status, method, split_method, split_amount, collected_at, visits ( patients ( id, name ) )")
         .eq("hospital_id", hospitalId)
         .eq("doctor_id", doctorId)
         .gte("collected_at", startInstant(range.from))
@@ -837,6 +850,7 @@ export async function fetchDoctorPaymentSummary(
     const rows = (data ?? []).map((r) => {
         const row = r as unknown as {
             id: number; total: number | string | null; status: string; method: string | null;
+            split_method: string | null; split_amount: number | string | null;
             collected_at: string;
             visits?: { patients?: { id?: string; name?: string } | null } | null;
         };
@@ -848,18 +862,27 @@ export async function fetchDoctorPaymentSummary(
             amount: Number(row.total ?? 0),
             status: row.status,
             method: row.method,
+            splitMethod: row.split_method,
+            splitAmount: row.split_amount === null ? null : Number(row.split_amount),
         };
     });
 
     let totalCollected = 0, pendingAmount = 0, paidCount = 0, pendingCount = 0;
     const byMethod = { cash: 0, upi: 0, card: 0, other: 0 };
+    const bumpMethod = (m: string | null, amt: number) => {
+        if (m === "cash") byMethod.cash += amt;
+        else if (m === "upi") byMethod.upi += amt;
+        else if (m === "card") byMethod.card += amt;
+        else byMethod.other += amt;
+    };
     for (const r of rows) {
         if (r.status === "paid") {
             totalCollected += r.amount; paidCount++;
-            if (r.method === "cash") byMethod.cash += r.amount;
-            else if (r.method === "upi") byMethod.upi += r.amount;
-            else if (r.method === "card") byMethod.card += r.amount;
-            else byMethod.other += r.amount;
+            // A split's first portion is never stored directly — it's
+            // whatever `amount` didn't go through `splitMethod`.
+            const firstPortion = r.splitAmount ? r.amount - r.splitAmount : r.amount;
+            bumpMethod(r.method, firstPortion);
+            if (r.splitMethod && r.splitAmount) bumpMethod(r.splitMethod, r.splitAmount);
         }
         else if (r.status === "pending") { pendingAmount += r.amount; pendingCount++; }
     }

@@ -222,6 +222,13 @@ export interface ConfirmedPayment {
     gstPercent: number;
     status: "paid" | "pending";
     method: PaymentMethod | null;
+    /** Set only for a split payment — the SECOND method, and how much of
+     *  `breakdown.total` went through it. `method` above stays the first
+     *  portion's method; that portion's own amount is never stored — it's
+     *  always `breakdown.total - splitAmount`. See `visit_payments.split_method`'s
+     *  own comment (`20260911_split_payment.sql`). */
+    splitMethod?: PaymentMethod | null;
+    splitAmount?: number | null;
 }
 
 export interface RecordPaymentInput {
@@ -235,6 +242,9 @@ export interface RecordPaymentInput {
     gstPercent: number;
     status: "paid" | "pending";
     method: PaymentMethod | null;
+    /** See `ConfirmedPayment.splitMethod`/`splitAmount` — same shape. */
+    splitMethod?: PaymentMethod | null;
+    splitAmount?: number | null;
     actor: { id: string | null; name: string | null; role: string | null };
 }
 
@@ -265,6 +275,8 @@ export async function recordVisitPayment(input: RecordPaymentInput): Promise<voi
             gst_amount: input.breakdown.gstAmount,
             status: input.status,
             method: input.method,
+            split_method: input.splitMethod ?? null,
+            split_amount: input.splitAmount ?? null,
             collected_by: input.actor.id,
         })
         .select("id")

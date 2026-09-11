@@ -230,6 +230,8 @@ export async function startConsultVisit(opts: {
         p_discount_percent: payment?.discountPercent ?? null,
         p_gst_percent: payment?.gstPercent ?? 0,
         p_gst_amount: payment?.breakdown.gstAmount ?? 0,
+        p_split_method: payment?.splitMethod ?? null,
+        p_split_amount: payment?.splitAmount ?? null,
     });
     if (error) throwConsultRpcError(`startConsultVisit: ${error.message}`);
     const row = data as { id: string; patient_id: string; assigned_doctor_id: string; status: string; token_number: number | null };
