@@ -241,11 +241,19 @@ export async function fetchClinicAnalytics(
         .eq("hospital_id", hospitalId)
         .gte("created_at", windowStart).lt("created_at", windowEnd);
 
+    // status = "paid" ONLY. This feeds "Collected" (the KPI tile, its
+    // sparkline, and every bench's own revenue share below) — money the
+    // clinic actually has, not money it's owed. Used to fetch "paid" AND
+    // "pending" and sum both without ever branching on `status` (not even
+    // selected), so a clinic with, say, ₹500 collected and ₹500 still
+    // pending showed "₹1,000 collected" — the exact bug PaymentDetailsModal
+    // /`fetchDoctorPaymentSummary` below never had, because that one always
+    // split on status. 2026-09-11.
     const payQuery = supabase.from("visit_payments")
         .select("total, fee, discount, method, collected_at, doctor_id")
         .eq("hospital_id", hospitalId)
         .gte("collected_at", windowStart).lt("collected_at", windowEnd)
-        .in("status", ["paid", "pending"]);
+        .eq("status", "paid");
 
     // Live counts ignore the range entirely: "who is waiting right now" is
     // not a question about last month.
@@ -789,6 +797,13 @@ export interface DoctorPaymentSummary {
     pendingAmount: number;
     paidCount: number;
     pendingCount: number;
+    /** `totalCollected`, split by how it came in — PAID rows only, same rule
+     *  `totalCollected` itself follows. "in what and which way these payments
+     *  has been collected — it should be very clearly shown" (Anmol,
+     *  2026-09-11): a total alone answers "how much", not "how". `other`
+     *  catches anything that isn't one of the three the payment rail offers
+     *  today, so a future method never silently vanishes from the sum. */
+    byMethod: { cash: number; upi: number; card: number; other: number };
     transactions: PaymentTransaction[];
 }
 
@@ -837,12 +852,19 @@ export async function fetchDoctorPaymentSummary(
     });
 
     let totalCollected = 0, pendingAmount = 0, paidCount = 0, pendingCount = 0;
+    const byMethod = { cash: 0, upi: 0, card: 0, other: 0 };
     for (const r of rows) {
-        if (r.status === "paid") { totalCollected += r.amount; paidCount++; }
+        if (r.status === "paid") {
+            totalCollected += r.amount; paidCount++;
+            if (r.method === "cash") byMethod.cash += r.amount;
+            else if (r.method === "upi") byMethod.upi += r.amount;
+            else if (r.method === "card") byMethod.card += r.amount;
+            else byMethod.other += r.amount;
+        }
         else if (r.status === "pending") { pendingAmount += r.amount; pendingCount++; }
     }
 
-    return { totalCollected, pendingAmount, paidCount, pendingCount, transactions: rows };
+    return { totalCollected, pendingAmount, paidCount, pendingCount, byMethod, transactions: rows };
 }
 
 // ── The doctor's own activity — visits and prescriptions ────────────────────

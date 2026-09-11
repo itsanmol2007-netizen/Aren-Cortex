@@ -1,20 +1,22 @@
 // ---------------------------------------------------------------------------
 // STATUS BAR — priority 3, and it looks like it.
 //
-// Engine state, model version, specialty, cache state. The philosophy doc puts
-// all of this in the lowest tier: supporting metadata, present so the doctor can
-// trust the screen, never competing with it. It is deliberately the only thing
-// on the page smaller and quieter than the body text.
+// Cut down 2026-09-11 — Anmol: "Signups Active, Model Signups, MVP1,
+// Specialty, General OPD... these are simply useless things here... I want
+// [to keep] this 'Data Cache Locally' [indicator]... that will just unlock
+// slightly more vertical space." The engine-active line, the model version,
+// and the specialty label were all internal build/debug facts a doctor never
+// asked to see and could do nothing with — the philosophy doc's "lowest
+// tier" was still one tier too high for them. What's left is what a doctor
+// can actually act on: `degraded`/`unidentified` (real state that changes
+// what to trust on screen), the cache/online indicator, and the keyboard
+// shortcuts affordance (kept, but text-less now — the icon + `?` hint is
+// the whole point per this component's own note below).
 // ---------------------------------------------------------------------------
 
 import { Cloud, CloudOff, Keyboard } from "lucide-react";
 
 interface Props {
-    /** ruleset loaded and ranking */
-    active: boolean;
-    /** ruleset version string from the loaded ruleset */
-    modelVersion: string | null;
-    specialty: string;
     /** personalisation degraded — ranking still works, habits do not */
     degraded: boolean;
     /** signed-in account has no `doctors` row — running on the shared fallback identity */
@@ -25,26 +27,10 @@ interface Props {
 }
 
 export function StatusBar({
-    active, modelVersion, specialty, degraded, unidentified, online, onOpenShortcuts,
+    degraded, unidentified, online, onOpenShortcuts,
 }: Props) {
     return (
         <footer className="cs-status">
-            <span className="cs-status-item">
-                <b>Synapse</b>
-                <span className={`cs-status-dot${active ? "" : " is-off"}`} />
-                {active ? "Active" : "Loading"}
-            </span>
-
-            {modelVersion && (
-                <span className="cs-status-item">
-                    Model: <b>Synapse {modelVersion}</b>
-                </span>
-            )}
-
-            <span className="cs-status-item">
-                Specialty: <b>{specialty}</b>
-            </span>
-
             {/* Said out loud rather than hidden: a doctor whose personalisation
                 failed still gets the global evidence-based ranking, which is
                 exactly what every doctor gets on their first day. They should
@@ -86,6 +72,10 @@ export function StatusBar({
                 never competing with it. The chord is printed on the button, so
                 the button teaches its own replacement and a doctor only needs
                 it once. */}
+            {/* Text-less now (was icon + "Shortcuts" + `?`) — the icon and the
+                chord it opens with are the whole affordance; the label was
+                the one line here that was pure repetition of `title`/
+                `aria-label`, not new information. */}
             <button
                 type="button"
                 className="cs-status-item cs-status-keys"
@@ -94,7 +84,6 @@ export function StatusBar({
                 title="Keyboard shortcuts"
             >
                 <Keyboard size={13} />
-                Shortcuts
                 <kbd>?</kbd>
             </button>
         </footer>

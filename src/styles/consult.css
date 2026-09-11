@@ -3077,20 +3077,35 @@ body.cs-locked-shell {
 
 /* "Save as template" — Prescription Templates' other entry point, beside
    the plan's own item count rather than a new row, since it acts on
-   exactly what that count is already summarising. */
+   exactly what that count is already summarising.
+
+   Given real button chrome 2026-09-11 — Anmol: "the Add button and Save as
+   Template button are just like a link here, like HTML without CSS." A
+   borderless, padding-less, underline-on-hover control reads as unstyled
+   text, not as something to click. Same small-pill recipe the Overview
+   payment modal's own secondary action ("Edit fee") already uses — a real
+   border and fill, sized for a header, not the footer's full-width filled
+   actions (`.cs-review`/`.cs-print`), which are a heavier weight this one
+   was never meant to carry. */
 .cs-plan-save-template {
-    border: 0;
-    background: none;
-    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(124, 58, 237, 0.30);
+    border-radius: 999px;
+    background: rgba(124, 58, 237, 0.06);
+    padding: 5px 11px;
     color: var(--cs-violet);
     font-size: 11px;
     font-weight: 650;
     cursor: pointer;
     white-space: nowrap;
+    transition: background 0.14s ease, border-color 0.14s ease;
 }
 
 .cs-plan-save-template:hover {
-    text-decoration: underline;
+    background: rgba(124, 58, 237, 0.12);
+    border-color: rgba(124, 58, 237, 0.48);
 }
 
 .cs-plan-scroll {
@@ -3124,21 +3139,34 @@ body.cs-locked-shell {
     text-transform: uppercase;
 }
 
+/* Same "real button, not a link" fix as `.cs-plan-save-template` above —
+   `.cs-lab-chip`'s own dashed-outline recipe (below, same file), since that
+   chip already IS this rail's "+ Add" shape. Not currently wired to any
+   Group in PlanCard.tsx (see its own note on why the standalone "+ Add" was
+   removed 2026-08-24), but styled correctly regardless — a link pretending
+   to be a button is wrong to leave sitting in the sheet even unused. */
 .cs-group-add {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     margin-left: auto;
-    border: 0;
-    background: none;
-    padding: 0;
+    border: 1px dashed var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 3px 9px;
     color: var(--cs-blue);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 620;
     letter-spacing: -0.005em;
+    cursor: pointer;
+    transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
 }
 
-.cs-group-add:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cs-group-add:hover {
+    background: rgba(18, 104, 232, 0.08);
+    color: var(--cs-blue);
+    border-color: rgba(18, 104, 232, 0.3);
+}
 
 /* one line on the plan */
 .cs-line {
@@ -3213,15 +3241,41 @@ body.cs-locked-shell {
     line-height: 1.3;
 }
 
-.cs-line-sub {
-    margin-top: 1px;
-    color: var(--cs-muted);
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: -0.004em;
+/* Replaced the old `.cs-line-sub` bullet-joined string (dose • freq •
+   duration • notes, one grey run-on line) 2026-09-11 — Anmol: the side strip
+   "is so much cluttered up... especially cluttered up when you add a
+   medicine." Dose/frequency/duration are short facts and read better as
+   distinct chips than as a sentence fragment; notes are prose and get their
+   own row underneath instead of joining the run-on. */
+.cs-line-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 3px;
 }
 
-.cs-line-sub::first-letter { text-transform: uppercase; }
+.cs-line-tag {
+    border-radius: 5px;
+    background: #f1f5f9;
+    padding: 1.5px 6px;
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 550;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+}
+
+.cs-line-tag::first-letter { text-transform: uppercase; }
+
+.cs-line-note {
+    margin-top: 3px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 450;
+    font-style: italic;
+    line-height: 1.4;
+}
 
 .cs-x {
     flex: none;
@@ -3308,8 +3362,13 @@ body.cs-locked-shell {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 4px;
-    padding: 8px 9px;
+    /* 10px/16px, was 4px/(8px 9px) — a doctor with several preferred labs
+       gets a chip row that wraps to two lines sitting right under a stack of
+       four or five bare test names; the old 4px gap read as one crowded
+       block instead of "the tests" and then, separately, "where they go."
+       Anmol, 2026-09-11: cluttered "when you add four or five tests." */
+    margin: 10px 16px 4px;
+    padding: 9px 10px;
     border-radius: 9px;
     background: rgba(18, 104, 232, 0.06);
     border: 1px solid rgba(18, 104, 232, 0.14);
@@ -3728,7 +3787,12 @@ body.cs-locked-shell {
     gap: 26px;
     flex: none;
     border-top: 1px solid var(--cs-line);
-    padding: 11px 22px;
+    /* 8px, was 11 — 2026-09-11, alongside trimming the strip itself down to
+       degraded/unidentified + cache state + shortcuts (see StatusBar.tsx's
+       own note): with the routine Synapse/model/specialty facts gone, this
+       row is usually near-empty, and it should read as reclaimed space, not
+       a mostly-blank bar still paying its old padding. */
+    padding: 8px 22px;
     color: var(--cs-faint);
     font-size: 12px;
     font-weight: 500;

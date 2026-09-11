@@ -146,6 +146,37 @@ export function PaymentDetailsModal({ hospitalId, doctorId, range, onClose }: Pr
                         </div>
                     </div>
 
+                    {/* ── By method — "in what and which way these payments has
+                        been collected, it should be very clearly shown" (Anmol,
+                        2026-09-11). A total alone answers how much; this answers
+                        how. Paid rows only, same rule `totalCollected` follows —
+                        omitted entirely rather than shown as three ₹0 chips when
+                        nothing has been collected yet. */}
+                    {summary.totalCollected > 0 && (
+                        <div className="mt-[8px] flex flex-none items-center gap-[6px]">
+                            {([
+                                { key: "cash", label: "Cash", amount: summary.byMethod.cash },
+                                { key: "upi", label: "UPI", amount: summary.byMethod.upi },
+                                { key: "card", label: "Card", amount: summary.byMethod.card },
+                                { key: "other", label: "Other", amount: summary.byMethod.other },
+                            ] as const)
+                                .filter((m) => m.amount > 0)
+                                .map((m) => (
+                                    <span
+                                        key={m.key}
+                                        className="flex min-w-0 flex-1 items-center justify-between gap-[6px] rounded-[9px] bg-[var(--cs-green-soft)] px-[10px] py-[6px]"
+                                    >
+                                        <span className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-[var(--cs-green)]">
+                                            {m.label}
+                                        </span>
+                                        <span className="text-[12px] font-bold tabular-nums text-[var(--cs-ink)]">
+                                            {formatMoney(m.amount)}
+                                        </span>
+                                    </span>
+                                ))}
+                        </div>
+                    )}
+
                     {/* ── Scrolls: the transactions ───────────────────────── */}
                     <div className="mt-[10px] flex min-h-0 flex-1 flex-col">
                         <span className="flex-none pb-[6px] text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
@@ -180,7 +211,9 @@ export function PaymentDetailsModal({ hospitalId, doctorId, range, onClose }: Pr
                                                     (t.status === "paid" ? "text-[var(--cs-green)]" : "text-[var(--cs-amber)]")
                                                 }
                                             >
-                                                {t.status}
+                                                {/* Method only means anything once it's actually paid — a
+                                                    pending row has none yet, so it stays just "pending". */}
+                                                {t.status === "paid" && t.method ? `${t.status} · ${t.method}` : t.status}
                                             </span>
                                         </span>
                                     </div>

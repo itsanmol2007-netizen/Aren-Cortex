@@ -57,7 +57,13 @@
     display: none;
 }
 
-/* Individual visit chip */
+/* Individual visit chip.
+   Opacity bumped 2026-09-11 — Anmol: "they are looking really great... just
+   slightly bump their opacity... add a slight bit of contrast into them so
+   they don't blend with the thing behind it." At 0.055/0.10 the chip's own
+   boundary was nearly the same value as the header's dark gradient behind
+   it — the CONTENT (date, diagnosis) was legible, but the chip itself had no
+   edge to be a chip. Kept the same recipe, just given real presence. */
 .tb-visit-chip {
     flex-shrink: 0;
     scroll-snap-align: start;
@@ -67,8 +73,8 @@
     gap: 1px;
     padding: 4px 9px;
     border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.09);
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
     min-width: 64px;
@@ -76,13 +82,13 @@
 }
 
 .tb-visit-chip:hover {
-    background: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.20);
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.28);
 }
 
 .tb-visit-chip.latest {
-    border-color: rgba(99, 102, 241, 0.45);
-    background: rgba(99, 102, 241, 0.10);
+    border-color: rgba(99, 102, 241, 0.52);
+    background: rgba(99, 102, 241, 0.16);
 }
 
 .tb-visit-date {

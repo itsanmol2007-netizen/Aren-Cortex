@@ -2415,10 +2415,11 @@ function App() {
             </aside>
           </main>
 
+          {/* `active`/`modelVersion`/`specialty` no longer go to StatusBar —
+              it stopped rendering them 2026-09-11 (see its own header note);
+              `synapse.status`/`specialty.label` are still computed above for
+              everything else that reads them. */}
           <StatusBar
-            active={synapse.status === "ready"}
-            modelVersion={synapse.data?.ruleset.version ?? null}
-            specialty={specialty.label}
             degraded={!!synapse.data?.degraded}
             unidentified={!identity.isReal}
             online={online}

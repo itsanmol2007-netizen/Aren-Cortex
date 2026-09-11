@@ -399,10 +399,21 @@ export function PlanCard({
                                                 />
                                                 {m.is_sos && <span className="cs-pill is-sos">SOS</span>}
                                             </div>
-                                            <div className="cs-line-sub">
-                                                {[m.dosage, m.frequency, m.duration, m.notes]
-                                                    .filter(Boolean).join(" • ")}
-                                            </div>
+                                            {/* Was one bullet-joined run-on string (dose • freq •
+                                                duration • notes) — the exact thing that read as
+                                                cluttered once two or three medicines stacked, all
+                                                the same weight, all the same grey. Dose/frequency/
+                                                duration are FACTS about the line — short, and worth
+                                                a boundary each; notes are prose, and get their own
+                                                row rather than being squeezed into a fourth tag. */}
+                                            {(m.dosage || m.frequency || m.duration) && (
+                                                <div className="cs-line-tags">
+                                                    {m.dosage && <span className="cs-line-tag">{m.dosage}</span>}
+                                                    {m.frequency && <span className="cs-line-tag">{m.frequency}</span>}
+                                                    {m.duration && <span className="cs-line-tag">{m.duration}</span>}
+                                                </div>
+                                            )}
+                                            {m.notes && <div className="cs-line-note">{m.notes}</div>}
                                         </div>
                                         <button
                                             type="button"
