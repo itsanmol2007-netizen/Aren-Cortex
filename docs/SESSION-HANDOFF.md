@@ -114,14 +114,29 @@ is display-only, `plans.code` is the stable key.
   Communication, Practice, Clinic, Settings, Help & Support, the consult
   screen, rail collapsed + expanded, tooltips. No console errors.
 
+## Also done, after the first pass
+
+- **`support-notify` deployed** (version 9, `verify_jwt` on) with the new
+  template, and the whole chain proved end to end: the real form, signed in as
+  the test doctor, put a real email in a real inbox — `support_email_log` #37,
+  `status = sent`. Only the recipient was redirected for the test.
+- Two things that test found and fixed: the confirmation heading was being
+  uppercased by `base.css`'s bare `h2` rule ("THAT'S WITH US"), and a failure
+  showed the Supabase SDK's own words to the doctor ("Edge Function returned a
+  non-2xx status code"). Both corrected; the SDK message goes to the console
+  now, where the person who can act on it looks.
+- **AREN Constellation** got a tagline and `sort_order: 20`, so Polaris (10)
+  now leads a plan list instead of trailing the expensive one.
+
 ## Still open
 
-- **The `support-notify` edge function is NOT redeployed.** The richer email
-  template (doctor's words first, affected areas, diagnostics table) is
-  committed but the deployed function still runs the old three-fact version.
-  The form works either way — the extra payload fields are simply ignored
-  until it ships. Deploy when ready.
-- **AREN Constellation has no `tagline`** in `plans`; Polaris does. Worth a
-  line of copy before that plan is shown to anyone.
-- `plans.sort_order` puts Constellation (0) ahead of Polaris (10). Probably
-  backwards for a pricing page — left alone, nobody asked.
+- **`support-notify` takes a caller-supplied `to`** (`const to = (body?.to as
+  string) || …`, inherited from the Express route it was ported from). Nothing
+  in the app passes it, but any authenticated user could, which makes AREN's
+  own Zoho mailbox able to send arbitrary HTML to an arbitrary address. Worth
+  closing: drop the override, or allow-list it. Not changed here because it is
+  pre-existing behaviour and removing it silently could break an unseen caller.
+- **The send is slow.** In the live test the button sat on "Sending…" for more
+  than six seconds — a Zoho token exchange plus the send, on a cold function
+  instance. Honest, but long. Worth either warming the token or saying
+  something after ~4s.

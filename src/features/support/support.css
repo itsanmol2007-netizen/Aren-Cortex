@@ -424,6 +424,8 @@ input#supp-reply-to:focus {
     font-weight: 750;
     color: #1c2333;
     letter-spacing: -0.015em;
+    /* base.css uppercases every bare `h2` — see `.supp-step-head h2`. */
+    text-transform: none;
 }
 
 .supp-sent p {

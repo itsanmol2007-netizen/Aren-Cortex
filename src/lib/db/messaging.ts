@@ -624,7 +624,15 @@ export async function sendSupportRequest(req: SupportRequest): Promise<void> {
     const { data, error } = await supabase.functions.invoke("support-notify", {
         body: { kind: "support_request", ...req },
     });
-    if (error) throw new Error(error.message || "Could not reach AREN support.");
+    if (error) {
+        // `error.message` here is the Supabase SDK's own wording — "Edge
+        // Function returned a non-2xx status code" — which is true, useless to
+        // a doctor, and slightly alarming. It goes to the console, where the
+        // person who can act on it will look; the doctor gets a sentence that
+        // tells them what to do instead.
+        console.error("[messaging] support request failed:", error.message);
+        throw new Error("We couldn't get that through just now.");
+    }
     // The function answers `{ ok: true, skipped: "not_configured" }` when the
     // mailbox credentials are missing on the server. That is a silent
     // non-delivery, which for this kind is a failure like any other.
