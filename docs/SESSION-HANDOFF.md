@@ -63,9 +63,14 @@ Load-bearing details a later session will otherwise break:
   invisible button that polled `getBoundingClientRect()` every 400ms so
   navigation stayed reachable under a full-screen overlay. A rail that is
   always visible and always on top is the honest version of that.
-- **The logo stays in the dark header**, one logo, never moves. Clicking it
-  opens the panel; the panel hangs underneath it. The JS logo-morph (measuring
-  two rects, animating a delta) is gone with the second logo it needed.
+- **One logo, in the rail's head**, top-left of the screen, never moves on any
+  page. Clicking it opens the panel, which hangs underneath it. Both headers
+  lost their own logo pill — that was the "two logos" problem. The JS
+  logo-morph (measuring two rects, animating a delta) went with the second logo
+  it existed to move. `WorkspaceHeader` still ACCEPTS `logoRef`/`onOpenSidebar`
+  as optional props because **Parallax still uses them**: its rail is a
+  different thing (in-flow, expands by width) and its header logo is genuinely
+  the only way to toggle it.
 - **Clicking anywhere closes it**, plus Escape. It is an aid, not a mode.
 - The rail is only in the doctor's workspace. Front desk keeps
   `features/frontdesk/components/NavRail.tsx` (which this was modelled on) and
@@ -77,11 +82,23 @@ on every screen — it was an inset rounded card (`margin: 0 18px`, `margin-top:
 `ws-header`. Consequences, both in `layout.css`/`consult.css`:
 
 - `.app-shell` lost `max-width: 1720px; margin: 0 auto` (a centred shell drifts
-  away from a viewport-anchored rail on wide screens). The cap moved to
-  `.cs-shell`, which is what it was protecting.
-- Both headers pull back across the rail's gutter with a negative margin.
+  away from a viewport-anchored rail on wide screens) and gained
+  `padding-left: var(--rail-w)`. The cap moved to `.cs-shell`, which is what it
+  was protecting.
+- **Nothing breaks out of that padded box**, and that is deliberate. The first
+  version had each header pull back across the gutter with a negative margin so
+  it spanned the viewport — which looked right everywhere except Patient
+  Records, whose root is `height: 100dvh; overflow: hidden` and therefore
+  *clipped the logo in half*. Any future page that bounds its own scroll would
+  have hit it too. The dark strip above the rail that makes the header read as
+  full-bleed is painted by `.rail-head` instead, where no page's overflow can
+  reach it. It matches whichever header is up (`.app-shell.is-consult` switches
+  the dark), with a deliberate hairline at the junction.
 - `.cs-shell`'s height maths went `100vh - 92px` → `100vh - 84px` (the
   topbar's 14px top margin is gone; 8px of its own remains).
+- The `@media (max-width: 1120px)` block's `.app-shell { padding: 10px }` had
+  to go: the shorthand silently reset the rail gutter, sliding every
+  narrow-screen page under the rail.
 
 ## 3. Help & Support is a real form
 
@@ -109,7 +126,10 @@ is display-only, `plans.code` is the stable key.
 
 ## Status
 
-- `npx tsc --noEmit` — clean.
+- `npx tsc -b` and `npm run build` — clean. (Note for next time: plain
+  `npx tsc --noEmit` is VACUOUS in this repo. The root `tsconfig.json` is a
+  solution file with only `references`, so it checks nothing and exits 0. Use
+  `tsc -b`, or `tsc -p tsconfig.app.json --noEmit`.)
 - Walked in a real browser signed in as the test doctor: Overview, Patients,
   Communication, Practice, Clinic, Settings, Help & Support, the consult
   screen, rail collapsed + expanded, tooltips. No console errors.
