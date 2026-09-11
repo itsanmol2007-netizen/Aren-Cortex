@@ -162,6 +162,17 @@ function SkeletonAvatar({ size = 40 }: { size?: number }) {
     );
 }
 
+/* Every block below was sized to the CSS class it sits inside — measured
+   live against the real card (Playwright, `getBoundingClientRect`), not
+   guessed. A block-level skeleton `<div>` doesn't inherit its parent's
+   `line-height` the way real text does, so a block sized to the font-size
+   alone (12px text -> a 12px-tall bar) rendered visibly SHORTER than the
+   text it stood in for (12px text at line-height 1.25 -> 15px of actual
+   line box) — three or four of those per card, and the whole card popped
+   17.5px taller the instant real data replaced it. Anmol, 2026-09-11: "the
+   skeleton loading actually doesn't match pixel by pixel with what content
+   is being shown here." Heights here are each row's real rendered height,
+   not its font-size. */
 function SkeletonTodayCard() {
     return (
         <div className="prec-today-card prec-today-card--skeleton">
@@ -173,24 +184,26 @@ function SkeletonTodayCard() {
                 <SkeletonAvatar size={34} />
             </div>
             <div className="prec-today-name">
-                <SkeletonBlock width="75%" height={12} />
+                <SkeletonBlock width="75%" height={15} />
             </div>
             <div className="prec-today-sub">
-                <SkeletonBlock width="45%" height={10} />
+                <SkeletonBlock width="45%" height={15} />
             </div>
             <div className="prec-today-chief" style={{ background: "rgba(18, 104, 232, 0.05)", border: "1px solid rgba(18, 104, 232, 0.12)" }}>
-                <SkeletonBlock width="80%" height={10} />
+                <SkeletonBlock width="80%" height={15} />
             </div>
             <div className="prec-today-footer">
                 <div className="prec-today-time">
-                    <SkeletonBlock width={38} height={10} />
+                    <SkeletonBlock width={38} height={16} />
                 </div>
-                <SkeletonBlock width={54} height={18} style={{ borderRadius: 20 }} />
+                <SkeletonBlock width={62} height={19.5} style={{ borderRadius: 20 }} />
             </div>
         </div>
     );
 }
 
+/* Same fix, same reason as `SkeletonTodayCard`'s own note — each height
+   below is the real cell's measured height, not its font-size. */
 function SkeletonTableRow() {
     return (
         <tr className="prec-table-row prec-table-row--skeleton">
@@ -201,10 +214,10 @@ function SkeletonTableRow() {
                     </div>
                     <div className="prec-table-patient-info">
                         <span className="prec-table-patient-name">
-                            <SkeletonBlock width={110} height={13} />
+                            <SkeletonBlock width={110} height={19.5} />
                         </span>
                         <span className="prec-table-patient-meta">
-                            <SkeletonBlock width={80} height={10} style={{ marginTop: 2 }} />
+                            <SkeletonBlock width={80} height={16.5} style={{ marginTop: 2 }} />
                         </span>
                     </div>
                 </div>
@@ -212,26 +225,26 @@ function SkeletonTableRow() {
             <td className="prec-table-cell prec-table-cell--snapshot">
                 <div className="prec-snapshot-cell">
                     <div className="prec-snapshot-chips">
-                        <SkeletonBlock width={60} height={16} style={{ borderRadius: 4 }} />
-                        <SkeletonBlock width={50} height={16} style={{ borderRadius: 4 }} />
+                        <SkeletonBlock width={60} height={19} style={{ borderRadius: 4 }} />
+                        <SkeletonBlock width={50} height={19} style={{ borderRadius: 4 }} />
                     </div>
-                    <SkeletonBlock width={130} height={10} style={{ marginTop: 3 }} />
+                    <SkeletonBlock width={130} height={16.5} style={{ marginTop: 3 }} />
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--visit">
-                <SkeletonBlock width={50} height={13} />
-                <SkeletonBlock width={40} height={10} style={{ marginTop: 3 }} />
+                <SkeletonBlock width={50} height={17} />
+                <SkeletonBlock width={40} height={16.5} style={{ marginTop: 3 }} />
             </td>
             <td className="prec-table-cell prec-table-cell--count">
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <SkeletonBlock width={14} height={14} />
-                    <SkeletonBlock width={28} height={9} style={{ marginTop: 2 }} />
+                    <SkeletonBlock width={14} height={16} />
+                    <SkeletonBlock width={28} height={13.5} style={{ marginTop: 2 }} />
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--status">
                 <div className="prec-table-status-wrap">
-                    <SkeletonBlock width={62} height={18} style={{ borderRadius: 20 }} />
-                    <SkeletonBlock width={42} height={10} style={{ marginTop: 2 }} />
+                    <SkeletonBlock width={62} height={23} style={{ borderRadius: 20 }} />
+                    <SkeletonBlock width={42} height={15} style={{ marginTop: 2 }} />
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--arrow">
