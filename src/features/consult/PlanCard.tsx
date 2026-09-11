@@ -15,7 +15,7 @@
 
 import { useRef, useState } from "react";
 import {
-    Activity, CalendarClock, FileText, FlaskConical, NotebookPen,
+    Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, NotebookPen,
     Pill, Printer, Stethoscope, Waves,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
@@ -374,7 +374,7 @@ export function PlanCard({
                                 return (
                                     <div
                                         key={m.id}
-                                        className={`cs-line is-click${openId === m.id ? " is-active" : ""}${justAdded.has(m.id) ? " is-new" : ""}`}
+                                        className={`cs-line is-med is-click${openId === m.id ? " is-active" : ""}${justAdded.has(m.id) ? " is-new" : ""}`}
                                     >
                                         <div
                                             className="cs-line-main"
@@ -402,15 +402,34 @@ export function PlanCard({
                                             {/* Was one bullet-joined run-on string (dose • freq •
                                                 duration • notes) — the exact thing that read as
                                                 cluttered once two or three medicines stacked, all
-                                                the same weight, all the same grey. Dose/frequency/
-                                                duration are FACTS about the line — short, and worth
-                                                a boundary each; notes are prose, and get their own
-                                                row rather than being squeezed into a fourth tag. */}
+                                                the same weight, all the same grey. Second pass,
+                                                2026-09-11 (Anmol, looking at ONE medicine on the
+                                                plan: "terribly placed without any visual hierarchy
+                                                ... looks like an HTML file without CSS"): three
+                                                identical grey boxes read exactly the same way a
+                                                run-on string did — nothing told you which number
+                                                was WHICH. Each tag now carries its own icon
+                                                (dose/frequency/duration are different questions,
+                                                not interchangeable facts) and the group's own teal,
+                                                so the row reads as "this medicine's" info at a
+                                                glance instead of loose data. */}
                                             {(m.dosage || m.frequency || m.duration) && (
                                                 <div className="cs-line-tags">
-                                                    {m.dosage && <span className="cs-line-tag">{m.dosage}</span>}
-                                                    {m.frequency && <span className="cs-line-tag">{m.frequency}</span>}
-                                                    {m.duration && <span className="cs-line-tag">{m.duration}</span>}
+                                                    {m.dosage && (
+                                                        <span className="cs-line-tag">
+                                                            <Pill size={10} aria-hidden="true" /> {m.dosage}
+                                                        </span>
+                                                    )}
+                                                    {m.frequency && (
+                                                        <span className="cs-line-tag">
+                                                            <Clock size={10} aria-hidden="true" /> {m.frequency}
+                                                        </span>
+                                                    )}
+                                                    {m.duration && (
+                                                        <span className="cs-line-tag">
+                                                            <CalendarDays size={10} aria-hidden="true" /> {m.duration}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
                                             {m.notes && <div className="cs-line-note">{m.notes}</div>}

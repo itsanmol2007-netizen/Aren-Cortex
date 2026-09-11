@@ -1924,7 +1924,6 @@ function App() {
             onDoctorChange={(patch) =>
               setDoctorProfile((prev) => (prev ? { ...prev, ...patch } : prev))
             }
-            onNavigate={handleSidebarNavigate}
             onOpenPrescriptionEditor={() => setPrescriptionEditorOpen(true)}
           />
         )

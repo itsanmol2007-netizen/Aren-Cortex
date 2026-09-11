@@ -2469,10 +2469,17 @@ body.cs-locked-shell {
     opacity: 0.45;
 }
 
+/* Italic 2026-09-11 — the ordinary pharmacy convention for a generic name
+   under a brand (brand upright, composition italic) is a second, free signal
+   that these two lines are different KINDS of fact, not just different
+   sizes of the same one. Part of the same pass as `.cs-line-tag`'s icons:
+   "terribly placed without any visual hierarchy" (Anmol), looking at a real
+   medicine on the plan. */
 .cs-ident-comp {
     color: var(--cs-muted);
     font-size: 12.5px;
     font-weight: 500;
+    font-style: italic;
     letter-spacing: -0.004em;
     line-height: 1.3;
     overflow: hidden;
@@ -3246,35 +3253,64 @@ body.cs-locked-shell {
    "is so much cluttered up... especially cluttered up when you add a
    medicine." Dose/frequency/duration are short facts and read better as
    distinct chips than as a sentence fragment; notes are prose and get their
-   own row underneath instead of joining the run-on. */
+   own row underneath instead of joining the run-on.
+
+   Second pass, same day, looking at ONE medicine on a real plan: "terribly
+   placed without any visual hierarchy... like an HTML file without CSS."
+   Three identical grey boxes turned out to be the same problem in a new
+   shape — nothing said which number was dose, which was frequency, which was
+   duration. Icons answer that at a glance; the Medicines group's own teal
+   (its glyph is `tone="teal"` in `Group`) ties the row back to the section
+   it's in instead of reading as loose, unstyled data. */
 .cs-line-tags {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    margin-top: 3px;
+    gap: 5px;
+    margin-top: 4px;
 }
 
 .cs-line-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     border-radius: 5px;
-    background: #f1f5f9;
-    padding: 1.5px 6px;
-    color: var(--cs-muted);
+    background: var(--cs-teal-soft);
+    padding: 2px 7px;
+    color: var(--cs-teal);
     font-size: 11px;
-    font-weight: 550;
+    font-weight: 650;
     letter-spacing: -0.003em;
     white-space: nowrap;
 }
 
+.cs-line-tag svg { flex: none; opacity: 0.68; }
+
 .cs-line-tag::first-letter { text-transform: uppercase; }
 
 .cs-line-note {
-    margin-top: 3px;
+    margin-top: 4px;
     color: var(--cs-faint);
     font-size: 11.5px;
     font-weight: 450;
     font-style: italic;
     line-height: 1.4;
+}
+
+/* Medicine lines carry three rows (name, tags, note) where every other kind
+   of plan line carries one — stacked with the same bare 7px padding as a
+   diagnosis or a test, five of them blurred into a single dense column with
+   nothing marking where one medicine ends and the next begins. A touch more
+   padding and a hairline between consecutive medicines (not the group's own
+   `.cs-group-head` border, which only separates SECTIONS) gives each one a
+   row to itself. */
+.cs-line.is-med {
+    padding-top: 9px;
+    padding-bottom: 9px;
+}
+
+.cs-line.is-med + .cs-line.is-med {
+    border-top: 1px solid var(--cs-line);
 }
 
 .cs-x {

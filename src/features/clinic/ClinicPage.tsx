@@ -2,14 +2,12 @@
 // CLINIC — "what I need to manage about my clinic."
 //
 // A sibling of Practice, not a settings application. Practice answers "how do
-// I practise"; Clinic answers six questions and nothing else —
+// I practise"; Clinic answers four questions and nothing else —
 //
 //   What is my clinic?         → the identity surface, clinic half
 //   Who is the doctor?         → the identity surface, doctor half
 //   What does my Rx look like? → Prescription Pad → the Prescription Editor
 //   When am I open?            → Clinic Hours (a modal, not a page)
-//   How do I reach patients?   → a doorway into the Communication Center
-//   How will they book?        → a restrained Coming Soon
 //
 // ── What is deliberately NOT here ─────────────────────────────────────────
 // No Contact Details card (that IS clinic information), no Branding,
@@ -20,6 +18,14 @@
 // modal; if it belongs to another module this page links to that module; if it
 // does not exist in the MVP there is no configuration surface pretending it
 // does.
+//
+// "How do I reach patients?" and "How will they book?" WERE here too — a
+// doorway into Communication, and a restrained "Coming Soon" for booking —
+// until 2026-09-11 (Anmol: "they don't serve any purpose here at all").
+// Communication already has its own destination in the rail; a doorway to it
+// from here was a second way to the same door, and a feature that doesn't
+// exist yet earned this page a card of dead white space instead of anything
+// a doctor could act on today. Removed, not "coming soon"-ed again.
 //
 // ── The identity surface is ONE surface ───────────────────────────────────
 // Clinic and Doctor are two rows in two different tables, and the UI does not
@@ -41,11 +47,10 @@ import { useEffect, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
     ArrowRight, Award, Building2, CalendarDays, ChevronRight, Clock,
-    FileSignature, Globe, GraduationCap, Mail, MapPin, MessageCircle,
-    MessageSquare, Monitor, Pencil, Phone, ScrollText, Stethoscope, UserCog, Users,
+    FileSignature, Globe, GraduationCap, Mail, MapPin,
+    Pencil, Phone, ScrollText, Stethoscope, UserCog, Users,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
-import { CommunicationArt } from "../../components/PlaceholderArt";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { RxPreview } from "./RxPreview";
 import { ClinicHoursModal, EditClinicModal, EditDoctorModal } from "./ClinicModals";
@@ -58,8 +63,6 @@ import {
 } from "../../lib/db/clinic";
 import type { DBDoctor, DBHospital } from "../../lib/db";
 
-import type { SidebarPage } from "../sidebar/SidebarNav";
-
 interface Props {
     /** Loaded once in App.tsx — the same two rows Consult and the prescription
      *  renderer already read. This page edits them; it keeps no second copy. */
@@ -67,9 +70,6 @@ interface Props {
     doctor: DBDoctor | null;
     onHospitalChange: (patch: Partial<DBHospital>) => void;
     onDoctorChange: (patch: Partial<DBDoctor>) => void;
-    /** The sidebar's own navigate — Patient Communication is a REDIRECT to a
-     *  module that exists, never a second copy of its controls. */
-    onNavigate: (page: SidebarPage) => void;
     /** Opens the Prescription Editor, a full page under Clinic. The dashboard
      *  card is a preview and a doorway; it is never an inline editor. */
     onOpenPrescriptionEditor: () => void;
@@ -103,11 +103,34 @@ function IdentityFact({ icon, value }: { icon: ReactNode; value: string | null |
     );
 }
 
+/** Website's own missing-value case, unlike every other `IdentityFact` — an
+ *  absent phone or email is unremarkable (plenty of clinics only ever gave
+ *  AREN one of the two), but a website is the one fact here that Practice's
+ *  "Coming Soon" booking page and the printed Rx footer both go looking for,
+ *  so a doctor who hasn't set one yet should be told, not left to notice its
+ *  absence on their own. "Website not set on the clinic profile yet... add a
+ *  button to Set Website" (Anmol, 2026-09-11) — not a real `<button>` (the
+ *  whole identity half is already `role="button"` and a nested one is the
+ *  invalid-DOM trap this file's own header warns about); the half's own
+ *  click already opens Edit Clinic, where the Website field lives. */
+function IdentityFactSetWebsite() {
+    return (
+        <div className="flex min-w-0 items-start gap-[7px]">
+            <span className="mt-[1px] grid flex-none place-items-center text-[var(--cs-blue)]" aria-hidden="true">
+                <Globe size={13} />
+            </span>
+            <span className="text-[12px] font-semibold leading-[1.45] text-[var(--cs-blue)] underline decoration-dotted underline-offset-2">
+                Website not set — Set website
+            </span>
+        </div>
+    );
+}
+
 // ── The page ───────────────────────────────────────────────────────────────
 
 export function ClinicPage({
     hospital, doctor,
-    onHospitalChange, onDoctorChange, onNavigate, onOpenPrescriptionEditor,
+    onHospitalChange, onDoctorChange, onOpenPrescriptionEditor,
 }: Props) {
     const identity = useClinicalIdentity();
 
@@ -192,9 +215,18 @@ export function ClinicPage({
                 {opts.eyebrow}
             </span>
 
-            <div className="flex min-w-0 items-center gap-[9px]">
+            {/* Logo/photo on the left, name AND facts together on the right —
+                one row, not "logo+name" then a second full-width block of
+                facts stacked below it. Anmol, 2026-09-11: "they are taking a
+                lot of horizontal space in dead white space... write those
+                details beside [the logo], don't put all the details at the
+                bottom." Facts wrap (`flex-wrap`) rather than stacking one per
+                line, so short ones (phone, email) sit two across and only
+                the address — which actually needs the room — takes a full
+                row of its own. */}
+            <div className="flex min-w-0 items-start gap-[11px]">
                 {opts.image}
-                <div className="flex min-w-0 flex-col gap-[2px]">
+                <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
                     {/* `Heading`, not `<h2>` — see the cascade note in ui.tsx.
                         base.css's unlayered `h2 { font-size:12px; text-transform:
                         uppercase }` beat every utility here and rendered both
@@ -205,10 +237,10 @@ export function ClinicPage({
                     {opts.role && (
                         <span className="text-[12px] font-medium text-[var(--cs-muted)]">{opts.role}</span>
                     )}
+                    <div className="mt-[3px] flex min-w-0 flex-wrap gap-x-[18px] gap-y-[4px]">{opts.facts}</div>
                 </div>
             </div>
 
-            <div className="flex min-w-0 flex-col gap-[5px]">{opts.facts}</div>
             {opts.chips}
 
             {/* Not a <button>. Its container is already role="button" and
@@ -312,7 +344,9 @@ export function ClinicPage({
                                 <IdentityFact icon={<MapPin size={13} />} value={clinicAddressLine} />
                                 <IdentityFact icon={<Phone size={13} />} value={hospital?.phone} />
                                 <IdentityFact icon={<Mail size={13} />} value={hospital?.email} />
-                                <IdentityFact icon={<Globe size={13} />} value={hospital?.website} />
+                                {hospital?.website
+                                    ? <IdentityFact icon={<Globe size={13} />} value={hospital.website} />
+                                    : <IdentityFactSetWebsite />}
                             </>
                         ),
                         chips: chips.length > 0 ? (
@@ -526,80 +560,12 @@ export function ClinicPage({
                     </Card>
                 </div>
 
-                {/* ══ Two quiet surfaces: one doorway, one honest "not yet" ══ */}
-                <div className="grid grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] items-stretch gap-[12px] max-[980px]:grid-cols-1">
-                    <Card
-                        tone="teal"
-                        icon={<MessageCircle size={14} />}
-                        title="Patient Communication"
-                        subtitle="Messages, reminders and templates for your patients."
-                        action={
-                            <CardAction tone="teal" onClick={() => onNavigate("communication")}>
-                                Open Communication <ArrowRight size={11} />
-                            </CardAction>
-                        }
-                        foot={
-                            <FootLink tone="teal" onClick={() => onNavigate("communication")}>
-                                Go to Communication Center <ChevronRight size={12} />
-                            </FootLink>
-                        }
-                    >
-                        {/* An entry point, not a second copy of that module's
-                            controls. What a prescription PRINTS (advice,
-                            footer) is the Prescription Editor's job — a doctor
-                            should never have to wonder why prescription advice
-                            would be filed under Communication. */}
-                        <EmptyBlock
-                            art={<CommunicationArt />}
-                            fact="Patient messaging lives in one place"
-                            next="Every conversation, reminder and template for your patients — configured there, not here."
-                        />
-                    </Card>
-
-                    <Card
-                        tone="slate"
-                        icon={<CalendarDays size={14} />}
-                        title="Patient Booking"
-                        subtitle="Let patients book appointments with your clinic."
-                    >
-                        {/* No fake configuration, no roadmap panel, no
-                            explanation nobody asked for. Two lines and the
-                            truth. When booking ships, this same surface
-                            becomes the entry point to its configuration. */}
-                        <div className="flex flex-1 flex-col justify-center gap-[6px]">
-                            {[
-                                {
-                                    icon: <Monitor size={15} />,
-                                    tint: "bg-[var(--cs-blue-soft)] text-[var(--cs-blue)]",
-                                    label: "Online booking",
-                                    sub: "Appointments booked from a link you share.",
-                                },
-                                {
-                                    icon: <MessageSquare size={15} />,
-                                    tint: "bg-[var(--cs-teal-soft)] text-[var(--cs-teal)]",
-                                    label: "WhatsApp booking",
-                                    sub: "Patients book in the chat they already use.",
-                                },
-                            ].map((row) => (
-                                <div
-                                    key={row.label}
-                                    className="flex min-w-0 items-center gap-[9px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[10px]"
-                                >
-                                    <span className={`grid h-[28px] w-[28px] flex-none place-items-center rounded-[8px] ${row.tint}`}>
-                                        {row.icon}
-                                    </span>
-                                    <RowText label={row.label} sub={row.sub} />
-                                    <span className="ml-auto flex-none rounded-full border border-[var(--cs-line-strong)] bg-[var(--cs-card)] px-[10px] py-[3px] text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--cs-label)]">
-                                        Coming soon
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                </div>
-
                 {/* ══ Staff — new with Consult, because a clinic with a front
-                    desk is a multi-user clinic and had nowhere to manage one. ══ */}
+                    desk is a multi-user clinic and had nowhere to manage one.
+                    Moved up 2026-09-11 to take the "Two quiet surfaces" row's
+                    old spot once Patient Communication/Booking were removed
+                    (see this file's header note) — Staff is the only one of
+                    the three that was ever a real, actionable surface. ══ */}
                 <div className="grid grid-cols-1 gap-[12px]">
                     <Card
                         id="clin-card-staff"
