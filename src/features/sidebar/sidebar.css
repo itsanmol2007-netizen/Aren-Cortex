@@ -27,10 +27,12 @@
        clear for it (see `.app-shell .ws-header-inner` in workspace-header.css
        in workspace-header.css). Change it here and
        those two follow automatically.
-       200px, was 186 — grown 2026-09-11 alongside the mark/text sizes below
-       ("so much muted and small", Anmol) so the bigger lockup has room to
-       breathe instead of crowding its own right edge. */
-    --brand-w: 200px;
+       236px, was 200, was 186 — grown twice on 2026-09-11 alongside the
+       mark/text sizes below. Second pass: "it should not feel same size as
+       Overview... make it even more bigger, its brand logo man" (Anmol) —
+       this is not a caption living next to the page title, it is the mark
+       of the product, and it has to read like one at a glance. */
+    --brand-w: 236px;
 
     /* Above the modals, on purpose — see NavRail.tsx's header. Toasts
        (2147483647) still win, which is right: a toast is a message about
@@ -253,13 +255,14 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    /* 44px, was 40 — the one piece of chrome that is on screen every second
-       the app is open; it was reading as a small dark chip next to the
-       nebula rather than the mark of the thing the doctor is using. */
-    width: 44px;
-    height: 44px;
-    padding: 6px;
-    border-radius: 12px;
+    /* 50px, was 44, was 40 — the one piece of chrome that is on screen every
+       second the app is open. It is the brand mark, not a nav icon sized
+       like its neighbours; it has to read as one at a glance next to the
+       page title beside it, not blend in with it. */
+    width: 50px;
+    height: 50px;
+    padding: 7px;
+    border-radius: 13px;
     border: 1px solid rgba(139, 92, 246, 0.45);
     background: rgba(5, 9, 22, 0.76);
     overflow: hidden;
@@ -277,37 +280,43 @@
     object-fit: contain;
 }
 
-/* Re-cut 2026-09-11 to match Front Desk's own wordmark exactly — Anmol:
-   "look in frontdesk, how AREN Frontdesk is written into the top header, i
-   need the same style here." That treatment (`Header` in
+/* Cut 2026-09-11 to match Front Desk's own wordmark voice — Anmol: "look in
+   frontdesk, how AREN Frontdesk is written into the top header, i need the
+   same style here." That treatment (`Header` in
    `features/frontdesk/components/WorkspaceShell.tsx`) is ONE line, not a
    stacked lockup: "AREN" and the product name sit side by side, same size,
-   same weight, split only by colour — Manrope 800 at 15px, -0.01em tracking,
-   white then a workspace tint. Cortex's own first attempt here (stacked,
-   small-caps-ish, two different sizes) was a caption under the mark, not a
-   wordmark; this is the same word Front Desk uses, in the same voice. */
+   same weight, split only by colour, white then a workspace tint.
+
+   Sized up a second time the same day — Front Desk sets its wordmark at
+   15px, barely past its own 16.5px page title's weight class, and once
+   Cortex's copied it 1:1 it read exactly that way here too: "it should not
+   feel same size as Overview written... its brand logo man" (Anmol). This
+   is the one piece of branding left anywhere in the app (see `.rail-head`'s
+   note above), on screen every second the app is open — it has to
+   outweigh a page title, not sit beside one as an equal. 22px, a full turn
+   past `.ws-header-title`'s 16.5px, is that gap. */
 .rail-brand-text {
     display: flex;
     align-items: baseline;
-    gap: 5px;
-    line-height: 1.15;
+    gap: 6px;
+    line-height: 1.1;
     min-width: 0;
     font-family: Manrope, sans-serif;
 }
 
 .rail-brand-name {
-    font-size: 15px;
+    font-size: 22px;
     font-weight: 800;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     color: #ffffff;
 }
 
 /* Front Desk's dawn pink (`#f0abc8`) is that workspace's tint — Cortex's is
    violet, the same one the mark's own glow already uses. */
 .rail-brand-product {
-    font-size: 15px;
+    font-size: 22px;
     font-weight: 800;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     color: #cfa8ff;
 }
 
