@@ -131,9 +131,13 @@ interface SettingsPageProps {
 
 // ── Shared shapes ───────────────────────────────────────────────────────────
 
+// 15px, was 18 — Anmol, 2026-09-11: "this is probably the page with the
+// highest number of padding and margin... just slightly reduce it... don't
+// make it look cramped." One shared constant, so every card on the page
+// tightens together rather than one-off edits drifting them apart.
 const CARD =
     "flex min-w-0 flex-col rounded-[16px] border border-[var(--cs-line)] bg-[var(--cs-card)] " +
-    "shadow-[var(--cs-shadow)] p-[18px]";
+    "shadow-[var(--cs-shadow)] p-[15px]";
 
 const ICON_TILE = "grid h-[34px] w-[34px] flex-none place-items-center rounded-[10px]";
 
@@ -149,7 +153,7 @@ function SettingsCard({
 }) {
     return (
         <section id={id} aria-label={title} className={CARD}>
-            <div className="mb-[14px] flex items-center gap-[10px]">
+            <div className="mb-[12px] flex items-center gap-[10px]">
                 <span className={`${ICON_TILE} ${tint}`}>{icon}</span>
                 <h2 className="text-[13px] font-bold uppercase tracking-[0.07em] text-[var(--cs-ink)]">
                     {title}
@@ -268,10 +272,14 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
 
     return (
         <div ref={wrapRef} className="relative w-full">
-            {/* The glyph sits in its own tinted well rather than floating as a
-                thin outline on a nebula — at 17px, white/45, over a moving
-                purple gradient it read as nothing at all. */}
-            <span className="pointer-events-none absolute left-[6px] top-1/2 z-[1] grid h-[32px] w-[32px] -translate-y-1/2 place-items-center rounded-[9px] bg-white/[0.10] text-white/80">
+            {/* Restyled 2026-09-11 for the page body instead of the dark
+                header it used to float in — the dark-glass recipe (white
+                text on translucent navy) read as broken on `--cs-page`'s
+                light grey. Same shape (icon well, kbd hint), light chrome:
+                a real bordered field with a soft shadow, violet on focus —
+                the accent this codebase already uses for "the thing to type
+                into" everywhere else. */}
+            <span className="pointer-events-none absolute left-[6px] top-1/2 z-[1] grid h-[34px] w-[34px] -translate-y-1/2 place-items-center rounded-[9px] bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]">
                 <Search size={17} />
             </span>
             <input
@@ -290,19 +298,17 @@ function MasterSearch({ onPick }: { onPick: (entry: SettingEntry) => void }) {
                 /* Every `!` here is load-bearing: `styles/base.css` styles bare
                    `input` UNLAYERED (height 31px, pale background, 7px radius,
                    9px padding), and unlayered CSS outranks every Tailwind
-                   utility regardless of specificity. Without them this field
-                   renders as a squat pale box in a dark header — measured at
-                   31px against the 42px asked for. Same trap as the
+                   utility regardless of specificity — same trap as the
                    `label`/`svg` ones in cortex-gotchas.md. */
                 className={
-                    "h-[44px]! w-full rounded-[13px]! border! border-white/25 bg-[rgba(8,12,28,0.55)]! pl-[46px]! pr-[56px] " +
-                    "text-[14px]! font-medium text-white! outline-none backdrop-blur-[10px] " +
-                    "placeholder:text-white/55 transition-colors " +
-                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_10px_rgba(0,0,0,0.30)] " +
-                    "hover:border-white/40 focus:border-[rgba(167,139,250,0.85)] focus:bg-[rgba(8,12,28,0.72)]!"
+                    "h-[48px]! w-full rounded-[14px]! border! border-[var(--cs-line-strong)] bg-white! pl-[48px]! pr-[56px] " +
+                    "text-[14.5px]! font-medium text-[var(--cs-ink)]! outline-none transition-colors " +
+                    "placeholder:text-[var(--cs-faint)] " +
+                    "shadow-[0_1px_2px_rgba(16,28,46,0.04),0_10px_28px_rgba(16,28,46,0.06)] " +
+                    "hover:border-[var(--cs-violet)]/50 focus:border-[var(--cs-violet)]! focus:shadow-[0_0_0_4px_var(--cs-violet-soft)]"
                 }
             />
-            <kbd className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 rounded-[6px] border border-white/20 bg-white/[0.10] px-[7px] py-[3px] text-[10.5px] font-semibold text-white/65">
+            <kbd className="pointer-events-none absolute right-[14px] top-1/2 -translate-y-1/2 rounded-[6px] border border-[var(--cs-line-strong)] bg-[var(--cs-page)] px-[7px] py-[3px] text-[10.5px] font-semibold text-[var(--cs-faint)]">
                 ⌘ K
             </kbd>
 
@@ -1158,6 +1164,17 @@ export function SettingsPage({
         ? new Date(subscription.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
         : null;
 
+    // Real facts the card already had the data for but didn't show — added
+    // 2026-09-11 to fill what was dead space under a short card once its
+    // taller grid sibling ("Your Account") stretched the row: Anmol, "a lot
+    // of dead white space in the subscription page... use that space for
+    // useful subscription details." Both come off the same `subscription`
+    // row the rest of this card already reads; no new fetch.
+    const startedOn = subscription?.startedAt
+        ? new Date(subscription.startedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+        : null;
+    const billedTo = subscription?.billingEmail ?? contactEmail ?? null;
+
     // The health page is a full page in its own right — its own dark header,
     // its own back button, its own scroll region — reached from the strip
     // below rather than being a modal cramped inside this one.
@@ -1177,7 +1194,6 @@ export function SettingsPage({
             <WorkspaceHeader
                 title="Settings"
                 subtitle="Find any setting, and the few that live only here"
-                centerSlot={<MasterSearch onPick={openSetting} />}
                 rightSlot={
                     <>
                         <button
@@ -1201,9 +1217,22 @@ export function SettingsPage({
             />
 
             <div className="flex-1 overflow-y-auto">
-                <div className="mx-auto flex w-full max-w-[1220px] flex-col gap-[16px] px-[56px] pb-[40px] pt-[22px] max-[900px]:px-[14px]">
+                {/* Out of the dark header, into the page — Anmol, 2026-09-11:
+                    "remove the search bar from the top dark header, bring it
+                    here... don't expand it horizontally so much, keep it in
+                    centre, with its own size... below that everything would
+                    be." Own row, own width, centred — not stretched to the
+                    page's 1220px content width the cards below use. */}
+                <div className="mx-auto w-full max-w-[560px] px-[14px] pt-[20px]">
+                    <MasterSearch onPick={openSetting} />
+                </div>
 
-                    <div className="grid grid-cols-2 gap-[16px] max-[980px]:grid-cols-1">
+                {/* 44px gutter (was 56) and 14px card gap (was 16) — same
+                    "slightly reduce, don't cram" pass as `CARD`'s own
+                    padding above. */}
+                <div className="mx-auto flex w-full max-w-[1220px] flex-col gap-[14px] px-[44px] pb-[32px] pt-[14px] max-[900px]:px-[14px]">
+
+                    <div className="grid grid-cols-2 gap-[13px] max-[980px]:grid-cols-1">
                         {/* ══ Your Account ═══════════════════════════════════ */}
                         <SettingsCard
                             id="set-card-account"
@@ -1375,10 +1404,22 @@ export function SettingsPage({
                                                 <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{renewsOn}</dd>
                                             </div>
                                         )}
-                                        <div className="flex items-center justify-between gap-[10px] px-[2px] py-[8px]">
+                                        <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[8px]">
                                             <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Doctors included</dt>
                                             <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">
                                                 {subscription.seats === 1 ? "1 doctor" : `${subscription.seats} doctors`}
+                                            </dd>
+                                        </div>
+                                        {startedOn && (
+                                            <div className="flex items-center justify-between gap-[10px] border-b border-[var(--cs-line)] px-[2px] py-[8px]">
+                                                <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Subscriber since</dt>
+                                                <dd className="m-0 text-[12.5px] font-bold text-[var(--cs-ink)]">{startedOn}</dd>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center justify-between gap-[10px] px-[2px] py-[8px]">
+                                            <dt className="text-[12px] font-semibold text-[var(--cs-faint)]">Billed to</dt>
+                                            <dd className="m-0 truncate text-[12.5px] font-bold text-[var(--cs-ink)]">
+                                                {billedTo ?? "Not set"}
                                             </dd>
                                         </div>
                                     </dl>
@@ -1523,7 +1564,24 @@ export function SettingsPage({
                                     ))}
                                 </div>
                             ) : (
-                                <ul className="m-0 flex list-none flex-col gap-[8px] p-0">
+                                /* Anmol, 2026-09-11: "it keeps growing with the
+                                   number of new devices... match its height
+                                   with the section beside it and add a nested
+                                   scrolling." This card sits beside "Consult
+                                   Setup" (a bounded, ~4-row card) in the grid;
+                                   with no cap here, a doctor who has ever
+                                   signed in on six machines stretched the
+                                   whole ROW (CSS Grid grids items to the
+                                   tallest cell, so Consult Setup got dragged
+                                   down with it) and, with it, the page.
+                                   224px ≈ the same 3-4 rows Consult Setup's
+                                   own content naturally runs to — past that,
+                                   this scrolls inside itself instead of the
+                                   card, the row, and the page all growing
+                                   together. -mr/pr shifts the scrollbar
+                                   outside the row content instead of
+                                   overlapping the "Sign out" pills. */
+                                <ul className="m-0 -mr-[6px] flex max-h-[224px] list-none flex-col gap-[8px] overflow-y-auto p-0 pr-[6px]">
                                     {(devices && devices.length > 0
                                         ? devices
                                         : [{
