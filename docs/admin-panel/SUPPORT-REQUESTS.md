@@ -50,16 +50,41 @@ would ask why it says `waiting_on_doctor`.
   `(hospital_id, created_at desc)`.
 - The doctor's reference is **`SR_<id>`** — shown to them on send, and in the
   email subject. Match on it.
-- Replying happens **by email**, to `reply_to`. There is no thread, no reply
-  table, no notification back into Cortex. Don't imply one in the UI until
-  there is one.
 - **No patient data is ever in this table**, by design. If it ever appears,
   that is a bug worth stopping for.
 
+## The thread (added 2026-09-11, same day)
+
+Email is no longer the only reply channel. `support_request_messages` is a
+conversation on top of each ticket, and Cortex now reads and writes it —
+per Founder directive: *"Communication between Master Control and Cortex
+must happen through the database, not email alone."*
+
+| Column | Notes |
+|---|---|
+| `request_id` | FK to `support_requests.id`, cascade-deletes with it |
+| `sender_type` | `'admin' \| 'doctor' \| 'system'` — CHECK-constrained |
+| `sender_name` | whatever Master Control names the operator ("Founder Anmol"); `null` on the doctor's own rows is rendered as their real name client-side, never invented |
+| `body` | plain text |
+
+**RLS is scoped to `doctors`, not `users`** — narrower than `support_requests`'
+own policy. A doctor's own session can read and insert (`sender_type =
+'doctor'` enforced by the INSERT policy's `with_check`); reception/admin
+sessions with no `doctors` row can see the ticket LIST but get an empty
+thread and a failing insert. That is the schema's own boundary, not a bug —
+Cortex's `sendDoctorReply` surfaces it as an ordinary thrown error.
+
+Both tables are on the `supabase_realtime` publication (enabled 2026-09-11,
+not schema/RLS — a message posted from Master Control reaches an open Cortex
+tab immediately, no refresh, and vice versa.
+
 ## Where the code is
 
-- Form + topics: `src/features/support/`
-- Client call: `sendSupportRequest()` in `src/lib/db/messaging.ts`
+- Form + tabs (New request / My requests) + thread UI: `src/features/support/SupportPage.tsx`
+- Status → label/colour mapping (read-only translation of your `status` column): `src/features/support/supportStatus.ts`
+- New-ticket client call: `sendSupportRequest()` in `src/lib/db/messaging.ts`
+- Thread reads/writes + realtime: `src/lib/db/support.ts`
 - Browser facts: `src/lib/diagnostics/sessionTrace.ts`
 - Server: `supabase/functions/support-notify/index.ts`
-- Schema: `supabase/migrations/20260911_support_requests.sql`
+- Schema: `supabase/migrations/20260911_support_requests.sql` (tickets) + the
+  `support_request_messages` table/policies (deployed from the Zenith side)
