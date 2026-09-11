@@ -3288,15 +3288,6 @@ body.cs-locked-shell {
 
 .cs-line-tag::first-letter { text-transform: uppercase; }
 
-.cs-line-note {
-    margin-top: 4px;
-    color: var(--cs-faint);
-    font-size: 11.5px;
-    font-weight: 450;
-    font-style: italic;
-    line-height: 1.4;
-}
-
 /* Medicine lines carry three rows (name, tags, note) where every other kind
    of plan line carries one — stacked with the same bare 7px padding as a
    diagnosis or a test, five of them blurred into a single dense column with
@@ -3488,18 +3479,29 @@ body.cs-locked-shell {
     gap: 6px;
 }
 
+/* Real button chrome, 2026-09-11 — same complaint, same fix as
+   `.cs-plan-save-template`/`.cs-group-add`: "that could be more better
+   button, right now it's looking like a link" (Anmol, about this exact
+   control). A filled pill rather than an outline — this is the one
+   affirmative action in a companion suggestion, and it needed to read as
+   the thing to press, not as a caption you could also click. */
 .cs-comp-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     border: 0;
-    background: none;
-    padding: 0;
-    color: var(--cs-blue);
-    font-size: 12.5px;
-    font-weight: 620;
-    letter-spacing: -0.005em;
+    border-radius: 999px;
+    background: var(--cs-blue);
+    padding: 4px 10px 4px 8px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: -0.003em;
     text-align: left;
+    transition: background 0.13s ease;
 }
 
-.cs-comp-add:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cs-comp-add:hover { background: #0d5bc9; }
 
 /* "Common pairing" and "Your pattern" are different claims —
    pharmacology vs. a record of this doctor's habit — so they are

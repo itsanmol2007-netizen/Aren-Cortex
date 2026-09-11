@@ -16,7 +16,7 @@
 import { useRef, useState } from "react";
 import {
     Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, NotebookPen,
-    Pill, Printer, Stethoscope, Waves,
+    Pill, Printer, Stethoscope, Utensils, Waves,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
@@ -413,7 +413,15 @@ export function PlanCard({
                                                 not interchangeable facts) and the group's own teal,
                                                 so the row reads as "this medicine's" info at a
                                                 glance instead of loose data. */}
-                                            {(m.dosage || m.frequency || m.duration) && (
+                                            {/* The instruction (After food / Before food / …) used
+                                                to sit on its own row below — a fixed, always-short
+                                                vocabulary (see MedicineAddSheet.tsx's own note: "any
+                                                of the four") reserving a whole line for itself.
+                                                Anmol, 2026-09-11: "move that thing also into the
+                                                same row... don't reserve a dedicated vertical space
+                                                for just this tiny thing." Folded into the same tag
+                                                row as a fourth chip. */}
+                                            {(m.dosage || m.frequency || m.duration || m.notes) && (
                                                 <div className="cs-line-tags">
                                                     {m.dosage && (
                                                         <span className="cs-line-tag">
@@ -430,9 +438,13 @@ export function PlanCard({
                                                             <CalendarDays size={10} aria-hidden="true" /> {m.duration}
                                                         </span>
                                                     )}
+                                                    {m.notes && (
+                                                        <span className="cs-line-tag">
+                                                            <Utensils size={10} aria-hidden="true" /> {m.notes}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
-                                            {m.notes && <div className="cs-line-note">{m.notes}</div>}
                                         </div>
                                         <button
                                             type="button"

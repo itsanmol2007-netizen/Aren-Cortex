@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
-import { Heart, Sparkles, X } from "lucide-react";
+import { Heart, Plus, Sparkles, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import type { IntentType } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
@@ -356,7 +356,7 @@ export function CompanionLine({
                         onClick={onAdd}
                         title={`Add ${suggestion.label} to the plan`}
                     >
-                        Add {suggestion.label}
+                        <Plus size={11} aria-hidden="true" /> {suggestion.label}
                     </button>
                     <span className={`cs-comp-tag is-${source}`} title={SOURCE_TITLE[source]}>
                         {SOURCE_TAG[source]}
