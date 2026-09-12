@@ -102,6 +102,18 @@
 }
 
 /* ── The rail ──────────────────────────────────────────────── */
+/* The gradient used to run #ffffff → #fcfbff → #f8f7fe: white cooling into a
+   VIOLET-tinted white, chosen to echo the brand mark's own glow. The app's
+   actual body (`--bg: #eef3f8` in base.css) cools into a BLUE-tinted grey
+   instead — a different hue, not just a different shade — so the rail read
+   as its own frosted panel laid over the app rather than the app's own
+   surface. Anywhere the page beside it does not happen to be a full-bleed
+   white card (any gutter, any gap between cards, the space below a short
+   page), that hue mismatch is a seam running the rail's ENTIRE height, which
+   is what actually reads as "pasted over something" — not the corner, which
+   the 2026-09-11 fix already resolved. Ending on `--bg` itself, the same
+   token the app already cools into, makes the rail the app's own surface
+   continued instead of a second one sitting beside it. */
 .nav-rail {
     position: fixed;
     top: 0;
@@ -116,7 +128,7 @@
     padding: 0 0 12px;
 
     background:
-        linear-gradient(180deg, #ffffff 0%, #fcfbff 45%, #f8f7fe 100%);
+        linear-gradient(180deg, #ffffff 0%, #f5f8fb 45%, var(--bg) 100%);
 
     /* Tooltips escape to the right — nothing here may clip them. */
     overflow: visible;
@@ -197,7 +209,37 @@
    one. When nothing is over the app the two darks match and the edge would be
    invisible either way — but the moment a modal scrim blurs the header behind
    it, an unblurred rectangle with a hard edge appears pasted on top of it.
-   A 52px fade means the block has no edge to notice, in either state. */
+   A 52px fade means the block has no edge to notice, in either state.
+
+   Its BOTTOM edge, where this dark corner meets the light rail directly
+   beneath it, used to stop the exact same way — a flat dark fill down to a
+   1px violet-tinted `border-bottom`. That reads completely differently from
+   the identical-looking line at the main header, because there it runs the
+   width of the whole viewport (a header, then a page — an ordinary, expected
+   shape); here it is a hard rule inside a 60px-wide column, which is a
+   column's whole visible width, so the eye follows it as one clean cut
+   across the thing it is looking straight at: "the sidebar rail strip top
+   meets with the bottom of dark header... it's looking like it pasted over
+   that dark header" (Anmol, 2026-09-12).
+
+   The fix is an ALPHA fade, not a colour one. A first attempt faded the
+   flat navy into `--bg` by interpolating BETWEEN the two colours — which
+   passes straight through a muddy grey-violet in the middle, because that
+   is what's physically between a near-black navy and a pale blue-grey on a
+   straight RGB line. Nobody asked for a smear at the bottom of the logo.
+   What actually removes the cut is fading this layer's own OPACITY to 0
+   over its last 16px via `mask-image`, so the true `.nav-rail` background
+   underneath shows through increasingly — the corner just stops painting
+   before it reaches the light rail's own surface, instead of either being
+   clipped by a hard edge or smudged into an invented colour. Combined with
+   the existing right-edge fade via `mask-composite: intersect` (both masks
+   must be opaque for a pixel to show, i.e. their intersection) — anywhere
+   the two overlap in the bottom-right corner, both restrictions still
+   apply. No border-bottom left to draw a line at all.
+
+   `mask-composite` degrades in older WebKit, which falls back to the
+   `-webkit-mask-image` below — the right-edge fade alone, exactly what
+   shipped before this pass. That is a fine floor, not a broken one. */
 .rail-head::before {
     content: "";
     position: absolute;
@@ -205,7 +247,10 @@
     top: 0;
     height: 100%;
     width: var(--brand-w);
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
+    mask-image:
+        linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%),
+        linear-gradient(to bottom, #000 0, #000 calc(100% - 16px), transparent 100%);
+    mask-composite: intersect;
     -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 52px), transparent 100%);
     background:
         radial-gradient(76px 54px at 46% 48%,
@@ -213,7 +258,6 @@
             rgba(124, 58, 237, 0.12) 45%,
             transparent 82%),
         #050916;
-    border-bottom: 1px solid rgba(147, 51, 234, 0.22);
     box-sizing: border-box;
 }
 
@@ -764,8 +808,12 @@ body.overlay-open .rail-logo {
     flex-direction: column;
     padding: 12px 0 12px;
 
+    /* Same recipe as `.nav-rail`, and for the same reason — see its own
+       comment. The panel is wider and sits over the page rather than beside
+       it, but it is still opaque against a page that cools into `--bg`, so
+       the same hue mismatch would show along its right edge otherwise. */
     background:
-        linear-gradient(180deg, #ffffff 0%, #fcfbff 45%, #f8f7fe 100%);
+        linear-gradient(180deg, #ffffff 0%, #f5f8fb 45%, var(--bg) 100%);
     border-right: 1px solid var(--nav-line);
     box-shadow:
         10px 0 40px rgba(20, 26, 52, 0.10),

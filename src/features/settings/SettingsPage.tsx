@@ -53,7 +53,7 @@ import {
     billingIntervalLabel, clearProfileCache, fetchClinicSubscription,
     formatPlanPrice, fetchSubscriptionRequests, submitSubscriptionRequest,
     REQUEST_KIND_LABEL, updateDoctorContactEmail,
-    describeDevice, fetchDevices, formFactorLabel, lastSeenLabel, revokeDevice,
+    deleteDevice, describeDevice, fetchDevices, formFactorLabel, lastSeenLabel, revokeDevice,
     type ClinicSubscription, type DBDoctor, type DBHospital,
     type SubscriptionRequest, type SubscriptionRequestKind, type UserDevice,
 } from "../../lib/db";
@@ -969,6 +969,7 @@ export function SettingsPage({
     const [devices, setDevices] = useState<UserDevice[] | null>(null);
     const [devicesError, setDevicesError] = useState(false);
     const [revoking, setRevoking] = useState<string | null>(null);
+    const [removing, setRemoving] = useState<string | null>(null);
     const [manageSubOpen, setManageSubOpen] = useState(false);
     /** Non-null while the shared "our team handles this" surface is open. */
     const [supportTopic, setSupportTopic] = useState<SupportTopic | null>(null);
@@ -1101,6 +1102,24 @@ export function SettingsPage({
             toast.error(e instanceof Error ? e.message : "Could not sign that device out.");
         } finally {
             setRevoking(null);
+        }
+    };
+
+    /* A hard delete, distinct from "Sign out" above — for a stale row that
+       isn't a live session to end, just bookkeeping worth clearing. Most of
+       the list should never need this any more (`touchThisDevice` now folds
+       duplicate signatures into one row on every sign-in), but it stays
+       reachable for whatever that dedup hasn't caught yet: "there should be a
+       way to delete the sign in records" (Anmol, 2026-09-12). */
+    const removeOne = async (device: UserDevice) => {
+        setRemoving(device.id);
+        try {
+            await deleteDevice(device.id);
+            setDevices((list) => (list ?? []).filter((d) => d.id !== device.id));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Could not remove that record.");
+        } finally {
+            setRemoving(null);
         }
     };
 
@@ -1618,15 +1637,31 @@ export function SettingsPage({
                                                     This device
                                                 </span>
                                             ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => revokeOne(d)}
-                                                    disabled={revoking === d.id}
-                                                    className="flex flex-none items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-red)] hover:text-[var(--cs-red)] disabled:opacity-60!"
-                                                >
-                                                    {revoking === d.id && <Loader2 size={11} className="animate-spin" />}
-                                                    Sign out
-                                                </button>
+                                                <span className="flex flex-none items-center gap-[6px]">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => revokeOne(d)}
+                                                        disabled={revoking === d.id || removing === d.id}
+                                                        className="flex flex-none items-center gap-[5px] rounded-full border border-[var(--cs-line-strong)] bg-white px-[11px] py-[5px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-red)] hover:text-[var(--cs-red)] disabled:opacity-60!"
+                                                    >
+                                                        {revoking === d.id && <Loader2 size={11} className="animate-spin" />}
+                                                        Sign out
+                                                    </button>
+                                                    {/* A hard delete for a stale record that isn't worth the
+                                                        "ends a session" language above — same row, a quieter
+                                                        icon-only affordance next to the action people actually
+                                                        reach for first. */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeOne(d)}
+                                                        disabled={revoking === d.id || removing === d.id}
+                                                        aria-label={`Remove ${d.label ?? "this device"} from the list`}
+                                                        title="Remove this record"
+                                                        className="grid h-[26px] w-[26px] flex-none place-items-center rounded-full border border-[var(--cs-line-strong)] bg-white text-[var(--cs-faint)] transition-colors hover:border-[var(--cs-red)] hover:text-[var(--cs-red)] disabled:opacity-60!"
+                                                    >
+                                                        {removing === d.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                                    </button>
+                                                </span>
                                             )}
                                         </li>
                                     ))}

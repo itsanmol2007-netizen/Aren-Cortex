@@ -179,6 +179,32 @@ export async function touchThisDevice(
             .maybeSingle<{ revoked_at: string | null }>();
 
         if (error || !data) return { revoked: false };
+
+        // A fresh sign-in is exactly the moment to fold in any other row that
+        // is really THIS SAME machine wearing a new `device_key` — the
+        // localStorage-minted id resets on a cleared profile, a private
+        // window, or (as found 2026-09-12) a dev/preview browser context that
+        // never persists storage between loads, and every reset used to mint
+        // an entirely new, permanent row. One account collected 116 rows all
+        // labelled "Chrome on Linux" this way in about a day: "why are you
+        // pointing the same device again and again... very useless and noisy
+        // data" (Anmol). `describeDevice()`'s label is already the coarse,
+        // human-legible signature the whole list is built around (see its own
+        // comment); collapsing to one non-revoked row per (account, label)
+        // is that same philosophy applied to the list as a whole, not just a
+        // single row. Scoped to the AUTHORISE call only — a genuine sign-in —
+        // never the periodic re-check, which fires far more often and has no
+        // business writing here at all.
+        if (opts.authorize) {
+            await supabase
+                .from("user_devices")
+                .delete()
+                .eq("user_id", userId)
+                .eq("label", d.label)
+                .is("revoked_at", null)
+                .neq("device_key", thisDeviceKey());
+        }
+
         return { revoked: data.revoked_at != null };
     } catch {
         return { revoked: false };
@@ -260,6 +286,21 @@ export async function revokeDevice(deviceId: string): Promise<void> {
         .update({ revoked_at: new Date().toISOString() })
         .eq("id", deviceId);
     if (error) throw new Error(`revokeDevice: ${error.message}`);
+}
+
+/** Erase a row outright — for a stale entry a doctor just wants gone, not
+ *  signed out (it may already be gone; deleting it isn't "ending a session"
+ *  in any sense worth a warning). `touchThisDevice`'s own dedup keeps this
+ *  from being the only way to clean up going forward, but a fresh sign-in
+ *  is the trigger for that; this is the one a doctor can reach for right
+ *  now, on demand, for whatever it hasn't caught yet. RLS scopes deletes to
+ *  the caller's own rows, same as every other op on this table. */
+export async function deleteDevice(deviceId: string): Promise<void> {
+    const { error } = await supabase
+        .from("user_devices")
+        .delete()
+        .eq("id", deviceId);
+    if (error) throw new Error(`deleteDevice: ${error.message}`);
 }
 
 /** "Active now", "2 hours ago", "12 Aug" — the granularity a device list
