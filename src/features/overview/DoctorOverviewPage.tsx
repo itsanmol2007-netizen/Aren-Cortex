@@ -84,8 +84,10 @@ import {
 import { PaymentDetailsModal } from "./PaymentDetailsModal";
 import { ActivityListModal } from "./ActivityListModal";
 import { fetchStaff } from "../../lib/db/staff";
+import { PrescriptionPreviewModal } from "../../components/PrescriptionPreviewModal";
+import { fetchHospitalCached } from "../../lib/db/profileCache";
 import type { SidebarPage } from "../sidebar/SidebarNav";
-import type { TodayVisit } from "../../lib/db";
+import type { TodayVisit, DBHospital } from "../../lib/db";
 
 interface Props {
     /** The sidebar's own Consult action, reused rather than reimplemented —
@@ -197,7 +199,7 @@ function HourBarsSkeleton() {
     );
 }
 
-type ActivityKind = "visits" | "prescriptions" | "new_patients";
+type ActivityKind = "visits" | "prescriptions" | "new_patients" | "recent_patients";
 
 export function DoctorOverviewPage({
     onStartConsult, onNavigate, onViewPatient,
@@ -272,6 +274,17 @@ export function DoctorOverviewPage({
     const [paymentOpen, setPaymentOpen] = useState(false);
     const [activityOpen, setActivityOpen] = useState<ActivityKind | null>(null);
     const [trendOpen, setTrendOpen] = useState(false);
+
+    // The prescription preview a "Prescriptions" activity row opens onto —
+    // see `PrescriptionPreviewModal`'s own header. `hospital` is fetched
+    // once (cross-page cache, same one Communication/Print RX already share)
+    // purely for the letterhead; nothing else on this page needed it before.
+    const [hospital, setHospital] = useState<DBHospital | null>(null);
+    useEffect(() => {
+        if (!identity.ready) return;
+        fetchHospitalCached(identity.hospitalId).then(setHospital).catch(() => setHospital(null));
+    }, [identity.ready, identity.hospitalId]);
+    const [viewingRxId, setViewingRxId] = useState<string | null>(null);
 
     const [roster, setRoster] = useState<DoctorRosterRow[] | null>(() => {
         if (!identity.ready || !isAdminDoctor) return null;
@@ -406,7 +419,7 @@ export function DoctorOverviewPage({
         const cachedRecent = getOverviewCache<DoctorActivityRow[]>(recentKey);
         if (cachedRecent) setRecentPatients(cachedRecent);
 
-        fetchDoctorVisitRows(identity.hospitalId, identity.doctorId, buildRange("30d"), 5)
+        fetchDoctorVisitRows(identity.hospitalId, identity.doctorId, buildRange("30d"), 3)
             .then((rows) => {
                 if (!cancelled) {
                     setRecentPatients(rows);
@@ -482,6 +495,14 @@ export function DoctorOverviewPage({
     const fetchNewPatientRowsForTile = useCallback(
         () => fetchNewPatientRows(identity.hospitalId, range, { doctorId: identity.doctorId }),
         [identity.hospitalId, identity.doctorId, range]
+    );
+    // Fixed at 30 days, not the page's own adjustable `range` — matches what
+    // the card itself already says ("Last 30 days") regardless of whatever
+    // period a doctor has the KPI tiles set to.
+    const recentPatientsRange = useMemo(() => buildRange("30d"), []);
+    const fetchRecentPatientsForModal = useCallback(
+        () => fetchDoctorVisitRows(identity.hospitalId, identity.doctorId, recentPatientsRange, 30),
+        [identity.hospitalId, identity.doctorId, recentPatientsRange]
     );
 
     const queuePreview = queueWaiting.slice(0, 3);
@@ -935,6 +956,17 @@ export function DoctorOverviewPage({
                                     icon={<Users size={14} />}
                                     title="Recent patients"
                                     subtitle={recentPatients === null ? "Loading…" : "Last 30 days"}
+                                    action={
+                                        recentPatients && recentPatients.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setActivityOpen("recent_patients")}
+                                                className="inline-flex cursor-pointer items-center gap-[3px] rounded-[6px] border-0 bg-transparent px-[4px] py-[3px] text-[10.5px] font-semibold text-[var(--cs-blue)] outline-none hover:underline"
+                                            >
+                                                View all <ArrowRight size={11} />
+                                            </button>
+                                        )
+                                    }
                                 >
                                     {recentPatients === null ? (
                                         <RowSkeleton count={3} />
@@ -944,8 +976,19 @@ export function DoctorOverviewPage({
                                             next="Whoever you see next shows up here."
                                         />
                                     ) : (
-                                        <div className="flex flex-col gap-[6px]">
-                                            {recentPatients.map((r) => (
+                                        // Capped height + its own scroll, not "however tall N
+                                        // rows happen to be" — this card sits in an
+                                        // `items-stretch` grid row beside Patient Flow/Who You
+                                        // Saw, so its natural content height WAS the row's
+                                        // height: real rows (once "Recent patients" actually had
+                                        // data) stretched the whole row and left dead space
+                                        // inside its shorter neighbours. "growing boundaries...
+                                        // heard of nested scrolling... just show 3" (Anmol,
+                                        // 2026-09-12) — 3 here, matching Today's Queue's own
+                                        // `queuePreview` cap, both with a "View all" beside the
+                                        // heading for the rest.
+                                        <div className="flex max-h-[168px] flex-col gap-[6px] overflow-y-auto">
+                                            {recentPatients.slice(0, 3).map((r) => (
                                                 <button
                                                     key={r.id}
                                                     type="button"
@@ -1177,6 +1220,47 @@ export function DoctorOverviewPage({
                     emptyNext="Prescriptions you write appear here as soon as they're saved."
                     onClose={() => setActivityOpen(null)}
                     onViewPatient={onViewPatient}
+                    // A prescription row opens the document itself, not a
+                    // detour through the patient page — "clicking on its
+                    // prescription shouldn't lead to [the patient page], [it
+                    // should open] actual prescription preview" (Anmol,
+                    // 2026-09-12). `r.id` here is `fetchDoctorPrescriptionRows`'
+                    // own row id, which IS the prescription id.
+                    // Closes the list rather than stacking the document on
+                    // top of it — `PracticeModal`'s own overlay (z-index 60)
+                    // otherwise sits ABOVE `PrescriptionPreviewModal`'s
+                    // ReviewModal (z-50), which opened the document
+                    // completely hidden behind the still-open list (caught
+                    // live: click registered, nothing visibly happened).
+                    onOpenPrescription={(r) => { setActivityOpen(null); setViewingRxId(r.id); }}
+                />
+            )}
+            {activityOpen === "recent_patients" && (
+                <ActivityListModal
+                    accent="blue"
+                    icon={<Users size={15} />}
+                    eyebrow="Recent patients"
+                    title="Recent patient activity"
+                    range={recentPatientsRange}
+                    fetcher={fetchRecentPatientsForModal}
+                    emptyFact="No patients yet"
+                    emptyNext="Whoever you see next shows up here."
+                    onClose={() => setActivityOpen(null)}
+                    onViewPatient={onViewPatient}
+                    // "there should be a button in that model which will
+                    // open actual patient page" (Anmol, 2026-09-12) — the
+                    // list itself already opens a patient record per row
+                    // (`onViewPatient`); this is the door to the FULL list
+                    // rather than one name at a time.
+                    footer={
+                        <button
+                            type="button"
+                            onClick={() => { setActivityOpen(null); onNavigate("patients"); }}
+                            className="flex w-full cursor-pointer items-center justify-center gap-[6px] rounded-[10px] border-0 bg-[var(--cs-blue)] py-[10px] text-[12.5px] font-bold text-white outline-none hover:opacity-90"
+                        >
+                            Open Patients page <ArrowRight size={13} />
+                        </button>
+                    }
                 />
             )}
             {activityOpen === "new_patients" && (
@@ -1193,6 +1277,12 @@ export function DoctorOverviewPage({
                     onViewPatient={onViewPatient}
                 />
             )}
+
+            <PrescriptionPreviewModal
+                prescriptionId={viewingRxId}
+                hospital={hospital}
+                onClose={() => setViewingRxId(null)}
+            />
 
             {feesOpen && fees && (
                 <FeesModal

@@ -34,6 +34,18 @@ interface Props {
      *  carries a real `patientId`, so there is no search step in between
      *  any more. Same door Communication's conversation panel uses. */
     onViewPatient: (patientId: string | null, name: string | null) => void;
+    /**
+     * When given, a row click opens THIS instead of the patient record —
+     * the "Prescriptions" list's own door (2026-09-12): a doctor scanning
+     * prescriptions wants the document itself, not a detour through the
+     * patient page to find it again. `r.id` here is the fetcher's own row
+     * id, which for `fetchDoctorPrescriptionRows` is the prescription's id.
+     */
+    onOpenPrescription?: (row: DoctorActivityRow) => void;
+    /** A door out of the list, below it — "there should be a button in
+     *  that model which will open actual patient page" (Anmol, 2026-09-12).
+     *  Forwarded straight to `PracticeModal`'s own `footer` slot. */
+    footer?: ReactNode;
 }
 
 function stamp(iso: string): string {
@@ -47,6 +59,7 @@ function stamp(iso: string): string {
 
 export function ActivityListModal({
     accent, icon, eyebrow, title, range, fetcher, emptyFact, emptyNext, onClose, onViewPatient,
+    onOpenPrescription, footer,
 }: Props) {
     const [rows, setRows] = useState<DoctorActivityRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -65,7 +78,7 @@ export function ActivityListModal({
     }, [fetcher]);
 
     return (
-        <PracticeModal accent={accent} icon={icon} eyebrow={eyebrow} title={title} onClose={onClose}>
+        <PracticeModal accent={accent} icon={icon} eyebrow={eyebrow} title={title} onClose={onClose} footer={footer}>
             <p className="m-0 -mt-[4px] flex-none text-[11px] text-[var(--cs-faint)]">
                 {formatRangeLabel(range)}{rows ? ` · ${rows.length}` : ""}
             </p>
@@ -106,7 +119,21 @@ export function ActivityListModal({
                                 </span>
                             </>
                         );
-                        return r.patientName ? (
+                        // A prescription row always has a real prescription
+                        // to open (that's what `r.id` IS here), even on the
+                        // rare row with no patient name resolved — so this
+                        // branch doesn't need `r.patientName` the way the
+                        // patient-record door below does.
+                        return onOpenPrescription ? (
+                            <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => onOpenPrescription(r)}
+                                className="group flex flex-none cursor-pointer items-center gap-[9px] rounded-[9px] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[10px] py-[8px] text-left outline-none transition-colors hover:border-[var(--cs-violet)]"
+                            >
+                                {inner}
+                            </button>
+                        ) : r.patientName ? (
                             <button
                                 key={r.id}
                                 type="button"

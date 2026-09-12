@@ -22,18 +22,23 @@
     /* (60 - 36) / 2 = 12 — a badge centred in the rail */
     --badge: 36px;
     --panel-w: 252px;
-    /* How wide the brand lockup PAINTS. The rail is still --rail-w wide in
-       the layout; this element overhangs into the space both headers leave
-       clear for it (see `.app-shell .ws-header-inner` in workspace-header.css
-       in workspace-header.css). Change it here and
-       those two follow automatically.
-       206px, was 236, was 200, was 186. Grown twice on 2026-09-11 ("it
-       should not feel same size as Overview... make it even more bigger,
-       its brand logo man" — Anmol), then pulled back on 2026-09-12 once
-       that second grow read as overshoot in practice: "you overshooted the
-       logo thing... right now it's very big and not looking good." Settles
-       just past the first grow — bigger than a page title, not a shout. */
-    --brand-w: 206px;
+    /* How wide the brand lockup PAINTS, AND (since `.rail-brand`'s own width
+       is `calc(var(--brand-w) - 6px)`, not "auto") exactly how wide the pill
+       itself renders. The two headers' own `padding-left` is derived from
+       this same number (`.app-shell .ws-header-inner` in workspace-header.css)
+       so a page title always starts a fixed ~20px past wherever the pill's
+       right edge actually lands — change it here and both follow.
+
+       118px — cut way down 2026-09-12 alongside the pill's redesign into a
+       compact boxed/stacked lockup (icon + AREN over Cortex, not a wide
+       one-line wordmark): the WIDE number this variable held (206px, before
+       it 236/200/186) was sized for that old wide layout, and once the pill
+       itself got visually narrower the two stopped agreeing — the header
+       kept reserving the old width, leaving a gap of dead dark header
+       between the pill's real right edge and "Overview": "That Overview
+       Heading and the actual Brand logo have meters of difference" (Anmol).
+       118px is what the new compact pill actually needs. */
+    --brand-w: 118px;
 
     /* Above the modals, on purpose — see NavRail.tsx's header. Toasts
        (2147483647) still win, which is right: a toast is a message about
@@ -242,8 +247,14 @@
     top: 50%;
     transform: translateY(-50%);
     height: 46px;
-    width: auto;
-    max-width: calc(var(--brand-w) - 6px);
+    /* Tied to `--brand-w`, not "auto" — the header's own padding-left is
+       computed from `--brand-w` too, so this is what actually keeps the
+       pill's real right edge and the page title's left edge a fixed,
+       constant distance apart regardless of what `--brand-w` gets tuned to
+       later. An auto width here is exactly what broke that contract
+       2026-09-12: the pill hugged its content and shrank well under
+       `--brand-w`, but the header still reserved the old, wider gap. */
+    width: calc(var(--brand-w) - 6px);
     z-index: 3;
 
     display: flex;

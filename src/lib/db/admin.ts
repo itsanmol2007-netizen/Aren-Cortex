@@ -922,11 +922,16 @@ const VISIT_STATUS_LABEL: Record<ReturnType<typeof visitStatusKind>, string> = {
  * discarded visit is not work the clinic did, so it counts toward nothing
  * anywhere on this page." Missed this the first time (caught live 2026-09-07
  * by actually opening the modal: the tile said 17, the list said 18 — one
- * discarded row the tile correctly ignored and the list didn't). Filtered
- * after the fetch rather than in SQL, so a very active doctor's discards can
- * in principle push the visible count under `limit` below their true total —
- * an acceptable approximation for a capped "recent activity" list, not for
- * the number on the tile itself.
+ * discarded row the tile correctly ignored and the list didn't).
+ *
+ * The exclusion used to happen AFTER the fetch, with the comment here
+ * admitting the exact failure mode "in principle" — a very active doctor's
+ * discards pushing the visible count under `limit` below their true total.
+ * That "in principle" turned real 2026-09-12: five discarded test consults
+ * in a row (the most recent activity) buried every genuine completed visit
+ * off the end of a `limit`-5 "Recent patients" call, which then showed
+ * "No patients yet" for a doctor who had just seen seven. Excluding in SQL,
+ * before `.limit()` ever runs, is the actual fix — not a smaller comment.
  */
 export async function fetchDoctorVisitRows(
     hospitalId: string,
@@ -941,6 +946,10 @@ export async function fetchDoctorVisitRows(
         .eq("assigned_doctor_id", doctorId)
         .gte("created_at", startInstant(range.from))
         .lt("created_at", endInstantExclusive(range.to))
+        // Mirrors `visitStatusKind`'s "inactive" set exactly — see this
+        // function's own doc comment for why this has to happen here and
+        // not in the client-side `.filter()` below.
+        .not("status", "in", "(inactive,cancelled,discarded)")
         .order("created_at", { ascending: false })
         .limit(limit);
     if (error) throw new Error(`fetchDoctorVisitRows: ${error.message}`);
@@ -1120,6 +1129,13 @@ export async function fetchPatientLedgerRows(
         .eq("hospital_id", hospitalId)
         .gte("created_at", startInstant(range.from))
         .lt("created_at", endInstantExclusive(range.to))
+        // Same "a discarded visit is not work the clinic did" rule
+        // `fetchClinicAnalytics`/`fetchDoctorVisitRows` already state — a
+        // discarded visit belongs in nothing derived from this page, the
+        // export included. Excluded here (before `.limit()`), not only in
+        // the client-side `.filter()` below — see `fetchDoctorVisitRows`'s
+        // own comment for the exact way doing it only client-side failed.
+        .not("status", "in", "(inactive,cancelled,discarded)")
         .order("created_at", { ascending: false })
         .limit(limit);
     if (scope.doctorId) query = query.eq("assigned_doctor_id", scope.doctorId);
@@ -1127,10 +1143,6 @@ export async function fetchPatientLedgerRows(
     const { data, error } = await query;
     if (error) throw new Error(`fetchPatientLedgerRows: ${error.message}`);
 
-    // Same "a discarded visit is not work the clinic did" rule
-    // `fetchClinicAnalytics`/`fetchDoctorVisitRows` already state — a
-    // discarded visit belongs in nothing derived from this page, the export
-    // included.
     const rows = (data ?? [])
         .map((r) => {
             const row = r as unknown as {

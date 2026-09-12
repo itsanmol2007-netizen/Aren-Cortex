@@ -44,10 +44,10 @@ import {
 import { toast } from "sonner";
 import { doctorName as formatDoctorName } from "../../lib/format";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
-import ReviewModal from "../../components/ReviewModal";
+import { PrescriptionPreviewModal } from "../../components/PrescriptionPreviewModal";
 import {
-    fetchDoctorsByHospital, fetchHospitalCached, fetchPrescriptionRenderData,
-    type DBDoctor, type DBHospital, type PrescriptionRenderData,
+    fetchDoctorsByHospital, fetchHospitalCached,
+    type DBDoctor, type DBHospital,
 } from "../../lib/db";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { CreditHistoryModal } from "./CreditHistoryModal";
@@ -953,7 +953,10 @@ function ConversationPanel({
 
     // "View Prescription" opens the SAME renderer Consult and Print RX use —
     // never a second one (standing rule 6) — read-only, exactly like Print
-    // RX's reprint door.
+    // RX's reprint door. The fetch/skeleton/`ReviewModal` plumbing itself
+    // now lives in `PrescriptionPreviewModal` (shared with Overview's own
+    // "Prescriptions" activity list, 2026-09-12) — this page just owns which
+    // id, if any, is open.
     const [viewingRxId, setViewingRxId] = useState<string | null>(null);
 
     // The `margin-top: auto` spacer (see the thread div's own comment) fixes
@@ -967,18 +970,6 @@ function ConversationPanel({
         const el = threadScrollRef.current;
         if (el) el.scrollTop = el.scrollHeight;
     }, [thread?.phone, thread?.messages.length]);
-    const [rxDetail, setRxDetail] = useState<PrescriptionRenderData | null>(null);
-    useEffect(() => {
-        if (!viewingRxId) { setRxDetail(null); return; }
-        let cancelled = false;
-        fetchPrescriptionRenderData(viewingRxId)
-            .then((d) => { if (!cancelled) setRxDetail(d); })
-            .catch((e: unknown) => {
-                console.error("[communication] fetchPrescriptionRenderData:", e);
-                if (!cancelled) { toast.error("Could not open that prescription."); setViewingRxId(null); }
-            });
-        return () => { cancelled = true; };
-    }, [viewingRxId]);
 
     return (
         <>
@@ -1129,80 +1120,13 @@ function ConversationPanel({
 
         {/* Consult's exact review/print pipeline, opened read-only — the
             same door Print RX's reprint uses, never a second renderer
-            (standing rule 6). */}
-        {viewingRxId && rxDetail && (
-            <ReviewModal
-                mode="print"
-                patient={rxDetail.patient}
-                visitId={rxDetail.visitId}
-                prescriptionRef={rxDetail.prescriptionRef ?? undefined}
-                symptoms={rxDetail.symptoms}
-                findings={rxDetail.findings}
-                prescription={rxDetail.medicines}
-                tests={rxDetail.tests}
-                followUpDays={rxDetail.followUpDays}
-                adviceNotes={rxDetail.adviceNotes ?? undefined}
-                doctor={rxDetail.doctor}
-                hospital={hospital}
-                vitals={rxDetail.vitals ?? undefined}
-                date={new Date(rxDetail.createdAt)}
-                onClose={() => setViewingRxId(null)}
-            />
-        )}
-
-        {/* The wait between the click and `rxDetail` landing — was nothing
-            at all before this (2026-09-08: "there is a skeleton screen...
-            slowly you'll fill those things there"). `fetchPrescriptionRenderData`
-            itself got faster the same round (3 parallel waves instead of a
-            ~12-query chain), but a real network round trip is still a real
-            wait, and a blank click is what actually reads as "stuck".
-            2026-09-08, second pass: that skeleton was `PracticeModal` — a
-            480px compact card, centered — swapped out for `ReviewModal`
-            itself (680px, up to 95vh, dark letterhead) the instant
-            `rxDetail` landed. Two completely different modals trading
-            places is its own jolt, worse than the wait it was covering for.
-            This is shaped like the document it precedes instead — same
-            outer shell ReviewModal renders (see that file's own "Modal
-            overlay" comment for why 680px), so opening a prescription is
-            one modal settling in, never two. */}
-        {viewingRxId && !rxDetail && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-                <div className="relative flex w-full max-w-[680px] max-h-[95vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-                    <div className="flex shrink-0 items-center justify-between px-5 py-3 border-b border-gray-100">
-                        <span className="h-[16px] w-[50px] animate-pulse rounded-[5px] bg-gray-100" />
-                        <span className="text-[15px] font-black text-gray-300">Opening…</span>
-                        <button
-                            onClick={() => setViewingRxId(null)}
-                            className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                        >
-                            <X className="h-4 w-4" />
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-hidden bg-gray-50/80 p-3">
-                        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200/80 bg-white p-4 shadow-lg">
-                            {/* Letterhead */}
-                            <div className="h-[100px] animate-pulse rounded-xl bg-gray-100" />
-                            {/* Patient strip */}
-                            <div className="flex items-center gap-3">
-                                <span className="h-9 w-9 flex-none animate-pulse rounded-xl bg-gray-100" />
-                                <span className="h-[18px] w-[40%] animate-pulse rounded-[6px] bg-gray-100" />
-                            </div>
-                            {/* Prescription table */}
-                            <div className="flex flex-col gap-2">
-                                <span className="h-[12px] w-[110px] animate-pulse rounded-[5px] bg-gray-100" />
-                                <div className="h-[64px] animate-pulse rounded-xl bg-gray-100" />
-                                <div className="h-[64px] animate-pulse rounded-xl bg-gray-100" />
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3 border-t border-gray-100 px-5 py-3">
-                        <span className="h-[16px] w-[70px] animate-pulse rounded-[5px] bg-gray-100" />
-                        <div className="flex-1" />
-                        <span className="h-9 w-[130px] animate-pulse rounded-xl bg-gray-100" />
-                    </div>
-                </div>
-            </div>
-        )}
+            (standing rule 6). See `PrescriptionPreviewModal`'s own header
+            for the skeleton-shell reasoning. */}
+        <PrescriptionPreviewModal
+            prescriptionId={viewingRxId}
+            hospital={hospital}
+            onClose={() => setViewingRxId(null)}
+        />
         </>
     );
 }
