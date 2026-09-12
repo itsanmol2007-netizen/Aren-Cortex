@@ -32,8 +32,9 @@ import {
 import { WorkspaceHeader } from "../../../components/WorkspaceHeader";
 import { BackButton } from "../../../components/BackButton";
 import { BlankHealthArt } from "../../consult/BlankArt";
+import { subscribeCatalogueSync } from "../../../lib/offline/catalogueSync";
 import {
-    cacheSnapshot, diagnosticsReport, isDegraded, probeHealth, readCachedSnapshot,
+    buildMedicineCatalogueService, cacheSnapshot, diagnosticsReport, isDegraded, probeHealth, readCachedSnapshot,
     type HealthService, type HealthSnapshot, type ServiceState,
 } from "./model";
 import { toast } from "sonner";
@@ -234,6 +235,27 @@ export function HealthPage({
             window.removeEventListener("offline", down);
         };
     }, [run]);
+
+    // The bug this closes: without it, the "Medicine catalogue" row was a
+    // one-shot snapshot taken whenever this page happened to mount — a
+    // doctor watching an actual multi-minute first download would see the
+    // SAME percentage forever unless they closed and reopened Settings,
+    // indistinguishable from it being genuinely stuck. Patches just this
+    // one row in place on every catalogue-sync event, rather than
+    // re-running the whole `probeHealth` (which would mean re-firing its
+    // three network probes on every progress tick).
+    useEffect(() => {
+        return subscribeCatalogueSync(() => {
+            setSnapshot((prev) => {
+                if (!prev) return prev;
+                const fresh = buildMedicineCatalogueService(online);
+                return {
+                    ...prev,
+                    services: prev.services.map((s) => (s.id === "medicineCatalogue" ? fresh : s)),
+                };
+            });
+        });
+    }, [online]);
 
     const problems = snapshot?.services.filter(isDegraded) ?? [];
     const healthy = snapshot?.services.filter((s) => !isDegraded(s)) ?? [];

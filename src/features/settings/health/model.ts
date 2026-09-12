@@ -106,6 +106,51 @@ async function timed<T>(
 }
 
 /**
+ * The "Medicine catalogue" row, on its own — separate from `probeHealth`
+ * so a live catalogue-sync event (see HealthPage.tsx's
+ * `subscribeCatalogueSync` listener) can refresh JUST this row instantly
+ * while a download is in progress, without re-running `probeHealth`'s own
+ * three network probes (records/synapse/attachments) on every progress
+ * tick. `getCatalogueSyncState()` is a synchronous, already-in-memory read
+ * (see catalogueSync.ts), so this itself never needs to be async.
+ */
+export function buildMedicineCatalogueService(online: boolean): HealthService {
+    const cat = getCatalogueSyncState();
+    const hasData = cat.localVersion > 0;
+    const state: ServiceState = hasData
+        ? "operational"
+        : online
+            ? "attention"
+            : "offline";
+    const metric = cat.phase === "downloading-snapshot"
+        ? `Downloading… ${Math.round(cat.progress * 100)}%`
+        : cat.phase === "delta"
+            ? "Checking for updates…"
+            : hasData
+                ? cat.lastSyncedAt
+                    ? `Up to date · synced ${new Date(cat.lastSyncedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
+                    : "Up to date"
+                : online
+                    ? "Downloading for the first time…"
+                    : "Not downloaded yet — offline";
+    return {
+        id: "medicineCatalogue",
+        icon: Pill,
+        name: "Medicine catalogue",
+        role: "The full medicine list Synapse needs to rank and search without internet.",
+        state,
+        metric,
+        impact: hasData
+            ? "None — a saved copy is already on this device."
+            : "Medicine search and Synapse suggestions need a live connection until the first download finishes.",
+        recovery: hasData
+            ? ["Nothing to do — this keeps itself current in the background."]
+            : ["Stay connected for a few minutes the first time you sign in on a new device — this downloads once, automatically."],
+        diagnostics: `catalogue.localVersion=${cat.localVersion} · phase=${cat.phase}${cat.error ? ` · error=${cat.error}` : ""}`,
+    };
+}
+
+/**
  * Runs every probe and builds the snapshot.
  *
  * `hospitalId`/`doctorId` scope the two probes that need them; both reads are
@@ -278,41 +323,7 @@ export async function probeHealth({
                         : ["Nothing to do — this is the resting state."],
             diagnostics: `offlineQueue.pending=${pendingWrites} · lock=${lockLevel} · offlineHours=${offlineHours}`,
         },
-        (() => {
-            const cat = getCatalogueSyncState();
-            const hasData = cat.localVersion > 0;
-            const state: ServiceState = hasData
-                ? "operational"
-                : online
-                    ? "attention"
-                    : "offline";
-            const metric = cat.phase === "downloading-snapshot"
-                ? `Downloading… ${Math.round(cat.progress * 100)}%`
-                : cat.phase === "delta"
-                    ? "Checking for updates…"
-                    : hasData
-                        ? cat.lastSyncedAt
-                            ? `Up to date · synced ${new Date(cat.lastSyncedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
-                            : "Up to date"
-                        : online
-                            ? "Downloading for the first time…"
-                            : "Not downloaded yet — offline";
-            return {
-                id: "medicineCatalogue",
-                icon: Pill,
-                name: "Medicine catalogue",
-                role: "The full medicine list Synapse needs to rank and search without internet.",
-                state,
-                metric,
-                impact: hasData
-                    ? "None — a saved copy is already on this device."
-                    : "Medicine search and Synapse suggestions need a live connection until the first download finishes.",
-                recovery: hasData
-                    ? ["Nothing to do — this keeps itself current in the background."]
-                    : ["Stay connected for a few minutes the first time you sign in on a new device — this downloads once, automatically."],
-                diagnostics: `catalogue.localVersion=${cat.localVersion} · phase=${cat.phase}${cat.error ? ` · error=${cat.error}` : ""}`,
-            } satisfies HealthService;
-        })(),
+        buildMedicineCatalogueService(online),
         {
             id: "whatsapp",
             icon: MessageCircle,
