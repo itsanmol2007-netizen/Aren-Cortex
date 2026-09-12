@@ -665,6 +665,54 @@ unchanged. Renamed in the database, which is the only place a plan name is
 allowed to live — nothing branches on `plans.name`, `plans.code` is the stable
 key (see `lib/db/subscriptions.ts`).
 
+### 2026-09-12 — Offline foundation (write-side only) + a per-doctor PIN lock.
+
+Two subsystems landed, both real, both wired in, both verified live — and
+one honest gap between them worth stating plainly here because it is easy
+to read the first as covering more than it does.
+
+**The write-side offline foundation** (`src/lib/offline/`): a Dexie
+(IndexedDB) database — a durable write queue generalizing the in-memory
+retry pattern `useVisitActions.ts`'s `createNewVisit` already had (so a
+patient registered offline now survives a reload, not just a live tab); a
+connectivity clock keyed to a REAL authenticated round trip, not
+`navigator.onLine`; and the 72-hour B2B licensing lock this clock drives,
+checked independently at three seams (new-patient creation, Synapse
+ranking, WhatsApp sends) rather than from one central switch. This is a
+DIFFERENT, newer system from §9's `referenceCache.ts`/`eventLog.ts` (Front
+Desk's own localStorage doctor/symptom cache) — the two don't share code
+and neither replaces the other.
+
+**What it does NOT yet do**: nothing reads from the local mirror.
+`patientsMirror`/`visitsMirror`/`prescriptionsMirror` exist as schema with
+zero readers or writers. Every screen in Cortex still hits Supabase
+directly with no offline fallback — Anmol, after this landed: *"this app
+is really not offline friendly."* Correct. Populating that read side is
+the clear next slice; see `docs/context/offline-security.md` and
+`docs/context/cortex-open-crosscutting.md` for the honest state.
+
+**The PIN lock** (`src/lib/security/`): per-doctor, not per-device — a
+shared machine must not mix two doctors' data. A Device Encryption Key
+(AES-256-GCM) wrapped locally under a 4-digit PIN (PBKDF2 + AES-KW) and,
+separately, escrowed server-side (a new `device_key_escrow` table + the
+`device-key-escrow` Edge Function, wrapping key derived via HKDF from
+`SUPABASE_SERVICE_ROLE_KEY` — no manually-configured secret) so a
+forgotten PIN recovers via a fresh password re-login and never wipes the
+local cache. 10-minute real-idle auto-lock; the app starts locked on
+every fresh login and every reload once a PIN is configured (a reload
+must never double as a physical-access bypass); WebAuthn (Face ID/Touch
+ID/Windows Hello, via the `largeBlob` extension) layered on top as a
+convenience, never a replacement. Verified end-to-end against the real
+deployed edge function, including the full Forgot-PIN recovery
+round-trip.
+
+**Deploy**: `wrangler.jsonc` (repo root) was also added this session — the
+project deploys to Cloudflare as a static-asset Worker
+(`assets.directory: "./dist"`), and its absence is what an earlier
+Cloudflare failure ("Missing entry-point to Worker script or to assets
+directory") turned out to be. Unrelated to the app code; noted here only
+so it isn't re-diagnosed as one.
+
 ## 10. Deeper charts
 
 - `aren-cortex-atlas.md` — ★ the Cortex-only companion to this document: consult lifecycle, the intelligence layer, the three styling vocabularies, overlay doctrine, the full defect ledger, and a "where do I change X?" table. Read it before any doctor-facing work.

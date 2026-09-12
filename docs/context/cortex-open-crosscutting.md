@@ -204,3 +204,21 @@ For physiotherapy-specific open items, see `cortex-open-physio.md`.
      itself is now a short index pointing here; `docs/context/README.md`'s
      routing table was updated to include these alongside the existing
      `engine.md`/`consult-ui.md`/`specialties.md` pockets.
+
+- **The offline foundation only covers writes, not reads yet — 2026-09-12.**
+  A durable write queue, a connectivity clock, the 72-hour B2B lock, and a
+  full per-doctor PIN lock all landed and are wired in for real (see
+  `context/offline-security.md`, the pocket this needs). But
+  `patientsMirror`/`visitsMirror`/`prescriptionsMirror`
+  (`lib/offline/db.ts`) are schema only — nothing writes a row into them
+  and nothing reads one back. Anmol's own complaint after this landed:
+  *"this app is really not offline friendly"* — correct, because every
+  screen (Overview, Patients, Consult, Communication) still does a raw
+  `supabase.from(...)` with no local fallback. Registering a new patient
+  offline now survives a reload; opening an existing patient, reading past
+  visits, or loading the Synapse ruleset offline still just fails exactly
+  as before. **The next slice**: make the mirror tables a real
+  read-through cache (network first, local fallback, refresh on
+  reconnect) for at least the signed-in doctor's own patients/visits —
+  that's what would make "offline-friendly" true of the actual consult
+  workflow instead of only new-patient intake and app security.

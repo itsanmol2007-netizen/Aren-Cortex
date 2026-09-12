@@ -24,6 +24,7 @@ that lives instead.
 | Open/unfinished physiotherapy work | `context/cortex-open-physio.md` |
 | Open/unfinished cross-cutting work (sidebar, WhatsApp, layout bugs, the running bug-fix log) | `context/cortex-open-crosscutting.md` |
 | A one-liner trap worth knowing before you hit it | `context/cortex-gotchas.md` |
+| Offline/PWA foundation (write queue, connectivity clock, 72h lock) or the per-doctor PIN lock — **and the honest gap: nothing reads from the local mirror yet** | `context/offline-security.md` |
 | Synapse internals — adding a signal/rule/guard, `IntentType`, the pipeline shape | `context/engine.md` |
 | Consult screen architecture — hooks, keyboard, layout doctrine | `context/consult-ui.md` |
 | A specialty profile — config, its own input screen, phases | `context/specialties.md` |
