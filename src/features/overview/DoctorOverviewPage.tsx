@@ -527,8 +527,13 @@ export function DoctorOverviewPage({
    edge, a 56px gutter on top of it left a band of dead white between
    the rail and the first card that was wider than most of the cards'
    own padding. Still a real gutter — the content does not touch either
-   boundary — just not a margin big enough to read as a mistake. */
-                className="flex w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[30px] pb-[44px] pt-[15px] max-[900px]:px-[12px]">
+   boundary — just not a margin big enough to read as a mistake.
+
+   `pt` 15px -> 32px, 2026-09-12 — the greeting sat almost flush against
+   the dark header's own drop-shadow, cramped rather than composed:
+   "directly falling under the shadow of that dark header, give it some
+   breathing room" (Anmol). */
+                className="flex w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[30px] pb-[44px] pt-[32px] max-[900px]:px-[12px]">
 
                 {/* ── Greeting + compact action ────────────────────────────
                     Replaces what used to be a full-width blue banner.
@@ -536,23 +541,28 @@ export function DoctorOverviewPage({
                     the door into the consult is still the first thing on the
                     page, just no longer the loudest. */}
                 <div className="flex flex-wrap items-center gap-[14px]">
-                    <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                        {/* Newsreader italic — already loaded for the login
-                            screen's own headline (`--lg-serif`), reused here
-                            rather than a third font: "cursive typography...
-                            generally cursive typography is used in
-                            medicine... matches the overall tone of the page"
-                            (Anmol, 2026-09-12). An editorial serif italic
-                            reads as a handwritten doctor's note without
-                            actually being illegible, which a true script
-                            face would be at this size. */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                        {/* Two lines, not one run-on phrase — "Good morning,"
+                            is a quiet caption; the NAME is the thing that
+                            should read big and distinct. Newsreader italic
+                            (already loaded for the login screen's own
+                            headline, `--lg-serif`) reused here rather than a
+                            third font: "cursive typography... generally
+                            cursive typography is used in medicine... matches
+                            the overall tone of the page" (Anmol, 2026-09-12).
+                            An editorial serif italic reads as a doctor's own
+                            handwriting without actually being illegible, the
+                            way a true script face would be at this size. */}
+                        <span className="text-[13px] font-medium text-[var(--cs-faint)]">
+                            {greetingFor(new Date().getHours())},
+                        </span>
                         <span
-                            className="truncate text-[30px] leading-[1.15] text-[var(--cs-ink)]"
+                            className="truncate text-[34px] leading-[1.15] text-[var(--cs-ink)]"
                             style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: "italic", fontWeight: 600, letterSpacing: "-0.01em" }}
                         >
-                            {greetingFor(new Date().getHours())}, {identity.doctorName}
+                            {identity.doctorName}
                         </span>
-                        <span className="text-[12px] text-[var(--cs-muted)]">
+                        <span className="mt-[2px] text-[12px] text-[var(--cs-muted)]">
                             Here's how your clinic is doing today.
                         </span>
                     </div>

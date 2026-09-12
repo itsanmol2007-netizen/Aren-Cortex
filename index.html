@@ -37,9 +37,13 @@
       rel="stylesheet"
     />
     <!-- Login screen families (landing-page identity): Geist + Geist Mono +
-         Newsreader. System fallbacks apply offline. -->
+         Newsreader. System fallbacks apply offline.
+         Newsreader italic 600 added 2026-09-12 for Overview's own greeting
+         (`DoctorOverviewPage.tsx`) — without it the browser would have faked
+         a bold weight on top of the only italic cut actually loaded (400),
+         which looks distorted on a serif face at that size. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,600&display=swap"
       rel="stylesheet"
     />
     <!-- Devanagari for Hindi prescriptions (PrescriptionDocument.tsx,
