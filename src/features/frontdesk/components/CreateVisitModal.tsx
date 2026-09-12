@@ -16,7 +16,7 @@ import { useGatewaySessions } from "./gateway/GatewaySessionsProvider";
 import { ageInYears, dobMattersFor, todayIso } from "@/lib/growth/age";
 import { useHospitalId } from "../hooks/useHospitalId";
 import {
-    computeFee, defaultVisitType, fetchFeeContext, resolveFee,
+    computeFee, defaultVisitType, fetchFeeContext, getCachedFeeContext, resolveFee,
     type FeeContext, type PaymentMethod, type VisitType,
 } from "@/lib/db/payments";
 
@@ -168,15 +168,25 @@ export function CreateVisitModal({ existingPatient, prefillName, doctors, defaul
     // handful of doctors and the desk may switch between them twice before
     // saving, which should not be two more round trips mid-form.
     const hospitalId = useHospitalId();
-    const [feeCtx, setFeeCtx] = useState<FeeContext | null>(null);
+    // Cache-first, same pattern PatientModal.tsx already uses for this exact
+    // read — without it, a fee-read failure (offline, most likely) left
+    // `feeCtx` at its bare `null` initial value forever, and the money
+    // section of THE ONE SCREEN THIS APP'S OFFLINE STORY IS BUILT AROUND
+    // (registering a patient at the front desk) simply never appeared. The
+    // live fetch below still runs every time and overwrites this the moment
+    // it succeeds — this only fills the gap while that hasn't happened yet.
+    const [feeCtx, setFeeCtx] = useState<FeeContext | null>(
+        () => (hospitalId ? getCachedFeeContext(hospitalId) : null)
+    );
     const [fee, setFee] = useState<FeeState>(INITIAL_FEE_STATE);
     useEffect(() => {
         if (!hospitalId) return;
         let alive = true;
         fetchFeeContext(hospitalId)
             .then((ctx) => { if (alive) setFeeCtx(ctx); })
-            // Non-fatal: a clinic must still be able to register a patient when
-            // the fee read fails. The rail simply shows no money controls.
+            // Non-fatal, and NOT a reason to blank out an already-cached fee:
+            // a clinic must still be able to register a patient when the fee
+            // read fails, with whatever fee was last known still showing.
             .catch((err) => console.warn("fetchFeeContext failed (non-fatal):", err));
         return () => { alive = false; };
     }, [hospitalId]);
