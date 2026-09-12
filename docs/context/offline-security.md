@@ -5,33 +5,52 @@ landed and what was verified, see `SESSION-HANDOFF.md` (until it's rewritten
 again) and `aren-technical-atlas.md` §9a's 2026-09-12 entries.
 
 **Read this before touching anything under `src/lib/offline/` or
-`src/lib/security/`, or before telling anyone "the app works offline" —
-it currently only half does, and the gap is below, not hidden.**
+`src/lib/security/`, or before telling anyone "the app works offline."**
+As of 2026-09-12 the write side, the read side, the Synapse ruleset cache,
+the medicine catalogue mirror, and PWA installability are ALL real and
+wired in. What's still genuinely missing is below, not hidden: offline
+consult can look up patients/visits/prescriptions and rank with the cached
+ruleset, but the medicine SEARCH RESULT a doctor actually prescribes still
+resolves through `composition_brands()`, a live Postgres RPC with no
+offline equivalent yet (see "Still open" below) — the catalogue mirror this
+session built exists to feed that replacement, once it's built.
 
 ---
 
 ## The honest state, first
 
-Two real things exist and are wired in for real:
+Real and wired in for real:
 
 1. **A durable write queue** — a doctor's own offline writes survive a
    reload. Wired to exactly ONE flow today: Front Desk's `createNewVisit`
    (new patient + visit registration).
 2. **The PIN lock + 72-hour B2B lock** — both fully wired, both verified
-   live, both independent of the point below.
+   live, both independent of everything else on this page.
+3. **The read-through cache** (`lib/offline/localMirror.ts`) — patients,
+   visit history, a specific visit's detail, and prescription render data
+   all go network-first/local-fallback now, for both the doctor (Cortex)
+   and front desk's own hospital-scoped reads. See "The read side" below.
+4. **The Synapse ruleset cache** (`useSynapse.ts`) — a doctor's ~4,000-row
+   ruleset + personalisation survives a dropped connection instead of
+   hard-failing the whole consult.
+5. **The medicine catalogue mirror + sync** (`lib/offline/catalogueSync.ts`)
+   — a real Dexie mirror of `medicines`/`compositions`/
+   `medicine_composition_map`, kept current via a version-tracked snapshot
+   + delta pipeline. See "The medicine catalogue" below.
+6. **PWA installability** — `beforeinstallprompt` captured, an "Install
+   App" card in Settings beside App Lock, iOS Safari's manual "Add to Home
+   Screen" instructions where no programmatic prompt exists.
 
-What does **NOT** exist yet, and is why the app still feels broken offline
-for anything beyond registering a patient:
+What does **NOT** exist yet:
 
-- **Nothing reads from the local mirror.** `patientsMirror` /
-  `visitsMirror` / `prescriptionsMirror` (`lib/offline/db.ts`) are real
-  Dexie tables with a real schema, and nothing — not Overview, not
-  Patients, not Consult, not Communication — ever writes a row into them
-  or reads one back. Every screen in Cortex still does a raw
-  `supabase.from(...)` call with no local fallback. Go offline mid-consult
-  today and the ruleset (`useSynapse.ts`), the patient list, the visit
-  history — all of it — still just fails, exactly as before this work
-  started.
+- **The catalogue mirror has data but nothing ranks with it yet.**
+  `composition_brands()` (single-molecule filter, doctor-preference
+  reorder, clinic default tagging, pediatric forms) is still a live-only
+  Postgres RPC. Offline, a doctor can chart a whole consult against the
+  cached ruleset, but the medicine search/pick step still needs a live
+  connection to actually resolve a prescribable brand. Explicitly deferred
+  — real, delicate work, tracked separately rather than rushed alongside
+  the mirror itself.
 - **Front Desk's own, OLDER, separate offline mechanism is untouched by
   any of this.** `features/frontdesk/operational/referenceCache.ts` +
   `eventLog.ts` (see atlas §9) already cache doctors/symptoms in
@@ -39,13 +58,14 @@ for anything beyond registering a patient:
   system for a narrower job (keep two dropdowns populated), not a
   precursor to the Dexie mirror — the two do not share code and were not
   designed as one system. Don't assume touching one affects the other.
-
-**The next real slice of this work is populating the read side** — turning
-`patientsMirror`/`visitsMirror`/`prescriptionsMirror` into an actual
-read-through cache (network first, local fallback, refresh on reconnect)
-for at least the patient/visit data a doctor needs mid-consult. Until that
-lands, "offline-friendly" only covers new-patient registration and app
-security (PIN lock), not the doctor's actual clinical workflow.
+- **No eviction on logout.** A shared machine that signs one doctor out and
+  another in reads only the correct doctor's rows (every cache key embeds
+  the id that scopes it), but a previous doctor's cached rows are not
+  actively wiped — they just sit there until something clears them.
+- **Local data at rest**: only the write queue's payloads are encrypted.
+  The read-through mirror and the catalogue are not — the DEK/AES-GCM
+  helpers (`lib/security/crypto.ts`) exist for this, it's wiring, not new
+  crypto, same standing note as last session.
 
 ---
 
@@ -82,6 +102,113 @@ security (PIN lock), not the doctor's actual clinical workflow.
 
 Registered handlers today: `"frontdesk.createVisit"` only, in
 `features/frontdesk/hooks/useVisitActions.ts`.
+
+## The read side — `localMirror.ts` + the Synapse ruleset cache
+
+- **`lib/offline/localMirror.ts`** — the generic read-through primitive:
+  network first, write the result into the mirror, return it; on failure,
+  fall back to whatever's cached under that exact key; nothing cached means
+  the original error still surfaces. Wraps `lib/db/patients.ts`'s
+  `fetchPatientById`/`fetchTodayPatients`/`fetchRecentPatients`/
+  `fetchPatientVisits`/`fetchVisitWithDetails`/`fetchPatientDirectory`/
+  `fetchPatientHistory` and `lib/db/prescriptions.ts`'s
+  `fetchPrescriptionRenderData` — every call site is unchanged, so every
+  existing caller benefits with no component changes. `fetchTodayVisits`
+  (front desk's live queue) is deliberately untouched — already covered by
+  its own older localStorage cache-first mechanism (`useQueue`,
+  `referenceCache.ts`), a different system for a different job.
+  Cache keys always embed the id that actually scopes them (a patient/
+  visit/prescription id, or a doctor/hospital id for a list read with no
+  id of its own) — that's what prevents one account's data surfacing under
+  another's read on a shared device, not the `doctorId`/`hospitalId`
+  metadata columns on `MirrorRow`, which are best-effort bookkeeping for
+  the not-yet-built "clear this doctor's cache on logout."
+- **`useSynapse.ts`** — on a successful ruleset load, the whole
+  `SynapseData` result (Maps/Sets/Date included — IndexedDB's structured
+  clone stores them natively, no serialisation layer needed) is stashed in
+  `lib/offline/db.ts`'s `meta` table, keyed per doctor
+  (`synapseCacheKey`). On a failed load it's read back and served instead
+  of erroring, with a `fromCache` flag on `SynapseData` for a future UI
+  surface to show staleness if it wants to. Cortex-only (single call site,
+  `App.tsx`) — front desk never reaches this hook.
+
+## The medicine catalogue — version tracking, snapshot, sync
+
+The 213k+ medicine catalogue is a different problem from the read-through
+cache above: too big to just cache opportunistically, doctor-only (front
+desk never downloads it — see the role-scoping rule this whole design was
+built around), and needs to stay current without re-downloading everything
+every time a handful of medicines change.
+
+- **Server-side (migration `20260912_catalogue_version_tracking.sql`)** —
+  a shared `catalogue_version_seq` and a `version bigint` column + trigger
+  on `medicines`/`compositions`/`medicine_composition_map`, stamped on every
+  insert/update. `catalogue_meta` is a singleton row holding
+  `current_version` (kept live by the same triggers) and, once a snapshot
+  exists, `snapshot_version` + the three `snapshot_*_url` columns. No
+  soft-delete column — nothing in this codebase hard-deletes a catalogue
+  row today (`addMedicine` only ever adds); if that ever changes, deletion
+  must become an UPDATE (a status flag), the same discipline
+  `patient_conditions` already uses, or a delta sync would never learn a
+  row is gone.
+- **`supabase/functions/catalogue-snapshot-build/`** — builds one
+  gzip-compressed, row-array JSON file per table (not row-object — 213k+
+  repetitions of the same key names is wasted bytes and wasted decode CPU)
+  and uploads it to the `arenode-catalogue-cdn` S3 bucket (region
+  `ap-south-1`, region and AWS credentials reused from the existing
+  attachments pipeline's Supabase secrets — a NEW, separate bucket from
+  `AWS_BUCKET_NAME`/`arenode-patient-orbit-uploads`, deliberately: patient
+  attachments are private, the catalogue is public/CDN-served, and mixing
+  them under one bucket makes that separation harder to get right, not
+  easier). `medicines` is filtered to `hospital_id IS NULL` — a hospital's
+  own pending doctor-added medicines are NOT part of the shared snapshot;
+  the client fetches those separately, live, every sync (small, cheap).
+  Processes one table per invocation to bound memory/time to that table's
+  own size. **Live-verified**: compositions (284 rows, 2.8KB gzipped),
+  medicines (213,146 rows, 3.1MB gzipped), medicine_composition_map
+  (311,562 rows, 1.16MB gzipped) — total first-time download ≈4.3MB.
+  Caught and fixed a real bug in that same pass: PostgREST silently caps
+  any `.range()` request at 1000 rows regardless of what's asked for (the
+  same ceiling `fetchObservables` in `lib/db/synapse.ts` already documents
+  hitting) — a page-size mismatch here reads a truncated first page as
+  "that's everything" and silently produces a near-empty snapshot.
+- **`supabase/functions/catalogue-cdn-healthcheck/`** — one-time (or
+  re-run-if-needed) diagnostic, round-trips a small test object against
+  the bucket to confirm it exists and the AWS credentials can actually
+  read/write/delete on it, without needing to hand the credentials to
+  whoever's checking. Caught a real gap live: the existing
+  `arenode-storage-service` IAM user had no policy granting it access to
+  the NEW bucket (only the old attachments one) until one was added.
+- **The bucket is intentionally private** (block public access on).
+  CloudFront with Origin Access Control in front of it is the piece that
+  makes the snapshot files actually fetchable by a browser — as of
+  2026-09-12 that's the one step still pending; a direct S3 fetch of a
+  snapshot file is a 403 today. Once it exists, `catalogue_meta`'s
+  `snapshot_*_url` columns get repointed at the CloudFront domain — the
+  client reads whatever URL is there, so that swap needs no client-side
+  change.
+- **`lib/offline/db.ts` (schema v2)** — `medicinesCatalogue`/
+  `compositionsCatalogue`/`medicineCompositionMap`. NOT per-doctor like the
+  other mirror tables — the global catalogue is the same rows for every
+  doctor on a device, so there's exactly one copy, not one per signed-in
+  doctor. `medicinesCatalogue.hospitalId` is null for a global row, set for
+  a hospital's own pending addition.
+- **`lib/offline/catalogueSync.ts`** — the sync engine. Cold start
+  downloads the 3 snapshot files and bulk-inserts, then a small delta
+  closes the gap since the snapshot was baked; a warm sync is a direct
+  delta query (`version > local`) paginated at PostgREST's real 1000-row
+  cap, falling back to redownloading the whole snapshot only when the
+  device is so far behind the delta itself would be huge
+  (`FALLBACK_TO_SNAPSHOT_ROWS`). Triggered from `useSynapse.ts` on every
+  real-doctor load, fire-and-forget — never blocks or gates the ruleset,
+  so a doctor can rank and prescribe before the first sync finishes,
+  exactly as before this existed. `getCatalogueSyncState`/
+  `subscribeCatalogueSync` back a new "Medicine catalogue" row in
+  Settings' System Health (`features/settings/health/model.ts`), same
+  service-registry pattern as the existing "Offline queue" row.
+- **What this does NOT do yet**: nothing RANKS with this mirror. See "The
+  honest state" above — `composition_brands()`'s replacement is separate,
+  deferred, tracked work.
 
 ## `src/lib/security/` — the PIN lock
 

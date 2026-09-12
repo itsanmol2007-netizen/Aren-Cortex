@@ -1,186 +1,147 @@
-# Session handoff — 2026-09-12, offline foundation + PIN lock + a Cloudflare fix
+# Session handoff — 2026-09-12, the offline read side + medicine catalogue pipeline
 
 **Temporary, self-replacing. REWRITE THE WHOLE FILE next session.**
 
-Everything below landed on `claude/latest-commit-details-vwb2bj`, five
-commits: a payment-rail keyboard bug, the PWA/offline write-side
-foundation, a per-doctor PIN lock, and a Cloudflare deploy fix that turned
-out to be unrelated to the app code entirely.
+This picks up from the SAME DAY's earlier handoff (the write-side
+foundation + PIN lock), on the same branch (`claude/busy-fermat-sez99f`,
+mirrored to `claude/latest-commit-details-vwb2bj`/`master`). That earlier
+work is untouched and still accurate as written; everything below is new
+on top of it.
 
 **Read `docs/context/offline-security.md` before touching anything under
-`src/lib/offline/` or `src/lib/security/` — it states the one thing most
-worth knowing up front: the offline work below covers WRITES, not reads.**
+`src/lib/offline/` or `src/lib/security/` — it now covers the read side and
+the catalogue pipeline too, not just the write side.**
 
 ---
 
-## 1. Payment rail: dead arrow keys + an invisible focus ring
+## What landed, in order
 
-Anmol, reviewing the previous session's keyboard-nav work: *"you click
-enter [on Collect ₹total] and then this thing just disappeared, now the
-whole arrow movement [stopped working]"* — plus the focus ring being too
-subtle to see against the gradient buttons.
+Anmol's brief: (1) the offline READ layer (patients/visits/prescriptions +
+Synapse ruleset), (2) finish PWA installability, (3) design and build how
+the medicine catalogue gets scoped by role and synced efficiently — with
+(3) discussed and decided BEFORE building, since it changes (1)'s shape.
+Built in that discussed order:
 
-Two real, separate bugs in `components/PatientPaymentRail.tsx`:
+### 1. Catalogue version tracking (migration, live on production)
 
-- **Dead arrows**: pressing Enter on "Collect ₹total" swaps it for the
-  payment-method grid — the focused button is removed from the DOM, and
-  the BROWSER (not React) resets focus to `<body>` the instant that
-  happens. A keydown fired while `<body>` is focused never reaches the
-  rail's `onKeyDown` listener at all — it doesn't bubble down to a div
-  that isn't an ancestor. Fixed with a `useEffect` that refocuses the
-  first control in whichever decision area just appeared, whenever
-  `collecting`/`splitting`/`decided` changes and focus was lost — never on
-  first mount (`PatientModal` owns that moment), never fighting the split
-  amount input's own `autoFocus`.
-- **Invisible ring**: Tailwind's `focus:outline-none` (needed to suppress
-  the ring on a plain mouse click) and `focus-visible:outline` both
-  resolve through the SAME shared `--tw-outline-style` custom property.
-  `:focus-visible` is always also `:focus`, so `outline-none`'s value won
-  regardless of the `focus-visible:` rule trying to override it — confirm
-  this against the BUILT CSS if it recurs elsewhere, not by reading the
-  class list, that's how it was actually found. Fixed with an explicit
-  `focus-visible:[outline:2.5px_solid_#a855f7]` (the arbitrary-property
-  form), which sets the literal shorthand and bypasses the shared
-  variable — applied to all fourteen buttons in the rail.
+`20260912_catalogue_version_tracking.sql` — a shared monotonic version
+column + trigger on `medicines`/`compositions`/`medicine_composition_map`,
+plus a `catalogue_meta` singleton row. Checked the live schema first (no
+`updated_at`/soft-delete existed on any of the three tables), applied in
+nine smaller stages after the full script timed out the migration tool at
+60s, verified with a live no-op update that both the row's version and
+`catalogue_meta.current_version` move together.
 
-Verified live with Playwright: arrow into "Collect ₹500" (ring visibly
-violet), Enter, focus lands on "Cash" (not `<body>`), a further
-`ArrowRight` still moves it.
+### 2. The offline read layer
 
-## 2. The offline foundation — write side only, and that matters
+`lib/offline/localMirror.ts` — a generic network-first/local-fallback
+read-through cache backed by the Dexie mirror tables that had been empty
+schema until now. Wraps the fetch functions doctors and front desk
+actually hit: `fetchPatientById`, `fetchTodayPatients`,
+`fetchRecentPatients`, `fetchPatientVisits` (the one behind the consult
+topbar's "past visits" strip — the read the earlier handoff specifically
+named as the gap), `fetchVisitWithDetails`, `fetchPatientDirectory`,
+`fetchPatientHistory`, `fetchPrescriptionRenderData`. No call site
+changed — every existing caller just started working offline.
 
-Full architecture in `docs/context/offline-security.md`; the one line
-that matters most if you read nothing else: **nothing reads from the
-local mirror yet.** `patientsMirror`/`visitsMirror`/`prescriptionsMirror`
-(`lib/offline/db.ts`) are real Dexie tables with zero readers or writers.
-Every screen in Cortex still does a raw `supabase.from(...)` with no
-offline fallback. Anmol's own reaction after this landed: *"this app is
-really not offline friendly"* — correct, and expected at this point in
-the work, not a regression. **The next slice is populating that read
-side** — a real read-through cache (network first, local fallback,
-refresh on reconnect) for the signed-in doctor's own patients/visits, at
-minimum.
+`useSynapse.ts` — the ~4,000-row ruleset + personalisation now survives a
+dropped connection: on success it's cached whole (Dexie stores Maps/Sets/
+Date natively) keyed per doctor; on failure the cached copy is served
+instead of hard-failing the consult, with a new `fromCache` flag.
 
-What DOES work, wired in for real:
+### 3. PWA install prompt
 
-- **A durable write queue** (`lib/offline/writeQueue.ts`) — generalizes
-  the in-memory retry `useVisitActions.ts`'s `createNewVisit` already had
-  into something that survives a reload. One registered handler today:
-  `"frontdesk.createVisit"`. A queued row's payload is encrypted under the
-  signed-in doctor's DEK (see §3) whenever one is available — real PII
-  sitting in IndexedDB overnight is exactly the scenario the PIN lock
-  exists for.
-- **A connectivity clock** (`lib/offline/connectivityClock.ts`) — "when
-  did this device last actually hear from the server," advanced only on a
-  real authenticated round trip, never on bare `navigator.onLine`.
-- **The 72-hour B2B lock** (`lib/offline/lockGate.ts`) — a licensing
-  friction, not a security boundary (says so in its own comments), checked
-  independently at three seams: new-patient creation, Synapse ranking
-  (`useConsultIntelligence.ts`'s `synapseLocked`), WhatsApp sends
-  (`messaging.ts`'s `invokeSend`).
-- **Settings → System Health** gained an "Offline queue" row, following
-  that panel's existing service-registry pattern rather than a new widget.
+`lib/pwa/installPrompt.ts` captures `beforeinstallprompt` at app boot
+(module-level, imported from `main.tsx`'s `initInstallPrompt` — Chrome
+fires this once, early, so it must never depend on Settings having been
+opened). New Settings card (`InstallAppCard.tsx`) right beside
+`AppLockCard`, same treatment: a real "Install app" button where the
+browser supports it, honest "not offered yet" otherwise, and manual
+"Add to Home Screen" instructions specifically for iOS/iPadOS Safari
+(never Chrome/Firefox-on-iOS, which share its engine but can't add to
+home screen at all) — Apple has no programmatic prompt to capture.
 
-## 3. A per-doctor PIN lock, with real server-side recovery
+### 4. The medicine catalogue — designed together, then built
 
-Design reviewed and approved separately before building (4-digit PIN,
-rest of the technical decisions left open). Locks the whole app after 10
-minutes of real idle time; shows only the doctor's name and clinic until
-the right PIN (or a registered platform authenticator) comes back.
-Full detail in `docs/context/offline-security.md`; the shape:
+Anmol's call, after discussion: **S3 + CloudFront for the bulk snapshot**,
+not a live paginated Supabase pull — his own reasoning (Supabase egress
+cost at scale) was sound and matched the fallback design already on the
+table. He created a new bucket (`arenode-catalogue-cdn`, kept separate
+from the private patient-attachments bucket on purpose) and, after one
+IAM permission gap was found and fixed, everything below is live:
 
-- **`src/lib/security/`** — `crypto.ts` (Web Crypto: AES-256-GCM DEK,
-  PBKDF2+AES-KW PIN-wrap), `deviceKey.ts` (the DEK's in-memory-only
-  lifecycle, per-DOCTOR not per-device), `idleTimer.ts` (10-min real
-  activity), `webauthn.ts` (Face ID/Touch ID/Windows Hello via the
-  `largeBlob` extension — a convenience layered on the PIN, never a
-  replacement), `escrow.ts` (client for the server-side recovery below).
-- **Server-side**: new table `device_key_escrow` (no RLS policy for
-  anybody — the edge function is the only reader/writer) + the
-  `device-key-escrow` Edge Function, deployed. No manually-configured
-  secret — its wrapping key derives via HKDF from
-  `SUPABASE_SERVICE_ROLE_KEY`, which every Edge Function already gets.
-- **UI**: `components/LockScreen.tsx` + `components/AppLockGate.tsx`
-  (mounted once in `main.tsx`, inside `AuthProvider` — resting state is
-  LOCKED whenever a PIN is configured and no DEK is in memory, which is
-  every fresh login AND every reload, deliberately: a reload must never
-  double as a bypass for physical access) + a new Settings **App Lock**
-  card (`features/settings/AppLockCard.tsx` — `SettingsCard` is now
-  exported from `SettingsPage.tsx` for this).
+- `supabase/functions/catalogue-snapshot-build/` — builds one gzip-
+  compressed, row-array JSON file per table, uploaded to S3, updating
+  `catalogue_meta`. Actually run against the real catalogue: 213,146
+  medicines (3.1MB gzipped), 311,562 map rows (1.16MB), 284 compositions
+  (2.8KB) — **~4.3MB total**, well under the earlier estimate. Caught a
+  real bug live: PostgREST caps `.range()` at 1000 rows regardless of what
+  you ask for — a 5000-row page size silently read the truncated first
+  page as "done" and produced a 1000-row snapshot. Fixed, verified with
+  the real row counts.
+- `supabase/functions/catalogue-cdn-healthcheck/` — the diagnostic that
+  found the IAM gap (bucket existed, `arenode-storage-service` had no
+  policy granting it access yet) and confirmed the fix.
+- `lib/offline/db.ts` (schema v2) + `lib/offline/catalogueSync.ts` — the
+  client-side mirror (`medicinesCatalogue`/`compositionsCatalogue`/
+  `medicineCompositionMap`, NOT per-doctor — one shared copy) and the sync
+  engine: cold start downloads the snapshot, warm syncs delta
+  (`version > local`), falls back to a fresh snapshot only if the device
+  is far enough behind that the delta would be huge. Triggered from
+  `useSynapse.ts`, fire-and-forget, doctor-only.
+- Download UX, decided with Anmol before building: **automatic, background,
+  invisible** — no permission prompt, a one-time visible indicator only on
+  a device's actual first sync. New "Medicine catalogue" row in Settings'
+  System Health shows progress/last-synced, same pattern as the existing
+  "Offline queue" row.
 
-**Verified live, end to end, against the real deployed edge function**:
-set a PIN (escrow store round-trip succeeds for real) → lock → wrong PIN
-rejected with a visible error → correct PIN unlocks → lock again → full
-Forgot-PIN recovery (password re-verify → real escrow retrieve
-round-trip → new PIN) → unlocks. Two real bugs were caught and fixed
-during that pass — both are the kind that cost a while to find if you
-don't already know to look:
-
-- `AppLockGate` checked "is a PIN configured" once, at mount, and never
-  again — setting one up mid-session (Settings) changed nothing until a
-  reload. Fixed: re-check on every lock-state transition, not just when
-  `userId` changes.
-- The PIN input's refocus-after-a-wrong-attempt called `.focus()` on a
-  still-`disabled` element (`checking` hadn't committed to the DOM yet at
-  that point in the promise chain) — silently ate every keystroke typed
-  right after a mistake. Fixed by moving the refocus into a `useEffect`
-  keyed on `checking`, so it only fires against a render where the input
-  is actually enabled again.
-
-## 4. Cloudflare deploy was failing — not the app's fault
-
-Anmol's Cloudflare build log showed the actual build succeeding
-completely (`tsc -b`, `vite build`, PWA precache all green), then the
-DEPLOY step — `npx wrangler versions upload` — failing immediately:
-`Missing entry-point to Worker script or to assets directory`. This
-project deploys as a Cloudflare **Worker** (not classic Pages), and there
-was no `wrangler.jsonc` telling Wrangler the build output lives in
-`dist/`. Added one at repo root: `assets.directory: "./dist"` +
-`not_found_handling: "single-page-application"` (client routes like
-`/app/cortex` are handled entirely by react-router in the browser — without
-this a hard reload on a deep route 404s at the edge instead of getting
-`index.html` back). Verified locally with `npx wrangler versions upload
---dry-run` — reports a real asset upload instead of failing before it
-gets that far.
-
-The local `dexie` import error Anmol also hit that session was separate
-and unrelated: a stale local checkout that predated `npm install` picking
-up the new dependency. Not a code bug either.
+**Still pending, not done**: CloudFront in front of the bucket (the bucket
+is intentionally private — a direct S3 fetch of a snapshot file is a 403
+today; Anmol is setting this up, last update was "in progress"). Once its
+domain exists, `catalogue_meta`'s `snapshot_*_url` columns get repointed
+at it — no client code change needed, it just reads whatever URL is there.
 
 ---
 
 ## Status
 
-- `npx tsc -p tsconfig.app.json --noEmit` and `npm run build` — clean.
-  (Same standing note as last time: plain `tsc --noEmit` at the repo root
-  is vacuous here — the root `tsconfig.json` is a solution file with only
-  `references`. Use `tsc -b`, or `-p tsconfig.app.json`.)
-- Fresh clone + `npm ci` + `npm run build` verified clean in an isolated
-  directory (not just the working tree) before every push.
-- Walked live in a real browser signed in as the test doctor for both the
-  payment-rail fix and the full PIN-lock flow (setup, lock, wrong PIN,
-  correct PIN, forgot-PIN recovery) — screenshots taken at each step, zero
-  console errors throughout.
-- The `device-key-escrow` Edge Function is deployed and live (version 1).
-  The `device_key_escrow` migration is applied.
+- `npx tsc -p tsconfig.app.json --noEmit` and `npm run build` — clean,
+  checked after every piece above landed, not just once at the end.
+- The medicine-catalogue mirror has NOT been exercised end-to-end in a
+  real browser yet — that needs CloudFront to exist first (the snapshot
+  files are unreachable until then). The snapshot files themselves ARE
+  confirmed correct server-side (verified row counts, verified gzip sizes,
+  verified `catalogue_meta` populated correctly).
+- Every edge function deployed this session
+  (`catalogue-cdn-healthcheck`, `catalogue-snapshot-build`) is committed
+  to `supabase/functions/` — source of truth in git, per this repo's own
+  existing discipline for edge functions.
 
 ## Still open
 
-- **The offline read side — see §2.** This is the one that actually makes
-  "offline-friendly" true of the doctor's real workflow, not just
-  new-patient intake. Nothing else in this list matters as much.
-- **PIN-lock follow-ups, roughly in order of what a doctor would notice
-  first**: no UI yet to turn OFF a registered WebAuthn credential (only to
-  turn it on); no UI to see/revoke escrow backups per device from
-  Settings; the 10-minute idle timeout is not configurable (deliberately,
-  for now — see the design note in `offline-security.md`'s history if it
-  comes up again).
-- **Local data at rest**: only the write queue's payloads are encrypted
-  today. The mirror tables would need the same treatment once they have
-  real readers/writers (§2) — the DEK and the AES-GCM helpers
-  (`lib/security/crypto.ts`) already exist for this, it's wiring, not new
-  crypto.
-- Everything listed as still-open in the 2026-09-11 handoff before this
-  one (now folded into `aren-technical-atlas.md` §9a and the relevant
-  context pockets rather than repeated here) — nothing in this session
-  touched sidebar/branding/Help&Support, so check there if picking that up.
+- **CloudFront setup** — the one remaining infra step; see above. Once
+  Anmol has the domain, update `catalogue_meta`'s three `snapshot_*_url`
+  columns (a plain UPDATE, or just re-run `catalogue-snapshot-build` once
+  more) and do a real live-browser first-sync test.
+- **The offline medicine ranking replica — the biggest remaining piece.**
+  The catalogue mirror has the DATA now, but `composition_brands()`
+  (single-molecule filter, doctor-preference reorder via `resolveBrands`/
+  `groupBrandFamilies`, clinic default tagging, pediatric forms) is still
+  a live-only Postgres RPC. Offline, a doctor can chart an entire consult
+  against the cached ruleset, but the medicine search/pick step still
+  needs a live connection to resolve an actual prescribable brand.
+  Deliberately NOT attempted this session — flagged as its own real,
+  delicate piece of work rather than rushed in at the end of an already
+  large one. This is the next thing to pick up.
+- **No eviction on logout.** A shared device signing out one doctor and in
+  as another reads only the right doctor's cached rows (every key embeds
+  the scoping id), but old rows aren't actively wiped — they just sit
+  there. Same class of gap as the PIN lock's own still-open list.
+- **Local data at rest**: only the write queue's payloads are encrypted.
+  The read-through mirror and the catalogue mirror are not — same standing
+  note as the previous handoff, the DEK/crypto helpers already exist for
+  this, it's wiring.
+- Everything listed as still-open in the previous 2026-09-12 handoff
+  before this one (PIN-lock follow-ups — no UI to turn off WebAuthn, no
+  escrow-backup management UI, idle timeout not configurable) — untouched
+  this session, still open.

@@ -38,13 +38,17 @@ catalogue. It sits alongside a front-desk queue app and shares the same
 Supabase backend and design language.
 
 **Also becoming offline-first, in progress.** A durable write queue, a
-per-doctor PIN lock (with real server-side recovery), and a 72-hour B2B
-licensing lock all exist and are wired in for real — but as of
-2026-09-12, nothing yet READS from the local cache, so the app is not
-actually offline-friendly for the doctor's own workflow yet. If your task
-touches anything under `src/lib/offline/` or `src/lib/security/`, or
-anything PWA/installability-related, read `context/offline-security.md`
-first — it says exactly what's real and what's still missing.
+per-doctor PIN lock (with real server-side recovery), a 72-hour B2B
+licensing lock, a read-through cache for patients/visits/prescriptions and
+the Synapse ruleset, PWA installability, and a version-synced medicine
+catalogue mirror all exist and are wired in for real as of 2026-09-12. The
+one piece still missing: offline medicine search/prescribing still needs a
+live connection (`composition_brands()`'s ranking has no offline
+equivalent yet — the catalogue mirror exists to feed that, once it's
+built). If your task touches anything under `src/lib/offline/` or
+`src/lib/security/`, or anything PWA/installability-related, read
+`context/offline-security.md` first — it says exactly what's real and
+what's still missing.
 
 ## Why this file exists
 
