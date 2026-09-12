@@ -42,6 +42,14 @@ import {
 } from "../lib/db/synapse";
 import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
+import { localDB } from "../lib/offline/db";
+
+/** One doctor's whole ruleset snapshot, per the same "shared machine, per-
+ *  doctor isolation" discipline `lib/offline/db.ts` documents for the other
+ *  mirror tables. `"shared"` covers a signed-in account with no `doctors`
+ *  row — the same non-personalized ranking every doctor gets on day one,
+ *  nobody's private data. */
+const synapseCacheKey = (doctorId: string | null) => `synapse:${doctorId ?? "shared"}`;
 
 export interface SynapseData {
     ruleset: Ruleset;
@@ -83,6 +91,9 @@ export interface SynapseData {
     loadedAt: Date;
     /** true when personalisation could not be loaded but ranking still works */
     degraded: boolean;
+    /** true when this is the last-known-good ruleset, served because the
+     *  live load failed (offline, most likely) — see `synapseCacheKey`. */
+    fromCache: boolean;
 }
 
 type Status = "idle" | "loading" | "ready" | "error";
@@ -185,7 +196,7 @@ export function useSynapse(): UseSynapse {
 
                 if (!mounted.current) return;
 
-                setData({
+                const result: SynapseData = {
                     ruleset,
                     signalLabels,
                     observables,
@@ -212,9 +223,37 @@ export function useSynapse(): UseSynapse {
                     signalsWithRules: new Set(ruleset.signalIntentRules.map((r) => r.signalId)),
                     loadedAt: new Date(),
                     degraded: f1 || f2 || f3 || f4 || f5 || f6 || f7 || f8,
-                });
+                    fromCache: false,
+                };
+                setData(result);
                 setStatus("ready");
+
+                // Best-effort — IndexedDB being unavailable or full must never
+                // fail an otherwise-successful, already-shown load. Dexie
+                // stores the Maps/Sets/Date inside `result` natively (IndexedDB's
+                // structured clone supports them), so this is a straight put,
+                // no serialisation step to keep in sync with SynapseData's shape.
+                localDB.meta.put({ key: synapseCacheKey(doctorId), value: result }).catch((e) => {
+                    console.warn("Synapse ruleset cache write (non-fatal):", e);
+                });
             } catch (e) {
+                // The live load failed — most likely offline. Falling back to
+                // the last ruleset that DID load beats the hard failure this
+                // hook used to be: `docs/context/offline-security.md` names
+                // exactly this ("useConsultIntelligence.ts... still just
+                // fails") as the gap this closes. A doctor who has never
+                // loaded Synapse on this device at all still gets the real
+                // error — there is nothing to fall back to.
+                try {
+                    const cached = await localDB.meta.get(synapseCacheKey(doctorId));
+                    if (cached && mounted.current) {
+                        setData({ ...(cached.value as SynapseData), fromCache: true });
+                        setStatus("ready");
+                        return;
+                    }
+                } catch (cacheErr) {
+                    console.warn("Synapse ruleset cache read (non-fatal):", cacheErr);
+                }
                 if (!mounted.current) return;
                 setError(e instanceof Error ? e.message : String(e));
                 setStatus("error");
