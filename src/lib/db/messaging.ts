@@ -30,6 +30,7 @@
 import { supabase } from "../supabase";
 import type { RxLanguage } from "../i18n/prescriptionLabels";
 import { guardWhatsAppSend } from "../offline/lockGate";
+import { getDurableCache, setDurableCache } from "../offline/durableCache";
 
 /**
  * Below this, the doctor is warned and AREN is alerted. Mirrors the same
@@ -127,26 +128,49 @@ const ZERO_BALANCE = (doctorId: string): CreditBalance => ({
  * fallback in `useClinicalIdentity`), and a Communication page that throws
  * for them would be worse than one that honestly shows nothing to spend.
  */
+const creditBalanceCacheKey = (doctorId: string) => `credit_balance.${doctorId}`;
+
+/** When the credit balance shown was last actually confirmed against the
+ *  server — null if it's a live read (it IS the confirmation) or nothing
+ *  has ever been cached. A UI showing a cached balance should say "as of
+ *  <this time>" rather than presenting a possibly-hours-old number as live —
+ *  a doctor deciding whether to send one more WhatsApp message needs to
+ *  know which kind of answer they're looking at. */
+export function getCachedCreditBalanceAt(doctorId: string): string | null {
+    return getDurableCache<CreditBalance>(creditBalanceCacheKey(doctorId))?.at ?? null;
+}
+
 export async function fetchCreditBalance(doctorId: string): Promise<CreditBalance> {
-    const { data, error } = await supabase
-        .from("messaging_credit_balances")
-        .select("doctor_id, doctor_name, balance, granted, spent, refunded, last_movement_at, status")
-        .eq("doctor_id", doctorId)
-        .maybeSingle();
+    try {
+        const { data, error } = await supabase
+            .from("messaging_credit_balances")
+            .select("doctor_id, doctor_name, balance, granted, spent, refunded, last_movement_at, status")
+            .eq("doctor_id", doctorId)
+            .maybeSingle();
 
-    if (error) throw new Error(`fetchCreditBalance: ${error.message}`);
-    if (!data) return ZERO_BALANCE(doctorId);
-
-    return {
-        doctorId: data.doctor_id as string,
-        doctorName: (data.doctor_name as string | null) ?? null,
-        balance: Number(data.balance ?? 0),
-        granted: Number(data.granted ?? 0),
-        spent: Number(data.spent ?? 0),
-        refunded: Number(data.refunded ?? 0),
-        lastMovementAt: (data.last_movement_at as string | null) ?? null,
-        status: (data.status as CreditStatus) ?? "OK",
-    };
+        if (error) throw new Error(`fetchCreditBalance: ${error.message}`);
+        const result = !data ? ZERO_BALANCE(doctorId) : {
+            doctorId: data.doctor_id as string,
+            doctorName: (data.doctor_name as string | null) ?? null,
+            balance: Number(data.balance ?? 0),
+            granted: Number(data.granted ?? 0),
+            spent: Number(data.spent ?? 0),
+            refunded: Number(data.refunded ?? 0),
+            lastMovementAt: (data.last_movement_at as string | null) ?? null,
+            status: (data.status as CreditStatus) ?? "OK",
+        };
+        setDurableCache(creditBalanceCacheKey(doctorId), result);
+        return result;
+    } catch (err) {
+        // Offline — the last balance this device actually confirmed. Never
+        // gatekept behind a live connection: a doctor deciding whether
+        // they can afford to send one more message needs an answer, even a
+        // slightly old one, not silence. getCachedCreditBalanceAt tells the
+        // caller how old it is.
+        const cached = getDurableCache<CreditBalance>(creditBalanceCacheKey(doctorId));
+        if (cached) return cached.value;
+        throw err;
+    }
 }
 
 /**
@@ -203,23 +227,33 @@ export const LEDGER_LABEL: Record<LedgerKind, string> = {
  * go" panel, not an accounting export, and an uncapped read of a year of
  * sends is a slow page for a question nobody asked.
  */
-export async function fetchCreditLedger(doctorId: string, limit = 40): Promise<LedgerEntry[]> {
-    const { data, error } = await supabase
-        .from("messaging_credit_ledger")
-        .select("id, kind, delta, note, message_id, created_at")
-        .eq("doctor_id", doctorId)
-        .order("created_at", { ascending: false })
-        .limit(limit);
+const creditLedgerCacheKey = (doctorId: string) => `credit_ledger.${doctorId}`;
 
-    if (error) throw new Error(`fetchCreditLedger: ${error.message}`);
-    return (data ?? []).map((r) => ({
-        id: Number(r.id),
-        kind: r.kind as LedgerKind,
-        delta: Number(r.delta),
-        note: (r.note as string | null) ?? null,
-        messageId: r.message_id === null ? null : Number(r.message_id),
-        createdAt: r.created_at as string,
-    }));
+export async function fetchCreditLedger(doctorId: string, limit = 40): Promise<LedgerEntry[]> {
+    try {
+        const { data, error } = await supabase
+            .from("messaging_credit_ledger")
+            .select("id, kind, delta, note, message_id, created_at")
+            .eq("doctor_id", doctorId)
+            .order("created_at", { ascending: false })
+            .limit(limit);
+
+        if (error) throw new Error(`fetchCreditLedger: ${error.message}`);
+        const result = (data ?? []).map((r) => ({
+            id: Number(r.id),
+            kind: r.kind as LedgerKind,
+            delta: Number(r.delta),
+            note: (r.note as string | null) ?? null,
+            messageId: r.message_id === null ? null : Number(r.message_id),
+            createdAt: r.created_at as string,
+        }));
+        setDurableCache(creditLedgerCacheKey(doctorId), result);
+        return result;
+    } catch (err) {
+        const cached = getDurableCache<LedgerEntry[]>(creditLedgerCacheKey(doctorId));
+        if (cached) return cached.value;
+        throw err;
+    }
 }
 
 // ── Packages ───────────────────────────────────────────────────────────────

@@ -42,6 +42,7 @@ import type { FindingSuggestionRule } from "../synapse/examSuggestions";
 import { offlineCompositionBrands } from "../offline/offlineBrands";
 import { getCatalogueSyncState } from "../offline/catalogueSync";
 import { requireOnlineFor } from "../offline/onlineOnly";
+import { getDurableCache, setDurableCache } from "../offline/durableCache";
 
 export const RULESET_VERSION = "mvp-1";
 
@@ -649,7 +650,21 @@ export type ClinicBrandDefaultDetail = {
  * here so a doctor can see and revoke what the clinic has standing without
  * reopening a brand picker mid-consult to find it.
  */
+const clinicBrandDefaultsCacheKey = (hospitalId: string) => `clinic_brand_defaults.${hospitalId}`;
+
 export async function fetchClinicBrandDefaultDetails(hospitalId: string): Promise<ClinicBrandDefaultDetail[]> {
+    try {
+        const result = await fetchClinicBrandDefaultDetailsFromNetwork(hospitalId);
+        setDurableCache(clinicBrandDefaultsCacheKey(hospitalId), result);
+        return result;
+    } catch (err) {
+        const cached = getDurableCache<ClinicBrandDefaultDetail[]>(clinicBrandDefaultsCacheKey(hospitalId));
+        if (cached) return cached.value;
+        throw err;
+    }
+}
+
+async function fetchClinicBrandDefaultDetailsFromNetwork(hospitalId: string): Promise<ClinicBrandDefaultDetail[]> {
     const { data: rows, error } = await supabase
         .from("clinic_brand_preference")
         .select("composition_id, medicine_id, form, note, updated_at")
@@ -1046,7 +1061,21 @@ export type HospitalAddedMedicine = {
  * describes ("hospital-scoped on creation, never global"), so filtering on
  * it is already the correct "added here" set — no separate log table.
  */
+const hospitalAddedMedicinesCacheKey = (hospitalId: string) => `hospital_added_medicines.${hospitalId}`;
+
 export async function fetchHospitalAddedMedicines(hospitalId: string): Promise<HospitalAddedMedicine[]> {
+    try {
+        const result = await fetchHospitalAddedMedicinesFromNetwork(hospitalId);
+        setDurableCache(hospitalAddedMedicinesCacheKey(hospitalId), result);
+        return result;
+    } catch (err) {
+        const cached = getDurableCache<HospitalAddedMedicine[]>(hospitalAddedMedicinesCacheKey(hospitalId));
+        if (cached) return cached.value;
+        throw err;
+    }
+}
+
+async function fetchHospitalAddedMedicinesFromNetwork(hospitalId: string): Promise<HospitalAddedMedicine[]> {
     const { data: meds, error } = await supabase
         .from("medicines")
         .select("id, name, manufacturer, strength_mg, created_at")
@@ -1182,7 +1211,21 @@ export type HospitalCompanionDetail = {
  * real labels. Same fetch-then-IN() shape as `fetchClinicBrandDefaultDetails`
  * — no SQL joins (standing rule: hydration pattern).
  */
+const hospitalCompanionDetailsCacheKey = (hospitalId: string) => `hospital_companion_details.${hospitalId}`;
+
 export async function fetchHospitalCompanionDetails(hospitalId: string): Promise<HospitalCompanionDetail[]> {
+    try {
+        const result = await fetchHospitalCompanionDetailsFromNetwork(hospitalId);
+        setDurableCache(hospitalCompanionDetailsCacheKey(hospitalId), result);
+        return result;
+    } catch (err) {
+        const cached = getDurableCache<HospitalCompanionDetail[]>(hospitalCompanionDetailsCacheKey(hospitalId));
+        if (cached) return cached.value;
+        throw err;
+    }
+}
+
+async function fetchHospitalCompanionDetailsFromNetwork(hospitalId: string): Promise<HospitalCompanionDetail[]> {
     const { data: rows, error } = await supabase
         .from("hospital_companion_preference")
         .select("intent_id, companion_intent_id, enabled, reason, source, updated_at")
@@ -2021,40 +2064,61 @@ export interface PreferredLab {
     sortOrder: number;
 }
 
+const preferredLabsCacheKey = (doctorId: string) => `preferred_labs.${doctorId}`;
+const defaultPreferredLabCacheKey = (doctorId: string) => `default_preferred_lab.${doctorId}`;
+
 export async function loadPreferredLabs(doctorId: string): Promise<PreferredLab[]> {
-    const { data, error } = await supabase
-        .from("doctor_preferred_labs")
-        .select("id, name, contact_note, is_default, sort_order")
-        .eq("doctor_id", doctorId)
-        .order("sort_order", { ascending: true })
-        .order("id", { ascending: true });
-    if (error) throw new Error(`doctor_preferred_labs (load): ${error.message}`);
-    return (data ?? []).map((r: any) => ({
-        id: Number(r.id),
-        name: r.name,
-        contactNote: r.contact_note ?? null,
-        isDefault: !!r.is_default,
-        sortOrder: Number(r.sort_order ?? 0),
-    }));
+    try {
+        const { data, error } = await supabase
+            .from("doctor_preferred_labs")
+            .select("id, name, contact_note, is_default, sort_order")
+            .eq("doctor_id", doctorId)
+            .order("sort_order", { ascending: true })
+            .order("id", { ascending: true });
+        if (error) throw new Error(`doctor_preferred_labs (load): ${error.message}`);
+        const result = (data ?? []).map((r: any) => ({
+            id: Number(r.id),
+            name: r.name,
+            contactNote: r.contact_note ?? null,
+            isDefault: !!r.is_default,
+            sortOrder: Number(r.sort_order ?? 0),
+        }));
+        setDurableCache(preferredLabsCacheKey(doctorId), result);
+        return result;
+    } catch (err) {
+        // Offline — the labs a doctor already connected are still real and
+        // still worth seeing; only ADDING a new one needs a live connection.
+        const cached = getDurableCache<PreferredLab[]>(preferredLabsCacheKey(doctorId));
+        if (cached) return cached.value;
+        throw err;
+    }
 }
 
 /** Just the default, for Consult's plan-rail prompt — one row, not the list. */
 export async function loadDefaultPreferredLab(doctorId: string): Promise<PreferredLab | null> {
-    const { data, error } = await supabase
-        .from("doctor_preferred_labs")
-        .select("id, name, contact_note, is_default, sort_order")
-        .eq("doctor_id", doctorId)
-        .eq("is_default", true)
-        .maybeSingle();
-    if (error) throw new Error(`doctor_preferred_labs (default): ${error.message}`);
-    if (!data) return null;
-    return {
-        id: Number(data.id),
-        name: data.name,
-        contactNote: data.contact_note ?? null,
-        isDefault: true,
-        sortOrder: Number(data.sort_order ?? 0),
-    };
+    try {
+        const { data, error } = await supabase
+            .from("doctor_preferred_labs")
+            .select("id, name, contact_note, is_default, sort_order")
+            .eq("doctor_id", doctorId)
+            .eq("is_default", true)
+            .maybeSingle();
+        if (error) throw new Error(`doctor_preferred_labs (default): ${error.message}`);
+        const result = !data ? null : {
+            id: Number(data.id),
+            name: data.name,
+            contactNote: data.contact_note ?? null,
+            isDefault: true,
+            sortOrder: Number(data.sort_order ?? 0),
+        };
+        setDurableCache(defaultPreferredLabCacheKey(doctorId), result);
+        return result;
+    } catch (err) {
+        // Offline mid-consult — the plan-rail prompt still needs an answer.
+        const cached = getDurableCache<PreferredLab | null>(defaultPreferredLabCacheKey(doctorId));
+        if (cached) return cached.value;
+        throw err;
+    }
 }
 
 export async function addPreferredLab(opts: {

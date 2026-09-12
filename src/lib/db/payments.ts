@@ -54,7 +54,13 @@ export interface FeeContext {
     feesByDoctor: Map<string, DoctorFeeCard>;
 }
 
-import { getOverviewCache, setOverviewCache } from "../../features/overview/overviewCache";
+// DURABLE, not `overviewCache` — that one has a 15-minute TTL (built for
+// "skip a redundant re-fetch on a fast page nav"), and reusing it here is
+// exactly why "no fee shown offline" kept resurfacing even after a cache
+// read was wired in: the value was still there, the TTL just refused to
+// hand it back once a clinic had been offline longer than 15 minutes. See
+// lib/offline/durableCache.ts's own header for the full story.
+import { getDurableCache, setDurableCache } from "../offline/durableCache";
 
 interface SerializedFeeContext {
     policy: BillingPolicy;
@@ -66,16 +72,16 @@ export function cacheFeeContext(hospitalId: string, ctx: FeeContext): void {
     ctx.feesByDoctor.forEach((v, k) => {
         obj[k] = v;
         const hasFee = v.consultationFee !== null || v.followUpFee !== null;
-        setOverviewCache(`fee_setup.${hospitalId}.${k}`, hasFee);
+        setDurableCache(`fee_setup.${hospitalId}.${k}`, hasFee);
     });
-    setOverviewCache<SerializedFeeContext>(`fee_context.${hospitalId}`, {
+    setDurableCache<SerializedFeeContext>(`fee_context.${hospitalId}`, {
         policy: ctx.policy,
         feesByDoctor: obj,
     });
 }
 
 export function getCachedFeeContext(hospitalId: string): FeeContext | null {
-    const raw = getOverviewCache<SerializedFeeContext>(`fee_context.${hospitalId}`);
+    const raw = getDurableCache<SerializedFeeContext>(`fee_context.${hospitalId}`)?.value;
     if (!raw) return null;
     const map = new Map<string, DoctorFeeCard>();
     if (raw.feesByDoctor) {
@@ -87,8 +93,15 @@ export function getCachedFeeContext(hospitalId: string): FeeContext | null {
     };
 }
 
+/** When this fee context was last confirmed against the live server — for
+ *  a UI that wants to say "as of 9:40 AM" rather than showing a possibly-
+ *  hours-old fee as if it were live. Null when nothing has ever been cached. */
+export function getFeeContextCachedAt(hospitalId: string): string | null {
+    return getDurableCache<SerializedFeeContext>(`fee_context.${hospitalId}`)?.at ?? null;
+}
+
 export function getFeeSetupStatus(hospitalId: string, doctorId: string): boolean | null {
-    return getOverviewCache<boolean>(`fee_setup.${hospitalId}.${doctorId}`);
+    return getDurableCache<boolean>(`fee_setup.${hospitalId}.${doctorId}`)?.value ?? null;
 }
 
 /**

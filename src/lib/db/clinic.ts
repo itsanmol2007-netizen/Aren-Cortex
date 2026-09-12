@@ -25,6 +25,7 @@
 import { supabase } from "../supabase";
 import type { CompressedImage } from "../image/compress";
 import { invalidateDoctor, invalidateHospital } from "./profileCache";
+import { getDurableCache, setDurableCache } from "../offline/durableCache";
 
 // ── CLINIC IDENTITY ────────────────────────────────────────────────────────────
 
@@ -207,25 +208,36 @@ function toInputTime(t: string): string {
     return t.slice(0, 5);
 }
 
-export async function fetchClinicHours(hospitalId: string): Promise<ClinicDayHours[]> {
-    const { data, error } = await supabase
-        .from("clinic_hours")
-        .select("day_of_week, opens_at, closes_at")
-        .eq("hospital_id", hospitalId)
-        .order("day_of_week")
-        .order("opens_at");
-    if (error) throw new Error(`fetchClinicHours: ${error.message}`);
+const clinicHoursCacheKey = (hospitalId: string) => `clinic_hours.${hospitalId}`;
 
-    const week = emptyClinicHours();
-    for (const row of data ?? []) {
-        const day = week[row.day_of_week as number];
-        if (!day) continue;
-        day.sessions.push({
-            opensAt: toInputTime(row.opens_at as string),
-            closesAt: toInputTime(row.closes_at as string),
-        });
+export async function fetchClinicHours(hospitalId: string): Promise<ClinicDayHours[]> {
+    try {
+        const { data, error } = await supabase
+            .from("clinic_hours")
+            .select("day_of_week, opens_at, closes_at")
+            .eq("hospital_id", hospitalId)
+            .order("day_of_week")
+            .order("opens_at");
+        if (error) throw new Error(`fetchClinicHours: ${error.message}`);
+
+        const week = emptyClinicHours();
+        for (const row of data ?? []) {
+            const day = week[row.day_of_week as number];
+            if (!day) continue;
+            day.sessions.push({
+                opensAt: toInputTime(row.opens_at as string),
+                closesAt: toInputTime(row.closes_at as string),
+            });
+        }
+        setDurableCache(clinicHoursCacheKey(hospitalId), week);
+        return week;
+    } catch (err) {
+        // Offline — the clinic's actual configured hours, not the empty
+        // week `emptyClinicHours()` would otherwise silently look like.
+        const cached = getDurableCache<ClinicDayHours[]>(clinicHoursCacheKey(hospitalId));
+        if (cached) return cached.value;
+        throw err;
     }
-    return week;
 }
 
 /**
@@ -324,33 +336,46 @@ export const DEFAULT_PRESCRIPTION_CONFIG: PrescriptionConfig = {
     ],
 };
 
-export async function fetchPrescriptionConfig(hospitalId: string): Promise<PrescriptionConfig> {
-    const { data, error } = await supabase
-        .from("prescription_settings")
-        // One string literal, never a concatenation: supabase-js infers the
-        // row's type from the literal itself, and `a + b` erases that back to
-        // `GenericStringError` (every field then reads as a type error).
-        .select("identity_mode, profile_image, print_mode, show_qualification, show_specialty, show_registration, show_clinic_address, show_clinic_phone, show_clinic_email, show_website, show_signature, footer_note, default_advice")
-        .eq("hospital_id", hospitalId)
-        .maybeSingle();
-    if (error) throw new Error(`fetchPrescriptionConfig: ${error.message}`);
-    if (!data) return DEFAULT_PRESCRIPTION_CONFIG;
+const prescriptionConfigCacheKey = (hospitalId: string) => `prescription_config.${hospitalId}`;
 
-    return {
-        identityMode: data.identity_mode as PrescriptionConfig["identityMode"],
-        profileImage: data.profile_image as PrescriptionConfig["profileImage"],
-        printMode: data.print_mode as PrescriptionConfig["printMode"],
-        showQualification: data.show_qualification,
-        showSpecialty: data.show_specialty,
-        showRegistration: data.show_registration,
-        showClinicAddress: data.show_clinic_address,
-        showClinicPhone: data.show_clinic_phone,
-        showClinicEmail: data.show_clinic_email,
-        showWebsite: data.show_website,
-        showSignature: data.show_signature,
-        footerNote: data.footer_note ?? "",
-        defaultAdvice: (data.default_advice as string[] | null) ?? [],
-    };
+export async function fetchPrescriptionConfig(hospitalId: string): Promise<PrescriptionConfig> {
+    try {
+        const { data, error } = await supabase
+            .from("prescription_settings")
+            // One string literal, never a concatenation: supabase-js infers the
+            // row's type from the literal itself, and `a + b` erases that back to
+            // `GenericStringError` (every field then reads as a type error).
+            .select("identity_mode, profile_image, print_mode, show_qualification, show_specialty, show_registration, show_clinic_address, show_clinic_phone, show_clinic_email, show_website, show_signature, footer_note, default_advice")
+            .eq("hospital_id", hospitalId)
+            .maybeSingle();
+        if (error) throw new Error(`fetchPrescriptionConfig: ${error.message}`);
+        if (!data) return DEFAULT_PRESCRIPTION_CONFIG;
+
+        const result: PrescriptionConfig = {
+            identityMode: data.identity_mode as PrescriptionConfig["identityMode"],
+            profileImage: data.profile_image as PrescriptionConfig["profileImage"],
+            printMode: data.print_mode as PrescriptionConfig["printMode"],
+            showQualification: data.show_qualification,
+            showSpecialty: data.show_specialty,
+            showRegistration: data.show_registration,
+            showClinicAddress: data.show_clinic_address,
+            showClinicPhone: data.show_clinic_phone,
+            showClinicEmail: data.show_clinic_email,
+            showWebsite: data.show_website,
+            showSignature: data.show_signature,
+            footerNote: data.footer_note ?? "",
+            defaultAdvice: (data.default_advice as string[] | null) ?? [],
+        };
+        setDurableCache(prescriptionConfigCacheKey(hospitalId), result);
+        return result;
+    } catch (err) {
+        // Offline — the clinic's actual saved letterhead config, not a
+        // silent fall-through to DEFAULT_PRESCRIPTION_CONFIG that could
+        // read as "our settings got wiped" when they're just unreachable.
+        const cached = getDurableCache<PrescriptionConfig>(prescriptionConfigCacheKey(hospitalId));
+        if (cached) return cached.value;
+        throw err;
+    }
 }
 
 export async function savePrescriptionConfig(
