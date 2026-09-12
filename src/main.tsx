@@ -7,11 +7,13 @@ import { initPWA } from "./pwa";
 import { installSessionTrace } from "./lib/diagnostics/sessionTrace";
 import { initConnectivityClock } from "./lib/offline/connectivityClock";
 import { initWriteQueue } from "./lib/offline/writeQueue";
+import { initIdleLock } from "./lib/security/idleTimer";
 import { FrontDeskPage } from "./features/frontdesk/FrontDeskPage";
 import { PatientsPage } from "./features/frontdesk/PatientsPage";
 import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
 import { ClinicStatusPage } from "./features/frontdesk/ClinicStatusPage";
 import { AuthProvider } from "./features/auth/AuthProvider";
+import { AppLockGate } from "./components/AppLockGate";
 import { RequireAuth, RequireRole, HomeRedirect } from "./features/auth/RequireAuth";
 import { AdminShell } from "./features/admin/AdminShell";
 import { OverviewPage } from "./features/admin/pages/OverviewPage";
@@ -48,6 +50,7 @@ function RoutedApp() {
   return (
     <AppErrorBoundary resetKey={location.pathname}>
       <AuthProvider>
+        <AppLockGate>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
             {/* Everything else — every workspace, every future route — sits
@@ -91,6 +94,7 @@ function RoutedApp() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
+        </AppLockGate>
         </AuthProvider>
       </AppErrorBoundary>
   );
@@ -120,3 +124,4 @@ initPWA();
 // delays first paint above.
 initConnectivityClock();
 initWriteQueue();
+initIdleLock();

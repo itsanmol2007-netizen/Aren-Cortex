@@ -69,6 +69,7 @@ import {
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
+import { AppLockCard } from "./AppLockCard";
 import { requestSettingFocus } from "./settingsFocus";
 import { toast } from "sonner";
 import "./settings.css";
@@ -141,7 +142,7 @@ const CARD =
 
 const ICON_TILE = "grid h-[34px] w-[34px] flex-none place-items-center rounded-[10px]";
 
-function SettingsCard({
+export function SettingsCard({
     id, icon, tint, title, children,
 }: {
     id: string;
@@ -1681,6 +1682,9 @@ export function SettingsPage({
                                 )}
                             </div>
                         </SettingsCard>
+
+                        {/* ══ App Lock ════════════════════════════════════════ */}
+                        {auth.status === "authed" && <AppLockCard userId={auth.identity.user.id} />}
                     </div>
 
                     {/* ══ System Health — a small section, opening a page ═════

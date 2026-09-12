@@ -36,8 +36,16 @@ export interface WriteQueueRow {
     /** Whatever the handler needs to replay this write. Must be plain JSON:
      *  Dexie/IndexedDB can store more, but this queue survives app upgrades
      *  and handler rewrites better if the payload never carries a class
-     *  instance, a File, or a function. */
+     *  instance, a File, or a function.
+     *
+     *  When `encrypted` is true this is a `Ciphertext` (see
+     *  lib/security/crypto.ts) instead of the plain payload — real patient
+     *  PII (a new patient's name/phone/DOB) sitting in IndexedDB is exactly
+     *  the "laptop stolen overnight" scenario the PIN lock exists for, so a
+     *  queued write is encrypted under the signed-in doctor's DEK whenever
+     *  one is available at enqueue time. See writeQueue.ts. */
     payload: unknown;
+    encrypted: boolean;
     hospitalId: string;
     doctorId: string | null;
     createdAt: number;

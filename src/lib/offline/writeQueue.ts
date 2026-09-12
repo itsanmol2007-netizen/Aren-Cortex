@@ -24,6 +24,8 @@
 import { localDB, type WriteQueueRow } from "./db";
 import { markConfirmedOnline } from "./connectivityClock";
 import { guardNewPatientCreation } from "./lockGate";
+import { encryptJSON, decryptJSON, type Ciphertext } from "../security/crypto";
+import { getActiveDek, onLockStateChange } from "../security/deviceKey";
 
 type WriteHandler = (payload: unknown) => Promise<void>;
 
@@ -59,17 +61,41 @@ export async function enqueueWrite(
 ): Promise<number> {
     if (opts.isNewPatientCreation) guardNewPatientCreation();
 
-    const row: WriteQueueRow = {
-        kind,
-        payload,
-        hospitalId: opts.hospitalId,
-        doctorId: opts.doctorId ?? null,
-        createdAt: Date.now(),
-        attempts: 0,
-        lastError: null,
-        lastAttemptAt: null,
-        status: "pending",
-    };
+    // Encrypt whenever this doctor has actually unlocked their PIN on this
+    // device right now — a new patient's name/phone/DOB sitting in
+    // IndexedDB in the clear is real PII, and "queued offline overnight" is
+    // exactly the window a stolen/unattended laptop would find it in. Falls
+    // back to plain storage when no PIN is set up (or the app happens to be
+    // locked at the exact moment of enqueue, vanishingly rare in practice
+    // since enqueueing only ever happens from a live, on-screen action) —
+    // encryption here is additive to an already-working feature, never a
+    // precondition for it.
+    const dek = opts.doctorId ? getActiveDek(opts.doctorId) : null;
+    const row: WriteQueueRow = dek
+        ? {
+              kind,
+              payload: await encryptJSON(dek, payload),
+              encrypted: true,
+              hospitalId: opts.hospitalId,
+              doctorId: opts.doctorId ?? null,
+              createdAt: Date.now(),
+              attempts: 0,
+              lastError: null,
+              lastAttemptAt: null,
+              status: "pending",
+          }
+        : {
+              kind,
+              payload,
+              encrypted: false,
+              hospitalId: opts.hospitalId,
+              doctorId: opts.doctorId ?? null,
+              createdAt: Date.now(),
+              attempts: 0,
+              lastError: null,
+              lastAttemptAt: null,
+              status: "pending",
+          };
     const id = await localDB.writeQueue.add(row);
     // Fire-and-forget: the caller already has its own optimistic UI update in
     // place (see useVisitActions.ts) and does not wait on this.
@@ -109,9 +135,21 @@ export async function flushQueue(): Promise<void> {
                 // for the next flush rather than losing it.
                 continue;
             }
+            // An encrypted row needs this doctor's DEK, which only exists
+            // in memory while unlocked — locked at exactly the moment a
+            // flush runs (idle-locked overnight, then reconnects) is a real
+            // case, not a bug, and it isn't a failure of the write either:
+            // leave it pending and let `onLockStateChange` below re-drive
+            // the queue the instant this doctor unlocks again.
+            let payload = row.payload;
+            if (row.encrypted) {
+                const dek = row.doctorId ? getActiveDek(row.doctorId) : null;
+                if (!dek) continue;
+                payload = await decryptJSON(dek, row.payload as Ciphertext);
+            }
             await localDB.writeQueue.update(row.id, { status: "sending" });
             try {
-                await handler(row.payload);
+                await handler(payload);
                 await localDB.writeQueue.delete(row.id);
                 markConfirmedOnline();
             } catch (err) {
@@ -149,6 +187,12 @@ export function initWriteQueue(): void {
     listenersWired = true;
     if (typeof window === "undefined") return;
     window.addEventListener("online", () => void flushQueue());
+    // The other half of the encrypted-row skip above: a doctor who unlocks
+    // is the other event (besides reconnecting) that can newly make a
+    // previously-stuck row flushable again.
+    onLockStateChange((unlocked) => {
+        if (unlocked) void flushQueue();
+    });
     void flushQueue();
     // Safety net: `online`/`offline` events are not perfectly reliable on
     // every platform, and a row can also fail for reasons unrelated to
