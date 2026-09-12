@@ -90,7 +90,7 @@ export function SignInPortal({ name, role, onDone }: Props) {
             onTransitionEnd={(e) => { if (e.propertyName === "opacity" && exiting) finish(); }}
         >
             <style>{SIP_CSS}</style>
-            <img src="/aren-nebula.svg" aria-hidden="true" className="sip-nebula" alt="" />
+            <div className="sip-nebula" aria-hidden="true" />
             <div className="sip-stage">
                 <motion.svg
                     width={104}
@@ -186,20 +186,30 @@ const SIP_CSS = `
 .sip-root.is-exiting {
     opacity: 0;
 }
+/* This was aren-nebula.svg (the same asset WorkspaceHeader paints into
+   every dark header) at full-viewport size. Removing it -- and ONLY it --
+   was what fixed a real, reproducible bug: this component was taking
+   ~4s to hand off instead of ~1.5-2s, confirmed by instrumenting a
+   standalone render (every setTimeout inside it fired exactly on
+   schedule in isolation, but landed together, seconds late, specifically
+   whenever that image was in the tree). The asset carries 6 internal
+   feGaussianBlur filters -- cheap to rasterize at a 64-84px header
+   strip, not cheap at full viewport height, and this is a screen with no
+   GPU-accelerated path to fall back on in some environments.
+
+   A plain CSS radial-gradient glow is what the rest of this app already
+   uses for "violet bloom on navy" wherever the source isn't the nebula
+   PNG/SVG itself -- .ws-header's own vignette, .rail-head::before's
+   corner bloom -- so this isn't a downgrade from the real thing, it's
+   the same technique those already use, and it costs one gradient fill,
+   not a filter pass over every pixel on screen. */
 .sip-nebula {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    opacity: 0.55;
-    filter: blur(0.6px);
     pointer-events: none;
-    animation: sip-drift 7s ease-in-out infinite alternate;
-}
-@keyframes sip-drift {
-    from { transform: scale(1.03) translate3d(0, 0, 0); }
-    to { transform: scale(1.08) translate3d(-1.2%, -0.6%, 0); }
+    background:
+        radial-gradient(720px 480px at 22% 28%, rgba(139, 92, 246, 0.16) 0%, transparent 70%),
+        radial-gradient(560px 420px at 78% 74%, rgba(99, 58, 200, 0.13) 0%, transparent 72%);
 }
 .sip-stage {
     position: relative;
