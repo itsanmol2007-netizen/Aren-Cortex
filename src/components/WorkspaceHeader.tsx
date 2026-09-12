@@ -128,7 +128,11 @@ export function WorkspaceHeader({ logoRef, onOpenSidebar, title, subtitle, right
                 {identitySlot ?? (
                     <div className="ws-header-identity">
                         <span className="ws-header-title">{title}</span>
-                        <span className="ws-header-subtitle">{subtitle}</span>
+                        {/* Omitted entirely when there's no subtitle (rather
+                            than an empty span) — an empty span still claimed
+                            `.ws-header-identity`'s gap, leaving a dangling
+                            12px of nothing after the title. */}
+                        {subtitle && <span className="ws-header-subtitle">{subtitle}</span>}
                     </div>
                 )}
 

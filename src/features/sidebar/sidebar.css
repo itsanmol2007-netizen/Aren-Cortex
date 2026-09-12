@@ -27,12 +27,13 @@
        clear for it (see `.app-shell .ws-header-inner` in workspace-header.css
        in workspace-header.css). Change it here and
        those two follow automatically.
-       236px, was 200, was 186 — grown twice on 2026-09-11 alongside the
-       mark/text sizes below. Second pass: "it should not feel same size as
-       Overview... make it even more bigger, its brand logo man" (Anmol) —
-       this is not a caption living next to the page title, it is the mark
-       of the product, and it has to read like one at a glance. */
-    --brand-w: 236px;
+       206px, was 236, was 200, was 186. Grown twice on 2026-09-11 ("it
+       should not feel same size as Overview... make it even more bigger,
+       its brand logo man" — Anmol), then pulled back on 2026-09-12 once
+       that second grow read as overshoot in practice: "you overshooted the
+       logo thing... right now it's very big and not looking good." Settles
+       just past the first grow — bigger than a page title, not a shout. */
+    --brand-w: 206px;
 
     /* Above the modals, on purpose — see NavRail.tsx's header. Toasts
        (2147483647) still win, which is right: a toast is a message about
@@ -255,12 +256,13 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    /* 50px, was 44, was 40 — the one piece of chrome that is on screen every
-       second the app is open. It is the brand mark, not a nav icon sized
-       like its neighbours; it has to read as one at a glance next to the
-       page title beside it, not blend in with it. */
-    width: 50px;
-    height: 50px;
+    /* 44px, was 50, was 44, was 40 — the one piece of chrome that is on
+       screen every second the app is open. It is the brand mark, not a nav
+       icon sized like its neighbours; it has to read as one at a glance
+       next to the page title beside it, not blend in with it — but 50px
+       read as an overshoot once it was actually on screen (2026-09-12). */
+    width: 44px;
+    height: 44px;
     padding: 7px;
     border-radius: 13px;
     border: 1px solid rgba(139, 92, 246, 0.45);
@@ -293,8 +295,10 @@
    feel same size as Overview written... its brand logo man" (Anmol). This
    is the one piece of branding left anywhere in the app (see `.rail-head`'s
    note above), on screen every second the app is open — it has to
-   outweigh a page title, not sit beside one as an equal. 22px, a full turn
-   past `.ws-header-title`'s 16.5px, is that gap. */
+   outweigh a page title, not sit beside one as an equal.
+   Pulled back from 22px to 18px on 2026-09-12 — a full turn past
+   `.ws-header-title`'s 16.5px overshot once it was on screen ("very big and
+   not looking good"). 18px keeps the same gap without shouting. */
 .rail-brand-text {
     display: flex;
     align-items: baseline;
@@ -305,7 +309,7 @@
 }
 
 .rail-brand-name {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 800;
     letter-spacing: -0.015em;
     color: #ffffff;
@@ -314,7 +318,7 @@
 /* Front Desk's dawn pink (`#f0abc8`) is that workspace's tint — Cortex's is
    violet, the same one the mark's own glow already uses. */
 .rail-brand-product {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 800;
     letter-spacing: -0.015em;
     color: #cfa8ff;
@@ -525,17 +529,25 @@ body.overlay-open .rail-logo {
     transform: translateY(-1px);
 }
 
-.rail-item.tone-blue:hover .rail-badge {
+/* `:not(.is-active)` — without it, hovering the CURRENTLY ACTIVE icon (the
+   normal state right after clicking it, cursor still resting there) tied
+   `.tone-*.is-active .rail-badge`'s `color: #fff` on specificity, and this
+   rule's OWN saturated blue/indigo/slate text color won by being the more
+   specific of the two — a blue glyph on the active item's blue gradient
+   fill. "when you click on it, it gets that blue highlight effect... now
+   that icon becomes invisible" (Anmol, 2026-09-12). Hover only ever
+   restyles an INACTIVE icon now; the active one keeps its white glyph. */
+.rail-item.tone-blue:hover:not(.is-active) .rail-badge {
     background: rgba(59, 130, 246, 0.14);
     color: #2563eb;
 }
 
-.rail-item.tone-indigo:hover .rail-badge {
+.rail-item.tone-indigo:hover:not(.is-active) .rail-badge {
     background: rgba(99, 102, 241, 0.14);
     color: #4f46e5;
 }
 
-.rail-item.tone-slate:hover .rail-badge {
+.rail-item.tone-slate:hover:not(.is-active) .rail-badge {
     background: rgba(100, 116, 139, 0.14);
     color: #475569;
 }

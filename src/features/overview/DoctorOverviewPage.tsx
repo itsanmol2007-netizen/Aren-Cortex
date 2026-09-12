@@ -83,6 +83,7 @@ import {
 } from "../../lib/db/admin";
 import { PaymentDetailsModal } from "./PaymentDetailsModal";
 import { ActivityListModal } from "./ActivityListModal";
+import { fetchStaff } from "../../lib/db/staff";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import type { TodayVisit } from "../../lib/db";
 
@@ -214,6 +215,29 @@ export function DoctorOverviewPage({
     // Everything under "Clinic management" below is gated on this and
     // nothing else changes for anyone else.
     const isAdminDoctor = adminAccess.access === "embedded";
+
+    // ── Is there actually somebody at the front desk right now? ───────────
+    //
+    // `clinic.frontDesk` answers "is this clinic SHAPED for a front desk"
+    // (`hospitals.clinic_mode`, set once) — it says nothing about whether
+    // the receptionist account is currently active. Deactivating them from
+    // Manage Team leaves `clinic_mode` untouched, so Today's Queue kept
+    // showing with nobody left to fill it. Anmol, 2026-09-12: "once
+    // receptionist is deactivated you should see recent patients... instead
+    // of today's queue because there is no receptionist to create a queue."
+    // `null` (not yet checked, or this clinic was never front-desk-shaped to
+    // begin with) reads as "assume yes" below — never downgrade the card
+    // before an active reception account is positively ruled out.
+    const [hasActiveReception, setHasActiveReception] = useState<boolean | null>(null);
+    const checkActiveReception = useCallback(() => {
+        if (!identity.ready || !clinic.frontDesk) return;
+        fetchStaff(identity.hospitalId)
+            .then((staff) => setHasActiveReception(staff.some((s) => s.role === "reception" && s.is_active)))
+            // Non-fatal: worst case the queue card stays up one extra load.
+            .catch(() => {});
+    }, [identity.ready, identity.hospitalId, clinic.frontDesk]);
+    useEffect(checkActiveReception, [checkActiveReception]);
+    const showQueueCard = clinic.frontDesk && hasActiveReception !== false;
 
     const [period, setPeriod] = useState<PeriodState>({ preset: "7d", from: today, to: today });
 
@@ -366,12 +390,17 @@ export function DoctorOverviewPage({
     useEffect(loadManagement, [loadManagement]);
 
     const [recentPatients, setRecentPatients] = useState<DoctorActivityRow[] | null>(() => {
-        if (clinic.frontDesk || !identity.ready) return null;
+        if (showQueueCard || !identity.ready) return null;
         return getOverviewCache<DoctorActivityRow[]>(`recent.${identity.hospitalId}.${identity.doctorId}`);
     });
 
     useEffect(() => {
-        if (clinic.frontDesk || !identity.ready) return;
+        // Gated on `showQueueCard` (Today's Queue vs Recent Patients'
+        // shared toggle), not `clinic.frontDesk` alone — a front-desk clinic
+        // whose receptionist just got deactivated needs this fetched too,
+        // the moment `showQueueCard` flips to false, same as a solo clinic
+        // always has.
+        if (showQueueCard || !identity.ready) return;
         let cancelled = false;
         const recentKey = `recent.${identity.hospitalId}.${identity.doctorId}`;
         const cachedRecent = getOverviewCache<DoctorActivityRow[]>(recentKey);
@@ -389,7 +418,7 @@ export function DoctorOverviewPage({
                 if (!cancelled && !cachedRecent) setRecentPatients([]);
             });
         return () => { cancelled = true; };
-    }, [clinic.frontDesk, identity.ready, identity.hospitalId, identity.doctorId]);
+    }, [showQueueCard, identity.ready, identity.hospitalId, identity.doctorId]);
 
     // No UNCONDITIONAL currency fetch here — `formatMoney` already defaults
     // to INR, and pulling `fetchFeeSettings` onto every doctor's landing page
@@ -461,11 +490,11 @@ export function DoctorOverviewPage({
         <div className="relative flex min-h-screen flex-col bg-[var(--cs-page)]">
             <WorkspaceHeader
                 title="Overview"
-                subtitle={
-                    setup
-                        ? `${identity.doctorName} · ${setup.name}`
-                        : identity.doctorName
-                }
+                // No subtitle here any more (2026-09-12) — it read
+                // "Dr X · Clinic name" right beside "Overview", and the
+                // greeting two lines down already says the doctor's name in
+                // full ("Good morning, Dr X"). Anmol: "that's abundance, you
+                // can remove that thing from the top header."
                 rightSlot={
                     <div className="flex items-center gap-[8px]">
                         {setup && (
@@ -508,11 +537,20 @@ export function DoctorOverviewPage({
                     page, just no longer the loudest. */}
                 <div className="flex flex-wrap items-center gap-[14px]">
                     <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                        <span className="text-[13px] font-medium text-[var(--cs-faint)]">
-                            {greetingFor(new Date().getHours())},
-                        </span>
-                        <span className="truncate text-[21px] font-bold leading-[1.2] text-[var(--cs-ink)]">
-                            {identity.doctorName}
+                        {/* Newsreader italic — already loaded for the login
+                            screen's own headline (`--lg-serif`), reused here
+                            rather than a third font: "cursive typography...
+                            generally cursive typography is used in
+                            medicine... matches the overall tone of the page"
+                            (Anmol, 2026-09-12). An editorial serif italic
+                            reads as a handwritten doctor's note without
+                            actually being illegible, which a true script
+                            face would be at this size. */}
+                        <span
+                            className="truncate text-[30px] leading-[1.15] text-[var(--cs-ink)]"
+                            style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: "italic", fontWeight: 600, letterSpacing: "-0.01em" }}
+                        >
+                            {greetingFor(new Date().getHours())}, {identity.doctorName}
                         </span>
                         <span className="text-[12px] text-[var(--cs-muted)]">
                             Here's how your clinic is doing today.
@@ -784,12 +822,15 @@ export function DoctorOverviewPage({
                             </Card>
 
                             {/* ── Today's Queue ─────────────────────────────
-                                Front desk only: a solo clinic has no front
-                                desk and nothing waiting to preview — the
-                                doctor's own "Start Consultation" already IS
-                                their intake. Reuses the exact read the queue
-                                sheet polls; see the Props doc comment. */}
-                            {clinic.frontDesk && (
+                                Front desk only, AND only while somebody is
+                                actually staffing it (`showQueueCard`) — a
+                                solo clinic, or a front-desk clinic whose
+                                receptionist was just deactivated, has no
+                                queue to preview: the doctor's own "Start
+                                Consultation" already IS their intake.
+                                Reuses the exact read the queue sheet polls;
+                                see the Props doc comment. */}
+                            {showQueueCard && (
                                 <Card
                                     tone="violet"
                                     icon={<CalendarClock size={14} />}
@@ -864,7 +905,7 @@ export function DoctorOverviewPage({
                                 intake: not "who's waiting" (nobody is — this
                                 doctor IS the front desk) but "who did I just
                                 see". */}
-                            {!clinic.frontDesk && (
+                            {!showQueueCard && (
                                 <Card
                                     tone="blue"
                                     icon={<Users size={14} />}
@@ -1051,7 +1092,12 @@ export function DoctorOverviewPage({
                     icon={<Users size={15} />}
                     eyebrow="Team"
                     title={setup ? `Manage ${setup.name}` : "Manage your team"}
-                    onClose={() => setTeamOpen(false)}
+                    // Re-check for an active receptionist the moment this
+                    // closes — activating/deactivating one is the ONE thing
+                    // this modal does that Today's-Queue-vs-Recent-Patients
+                    // cares about, and it happened while `hasActiveReception`
+                    // sat frozen at whatever it read on page load.
+                    onClose={() => { setTeamOpen(false); checkActiveReception(); }}
                     xl
                 >
                     <PeoplePage />
