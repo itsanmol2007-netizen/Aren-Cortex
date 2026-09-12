@@ -21,6 +21,7 @@ import { homeRouteForRole, loadIdentity, phoneToAuthEmail, phoneToStaffAuthEmail
 import { useAuth } from "./AuthProvider";
 import type { GateNotice } from "./AuthProvider";
 import { ArenMark } from "./ArenMark";
+import { SignInPortal } from "./SignInPortal";
 
 type Banner = { tone: "error" | "pending" | "info"; text: string } | null;
 
@@ -66,6 +67,12 @@ export function LoginPage() {
         bannerFromGateNotice((location.state as { notice?: GateNotice } | null)?.notice)
     );
     const passwordRef = useRef<HTMLInputElement>(null);
+
+    // Set only once credentials AND the identity gate both pass — the portal
+    // plays on its way INTO a working session, never as a substitute for one.
+    // `adoptIdentity` already ran by the time this is set; the portal only
+    // delays the `navigate()` call below it, not anything the app needs.
+    const [portal, setPortal] = useState<{ name: string | null; role: string | null; route: string } | null>(null);
 
     // Numeric only, hard-capped at 10 — letters and symbols never appear.
     // A 12-digit paste beginning "91" is a country-coded number: strip it,
@@ -151,7 +158,11 @@ export function LoginPage() {
             }
 
             adoptIdentity(result.identity);
-            navigate(homeRouteForRole(result.identity.user.role), { replace: true });
+            setPortal({
+                name: result.identity.user.full_name,
+                role: result.identity.user.role,
+                route: homeRouteForRole(result.identity.user.role),
+            });
         } finally {
             setBusy(false);
         }
@@ -243,6 +254,14 @@ export function LoginPage() {
             <div className="lg-baseline" aria-hidden="true">
                 AREN — CLINICAL OPERATING SYSTEM
             </div>
+
+            {portal && (
+                <SignInPortal
+                    name={portal.name}
+                    role={portal.role}
+                    onDone={() => navigate(portal.route, { replace: true })}
+                />
+            )}
         </div>
     );
 }
