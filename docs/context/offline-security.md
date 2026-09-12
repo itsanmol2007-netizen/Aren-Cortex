@@ -6,14 +6,14 @@ again) and `aren-technical-atlas.md` §9a's 2026-09-12 entries.
 
 **Read this before touching anything under `src/lib/offline/` or
 `src/lib/security/`, or before telling anyone "the app works offline."**
-As of 2026-09-12 the write side, the read side, the Synapse ruleset cache,
-the medicine catalogue mirror, and PWA installability are ALL real and
-wired in. What's still genuinely missing is below, not hidden: offline
-consult can look up patients/visits/prescriptions and rank with the cached
-ruleset, but the medicine SEARCH RESULT a doctor actually prescribes still
-resolves through `composition_brands()`, a live Postgres RPC with no
-offline equivalent yet (see "Still open" below) — the catalogue mirror this
-session built exists to feed that replacement, once it's built.
+As of 2026-09-12 a doctor can chart, rank, prescribe from the existing
+catalogue, AND SAVE a whole consultation while offline — the queue closes
+with everything already saved here still fully readable. Deliberately
+NOT covered, by Anmol's own explicit call (not an oversight): adding a
+brand-new medicine to the catalogue mid-consult or from the Practice page
+stays online-only. See "The honest state" below for the full, current
+breakdown — this is a "core features survive, not a full offline HMS"
+system, and that boundary is deliberate.
 
 ---
 
@@ -22,8 +22,9 @@ session built exists to feed that replacement, once it's built.
 Real and wired in for real:
 
 1. **A durable write queue** — a doctor's own offline writes survive a
-   reload. Wired to exactly ONE flow today: Front Desk's `createNewVisit`
-   (new patient + visit registration).
+   reload. Wired to TWO flows: Front Desk's `createNewVisit` (new patient +
+   visit registration) and, as of this session, `"consult.saveConsult"` —
+   see item 8 below, the actual core-survivability feature.
 2. **The PIN lock + 72-hour B2B lock** — both fully wired, both verified
    live, both independent of everything else on this page.
 3. **The read-through cache** (`lib/offline/localMirror.ts`) — patients,
@@ -54,7 +55,54 @@ Real and wired in for real:
    `composition_brands()` across paracetamol (1786 candidates), amoxicillin
    (1511), a combination-only composition, a composition with no coverage
    at all, and compositions with real `is_primary` rows — zero diffs, both
-   with and without a paediatric/keep-list boost active.
+   with and without a paediatric/keep-list boost active. **Local-first, not
+   fallback-only**: once a device has ever synced the catalogue,
+   `fetchCompositionBrands`/`resolveProductByName`/`fetchProductsByNames`
+   read the local mirror FIRST (not the network, falling back to local on
+   failure) — Anmol's call, for speed: a same-machine IndexedDB read beats
+   a network round trip regardless of connectivity, and the background sync
+   already keeps the local copy close to current independently. Only a
+   device that has never synced asks the network at all; an unexpected
+   local read failure still falls through to the network as a safety net.
+8. **Offline consult-save** — the actual core-survivability feature,
+   built after Anmol's own "this should have been the first priority"
+   reaction to finding it wasn't there yet. `saveConsult`
+   (`lib/db/intelligence.ts`: visit completion + prescription +
+   prescription_medicines + diagnostic_orders) now has a registered write
+   handler (`"consult.saveConsult"`) — `useConsultLifecycle.ts`'s
+   `handleConfirmAndSave` tries it live first, and on a genuine offline
+   failure (`!navigator.onLine`, not a real server-side rejection, which
+   still surfaces exactly as before) queues the whole save and finishes the
+   consult from the doctor's point of view (chart resets, toast confirms,
+   moves to the next patient) instead of hard-failing at the last step. No
+   id-reconciliation risk: every medicine/composition id it ever receives
+   already exists in the (downloaded-well-before-this-consult) catalogue.
+   Deliberately NOT queued alongside it — WhatsApp send (no offline
+   equivalent exists for a message send), the exercise plan write, the
+   story/goals write, the decision-log learning write — all four are
+   already treated as best-effort/non-fatal even when fully online (see
+   `useConsultLifecycle.ts`'s own comments), so skipping them outright when
+   the whole save had to queue is the same acceptance, not a new one.
+9. **Medicine/lab additions are explicitly restricted to online-only**,
+   not silently broken. `addMedicine` (consult) and `addClinicMedicine`
+   (Practice page) both call `requireOnlineFor()`
+   (`lib/offline/onlineOnly.ts`) up front and throw a clear, doctor-facing
+   message rather than attempting a write that has nowhere safe to go
+   offline. This was a deliberate scope cut, not an oversight: queuing a
+   brand-new medicine's creation would need either inventing a fake id and
+   reconciling it once the real one exists, or resolving a same-consult
+   prescription by name instead of id at replay time — both real, buildable
+   designs, deliberately not built because the case (adding a genuinely new
+   medicine mid-consult, offline) is rare and worth less than the risk of
+   getting a medicine-id linkage wrong. Anmol's own words: "we just need to
+   build core features survivable, not a full offline HMS."
+10. **Personalisation refreshes periodically, not just at login.**
+    `useSynapse.ts` re-runs its whole load (ruleset + preferences + brand
+    habits + frequent list + clinic defaults) every 24 hours while the tab
+    stays open AND online — closes the one real gap in "cached once at
+    login": a doctor who keeps an installed PWA open across several days
+    would otherwise rank against a slowly staling snapshot of their own
+    habits until they happened to reload.
 
 What does **NOT** exist yet:
 
@@ -262,11 +310,13 @@ name ascending — and take the top `limit`.
   without a paediatric/doctor-preference boost active. Zero differences in
   every case.
 - **What this does NOT solve**: a doctor ADDING a brand-new medicine
-  (`addMedicine`) while offline. That's a WRITE, and only one write type has
-  an offline queue handler today (front desk's `createVisit`) — see the
-  write-side section above. Attempting it offline fails exactly as it did
-  before any of this work started; genuinely new, separate work, not
-  something this ranking replica touches.
+  (`addMedicine`) while offline. This is now a deliberate, explicit
+  restriction rather than an open gap — see "The honest state" item 9
+  (`lib/offline/onlineOnly.ts`'s `requireOnlineFor`): both `addMedicine`
+  and Practice's `addClinicMedicine` throw a clear message up front instead
+  of attempting a write that has no safe offline path (the id-
+  reconciliation problem this ranking replica does NOT need to solve, since
+  every id it ever reads already exists in the synced catalogue).
 
 ## `src/lib/security/` — the PIN lock
 

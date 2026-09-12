@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { registerWriteHandler } from "../offline/writeQueue";
 
 // ---------------------------------------------------------------------------
 // What saving a consultation writes.
@@ -139,4 +140,38 @@ export async function saveConsult(opts: {
 
     return { prescriptionId: rx.id };
 }
+
+// ── OFFLINE — queued consult save ───────────────────────────────────────────
+//
+// This is the CORE offline-survivability write, not a full offline HMS —
+// see docs/context/offline-security.md's design discussion. It exists
+// because, until now, finishing a consult had NO offline path at all: only
+// front desk's new-patient/visit registration was queued
+// (`frontdesk.createVisit` in useVisitActions.ts). A doctor who lost
+// connectivity mid-consult could chart everything, then hit a hard "Save
+// failed" at the very last step — the one moment losing the work actually
+// mattered.
+//
+// What this handler does NOT cover, deliberately: `saveExercisePlan`,
+// `onSaveStory` (the story/goals write), `commitConsultation` (the
+// decision-log learning write), and any WhatsApp send. All four are
+// already treated as best-effort/non-fatal even in the ONLINE path today
+// (see useConsultLifecycle.ts's own comments — "a consult save must never
+// fail because personalisation did") — extending that same acceptance to
+// "the network wasn't there for the whole save" is consistent, not a new
+// compromise. `useConsultLifecycle.ts`'s offline branch skips them outright
+// rather than trying to queue four more independent writes, several of
+// which (WhatsApp in particular) cannot be queued at all — a message send
+// has no offline equivalent to fall back to.
+//
+// No new-medicine-creation risk here either: every `medicine_id`/
+// `composition_id` this ever receives already exists in the catalogue by
+// the time a doctor can pick it (the catalogue is downloaded well before
+// any consult starts) — there is no id-reconciliation problem like the one
+// discussed for offline medicine ADDITION, which is why that stays
+// restricted to online-only instead.
+async function replaySaveConsult(payload: unknown): Promise<void> {
+    await saveConsult(payload as Parameters<typeof saveConsult>[0]);
+}
+registerWriteHandler("consult.saveConsult", replaySaveConsult);
 

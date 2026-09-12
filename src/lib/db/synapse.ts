@@ -41,6 +41,7 @@ import type { MeasurementRow } from "../synapse/consultInput";
 import type { FindingSuggestionRule } from "../synapse/examSuggestions";
 import { offlineCompositionBrands } from "../offline/offlineBrands";
 import { getCatalogueSyncState } from "../offline/catalogueSync";
+import { requireOnlineFor } from "../offline/onlineOnly";
 
 export const RULESET_VERSION = "mvp-1";
 
@@ -847,8 +848,16 @@ export async function fetchCompositionBrands(opts: {
         ]),
     ];
 
-    let rows: BrandRow[];
-    try {
+    // LOCAL FIRST, deliberately — not a fallback path. Once this device has
+    // ever synced the catalogue, ranking from it is a same-machine IndexedDB
+    // read instead of a network round trip, and the background sync
+    // (catalogueSync.ts) already keeps it close to current independently —
+    // that's what makes reading it directly safe, not just fast. Only a
+    // device that has NEVER synced (brand new install, first minute of use)
+    // asks the network at all. Anmol's call: consult-time medicine lookups
+    // should hit the fast local copy first, same as everything else in this
+    // ranking already prioritises "resolvable now" over "freshest possible."
+    const askNetwork = async (): Promise<BrandRow[]> => {
         const { data, error } = await supabase.rpc("composition_brands", {
             p_composition_ids: opts.compositionIds,
             p_limit: BRAND_CANDIDATES,
@@ -857,28 +866,28 @@ export async function fetchCompositionBrands(opts: {
             p_keep_medicine_ids: keep,
         });
         if (error) throw new Error(`brands: ${error.message}`);
-        rows = (data ?? []) as BrandRow[];
-    } catch (err) {
-        // Offline (or the RPC genuinely failed) — the local catalogue
-        // mirror's own replica of this exact ranking. See
-        // lib/offline/offlineBrands.ts's header for why it reproduces the
-        // real SQL rather than approximating it: the ordering IS the
-        // clinical decision.
-        rows = await offlineCompositionBrands({
-            compositionIds: opts.compositionIds,
-            limit: BRAND_CANDIDATES,
-            hospitalId: opts.hospitalId ?? null,
-            pediatric: opts.isPediatric,
-            keepMedicineIds: keep,
-        });
-        // An empty offline result is ambiguous by itself — it's the correct
-        // answer for a composition with genuinely no catalogue coverage, the
-        // SAME thing the RPC would also return. What actually distinguishes
-        // "offline worked, nothing to show" from "this device has never
-        // synced the catalogue at all" is whether there's ANY local
-        // catalogue to have queried in the first place — checked directly
-        // rather than inferred from this one query's row count.
-        if (rows.length === 0 && getCatalogueSyncState().localVersion === 0) throw err;
+        return (data ?? []) as BrandRow[];
+    };
+
+    let rows: BrandRow[];
+    if (getCatalogueSyncState().localVersion > 0) {
+        try {
+            rows = await offlineCompositionBrands({
+                compositionIds: opts.compositionIds,
+                limit: BRAND_CANDIDATES,
+                hospitalId: opts.hospitalId ?? null,
+                pediatric: opts.isPediatric,
+                keepMedicineIds: keep,
+            });
+        } catch (localErr) {
+            // The local read itself failed unexpectedly (a genuine IndexedDB
+            // error, not "found nothing") — this device may well be online,
+            // so ask the network rather than leaving the doctor stuck.
+            console.warn("offlineCompositionBrands failed, falling back to network:", localErr);
+            rows = await askNetwork();
+        }
+    } else {
+        rows = await askNetwork();
     }
     const candidates = new Map<number, Medicine[]>();
     const totals = new Map<number, { single: number; combination: number }>();
@@ -986,6 +995,8 @@ export async function addMedicine(opts: {
     strengthMg?: number | null;
     manufacturer?: string | null;
 }): Promise<AddMedicineResult[]> {
+    // Online-only, deliberately — see lib/offline/onlineOnly.ts's header.
+    requireOnlineFor("Adding a new medicine");
     const { data, error } = await supabase.rpc("add_medicine", {
         p_name: opts.name,
         p_composition_ids: opts.compositionIds,

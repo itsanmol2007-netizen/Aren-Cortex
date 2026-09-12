@@ -281,6 +281,25 @@ export function useSynapse(): UseSynapse {
     }, [ready, load]);
 
     useEffect(() => {
+        // Personalisation (brand habits, frequent list, clinic defaults)
+        // only gets fetched once per login otherwise — fine for a normal
+        // day, but a doctor who keeps an installed PWA open across several
+        // days would keep ranking against a slowly staling snapshot of
+        // their own habits until they happened to reload. A periodic
+        // background refresh closes that: once every 24h, and only while
+        // actually online (no point retrying into a dead network — the next
+        // tick will catch it). Silent on success; `reload`'s own error path
+        // already covers a genuine failure.
+        if (!ready) return;
+        const REFRESH_MS = 24 * 60 * 60 * 1000;
+        const id = window.setInterval(() => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) return;
+            void load(true);
+        }, REFRESH_MS);
+        return () => window.clearInterval(id);
+    }, [ready, load]);
+
+    useEffect(() => {
         // The medicine catalogue mirror — a completely separate concern from
         // the ruleset above (~525k rows vs ~4,000, its own version-tracked
         // sync, see lib/offline/catalogueSync.ts), so it runs on its own

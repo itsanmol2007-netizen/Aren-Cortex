@@ -44,6 +44,7 @@ import {
   formatCredits,
 } from "../lib/db/messaging";
 import type { RxLanguage } from "../lib/i18n/prescriptionLabels";
+import { enqueueWrite } from "../lib/offline/writeQueue";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -644,7 +645,7 @@ export function useConsultLifecycle({
         sort_order: i,
       }));
 
-      const saved = await saveConsult({
+      const saveConsultOpts = {
         visitId,
         doctorId: identity.doctorId,
         hospitalId: identity.hospitalId,
@@ -657,7 +658,55 @@ export function useConsultLifecycle({
         adviceNotes: plan.reviewAdvice,
         therapyNotes: plan.therapyNotes || null,
         labName: plan.selectedLabName,
-      });
+      };
+
+      let saved: { prescriptionId: string } | null = null;
+      try {
+        saved = await saveConsult(saveConsultOpts);
+      } catch (err) {
+        // Offline is the one failure mode worth a different outcome than
+        // "Save failed" — everything charted this consult (diagnosis, plan,
+        // prescription) would otherwise be stuck on screen with no way to
+        // finish. A REAL failure (validation, RLS, a genuine server error)
+        // reached the server and got an answer; it should still surface
+        // exactly as before. `navigator.onLine` is the same signal every
+        // other offline mechanism in this app already trusts for this call
+        // (writeQueue.ts's own flush loop, useOnline.ts) — not perfect, but
+        // consistent, and a real but rare "online per the OS, actually
+        // flaky" case still degrades to today's existing behaviour, not a
+        // new one.
+        if (typeof navigator === "undefined" || navigator.onLine) throw err;
+
+        // Queue the whole save — visit completion, prescription, medicines,
+        // diagnostic orders — see lib/db/intelligence.ts's registered
+        // "consult.saveConsult" handler for exactly what replays once
+        // connectivity returns. No id-reconciliation risk: every
+        // medicine_id/composition_id here already exists in the catalogue
+        // (downloaded well before this consult started), unlike offline
+        // medicine ADDITION, which is why that stays online-only instead.
+        await enqueueWrite("consult.saveConsult", saveConsultOpts, {
+          hospitalId: identity.hospitalId,
+          doctorId: identity.isReal ? identity.doctorId : null,
+        });
+
+        // Deliberately NOT attempted offline: WhatsApp (a message send has
+        // no offline equivalent to fall back to), the exercise plan, the
+        // story/goals write, and the decision-log learning write — all four
+        // are already treated as best-effort/non-fatal even when online
+        // (see the comments further down this function), so skipping them
+        // outright here is the same acceptance extended to "the network
+        // wasn't there for the whole save," not a new compromise. The
+        // doctor is told plainly what did and didn't happen.
+        const seen = session.patient?.name ?? null;
+        session.setIsReviewOpen(false);
+        resetConsultState();
+        showToast(
+          "Saved offline — will sync once you're back online. " +
+          "WhatsApp, the exercise plan, and follow-up learning are skipped for this consult."
+        );
+        onConsultSaved?.(seen);
+        return;
+      }
 
       // The home programme, as rows rather than prose.
       //

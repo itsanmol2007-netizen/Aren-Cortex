@@ -14,6 +14,72 @@ the catalogue pipeline too, not just the write side.**
 
 ---
 
+## Addendum, same session: offline consult-save (the actual core feature)
+
+Everything below this line was the original handoff. This addendum covers
+what came after, once CloudFront hit an AWS account-verification wall
+(Anmol worked around it by making the S3 bucket's `snapshots/` prefix
+public instead — verified end to end, real row counts, real gzip sizes)
+and a design conversation about medicine additions surfaced a real gap:
+**saving a whole consultation had NO offline path at all** — only front
+desk's new-patient/visit registration was queued. Anmol's reaction was
+correctly sharp about that ("this should have been first priority"), and
+his direction from there shaped everything below: **restrict catalogue
+additions to online-only, and spend the real effort on consult-save
+surviving offline** — "core features survivable, not a full offline HMS."
+
+Built, in this order:
+
+1. **Offline consult-save** — `saveConsult` (`lib/db/intelligence.ts`) now
+   has a registered write handler (`"consult.saveConsult"`).
+   `useConsultLifecycle.ts`'s `handleConfirmAndSave` tries it live first;
+   on a genuine offline failure it queues the WHOLE save (visit completion,
+   prescription, medicines, diagnostic orders) and finishes the consult
+   from the doctor's point of view exactly like a successful save — chart
+   resets, a clear toast, advances to the next patient. A real (non-
+   network) failure still surfaces exactly as before — only
+   `!navigator.onLine` triggers the queue path. Deliberately NOT bundled
+   into the same queue: WhatsApp send, the exercise plan write, the
+   story/goals write, the decision-log learning write — all four are
+   already best-effort/non-fatal even fully online, so this extends that
+   same acceptance rather than inventing a new compromise.
+2. **Medicine/lab additions restricted to online-only, on purpose.**
+   `lib/offline/onlineOnly.ts`'s `requireOnlineFor()`, called from both
+   `addMedicine` (consult) and `addClinicMedicine` (Practice page). Why
+   restricted rather than queued: a same-consult prescription referencing
+   a medicine that was ALSO just added offline creates a real id-
+   reconciliation problem the write queue doesn't support (queued writes
+   are independent by design — see writeQueue.ts's own header). Solvable
+   (resolve the later write by name instead of id at replay time), but
+   Anmol's call was that the case is rare enough not to be worth the risk
+   of getting a medicine-id linkage wrong.
+3. **Local-first medicine ranking/search**, not fallback-only. Anmol,
+   directly: "I will prefer local database because that is very much
+   fast." Once a device has ever synced the catalogue,
+   `fetchCompositionBrands`/`resolveProductByName`/`fetchProductsByNames`
+   now read the local mirror FIRST — not network-first-with-fallback like
+   everything else built this session — falling through to network only
+   when nothing has ever synced, or when the local read itself errors
+   unexpectedly. Safe because the background sync already keeps the local
+   copy close to current independently, and because it's read-only data
+   changing rarely, unlike a patient's live chart.
+4. **Personalisation now refreshes every 24h**, not just at login —
+   closes the gap Anmol named directly ("that thing need to be... cast
+   time by time, every one day, two day, three day, or a week"): a doctor
+   with an installed PWA open across several days used to rank against a
+   slowly staling snapshot of their own brand habits until they reloaded.
+
+Verified: `npx tsc -p tsconfig.app.json --noEmit` and `npm run build` both
+clean after every piece above, same discipline as the rest of this session.
+NOT yet verified live in a real signed-in browser session — this addendum's
+work is fresh; a Playwright pass signed in as a real doctor (finish a
+consult with the network actually cut, confirm it queues and later
+flushes; confirm ranking is visibly instant once synced) is the natural
+next check before calling this fully proven, the same way the PIN lock and
+payment-rail fixes earlier in this project's history were.
+
+---
+
 ## What landed, in order
 
 Anmol's brief: (1) the offline READ layer (patients/visits/prescriptions +

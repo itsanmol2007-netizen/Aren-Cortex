@@ -24,6 +24,7 @@
 
 import { supabase } from "../supabase";
 import { visitStatusKind } from "../../features/patients/visitStatus";
+import { requireOnlineFor } from "../offline/onlineOnly";
 
 const IST_OFFSET = "+05:30";
 const IST_ZONE = "Asia/Kolkata";
@@ -1403,6 +1404,8 @@ export async function addClinicMedicine(opts: {
     strengthMg?: number | null;
     manufacturer?: string | null;
 }): Promise<void> {
+    // Online-only, deliberately — see lib/offline/onlineOnly.ts's header.
+    requireOnlineFor("Adding a new medicine");
     const { error } = await supabase.rpc("add_medicine", {
         p_name: opts.name.trim(),
         p_composition_ids: opts.compositionIds,
