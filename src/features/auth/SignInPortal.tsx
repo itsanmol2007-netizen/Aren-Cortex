@@ -58,12 +58,9 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 
 type Props = {
-    /** The doctor/staff's first name, already resolved by `loadIdentity` —
+    /** The doctor/staff's stored name, already resolved by `loadIdentity` —
      *  never fetched here, this component owns no network of its own. */
     name?: string | null;
-    /** "doctor" gets the clinical honorific; everyone else just gets their
-     *  name, or a role-neutral line if even that isn't there yet. */
-    role?: string | null;
     /** Present ⇒ WAITING mode: the portal draws in, holds on a soft pulse,
      *  and exits once this turns true (never before `MIN_MS`). Omitted ⇒
      *  TIMED mode: a fixed-length greeting that always finishes on its own. */
@@ -94,7 +91,26 @@ const MIN_MS = 2300;
 const DEFAULT_TIMEOUT_MS = 15000;
 const FADE_MS = 500;
 
-export function SignInPortal({ name, role, waitFor, holdMessage, timeoutMs = DEFAULT_TIMEOUT_MS, onTimeout, onDone }: Props) {
+/**
+ * Trim a stored name down to something short enough to greet with — and
+ * NEVER add an honorific of its own. Anmol, 2026-09-12: "Doctor is already
+ * written in most of the names, so don't [append] doctor by yourself." The
+ * old line did exactly that (`Welcome back, Dr. ${firstWord}`), so a
+ * `users.full_name` of "Dr Anmol Pandey" greeted the doctor as "Welcome
+ * back, Dr. Dr" — the first WORD of that name is the honorific, not a name.
+ *
+ * So: if the stored name already opens with one, keep it and the name
+ * beside it ("Dr Anmol"); otherwise just the first name ("Anmol"). Either
+ * way the clinic's own convention is what shows, never one invented here.
+ */
+function greetingName(raw?: string | null): string | null {
+    const parts = (raw ?? "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return null;
+    const honorific = /^(dr|doctor|prof|mr|mrs|ms|miss)\.?$/i.test(parts[0]);
+    return honorific ? parts.slice(0, 2).join(" ") : parts[0];
+}
+
+export function SignInPortal({ name, waitFor, holdMessage, timeoutMs = DEFAULT_TIMEOUT_MS, onTimeout, onDone }: Props) {
     const reducedMotion = useReducedMotion();
     const waitingMode = waitFor !== undefined;
     const [exiting, setExiting] = useState(false);
@@ -167,12 +183,11 @@ export function SignInPortal({ name, role, waitFor, holdMessage, timeoutMs = DEF
         );
     }
 
-    const first = name?.trim().split(/\s+/)[0];
+    const greeting = greetingName(name);
     const line = waitingMode
         ? (holdMessage ?? "Setting things up…")
-        : role === "doctor" && first ? `Welcome back, Dr. ${first}`
-            : first ? `Welcome back, ${first}`
-                : "Welcome back";
+        : greeting ? `Welcome back, ${greeting}`
+            : "Welcome back";
 
     return (
         <div

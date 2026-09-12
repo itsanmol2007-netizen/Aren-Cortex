@@ -1728,7 +1728,6 @@ function App() {
         waitFor={dbReady}
         holdMessage="Setting up your clinic…"
         name={identity.doctorName}
-        role="doctor"
         onTimeout={() => setBootTimedOut(true)}
         onDone={() => setPortalShown(true)}
       />

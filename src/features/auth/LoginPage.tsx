@@ -72,7 +72,7 @@ export function LoginPage() {
     // plays on its way INTO a working session, never as a substitute for one.
     // `adoptIdentity` already ran by the time this is set; the portal only
     // delays the `navigate()` call below it, not anything the app needs.
-    const [portal, setPortal] = useState<{ name: string | null; role: string | null; route: string } | null>(null);
+    const [portal, setPortal] = useState<{ name: string | null; route: string } | null>(null);
 
     // Numeric only, hard-capped at 10 — letters and symbols never appear.
     // A 12-digit paste beginning "91" is a country-coded number: strip it,
@@ -160,7 +160,6 @@ export function LoginPage() {
             adoptIdentity(result.identity);
             setPortal({
                 name: result.identity.user.full_name,
-                role: result.identity.user.role,
                 route: homeRouteForRole(result.identity.user.role),
             });
         } finally {
@@ -249,14 +248,14 @@ export function LoginPage() {
                 </div>
             </main>
 
-            <div className="lg-baseline" aria-hidden="true">
-                AREN — CLINICAL OPERATING SYSTEM
-            </div>
+            {/* The "AREN — CLINICAL OPERATING SYSTEM" baseline used to live
+                here; AuthLayout carries the brand lockup and the footer row
+                for both screens now, so a second copy of it under the card
+                would just be the same words twice. */}
 
             {portal && (
                 <SignInPortal
                     name={portal.name}
-                    role={portal.role}
                     onDone={() => navigate(portal.route, { replace: true })}
                 />
             )}
@@ -272,27 +271,27 @@ const LOGIN_CSS = `
    the glass. This is just the card, centred in whatever space the shared
    layout gives it. */
 .lg-root {
-    min-height: 100%;
-    display: grid;
-    place-items: center;
-    padding: 32px 20px 64px;
+    display: block;
     font-family: var(--lg-sans);
     color: var(--lg-ink);
 }
 
-/* The glass card. */
+/* The glass card. Same glass recipe as WelcomePage's card on purpose —
+   the two are one card moving between two states as far as the doctor is
+   concerned (AuthLayout animates the box between them), so they must not
+   be two different-looking pieces of glass. */
 .lg-card {
     position: relative;
-    width: min(420px, 100%);
-    padding: 38px 36px 30px;
-    border-radius: calc(var(--lg-radius) * 1.5);
-    background: rgba(255, 255, 255, 0.55);
+    width: 100%;
+    padding: 36px 34px 28px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.82);
     -webkit-backdrop-filter: blur(22px) saturate(1.25);
     backdrop-filter: blur(22px) saturate(1.25);
-    border: 1px solid var(--lg-line);
+    border: 1px solid rgba(255, 255, 255, 0.9);
     box-shadow:
-        0 28px 64px -28px rgba(12, 13, 12, 0.22),
-        0 2px 8px rgba(12, 13, 12, 0.04);
+        0 32px 70px -30px rgba(58, 30, 92, 0.28),
+        0 2px 10px rgba(12, 13, 12, 0.04);
 }
 
 .lg-eyebrow {
@@ -482,23 +481,5 @@ input.lg-input:disabled {
 }
 .lg-foot a:hover {
     border-bottom-color: var(--lg-accent-ink);
-}
-
-.lg-baseline {
-    position: fixed;
-    bottom: 22px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-family: var(--lg-mono);
-    font-size: 9.5px;
-    letter-spacing: 0.22em;
-    color: var(--lg-faint);
-    opacity: 0.75;
-    pointer-events: none;
-}
-
-@media (max-height: 640px) {
-    .lg-baseline { display: none; }
 }
 `;
