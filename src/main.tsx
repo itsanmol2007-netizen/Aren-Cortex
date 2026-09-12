@@ -25,6 +25,8 @@ import { CataloguePage } from "./features/admin/pages/CataloguePage";
 import { ClinicSettingsPage } from "./features/admin/pages/ClinicSettingsPage";
 import { PlanPage } from "./features/admin/pages/PlanPage";
 import { LoginPage } from "./features/auth/LoginPage";
+import { WelcomePage } from "./features/auth/WelcomePage";
+import { AuthLayout } from "./features/auth/AuthLayout";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -53,7 +55,17 @@ function RoutedApp() {
       <AuthProvider>
         <AppLockGate>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+            {/* The marketing-style welcome screen at the index, the actual
+                credential form one level down — see AuthLayout.tsx for why
+                they share one element instead of each owning their own
+                background. A cold, unauthenticated visit (RequireAuth's own
+                redirect below) lands on the welcome screen; a returning
+                visit that has something specific to say (device revoked,
+                session lost) skips straight to /login/signin instead. */}
+            <Route path="/login" element={<AuthLayout />}>
+              <Route index element={<WelcomePage />} />
+              <Route path="signin" element={<LoginPage />} />
+            </Route>
             {/* Everything else — every workspace, every future route — sits
                 behind the auth gate. No verified session + active user +
                 active hospital ⇒ nothing renders but the login screen. */}

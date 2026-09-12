@@ -30,6 +30,10 @@ export function useLogout(): () => Promise<void> {
         // inherit the previous session's clinic name, logo or photo from
         // localStorage while their own rows load.
         clearProfileCache();
-        navigate("/login", { replace: true });
+        // Straight to the credential form, not the marketing welcome screen
+        // at /login itself — someone who just pressed "Log out" already
+        // knows they have an account; the first-impression screen is for a
+        // cold, unauthenticated visit (see RequireAuth's own redirect).
+        navigate("/login/signin", { replace: true });
     }, [signOut, queryClient, navigate]);
 }

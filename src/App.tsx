@@ -112,6 +112,7 @@ import {
   type DBDoctor, type DBHospital, type RealVisit,
 } from "./lib/db";
 import { fetchLastExercisePlan } from "./lib/db/exercises";
+import { SignInPortal } from "./features/auth/SignInPortal";
 
 // Title + subtitle for a coming-soon feature page — now the FALLBACK for a
 // future sidebar destination that hasn't earned its own page yet, not a
@@ -153,6 +154,15 @@ function App() {
   const [dbReady, setDbReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootAttempt, setBootAttempt] = useState(0);
+  // The portal (SignInPortal.tsx, WAITING mode) draws in, holds, then exits
+  // once `dbReady` turns true — `portalShown` is that "has it actually
+  // finished handing off yet" flag, separate from `dbReady` itself so the
+  // real app doesn't mount a frame early just because the fetch resolved
+  // fast. `bootTimedOut` is the other way out: `SignInPortal`'s own
+  // `timeoutMs` gives up if `dbReady` never arrives — a real gap the old
+  // plain-text "Connecting to AREN database…" had no answer for at all.
+  const [portalShown, setPortalShown] = useState(false);
+  const [bootTimedOut, setBootTimedOut] = useState(false);
   const [doctorProfile, setDoctorProfile] = useState<DBDoctor | null>(null);
   const [hospitalProfile, setHospitalProfile] = useState<DBHospital | null>(null);
 
@@ -557,7 +567,11 @@ function App() {
       });
   }, [identity.ready, identity.doctorId, identity.hospitalId, bootAttempt]);
 
-  const retryBoot = useCallback(() => setBootAttempt((n) => n + 1), []);
+  const retryBoot = useCallback(() => {
+    setBootTimedOut(false);
+    setPortalShown(false);
+    setBootAttempt((n) => n + 1);
+  }, []);
 
   // The engine is a pure function over data already in memory, so ranking is
   // synchronous — the list re-ranks in the same frame the chip lands. The old
@@ -1669,36 +1683,55 @@ function App() {
   );
 
 
-  if (!dbReady) {
+  // A real error (the fetch itself rejected) always wins over the portal —
+  // no reason to sit through a 15s timeout when the answer already came
+  // back. `bootTimedOut` is SignInPortal's own `onTimeout` firing instead:
+  // `dbReady` never arrived within its `timeoutMs`, the one case the old
+  // plain-text screen had no answer for at all (it would just sit on
+  // "Connecting to AREN database…" forever).
+  if (bootError || bootTimedOut) {
     return (
       <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
         <div style={{ textAlign: "center", color: "var(--muted)" }}>
           <div style={{ fontSize: 28, marginBottom: 12 }}>⚕</div>
-          {bootError ? (
-            <>
-              <p style={{ fontSize: 14, color: "var(--cs-red, #b42318)" }}>
-                Couldn't reach the AREN database.
-              </p>
-              <p style={{ fontSize: 12, marginTop: 4, marginBottom: 16 }}>{bootError}</p>
-              <button
-                onClick={retryBoot}
-                style={{
-                  fontSize: 13,
-                  padding: "8px 18px",
-                  borderRadius: 8,
-                  border: "1px solid var(--line, #dbe2ec)",
-                  background: "var(--card, #fff)",
-                  cursor: "pointer",
-                }}
-              >
-                Retry
-              </button>
-            </>
-          ) : (
-            <p style={{ fontSize: 14 }}>Connecting to AREN database…</p>
-          )}
+          <p style={{ fontSize: 14, color: "var(--cs-red, #b42318)" }}>
+            {bootError ? "Couldn't reach the AREN database." : "This is taking longer than expected."}
+          </p>
+          <p style={{ fontSize: 12, marginTop: 4, marginBottom: 16 }}>
+            {bootError ?? "Check your connection and try again."}
+          </p>
+          <button
+            onClick={retryBoot}
+            style={{
+              fontSize: 13,
+              padding: "8px 18px",
+              borderRadius: 8,
+              border: "1px solid var(--line, #dbe2ec)",
+              background: "var(--card, #fff)",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       </div>
+    );
+  }
+
+  // Not just "while !dbReady" — the portal itself decides when it's done
+  // (never before its own MIN_MS, so a fetch resolving in 80ms still reads
+  // as a considered moment rather than a flash), and `portalShown` is what
+  // actually gates the real app rendering a frame early.
+  if (!portalShown) {
+    return (
+      <SignInPortal
+        waitFor={dbReady}
+        holdMessage="Setting up your clinic…"
+        name={identity.doctorName}
+        role="doctor"
+        onTimeout={() => setBootTimedOut(true)}
+        onDone={() => setPortalShown(true)}
+      />
     );
   }
 

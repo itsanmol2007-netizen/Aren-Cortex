@@ -15,7 +15,22 @@ export function RequireAuth() {
     if (auth.status === "checking") return <GateScreen />;
 
     if (auth.status === "anon") {
-        return <Navigate to="/login" replace state={auth.notice ? { notice: auth.notice } : undefined} />;
+        // A plain, cold visit (no notice at all — nobody has told this
+        // browser it used to be signed in) gets the marketing welcome
+        // screen first, per Anmol, 2026-09-12: a doctor arriving from an
+        // email link should not land straight on a bare credential form.
+        // Any real notice (device revoked, session lost, a hospital not
+        // yet active) means this IS a known, returning visit with
+        // something specific to say — that goes straight to the
+        // credential form so the banner is the first thing they see, not
+        // buried a click behind a screen meant for first impressions.
+        return (
+            <Navigate
+                to={auth.notice ? "/login/signin" : "/login"}
+                replace
+                state={auth.notice ? { notice: auth.notice } : undefined}
+            />
+        );
     }
 
     return <Outlet />;

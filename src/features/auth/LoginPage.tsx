@@ -171,8 +171,6 @@ export function LoginPage() {
     return (
         <div className="lg-root">
             <style>{LOGIN_CSS}</style>
-            <div className="lg-wash lg-wash-a" aria-hidden="true" />
-            <div className="lg-wash lg-wash-b" aria-hidden="true" />
 
             <main className="lg-card">
                 <ArenMark size={46} />
@@ -267,58 +265,19 @@ export function LoginPage() {
 }
 
 const LOGIN_CSS = `
+/* No tokens, no fixed positioning, no background of its own any more --
+   this now renders inside AuthLayout.tsx's <Outlet/>, which already
+   supplies the paper background, the --lg-* tokens (still the same
+   values, defined once instead of twice) and the drifting blobs behind
+   the glass. This is just the card, centred in whatever space the shared
+   layout gives it. */
 .lg-root {
-    --lg-paper: #fbfaf8;
-    --lg-paper-2: #f4f2ee;
-    --lg-paper-3: #ece9e3;
-    --lg-ink: #0c0d0c;
-    --lg-ink-2: #1c1e1c;
-    --lg-muted: #6a6a63;
-    --lg-faint: #9a9a93;
-    --lg-line: rgba(12, 13, 12, 0.09);
-    --lg-line-2: rgba(12, 13, 12, 0.16);
-    --lg-accent: #6311d3;
-    --lg-accent-soft: #f1e8fb;
-    --lg-accent-ink: #4a0da1;
-    --lg-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
-    --lg-mono: "Geist Mono", ui-monospace, monospace;
-    --lg-serif: "Newsreader", Georgia, serif;
-    --lg-radius: 0.75rem;
-
-    position: fixed;
-    inset: 0;
-    overflow: auto;
+    min-height: 100%;
     display: grid;
     place-items: center;
     padding: 32px 20px 64px;
-    background: var(--lg-paper);
     font-family: var(--lg-sans);
     color: var(--lg-ink);
-    z-index: 50;
-}
-
-/* Soft color fields behind the glass — enough for the blur to catch,
-   quiet enough to stay clinical. */
-.lg-wash {
-    position: fixed;
-    border-radius: 50%;
-    filter: blur(70px);
-    pointer-events: none;
-}
-.lg-wash-a {
-    width: 480px;
-    height: 420px;
-    top: -120px;
-    right: -80px;
-    background: radial-gradient(closest-side, var(--lg-accent-soft), transparent 72%);
-    opacity: 0.9;
-}
-.lg-wash-b {
-    width: 520px;
-    height: 460px;
-    bottom: -160px;
-    left: -120px;
-    background: radial-gradient(closest-side, var(--lg-paper-3), transparent 70%);
 }
 
 /* The glass card. */
