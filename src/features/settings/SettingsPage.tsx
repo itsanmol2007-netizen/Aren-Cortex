@@ -70,6 +70,7 @@ import type { SidebarPage } from "../sidebar/SidebarNav";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
 import { AppLockCard } from "./AppLockCard";
+import { InstallAppCard } from "./InstallAppCard";
 import { requestSettingFocus } from "./settingsFocus";
 import { toast } from "sonner";
 import "./settings.css";
@@ -1685,6 +1686,10 @@ export function SettingsPage({
 
                         {/* ══ App Lock ════════════════════════════════════════ */}
                         {auth.status === "authed" && <AppLockCard userId={auth.identity.user.id} />}
+
+                        {/* ══ Install App — right beside App Lock, same
+                            treatment: both are "make this device yours". ══ */}
+                        <InstallAppCard />
                     </div>
 
                     {/* ══ System Health — a small section, opening a page ═════

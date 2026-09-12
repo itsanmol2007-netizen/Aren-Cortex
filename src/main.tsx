@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import App from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { initPWA } from "./pwa";
+import { initInstallPrompt } from "./lib/pwa/installPrompt";
 import { installSessionTrace } from "./lib/diagnostics/sessionTrace";
 import { initConnectivityClock } from "./lib/offline/connectivityClock";
 import { initWriteQueue } from "./lib/offline/writeQueue";
@@ -118,6 +119,7 @@ createRoot(document.getElementById("root")!).render(
 // the one a support request most needs to carry. See sessionTrace.ts.
 installSessionTrace();
 initPWA();
+initInstallPrompt();
 // The offline foundation: the "when did we last really hear from the
 // server" clock, and the durable write queue that replays anything queued
 // while disconnected. Both are pure background wiring — neither blocks or
