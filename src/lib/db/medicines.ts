@@ -41,6 +41,17 @@
 
 import { supabase } from "../supabase";
 import type { Medicine } from "../synapse/brands";
+import { offlineResolveProductByName, offlineFetchProductsByNames } from "../offline/offlineMedicineLookup";
+import { getCatalogueSyncState } from "../offline/catalogueSync";
+
+/** An offline "not found" is only trustworthy once the catalogue has synced
+ *  at least once on this device — before that, "not found" and "haven't
+ *  downloaded the catalogue yet" look identical, and this file's own header
+ *  rule ("REACHABILITY IS ABSOLUTE") means that ambiguity has to resolve
+ *  toward surfacing the real network error, never a silent empty result. */
+function catalogueHasSynced(): boolean {
+    return getCatalogueSyncState().localVersion > 0;
+}
 
 /** A product with every molecule it actually contains. */
 export interface ResolvedProduct extends Medicine {
@@ -156,37 +167,50 @@ export async function resolveProductByName(name: string): Promise<ResolvedProduc
     const q = name.trim();
     if (!q) return null;
 
-    // ── EXACT MATCH ONLY, and that is not a limitation ────────────────────
-    // The caller passes `search_intents`' own `via_label`, which IS the row's
-    // name, so equality is the right test rather than a compromise.
-    //
-    // It is also the only test that finishes. Measured against the live
-    // catalogue 2026-08-12: `.eq("name", ...)` returns in ~730ms, while
-    // `.ilike("name", "acenac%")` is CANCELLED BY THE STATEMENT TIMEOUT.
-    // `medicines` holds 213,145 rows with no index supporting a prefix scan,
-    // so the wildcard fallback this function used to carry could never
-    // succeed: it failed on every call and the catch below turned that into
-    // silence.
-    const { data, error } = await supabase
-        .from("medicines")
-        .select("id, name")
-        .eq("name", q)
-        .limit(4);
-    if (error) throw new Error(`medicines: ${error.message}`);
+    try {
+        // ── EXACT MATCH ONLY, and that is not a limitation ────────────────
+        // The caller passes `search_intents`' own `via_label`, which IS the row's
+        // name, so equality is the right test rather than a compromise.
+        //
+        // It is also the only test that finishes. Measured against the live
+        // catalogue 2026-08-12: `.eq("name", ...)` returns in ~730ms, while
+        // `.ilike("name", "acenac%")` is CANCELLED BY THE STATEMENT TIMEOUT.
+        // `medicines` holds 213,145 rows with no index supporting a prefix scan,
+        // so the wildcard fallback this function used to carry could never
+        // succeed: it failed on every call and the catch below turned that into
+        // silence.
+        const { data, error } = await supabase
+            .from("medicines")
+            .select("id, name")
+            .eq("name", q)
+            .limit(4);
+        if (error) throw new Error(`medicines: ${error.message}`);
 
-    const rows = (data ?? []) as { id: number; name: string }[];
-    if (rows.length === 0) return null;
+        const rows = (data ?? []) as { id: number; name: string }[];
+        if (rows.length === 0) return null;
 
-    // Shortest name wins a tie, on the rare duplicate-name row.
-    rows.sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name));
-    const pick = rows[0];
+        // Shortest name wins a tie, on the rare duplicate-name row.
+        rows.sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name));
+        const pick = rows[0];
 
-    const products = await hydrate(
-        [Number(pick.id)],
-        new Map([[Number(pick.id), pick.name]]),
-        new Map()
-    );
-    return products[0] ?? null;
+        const products = await hydrate(
+            [Number(pick.id)],
+            new Map([[Number(pick.id), pick.name]]),
+            new Map()
+        );
+        return products[0] ?? null;
+    } catch (err) {
+        // Offline — the local catalogue mirror's own exact-name index. Same
+        // "shortest name wins a tie" rule, see offlineMedicineLookup.ts.
+        const found = await offlineResolveProductByName(q).catch(() => null);
+        if (found) return found;
+        // A genuine "no such product" is only trustworthy once there's
+        // actually a catalogue to have searched — otherwise this is
+        // "haven't synced yet," and the real network error is the honest
+        // answer, not a false "medicine not found."
+        if (catalogueHasSynced()) return null;
+        throw err;
+    }
 }
 
 /**
@@ -211,22 +235,31 @@ export async function fetchProductsByNames(
     const wanted = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
     if (wanted.length === 0) return out;
 
-    const { data, error } = await supabase
-        .from("medicines")
-        .select("id, name")
-        // Equality set, not a pattern. See the timeout note in
-        // `resolveProductByName`: anything wildcard-shaped does not return.
-        .in("name", wanted)
-        .limit(wanted.length * 2);
-    if (error) throw new Error(`medicines: ${error.message}`);
+    try {
+        const { data, error } = await supabase
+            .from("medicines")
+            .select("id, name")
+            // Equality set, not a pattern. See the timeout note in
+            // `resolveProductByName`: anything wildcard-shaped does not return.
+            .in("name", wanted)
+            .limit(wanted.length * 2);
+        if (error) throw new Error(`medicines: ${error.message}`);
 
-    const rows = (data ?? []) as { id: number; name: string }[];
-    if (rows.length === 0) return out;
+        const rows = (data ?? []) as { id: number; name: string }[];
+        if (rows.length === 0) return out;
 
-    const names_ = new Map<number, string>(rows.map((r) => [Number(r.id), r.name]));
-    const products = await hydrate([...names_.keys()], names_, new Map());
-    for (const p of products) out.set(p.name, p);
-    return out;
+        const names_ = new Map<number, string>(rows.map((r) => [Number(r.id), r.name]));
+        const products = await hydrate([...names_.keys()], names_, new Map());
+        for (const p of products) out.set(p.name, p);
+        return out;
+    } catch (err) {
+        // Offline — same local exact-match fallback, same "empty result is
+        // ambiguous until the catalogue has actually synced" rule as
+        // resolveProductByName above.
+        const found = await offlineFetchProductsByNames(wanted).catch(() => new Map<string, ResolvedProduct>());
+        if (found.size > 0 || catalogueHasSynced()) return found;
+        throw err;
+    }
 }
 
 /**

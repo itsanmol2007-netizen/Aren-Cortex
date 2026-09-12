@@ -93,6 +93,12 @@ export interface MedicineRow {
     id: number;
     name: string;
     manufacturer: string | null;
+    /** display only — see `composition_brands()`'s own note on why this is
+     *  null on ~31% of the catalogue (the variant label prefers the strength
+     *  written into the product name instead). Required for the offline
+     *  ranking replica (`lib/offline/offlineBrands.ts`) to return the same
+     *  `strength_mg` field the real RPC does. */
+    strengthMg: number | null;
     /** null = global catalogue; set = this hospital's own pending addition */
     hospitalId: string | null;
 }

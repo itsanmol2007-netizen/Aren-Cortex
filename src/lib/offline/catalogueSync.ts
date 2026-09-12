@@ -127,10 +127,12 @@ function rowsToMedicines(columns: string[], rows: unknown[][]): MedicineRow[] {
     const idIdx = columns.indexOf("id");
     const nameIdx = columns.indexOf("name");
     const manuIdx = columns.indexOf("manufacturer");
+    const strengthIdx = columns.indexOf("strength_mg");
     return rows.map((r) => ({
         id: Number(r[idIdx]),
         name: String(r[nameIdx]),
         manufacturer: r[manuIdx] == null ? null : String(r[manuIdx]),
+        strengthMg: strengthIdx === -1 || r[strengthIdx] == null ? null : Number(r[strengthIdx]),
         hospitalId: null,
     }));
 }
@@ -219,7 +221,7 @@ async function applyDelta(sinceVersion: number, maxRows: number): Promise<boolea
         // handled separately by `syncHospitalMedicines`, always live.
         const { data, error } = await supabase
             .from("medicines")
-            .select("id, name, manufacturer, version")
+            .select("id, name, manufacturer, strength_mg, version")
             .is("hospital_id", null)
             .gt("version", sinceVersion)
             .order("version", { ascending: true })
@@ -229,7 +231,10 @@ async function applyDelta(sinceVersion: number, maxRows: number): Promise<boolea
         total += data.length;
         if (total > maxRows) return false;
         await localDB.medicinesCatalogue.bulkPut(
-            data.map((r: any) => ({ id: Number(r.id), name: r.name, manufacturer: r.manufacturer ?? null, hospitalId: null }))
+            data.map((r: any) => ({
+                id: Number(r.id), name: r.name, manufacturer: r.manufacturer ?? null,
+                strengthMg: r.strength_mg == null ? null : Number(r.strength_mg), hospitalId: null,
+            }))
         );
         if (data.length < PAGE_SIZE) break;
         offset += PAGE_SIZE;
@@ -274,12 +279,15 @@ async function applyDelta(sinceVersion: number, maxRows: number): Promise<boolea
 async function syncHospitalMedicines(hospitalId: string): Promise<void> {
     const { data, error } = await supabase
         .from("medicines")
-        .select("id, name, manufacturer")
+        .select("id, name, manufacturer, strength_mg")
         .eq("hospital_id", hospitalId);
     if (error) throw new Error(`hospital medicines: ${error.message}`);
     if (!data || data.length === 0) return;
     await localDB.medicinesCatalogue.bulkPut(
-        data.map((r: any) => ({ id: Number(r.id), name: r.name, manufacturer: r.manufacturer ?? null, hospitalId }))
+        data.map((r: any) => ({
+            id: Number(r.id), name: r.name, manufacturer: r.manufacturer ?? null,
+            strengthMg: r.strength_mg == null ? null : Number(r.strength_mg), hospitalId,
+        }))
     );
 }
 

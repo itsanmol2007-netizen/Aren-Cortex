@@ -61,7 +61,12 @@ type TableName = 'medicines' | 'compositions' | 'medicine_composition_map';
 
 const TABLE_CONFIG: Record<TableName, { columns: string[]; filter?: (q: any) => any; snapshotUrlField: string }> = {
   medicines: {
-    columns: ['id', 'name', 'manufacturer'],
+    // strength_mg is required — it's part of composition_brands()'s own
+    // output (via mv_composition_brand), read by the offline ranking
+    // replica in lib/offline/offlineBrands.ts. Missing on first cut of this
+    // snapshot; caught while reading that RPC's real source before building
+    // the replica.
+    columns: ['id', 'name', 'manufacturer', 'strength_mg'],
     filter: (q) => q.is('hospital_id', null),
     snapshotUrlField: 'snapshot_medicines_url',
   },

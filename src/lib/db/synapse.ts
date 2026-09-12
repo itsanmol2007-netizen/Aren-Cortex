@@ -39,6 +39,8 @@ import {
 import type { CompanionEdge } from "../synapse/companions";
 import type { MeasurementRow } from "../synapse/consultInput";
 import type { FindingSuggestionRule } from "../synapse/examSuggestions";
+import { offlineCompositionBrands } from "../offline/offlineBrands";
+import { getCatalogueSyncState } from "../offline/catalogueSync";
 
 export const RULESET_VERSION = "mvp-1";
 
@@ -780,7 +782,12 @@ export interface CompositionBrands {
 
 export type BrandIndex = Map<number, CompositionBrands>;
 
-interface BrandRow {
+/** Exported so lib/offline/offlineBrands.ts can produce the exact same shape
+ *  regardless of whether it came from the live composition_brands() RPC or
+ *  the offline replica — every line below `fetchCompositionBrands`'s RPC
+ *  call already treats this as an opaque row shape, so nothing downstream
+ *  needs to know which source it came from. */
+export interface BrandRow {
     composition_id: number;
     medicine_id: number | null;
     name: string | null;
@@ -840,16 +847,39 @@ export async function fetchCompositionBrands(opts: {
         ]),
     ];
 
-    const { data, error } = await supabase.rpc("composition_brands", {
-        p_composition_ids: opts.compositionIds,
-        p_limit: BRAND_CANDIDATES,
-        p_hospital_id: opts.hospitalId ?? null,
-        p_pediatric: opts.isPediatric,
-        p_keep_medicine_ids: keep,
-    });
-    if (error) throw new Error(`brands: ${error.message}`);
-
-    const rows = (data ?? []) as BrandRow[];
+    let rows: BrandRow[];
+    try {
+        const { data, error } = await supabase.rpc("composition_brands", {
+            p_composition_ids: opts.compositionIds,
+            p_limit: BRAND_CANDIDATES,
+            p_hospital_id: opts.hospitalId ?? null,
+            p_pediatric: opts.isPediatric,
+            p_keep_medicine_ids: keep,
+        });
+        if (error) throw new Error(`brands: ${error.message}`);
+        rows = (data ?? []) as BrandRow[];
+    } catch (err) {
+        // Offline (or the RPC genuinely failed) — the local catalogue
+        // mirror's own replica of this exact ranking. See
+        // lib/offline/offlineBrands.ts's header for why it reproduces the
+        // real SQL rather than approximating it: the ordering IS the
+        // clinical decision.
+        rows = await offlineCompositionBrands({
+            compositionIds: opts.compositionIds,
+            limit: BRAND_CANDIDATES,
+            hospitalId: opts.hospitalId ?? null,
+            pediatric: opts.isPediatric,
+            keepMedicineIds: keep,
+        });
+        // An empty offline result is ambiguous by itself — it's the correct
+        // answer for a composition with genuinely no catalogue coverage, the
+        // SAME thing the RPC would also return. What actually distinguishes
+        // "offline worked, nothing to show" from "this device has never
+        // synced the catalogue at all" is whether there's ANY local
+        // catalogue to have queried in the first place — checked directly
+        // rather than inferred from this one query's row count.
+        if (rows.length === 0 && getCatalogueSyncState().localVersion === 0) throw err;
+    }
     const candidates = new Map<number, Medicine[]>();
     const totals = new Map<number, { single: number; combination: number }>();
 

@@ -40,17 +40,24 @@ Real and wired in for real:
 6. **PWA installability** — `beforeinstallprompt` captured, an "Install
    App" card in Settings beside App Lock, iOS Safari's manual "Add to Home
    Screen" instructions where no programmatic prompt exists.
+7. **The offline medicine-ranking replica** (`lib/offline/offlineBrands.ts`,
+   `lib/offline/offlineMedicineLookup.ts`) — `composition_brands()`'s exact
+   ranking (single-molecule filter, doctor-preference/clinic-default
+   reorder, paediatric-form boost, `is_primary`, alphabetical tiebreak) and
+   the exact-name lookups (`resolveProductByName`/`fetchProductsByNames`)
+   both now have offline replicas, wired into `fetchCompositionBrands` and
+   `lib/db/medicines.ts` with network-first/local-fallback. **Verified
+   against the real RPC's actual SQL source (pulled directly from the live
+   database, not guessed) at full scale** — an equivalent query built off
+   the same raw tables the client mirror actually holds (not the
+   `mv_composition_brand` view) produced byte-identical output to
+   `composition_brands()` across paracetamol (1786 candidates), amoxicillin
+   (1511), a combination-only composition, a composition with no coverage
+   at all, and compositions with real `is_primary` rows — zero diffs, both
+   with and without a paediatric/keep-list boost active.
 
 What does **NOT** exist yet:
 
-- **The catalogue mirror has data but nothing ranks with it yet.**
-  `composition_brands()` (single-molecule filter, doctor-preference
-  reorder, clinic default tagging, pediatric forms) is still a live-only
-  Postgres RPC. Offline, a doctor can chart a whole consult against the
-  cached ruleset, but the medicine search/pick step still needs a live
-  connection to actually resolve a prescribable brand. Explicitly deferred
-  — real, delicate work, tracked separately rather than rushed alongside
-  the mirror itself.
 - **Front Desk's own, OLDER, separate offline mechanism is untouched by
   any of this.** `features/frontdesk/operational/referenceCache.ts` +
   `eventLog.ts` (see atlas §9) already cache doctors/symptoms in
@@ -206,9 +213,60 @@ every time a handful of medicines change.
   `subscribeCatalogueSync` back a new "Medicine catalogue" row in
   Settings' System Health (`features/settings/health/model.ts`), same
   service-registry pattern as the existing "Offline queue" row.
-- **What this does NOT do yet**: nothing RANKS with this mirror. See "The
-  honest state" above — `composition_brands()`'s replacement is separate,
-  deferred, tracked work.
+## The offline medicine-ranking replica
+
+`composition_brands()` is a Postgres RPC (source pulled directly from the
+live database, not guessed — `pg_get_functiondef`), backed by a
+materialized view (`mv_composition_brand` = `medicine_composition_map`
+joined to `medicines`, with `ingredient_count` computed as "how many
+compositions does this medicine_id map to, total"). Its logic, in order:
+filter to compositions/hospital-visible rows, compute `single_total`/
+`combination_total` across ALL visible rows, then rank ONLY the
+single-molecule ones by (doctor-history-or-clinic-default) desc, then
+(paediatric AND route is syrup/drops) desc, then `is_primary` desc, then
+name ascending — and take the top `limit`.
+
+- **`lib/offline/offlineBrands.ts`** — reproduces that exact logic over
+  `medicinesCatalogue`/`medicineCompositionMap` (computing `ingredient_count`
+  itself, since the mirror holds the raw tables, not the view). Returns the
+  same `BrandRow[]` shape the RPC does (now exported from `lib/db/synapse.ts`
+  for this reason), so every line downstream of the RPC call in
+  `fetchCompositionBrands` (building candidates/totals, `resolveBrands`,
+  `groupBrandFamilies`) runs unchanged regardless of which one answered.
+- **`lib/offline/offlineMedicineLookup.ts`** — the offline counterpart to
+  `lib/db/medicines.ts`'s exact-name lookups
+  (`resolveProductByName`/`fetchProductsByNames`), mirroring that file's own
+  `hydrate()` field-for-field — including its deliberate `strengthMg: null`
+  quirk (the catalogue puts strength in the product NAME instead;
+  diverging from that offline would make a product's card look different
+  depending on connectivity).
+- **Wiring**: both `fetchCompositionBrands` and `lib/db/medicines.ts`'s two
+  lookups try the network first, catch, and fall back to the local replica.
+  An EMPTY offline result is treated as ambiguous rather than trusted at
+  face value — this file's own header states the rule that motivated the
+  check: "REACHABILITY IS ABSOLUTE… a product the search can find must be a
+  product the accept can deliver." So an empty/null offline answer is only
+  accepted when the catalogue has actually synced at least once on this
+  device (`getCatalogueSyncState().localVersion > 0`); otherwise the real
+  network error surfaces instead of a false "not found."
+- **Correctness verification**: given the clinical stakes (this decides
+  what a doctor sees to prescribe), the ranking logic was checked against
+  the REAL RPC's REAL output on the REAL catalogue, not a synthetic sample
+  — an equivalent SQL query built directly off the raw tables (the same
+  ones the client mirror holds) was diffed against `composition_brands()`
+  itself using `EXCEPT`, at full scale: paracetamol (1786 single-molecule
+  candidates), amoxicillin (1511), a combination-only composition (zero
+  single-molecule products — the one-row-of-nulls-carrying-totals case), a
+  composition with no catalogue coverage at all (zero output rows, not a
+  placeholder), and compositions with real `is_primary` rows, both with and
+  without a paediatric/doctor-preference boost active. Zero differences in
+  every case.
+- **What this does NOT solve**: a doctor ADDING a brand-new medicine
+  (`addMedicine`) while offline. That's a WRITE, and only one write type has
+  an offline queue handler today (front desk's `createVisit`) — see the
+  write-side section above. Attempting it offline fails exactly as it did
+  before any of this work started; genuinely new, separate work, not
+  something this ranking replica touches.
 
 ## `src/lib/security/` — the PIN lock
 
