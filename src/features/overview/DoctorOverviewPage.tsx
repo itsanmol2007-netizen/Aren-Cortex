@@ -500,7 +500,21 @@ export function DoctorOverviewPage({
                         {setup && (
                             <div className="ws-stat-pill px-[12px] py-[6px]">
                                 <div className="flex items-center gap-[6px] whitespace-nowrap text-white/90">
-                                    <span className="text-[12px] font-bold text-white">{setup.modeLabel}</span>
+                                    {/* `setup.modeLabel` names the clinic's CONFIGURED shape
+                                        (`hospitals.clinic_mode`) — same static fact
+                                        `showQueueCard` already learned isn't the whole
+                                        story. Deactivating the receptionist left this
+                                        chip still reading "with front desk": "deactivating
+                                        receptionist still shows Single Bench, With
+                                        Frontdesk" (Anmol, 2026-09-12). Override the
+                                        label, not the underlying fact — the clinic IS
+                                        still shaped for a front desk, nobody is just
+                                        staffing it today. */}
+                                    <span className="text-[12px] font-bold text-white">
+                                        {clinic.frontDesk && hasActiveReception === false
+                                            ? "Solo today — front desk offline"
+                                            : setup.modeLabel}
+                                    </span>
                                     {clinicToday_ !== null && (
                                         <>
                                             <span className="text-[11px] text-white/40">·</span>

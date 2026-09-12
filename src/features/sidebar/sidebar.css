@@ -227,53 +227,53 @@
    the header's left margin. The headers leave exactly that much clear, and
    nothing of theirs is ever underneath it.
 
-   The mark's own tile is `.ws-logo-pill`'s recipe (workspace-header.css) —
-   dark translucent, violet edge, soft outer glow. NOT a filled violet pill:
-   `aren-logo.png` is opaque and carries its own near-black ground, so a
-   gradient behind it is invisible and the mark reads as a dark square lost on
-   a dark header. The glow is what makes it a lit badge; the art supplies the
-   dark. */
+   The WHOLE lockup is `.ws-logo-pill`'s own recipe (workspace-header.css) —
+   dark translucent, violet edge, soft outer glow, AREN stacked over the
+   product name inside one boxed pill — not just the icon boxed with the
+   words floating free beside it. Redesigned 2026-09-12 from a photo of
+   Parallax/Front Desk's own header: "we need some brand logo like this,
+   just the scale accordingly" (Anmol). The icon itself is a plain small
+   tile inside that shared pill now, not a second nested box — `aren-logo.png`
+   is opaque with its own near-black ground, so it still reads fine sitting
+   directly on the pill's dark glass rather than needing its own border. */
 .rail-brand {
     position: absolute;
-    left: 0;
-    top: 0;
-    height: 100%;
-    width: var(--brand-w);
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 46px;
+    width: auto;
+    max-width: calc(var(--brand-w) - 6px);
     z-index: 3;
 
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 0 14px 0 10px;
-    border: none;
-    background: transparent;
+    gap: 9px;
+    padding: 6px 14px 6px 7px;
+    border-radius: 13px;
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    background: rgba(5, 9, 22, 0.78);
+    box-shadow:
+        0 0 0 1px rgba(139, 92, 246, 0.10),
+        0 0 22px rgba(139, 92, 246, 0.32),
+        0 0 48px rgba(168, 85, 247, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     cursor: pointer;
     text-align: left;
     -webkit-tap-highlight-color: transparent;
+    transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
 .rail-brand-mark {
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    /* 44px, was 50, was 44, was 40 — the one piece of chrome that is on
-       screen every second the app is open. It is the brand mark, not a nav
-       icon sized like its neighbours; it has to read as one at a glance
-       next to the page title beside it, not blend in with it — but 50px
-       read as an overshoot once it was actually on screen (2026-09-12). */
-    width: 44px;
-    height: 44px;
-    padding: 7px;
-    border-radius: 13px;
-    border: 1px solid rgba(139, 92, 246, 0.45);
-    background: rgba(5, 9, 22, 0.76);
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
     overflow: hidden;
-    box-shadow:
-        0 0 0 1px rgba(139, 92, 246, 0.10),
-        0 0 22px rgba(139, 92, 246, 0.32),
-        0 0 48px rgba(168, 85, 247, 0.14),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .rail-brand-mark img {
@@ -282,51 +282,41 @@
     object-fit: contain;
 }
 
-/* Cut 2026-09-11 to match Front Desk's own wordmark voice — Anmol: "look in
-   frontdesk, how AREN Frontdesk is written into the top header, i need the
-   same style here." That treatment (`Header` in
-   `features/frontdesk/components/WorkspaceShell.tsx`) is ONE line, not a
-   stacked lockup: "AREN" and the product name sit side by side, same size,
-   same weight, split only by colour, white then a workspace tint.
-
-   Sized up a second time the same day — Front Desk sets its wordmark at
-   15px, barely past its own 16.5px page title's weight class, and once
-   Cortex's copied it 1:1 it read exactly that way here too: "it should not
-   feel same size as Overview written... its brand logo man" (Anmol). This
-   is the one piece of branding left anywhere in the app (see `.rail-head`'s
-   note above), on screen every second the app is open — it has to
-   outweigh a page title, not sit beside one as an equal.
-   Pulled back from 22px to 18px on 2026-09-12 — a full turn past
-   `.ws-header-title`'s 16.5px overshot once it was on screen ("very big and
-   not looking good"). 18px keeps the same gap without shouting. */
+/* Cut 2026-09-11 to match Front Desk's own wordmark voice, sized up the same
+   day past a plain caption weight ("it should not feel same size as
+   Overview... its brand logo man" — Anmol), then redesigned 2026-09-12 into
+   the boxed/stacked pill above — same reference, a different one of its two
+   treatments. AREN on top, bold and tracked like a wordmark; the product
+   name underneath, smaller, in the mark's own violet tint — not two equal
+   words side by side any more. */
 .rail-brand-text {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
-    line-height: 1.1;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.05;
     min-width: 0;
     font-family: Manrope, sans-serif;
 }
 
 .rail-brand-name {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 800;
-    letter-spacing: -0.015em;
+    letter-spacing: 0.05em;
     color: #ffffff;
 }
 
 /* Front Desk's dawn pink (`#f0abc8`) is that workspace's tint — Cortex's is
    violet, the same one the mark's own glow already uses. */
 .rail-brand-product {
-    font-size: 18px;
-    font-weight: 800;
-    letter-spacing: -0.015em;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     color: #cfa8ff;
 }
 
-.rail-brand:hover .rail-brand-mark {
-    transform: translateY(-1px);
+.rail-brand:hover {
     border-color: rgba(167, 139, 250, 0.70);
+    background: rgba(22, 10, 50, 0.86);
     box-shadow:
         0 0 0 1px rgba(139, 92, 246, 0.22),
         0 0 28px rgba(139, 92, 246, 0.52),
@@ -334,16 +324,17 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
-.rail-brand:focus-visible {
-    outline: none;
+.rail-brand:hover .rail-brand-mark {
+    transform: translateY(-1px);
 }
 
-.rail-brand:focus-visible .rail-brand-mark {
+.rail-brand:focus-visible {
+    outline: none;
     box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.55);
 }
 
 /* Pressed, while the panel hangs off it. */
-.nav-open .rail-brand-mark {
+.nav-open .rail-brand {
     border-color: rgba(192, 132, 252, 0.90);
     box-shadow:
         0 0 0 2px rgba(168, 85, 247, 0.40),

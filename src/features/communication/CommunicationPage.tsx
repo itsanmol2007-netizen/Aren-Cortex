@@ -34,7 +34,7 @@
 // watermarked behind its few rows (see `parts.tsx`).
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import {
     AlertTriangle, ArrowRight, CalendarClock, Check, CheckCheck, Clock,
@@ -955,6 +955,18 @@ function ConversationPanel({
     // never a second one (standing rule 6) — read-only, exactly like Print
     // RX's reprint door.
     const [viewingRxId, setViewingRxId] = useState<string | null>(null);
+
+    // The `margin-top: auto` spacer (see the thread div's own comment) fixes
+    // scrollability but, on its own, leaves a freshly opened/switched thread
+    // sitting at its TOP — a plain scroll container's natural resting
+    // position, and the wrong one for a chat, where the newest message is
+    // the thing a doctor opens a conversation to read. Jump to the bottom
+    // ourselves whenever the thread identity or its message count changes.
+    const threadScrollRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = threadScrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+    }, [thread?.phone, thread?.messages.length]);
     const [rxDetail, setRxDetail] = useState<PrescriptionRenderData | null>(null);
     useEffect(() => {
         if (!viewingRxId) { setRxDetail(null); return; }
@@ -1006,14 +1018,25 @@ function ConversationPanel({
                     {/* The thread. The tinted ground is the one real WhatsApp
                         borrowing — it is what makes bubbles read as bubbles
                         rather than as cards. */}
-                    {/* `justify-end` is the WhatsApp behaviour and the fix
-                        for the dead well under a short thread (measured live
-                        2026-09-07): three messages used to hang from the top
-                        with 300px of empty ground beneath them. Anchored to
-                        the bottom, a short thread sits where the newest
-                        message always is and the space goes above it, where
-                        older history would be. */}
-                    <div className="flex min-h-0 flex-1 flex-col justify-end gap-[9px] overflow-y-auto bg-[#f7f8fa] px-[16px] py-[13px]">
+                    {/* Bottom-anchored via a `margin-top: auto` SPACER, not
+                        `justify-content: flex-end` on the scroll container
+                        itself — those look identical for a short thread but
+                        are NOT the same once it overflows. `justify-end` is
+                        "unsafe" alignment per the box-alignment spec: when
+                        content is taller than the container, the OVERFLOW
+                        happens on the far side from the alignment (the top,
+                        here) and is genuinely unreachable by scrolling —
+                        `scrollHeight` stays equal to `clientHeight` and every
+                        message above whatever fits is just gone. Measured
+                        live 2026-09-12 with a 30-message thread: 36 bubbles
+                        in the DOM, container reporting zero scrollable
+                        overflow, only the last handful ever visible. A plain
+                        margin-auto spacer produces the same "sits at the
+                        bottom when short" look but collapses to nothing the
+                        moment real content is taller than the box, leaving
+                        ordinary (reachable) top-anchored overflow. */}
+                    <div ref={threadScrollRef} className="flex min-h-0 flex-1 flex-col gap-[9px] overflow-y-auto bg-[#f7f8fa] px-[16px] py-[13px]">
+                        <div className="mt-auto" aria-hidden="true" />
                         {focus && (
                             <DeliveryTimeline focus={focus} />
                         )}
