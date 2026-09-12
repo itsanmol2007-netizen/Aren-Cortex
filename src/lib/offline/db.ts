@@ -80,12 +80,48 @@ export interface MetaRow {
     value: unknown;
 }
 
+/**
+ * The medicine catalogue's local mirror — see catalogueSync.ts. Unlike the
+ * *Mirror tables above, this is NOT per-doctor: the global catalogue is the
+ * same rows for every doctor on this device, so there is exactly one copy
+ * of each, not one per signed-in doctor. `hospitalId` is null for a global
+ * (catalogue snapshot) row and set for a hospital's own pending doctor-added
+ * medicine (see `addMedicine` in lib/db/synapse.ts) — the small live-fetched
+ * addendum catalogueSync.ts layers on top of the shared snapshot.
+ */
+export interface MedicineRow {
+    id: number;
+    name: string;
+    manufacturer: string | null;
+    /** null = global catalogue; set = this hospital's own pending addition */
+    hospitalId: string | null;
+}
+
+export interface CompositionRow {
+    id: number;
+    name: string;
+    specializationScope: string[];
+}
+
+/** No natural single-column key — `id` is synthetic (`${medicineId}:${compositionId}`),
+ *  never sent anywhere, purely a Dexie primary key. */
+export interface MedicineCompositionMapRow {
+    id: string;
+    medicineId: number;
+    compositionId: number;
+    isPrimary: boolean;
+    route: string | null;
+}
+
 class ArenLocalDB extends Dexie {
     writeQueue!: EntityTable<WriteQueueRow, "id">;
     patientsMirror!: EntityTable<MirrorRow, "id">;
     visitsMirror!: EntityTable<MirrorRow, "id">;
     prescriptionsMirror!: EntityTable<MirrorRow, "id">;
     meta!: EntityTable<MetaRow, "key">;
+    medicinesCatalogue!: EntityTable<MedicineRow, "id">;
+    compositionsCatalogue!: EntityTable<CompositionRow, "id">;
+    medicineCompositionMap!: EntityTable<MedicineCompositionMapRow, "id">;
 
     constructor() {
         super("aren-cortex-local");
@@ -95,6 +131,25 @@ class ArenLocalDB extends Dexie {
             visitsMirror: "id, doctorId, updatedAt",
             prescriptionsMirror: "id, doctorId, updatedAt",
             meta: "key",
+        });
+        // v2: the medicine catalogue mirror (see catalogueSync.ts) — doctor
+        // role only, front desk never populates or reads these. Every store
+        // from v1 must be restated here even though none of them change;
+        // Dexie's versioning always wants the FULL schema at each version,
+        // not just the diff.
+        this.version(2).stores({
+            writeQueue: "++id, kind, status, createdAt, doctorId",
+            patientsMirror: "id, doctorId, updatedAt",
+            visitsMirror: "id, doctorId, updatedAt",
+            prescriptionsMirror: "id, doctorId, updatedAt",
+            meta: "key",
+            medicinesCatalogue: "id, name, hospitalId",
+            compositionsCatalogue: "id, name",
+            // `compositionId` indexed — the hot lookup direction is "which
+            // medicines contain this molecule" (composition -> medicines),
+            // the same direction `medicine_composition_map`'s own read
+            // pattern favours server-side.
+            medicineCompositionMap: "id, medicineId, compositionId",
         });
     }
 }

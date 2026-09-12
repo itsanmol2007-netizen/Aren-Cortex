@@ -23,13 +23,14 @@
 // ---------------------------------------------------------------------------
 
 import {
-    Cloud, Database, HardDrive, MessageCircle, Paperclip, Radio, Sparkles, Wifi,
+    Cloud, Database, HardDrive, MessageCircle, Paperclip, Pill, Radio, Sparkles, Wifi,
     type LucideIcon,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { loadConsultDraft } from "../../../lib/consultDraft";
 import { pendingWriteCount } from "../../../lib/offline/writeQueue";
 import { getLockLevel, getOfflineDurationMs } from "../../../lib/offline/connectivityClock";
+import { getCatalogueSyncState } from "../../../lib/offline/catalogueSync";
 
 export type ServiceState = "operational" | "attention" | "offline" | "notConfigured";
 export type OverallState = "healthy" | "warning" | "critical";
@@ -277,6 +278,41 @@ export async function probeHealth({
                         : ["Nothing to do — this is the resting state."],
             diagnostics: `offlineQueue.pending=${pendingWrites} · lock=${lockLevel} · offlineHours=${offlineHours}`,
         },
+        (() => {
+            const cat = getCatalogueSyncState();
+            const hasData = cat.localVersion > 0;
+            const state: ServiceState = hasData
+                ? "operational"
+                : online
+                    ? "attention"
+                    : "offline";
+            const metric = cat.phase === "downloading-snapshot"
+                ? `Downloading… ${Math.round(cat.progress * 100)}%`
+                : cat.phase === "delta"
+                    ? "Checking for updates…"
+                    : hasData
+                        ? cat.lastSyncedAt
+                            ? `Up to date · synced ${new Date(cat.lastSyncedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
+                            : "Up to date"
+                        : online
+                            ? "Downloading for the first time…"
+                            : "Not downloaded yet — offline";
+            return {
+                id: "medicineCatalogue",
+                icon: Pill,
+                name: "Medicine catalogue",
+                role: "The full medicine list Synapse needs to rank and search without internet.",
+                state,
+                metric,
+                impact: hasData
+                    ? "None — a saved copy is already on this device."
+                    : "Medicine search and Synapse suggestions need a live connection until the first download finishes.",
+                recovery: hasData
+                    ? ["Nothing to do — this keeps itself current in the background."]
+                    : ["Stay connected for a few minutes the first time you sign in on a new device — this downloads once, automatically."],
+                diagnostics: `catalogue.localVersion=${cat.localVersion} · phase=${cat.phase}${cat.error ? ` · error=${cat.error}` : ""}`,
+            } satisfies HealthService;
+        })(),
         {
             id: "whatsapp",
             icon: MessageCircle,

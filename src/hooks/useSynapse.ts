@@ -43,6 +43,7 @@ import {
 import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
+import { syncCatalogue } from "../lib/offline/catalogueSync";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
  *  doctor isolation" discipline `lib/offline/db.ts` documents for the other
@@ -278,6 +279,21 @@ export function useSynapse(): UseSynapse {
         if (!ready) return;
         void load(false);
     }, [ready, load]);
+
+    useEffect(() => {
+        // The medicine catalogue mirror — a completely separate concern from
+        // the ruleset above (~525k rows vs ~4,000, its own version-tracked
+        // sync, see lib/offline/catalogueSync.ts), so it runs on its own
+        // effect rather than being folded into `load`. Fire-and-forget:
+        // never blocks or gates the ruleset — a doctor can rank and
+        // prescribe before this finishes, exactly as before this existed.
+        // Doctor-only, matching the role-scoping rule (front desk never
+        // reaches useSynapse at all — see App.tsx's single call site).
+        if (!ready || !isReal) return;
+        syncCatalogue(hospitalId).catch((e) => {
+            console.warn("Catalogue sync (non-fatal):", e);
+        });
+    }, [ready, isReal, hospitalId]);
 
     const reload = useCallback(() => void load(true), [load]);
 
