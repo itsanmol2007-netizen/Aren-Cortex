@@ -3,6 +3,7 @@ import type { DBSymptom, DBFinding } from "./reference";
 import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../body/anatomy";
 import { visitStatusKind } from "../../features/patients/visitStatus";
 import type { ConfirmedPayment } from "./payments";
+import { readThroughValue, resolveMirrorIdentity } from "../offline/localMirror";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -55,13 +56,22 @@ export async function findPatientByPhone(phone: string): Promise<DBPatient | nul
  * row) — callers fall back to a name search rather than showing nothing.
  */
 export async function fetchPatientById(patientId: string): Promise<DBPatient | null> {
-    const { data, error } = await supabase
-        .from("patients")
-        .select("id, name, age, gender, phone, date_of_birth")
-        .eq("id", patientId)
-        .maybeSingle();
-    if (error) throw new Error(`fetchPatientById: ${error.message}`);
-    return data;
+    const identity = await resolveMirrorIdentity();
+    return readThroughValue({
+        kind: "patients",
+        key: patientId,
+        doctorId: identity?.doctorId ?? null,
+        hospitalId: identity?.hospitalId ?? "",
+        fetcher: async () => {
+            const { data, error } = await supabase
+                .from("patients")
+                .select("id, name, age, gender, phone, date_of_birth")
+                .eq("id", patientId)
+                .maybeSingle();
+            if (error) throw new Error(`fetchPatientById: ${error.message}`);
+            return data;
+        },
+    });
 }
 
 // `hospitalId` is REQUIRED and has no fallback, deliberately. It used to be the
@@ -763,7 +773,37 @@ export type RealVisit = {
     story_mechanism: string | null;
 };
 
+/**
+ * Cached wrapper around `fetchPatientVisitsFromNetwork` — see that function
+ * for everything about what this actually fetches. Keyed by `patientId`
+ * ONLY, deliberately not `excludeVisitId`: the exclusion is applied EARLY,
+ * before the expensive per-visit detail queries run (symptoms, findings,
+ * prescriptions), so two calls for the same patient with different
+ * exclusions are not equivalent reads of the same data — they are two
+ * different result sets. In practice `excludeVisitId` is the current
+ * consult's own visit and stays stable for the length of one consult (see
+ * the doc comment below on why it's always set before this runs), so this
+ * only matters if a device goes offline, then loads the SAME patient with a
+ * DIFFERENT exclusion than whatever was last cached online — worst case,
+ * today's own visit briefly appears or is missing from the "past visits"
+ * strip until the network returns. A real but low-severity, low-probability
+ * trade-off, accepted rather than fetching every visit's full detail
+ * unconditionally just to make the cache key exact.
+ */
 export async function fetchPatientVisits(
+    patientId: string,
+    excludeVisitId?: string | null,
+): Promise<RealVisit[]> {
+    return readThroughValue({
+        kind: "visits",
+        key: `clinical:${patientId}`,
+        doctorId: null,
+        hospitalId: "",
+        fetcher: () => fetchPatientVisitsFromNetwork(patientId, excludeVisitId),
+    });
+}
+
+async function fetchPatientVisitsFromNetwork(
     patientId: string,
     /**
      * The consult in progress right now, if any. Excluded before it reaches
@@ -1336,33 +1376,54 @@ async function buildPatientRecordRows(
 // the write paths that turned into a 403, this failed silently: RLS filtered the
 // other clinic's rows away and the records page simply rendered empty forever.
 export async function fetchTodayPatients(doctorId: string): Promise<PatientRecordRow[]> {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    return readThroughValue({
+        kind: "patients",
+        key: `today:${doctorId}`,
+        doctorId,
+        hospitalId: "",
+        fetcher: async () => {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
 
-    const { data: visits, error } = await supabase
-        .from("visits")
-        .select("id, patient_id, status, started_at, completed_at, care_plan_id")
-        .eq("assigned_doctor_id", doctorId)
-        .gte("started_at", todayStart.toISOString())
-        .order("started_at", { ascending: false });
+            const { data: visits, error } = await supabase
+                .from("visits")
+                .select("id, patient_id, status, started_at, completed_at, care_plan_id")
+                .eq("assigned_doctor_id", doctorId)
+                .gte("started_at", todayStart.toISOString())
+                .order("started_at", { ascending: false });
 
-    if (error) throw new Error(`fetchTodayPatients: ${error.message}`);
-    return buildPatientRecordRows((visits ?? []) as RawVisitRow[], doctorId, false);
+            if (error) throw new Error(`fetchTodayPatients: ${error.message}`);
+            return buildPatientRecordRows((visits ?? []) as RawVisitRow[], doctorId, false);
+        },
+    });
 }
 
 // ── PATIENT RECORDS PAGE — ALL RECENT PATIENTS ────────────────────────────────
 // `doctorId` required — same reason as fetchTodayPatients above.
 export async function fetchRecentPatients(doctorId: string, limit = 40): Promise<PatientRecordRow[]> {
-    const { data: visits, error } = await supabase
-        .from("visits")
-        .select("id, patient_id, status, started_at, completed_at, care_plan_id")
-        .eq("assigned_doctor_id", doctorId)
-        .eq("status", "completed")
-        .order("started_at", { ascending: false })
-        .limit(limit);
+    return readThroughValue({
+        kind: "patients",
+        // `limit` deliberately left out of the key: every call site passes
+        // the same default, and a doctor is never mid-consult holding two
+        // different windows on their own recent-patient list open offline at
+        // once — see fetchPatientVisits' `excludeVisitId` note for the same
+        // "the identifying id is the key, a secondary parameter is not" call.
+        key: `recent:${doctorId}`,
+        doctorId,
+        hospitalId: "",
+        fetcher: async () => {
+            const { data: visits, error } = await supabase
+                .from("visits")
+                .select("id, patient_id, status, started_at, completed_at, care_plan_id")
+                .eq("assigned_doctor_id", doctorId)
+                .eq("status", "completed")
+                .order("started_at", { ascending: false })
+                .limit(limit);
 
-    if (error) throw new Error(`fetchRecentPatients: ${error.message}`);
-    return buildPatientRecordRows((visits ?? []) as RawVisitRow[], doctorId, true);
+            if (error) throw new Error(`fetchRecentPatients: ${error.message}`);
+            return buildPatientRecordRows((visits ?? []) as RawVisitRow[], doctorId, true);
+        },
+    });
 }
 
 // ── PATIENTS PAGE — DIRECTORY ──────────────────────────────────────────────────
@@ -1388,6 +1449,23 @@ export type PatientDirectoryEntry = {
 };
 
 export async function fetchPatientDirectory(): Promise<PatientDirectoryEntry[]> {
+    const identity = await resolveMirrorIdentity();
+    // No hospital to scope the cache key with (identity resolution failed —
+    // see resolveMirrorIdentity's doc comment) means this read is never
+    // cached rather than risking one clinic's directory under a shared or
+    // missing key: call the network directly and let a real offline failure
+    // surface, same as before this cache existed.
+    if (!identity) return fetchPatientDirectoryFromNetwork();
+    return readThroughValue({
+        kind: "patients",
+        key: `directory:${identity.hospitalId}`,
+        doctorId: null,
+        hospitalId: identity.hospitalId,
+        fetcher: fetchPatientDirectoryFromNetwork,
+    });
+}
+
+async function fetchPatientDirectoryFromNetwork(): Promise<PatientDirectoryEntry[]> {
     const { data: patients, error } = await supabase
         .from("patients")
         .select("id, name, age, gender, phone, abha_id, created_at, date_of_birth")
@@ -1464,28 +1542,40 @@ export type PatientHistoryVisit = {
 };
 
 export async function fetchPatientHistory(patientId: string): Promise<PatientHistoryVisit[]> {
-    const { data: visits, error } = await supabase
-        .from("visits")
-        .select("id, created_at, status, token_number, assigned_doctor_id")
-        .eq("patient_id", patientId)
-        .order("created_at", { ascending: false });
-    if (error) throw new Error(`fetchPatientHistory: ${error.message}`);
-    if (!visits || visits.length === 0) return [];
+    // Front-desk operational read, hospital-scoped by RLS rather than any
+    // one doctor — `patientId` alone already scopes the cache key uniquely
+    // (a patient's own id, not shared across accounts), so no identity
+    // lookup is needed just to cache this safely.
+    return readThroughValue({
+        kind: "visits",
+        key: `history:${patientId}`,
+        doctorId: null,
+        hospitalId: "",
+        fetcher: async () => {
+            const { data: visits, error } = await supabase
+                .from("visits")
+                .select("id, created_at, status, token_number, assigned_doctor_id")
+                .eq("patient_id", patientId)
+                .order("created_at", { ascending: false });
+            if (error) throw new Error(`fetchPatientHistory: ${error.message}`);
+            if (!visits || visits.length === 0) return [];
 
-    const doctorIds = [...new Set(visits.map((v: any) => v.assigned_doctor_id).filter(Boolean))];
-    const doctorMap = new Map<string, string>();
-    if (doctorIds.length) {
-        const { data: docs } = await supabase.from("doctors").select("id, name").in("id", doctorIds);
-        (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
-    }
+            const doctorIds = [...new Set(visits.map((v: any) => v.assigned_doctor_id).filter(Boolean))];
+            const doctorMap = new Map<string, string>();
+            if (doctorIds.length) {
+                const { data: docs } = await supabase.from("doctors").select("id, name").in("id", doctorIds);
+                (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
+            }
 
-    return visits.map((v: any) => ({
-        visit_id: v.id,
-        created_at: v.created_at,
-        status: v.status,
-        token_number: v.token_number ?? null,
-        doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
-    }));
+            return visits.map((v: any) => ({
+                visit_id: v.id,
+                created_at: v.created_at,
+                status: v.status,
+                token_number: v.token_number ?? null,
+                doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
+            }));
+        },
+    });
 }
 
 // ── PATIENTS PAGE — DEMOGRAPHIC UPDATES ────────────────────────────────────────
@@ -1749,6 +1839,20 @@ export async function fetchDraftVisits(doctorId: string): Promise<DBVisit[]> {
 }
 
 export async function fetchVisitWithDetails(visitId: string): Promise<{
+    visit: DBVisit;
+    symptoms: DBSymptom[];
+    findings: DBFinding[];
+}> {
+    return readThroughValue({
+        kind: "visits",
+        key: `detail:${visitId}`,
+        doctorId: null,
+        hospitalId: "",
+        fetcher: () => fetchVisitWithDetailsFromNetwork(visitId),
+    });
+}
+
+async function fetchVisitWithDetailsFromNetwork(visitId: string): Promise<{
     visit: DBVisit;
     symptoms: DBSymptom[];
     findings: DBFinding[];

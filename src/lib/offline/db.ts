@@ -56,15 +56,23 @@ export interface WriteQueueRow {
 }
 
 /** A doctor's own patient/visit/prescription row, cached for offline reads.
- *  Deliberately loose (`Record<string, unknown>` for the payload) — this is a
- *  cache of whatever the last successful fetch returned, not a second schema
- *  to keep in lockstep with Postgres migrations. */
+ *  Deliberately loose (`unknown` for the payload) — this is a cache of
+ *  whatever the last successful fetch returned (an object, an array, a
+ *  primitive), not a second schema to keep in lockstep with Postgres
+ *  migrations. `id` is not always a database row id — see localMirror.ts's
+ *  `readThrough`, which also caches LIST reads under a synthetic key such
+ *  as `"recent:${doctorId}"`. `doctorId` is null for a front-desk read
+ *  (hospital-scoped, not any one doctor's) — both fields are best-effort
+ *  bookkeeping for a future "wipe this doctor's/hospital's rows on
+ *  logout" (not built yet, see localMirror.ts), not what keeps one
+ *  account's data from leaking into another's: that guarantee comes from
+ *  `id` itself always embedding the scoping id the read actually needs. */
 export interface MirrorRow {
     id: string;
-    doctorId: string;
+    doctorId: string | null;
     hospitalId: string;
     updatedAt: number;
-    data: Record<string, unknown>;
+    data: unknown;
 }
 
 export interface MetaRow {

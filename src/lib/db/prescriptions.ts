@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import type { PrescriptionMedicine, Vitals } from "../../types";
+import { readThroughValue } from "../offline/localMirror";
 
 // ── PRINT RX — PRESCRIPTION QUEUE ──────────────────────────────────────────────
 // The receptionist's document workspace reads prescriptions that already exist
@@ -161,6 +162,16 @@ export type PrescriptionRenderData = {
  *         other.
  */
 export async function fetchPrescriptionRenderData(prescriptionId: string): Promise<PrescriptionRenderData> {
+    return readThroughValue({
+        kind: "prescriptions",
+        key: prescriptionId,
+        doctorId: null,
+        hospitalId: "",
+        fetcher: () => fetchPrescriptionRenderDataFromNetwork(prescriptionId),
+    });
+}
+
+async function fetchPrescriptionRenderDataFromNetwork(prescriptionId: string): Promise<PrescriptionRenderData> {
     const { data: rx, error: rxErr } = await supabase
         .from("prescriptions")
         .select("id, visit_id, assigned_doctor_id, created_at, follow_up_days, advice_notes")
