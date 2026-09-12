@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Check, ChevronDown, Clock, CreditCard, Info, Lock, Percent, RotateCcw, Split, Wallet,
 } from "lucide-react";
@@ -79,6 +79,29 @@ export const INITIAL_FEE_STATE: FeeState = {
     split: null,
 };
 
+// One ring, every button in this rail. Violet reads clearly against the
+// modal's light backdrop regardless of what the button itself is filled
+// with — a WHITE ring (the obvious choice for the dark Collect/Confirm-split
+// buttons) would have blended into the same light backdrop it sits on,
+// which is exactly the "gray-on-gray" disappearing-focus Anmol flagged
+// (2026-09-12): the ring's own contrast is against its SURROUNDINGS, not
+// the control it outlines. `outline`, not `box-shadow` or `border`, so it
+// never nudges layout and never gets clipped by a parent's `overflow`.
+//
+// NOT `focus-visible:outline focus-visible:outline-[…]` — Tailwind's bare
+// `outline` utility resolves its style through the SAME shared
+// `--tw-outline-style` custom property that `outline-none` writes to, and
+// `focus:outline-none` (needed to suppress the ring on a plain mouse click)
+// pins that variable to `none` for every `:focus` state — which
+// `:focus-visible` always also is. The `focus-visible:outline` rule then
+// reads its own already-overridden variable and the ring silently never
+// draws (confirmed against the built CSS: verified by measuring an
+// actually-focused button's computed style, not by reading the class list).
+// The arbitrary-property form below sets the literal `outline` shorthand
+// directly, sidestepping that shared variable entirely.
+const FOCUS_RING =
+    "focus:outline-none focus-visible:[outline:2.5px_solid_#a855f7] focus-visible:outline-offset-2";
+
 const METHODS: { key: PaymentMethod; label: string }[] = [
     { key: "cash", label: "Cash" },
     { key: "upi", label: "UPI" },
@@ -156,6 +179,45 @@ export function PatientPaymentRail({
         focusable[(i + dir + focusable.length) % focusable.length]?.focus();
     };
 
+    // Which of the four decision states is on screen right now — moved above
+    // the no-fee early return below because the effect right after it needs
+    // to run on every render, hook rules and all.
+    const decided = state.status !== "undecided";
+
+    // ── Keep focus INSIDE the rail across a decision transition ────────────
+    // 2026-09-12, Anmol: "you click enter [on Collect], and then this thing
+    // just disappeared, now the whole arrow movement [stopped working]."
+    // Root cause: pressing Enter on "Collect ₹total" swaps it out for the
+    // method grid — the focused button is removed from the DOM, and the
+    // BROWSER resets focus to <body> the instant that happens (React does
+    // not choose a new focus target for you). `onRailKeyDown` above walks
+    // `document.activeElement` through the rail's own buttons, but a
+    // keydown fired while `document.body` is focused never even reaches
+    // this div's listener — it doesn't bubble down. So the fix isn't in the
+    // arrow handler at all: whichever new controls just appeared need to
+    // actually receive focus once they land, or the whole mechanism goes
+    // quiet with no error and no visible cause.
+    //
+    // Skipped on the very first mount (`mountedRef`) — `PatientModal` has
+    // its own reason for deciding WHEN this rail first earns focus (the
+    // instant a patient is picked off the search list, per the
+    // `containerRef` doc above); this effect only ever repairs a transition
+    // that has already happened, never grabs focus unprompted on open. And
+    // skipped entirely if focus is already somewhere inside the decision
+    // area — the split amount input's own `autoFocus` already lands there
+    // first, and this must never fight it.
+    const decisionAreaRef = useRef<HTMLDivElement>(null);
+    const mountedRef = useRef(false);
+    useEffect(() => {
+        if (!mountedRef.current) {
+            mountedRef.current = true;
+            return;
+        }
+        const root = decisionAreaRef.current;
+        if (!root || root.contains(document.activeElement)) return;
+        root.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    }, [decided, collecting, splitting]);
+
     const set = (patch: Partial<FeeState>) => onChange({ ...state, ...patch });
 
     const money = (n: number) =>
@@ -179,6 +241,7 @@ export function PatientPaymentRail({
                         onClick={() => set({ visitType: o.key })}
                         className={
                             "h-[36px] cursor-pointer rounded-[10px] border text-[12.5px] font-bold transition-colors " +
+                            FOCUS_RING + " " +
                             (on
                                 ? "border-[#a855f7] bg-[#f5ecff] text-[#7c3aed]"
                                 : "border-black/10 bg-white text-[#64748b] hover:border-[#d8b4fe] hover:text-[#334155]")
@@ -205,8 +268,6 @@ export function PatientPaymentRail({
             </RailFrame>
         );
     }
-
-    const decided = state.status !== "undecided";
 
     return (
         <RailFrame rootRef={railRef} onKeyDown={onRailKeyDown}>
@@ -248,6 +309,7 @@ export function PatientPaymentRail({
             )}
 
             <div
+                ref={decisionAreaRef}
                 className={
                     "mt-[10px] flex flex-col gap-[8px] rounded-[13px] " +
                     (needsDecision && !decided && !locked ? "outline outline-2 outline-offset-[4px] outline-[#fca5a5]" : "")
@@ -291,7 +353,7 @@ export function PatientPaymentRail({
                             aria-label="Change payment"
                             title="Change"
                             onClick={() => { set({ status: "undecided", method: null, split: null }); setCollecting(false); setSplitting(false); }}
-                            className="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[8px] text-[#94a3b8] transition-colors hover:bg-white hover:text-[#334155]"
+                            className={"flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[8px] text-[#94a3b8] transition-colors hover:bg-white hover:text-[#334155] " + FOCUS_RING}
                         >
                             <RotateCcw size={13} />
                         </button>
@@ -341,6 +403,7 @@ export function PatientPaymentRail({
                                                 }}
                                                 className={
                                                     "h-[32px] cursor-pointer rounded-[8px] border text-[11.5px] font-bold transition-colors " +
+                                                    FOCUS_RING + " " +
                                                     (splitFirstMethod === m.key
                                                         ? "border-[#a855f7] bg-[#f5ecff] text-[#7c3aed]"
                                                         : "border-black/10 bg-white text-[#64748b] hover:border-[#d8b4fe]")
@@ -384,6 +447,7 @@ export function PatientPaymentRail({
                                                 onClick={() => setSplitSecondMethod(m.key)}
                                                 className={
                                                     "h-[32px] cursor-pointer rounded-[8px] border text-[11.5px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-30 " +
+                                                    FOCUS_RING + " " +
                                                     (splitSecondMethod === m.key
                                                         ? "border-[#a855f7] bg-[#f5ecff] text-[#7c3aed]"
                                                         : "border-black/10 bg-white text-[#64748b] hover:border-[#d8b4fe]")
@@ -399,7 +463,7 @@ export function PatientPaymentRail({
                                     <button
                                         type="button"
                                         onClick={() => setSplitting(false)}
-                                        className="cursor-pointer self-start border-0 bg-transparent p-0 text-[11.5px] font-semibold text-[#94a3b8] hover:text-[#334155]"
+                                        className={"cursor-pointer self-start rounded-[4px] border-0 bg-transparent p-0 text-[11.5px] font-semibold text-[#94a3b8] hover:text-[#334155] " + FOCUS_RING}
                                     >
                                         Back
                                     </button>
@@ -407,7 +471,7 @@ export function PatientPaymentRail({
                                         type="button"
                                         disabled={!validFirst}
                                         onClick={confirmSplit}
-                                        className="ml-auto flex h-[34px] cursor-pointer items-center gap-[6px] rounded-[9px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] px-[14px] text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                                        className={"ml-auto flex h-[34px] cursor-pointer items-center gap-[6px] rounded-[9px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] px-[14px] text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 " + FOCUS_RING}
                                     >
                                         <Check size={13} /> Confirm split
                                     </button>
@@ -429,7 +493,7 @@ export function PatientPaymentRail({
                                         setCollecting(false);
                                         onCommit?.({ status: "paid", method: m.key });
                                     }}
-                                    className="h-[36px] cursor-pointer rounded-[10px] border border-black/10 bg-white text-[12.5px] font-bold text-[#334155] transition-colors hover:border-[#a855f7] hover:bg-[#faf5ff] hover:text-[#7c3aed] disabled:cursor-not-allowed"
+                                    className={"h-[36px] cursor-pointer rounded-[10px] border border-black/10 bg-white text-[12.5px] font-bold text-[#334155] transition-colors hover:border-[#a855f7] hover:bg-[#faf5ff] hover:text-[#7c3aed] disabled:cursor-not-allowed " + FOCUS_RING}
                                 >
                                     {m.label}
                                 </button>
@@ -450,14 +514,14 @@ export function PatientPaymentRail({
                                 setSplitSecondMethod("upi");
                                 setSplitting(true);
                             }}
-                            className="flex h-[34px] w-full cursor-pointer items-center justify-center gap-[6px] rounded-[10px] border border-dashed border-black/15 bg-transparent text-[12px] font-bold text-[#64748b] transition-colors hover:border-[#a855f7] hover:text-[#7c3aed] disabled:cursor-not-allowed"
+                            className={"flex h-[34px] w-full cursor-pointer items-center justify-center gap-[6px] rounded-[10px] border border-dashed border-black/15 bg-transparent text-[12px] font-bold text-[#64748b] transition-colors hover:border-[#a855f7] hover:text-[#7c3aed] disabled:cursor-not-allowed " + FOCUS_RING}
                         >
                             <Split size={13} /> Split across two methods
                         </button>
                         <button
                             type="button"
                             onClick={() => setCollecting(false)}
-                            className="cursor-pointer self-start border-0 bg-transparent p-0 text-[11.5px] font-semibold text-[#94a3b8] hover:text-[#334155]"
+                            className={"cursor-pointer self-start rounded-[4px] border-0 bg-transparent p-0 text-[11.5px] font-semibold text-[#94a3b8] hover:text-[#334155] " + FOCUS_RING}
                         >
                             Back
                         </button>
@@ -468,7 +532,7 @@ export function PatientPaymentRail({
                             type="button"
                             disabled={locked}
                             onClick={() => setCollecting(true)}
-                            className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-[9px] rounded-[12px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(168,85,247,0.32)] transition-[opacity,box-shadow] hover:opacity-90 hover:shadow-[0_5px_18px_rgba(168,85,247,0.42)] disabled:cursor-not-allowed disabled:shadow-none"
+                            className={"flex h-[44px] w-full cursor-pointer items-center justify-center gap-[9px] rounded-[12px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(168,85,247,0.32)] transition-[opacity,box-shadow] hover:opacity-90 hover:shadow-[0_5px_18px_rgba(168,85,247,0.42)] disabled:cursor-not-allowed disabled:shadow-none " + FOCUS_RING}
                         >
                             <CreditCard size={16} />
                             Collect {money(breakdown.total)}
@@ -477,7 +541,7 @@ export function PatientPaymentRail({
                             type="button"
                             disabled={locked}
                             onClick={() => { set({ status: "unpaid", method: null, split: null }); onCommit?.({ status: "unpaid", method: null }); }}
-                            className="flex h-[40px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-black/[0.04] text-[13px] font-bold text-[#4b5563] transition-colors hover:bg-black/[0.07] hover:text-[#0f172a] disabled:cursor-not-allowed"
+                            className={"flex h-[40px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[12px] border-0 bg-black/[0.04] text-[13px] font-bold text-[#4b5563] transition-colors hover:bg-black/[0.07] hover:text-[#0f172a] disabled:cursor-not-allowed " + FOCUS_RING}
                         >
                             <Clock size={14} />
                             Mark as unpaid
@@ -497,7 +561,7 @@ export function PatientPaymentRail({
                             else set({ discountKind: "none", discountValue: "" });
                         }}
                         aria-expanded={discountOpen}
-                        className="flex w-full cursor-pointer items-center gap-[8px] rounded-[9px] border-0 bg-transparent px-[2px] py-[6px] text-left text-[12.5px] font-semibold text-[#a855f7] transition-colors hover:text-[#7c3aed]"
+                        className={"flex w-full cursor-pointer items-center gap-[8px] rounded-[9px] border-0 bg-transparent px-[2px] py-[6px] text-left text-[12.5px] font-semibold text-[#a855f7] transition-colors hover:text-[#7c3aed] " + FOCUS_RING}
                     >
                         <Percent size={13} />
                         Adjust amount / discount
@@ -541,6 +605,7 @@ export function PatientPaymentRail({
                                                 onClick={() => set({ discountKind: u.key })}
                                                 className={
                                                     "w-[36px] cursor-pointer border-0 text-[13px] font-bold transition-colors " +
+                                                    FOCUS_RING + " " +
                                                     (on
                                                         ? "bg-gradient-to-br from-[#f472b6] to-[#a855f7] text-white"
                                                         : "bg-transparent text-[#94a3b8] hover:text-[#334155]")
