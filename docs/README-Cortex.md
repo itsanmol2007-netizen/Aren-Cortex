@@ -37,6 +37,15 @@ doctor sees is pre-sorted by relevance to the current patient, not a flat
 catalogue. It sits alongside a front-desk queue app and shares the same
 Supabase backend and design language.
 
+**Also becoming offline-first, in progress.** A durable write queue, a
+per-doctor PIN lock (with real server-side recovery), and a 72-hour B2B
+licensing lock all exist and are wired in for real — but as of
+2026-09-12, nothing yet READS from the local cache, so the app is not
+actually offline-friendly for the doctor's own workflow yet. If your task
+touches anything under `src/lib/offline/` or `src/lib/security/`, or
+anything PWA/installability-related, read `context/offline-security.md`
+first — it says exactly what's real and what's still missing.
+
 ## Why this file exists
 
 Before this, a cold start meant guessing which of ~15 loose docs in

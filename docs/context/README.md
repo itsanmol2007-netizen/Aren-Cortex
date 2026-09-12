@@ -23,6 +23,7 @@ task doesn't fit any pocket.
 | Communication / messaging credits / recharge requests / operational email | `communication-credits.md` | consult internals, engine, specialty UI |
 | The doctor's own Overview / landing page (KPI doors, payment details, queue preview) | `doctor-overview.md` | consult internals, engine, specialty UI |
 | The admin workspace (AREN Parallax) — who gets it, its pages, fees, plan, catalogue rules | `parallax-admin.md` | consult internals, engine, specialty UI |
+| Offline/PWA foundation, the write queue, connectivity clock, 72h lock, or the per-doctor PIN lock — **and the honest gap: nothing reads from the local mirror yet** | `offline-security.md` | frontdesk, engine, specialty UI |
 | Building or restyling ANY modal/sheet — sizing, accent colour, header shape | `../aren-modal-design.md` | everything above |
 | Front desk / patient queue / clinic status | `../aren-frontdesk-source-of-truth.md` + `../aren-frontdesk-brief.md` | everything above |
 | Auth / login / roles | `../Login Screen Implementation.md` | everything above |
