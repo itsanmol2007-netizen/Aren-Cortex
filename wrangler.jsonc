@@ -1,0 +1,18 @@
+{
+  // Cloudflare's build pipeline runs `npm run build` (produces `dist/`),
+  // then `npx wrangler versions upload` — with no config file, Wrangler had
+  // nothing telling it what to deploy and failed with "Missing entry-point
+  // to Worker script or to assets directory". This is a static Vite SPA,
+  // not a Worker script, so `assets.directory` is the whole config it
+  // needs: point it at the build output, no server-side code involved.
+  "name": "aren-cortex-phase-1",
+  "compatibility_date": "2026-09-11",
+  "assets": {
+    "directory": "./dist",
+    // Client-side routes (`/app/cortex`, `/app/frontdesk`, …) are handled
+    // entirely by react-router in the browser — the server only ever has
+    // `index.html` to hand back for any of them. Without this, reloading
+    // on a deep route 404s instead of re-mounting the app.
+    "not_found_handling": "single-page-application"
+  }
+}
