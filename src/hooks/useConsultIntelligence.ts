@@ -30,6 +30,7 @@ import { fetchCombinationProducts, type ResolvedProduct } from "../lib/db/medici
 import type { SynapseData } from "./useSynapse";
 import type { Vitals } from "../types";
 import type { Sex } from "../lib/growth/growth";
+import { isHardLocked } from "../lib/offline/lockGate";
 
 export interface ConsultIntelligenceArgs {
     data: SynapseData | null;
@@ -101,6 +102,11 @@ export interface ConsultIntelligence {
     isPediatric: boolean;
     measurements: MeasurementRow[];
     hasInput: boolean;
+    /** True once this device has gone 72+ hours without reaching the AREN
+     *  server — Synapse ranking pauses (see lockGate.ts) until it reconnects.
+     *  Already-prescribed plans and past visits stay fully readable; this
+     *  only means no NEW ranking runs. */
+    synapseLocked: boolean;
 }
 
 const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
@@ -145,13 +151,22 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         sex,
     ]);
 
+    // One of the three independent 72-hour-lock seams — see lockGate.ts's own
+    // note on why this is checked here, inside the hook that actually runs
+    // the engine, rather than once in a shared "is the app locked" wrapper
+    // component. A plain boolean read (not `guardSynapseRanking`'s throwing
+    // form) — this runs inside a render-time memo, and the ranking degrading
+    // to "unavailable" is the graceful outcome here, not a crash.
+    const synapseLocked = isHardLocked();
+
     const result = useMemo(() => {
+        if (synapseLocked) return null;
         if (!data || !built) return null;
         const hasAnything =
             built.input.observations.length > 0 || built.input.measurements.length > 0;
         if (!hasAnything) return null;
         return runEngine(data.ruleset, built.input);
-    }, [data, built]);
+    }, [data, built, synapseLocked]);
 
     // "Synapse is thinking" — see ThinkingRing in features/consult/parts.tsx.
     // A value that changes identity exactly when the engine's OUTPUT changes
@@ -427,5 +442,6 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         isPediatric,
         measurements: built?.measurements ?? [],
         hasInput: !!built && (built.observableIds.length > 0 || built.measurements.length > 0),
+        synapseLocked,
     };
 }

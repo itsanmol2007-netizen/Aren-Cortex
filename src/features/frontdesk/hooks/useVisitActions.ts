@@ -24,6 +24,131 @@ import type { TodayVisit } from "../types/frontdesk";
 import { useT } from "../i18n/i18n";
 import { useHospitalId } from "./useHospitalId";
 import { padToken } from "../utils";
+import { registerWriteHandler, enqueueWrite } from "@/lib/offline/writeQueue";
+import { OfflineLockError, isHardLocked } from "@/lib/offline/lockGate";
+
+/**
+ * Every field `attempt()` below needs to replay a queued visit registration —
+ * plain JSON, no `File` objects (see `CreateVisitAttachmentPayload`'s own
+ * note) so it survives a reload sitting in IndexedDB.
+ */
+type QueuedCreateVisitPayload = {
+    existingPatient: DBPatient | null;
+    name: string;
+    phone: string;
+    age: string;
+    dateOfBirth?: string;
+    gender: string;
+    observableIds: number[];
+    observableDurations?: [number, number][];
+    vitals?: Partial<Vitals>;
+    hospitalId: string;
+    doctorId: string;
+    doctorName: string;
+    payment?: {
+        visitType: VisitType;
+        base: number;
+        discount: number;
+        gstAmount: number;
+        total: number;
+        discountKind: "none" | "percent" | "amount";
+        discountPercent: number | null;
+        gstPercent: number;
+        status: "paid" | "pending";
+        method: PaymentMethod | null;
+    } | null;
+    actor: { id: string | null; name: string | null; role: string | null };
+};
+
+/**
+ * The actual replay, run either immediately (the common case — this device is
+ * online) or later, from the durable queue, once connectivity returns —
+ * possibly after a reload, which is exactly the gap this closes over the old
+ * in-memory-only `attempt()`. Registered once at module load, per
+ * `writeQueue.ts`'s own contract.
+ *
+ * Attachments are NOT replayed here — a `File` cannot survive IndexedDB
+ * serialization across a reload, and forcing a receptionist to re-pick a
+ * file after reconnecting is a smaller papercut than silently dropping it
+ * would be. They still upload immediately, best-effort, from the live
+ * `attempt()` path below when this device is online at registration time;
+ * only the visit itself (and its symptoms/measurements/payment) is queued
+ * durably.
+ */
+async function replayCreateVisit(raw: unknown): Promise<void> {
+    const payload = raw as QueuedCreateVisitPayload;
+    let patient = payload.existingPatient;
+    if (!patient) {
+        const byPhone = await findPatientByPhone(payload.phone.trim());
+        patient =
+            byPhone ??
+            (await createPatient(
+                {
+                    name: payload.name.trim(),
+                    age: Number(payload.age) || 0,
+                    gender: payload.gender,
+                    phone: payload.phone.trim(),
+                    date_of_birth: payload.dateOfBirth || null,
+                },
+                payload.hospitalId
+            ));
+    }
+
+    const visit = await createVisit({
+        patientId: patient.id,
+        hospitalId: payload.hospitalId,
+        doctorId: payload.doctorId,
+        initialStatus: "waiting",
+    });
+
+    if (payload.observableIds.length) {
+        const ids = payload.observableIds;
+        const durations = payload.observableDurations
+            ? new Map(payload.observableDurations)
+            : undefined;
+        try {
+            await saveVisitObservations(visit.id, ids, durations);
+            const legacy = await legacySymptomIdsFor(ids);
+            if (legacy.length) await saveVisitSymptoms(visit.id, legacy);
+        } catch (err) {
+            console.warn("saveVisitObservations failed (non-fatal):", err);
+        }
+    }
+
+    if (payload.vitals && Object.keys(payload.vitals).length) {
+        const rows = vitalsToMeasurements(payload.vitals as Vitals);
+        if (rows.length) {
+            try {
+                await saveVisitMeasurements(visit.id, rows);
+            } catch (err) {
+                console.warn("saveVisitMeasurements failed (non-fatal):", err);
+            }
+        }
+    }
+
+    if (payload.payment) {
+        const pay = payload.payment;
+        try {
+            await recordVisitPayment({
+                visitId: visit.id,
+                hospitalId: payload.hospitalId,
+                doctorId: payload.doctorId || null,
+                visitType: pay.visitType,
+                breakdown: { base: pay.base, discount: pay.discount, gstAmount: pay.gstAmount, total: pay.total },
+                discountKind: pay.discountKind,
+                discountPercent: pay.discountPercent,
+                gstPercent: pay.gstPercent,
+                status: pay.status,
+                method: pay.method,
+                actor: payload.actor,
+            });
+        } catch (err) {
+            console.warn("recordVisitPayment failed (non-fatal):", err);
+        }
+    }
+}
+
+registerWriteHandler("frontdesk.createVisit", replayCreateVisit);
 
 type UseVisitActionsArgs = {
     visits: TodayVisit[];
@@ -170,6 +295,16 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
             return;
         }
 
+        // The write-queue's own 72-hour-lock seam (see lockGate.ts) also runs
+        // the moment this reaches `enqueueWrite`, on the offline path below —
+        // this earlier check is the same guard run independently, before any
+        // optimistic row even appears, so a hard-locked device never shows a
+        // "waiting" row it is about to have to tear back down.
+        if (isHardLocked()) {
+            toast.error(new OfflineLockError("Creating a new patient").message);
+            return;
+        }
+
         const tempId = `pending-${crypto.randomUUID()}`;
         const nowIso = new Date().toISOString();
         const optimistic: TodayVisit = {
@@ -306,16 +441,57 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
             } catch (err: any) {
                 const offline = typeof navigator !== "undefined" && !navigator.onLine;
                 if (offline) {
-                    // Still trying, not failed — wait for the browser to say
-                    // connectivity is back, then run the exact same attempt
-                    // again. One-shot listener; removes itself either way.
+                    // Still trying, not failed — queue it DURABLY (see
+                    // writeQueue.ts) rather than the old in-memory one-shot
+                    // `online` listener, which lost the whole registration if
+                    // the tab reloaded (or the browser reclaimed it) before
+                    // connectivity came back. `replayCreateVisit` above is
+                    // registered to replay exactly this payload the moment
+                    // this device reaches the server again, reload or not.
                     patch(tempId, { pending: true, offline: true });
-                    const onBackOnline = () => {
-                        window.removeEventListener("online", onBackOnline);
-                        patch(tempId, { offline: false });
-                        attempt();
+                    const payload: QueuedCreateVisitPayload = {
+                        existingPatient: opts.existingPatient,
+                        name: opts.name,
+                        phone: opts.phone,
+                        age: opts.age,
+                        dateOfBirth: opts.dateOfBirth,
+                        gender: opts.gender,
+                        observableIds: opts.observableIds,
+                        observableDurations: opts.observableDurations
+                            ? Array.from(opts.observableDurations.entries())
+                            : undefined,
+                        vitals: opts.vitals,
+                        hospitalId,
+                        doctorId: opts.doctorId,
+                        doctorName: opts.doctorName,
+                        payment: opts.payment,
+                        actor: actorRef.current,
                     };
-                    window.addEventListener("online", onBackOnline);
+                    try {
+                        await enqueueWrite("frontdesk.createVisit", payload, {
+                            hospitalId,
+                            doctorId: opts.doctorId,
+                            isNewPatientCreation: true,
+                        });
+                    } catch (lockErr) {
+                        // The 72-hour lock tripped between the earlier check
+                        // and now (this device was offline just long enough).
+                        // Tear the optimistic row back out — there is nothing
+                        // durable to wait on.
+                        setVisits((vs) => vs.filter((v) => v.visit_id !== tempId));
+                        const message =
+                            lockErr instanceof OfflineLockError ? lockErr.message : String(lockErr);
+                        toast.error(message);
+                        return;
+                    }
+                    // Attachments cannot be queued durably (a `File` doesn't
+                    // survive IndexedDB across a reload — see
+                    // replayCreateVisit's own note) and there is no real visit
+                    // id yet to attach them to until the queued write lands.
+                    // Say so once rather than silently dropping them.
+                    if (opts.attachments.length) {
+                        toast.error(t("attachUploadFailed"));
+                    }
                     return;
                 }
                 setVisits((vs) => vs.filter((v) => v.visit_id !== tempId));

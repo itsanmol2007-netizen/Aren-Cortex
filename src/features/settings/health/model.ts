@@ -23,11 +23,13 @@
 // ---------------------------------------------------------------------------
 
 import {
-    Cloud, Database, MessageCircle, Paperclip, Radio, Sparkles, Wifi,
+    Cloud, Database, HardDrive, MessageCircle, Paperclip, Radio, Sparkles, Wifi,
     type LucideIcon,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { loadConsultDraft } from "../../../lib/consultDraft";
+import { pendingWriteCount } from "../../../lib/offline/writeQueue";
+import { getLockLevel, getOfflineDurationMs } from "../../../lib/offline/connectivityClock";
 
 export type ServiceState = "operational" | "attention" | "offline" | "notConfigured";
 export type OverallState = "healthy" | "warning" | "critical";
@@ -146,6 +148,9 @@ export async function probeHealth({
     })();
 
     const draft = loadConsultDraft(doctorId);
+    const pendingWrites = await pendingWriteCount().catch(() => 0);
+    const lockLevel = getLockLevel();
+    const offlineHours = Math.floor(getOfflineDurationMs() / (60 * 60 * 1000));
 
     const services: HealthService[] = [
         {
@@ -242,6 +247,37 @@ export async function probeHealth({
             diagnostics: draft ? `drafts.pending=1 · savedAt=${draft.savedAt}` : "drafts.pending=0",
         },
         {
+            id: "offlineQueue",
+            icon: HardDrive,
+            name: "Offline queue",
+            role: "Patients and visits registered while this device couldn't reach the clinic's records.",
+            state:
+                lockLevel === "hard72"
+                    ? "offline"
+                    : pendingWrites > 0 || lockLevel === "warn24"
+                        ? "attention"
+                        : "operational",
+            metric:
+                lockLevel === "hard72"
+                    ? `Locked — ${offlineHours}h offline`
+                    : pendingWrites > 0
+                        ? `${pendingWrites} waiting to sync`
+                        : online
+                            ? "Nothing waiting"
+                            : `Offline ${offlineHours}h`,
+            impact:
+                lockLevel === "hard72"
+                    ? "72+ hours without reaching the server: new patients, Synapse ranking and WhatsApp sends are paused until this device reconnects. Everything already saved here still opens normally."
+                    : "Nothing registered on this device is lost while offline — it sends the moment the connection returns.",
+            recovery:
+                lockLevel === "hard72"
+                    ? ["Reconnect this device to the internet — the lock lifts automatically the moment it reaches the server again."]
+                    : pendingWrites > 0
+                        ? ["Reconnect to the internet — the queue drains on its own within a couple of minutes."]
+                        : ["Nothing to do — this is the resting state."],
+            diagnostics: `offlineQueue.pending=${pendingWrites} · lock=${lockLevel} · offlineHours=${offlineHours}`,
+        },
+        {
             id: "whatsapp",
             icon: MessageCircle,
             name: "WhatsApp",
@@ -324,6 +360,7 @@ const ICON_BY_ID: Record<string, HealthService["icon"]> = {
     realtime: Radio,
     attachments: Paperclip,
     drafts: Cloud,
+    offlineQueue: HardDrive,
     whatsapp: MessageCircle,
 };
 

@@ -29,6 +29,7 @@
 
 import { supabase } from "../supabase";
 import type { RxLanguage } from "../i18n/prescriptionLabels";
+import { guardWhatsAppSend } from "../offline/lockGate";
 
 /**
  * Below this, the doctor is warned and AREN is alerted. Mirrors the same
@@ -500,6 +501,11 @@ async function invokeSend(
     purpose: "prescription" | "follow_up",
     body: Record<string, unknown>,
 ): Promise<SendResult> {
+    // One of the three independent 72-hour-lock seams — see lockGate.ts.
+    // Deliberately checked here, at the one place every send already funnels
+    // through, rather than at each of sendPrescription/sendFollowUp's call
+    // sites in the UI.
+    guardWhatsAppSend();
     const { data, error } = await supabase.functions.invoke("messaging-send", {
         body: { purpose, ...body },
     });

@@ -29,6 +29,7 @@ import {
 } from "../../lib/auth";
 import type { Identity, IdentityFailure } from "../../lib/auth";
 import { touchThisDevice, watchThisDeviceRevocation } from "../../lib/db/devices";
+import { markConfirmedOnline } from "../../lib/offline/connectivityClock";
 
 /** How often the fallback re-check runs while a tab sits open and idle.
  *  Realtime (`watchThisDeviceRevocation`) is the live path and fires the
@@ -79,6 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await loadIdentity(userId);
         if (result.ok) {
             cacheIdentity(result.identity);
+            // A real, authenticated round trip just succeeded — this is
+            // exactly the kind of confirmation the 72-hour lock's clock is
+            // built on, as opposed to a bare `navigator.onLine` flag. See
+            // connectivityClock.ts.
+            markConfirmedOnline();
             setState({ status: "authed", identity: result.identity, offline: false });
             return "ok";
         }
@@ -224,6 +230,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const adoptIdentity = (identity: Identity) => {
         userIdRef.current = identity.user.id;
         cacheIdentity(identity);
+        // The login screen only calls this after running its own live check
+        // sequence — just as real a confirmed round trip as `resolve`'s own
+        // "ok" branch above, and the connectivity clock needs both call sites
+        // or every fresh login would read as having never reached the server.
+        markConfirmedOnline();
         setState({ status: "authed", identity, offline: false });
     };
 
