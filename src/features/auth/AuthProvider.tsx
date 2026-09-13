@@ -17,6 +17,7 @@
 //     the moment connectivity returns.
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { applyAppIdentity, faceForRole } from "../../lib/pwa/appIdentity";
 import type { ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import {
@@ -182,6 +183,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setState({ status: "anon", notice: "device-revoked" });
         });
     }, []);
+
+    // WHICH app this install is — Cortex or Front Desk. Runs for an OFFLINE
+    // identity too (unlike the effects below it): the face is read off the
+    // cached role and needs no network, and a receptionist opening a
+    // reconnecting tab should still see their own workspace's name and mark.
+    useEffect(() => {
+        if (state.status !== "authed") return;
+        applyAppIdentity(faceForRole(state.identity.user.role));
+    }, [state]);
 
     useEffect(() => {
         if (state.status !== "authed" || state.offline) return;

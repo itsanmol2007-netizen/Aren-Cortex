@@ -1,0 +1,17 @@
+{
+  "name": "AREN Front Desk",
+  "short_name": "Front Desk",
+  "description": "Reception, queue and billing for a clinic — one window.",
+  "id": "/?app=frontdesk",
+  "start_url": "/app/frontdesk",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#fbfaf8",
+  "theme_color": "#f0abc8",
+  "icons": [
+    { "src": "/icon-front-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-front-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-front-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

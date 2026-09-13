@@ -48,11 +48,22 @@ export default defineConfig({
         name: "AREN Cortex",
         short_name: "Cortex",
         description:
-          "Reception, consultation and prescription for a clinic — one window.",
+          "Consultation, prescription and clinical intelligence — one window.",
         id: "/",
         start_url: "/",
         scope: "/",
-        display: "standalone",
+        // Front Desk gets its OWN manifest, name, icon and id
+        // (`public/manifest-frontdesk.webmanifest`); which of the two the
+        // page advertises is decided at runtime by the signed-in role —
+        // see `src/lib/pwa/appIdentity.ts`.
+        //
+        // `fullscreen` with a `standalone` fallback: Anmol asked for the
+        // installed app to open full-screen ("whenever you open it by
+        // default it will open in full screen when clicking on icon").
+        // Desktop browsers may honour only the fallback, which is why the
+        // fallback is named rather than left to chance.
+        display: "fullscreen",
+        display_override: ["fullscreen", "standalone"],
         background_color: "#eef3f8",
         theme_color: "#0b1733",
         icons: [

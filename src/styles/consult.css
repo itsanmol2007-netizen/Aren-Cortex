@@ -2277,6 +2277,51 @@ body.cs-locked-shell {
    instead of scrolling inside it ("still overflowing... literally"). A
    two-class selector beats the one-class base rule outright, no ordering
    luck required. */
+/* ── Ranked rows arriving ──────────────────────────────────────────────────
+   Anmol, 2026-09-13: "when doctors and people type things and the ranking
+   appear, can we have some animation for that thing also... something
+   beautiful appearing one by one. Not like one thing taking 10 seconds...
+   it should not feel like you put there and randomly everything pops up."
+
+   One keyframe and nth-child delays, applied at the ONE container every
+   ranked list already shares (.cs-list — Suggestions, Recommendations and
+   Conditions all render into it), so no card needed changing and no row
+   needed a JS animation of its own.
+
+   Why CSS and not Framer here: a CSS animation runs once, when the element
+   is first painted. React keeps existing rows by key, so re-ranking an
+   already-visible list does NOT replay this — only rows that genuinely just
+   arrived animate. That is exactly the behaviour a consult wants, and it
+   costs nothing on every keystroke in between.
+
+   The numbers are deliberately small. 200ms per row, 26ms apart, and the
+   stagger stops climbing after the 8th row: a 30-result list must not take
+   a second to finish arriving, and nothing below the fold should be waiting
+   on a delay at all. Rows animate opacity and a 6px lift only — never
+   height — so the list's own scroll position and the card's height are
+   untouched while they land, and a doctor already reading row 1 is never
+   pushed around by row 9 showing up. */
+@keyframes cs-row-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.cs-list > * {
+    animation: cs-row-in 200ms cubic-bezier(0.22, 0.68, 0, 1) both;
+}
+.cs-list > *:nth-child(1) { animation-delay: 0ms; }
+.cs-list > *:nth-child(2) { animation-delay: 26ms; }
+.cs-list > *:nth-child(3) { animation-delay: 52ms; }
+.cs-list > *:nth-child(4) { animation-delay: 78ms; }
+.cs-list > *:nth-child(5) { animation-delay: 104ms; }
+.cs-list > *:nth-child(6) { animation-delay: 130ms; }
+.cs-list > *:nth-child(7) { animation-delay: 156ms; }
+/* Everything past the 8th lands together — see the note above. */
+.cs-list > *:nth-child(n + 8) { animation-delay: 182ms; }
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-list > * { animation: none; }
+}
+
 .cs-list.is-list-collapsed { overflow: hidden; }
 .cs-list.is-list-expanded { overflow-y: auto; padding-right: 4px; }
 

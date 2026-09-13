@@ -35,7 +35,7 @@
 // on the four-second bug that cost.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useOutlet } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Send, Sparkles, User } from "lucide-react";
@@ -77,8 +77,65 @@ export function AuthLayout() {
         ? { duration: 0 }
         : { type: "spring" as const, stiffness: 90, damping: 20, mass: 0.9 };
 
+    /**
+     * Pointer parallax on the bubbles — the cheapest version of it that
+     * still reads as depth. Anmol, 2026-09-12: "maybe just slight bit of
+     * animations when you are hovering your mouse here and there in those
+     * bubbles. Not very dramatic... use the simplest animation there
+     * possible."
+     *
+     * So: no per-bubble listeners, no library, no React state (state would
+     * re-render this whole subtree on every mouse move). One listener on
+     * the shell writes two numbers into CSS custom properties, and the
+     * bubbles read them in their own `translate`, each with its own
+     * `--depth` so the nearer ones move further — which is the entire
+     * trick to making flat circles look like they sit at different
+     * distances.
+     *
+     * `translate` and not `transform`, deliberately: the float keyframe
+     * already owns `transform` on the same element, and the two would
+     * overwrite each other. They are separate CSS properties and compose.
+     *
+     * rAF-coalesced, so a mouse reporting 500 events a second still costs
+     * at most one style write per frame. Skipped entirely under reduced
+     * motion or on a touch device, where there is no hover to respond to.
+     */
+    const shellRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = shellRef.current;
+        if (!el || reducedMotion) return;
+        if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+
+        let frame = 0;
+        let nx = 0;
+        let ny = 0;
+        const write = () => {
+            frame = 0;
+            el.style.setProperty("--ax", nx.toFixed(3));
+            el.style.setProperty("--ay", ny.toFixed(3));
+        };
+        const onMove = (e: PointerEvent) => {
+            nx = e.clientX / window.innerWidth - 0.5;
+            ny = e.clientY / window.innerHeight - 0.5;
+            if (!frame) frame = requestAnimationFrame(write);
+        };
+        const onLeave = () => {
+            nx = 0;
+            ny = 0;
+            if (!frame) frame = requestAnimationFrame(write);
+        };
+
+        window.addEventListener("pointermove", onMove, { passive: true });
+        window.addEventListener("pointerleave", onLeave, { passive: true });
+        return () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerleave", onLeave);
+            if (frame) cancelAnimationFrame(frame);
+        };
+    }, [reducedMotion]);
+
     return (
-        <div className={`auth-shell${isSignin ? " is-signin" : ""}${copyGone ? " is-narrow" : ""}`}>
+        <div ref={shellRef} className={`auth-shell${isSignin ? " is-signin" : ""}${copyGone ? " is-narrow" : ""}`}>
             <style>{AUTH_LAYOUT_CSS}</style>
 
             {/* ── The bubbles ───────────────────────────────────────────
@@ -145,14 +202,14 @@ export function AuthLayout() {
 
             <div className="auth-page">
                 <div className="auth-top">
-                    <div className="auth-brand">
+                    <div className="auth-brand auth-in auth-in-1">
                         <img src={arenLogo} alt="" className="auth-brand-mark" />
                         <div className="auth-brand-text">
                             <span className="auth-brand-name">AREN</span>
                             <span className="auth-brand-sub">CLINICAL OPERATING SYSTEM</span>
                         </div>
                     </div>
-                    <div className="auth-corner">
+                    <div className="auth-corner auth-in auth-in-2">
                         <span>BUILT FOR</span>
                         <span>A HEALTHIER</span>
                         <span>TOMORROW</span>
@@ -175,23 +232,28 @@ export function AuthLayout() {
                             <motion.div
                                 key="copy"
                                 className="auth-copy"
-                                initial={{ opacity: 0, x: -18 }}
-                                animate={{ opacity: 1, x: 0 }}
+                                /* `initial={false}` on purpose: the copy's
+                                   own CHILDREN stagger themselves in via
+                                   CSS (.auth-in). Fading the whole block
+                                   here as well would just put a second,
+                                   flatter animation on top of that one and
+                                   hide it. Framer still owns the EXIT. */
+                                initial={false}
                                 exit={{ opacity: 0, x: -34 }}
                                 transition={reducedMotion ? { duration: 0 } : { duration: 0.3, ease: "easeOut" }}
                             >
-                                <h1 className="auth-headline">
+                                <h1 className="auth-headline auth-in auth-in-2">
                                     You Practice,
                                     <br />
                                     <em className="auth-headline-accent">We Handle the Rest!</em>
                                 </h1>
 
-                                <p className="auth-tagline">
+                                <p className="auth-tagline auth-in auth-in-4">
                                     LESS FRICTION. MORE CARE.
                                     <span className="auth-rule" />
                                 </p>
 
-                                <ul className="auth-features">
+                                <ul className="auth-features auth-in-list">
                                     {FEATURES.map(({ icon: Icon, lines }) => (
                                         <li key={lines[0]} className="auth-feature">
                                             <span className="auth-feature-icon">
@@ -207,7 +269,7 @@ export function AuthLayout() {
                         )}
                     </AnimatePresence>
 
-                    <motion.div className="auth-card-slot" layout transition={spring}>
+                    <motion.div className="auth-card-slot auth-in auth-in-3" layout transition={spring}>
                         {/* No crossfade here, deliberately. An
                             AnimatePresence "wait" swap (old card fades
                             fully out, then the new one fades in) left
@@ -231,7 +293,7 @@ export function AuthLayout() {
                     </motion.div>
                 </div>
 
-                <div className="auth-foot">
+                <div className="auth-foot auth-in auth-in-6">
                     <AnimatePresence initial={false}>
                         {!isSignin && (
                             <motion.span
@@ -297,6 +359,16 @@ const AUTH_LAYOUT_CSS = `
     width: 100%;
     height: 100%;
     border-radius: 50%;
+    /* Pointer parallax. --ax/--ay are written by the shell (one rAF-
+       coalesced listener, see the component); --depth is per-bubble, and
+       the spread between depths is what sells these flat circles as
+       sitting at different distances. translate, not transform: the
+       float keyframe below owns transform on this same element. */
+    translate: calc(var(--ax, 0) * var(--depth, 12px)) calc(var(--ay, 0) * var(--depth, 12px));
+    transition: translate 600ms cubic-bezier(0.22, 0.68, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-bubble { translate: none; transition: none; }
 }
 @keyframes auth-float-a {
     0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
@@ -322,6 +394,7 @@ const AUTH_LAYOUT_CSS = `
     height: 620px;
 }
 .auth-bubble--wash-tr {
+    --depth: 26px;
     background: radial-gradient(closest-side,
         rgba(196, 181, 253, 0.55) 0%,
         rgba(216, 180, 254, 0.28) 55%,
@@ -341,6 +414,7 @@ const AUTH_LAYOUT_CSS = `
     height: 260px;
 }
 .auth-bubble--orb {
+    --depth: 54px;
     background: radial-gradient(circle at 34% 28%,
         rgba(237, 233, 254, 0.95) 0%,
         rgba(167, 139, 250, 0.88) 34%,
@@ -359,6 +433,7 @@ const AUTH_LAYOUT_CSS = `
     height: 760px;
 }
 .auth-bubble--wash-br {
+    --depth: 18px;
     background: radial-gradient(closest-side,
         rgba(244, 171, 215, 0.50) 0%,
         rgba(216, 180, 254, 0.30) 52%,
@@ -376,6 +451,7 @@ const AUTH_LAYOUT_CSS = `
     height: 640px;
 }
 .auth-bubble--wash-bl {
+    --depth: 12px;
     background: radial-gradient(closest-side,
         rgba(221, 214, 254, 0.34) 0%,
         transparent 72%);
@@ -389,6 +465,47 @@ const AUTH_LAYOUT_CSS = `
     width: 100%;
     height: 100%;
     pointer-events: none;
+}
+
+/* ── The way in ───────────────────────────────────────────────────────────
+   Anmol, 2026-09-12: "there should be also a starting animation when you
+   just start the app or load the website... not something very hard, but
+   something beautiful... not something like you open the app and it
+   randomly pops up."
+
+   One keyframe, and delays. No library, no per-element JS, nothing to
+   coordinate: a CSS animation runs when its element is first painted, so
+   this costs exactly one composited opacity+transform pass per element and
+   is over in under a second. both holds the from-state before the delay
+   elapses, which is what stops the flash of everything-at-once that a
+   delay without it would give.
+
+   Persistent chrome (the brand, the card slot, the footer) animates once
+   on load and never again, because those elements stay mounted across the
+   welcome/sign-in change. The copy's own children are remounted by the
+   route, so they replay it — which is correct: they really are arriving
+   again. */
+@keyframes auth-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.auth-in,
+.auth-in-list > * {
+    animation: auth-rise 620ms cubic-bezier(0.22, 0.68, 0, 1) both;
+}
+.auth-in-1 { animation-delay: 60ms; }
+.auth-in-2 { animation-delay: 130ms; }
+.auth-in-3 { animation-delay: 210ms; }
+.auth-in-4 { animation-delay: 290ms; }
+.auth-in-6 { animation-delay: 520ms; }
+/* The three feature rows, one after another, off the tagline's beat. */
+.auth-in-list > *:nth-child(1) { animation-delay: 350ms; }
+.auth-in-list > *:nth-child(2) { animation-delay: 410ms; }
+.auth-in-list > *:nth-child(3) { animation-delay: 470ms; }
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-in,
+    .auth-in-list > * { animation: none; }
 }
 
 /* ── Page frame ───────────────────────────────────────────────────────── */
