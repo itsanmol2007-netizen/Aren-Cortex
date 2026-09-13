@@ -5,6 +5,7 @@ import App from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { initPWA } from "./pwa";
 import { initInstallPrompt } from "./lib/pwa/installPrompt";
+import { applyCachedAppIdentity } from "./lib/pwa/appIdentity";
 import { installSessionTrace } from "./lib/diagnostics/sessionTrace";
 import { initConnectivityClock } from "./lib/offline/connectivityClock";
 import { initWriteQueue } from "./lib/offline/writeQueue";
@@ -112,6 +113,11 @@ function RoutedApp() {
       </AppErrorBoundary>
   );
 }
+
+// Before the first paint: name this window Cortex or Front Desk from the
+// cached identity, so a receptionist's window never opens as "AREN Cortex"
+// and flips a beat later. See appIdentity.ts.
+applyCachedAppIdentity();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

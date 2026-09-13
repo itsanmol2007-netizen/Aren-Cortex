@@ -36,9 +36,9 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { Outlet, useLocation, useOutlet } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Send, Sparkles, User } from "lucide-react";
+import { CloudOff, MessageCircle, MonitorDown, Send, Sparkles, User } from "lucide-react";
 import arenLogo from "../../assets/aren-logo-w.png";
 
 const FEATURES = [
@@ -49,6 +49,7 @@ const FEATURES = [
 
 export function AuthLayout() {
     const location = useLocation();
+    const navigate = useNavigate();
     const outlet = useOutlet();
     const reducedMotion = useReducedMotion();
     const isSignin = location.pathname.startsWith("/login/signin");
@@ -77,6 +78,14 @@ export function AuthLayout() {
         ? { duration: 0 }
         : { type: "spring" as const, stiffness: 90, damping: 20, mass: 0.9 };
 
+    /** The card's own move. Softer and better damped than the bubbles'
+     *  spring: this one carries text a person is about to read, so it must
+     *  settle without the overshoot that looks lively on a background blob
+     *  and merely unsteady under a form. */
+    const cardMove = reducedMotion
+        ? { duration: 0 }
+        : { type: "spring" as const, stiffness: 140, damping: 26, mass: 0.7 };
+
     /**
      * Pointer parallax on the bubbles — the cheapest version of it that
      * still reads as depth. Anmol, 2026-09-12: "maybe just slight bit of
@@ -100,6 +109,27 @@ export function AuthLayout() {
      * at most one style write per frame. Skipped entirely under reduced
      * motion or on a touch device, where there is no hover to respond to.
      */
+    /**
+     * Click anywhere off the card to go back to the welcome screen.
+     *
+     * The sign-in form had no way back at all once you were in it —
+     * "whenever you click somewhere out of the model, it will take you
+     * back to that previous screen... but right now when you come into
+     * this login thing, there is no any way to back" (Anmol, 2026-09-13).
+     *
+     * Guarded three ways so it can never eat a real interaction: only on
+     * the sign-in route, only for a primary click, and only when the click
+     * did not land inside the card (`closest`, so anything in the form —
+     * inputs, the eye toggle, the links in its footer — is untouched).
+     * A visible "Back" control lives on the card itself as well; a
+     * click-off that nothing announces is a shortcut, not an exit.
+     */
+    const onShellClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!isSignin || e.button !== 0) return;
+        if ((e.target as HTMLElement).closest(".auth-card-slot")) return;
+        navigate("/login");
+    };
+
     const shellRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         const el = shellRef.current;
@@ -135,7 +165,11 @@ export function AuthLayout() {
     }, [reducedMotion]);
 
     return (
-        <div ref={shellRef} className={`auth-shell${isSignin ? " is-signin" : ""}${copyGone ? " is-narrow" : ""}`}>
+        <div
+            ref={shellRef}
+            onClick={onShellClick}
+            className={`auth-shell${isSignin ? " is-signin" : ""}${copyGone ? " is-narrow" : ""}`}
+        >
             <style>{AUTH_LAYOUT_CSS}</style>
 
             {/* ── The bubbles ───────────────────────────────────────────
@@ -265,11 +299,39 @@ export function AuthLayout() {
                                         </li>
                                     ))}
                                 </ul>
+
+                                {/* Three facts a doctor arriving cold from
+                                    an email link actually wants, in the
+                                    smallest form that carries them — asked
+                                    for as "some useful things", explicitly
+                                    not clutter. Each one is something this
+                                    app really does, not a slogan. */}
+                                <ul className="auth-facts">
+                                    <li><CloudOff size={13} strokeWidth={2} /> Keeps working offline</li>
+                                    <li><MonitorDown size={13} strokeWidth={2} /> Installs like a desktop app</li>
+                                    <li><MessageCircle size={13} strokeWidth={2} /> Sends the prescription on WhatsApp</li>
+                                </ul>
                             </motion.div>
                         )}
                     </AnimatePresence>
 
-                    <motion.div className="auth-card-slot auth-in auth-in-3" layout transition={spring}>
+                    {/* `layout="position"` and NOT plain `layout`.
+
+                        Plain `layout` animates the box's SIZE as well as its
+                        place, and Framer does that with a scale transform —
+                        so the welcome card (short) becoming the sign-in form
+                        (tall) spent the whole move as stretched, squashed
+                        type and controls. That is what "when you click on
+                        sign in, the animation... is very terrible" was
+                        (Anmol, 2026-09-13). Position-only means the box
+                        takes its new size immediately and only GLIDES to its
+                        new place: nothing is ever scaled, so nothing is ever
+                        distorted. */}
+                    <motion.div
+                        className="auth-card-slot auth-in auth-in-3"
+                        layout="position"
+                        transition={cardMove}
+                    >
                         {/* No crossfade here, deliberately. An
                             AnimatePresence "wait" swap (old card fades
                             fully out, then the new one fades in) left
@@ -309,9 +371,18 @@ export function AuthLayout() {
                             </motion.span>
                         )}
                     </AnimatePresence>
+                    {/* Was "CLINICS · PEOPLE · PROGRESS", which said
+                        nothing and did nothing — "progress doesn't make any
+                        sense" (Anmol, 2026-09-13). Two real destinations
+                        instead, in the same quiet register. */}
                     <span className="auth-foot-item auth-foot-item--right">
-                        <span className="auth-rule auth-rule--lead" />
-                        CLINICS <span className="auth-dot" /> PEOPLE <span className="auth-dot" /> PROGRESS
+                        <a className="auth-foot-link" href="https://arenode.com" target="_blank" rel="noreferrer">
+                            ARENODE.COM
+                        </a>
+                        <span className="auth-dot" />
+                        <a className="auth-foot-link" href="mailto:care@arenode.com">
+                            CARE@ARENODE.COM
+                        </a>
                     </span>
                 </div>
             </div>
@@ -675,6 +746,39 @@ const AUTH_LAYOUT_CSS = `
 }
 
 /* ── Footer row ───────────────────────────────────────────────────────── */
+/* The three capability facts under the features. Deliberately typed DOWN
+   from the feature rows above them -- they are supporting detail, and a
+   first-time visitor should read the three big promises first. */
+.auth-facts {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin: 30px 0 0;
+    padding: 0;
+}
+.auth-facts li {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--lg-line);
+    background: rgba(255, 255, 255, 0.55);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--lg-muted);
+}
+.auth-facts svg { color: var(--lg-accent); flex: none; }
+
+.auth-foot-link {
+    color: inherit;
+    text-decoration: none;
+    letter-spacing: inherit;
+    transition: color 140ms ease;
+}
+.auth-foot-link:hover { color: var(--lg-accent-ink); }
+
 .auth-foot {
     display: flex;
     align-items: center;

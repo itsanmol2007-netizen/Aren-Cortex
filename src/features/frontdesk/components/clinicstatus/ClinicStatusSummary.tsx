@@ -15,6 +15,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { useT } from "../../i18n/i18n";
+import { InstallDeskCard } from "./InstallDeskCard";
 import { StatusIllustration } from "./StatusIllustration";
 import type { ClinicStatus, OverallState } from "../../clinicStatus/model";
 
@@ -175,6 +176,8 @@ export function ClinicStatusSummary({
                         {t("csViewDetailsSub")}
                     </div>
                 </button>
+
+                <InstallDeskCard />
 
                 {/* Session — the quiet, buried corner where logout lives */}
                 <section className="rounded-[18px] border border-[#ecebf3] bg-[#fafbfc] p-[16px]">

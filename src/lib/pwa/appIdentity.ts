@@ -36,7 +36,12 @@ const CORTEX = {
 const FRONT_DESK = {
     href: "/manifest-frontdesk.webmanifest",
     title: "AREN Front Desk",
-    theme: "#f0abc8",
+    // The dawn ink Front Desk's OWN header already opens on
+    // (WorkspaceShell's gradient starts #0d1b35 / #120f28). A theme colour
+    // is the strip the OS paints ABOVE the app, so it should continue the
+    // app's band rather than announce itself: the light rose that was here
+    // read as "a slightly pink header" sitting on top of a deep navy one.
+    theme: "#120f28",
 } as const;
 
 export type AppFace = "cortex" | "frontdesk";
@@ -46,6 +51,36 @@ export type AppFace = "cortex" | "frontdesk";
  *  already ships with. */
 export function faceForRole(role?: string | null): AppFace {
     return role === "reception" ? "frontdesk" : "cortex";
+}
+
+/**
+ * Settle the face BEFORE React's first paint, from the identity cache.
+ *
+ * Without this, a receptionist's window opened as "AREN Cortex" and then
+ * flipped to "AREN Front Desk" a moment later, once the auth gate had
+ * resolved and the effect below ran — visible every single launch:
+ * "now it's writing AREN Cortex and then AREN Front Desk into the top bar"
+ * (Anmol, 2026-09-13).
+ *
+ * `lib/auth.ts` already stashes the last verified identity in
+ * localStorage for the offline gate, and that read is synchronous, so the
+ * answer is available before anything renders. Read directly rather than
+ * through `readCachedIdentity(userId)` — at this point in the boot there
+ * is no resolved user id to check it against, and the only thing being
+ * decided is a name and an icon. If it turns out to be the wrong face
+ * (a different account signs in), the effect in AuthProvider corrects it
+ * the moment the real identity lands.
+ */
+export function applyCachedAppIdentity(): void {
+    try {
+        const raw = localStorage.getItem("aren.identity.v1");
+        if (!raw) return;
+        const role = JSON.parse(raw)?.identity?.user?.role as string | undefined;
+        applyAppIdentity(faceForRole(role));
+    } catch {
+        /* no cache, unreadable storage, or a shape we don't recognise —
+           the page keeps the default face it shipped with. */
+    }
 }
 
 let applied: AppFace | null = null;

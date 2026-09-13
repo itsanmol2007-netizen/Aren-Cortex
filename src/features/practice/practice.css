@@ -89,7 +89,16 @@
        inside that shell — the same 36px Patients' `.prec-page-body` already
        uses for its own dense workspace (`patients-shell.css`), not a new
        number picked for this page alone. */
-    padding: var(--cs-s5) 56px 44px;
+    /* 32px top / 30px sides is not a number picked for this page — it is
+       exactly what DoctorOverviewPage's body uses (pt-[32px] px-[30px]).
+       At the old 15px top the heading sat up under the dark header's own
+       drop shadow, which reads as the shadow dirtying the title rather
+       than as a page beginning: "there is shadow of dark header which is
+       covering this thing and this is looking ugly... why don't you align
+       its position with heading of other pages like Overview" (Anmol,
+       2026-09-13). Same gutter as Overview means the two pages' headings
+       now start on the same line as each other, not just further down. */
+    padding: 32px 30px 44px;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -192,11 +201,20 @@
    than the workspace's primary heading. This is the one heading on the
    page that outranks every card title under it; it now carries visible
    weight to match, not just a bump in the type scale. */
+/* Retyped 2026-09-13 to match Overview's own page heading rather than
+   being a heavier sans in a different size: Overview sets the doctor's
+   name in Newsreader italic, and that face is already the product's
+   "this is the heading of a page" voice (see its own note there, and the
+   login screen's headline). Practice's heading is the same rank, so it
+   gets the same voice. */
 .prac-group-title {
     margin: 0;
     color: var(--cs-ink);
-    font-size: 19px;
-    font-weight: 800;
+    font-family: "Newsreader", Georgia, serif;
+    font-style: italic;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.15;
     letter-spacing: -0.01em;
     text-transform: none;
 }

@@ -55,6 +55,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, useReducedMotion } from "motion/react";
 
 type Props = {
@@ -169,18 +170,35 @@ export function SignInPortal({ name, waitFor, holdMessage, timeoutMs = DEFAULT_T
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [waitingMode, timeoutMs]);
 
+    /**
+     * Nothing scrolls behind the portal while it is up.
+     *
+     * base.css keeps `overflow-y: scroll` on the body permanently (so page
+     * length changes never shift the layout sideways), which meant a live
+     * scrollbar sat down the edge of this full-screen dark moment — "why
+     * even at that screen there is a nested scrolling on the side? That
+     * screen should simply cover everything" (Anmol, 2026-09-13). An inline
+     * style outranks the stylesheet and is put back exactly as found on
+     * unmount, so the app's own scrolling behaviour is untouched after.
+     */
+    useEffect(() => {
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => { document.body.style.overflow = prev; };
+    }, []);
+
     // Reduced motion: a plain, static line -- no drawing, no fade, but
     // WAITING mode still genuinely blocks on `waitFor`/`timeoutMs` above;
     // this is only ever a visual simplification, never a shortcut past the
     // real wait.
     if (reducedMotion) {
         if (!waitingMode) return null;
-        return (
+        return createPortal((
             <div className="sip-root sip-root--plain" role="status" aria-label={holdMessage ?? "Loading"}>
                 <style>{SIP_PLAIN_CSS}</style>
                 <p className="sip-plain-line">{holdMessage ?? "Setting things up…"}</p>
             </div>
-        );
+        ), document.body);
     }
 
     const greeting = greetingName(name);
@@ -189,7 +207,20 @@ export function SignInPortal({ name, waitFor, holdMessage, timeoutMs = DEFAULT_T
         : greeting ? `Welcome back, ${greeting}`
             : "Welcome back";
 
-    return (
+    /**
+     * Rendered into `document.body`, not in place.
+     *
+     * `position: fixed` is only viewport-relative while NO ancestor has a
+     * transform — and this component's callers both sit under one. On the
+     * login screen AuthLayout's card slot is a Framer `layout` element,
+     * which means it carries a transform for the whole of its animation;
+     * a fixed child of that is sized and positioned against the CARD
+     * instead of the screen, which is exactly the reported bug: "instead
+     * of full screen animation... we are getting a half screen" (Anmol,
+     * 2026-09-13). A body portal has no such ancestor and cannot regress
+     * if some future parent gains one.
+     */
+    return createPortal((
         <div
             className={`sip-root${exiting ? " is-exiting" : ""}`}
             role="status"
@@ -281,7 +312,7 @@ export function SignInPortal({ name, waitFor, holdMessage, timeoutMs = DEFAULT_T
                 </motion.p>
             </div>
         </div>
-    );
+    ), document.body);
 }
 
 const SIP_CSS = `

@@ -14,8 +14,8 @@
 
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Eye, EyeOff } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { homeRouteForRole, loadIdentity, phoneToAuthEmail, phoneToStaffAuthEmail, signOutLocal, withTimeout } from "../../lib/auth";
 import { useAuth } from "./AuthProvider";
@@ -172,6 +172,13 @@ export function LoginPage() {
             <style>{LOGIN_CSS}</style>
 
             <main className="lg-card">
+                {/* Clicking off the card also goes back (AuthLayout owns
+                    that), but an exit nothing announces is a shortcut, not
+                    a way out -- this is the visible one. */}
+                <Link to="/login" className="lg-back">
+                    <ArrowLeft size={14} />
+                    Back
+                </Link>
                 <ArenMark size={46} />
                 <div className="lg-eyebrow">AREN · CLINIC SIGN-IN</div>
                 <h1 className="lg-title">Welcome back.</h1>
@@ -275,6 +282,24 @@ const LOGIN_CSS = `
     font-family: var(--lg-sans);
     color: var(--lg-ink);
 }
+
+.lg-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    margin-bottom: 18px;
+    font-family: var(--lg-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--lg-faint);
+    text-decoration: none;
+    transition: color 140ms ease;
+}
+.lg-back svg { flex: none; }
+.lg-back:hover { color: var(--lg-accent-ink); }
 
 /* The glass card. Same glass recipe as WelcomePage's card on purpose —
    the two are one card moving between two states as far as the doctor is
