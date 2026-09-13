@@ -43,14 +43,14 @@ import {
     Activity, AlertTriangle, ArrowRight, Check, ChevronRight,
     ExternalLink, FileText, HelpCircle, Info, Keyboard, Laptop, Loader2, Lock,
     LogOut, Mail, MonitorSmartphone, Receipt, Search, Settings2, Shield,
-    ShieldCheck, Smartphone, Stethoscope, Tablet, Trash2, User, Users, X,
+    ShieldCheck, Smartphone, Stethoscope, Tablet, Trash2, User, Users, X, CloudOff,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
 import { useLogout } from "../auth/useLogout";
 import { supabase } from "../../lib/supabase";
 import {
-    billingIntervalLabel, clearProfileCache, fetchClinicSubscription,
+    billingIntervalLabel, clearProfileCache, fetchClinicSubscription, getSubscriptionCachedAt,
     formatPlanPrice, fetchSubscriptionRequests, submitSubscriptionRequest,
     REQUEST_KIND_LABEL, updateDoctorContactEmail,
     deleteDevice, describeDevice, fetchDevices, formFactorLabel, lastSeenLabel, revokeDevice,
@@ -961,6 +961,14 @@ export function SettingsPage({
     const auth = useAuth();
     const [subscription, setSubscription] = useState<ClinicSubscription | null>(null);
     const [subLoading, setSubLoading] = useState(true);
+    // "The lookup failed" is NOT "this clinic has no plan". Conflating them
+    // told paying clinics they had no subscription whenever the network was
+    // down. `fetchClinicSubscription` now falls back to the last confirmed
+    // plan on its own, so reaching this flag means even that was missing.
+    const [subUnavailable, setSubUnavailable] = useState(false);
+    // Set whenever what we are showing came from cache rather than a live
+    // read, so the card can date it instead of passing it off as current.
+    const [subAsOf, setSubAsOf] = useState<string | null>(null);
     const [accountOpen, setAccountOpen] = useState(false);
     const [confirmingDrafts, setConfirmingDrafts] = useState(false);
     const [confirmingGlobal, setConfirmingGlobal] = useState(false);
@@ -1049,9 +1057,20 @@ export function SettingsPage({
     useEffect(() => {
         let cancelled = false;
         setSubLoading(true);
+        setSubUnavailable(false);
         fetchClinicSubscription(hospitalId)
-            .then((s) => { if (!cancelled) setSubscription(s); })
-            .catch(() => { if (!cancelled) setSubscription(null); })
+            .then((s) => {
+                if (cancelled) return;
+                setSubscription(s);
+                // Dated only when this device is offline: online, what we
+                // just showed IS current, whatever path it came back on.
+                setSubAsOf(navigator.onLine ? null : getSubscriptionCachedAt(hospitalId));
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setSubscription(null);
+                setSubUnavailable(true);
+            })
             .finally(() => { if (!cancelled) setSubLoading(false); });
         return () => { cancelled = true; };
     }, [hospitalId]);
@@ -1370,6 +1389,18 @@ export function SettingsPage({
                                 <div className="flex flex-1 items-center justify-center gap-[10px] py-[18px] text-[13px] text-[var(--cs-faint)]">
                                     <Loader2 size={16} className="animate-spin" /> Loading your plan…
                                 </div>
+                            ) : subUnavailable ? (
+                                /* Couldn't ask, and nothing cached to fall
+                                   back on. Says exactly that — telling a
+                                   paying clinic it has no plan because the
+                                   wifi dropped is the bug this replaced. */
+                                <div className="flex flex-1 flex-col justify-center gap-[6px] py-[10px]">
+                                    <span className="text-[15px] font-bold text-[var(--cs-ink)]">Plan details unavailable offline</span>
+                                    <span className="text-[12.5px] text-[var(--cs-faint)]">
+                                        Your subscription is unchanged — this device just hasn&rsquo;t been able to
+                                        check it yet. It will fill in when you&rsquo;re back online.
+                                    </span>
+                                </div>
                             ) : !subscription ? (
                                 /* A clinic with no subscription row is a real
                                    state — Admin assigns them. Never invent one. */
@@ -1381,6 +1412,18 @@ export function SettingsPage({
                                 </div>
                             ) : (
                                 <>
+                                    {/* Dated, not hidden. A plan barely changes,
+                                        so the last confirmed one is almost
+                                        always still true — but it is shown as
+                                        what it is rather than passed off as a
+                                        live read. */}
+                                    {subAsOf && (
+                                        <div className="mb-[10px] flex items-center gap-[7px] rounded-[9px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[10px] py-[7px] text-[11.5px] font-semibold text-[var(--cs-faint)]">
+                                            <CloudOff size={13} />
+                                            From your last online session ·{" "}
+                                            {new Date(subAsOf).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-[16px]">
                                         <span className="grid h-[76px] w-[76px] flex-none place-items-center rounded-full bg-[linear-gradient(135deg,rgba(168,85,247,0.16),rgba(99,102,241,0.16))] text-[var(--cs-violet)] ring-1 ring-inset ring-[rgba(124,58,237,0.18)]">
                                             <Shield size={30} />

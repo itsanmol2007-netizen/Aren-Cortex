@@ -403,16 +403,26 @@ export function CommunicationPage({
         }
     }, [pendingRecharge, cancelling, load]);
 
+    // `credits === null` is NOT zero credits — it is "this device has never
+    // managed to read the balance". Collapsing the two is what put a clinic
+    // that was merely offline into the full out-of-credits alarm: "when
+    // there is no any connection, it shows zero credits remaining, which is
+    // not a good deal" (Anmol, 2026-09-13). `fetchCreditBalance` already
+    // falls back to the last confirmed balance (lib/db/messaging.ts), so
+    // null here means even THAT was never written — and the honest answer
+    // then is "we don't know", never "you have none".
+    const balanceKnown = credits != null;
     const balance = credits?.balance ?? 0;
     // Three tiers below "ok", each a step up in urgency — Anmol, 2026-09-07:
     // "as the credits go under 500, start showing soft warning" ON TOP OF the
     // existing under-100 reminder, not instead of it. `LOW_CREDIT_THRESHOLD`
     // stays what the database and AREN's own email alert use; "soft" is a
     // UI-only earlier nudge with no email behind it.
-    const health = balance <= 0 ? "out"
-        : balance < LOW_CREDIT_THRESHOLD ? "low"
-            : balance < SOFT_LOW_CREDIT_THRESHOLD ? "soft"
-                : "ok";
+    const health = !balanceKnown ? "unknown"
+        : balance <= 0 ? "out"
+            : balance < LOW_CREDIT_THRESHOLD ? "low"
+                : balance < SOFT_LOW_CREDIT_THRESHOLD ? "soft"
+                    : "ok";
     const usageTotal = useMemo(() => usage.reduce((n, p) => n + p.credits, 0), [usage]);
     const waitMs = pendingRecharge ? msUntilCancellable(pendingRecharge) : 0;
 

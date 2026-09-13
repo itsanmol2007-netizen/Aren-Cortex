@@ -16,6 +16,7 @@ import { PrintRxPage } from "./features/frontdesk/PrintRxPage";
 import { ClinicStatusPage } from "./features/frontdesk/ClinicStatusPage";
 import { AuthProvider } from "./features/auth/AuthProvider";
 import { AppLockGate } from "./components/AppLockGate";
+import { OfflineBanner } from "./components/OfflineBanner";
 import { RequireAuth, RequireRole, HomeRedirect } from "./features/auth/RequireAuth";
 import { AdminShell } from "./features/admin/AdminShell";
 import { OverviewPage } from "./features/admin/pages/OverviewPage";
@@ -54,6 +55,10 @@ function RoutedApp() {
   return (
     <AppErrorBoundary resetKey={location.pathname}>
       <AuthProvider>
+        {/* Mounted once, above every route: one place says "you're offline
+            and this is saved data", so no individual card has to hedge in
+            its own words. See OfflineBanner.tsx. */}
+        <OfflineBanner />
         <AppLockGate>
         <Routes>
             {/* The marketing-style welcome screen at the index, the actual

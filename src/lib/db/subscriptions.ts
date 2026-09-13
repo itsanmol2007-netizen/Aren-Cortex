@@ -32,6 +32,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
+import { getDurableCache, setDurableCache } from "../offline/durableCache";
 
 /** Free text, not a TS enum — Admin can introduce a status without a deploy. */
 export type SubscriptionStatus =
@@ -128,7 +129,42 @@ interface SubscriptionRow {
  * deliberately not returned: a clinic whose subscription lapsed should read
  * as having none, not as having a cancelled one.
  */
+const subscriptionCacheKey = (hospitalId: string) => `subscription.${hospitalId}`;
+
+/** When the cached subscription below was last confirmed against the
+ *  server — for a UI that wants to say "as of your last online session"
+ *  rather than presenting an old plan as if it were live. */
+export function getSubscriptionCachedAt(hospitalId: string): string | null {
+    return getDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId))?.at ?? null;
+}
+
+/**
+ * The clinic's plan.
+ *
+ * Cached durably, because losing the network must not look like losing the
+ * subscription: the uncached version threw on any error, and Settings
+ * rendered that as "No subscription on file — contact support to have a plan
+ * assigned to this clinic", which is a frightening thing to tell a paying
+ * clinic because their wifi dropped ("that's a terrible thing when internet
+ * is not there", Anmol, 2026-09-13). A plan is close to static — the last
+ * confirmed one is very nearly always still the truth.
+ *
+ * Note the cached value may legitimately be `null` (a clinic really has no
+ * subscription). That is cached too, and is a different fact from "we could
+ * not ask" — which is what the throw at the bottom now means, and only after
+ * we have established there is nothing at all to fall back on.
+ */
 export async function fetchClinicSubscription(hospitalId: string): Promise<ClinicSubscription | null> {
+    try {
+        return await fetchClinicSubscriptionFromNetwork(hospitalId);
+    } catch (err) {
+        const cached = getDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId));
+        if (cached) return cached.value;
+        throw err;
+    }
+}
+
+async function fetchClinicSubscriptionFromNetwork(hospitalId: string): Promise<ClinicSubscription | null> {
     const { data, error } = await supabase
         .from("subscriptions")
         .select(`
@@ -146,10 +182,16 @@ export async function fetchClinicSubscription(hospitalId: string): Promise<Clini
         .maybeSingle<SubscriptionRow>();
 
     if (error) throw new Error(`fetchClinicSubscription: ${error.message}`);
-    if (!data || !data.plans) return null;
+    if (!data || !data.plans) {
+        // A real, server-confirmed "this clinic has no plan" — worth caching
+        // as such, so an offline reload repeats the same answer rather than
+        // inventing a different one.
+        setDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId), null);
+        return null;
+    }
 
     const plan = data.plans;
-    return {
+    const resolved: ClinicSubscription = {
         id: data.id,
         status: data.status,
         startedAt: data.started_at,
@@ -182,6 +224,8 @@ export async function fetchClinicSubscription(hospitalId: string): Promise<Clini
             limitValue: e.limit_value,
         })),
     };
+    setDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId), resolved);
+    return resolved;
 }
 
 /**
