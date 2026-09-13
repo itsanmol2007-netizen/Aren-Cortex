@@ -42,6 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
+import { collectRuntimeFacts } from "../diagnostics/runtimeFacts";
 
 const DEVICE_KEY_STORAGE = "aren.device.v1.key";
 
@@ -145,6 +146,13 @@ export async function touchThisDevice(
     opts: { authorize?: boolean } = {}
 ): Promise<{ revoked: boolean }> {
     const d = describeDevice();
+    // What this install is RUNNING — app version, install mode, OS, sync
+    // health, service-worker state (see diagnostics/runtimeFacts.ts for the
+    // line it does not cross). Collected here rather than on a timer of its
+    // own so it rides the write this heartbeat was already making: Master
+    // Control reads it off the same `user_devices` row it already uses for
+    // the cross-account device view.
+    const facts = await collectRuntimeFacts().catch(() => null);
     try {
         const { data, error } = await supabase
             .from("user_devices")
@@ -158,6 +166,7 @@ export async function touchThisDevice(
                     browser: d.browser,
                     form_factor: d.formFactor,
                     last_seen_at: new Date().toISOString(),
+                    ...(facts ?? {}),
                     // A fresh, fully-verified sign-in RE-AUTHORISES this install:
                     // any `revoked_at` left over from an earlier "sign out this
                     // device" is cleared. Revoking a device ends its current

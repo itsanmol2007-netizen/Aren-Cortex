@@ -140,6 +140,10 @@ export function collectDiagnostics(extra: Record<string, string | null | undefin
         if (v) out[k] = v;
     };
 
+    // The released version first, then the exact commit inside it. "App
+    // version" below is the SERVICE WORKER's state (are they on stale code),
+    // which is a different question and keeps its own line.
+    put("Version", typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : null);
     put("Build", buildStamp());
     for (const [k, v] of Object.entries(extra)) put(k, v);
 
@@ -148,7 +152,7 @@ export function collectDiagnostics(extra: Record<string, string | null | undefin
         put("Route in", pageTrail());
         put("Recent errors", recentErrors());
         put("Install", installMode());
-        put("App version", appVersionState());
+        put("Code freshness", appVersionState());
         put("Network", networkQuality());
         put("Viewport", `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio || 1}x`);
         put("Time zone", Intl.DateTimeFormat().resolvedOptions().timeZone);

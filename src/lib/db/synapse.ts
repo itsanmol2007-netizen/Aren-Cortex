@@ -2270,7 +2270,36 @@ export interface PrescriptionTemplateDetail extends PrescriptionTemplateSummary 
 /** The Practice manager's list, and the pool Consult matches trigger words
  *  against — a doctor's template count is small, so both read this same
  *  shape rather than needing a separate search RPC. */
+const templateSummariesCacheKey = (doctorId: string) => `rx_templates.${doctorId}`;
+
+/** When the cached template list below was last confirmed live. */
+export function getTemplateSummariesCachedAt(doctorId: string): string | null {
+    return getDurableCache<PrescriptionTemplateSummary[]>(templateSummariesCacheKey(doctorId))?.at ?? null;
+}
+
+/**
+ * Cached like the rest of the Practice page's clinic-wide settings: a
+ * doctor's own prescription templates barely change week to week, so an
+ * offline Practice page showing the list it showed yesterday is right, and
+ * showing an empty card is wrong ("don't show blank pages when internet
+ * goes... just show the last value", Anmol, 2026-09-13).
+ *
+ * A genuinely empty list is cached too — "this doctor has no templates" is
+ * a real answer and must survive a reload the same way a full list does.
+ */
 export async function loadPrescriptionTemplateSummaries(doctorId: string): Promise<PrescriptionTemplateSummary[]> {
+    try {
+        const fresh = await loadPrescriptionTemplateSummariesFromNetwork(doctorId);
+        setDurableCache(templateSummariesCacheKey(doctorId), fresh);
+        return fresh;
+    } catch (err) {
+        const cached = getDurableCache<PrescriptionTemplateSummary[]>(templateSummariesCacheKey(doctorId));
+        if (cached) return cached.value;
+        throw err;
+    }
+}
+
+async function loadPrescriptionTemplateSummariesFromNetwork(doctorId: string): Promise<PrescriptionTemplateSummary[]> {
     const { data: templates, error } = await supabase
         .from("prescription_templates")
         .select("id, name, trigger_label, updated_at")

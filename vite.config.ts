@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import path from "path"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
@@ -29,6 +30,13 @@ export default defineConfig({
   define: {
     __BUILD_SHA__: JSON.stringify(buildStamp()),
     __BUILT_AT__: JSON.stringify(new Date().toISOString()),
+    // The PUBLISHED version, read straight from package.json so there is
+    // exactly one place to bump it. `__BUILD_SHA__` above says which commit;
+    // this says which release that commit belongs to, which is the thing a
+    // support conversation actually needs ("you're on 1.0.0-beta.1").
+    __APP_VERSION__: JSON.stringify(
+      JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version
+    ),
   },
   plugins: [
     react(),
