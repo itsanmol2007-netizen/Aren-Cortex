@@ -2404,6 +2404,7 @@ function App() {
                 page. The choosing happens in the Plan row above. */}
             <aside className="cs-summary">
               <PlanCard
+            onOpenShortcuts={() => setShortcutsOpen(true)}
                 justAdded={justAdded}
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
@@ -2453,8 +2454,6 @@ function App() {
           <StatusBar
             degraded={!!synapse.data?.degraded}
             unidentified={!identity.isReal}
-            online={online}
-            onOpenShortcuts={() => setShortcutsOpen(true)}
           />
 
           {/* ── The specialty charts ────────────────────────────────────────

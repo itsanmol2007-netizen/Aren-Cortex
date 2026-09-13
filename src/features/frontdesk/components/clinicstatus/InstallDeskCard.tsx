@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
-import { CheckCircle2, Download, Share } from "lucide-react";
+import { CheckCircle2, Download, MonitorDown, Share } from "lucide-react";
 import { useInstallPrompt } from "../../../../hooks/useInstallPrompt";
 
 export function InstallDeskCard() {
@@ -23,10 +23,6 @@ export function InstallDeskCard() {
     const [busy, setBusy] = useState(false);
     const [declined, setDeclined] = useState(false);
 
-    // Nothing to offer and nothing to report: no browser support, already
-    // dismissed at the OS level, or not a PWA-capable context at all. A card
-    // that can only say "you can't" is worse than no card.
-    if (!installed && !installable && !isIOSSafari) return null;
 
     const handleInstall = async () => {
         setBusy(true);
@@ -60,18 +56,45 @@ export function InstallDeskCard() {
             ) : (
                 <div className="flex flex-col gap-[11px]">
                     <div className="text-[12.5px] leading-[1.55] text-[#5a6472]">
-                        Open Front Desk from the dock like any other app — full screen, and
-                        it keeps working through a dropped connection.
+                        Installs as <b className="font-bold text-[#3b4453]">AREN Front Desk</b>, with
+                        its own icon — opens full screen, straight onto the queue, and keeps
+                        working through a dropped connection.
                     </div>
-                    <button
-                        type="button"
-                        onClick={handleInstall}
-                        disabled={busy}
-                        className="flex items-center justify-center gap-[8px] rounded-[12px] border border-[rgba(124,92,240,0.28)] bg-[linear-gradient(160deg,#7c5cf0,#2f6bed)] px-[14px] py-[11px] text-[13px] font-extrabold text-white shadow-[0_8px_22px_rgba(70,60,180,0.22)] transition-transform hover:-translate-y-[1px] disabled:opacity-60"
-                    >
-                        <Download size={15} />
-                        {busy ? "Installing…" : "Install Front Desk"}
-                    </button>
+
+                    {installable ? (
+                        <button
+                            type="button"
+                            onClick={handleInstall}
+                            disabled={busy}
+                            className="flex items-center justify-center gap-[8px] rounded-[12px] border border-[rgba(124,92,240,0.28)] bg-[linear-gradient(160deg,#7c5cf0,#2f6bed)] px-[14px] py-[11px] text-[13px] font-extrabold text-white shadow-[0_8px_22px_rgba(70,60,180,0.22)] transition-transform hover:-translate-y-[1px] disabled:opacity-60"
+                        >
+                            <Download size={15} />
+                            {busy ? "Installing…" : "Install Front Desk"}
+                        </button>
+                    ) : (
+                        /* The browser has not offered us a prompt — it fires
+                           `beforeinstallprompt` once, early, and only when IT
+                           decides the page is eligible. Hiding the card in
+                           that case is what made this look missing
+                           altogether ("there isn't any PWA installation
+                           option on Frontdesk", Anmol, 2026-09-13). The
+                           manual route always exists, so say it plainly
+                           instead of showing nothing. */
+                        <div className="flex flex-col gap-[7px] rounded-[12px] border border-[#eef0f5] bg-[#fafbfc] px-[13px] py-[11px]">
+                            <div className="flex items-center gap-[7px] text-[12.5px] font-bold text-[#3b4453]">
+                                <MonitorDown size={14} /> Install from your browser menu
+                            </div>
+                            <div className="text-[11.5px] leading-[1.55] text-[#5a6472]">
+                                Chrome or Edge: the install icon at the right of the address bar, or
+                                <b className="font-semibold"> ⋮ → Cast, save and share → Install page as app</b>.
+                            </div>
+                            <div className="text-[11.5px] leading-[1.5] text-[#8a91a0]">
+                                Already installed AREN as Cortex on this machine? Install again from
+                                here — Front Desk is a separate app with its own name and icon.
+                            </div>
+                        </div>
+                    )}
+
                     {declined && (
                         <div className="text-[11.5px] leading-[1.5] text-[#8a91a0]">
                             No problem — it stays here whenever you want it.

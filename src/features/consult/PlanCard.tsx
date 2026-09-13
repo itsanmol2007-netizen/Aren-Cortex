@@ -15,8 +15,8 @@
 
 import { useRef, useState } from "react";
 import {
-    Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, NotebookPen,
-    Pill, Printer, Stethoscope, Utensils, Waves,
+    Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, Keyboard,
+    NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
@@ -194,6 +194,9 @@ interface Props {
      *  see App.tsx's SaveAsTemplateModal. Absent items list means nothing
      *  worth saving yet, so the button only renders once the plan isn't empty. */
     onSaveAsTemplate?: () => void;
+    /** Opens the keyboard map. Lives here since 2026-09-13 — it used to be
+     *  the only permanent resident of the bottom status bar. */
+    onOpenShortcuts?: () => void;
 }
 
 export function PlanCard({
@@ -209,6 +212,7 @@ export function PlanCard({
     notes, onNotesChange,
     companionsFor, onAddCompanion, onDismissCompanion,
     onAddMedicine, onAddTest, onReviewRx, onPrint, panelRef, onSaveAsTemplate,
+    onOpenShortcuts,
 }: Props) {
     const [openId, setOpenId] = useState<string | null>(null);
 
@@ -293,6 +297,25 @@ export function PlanCard({
                     <span className="cs-count is-quiet">
                         {itemCount} item{itemCount === 1 ? "" : "s"}
                     </span>
+                    {/* Moved here 2026-09-13 from the bottom status bar, which
+                        was holding a whole strip open across the consult to
+                        carry this one icon. The plan header is on screen just
+                        as permanently, already has a controls row, and is
+                        closer to where the hands are. `?` still opens it —
+                        the chord is printed on the button so it teaches its
+                        own replacement. */}
+                    {onOpenShortcuts && (
+                        <button
+                            type="button"
+                            className="cs-plan-keys"
+                            onClick={onOpenShortcuts}
+                            aria-label="Keyboard shortcuts"
+                            title="Keyboard shortcuts"
+                        >
+                            <Keyboard size={13} />
+                            <kbd>?</kbd>
+                        </button>
+                    )}
                 </div>
             </div>
 

@@ -3139,6 +3139,35 @@ body.cs-locked-shell {
    border and fill, sized for a header, not the footer's full-width filled
    actions (`.cs-review`/`.cs-print`), which are a heavier weight this one
    was never meant to carry. */
+/* The keyboard-map button, in the plan header's control row since
+   2026-09-13 (it used to be the bottom status bar's only permanent
+   resident — see StatusBar.tsx). Quiet by default: it is a help
+   affordance that must be findable without ever competing with the plan
+   it sits above. */
+.cs-plan-keys {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 7px;
+    border: 1px solid var(--cs-line);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.cs-plan-keys:hover {
+    color: var(--cs-violet);
+    border-color: var(--cs-violet);
+    background: rgba(124, 58, 237, 0.06);
+}
+.cs-plan-keys kbd {
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+}
+
 .cs-plan-save-template {
     display: inline-flex;
     align-items: center;

@@ -1,34 +1,41 @@
 // ---------------------------------------------------------------------------
-// STATUS BAR — priority 3, and it looks like it.
+// STATUS BAR — priority 3, and now usually not there at all.
 //
-// Cut down 2026-09-11 — Anmol: "Signups Active, Model Signups, MVP1,
-// Specialty, General OPD... these are simply useless things here... I want
-// [to keep] this 'Data Cache Locally' [indicator]... that will just unlock
-// slightly more vertical space." The engine-active line, the model version,
-// and the specialty label were all internal build/debug facts a doctor never
-// asked to see and could do nothing with — the philosophy doc's "lowest
-// tier" was still one tier too high for them. What's left is what a doctor
-// can actually act on: `degraded`/`unidentified` (real state that changes
-// what to trust on screen), the cache/online indicator, and the keyboard
-// shortcuts affordance (kept, but text-less now — the icon + `?` hint is
-// the whole point per this component's own note below).
+// Cut down twice. 2026-09-11 removed the build/debug facts (engine active,
+// model version, specialty) that a doctor never asked to see. 2026-09-13
+// removed the last two RESIDENT items — the "Data cached locally" pill and
+// the keyboard-shortcuts button — because between them they were holding a
+// bordered, padded strip open across the bottom of every consult to say
+// nothing that changes: "you're wasting vertical bottom space to just show
+// these two shits... let that bottom vertical space reserved now be used
+// for actual consultation workspace" (Anmol).
+//
+// The shortcuts affordance did not die, it MOVED — to the Consultation Plan
+// header's top-right, which is on screen just as permanently and already
+// has a row of controls for exactly this kind of thing. See PlanCard.
+//
+// What is left only renders when it has something to say: `degraded` and
+// `unidentified` are real state that changes what to trust on screen. On a
+// normal consult this component returns null and costs zero pixels.
 // ---------------------------------------------------------------------------
-
-import { Cloud, CloudOff, Keyboard } from "lucide-react";
 
 interface Props {
     /** personalisation degraded — ranking still works, habits do not */
     degraded: boolean;
     /** signed-in account has no `doctors` row — running on the shared fallback identity */
     unidentified: boolean;
-    online: boolean;
-    /** opens the keyboard map — see the comment on the button */
-    onOpenShortcuts: () => void;
 }
 
-export function StatusBar({
-    degraded, unidentified, online, onOpenShortcuts,
-}: Props) {
+export function StatusBar({ degraded, unidentified }: Props) {
+    // Nothing to say, no bar at all — not an empty bar still paying for its
+    // border, padding and line-height. Anmol, 2026-09-13: "you're wasting
+    // vertical bottom space to just show these two shits... let that bottom
+    // vertical space reserved now be used for actual consultation
+    // workspace." On a normal consult both flags are false, so this strip
+    // now costs the workspace exactly zero pixels, and reappears only when
+    // there is a real warning to carry.
+    if (!degraded && !unidentified) return null;
+
     return (
         <footer className="cs-status">
             {/* Said out loud rather than hidden: a doctor whose personalisation
@@ -53,39 +60,6 @@ export function StatusBar({
                 </span>
             )}
 
-            <span className="cs-status-item is-right">
-                {online ? <Cloud size={13} /> : <CloudOff size={13} />}
-                {online ? "Data cached locally" : "Offline — working from cache"}
-            </span>
-
-            {/* ── The way in to the keyboard map ──────────────────────────────
-                "?" has opened this since the sheet was built and nothing on
-                screen ever said so, which makes it a shortcut for people who
-                already know it — the exact opposite of what a help affordance
-                is for.
-
-                It lives in the status bar rather than the sidebar because the
-                sidebar is two clicks away behind an overlay, and this is
-                needed WHILE working. The status bar is priority-3 metadata by
-                the philosophy doc, and a permanently available help control is
-                precisely that: present so the doctor can trust the screen,
-                never competing with it. The chord is printed on the button, so
-                the button teaches its own replacement and a doctor only needs
-                it once. */}
-            {/* Text-less now (was icon + "Shortcuts" + `?`) — the icon and the
-                chord it opens with are the whole affordance; the label was
-                the one line here that was pure repetition of `title`/
-                `aria-label`, not new information. */}
-            <button
-                type="button"
-                className="cs-status-item cs-status-keys"
-                onClick={onOpenShortcuts}
-                aria-label="Keyboard shortcuts"
-                title="Keyboard shortcuts"
-            >
-                <Keyboard size={13} />
-                <kbd>?</kbd>
-            </button>
         </footer>
     );
 }

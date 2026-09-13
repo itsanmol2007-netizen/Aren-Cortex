@@ -35,7 +35,7 @@
 // on the four-second bug that cost.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { CloudOff, MessageCircle, MonitorDown, Send, Sparkles, User } from "lucide-react";
@@ -129,6 +129,39 @@ export function AuthLayout() {
         if ((e.target as HTMLElement).closest(".auth-card-slot")) return;
         navigate("/login");
     };
+
+    /**
+     * The card's height, measured, so the box can animate to a real number.
+     *
+     * Third attempt at this transition, and the first two each fixed one
+     * half and broke the other:
+     *   - plain `layout` animates size with a SCALE transform, so the card
+     *     spent the move as stretched type and squashed inputs;
+     *   - `layout="position"` removed the distortion by removing the size
+     *     animation altogether — which is exactly what was reported next:
+     *     "it expands (without any animation, just directly) and then the
+     *     next frame it's in the centre" (Anmol, 2026-09-13).
+     *
+     * Both are avoidable: position comes from `layout="position"` (a
+     * transform, cheap, no distortion) and SIZE comes from animating the
+     * `height` property itself against a measured target. Nothing is
+     * scaled, so nothing distorts, and both halves move together.
+     *
+     * A ResizeObserver keeps the target honest after the swap too — the
+     * sign-in card grows when a validation banner appears, and the box
+     * should follow that rather than clipping it.
+     */
+    const measureRef = useRef<HTMLDivElement>(null);
+    const [cardHeight, setCardHeight] = useState<number | null>(null);
+    useLayoutEffect(() => {
+        const el = measureRef.current;
+        if (!el) return;
+        const sync = () => setCardHeight(el.offsetHeight);
+        sync();
+        const ro = new ResizeObserver(sync);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [isSignin]);
 
     const shellRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -328,8 +361,22 @@ export function AuthLayout() {
                         new place: nothing is ever scaled, so nothing is ever
                         distorted. */}
                     <motion.div
-                        className="auth-card-slot auth-in auth-in-3"
+                        /* The intro class deliberately does NOT go here.
+                           `auth-rise` is a CSS animation with `both` fill, so
+                           it keeps `transform` applied on this element for
+                           good — and a CSS animation outranks an inline
+                           style, so it silently overrode the transform Framer
+                           uses for the `layout` glide. The card jumped
+                           straight to centre while its height animated
+                           correctly beside it. The intro now runs on the clip
+                           INSIDE, which owns no transform Framer needs. */
+                        className="auth-card-slot"
                         layout="position"
+                        /* `null` on the very first paint means "no height
+                           opinion yet" — the card lays out naturally and is
+                           measured, rather than animating up from zero on
+                           load. */
+                        animate={cardHeight == null ? undefined : { height: cardHeight }}
                         transition={cardMove}
                     >
                         {/* No crossfade here, deliberately. An
@@ -344,14 +391,18 @@ export function AuthLayout() {
                             way in; the card box is never empty, and the
                             movement people actually watch is the slot's
                             `layout` glide. */}
-                        <motion.div
-                            key={isSignin ? "signin" : "welcome"}
-                            initial={{ opacity: 0.45 }}
-                            animate={{ opacity: 1 }}
-                            transition={reducedMotion ? { duration: 0 } : { duration: 0.22, ease: "easeOut" }}
-                        >
-                            {outlet ?? <Outlet />}
-                        </motion.div>
+                        <div className="auth-card-clip auth-in auth-in-3">
+                            <div ref={measureRef}>
+                                <motion.div
+                                    key={isSignin ? "signin" : "welcome"}
+                                    initial={{ opacity: 0.45 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={reducedMotion ? { duration: 0 } : { duration: 0.22, ease: "easeOut" }}
+                                >
+                                    {outlet ?? <Outlet />}
+                                </motion.div>
+                            </div>
+                        </div>
                     </motion.div>
                 </div>
 
@@ -734,6 +785,20 @@ const AUTH_LAYOUT_CSS = `
     font-size: 20px;
     line-height: 1.35;
     color: var(--lg-ink-2);
+}
+
+/* The clipping box the animated height acts on. It carries the card's
+   drop shadow instead of the card, because overflow: hidden clips a
+   CHILD's shadow — moving it up here means the box can crop the card
+   mid-transition (which is what stops the content squashing) without
+   ever cropping the shadow around it. */
+.auth-card-clip {
+    height: 100%;
+    overflow: hidden;
+    border-radius: 20px;
+    box-shadow:
+        0 32px 70px -30px rgba(58, 30, 92, 0.28),
+        0 2px 10px rgba(12, 13, 12, 0.04);
 }
 
 .auth-card-slot {

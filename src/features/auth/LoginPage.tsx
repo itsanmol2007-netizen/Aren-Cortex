@@ -314,9 +314,9 @@ const LOGIN_CSS = `
     -webkit-backdrop-filter: blur(22px) saturate(1.25);
     backdrop-filter: blur(22px) saturate(1.25);
     border: 1px solid rgba(255, 255, 255, 0.9);
-    box-shadow:
-        0 32px 70px -30px rgba(58, 30, 92, 0.28),
-        0 2px 10px rgba(12, 13, 12, 0.04);
+    /* No shadow here — AuthLayout's .auth-card-clip draws it, so the
+       clipping box that animates this card's height can crop the card
+       without cropping its shadow. */
 }
 
 .lg-eyebrow {
