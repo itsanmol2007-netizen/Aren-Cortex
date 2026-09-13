@@ -830,6 +830,17 @@
     padding-top: 2px;
 }
 
+/* A field-level validation message — the phone-clash guard on Edit details
+   ("Already used by <name>") and a plain "enter a valid number" fallback.
+   Sits directly under the field it complains about, same red as the ring
+   the field itself gets (`errors.phone` inline style) rather than a new hue. */
+.pm-error-text {
+    margin: -2px 0 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: #db2777;
+}
+
 .pm-btn-primary {
     flex: 1;
     height: 42px;

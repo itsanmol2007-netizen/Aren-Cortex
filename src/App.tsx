@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
+import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
 import { ActiveConsultGuard } from "./components/ActiveConsultGuard";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import ReviewModal from "./components/ReviewModal";
@@ -421,7 +422,7 @@ function App() {
   // useConsultLifecycle below. See useConsultSession.ts for the layering.
   const session = useConsultSession({ chart, data: synapse.data });
   const {
-    patient, visitId,
+    patient, setPatient, visitId,
     pastVisits, pastVisitsLoading,
     repeatRxBanner, setRepeatRxBanner,
     isSaving, isReviewOpen, setIsReviewOpen,
@@ -429,6 +430,11 @@ function App() {
     activeConsultGuardOpen, setActiveConsultGuardOpen,
     ageYears, ageMonths, patientSex, hasActiveConsult,
   } = session;
+
+  // Edit the patient on screen mid-consult — the pencil beside their name in
+  // the dark header (`PatientHeader`'s `onEditPatient`). See
+  // `EditPatientDetailsModal`'s own header for why this exists.
+  const [editPatientOpen, setEditPatientOpen] = useState(false);
 
   // ★ The longitudinal record — a confirmed condition becomes an engine input
   // and, when it is chronic, a fact that survives the visit. Sits between the
@@ -1795,6 +1801,28 @@ function App() {
           onOpenQueue={clinic.frontDesk ? () => setQueueSheetOpen(true) : undefined}
           queueCount={queue.waiting.length}
           nextToken={queue.waiting[0] ? padToken(queue.waiting[0].token_number) : null}
+          onEditPatient={patient?.id ? () => setEditPatientOpen(true) : undefined}
+        />
+      )}
+
+      {editPatientOpen && patient?.id && (
+        <EditPatientDetailsModal
+          patientId={patient.id}
+          onClose={() => setEditPatientOpen(false)}
+          onSaved={(fresh) => {
+            // Patch the patient in-flight — same shape `dbToUiPatient` builds
+            // for the intake modal, so the header/chart/prescription all see
+            // the correction immediately, no reload of the consult needed.
+            setPatient((p) => (p ? {
+              ...p,
+              name: fresh.name,
+              age: String(fresh.age),
+              gender: fresh.gender as Patient["gender"],
+              phone: fresh.phone,
+              dateOfBirth: fresh.date_of_birth ?? "",
+            } : p));
+            setEditPatientOpen(false);
+          }}
         />
       )}
 

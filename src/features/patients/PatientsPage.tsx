@@ -706,6 +706,28 @@ export function PatientsPage({ onStartConsult, onResumeConsult, specialty, onNav
         setSelectedRow(null);
     }, []);
 
+    // A demographic edit saved from inside Patient Record (its own pencil, or
+    // Consult's header if this same patient is on screen there too) — patch
+    // every row for this patient wherever it's held here, so going back to
+    // the list never shows the stale name/age/sex/phone the record opened
+    // with. `PatientRecord` already updates its own view instantly; this is
+    // what keeps THIS page's state in step with it.
+    const handlePatientUpdated = useCallback((fresh: DBPatient) => {
+        const patch = (rows: PatientRecordRow[]) =>
+            rows.map((r) =>
+                r.patient_id === fresh.id
+                    ? { ...r, patient_name: fresh.name, age: fresh.age, gender: fresh.gender, phone: fresh.phone }
+                    : r
+            );
+        setTodayRows(patch);
+        setRecentRows(patch);
+        setSelectedRow((r) =>
+            r && r.patient_id === fresh.id
+                ? { ...r, patient_name: fresh.name, age: fresh.age, gender: fresh.gender, phone: fresh.phone }
+                : r
+        );
+    }, []);
+
     const completedToday = todayRows.filter((r) => visitStatusKind(r.visit_status) === "done").length;
     const activeToday = todayRows.filter((r) => visitStatusKind(r.visit_status) === "active").length;
 
@@ -745,6 +767,7 @@ export function PatientsPage({ onStartConsult, onResumeConsult, specialty, onNav
                 specialty={specialty}
                 onBack={goBack}
                 onStartConsult={onStartConsult}
+                onPatientUpdated={handlePatientUpdated}
             />
         );
     }

@@ -36,11 +36,40 @@
 }
 
 .prec-detail-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 18px;
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.01em;
     margin-bottom: 5px;
+}
+
+/* The pencil beside the patient's name — same fix as the consult header's
+   `.tb-edit-patient-btn`, reached here instead when a doctor is browsing
+   Patients rather than mid-consult. See EditPatientDetailsModal's header. */
+.prec-edit-patient-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 7px;
+    background: rgba(15, 23, 42, 0.03);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+
+.prec-edit-patient-btn:hover,
+.prec-edit-patient-btn:focus-visible {
+    background: rgba(168, 85, 247, 0.1);
+    border-color: rgba(168, 85, 247, 0.3);
+    color: #a855f7;
+    outline: none;
 }
 
 .prec-detail-meta {

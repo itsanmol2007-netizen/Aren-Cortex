@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pill, Stethoscope, Plus, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Pencil, Pill, Stethoscope, Plus, Users } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import type { Doctor, Patient } from "../types";
 import { useClinicShape } from "../hooks/useClinicShape";
@@ -66,6 +66,12 @@ type PatientHeaderProps = {
   onOpenQueue?: () => void;
   queueCount?: number;
   nextToken?: string | null;
+  /**
+   * Opens `EditPatientDetailsModal` for the patient on screen. Omitted (or
+   * `patient.id` absent, e.g. "no patient selected" between consults) → no
+   * pencil renders at all — see 2026-09-13 note above `EditPatientDetailsModal`.
+   */
+  onEditPatient?: () => void;
 };
 
 // The vitals strip that used to live here is gone. BP, Pulse, SpO2, Temp and
@@ -80,6 +86,7 @@ export function PatientHeader({
   pastVisits = [], pastVisitsLoading = false,
   onOpenVisit, sessionLabels,
   onOpenQueue, queueCount = 0, nextToken,
+  onEditPatient,
 }: PatientHeaderProps) {
   const { frontDesk } = useClinicShape();
   const [cancelArmed, setCancelArmed] = useState(false);
@@ -143,7 +150,20 @@ export function PatientHeader({
           </div>
           <div className="tb-patient-info">
             <span className="tb-active-label">Active consult</span>
-            <strong className="tb-patient-name">{patient.name || "No patient selected"}</strong>
+            <div className="tb-patient-name-row">
+              <strong className="tb-patient-name">{patient.name || "No patient selected"}</strong>
+              {onEditPatient && patient.id && (
+                <button
+                  type="button"
+                  className="tb-edit-patient-btn"
+                  onClick={onEditPatient}
+                  title="Edit patient details"
+                  aria-label="Edit patient details"
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
+            </div>
             <span className="tb-patient-meta">{details || "Create or search a patient to begin"}</span>
           </div>
         </div>

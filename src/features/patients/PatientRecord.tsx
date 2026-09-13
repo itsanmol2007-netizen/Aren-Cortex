@@ -34,6 +34,7 @@ import {
     Clock,
     FileText,
     MessageCircle,
+    Pencil,
     Phone,
     Pill,
     Plus,
@@ -47,6 +48,7 @@ import {
     fetchPrescriptionRenderData,
     freqSlotToLabel,
     type DBHospital,
+    type DBPatient,
     type PatientRecordRow,
     type PrescriptionRenderData,
     type RealVisit,
@@ -55,6 +57,7 @@ import type { Patient } from "../../types";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { BackButton } from "../../components/BackButton";
 import { PastVisitCard } from "../../components/PastVisitCard";
+import { EditPatientDetailsModal } from "../../components/EditPatientDetailsModal";
 import ReviewModal from "../../components/ReviewModal";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
@@ -478,10 +481,26 @@ interface PatientRecordProps {
     specialty: SpecialtyProfile;
     onBack: () => void;
     onStartConsult: (patient: Patient) => void;
+    /** Patches the SAME row in Patients' own `todayRows`/`recentRows`/
+     *  `selectedRow` state (`PatientsPage.tsx`) once a demographic edit here
+     *  saves — so navigating back to the list shows the correction rather
+     *  than the stale name/age/sex/phone this page was opened with. */
+    onPatientUpdated?: (fresh: DBPatient) => void;
 }
 
-export function PatientRecord({ row, specialty, onBack, onStartConsult }: PatientRecordProps) {
+export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult, onPatientUpdated }: PatientRecordProps) {
     const identity = useClinicalIdentity();
+
+    // A saved edit patches these four fields for the rest of this page's life
+    // (the identity card, "New Consult", the WhatsApp text) without waiting on
+    // a re-fetch — reset only when a DIFFERENT patient is opened. `row` below
+    // shadows the prop everywhere else in this component on purpose: every
+    // existing `row.*` read downstream picks up the correction for free.
+    const [demographicsPatch, setDemographicsPatch] = useState<Partial<Pick<PatientRecordRow, "patient_name" | "age" | "gender" | "phone">> | null>(null);
+    useEffect(() => { setDemographicsPatch(null); }, [rowProp.patient_id]);
+    const row = demographicsPatch ? { ...rowProp, ...demographicsPatch } : rowProp;
+    const [editPatientOpen, setEditPatientOpen] = useState(false);
+
     const [visits, setVisits] = useState<RealVisit[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAll, setShowAll] = useState(false);
@@ -664,7 +683,18 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult }: Patien
                                         {initials(row.patient_name)}
                                     </div>
                                     <div>
-                                        <div className="prec-detail-name">{row.patient_name}</div>
+                                        <div className="prec-detail-name">
+                                            {row.patient_name}
+                                            <button
+                                                type="button"
+                                                className="prec-edit-patient-btn"
+                                                onClick={() => setEditPatientOpen(true)}
+                                                title="Edit patient details"
+                                                aria-label="Edit patient details"
+                                            >
+                                                <Pencil size={12} />
+                                            </button>
+                                        </div>
                                         <div className="prec-detail-meta">
                                             {row.age > 0 && <span className="prec-identity-pill">{row.age} yrs</span>}
                                             {row.gender && <span className="prec-identity-pill">{row.gender}</span>}
@@ -1109,6 +1139,23 @@ export function PatientRecord({ row, specialty, onBack, onStartConsult }: Patien
                     visitA={comparing.a}
                     visitB={comparing.b}
                     onClose={() => setComparing(null)}
+                />
+            )}
+
+            {editPatientOpen && (
+                <EditPatientDetailsModal
+                    patientId={row.patient_id}
+                    onClose={() => setEditPatientOpen(false)}
+                    onSaved={(fresh) => {
+                        setDemographicsPatch({
+                            patient_name: fresh.name,
+                            age: fresh.age,
+                            gender: fresh.gender,
+                            phone: fresh.phone,
+                        });
+                        onPatientUpdated?.(fresh);
+                        setEditPatientOpen(false);
+                    }}
                 />
             )}
         </div>

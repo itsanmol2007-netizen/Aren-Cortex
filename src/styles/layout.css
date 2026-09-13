@@ -217,6 +217,39 @@
     white-space: nowrap;
 }
 
+.tb-patient-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* The pencil beside the patient's name — 2026-09-13, the doctor's only route
+   to fixing a demographic mistake (wrong sex, a mistyped phone) once a
+   consult has started, short of Front Desk's own Patients page. Quiet by
+   default (this bar already carries a lot); it only announces itself on
+   hover/focus, same restraint as `.tb-visits-arrow`. */
+.tb-edit-patient-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(240, 244, 255, 0.32);
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s;
+}
+
+.tb-edit-patient-btn:hover,
+.tb-edit-patient-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.09);
+    color: #f0f4ff;
+    outline: none;
+}
+
 .tb-patient-meta {
     display: block;
     font-size: 12px;
