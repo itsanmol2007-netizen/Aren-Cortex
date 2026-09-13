@@ -111,6 +111,17 @@ interface Props {
     queueLoading: boolean;
     onOpenQueue: () => void;
     onStartFromQueueRow: (visit: TodayVisit) => void;
+
+    /**
+     * Land straight on Manage Team with `AddStaffForm` already open —
+     * Clinic's own Staff card links here for exactly this (2026-09-13), one
+     * seed among the several App.tsx already carries this way (see
+     * `patientRecordSeed`): `handleSidebarNavigate` clears it on every
+     * navigation, and the ONE caller that wants it sets it again right after,
+     * in the same batch, so it never lingers into a later, ordinary visit to
+     * this page. Read once, at mount — see the effect below.
+     */
+    openTeamAddStaff?: boolean;
 }
 
 /** "Good morning" / "Good afternoon" / "Good evening" — the one piece of the
@@ -204,6 +215,7 @@ type ActivityKind = "visits" | "prescriptions" | "new_patients" | "recent_patien
 export function DoctorOverviewPage({
     onStartConsult, onNavigate, onViewPatient,
     queueWaiting, queueLoading, onOpenQueue, onStartFromQueueRow,
+    openTeamAddStaff,
 }: Props) {
     const identity = useClinicalIdentity();
     const clinic = useClinicShape();
@@ -322,6 +334,21 @@ export function DoctorOverviewPage({
     }, [identity.ready, identity.hospitalId, data?.revenueTracked, fees]);
 
     const [teamOpen, setTeamOpen] = useState(false);
+    // Set once, from `openTeamAddStaff`, and never re-derived from that prop
+    // again — otherwise every LATER "Manage team" click this same mount
+    // (opened for an ordinary reason, not the seeded one) would reopen
+    // straight onto Add Staff too. Cleared back to false the moment the team
+    // modal closes, so `PeoplePage` starts fresh the next time it mounts.
+    const [autoOpenAddStaff, setAutoOpenAddStaff] = useState(false);
+    useEffect(() => {
+        if (openTeamAddStaff) {
+            setTeamOpen(true);
+            setAutoOpenAddStaff(true);
+        }
+        // Read once, at mount, by design — see `openTeamAddStaff`'s own doc
+        // comment on `Props`.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const loadAnalytics = useCallback(() => {
         if (!identity.ready) return;
@@ -1164,10 +1191,10 @@ export function DoctorOverviewPage({
                     // this modal does that Today's-Queue-vs-Recent-Patients
                     // cares about, and it happened while `hasActiveReception`
                     // sat frozen at whatever it read on page load.
-                    onClose={() => { setTeamOpen(false); checkActiveReception(); }}
+                    onClose={() => { setTeamOpen(false); setAutoOpenAddStaff(false); checkActiveReception(); }}
                     xl
                 >
-                    <PeoplePage />
+                    <PeoplePage autoOpenAddStaff={autoOpenAddStaff} />
                 </PracticeModal>
             )}
 

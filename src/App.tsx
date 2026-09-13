@@ -260,6 +260,17 @@ function App() {
    */
   const [patientRecordSeed, setPatientRecordSeed] = useState<{ id: string | null; name: string | null } | null>(null);
 
+  /**
+   * Same seed pattern as `patientRecordSeed` right above, for Clinic's Staff
+   * card's own "Add staff" link (2026-09-13): that card cannot mint a login
+   * itself (`StaffModal`'s own header explains why), but Overview's Team
+   * modal already can — so this seed sends the doctor there and lands them
+   * on `AddStaffForm`, already open, rather than a bare trip to Overview
+   * that leaves them to find "Manage team" themselves. Cleared by
+   * `handleSidebarNavigate` so an ordinary trip to Overview never re-opens it.
+   */
+  const [openTeamAddStaff, setOpenTeamAddStaff] = useState(false);
+
   // Runs a pending "take me to that setting" request after the page it lives
   // on has mounted — scrolls to the control and flashes it. Mounted once,
   // here, so no individual page has to know the mechanism exists. See
@@ -998,6 +1009,7 @@ function App() {
     // box. The one caller that wants a seed sets it immediately AFTER this
     // returns, in the same batch, so its write is the one that lands.
     setPatientRecordSeed(null);
+    setOpenTeamAddStaff(false);
     setActivePage(page);
     setSidebarOpen(false);
     setPrescriptionEditorOpen(false);
@@ -1014,6 +1026,15 @@ function App() {
     setActiveConsultGuardOpen(false);
     setQueueSheetOpen(false);
     setTransition(null);
+  };
+
+  /** Clinic's Staff card "Add staff" link — see `openTeamAddStaff`'s own doc
+   *  comment. Navigates first (clearing the seed like every other trip
+   *  through `handleSidebarNavigate`), then sets it again right after, in
+   *  the same batch, so this write is the one that lands. */
+  const goAddStaffFromClinic = () => {
+    handleSidebarNavigate("overview");
+    setOpenTeamAddStaff(true);
   };
 
   const handleSidebarConsult = () => {
@@ -1911,6 +1932,7 @@ function App() {
           onStartFromQueueRow={(visit) =>
             consultFromQueue(visit, visit.visit_id !== queue.waiting[0]?.visit_id)
           }
+          openTeamAddStaff={openTeamAddStaff}
         />
       ) : activePage === "patients" ? (
         <PatientsPage
@@ -1985,6 +2007,7 @@ function App() {
               setDoctorProfile((prev) => (prev ? { ...prev, ...patch } : prev))
             }
             onOpenPrescriptionEditor={() => setPrescriptionEditorOpen(true)}
+            onAddStaff={goAddStaffFromClinic}
           />
         )
       ) : activePage === "support" ? (

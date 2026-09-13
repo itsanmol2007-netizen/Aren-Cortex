@@ -3,9 +3,15 @@
 //
 // Adding a login is deliberately NOT here: `users` INSERT is gated on
 // `id = auth.uid()` (registration only), so a "create staff" button would be
-// a form that always fails. The footer says where people actually join from.
+// a form that always fails. The footer used to say that was the ONLY door in
+// — self-registration — which stopped being true once Overview's Team modal
+// grew a real "Add staff" form that mints a login via the `admin-staff` Edge
+// Function (2026-09-13). `onAddStaff` present → that door is real for THIS
+// doctor and the footer both says so and links to it; absent → this doctor
+// isn't this clinic's admin, and the footer says who to ask instead of
+// repeating the old, now-inaccurate "only self-registration" claim.
 import { useEffect, useState } from "react";
-import { Users } from "lucide-react";
+import { UserPlus, Users } from "lucide-react";
 import { PracticeModal } from "../practice/PracticeModal";
 import { INPUT_CLASS, RowText } from "./ui";
 import { fetchStaff, updateStaffMember, type StaffMember } from "../../lib/db/staff";
@@ -18,13 +24,16 @@ const ROLES = [
 ];
 
 export function StaffModal({
-    hospitalId, currentUserId, onClose, onChanged,
+    hospitalId, currentUserId, onClose, onChanged, onAddStaff,
 }: {
     hospitalId: string;
     /** you cannot deactivate or demote yourself — that locks the clinic out */
     currentUserId: string | null;
     onClose: () => void;
     onChanged?: (staff: StaffMember[]) => void;
+    /** Present only when THIS doctor can actually add staff (Clinic's own
+     *  `useAdminAccess` check) — see this file's header. */
+    onAddStaff?: () => void;
 }) {
     const [staff, setStaff] = useState<StaffMember[]>([]);
     const [loading, setLoading] = useState(true);
@@ -133,10 +142,23 @@ export function StaffModal({
                         </div>
                     );
                 })}
-                <p className="m-0 pt-[2px] text-[11px] leading-[1.5] text-[var(--cs-faint)]">
-                    New staff join by registering at arenode.com with this clinic's phone number — an account can only be
-                    created by the person signing in, so it cannot be made for them from here.
-                </p>
+                {onAddStaff ? (
+                    <p className="m-0 flex flex-wrap items-center gap-x-[5px] gap-y-[2px] pt-[2px] text-[11px] leading-[1.5] text-[var(--cs-faint)]">
+                        <span>New staff can also register at arenode.com with this clinic's phone number, or</span>
+                        <button
+                            type="button"
+                            onClick={onAddStaff}
+                            className="inline-flex cursor-pointer items-center gap-[3px] border-0 bg-transparent p-0 font-semibold text-[var(--cs-violet)] underline decoration-dotted underline-offset-2"
+                        >
+                            <UserPlus size={11} /> add their login yourself.
+                        </button>
+                    </p>
+                ) : (
+                    <p className="m-0 pt-[2px] text-[11px] leading-[1.5] text-[var(--cs-faint)]">
+                        New staff join by registering at arenode.com with this clinic's phone number, or your clinic's
+                        admin can add a login for them.
+                    </p>
+                )}
             </div>
         </PracticeModal>
     );

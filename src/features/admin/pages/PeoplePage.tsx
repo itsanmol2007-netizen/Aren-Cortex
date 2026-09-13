@@ -150,7 +150,17 @@ function AddStaffForm({ onCreated }: { onCreated: () => void }) {
     );
 }
 
-export function PeoplePage() {
+export function PeoplePage({
+    /**
+     * Opens straight onto `AddStaffForm`, already expanded — Clinic's own
+     * Staff card links here for exactly this (2026-09-13: its old copy
+     * claimed nobody could be added from anywhere but self-registration,
+     * which stopped being true the moment this form could mint a real
+     * sign-in). `People` is already the first card in this page, so no
+     * scroll is needed to reach it — landing here IS landing on it.
+     */
+    autoOpenAddStaff = false,
+}: { autoOpenAddStaff?: boolean } = {}) {
     const identity = useClinicalIdentity();
     const auth = useAuth();
     const myUserId = auth.status === "authed" ? auth.identity.user.id : null;
@@ -165,7 +175,7 @@ export function PeoplePage() {
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [adminBusyId, setAdminBusyId] = useState<string | null>(null);
-    const [addingStaff, setAddingStaff] = useState(false);
+    const [addingStaff, setAddingStaff] = useState(autoOpenAddStaff);
 
     const range = useMemo(
         () => buildRange(period.preset, { from: period.from, to: period.to }),

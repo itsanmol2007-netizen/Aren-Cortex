@@ -48,10 +48,11 @@ import type { ReactNode, RefObject } from "react";
 import {
     ArrowRight, Award, Building2, CalendarDays, ChevronRight, Clock,
     FileSignature, Globe, GraduationCap, Mail, MapPin,
-    Pencil, Phone, ScrollText, Stethoscope, UserCog, Users,
+    Pencil, Phone, ScrollText, Stethoscope, UserCog, UserPlus, Users,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
+import { useAdminAccess } from "../../hooks/useAdminAccess";
 import { RxPreview } from "./RxPreview";
 import { ClinicHoursModal, EditClinicModal, EditDoctorModal } from "./ClinicModals";
 import { StaffModal } from "./StaffModal";
@@ -73,6 +74,15 @@ interface Props {
     /** Opens the Prescription Editor, a full page under Clinic. The dashboard
      *  card is a preview and a doorway; it is never an inline editor. */
     onOpenPrescriptionEditor: () => void;
+    /**
+     * Takes the doctor to Overview's Team modal with `AddStaffForm` already
+     * open (2026-09-13) — `StaffModal` here can rename/re-role/deactivate an
+     * EXISTING login but deliberately cannot mint a new one (see its own
+     * header), so "Add staff" has to leave this page rather than pretend it
+     * can do that itself. Shown only when `useAdminAccess` says this doctor
+     * actually can (`embedded`/`dedicated`) — see the Staff card below.
+     */
+    onAddStaff: () => void;
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────
@@ -130,9 +140,15 @@ function IdentityFactSetWebsite() {
 
 export function ClinicPage({
     hospital, doctor,
-    onHospitalChange, onDoctorChange, onOpenPrescriptionEditor,
+    onHospitalChange, onDoctorChange, onOpenPrescriptionEditor, onAddStaff,
 }: Props) {
     const identity = useClinicalIdentity();
+    // Same rule Overview's own Team section gates on (`isAdminDoctor` there):
+    // a solo doctor is the de-facto admin the instant nobody else does that
+    // job (`dedicatedAdminCount === 0`) — no flag to flip, no "make yourself
+    // admin" detour. Only "none" (a clinic with someone ELSE administering
+    // it, and this doctor isn't them) actually can't add staff.
+    const canAddStaff = useAdminAccess().access !== "none";
 
     const [week, setWeek] = useState<ClinicDayHours[]>(emptyClinicHours);
     const [hoursLoading, setHoursLoading] = useState(true);
@@ -575,17 +591,41 @@ export function ClinicPage({
                         icon={<Users size={14} />}
                         title="Staff"
                         subtitle="Who works at this clinic, and what they can do."
-                        action={<CardPillButton tone="violet" onClick={() => setStaffModalOpen(true)}>
-                            <UserCog size={12} /> Manage staff
-                        </CardPillButton>}
+                        action={
+                            <>
+                                {/* Leaves this page on purpose — see `onAddStaff`'s own doc
+                                    comment on `Props`. Hidden entirely for a doctor who
+                                    isn't this clinic's admin: showing it and then failing
+                                    at Overview would be a dead end one page later instead
+                                    of an honest one here. */}
+                                {canAddStaff && (
+                                    <CardPillButton tone="violet" onClick={onAddStaff}>
+                                        <UserPlus size={12} /> Add staff
+                                    </CardPillButton>
+                                )}
+                                <CardPillButton tone="violet" onClick={() => setStaffModalOpen(true)}>
+                                    <UserCog size={12} /> Manage staff
+                                </CardPillButton>
+                            </>
+                        }
                     >
                         {staff === null ? (
                             <SkeletonRows count={2} />
                         ) : staff.length === 0 ? (
                             <EmptyBlock
                                 fact="Nobody else is registered here yet"
-                                next="Staff join by registering against this clinic; manage their role and access here."
-                                action={<EmptyAction tone="violet" onClick={() => setStaffModalOpen(true)}>Manage staff</EmptyAction>}
+                                next={
+                                    canAddStaff
+                                        ? "Add their login yourself, or they can register against this clinic on their own."
+                                        : "Only your clinic's admin can add staff — ask them, or register against this clinic yourself."
+                                }
+                                action={
+                                    canAddStaff ? (
+                                        <EmptyAction tone="violet" onClick={onAddStaff}>Add staff</EmptyAction>
+                                    ) : (
+                                        <EmptyAction tone="violet" onClick={() => setStaffModalOpen(true)}>Manage staff</EmptyAction>
+                                    )
+                                }
                             />
                         ) : (
                             <div className="flex flex-col gap-[6px]">
@@ -617,6 +657,7 @@ export function ClinicPage({
                     currentUserId={identity.userId}
                     onClose={() => setStaffModalOpen(false)}
                     onChanged={setStaff}
+                    onAddStaff={canAddStaff ? () => { setStaffModalOpen(false); onAddStaff(); } : undefined}
                 />
             )}
 
