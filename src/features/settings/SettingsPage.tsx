@@ -144,7 +144,7 @@ const CARD =
 const ICON_TILE = "grid h-[34px] w-[34px] flex-none place-items-center rounded-[10px]";
 
 export function SettingsCard({
-    id, icon, tint, title, children,
+    id, icon, tint, title, children, headerRight,
 }: {
     id: string;
     icon: ReactNode;
@@ -152,6 +152,12 @@ export function SettingsCard({
     tint: string;
     title: string;
     children: ReactNode;
+    /** A small, quiet indicator on the header's own right edge — for a
+     *  BACKGROUND refresh only (see Subscription's own use). The card's
+     *  body should show its last-known content the instant there is any,
+     *  never a full-card spinner that throws away what was already on
+     *  screen just because a re-fetch started. */
+    headerRight?: ReactNode;
 }) {
     return (
         <section id={id} aria-label={title} className={CARD}>
@@ -160,6 +166,7 @@ export function SettingsCard({
                 <h2 className="text-[13px] font-bold uppercase tracking-[0.07em] text-[var(--cs-ink)]">
                     {title}
                 </h2>
+                {headerRight && <span className="ml-auto flex items-center">{headerRight}</span>}
             </div>
             {children}
         </section>
@@ -1068,7 +1075,13 @@ export function SettingsPage({
             })
             .catch(() => {
                 if (cancelled) return;
-                setSubscription(null);
+                // NOT `setSubscription(null)`. Reaching this catch means
+                // `fetchClinicSubscription`'s own durable-cache fallback
+                // ALSO had nothing — which on a re-fetch (hospitalId
+                // unchanged from a prior successful load) should be near
+                // impossible, but if it ever happens there is no reason to
+                // throw away a perfectly good value already sitting in
+                // this component's own state along with it.
                 setSubUnavailable(true);
             })
             .finally(() => { if (!cancelled) setSubLoading(false); });
@@ -1384,12 +1397,29 @@ export function SettingsPage({
                             icon={<Shield size={17} />}
                             tint="bg-[rgba(124,58,237,0.10)] text-[var(--cs-violet)]"
                             title="Subscription"
+                            /* A background refresh (this card already has
+                               SOMETHING to show — a plan, or a definitive
+                               "no plan on file") gets a small corner spinner
+                               instead of blanking the card. "why we even
+                               need to load that subscription page again and
+                               again... show that Polaris subscription card
+                               and when it's buffering or loading, just show
+                               a loading option on top right" (Anmol,
+                               2026-09-13). The full-card loading state below
+                               is now reached ONLY on the very first load,
+                               when there is genuinely nothing yet to keep
+                               showing. */
+                            headerRight={
+                                subLoading && (subscription || subUnavailable) ? (
+                                    <Loader2 size={13} className="animate-spin text-[var(--cs-faint)]" />
+                                ) : undefined
+                            }
                         >
-                            {subLoading ? (
+                            {subLoading && !subscription && !subUnavailable ? (
                                 <div className="flex flex-1 items-center justify-center gap-[10px] py-[18px] text-[13px] text-[var(--cs-faint)]">
                                     <Loader2 size={16} className="animate-spin" /> Loading your plan…
                                 </div>
-                            ) : subUnavailable ? (
+                            ) : subUnavailable && !subscription ? (
                                 /* Couldn't ask, and nothing cached to fall
                                    back on. Says exactly that — telling a
                                    paying clinic it has no plan because the

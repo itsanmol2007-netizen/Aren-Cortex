@@ -38,7 +38,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { CloudOff, MessageCircle, MonitorDown, Send, Sparkles, User } from "lucide-react";
+import { Send, Sparkles, User } from "lucide-react";
 import arenLogo from "../../assets/aren-logo-w.png";
 
 const FEATURES = [
@@ -331,18 +331,6 @@ export function AuthLayout() {
                                             </span>
                                         </li>
                                     ))}
-                                </ul>
-
-                                {/* Three facts a doctor arriving cold from
-                                    an email link actually wants, in the
-                                    smallest form that carries them — asked
-                                    for as "some useful things", explicitly
-                                    not clutter. Each one is something this
-                                    app really does, not a slogan. */}
-                                <ul className="auth-facts">
-                                    <li><CloudOff size={13} strokeWidth={2} /> Keeps working offline</li>
-                                    <li><MonitorDown size={13} strokeWidth={2} /> Installs like a desktop app</li>
-                                    <li><MessageCircle size={13} strokeWidth={2} /> Sends the prescription on WhatsApp</li>
                                 </ul>
                             </motion.div>
                         )}
@@ -811,30 +799,6 @@ const AUTH_LAYOUT_CSS = `
 }
 
 /* ── Footer row ───────────────────────────────────────────────────────── */
-/* The three capability facts under the features. Deliberately typed DOWN
-   from the feature rows above them -- they are supporting detail, and a
-   first-time visitor should read the three big promises first. */
-.auth-facts {
-    list-style: none;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 10px;
-    margin: 30px 0 0;
-    padding: 0;
-}
-.auth-facts li {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 7px 13px;
-    border-radius: 999px;
-    border: 1px solid var(--lg-line);
-    background: rgba(255, 255, 255, 0.55);
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--lg-muted);
-}
-.auth-facts svg { color: var(--lg-accent); flex: none; }
 
 .auth-foot-link {
     color: inherit;

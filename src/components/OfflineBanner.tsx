@@ -1,22 +1,21 @@
 // ---------------------------------------------------------------------------
-// One line, across the top, whenever this device is offline.
+// A small, persistent pill saying "you're offline" — never a strip across
+// the top.
 //
-// Anmol, 2026-09-13: "when the connection is actually offline, a simple
-// banner on top... don't show blank pages when internet goes, just show the
-// last value if internet connection is not present."
+// The first version WAS a full-width strip pinned to `top: 0`, above every
+// header on every page. Anmol, 2026-09-13: "that offline card indicator...
+// its covering the top things... place it more intelligently that its
+// visible in all pages, and doesn't block anything important visually."
 //
-// The second half of that is the job of each read (the durable caches in
-// `lib/offline/durableCache.ts` and the `lib/db/*` functions that fall back
-// to them). This is the first half: the one place that says, plainly and
-// once, why a number on screen might be older than it looks — so no
-// individual card has to hedge in its own words, and nothing has to be
-// hidden or blanked just because it can't be re-checked right now.
-//
-// Deliberately a strip, not a modal or a toast: it must never take a click
-// to dismiss mid-consult, and it must never be the thing a doctor has to
-// get past to reach the queue. It also reports queued writes, because "3
-// waiting to sync" is the one piece of offline state that is genuinely
-// actionable — it tells you not to close the tab yet.
+// Bottom-right, not top: it's the one corner nothing else in this app
+// claims. The consult's own bottom status bar now collapses to nothing on
+// an ordinary day (StatusBar.tsx, 2026-09-13), the nav rail's avatar sits
+// bottom-LEFT, and Sonner's toasts already live at `bottom-right` (see
+// main.tsx) — a small pill in the same neighbourhood as an existing,
+// already-accepted UI citizen reads as belonging there, not as a new
+// intrusion. It sits a little higher than a toast would land, so the two
+// can coexist without a transient toast ever landing on top of a
+// persistent fact.
 // ---------------------------------------------------------------------------
 
 import { CloudOff } from "lucide-react";
@@ -29,13 +28,11 @@ export function OfflineBanner() {
     return (
         <div className="aren-offline-banner" role="status">
             <style>{BANNER_CSS}</style>
-            <CloudOff size={14} strokeWidth={2.2} />
-            <span>
-                You&rsquo;re offline — showing the last information this device saved.
-            </span>
+            <CloudOff size={13} strokeWidth={2.2} />
+            <span>Offline — showing saved data</span>
             {pendingWrites > 0 && (
                 <span className="aren-offline-pending">
-                    {pendingWrites} {pendingWrites === 1 ? "change" : "changes"} waiting to sync
+                    {pendingWrites} {pendingWrites === 1 ? "change" : "changes"} waiting
                 </span>
             )}
         </div>
@@ -45,34 +42,34 @@ export function OfflineBanner() {
 const BANNER_CSS = `
 .aren-offline-banner {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    /* Above the nav rail (--rail-z: 10000) so it is never tucked behind the
-       one surface that outranks the modals, but below Sonner's toasts,
-       which are messages about something that already happened. */
-    z-index: 10001;
+    right: 18px;
+    bottom: 76px;
+    z-index: 9500;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 7px 16px;
+    gap: 8px;
+    padding: 7px 13px;
+    border-radius: 999px;
     background: linear-gradient(180deg, #2a2036 0%, #1d1730 100%);
     color: rgba(255, 255, 255, 0.92);
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.01em;
-    box-shadow: 0 2px 14px rgba(12, 10, 30, 0.28);
+    box-shadow: 0 6px 20px rgba(12, 10, 30, 0.30);
     pointer-events: none;
 }
 .aren-offline-banner svg { flex: none; color: #e9b8ff; }
 .aren-offline-pending {
-    padding: 2px 9px;
+    padding: 2px 8px;
     border-radius: 999px;
     background: rgba(233, 184, 255, 0.16);
     color: #f0d9ff;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
+}
+
+@media (max-width: 640px) {
+    .aren-offline-banner { right: 12px; bottom: 12px; }
 }
 `;

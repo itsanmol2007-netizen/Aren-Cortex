@@ -135,11 +135,17 @@ export function initConnectivityClock(): void {
 
     if (typeof window === "undefined") return;
 
-    window.addEventListener("offline", () => {
-        toast("You're offline — working from data already on this device.", {
-            id: "connectivity-offline",
-        });
-    });
+    // The "you just went offline" toast used to live here too, and it is
+    // what was landing on top of OfflineBanner.tsx's own persistent pill —
+    // both are bottom-right (Sonner's own corner, `main.tsx`), and both
+    // appeared at the exact same instant a device drops offline. The
+    // persistent pill already says the same fact for as long as it stays
+    // true, which a transient toast cannot, so it is the one that stays;
+    // this one-time announcement was the redundant half of the collision,
+    // not the fix for it. "Back online" is kept — it is a genuinely
+    // separate, celebratory moment (the offline pill has already
+    // vanished by the time this fires, so there is nothing left to
+    // collide with).
     window.addEventListener("online", () => {
         toast.success("Back online.", { id: "connectivity-online" });
     });

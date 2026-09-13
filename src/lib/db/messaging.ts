@@ -30,7 +30,7 @@
 import { supabase } from "../supabase";
 import type { RxLanguage } from "../i18n/prescriptionLabels";
 import { guardWhatsAppSend } from "../offline/lockGate";
-import { getDurableCache, setDurableCache } from "../offline/durableCache";
+import { getDurableCache, readThroughDurableCache } from "../offline/durableCache";
 
 /**
  * Below this, the doctor is warned and AREN is alerted. Mirrors the same
@@ -141,36 +141,34 @@ export function getCachedCreditBalanceAt(doctorId: string): string | null {
 }
 
 export async function fetchCreditBalance(doctorId: string): Promise<CreditBalance> {
-    try {
-        const { data, error } = await supabase
-            .from("messaging_credit_balances")
-            .select("doctor_id, doctor_name, balance, granted, spent, refunded, last_movement_at, status")
-            .eq("doctor_id", doctorId)
-            .maybeSingle();
+    // Offline — the last balance this device actually confirmed. Never
+    // gatekept behind a live connection: a doctor deciding whether they
+    // can afford to send one more message needs an answer, even a
+    // slightly old one, not silence. getCachedCreditBalanceAt tells the
+    // caller how old it is.
+    return readThroughDurableCache(creditBalanceCacheKey(doctorId), () =>
+        fetchCreditBalanceFromNetwork(doctorId)
+    );
+}
 
-        if (error) throw new Error(`fetchCreditBalance: ${error.message}`);
-        const result = !data ? ZERO_BALANCE(doctorId) : {
-            doctorId: data.doctor_id as string,
-            doctorName: (data.doctor_name as string | null) ?? null,
-            balance: Number(data.balance ?? 0),
-            granted: Number(data.granted ?? 0),
-            spent: Number(data.spent ?? 0),
-            refunded: Number(data.refunded ?? 0),
-            lastMovementAt: (data.last_movement_at as string | null) ?? null,
-            status: (data.status as CreditStatus) ?? "OK",
-        };
-        setDurableCache(creditBalanceCacheKey(doctorId), result);
-        return result;
-    } catch (err) {
-        // Offline — the last balance this device actually confirmed. Never
-        // gatekept behind a live connection: a doctor deciding whether
-        // they can afford to send one more message needs an answer, even a
-        // slightly old one, not silence. getCachedCreditBalanceAt tells the
-        // caller how old it is.
-        const cached = getDurableCache<CreditBalance>(creditBalanceCacheKey(doctorId));
-        if (cached) return cached.value;
-        throw err;
-    }
+async function fetchCreditBalanceFromNetwork(doctorId: string): Promise<CreditBalance> {
+    const { data, error } = await supabase
+        .from("messaging_credit_balances")
+        .select("doctor_id, doctor_name, balance, granted, spent, refunded, last_movement_at, status")
+        .eq("doctor_id", doctorId)
+        .maybeSingle();
+
+    if (error) throw new Error(`fetchCreditBalance: ${error.message}`);
+    return !data ? ZERO_BALANCE(doctorId) : {
+        doctorId: data.doctor_id as string,
+        doctorName: (data.doctor_name as string | null) ?? null,
+        balance: Number(data.balance ?? 0),
+        granted: Number(data.granted ?? 0),
+        spent: Number(data.spent ?? 0),
+        refunded: Number(data.refunded ?? 0),
+        lastMovementAt: (data.last_movement_at as string | null) ?? null,
+        status: (data.status as CreditStatus) ?? "OK",
+    };
 }
 
 /**
@@ -230,30 +228,28 @@ export const LEDGER_LABEL: Record<LedgerKind, string> = {
 const creditLedgerCacheKey = (doctorId: string) => `credit_ledger.${doctorId}`;
 
 export async function fetchCreditLedger(doctorId: string, limit = 40): Promise<LedgerEntry[]> {
-    try {
-        const { data, error } = await supabase
-            .from("messaging_credit_ledger")
-            .select("id, kind, delta, note, message_id, created_at")
-            .eq("doctor_id", doctorId)
-            .order("created_at", { ascending: false })
-            .limit(limit);
+    return readThroughDurableCache(creditLedgerCacheKey(doctorId), () =>
+        fetchCreditLedgerFromNetwork(doctorId, limit)
+    );
+}
 
-        if (error) throw new Error(`fetchCreditLedger: ${error.message}`);
-        const result = (data ?? []).map((r) => ({
-            id: Number(r.id),
-            kind: r.kind as LedgerKind,
-            delta: Number(r.delta),
-            note: (r.note as string | null) ?? null,
-            messageId: r.message_id === null ? null : Number(r.message_id),
-            createdAt: r.created_at as string,
-        }));
-        setDurableCache(creditLedgerCacheKey(doctorId), result);
-        return result;
-    } catch (err) {
-        const cached = getDurableCache<LedgerEntry[]>(creditLedgerCacheKey(doctorId));
-        if (cached) return cached.value;
-        throw err;
-    }
+async function fetchCreditLedgerFromNetwork(doctorId: string, limit: number): Promise<LedgerEntry[]> {
+    const { data, error } = await supabase
+        .from("messaging_credit_ledger")
+        .select("id, kind, delta, note, message_id, created_at")
+        .eq("doctor_id", doctorId)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+    if (error) throw new Error(`fetchCreditLedger: ${error.message}`);
+    return (data ?? []).map((r) => ({
+        id: Number(r.id),
+        kind: r.kind as LedgerKind,
+        delta: Number(r.delta),
+        note: (r.note as string | null) ?? null,
+        messageId: r.message_id === null ? null : Number(r.message_id),
+        createdAt: r.created_at as string,
+    }));
 }
 
 // ── Packages ───────────────────────────────────────────────────────────────

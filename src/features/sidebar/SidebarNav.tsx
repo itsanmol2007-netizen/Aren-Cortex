@@ -3,7 +3,7 @@ import {
     Users,
     MessageSquare,
     Stethoscope,
-    ClipboardList,
+    SlidersHorizontal,
     Building2,
     LifeBuoy,
     Settings,
@@ -96,13 +96,15 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     { page: "overview", label: "Overview", icon: LayoutDashboard, tone: "blue", group: 1 },
     { page: "patients", label: "Patients", icon: Users, tone: "blue", group: 1 },
     { page: "communication", label: "Communication", icon: MessageSquare, tone: "blue", group: 1 },
-    // ClipboardList, not BriefcaseMedical — that read as near-identical to
-    // Clinic's Building2 at rail size (both a blocky rectangle with a bar
-    // across the top). "the icon of Clinic and Practice is more or less
-    // same" (Anmol, 2026-09-12). A checklist silhouette (meds/labs/presets
-    // ARE a set of standing preferences) reads distinctly from a building at
-    // a glance, which is the one thing an always-on-screen rail icon has to do.
-    { page: "practice", label: "Practice", icon: ClipboardList, tone: "indigo", group: 2 },
+    // SlidersHorizontal — the exact glyph Practice's own "Clinical
+    // Defaults" section heading already uses (PracticePage.tsx). Was
+    // ClipboardList, chosen 2026-09-12 only to read distinctly from
+    // Clinic's Building2 at rail size; that reasoning still holds for
+    // SlidersHorizontal (a row of controls, not a blocky rectangle), so
+    // this trades it for a glyph the page underneath ALSO uses — "use the
+    // same icon for practice page" (Anmol, 2026-09-13) — instead of the
+    // rail promising one visual language and the page opening on another.
+    { page: "practice", label: "Practice", icon: SlidersHorizontal, tone: "indigo", group: 2 },
     { page: "clinic", label: "Clinic", icon: Building2, tone: "indigo", group: 2 },
     { page: "settings", label: "Settings", icon: Settings, tone: "slate", group: 3 },
     { page: "support", label: "Help & Support", icon: LifeBuoy, tone: "slate", group: 4, utility: true },

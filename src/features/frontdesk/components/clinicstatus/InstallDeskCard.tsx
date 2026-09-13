@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
-import { CheckCircle2, Download, MonitorDown, Share } from "lucide-react";
+import { CheckCircle2, Download, Share } from "lucide-react";
 import { useInstallPrompt } from "../../../../hooks/useInstallPrompt";
 
 export function InstallDeskCard() {
@@ -79,20 +79,24 @@ export function InstallDeskCard() {
                            altogether ("there isn't any PWA installation
                            option on Frontdesk", Anmol, 2026-09-13). The
                            manual route always exists, so say it plainly
-                           instead of showing nothing. */
-                        <div className="flex flex-col gap-[7px] rounded-[12px] border border-[#eef0f5] bg-[#fafbfc] px-[13px] py-[11px]">
-                            <div className="flex items-center gap-[7px] text-[12.5px] font-bold text-[#3b4453]">
-                                <MonitorDown size={14} /> Install from your browser menu
-                            </div>
-                            <div className="text-[11.5px] leading-[1.55] text-[#5a6472]">
-                                Chrome or Edge: the install icon at the right of the address bar, or
-                                <b className="font-semibold"> ⋮ → Cast, save and share → Install page as app</b>.
-                            </div>
-                            <div className="text-[11.5px] leading-[1.5] text-[#8a91a0]">
-                                Already installed AREN as Cortex on this machine? Install again from
-                                here — Front Desk is a separate app with its own name and icon.
-                            </div>
-                        </div>
+                           instead of showing nothing.
+                           
+                           Deliberately NOT icon-led, bold-header, bordered-
+                           box styling — that combination is this app's own
+                           visual shorthand for "a control", and the address-
+                           bar icon it describes lives in the BROWSER, not on
+                           this card. "that install icon is not clickable"
+                           (Anmol, 2026-09-13) was this box reading as a
+                           button when it is a plain instruction. Quiet
+                           paragraph text only, no icon, no border mimicking
+                           an actionable row. */
+                        <p className="m-0 text-[12.5px] leading-[1.6] text-[#5a6472]">
+                            Your browser hasn&rsquo;t offered an install prompt yet. Look for an
+                            install icon at the right of the address bar, or open the browser menu
+                            (⋮) and choose <b className="font-semibold text-[#3b4453]">Install page as app</b> (Chrome or Edge).
+                            Already installed AREN as Cortex here? Installing again from this page
+                            still gets Front Desk its own separate app and icon.
+                        </p>
                     )}
 
                     {declined && (

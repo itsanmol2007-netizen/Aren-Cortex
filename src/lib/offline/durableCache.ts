@@ -51,3 +51,44 @@ export function setDurableCache<T>(key: string, value: T): void {
          * never a precondition for the live read that just succeeded. */
     }
 }
+
+/**
+ * Try a live read; fall back to the durable cache on failure, or skip the
+ * live attempt outright when this device already knows it is offline.
+ *
+ * The skip is the point. Every one of the "durable cache" reads across
+ * `lib/db/*` used to try the network first regardless, so a genuinely
+ * offline Practice page still sat through however long the browser takes
+ * to give up on a request that can never succeed — 5-10 seconds is exactly
+ * what that looks like — before the `catch` ever got a turn to hand back
+ * the cached answer. Anmol, 2026-09-13: "if you better know system is
+ * offline so why even load for 5-10 sec, just show the offline data."
+ *
+ * `navigator.onLine` is a fast-path, not a guarantee — it can read `true`
+ * on a captive portal or a dead VPN adapter with no real path out. That is
+ * exactly why this only ever SKIPS the attempt when it says `false`; it
+ * never skips the fallback logic that runs when the browser says `true`
+ * and the request fails anyway, which is unchanged and still the thing
+ * that catches those cases.
+ */
+export async function readThroughDurableCache<T>(
+    key: string,
+    fetchLive: () => Promise<T>
+): Promise<T> {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        const cached = getDurableCache<T>(key);
+        if (cached) return cached.value;
+        // Offline AND nothing cached yet — still worth a real attempt; there
+        // is nothing to lose by trying, and `navigator.onLine` is occasionally
+        // wrong in the other direction too (some captive-portal setups).
+    }
+    try {
+        const fresh = await fetchLive();
+        setDurableCache(key, fresh);
+        return fresh;
+    } catch (err) {
+        const cached = getDurableCache<T>(key);
+        if (cached) return cached.value;
+        throw err;
+    }
+}

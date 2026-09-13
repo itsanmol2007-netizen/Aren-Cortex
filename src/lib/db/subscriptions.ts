@@ -32,7 +32,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
-import { getDurableCache, setDurableCache } from "../offline/durableCache";
+import { getDurableCache, readThroughDurableCache } from "../offline/durableCache";
 
 /** Free text, not a TS enum — Admin can introduce a status without a deploy. */
 export type SubscriptionStatus =
@@ -155,13 +155,9 @@ export function getSubscriptionCachedAt(hospitalId: string): string | null {
  * we have established there is nothing at all to fall back on.
  */
 export async function fetchClinicSubscription(hospitalId: string): Promise<ClinicSubscription | null> {
-    try {
-        return await fetchClinicSubscriptionFromNetwork(hospitalId);
-    } catch (err) {
-        const cached = getDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId));
-        if (cached) return cached.value;
-        throw err;
-    }
+    return readThroughDurableCache(subscriptionCacheKey(hospitalId), () =>
+        fetchClinicSubscriptionFromNetwork(hospitalId)
+    );
 }
 
 async function fetchClinicSubscriptionFromNetwork(hospitalId: string): Promise<ClinicSubscription | null> {
@@ -182,13 +178,11 @@ async function fetchClinicSubscriptionFromNetwork(hospitalId: string): Promise<C
         .maybeSingle<SubscriptionRow>();
 
     if (error) throw new Error(`fetchClinicSubscription: ${error.message}`);
-    if (!data || !data.plans) {
-        // A real, server-confirmed "this clinic has no plan" — worth caching
-        // as such, so an offline reload repeats the same answer rather than
-        // inventing a different one.
-        setDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId), null);
-        return null;
-    }
+    // A real, server-confirmed "this clinic has no plan" is a legitimate
+    // return value here — readThroughDurableCache above caches whatever
+    // this function returns, `null` included, so an offline reload repeats
+    // the same answer rather than inventing a different one.
+    if (!data || !data.plans) return null;
 
     const plan = data.plans;
     const resolved: ClinicSubscription = {
@@ -224,7 +218,6 @@ async function fetchClinicSubscriptionFromNetwork(hospitalId: string): Promise<C
             limitValue: e.limit_value,
         })),
     };
-    setDurableCache<ClinicSubscription | null>(subscriptionCacheKey(hospitalId), resolved);
     return resolved;
 }
 
