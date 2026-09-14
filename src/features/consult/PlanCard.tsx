@@ -287,13 +287,19 @@ export function PlanCard({
     return (
         <aside className="cs-card cs-plan" aria-label="Consultation plan" ref={panelRef}>
             <div className="cs-plan-head">
-                <h2 className="cs-card-title">Consultation Plan</h2>
-                <div className="cs-plan-head-end">
-                    {!isEmpty && onSaveAsTemplate && (
-                        <button type="button" className="cs-plan-save-template" onClick={onSaveAsTemplate}>
-                            Save as template
-                        </button>
-                    )}
+                {/* Title, count and the shortcut key on one row; "Save as
+                    template" on its own beneath it. Anmol, 2026-09-14: "the
+                    save as template thing and one item thing is literally
+                    pushing that keyboard icon aside... the single button is
+                    cramping the whole thing. The word Consultation Plan is in
+                    one line but now it's going in two lines."
+                    Three controls plus a two-word title never fit this rail's
+                    width, so the title wrapped and everything after it slid
+                    off centre. The button is the widest and the least often
+                    pressed, so it is the one that moves. */}
+                <div className="cs-plan-head-top">
+                    <h2 className="cs-card-title">Consultation Plan</h2>
+                    <div className="cs-plan-head-end">
                     <span className="cs-count is-quiet">
                         {itemCount} item{itemCount === 1 ? "" : "s"}
                     </span>
@@ -316,7 +322,13 @@ export function PlanCard({
                             <kbd>?</kbd>
                         </button>
                     )}
+                    </div>
                 </div>
+                {!isEmpty && onSaveAsTemplate && (
+                    <button type="button" className="cs-plan-save-template" onClick={onSaveAsTemplate}>
+                        Save as template
+                    </button>
+                )}
             </div>
 
             {/* The keydown sits on the scroll container rather than on each

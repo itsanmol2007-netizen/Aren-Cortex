@@ -653,21 +653,22 @@ export function SuggestionsCard({
                     </span>
                     {title}
                 </span>
-                {/* A single-section instance (the Assessment side-slot,
-                    "Investigations") never gets tabs — one section IS "all"
-                    — so its sort label stays right here, inline, exactly
-                    where it always sat: this is the reference pair
-                    (`responsive-grid.md`) with Assessment's own `.cs-sort`,
-                    which is ALSO inline in its head row. Moving only THIS
-                    instance's label onto a new row below the search field
-                    would grow it one row taller than Assessment the moment
-                    either has content — reopening the exact header/row-
-                    height mismatch three blind passes fought on
-                    2026-08-25. The multi-section instance (the standalone
-                    "Clinical Suggestions" panel, which item 6 is actually
-                    about) renders its sort label in `.cs-sug-controls`
-                    below the search box instead — see there. */}
-                {SECTIONS.length === 1 && !search.isSearching && anyContent && (
+                {/* Inline in the head row for EVERY instance, beside the
+                    title — the same place Assessment and Investigations put
+                    it. Anmol, 2026-09-14: "in assessment the most relevant
+                    first is on the top header beside assessment, and that's a
+                    good place. But in clinical suggestions it's down, and the
+                    ranked suggestions is also down, and that's why it's
+                    looking terrible."
+
+                    It used to sit in `.cs-sug-controls` below the search box
+                    for the multi-section instance only, which stacked TWO
+                    label rows ("Most relevant first", then "Ranked
+                    suggestions · 2 of 2") under the search field and pushed
+                    the list itself down by both. Up here it costs no row at
+                    all, and the three panels finally say the same thing in
+                    the same place. */}
+                {!search.isSearching && anyContent && (
                     <span className="cs-sort">Most relevant first</span>
                 )}
             </div>
@@ -704,9 +705,13 @@ export function SuggestionsCard({
                 Recommendations` beside it already gets from having no
                 filter row of its own. See `cortex-design-dna/empty-
                 states.md` and `.../responsive-grid.md`. */}
-            {SECTIONS.length > 1 && !search.isSearching && anyContent && (
+            {/* Tabs only now — the sort label moved up into the head row
+                (see there). Gated on there being more than one non-empty
+                category, which is the only thing this row still holds, so a
+                panel with nothing to filter spends no vertical space on an
+                empty controls strip. */}
+            {SECTIONS.length > 1 && !search.isSearching && anyContent && nonEmptySections.length > 1 && (
                 <div className="cs-sug-controls">
-                    <span className="cs-sort">Most relevant first</span>
                     {/* §3, 2026-08-24. One button per category — "Tests",
                         "Advice"… — to get straight to that section,
                         replacing a `<select>` that only ever narrowed an
@@ -724,8 +729,7 @@ export function SuggestionsCard({
                         the identical filter, so a two-tab row that always
                         says the same thing twice was reading as a stray
                         global search bar rather than a scoped one. */}
-                    {nonEmptySections.length > 1 && (
-                        <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
+                    <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
                             <button
                                 type="button"
                                 role="tab"
@@ -750,8 +754,7 @@ export function SuggestionsCard({
                                     {s.label}
                                 </button>
                             ))}
-                        </div>
-                    )}
+                    </div>
                 </div>
             )}
 

@@ -2392,7 +2392,25 @@ body.cs-locked-shell {
 }
 
 .cs-list.is-list-collapsed { overflow: hidden; }
-.cs-list.is-list-expanded { overflow-y: auto; padding-right: 4px; }
+/* `scrollbar-gutter` so the track has room of its own instead of sitting on
+   top of the rows, and the right padding matches the collapsed state so the
+   list does not shift sideways when "Show all" turns the scrollbar on.
+   Anmol, 2026-09-14: "the nested scroll bar is literally touching that
+   two-of-two thing". */
+.cs-list.is-list-expanded {
+    overflow-y: auto;
+    padding-right: 10px;
+    scrollbar-gutter: stable;
+}
+
+/* Only SuggestionsCard renders this row as a direct child of `.cs-card`
+   (Assessment's sits inside its own Tailwind `px-4` column), so this aligns
+   the "RANKED SUGGESTIONS - 2 of 2" row with the list beneath it instead of
+   letting it run the full card width while the rows are inset. */
+.cs-card > .cs-ranked-head {
+    padding-left: 10px;
+    padding-right: 10px;
+}
 
 /* The "Show more" button at the foot of a capped list — reuses
    `.cs-card-foot-more`'s colours but needs its own layout: that class was
@@ -3182,12 +3200,28 @@ body.cs-locked-shell {
 
 .cs-plan-head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    /* Column since 2026-09-14 — see PlanCard's own note. The title row and
+       "Save as template" are two rows now because three controls plus the
+       title never fit this rail, which was wrapping "Consultation Plan" onto
+       two lines and pushing the count and shortcut key off centre. */
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
     flex: none;
     border-bottom: 1px solid var(--cs-line);
     padding: 15px 16px 13px;
+}
+
+.cs-plan-head-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+/* The title is what everything else is arranged around — it never wraps. */
+.cs-plan-head-top .cs-card-title {
+    white-space: nowrap;
 }
 
 .cs-plan-head-end {
@@ -3251,6 +3285,8 @@ body.cs-locked-shell {
     cursor: pointer;
     white-space: nowrap;
     transition: background 0.14s ease, border-color 0.14s ease;
+    /* Its own row now — hug the left edge instead of stretching. */
+    align-self: flex-start;
 }
 
 .cs-plan-save-template:hover {
