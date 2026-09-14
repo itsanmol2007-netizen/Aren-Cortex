@@ -49,7 +49,8 @@ import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
 import { RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
-import { CASCADE_STAGE, rankOrderKey, useRankCascade } from "./cascade";
+import { motion, useReducedMotion } from "motion/react";
+import { CASCADE_STAGE, cascadeRowProps, rankOrderKey, useRankCascade } from "./cascade";
 import {
     comparePlans, formatDose, formatSide, identityOf,
     type ExerciseLine, type ExerciseSide, type Progression,
@@ -306,7 +307,8 @@ export function ExercisePlanCard({
     // Same stage as medicines: on a physio chart this card IS the plan's
     // primary column, so it leads off the same beat rather than inventing a
     // fourth one.
-    const cascade = useRankCascade(CASCADE_STAGE.plan, rankOrderKey(offered));
+    const reduce = useReducedMotion();
+    const cascade = useRankCascade(CASCADE_STAGE.plan, rankOrderKey(offered), listRef);
 
     // The same walk-and-take every ranked panel has. `.cs-ex-offer` is the
     // offered rows and `.cs-sug` is what the search results render, so one
@@ -356,7 +358,7 @@ export function ExercisePlanCard({
                 onKeyDown={onSearchKeyDown}
             />
 
-            <div className="cs-list cs-ex-list" ref={listRef}>
+            <motion.div className="cs-list cs-ex-list" ref={listRef} layoutScroll>
                 {/* Gated on `isSearching`, not on the query being non-empty:
                     the results block renders its own "nothing matches" empty
                     state, which on an idle card is a clipped sentence under
@@ -432,10 +434,14 @@ export function ExercisePlanCard({
                                 <p className="cs-ex-grouphead">
                                     {plan.length > 0 ? "Also suggested" : "Suggested for this chart"}
                                 </p>
-                                {offered.map((intent) => {
+                                {offered.map((intent, i) => {
                                     const relevance = relevanceOf(rankFillOf(intent, topScore));
                                     return (
-                                        <div key={intent.intentId} className="cs-ex-row cs-ex-offer">
+                                        <motion.div
+                                            key={intent.intentId}
+                                            {...cascadeRowProps(cascade.delayOf(i), reduce)}
+                                            className="cs-ex-row cs-ex-offer"
+                                        >
                                             <div className="cs-ex-main">
                                                 <div className="cs-ex-head">
                                                     <span className="cs-ex-label">{intent.label}</span>
@@ -464,7 +470,7 @@ export function ExercisePlanCard({
                                                 <Plus size={13} />
                                                 Add
                                             </button>
-                                        </div>
+                                        </motion.div>
                                     );
                                 })}
                             </div>
@@ -479,7 +485,7 @@ export function ExercisePlanCard({
                         )}
                     </>
                 )}
-            </div>
+            </motion.div>
         </section>
     );
 }

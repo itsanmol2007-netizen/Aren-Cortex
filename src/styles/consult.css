@@ -2277,40 +2277,40 @@ body.cs-locked-shell {
    instead of scrolling inside it ("still overflowing... literally"). A
    two-class selector beats the one-class base rule outright, no ordering
    luck required. */
-/* ── Ranked rows arriving ──────────────────────────────────────────────────
-   Anmol, 2026-09-13: "when doctors and people type things and the ranking
-   appear, can we have some animation for that thing also... something
-   beautiful appearing one by one. Not like one thing taking 10 seconds...
-   it should not feel like you put there and randomly everything pops up."
+/* ── The blue that travels down a re-ranking list ─────────────────────────
+   Anmol, 2026-09-13: "something beautiful appearing one by one."
+   Anmol, 2026-09-14: "that blue trail or whatever I want, that effect —
+   that's not there. It doesn't feel like that."
 
-   Extended 2026-09-14 into a STAGED cascade — see `cascade.ts` for the
-   timing rationale and for why this is structurally not the 2026-08-24
-   ThinkingRing wash. Three things changed here:
+   It wasn't there, and this file is why. The blue and the row's fade used to
+   be ONE animation: the tint is brightest at 0%, which is exactly when the
+   row was still at opacity 0, so it only ever painted on an invisible row
+   and had decayed most of the way by the time anything was visible. A blue
+   you can only see on a transparent row is a blue nobody sees.
 
-     1. A per-card lead (`--cs-cascade-lead`, set by `useRankCascade`). Cards
-        start one after another down the clinical order — assessment, then
-        investigations, then the plan — instead of all at 0ms. They OVERLAP
-        rather than queue: a card starts on its own lead whether or not the
-        one above it has finished, which is what keeps the whole cascade
-        under ~900ms while still reading as ordered.
+   So opacity left this file entirely. CSS owns the blue and nothing else —
+   see `cascade.ts` for the full split, but the short version is that React
+   RE-INSERTS DOM nodes when a list reorders, which restarts every CSS
+   animation on them; that makes CSS unable to hold a fade across a re-rank
+   (the row would vanish for the whole slide) and perfectly suited to the
+   blue, where a row that moved SHOULD re-take the tint.
 
-     2. A blue that travels. Each row arrives carrying a faint wash and a
-        lit leading edge which decay to nothing; because rows arrive 45ms
-        apart and the decay runs 300ms, roughly the last six rows are tinted
-        at any instant, brightest at the newest. Nothing draws a "wave" —
-        the comet tail rolling down the list is purely the stagger plus the
-        decay, which is why it cannot detach from the rows and wash across
-        the screen the way its predecessor did.
+   The `data-cascade` a↔b flip covers the rows that did NOT move: they are
+   not re-inserted, so nothing would otherwise replay them. Flipping the name
+   is the one thing that restarts a running CSS animation without remounting
+   the element — and remounting is not available here, since these rows hold
+   focus, the roving cursor and open brand pickers.
 
-     3. `data-cascade` a↔b. A CSS animation runs once per painted element,
-        so a brand-new row animates for free and re-ranking an existing list
-        used to replay nothing at all — which is precisely the case that
-        matters, since a new symptom REORDERS a list already on screen.
-        Flipping the attribute swaps `animation-name` between two identical
-        keyframes, and an `animation-name` change is the one thing that
-        restarts a CSS animation without remounting the element. Remounting
-        is not an option: these rows hold focus, the roving cursor and open
-        brand pickers.
+   Delay comes from `--cs-row-delay`, written per row by `delayOf` in
+   `cascade.ts`, rather than from a ladder of `nth-child` rules. One source
+   for the timing, shared with the Framer fade so a row's arrival and its
+   blue always start on the same beat, and it stays correct past the 8th row
+   where the old ladder ran out.
+
+   620ms of decay against a 75ms step is a tail of roughly eight rows,
+   brightest at the newest. Nothing draws a wave: the comet rolling down the
+   list is purely stagger plus decay, which is why it cannot detach from the
+   rows and wash across the screen the way the 2026-08-24 ThinkingRing did.
 
    The tint rides on `box-shadow`, never `background`: these rows already
    carry meaningful backgrounds (confirmed green, hard-guard red, the
@@ -2318,59 +2318,34 @@ body.cs-locked-shell {
    decoration. An inset shadow composites above the background and below the
    text, and touches neither.
 
-   `animation-fill-mode: backwards` — not `both`. Backwards is what holds a
-   row invisible through its delay; `forwards` would additionally pin the
-   final keyframe's transparent shadow onto the row permanently, quietly
-   deleting any real box-shadow it is meant to have once it has landed.
-
-   Rows animate opacity, a 6px lift and the tint only — never height — so
-   the list's scroll position and the card's own height are untouched while
-   they land, and a doctor already reading row 1 is never pushed around by
-   row 9 showing up. */
-@keyframes cs-row-in {
+   `backwards`, not `both`: `forwards` would pin the final transparent shadow
+   on permanently and quietly delete any real box-shadow the row is meant to
+   have once it has landed. */
+@keyframes cs-row-settle {
     0% {
-        opacity: 0;
-        transform: translateY(6px);
         box-shadow:
-            inset 2px 0 0 0 rgba(18, 104, 232, 0.85),
-            inset 0 0 0 999px rgba(18, 104, 232, 0.1);
-    }
-    /* 200ms of a 300ms animation: the row has fully arrived well before its
-       blue has finished leaving, so the tail lags the motion instead of
-       ending with it. */
-    67% {
-        opacity: 1;
-        transform: translateY(0);
+            inset 3px 0 0 0 rgba(18, 104, 232, 0.95),
+            inset 0 0 0 999px rgba(18, 104, 232, 0.18);
     }
     100% {
-        opacity: 1;
-        transform: translateY(0);
         box-shadow:
             inset 0 0 0 0 rgba(18, 104, 232, 0),
             inset 0 0 0 999px rgba(18, 104, 232, 0);
     }
 }
 
-/* Byte-identical to `cs-row-in` on purpose, and it has to be a separate
-   @keyframes rather than a variable: only a change of `animation-name`
-   restarts a running animation. `useRankCascade` alternates between the two
-   names, so consecutive re-ranks always land on a name different from the
-   one currently playing. */
-@keyframes cs-row-in-alt {
+/* Byte-identical to `cs-row-settle`, and it has to be a separate @keyframes
+   rather than a variable: only a change of `animation-name` restarts a
+   running animation. `useRankCascade` alternates between the two names, so
+   consecutive re-ranks always land on a name different from the one
+   currently playing. */
+@keyframes cs-row-settle-alt {
     0% {
-        opacity: 0;
-        transform: translateY(6px);
         box-shadow:
-            inset 2px 0 0 0 rgba(18, 104, 232, 0.85),
-            inset 0 0 0 999px rgba(18, 104, 232, 0.1);
-    }
-    67% {
-        opacity: 1;
-        transform: translateY(0);
+            inset 3px 0 0 0 rgba(18, 104, 232, 0.95),
+            inset 0 0 0 999px rgba(18, 104, 232, 0.18);
     }
     100% {
-        opacity: 1;
-        transform: translateY(0);
         box-shadow:
             inset 0 0 0 0 rgba(18, 104, 232, 0),
             inset 0 0 0 999px rgba(18, 104, 232, 0);
@@ -2384,51 +2359,31 @@ body.cs-locked-shell {
    its own `.cs-list`). */
 .cs-list > *,
 .cs-cascade > * {
-    animation-name: cs-row-in;
-    animation-duration: 300ms;
-    animation-timing-function: cubic-bezier(0.22, 0.68, 0, 1);
-    animation-fill-mode: backwards;
+    animation: cs-row-settle 620ms cubic-bezier(0.22, 0.68, 0, 1) backwards;
+    animation-delay: var(--cs-row-delay, 0ms);
 }
 
 .cs-list[data-cascade="b"] > *,
 .cs-cascade[data-cascade="b"] > * {
-    animation-name: cs-row-in-alt;
+    animation-name: cs-row-settle-alt;
 }
 
-/* A container that cascades its own children never animates as one block
-   itself — otherwise the group fades in while its rows fade in inside it and
-   the two opacities multiply, which reads as the group arriving dimmed. */
+/* A container that cascades its own children is not itself one of the rows. */
 .cs-list > .cs-cascade {
     animation: none;
 }
 
-/* Delay = this card's lead + this row's place in the list. The lead is unset
-   on any list that has not opted into staging, so those keep starting at 0ms
-   exactly as before. */
-.cs-list > *:nth-child(1),
-.cs-cascade > *:nth-child(1) { animation-delay: var(--cs-cascade-lead, 0ms); }
-.cs-list > *:nth-child(2),
-.cs-cascade > *:nth-child(2) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 45ms); }
-.cs-list > *:nth-child(3),
-.cs-cascade > *:nth-child(3) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 90ms); }
-.cs-list > *:nth-child(4),
-.cs-cascade > *:nth-child(4) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 135ms); }
-.cs-list > *:nth-child(5),
-.cs-cascade > *:nth-child(5) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 180ms); }
-.cs-list > *:nth-child(6),
-.cs-cascade > *:nth-child(6) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 225ms); }
-.cs-list > *:nth-child(7),
-.cs-cascade > *:nth-child(7) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 270ms); }
-.cs-list > *:nth-child(8),
-.cs-cascade > *:nth-child(8) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 315ms); }
-/* Everything past the 8th lands together. A 30-result list must not take a
-   second to finish arriving, and nothing below the fold should be waiting on
-   a delay at all. */
-.cs-list > *:nth-child(n + 9),
-.cs-cascade > *:nth-child(n + 9) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 360ms); }
+/* A group's heading is not a ranked row and must not take the tint — it sits
+   at child 1 inside `.cs-ex-group.cs-cascade`, so without this it would flash
+   blue a beat before the exercises it labels. */
+.cs-ex-grouphead {
+    animation: none;
+}
 
 /* The attribute-qualified selectors are here so this still outranks the
-   `[data-cascade="b"]` rule above, which is more specific than the base one. */
+   `[data-cascade="b"]` rule above, which is more specific than the base one.
+   The fade and the slide are disabled separately, in the cards, off the same
+   `useReducedMotion` they already use for their own springs. */
 @media (prefers-reduced-motion: reduce) {
     .cs-list > *,
     .cs-cascade > *,

@@ -33,7 +33,7 @@ import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { DoctorFreeTerm, DoctorFreeTermType } from "../../lib/db/synapse";
 import { GuardReason, RANKED_ROW_H, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
-import { CASCADE_STAGE, rankOrderKey, useRankCascade, type CascadeStage } from "./cascade";
+import { CASCADE_STAGE, cascadeRowProps, rankOrderKey, useRankCascade, type CascadeStage } from "./cascade";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -420,7 +420,7 @@ export function SuggestionsCard({
 
     // Keyed on the rendered rows, so "Show all" cascades the newly revealed
     // ones in rather than having them appear mid-list unannounced.
-    const cascade = useRankCascade(cascadeStage, rankOrderKey(visibleRows.map((r) => r.intent)));
+    const cascade = useRankCascade(cascadeStage, rankOrderKey(visibleRows.map((r) => r.intent)), listRef);
 
     const body = () => {
         if (search.isSearching) {
@@ -580,7 +580,7 @@ export function SuggestionsCard({
             );
         }
 
-        const rowNodes = visibleRows.map(({ intent, section }) => {
+        const rowNodes = visibleRows.map(({ intent, section }, i) => {
             const list = byType[section.type] ?? [];
             const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
             // A section of one has no other side to the comparison.
@@ -590,6 +590,7 @@ export function SuggestionsCard({
                 <SuggestionRow
                     key={intent.intentId}
                     intent={intent}
+                    cascadeDelay={cascade.delayOf(i)}
                     // Redundant on every single row when this instance only
                     // ever shows ONE type — the panel's own title already
                     // says "Investigations"/"Exercise Plans"/etc. Only worth
@@ -814,6 +815,7 @@ export function SuggestionsCard({
                             "cs-list " + (capped != null && showAllCapped ? "is-list-expanded" : "is-list-collapsed")
                         }
                         ref={listRef}
+                        layoutScroll
                         {...cascade}
                     >
                         {body()}
@@ -835,9 +837,12 @@ export function SuggestionsCard({
 }
 
 function SuggestionRow({
+    cascadeDelay,
     intent, kindLabel, verb, icon, relevance, added, acknowledged, onAcknowledge,
     onExplain, onAccept, onRemove,
 }: {
+    /** ms this row waits before arriving — see `delayOf` in cascade.ts */
+    cascadeDelay: number;
     intent: PersonalizedIntent;
     /** null when this instance renders only one type — see the call site */
     kindLabel: string | null;
@@ -853,13 +858,16 @@ function SuggestionRow({
     onRemove?: () => void;
 }) {
     const rowRef = useRef<HTMLDivElement>(null);
+    const reduce = useReducedMotion();
     const isHard = intent.status === "warn_hard";
     const isWarn = intent.status === "warn";
     const locked = isHard && !acknowledged;
     const tone = intent.type;
 
     return (
-        <div
+        <motion.div
+            /* Fade, slide and blue all off one beat — see cascadeRowProps. */
+            {...cascadeRowProps(cascadeDelay, reduce)}
             ref={rowRef}
             className={`cs-sug${added ? " is-added" : ""}${isHard ? " is-hard" : ""}`}
             onDoubleClick={() => {
@@ -914,7 +922,7 @@ function SuggestionRow({
                     />
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }
 

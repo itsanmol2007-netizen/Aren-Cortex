@@ -40,7 +40,7 @@ import type { ResolvedProduct } from "../../lib/db/medicines";
 import {
     GuardReason, MedicineIdentity, PinButton, RankBar, ThinkingRing, rankFillOf,
 } from "./parts";
-import { CASCADE_STAGE, rankOrderKey, useRankCascade } from "./cascade";
+import { CASCADE_STAGE, cascadeRowProps, rankOrderKey, useRankCascade } from "./cascade";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -170,11 +170,6 @@ export function RecommendationsCard({
     // space in the column beside it (Anmol, 2026-08-12).
     const shown = ordered;
 
-    // Stage 2 — the plan. Medicines are what the assessment and the
-    // investigations resolve INTO, so this panel lands last of the three and
-    // reads as the conclusion of the cascade rather than a fourth thing that
-    // happened at the same time.
-    const cascade = useRankCascade(CASCADE_STAGE.plan, rankOrderKey(shown));
 
     const brandsFor = (intent: PersonalizedIntent) =>
         intent.refTable === "compositions" && intent.refId != null
@@ -317,6 +312,12 @@ export function RecommendationsCard({
      * `PatientModal`'s match rows and `BrandSheet`'s own rows use.
      */
     const listRef = useRef<HTMLDivElement>(null);
+
+    // Stage 2 — the plan. Medicines are what the assessment and the
+    // investigations resolve INTO, so this panel lands last of the three and
+    // reads as the conclusion of the cascade rather than a fourth thing that
+    // happened at the same time.
+    const cascade = useRankCascade(CASCADE_STAGE.plan, rankOrderKey(shown), listRef);
     const roving = useRovingList({
         containerRef: listRef,
         // The middle clause is the guard for a row that opens to NOTHING —
@@ -455,7 +456,7 @@ export function RecommendationsCard({
             );
         }
 
-        return shown.map((intent) => {
+        return shown.map((intent, i) => {
             const combos = combosFor(intent);
             const verdict = effectiveVerdicts.get(intent.intentId)
                 ?? { status: intent.status, reasons: intent.guardReasons };
@@ -463,6 +464,7 @@ export function RecommendationsCard({
                 <MedicineRow
                     key={intent.intentId}
                     intent={intent}
+                    cascadeDelay={cascade.delayOf(i)}
                     verdict={verdict}
                     position={engineRank.get(intent.intentId) ?? 1}
                     fill={rankFillOf(intent, topScore)}
@@ -519,7 +521,14 @@ export function RecommendationsCard({
 
             {/* Unbound while searching: search hits answer typing directly and
                 must not sit behind the plan's stage lead. See ConditionsCard. */}
-            <div className="cs-list" ref={listRef} {...(isSearching ? {} : cascade)}>{body()}</div>
+            <motion.div
+                className="cs-list"
+                ref={listRef}
+                layoutScroll
+                {...(isSearching ? {} : cascade)}
+            >
+                {body()}
+            </motion.div>
         </section>
     );
 }
@@ -529,10 +538,13 @@ export function RecommendationsCard({
 // ============================================================
 
 function MedicineRow({
+    cascadeDelay,
     intent, verdict, position, fill, pinned, onTogglePin, added, acknowledged, onAcknowledge,
     composition, brandsLoading, combos, combosLoading, comboVerdictOf, chosen, brandPreferences,
     onAccept, onOpenSheet, onExplain, onSearchProducts, onRemove,
 }: {
+    /** ms this row waits before arriving — see `delayOf` in cascade.ts */
+    cascadeDelay: number;
     intent: PersonalizedIntent;
     /** the row's REAL status — the engine's own verdict merged with every
      *  combination offered beside it. See `effectiveVerdicts` in the parent. */
@@ -625,7 +637,9 @@ function MedicineRow({
         : intent.label;
 
     return (
-        <div
+        <motion.div
+            /* Fade, slide and blue all off one beat — see cascadeRowProps. */
+            {...cascadeRowProps(cascadeDelay, reduceMotion)}
             ref={rowRef}
             className={
                 `cs-rec${added ? " is-added" : ""}${isHard ? " is-hard" : ""}` +
@@ -898,6 +912,6 @@ function MedicineRow({
                     />
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }

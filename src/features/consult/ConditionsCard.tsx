@@ -38,7 +38,7 @@ import type { DoctorFreeTerm } from "../../lib/db/synapse";
 import { matchingFreeTerms, topFreeTermMatches } from "./freeTerms";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RANKED_ROW_H, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
-import { CASCADE_STAGE, rankOrderKey, useRankCascade } from "./cascade";
+import { CASCADE_STAGE, cascadeRowProps, rankOrderKey, useRankCascade } from "./cascade";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -241,7 +241,7 @@ export function ConditionsCard({
     // what the doctor's signals resolve into first; everything downstream
     // leads off this panel. Keyed on what is actually RENDERED (`shown`), so
     // unlocking "Show more" cascades the newly revealed rows in too.
-    const cascade = useRankCascade(CASCADE_STAGE.assessment, rankOrderKey(shown));
+    const cascade = useRankCascade(CASCADE_STAGE.assessment, rankOrderKey(shown), listRef);
 
     const rankedIds = useMemo(
         () => new Set(intents.map((i) => i.intentId)),
@@ -305,14 +305,22 @@ export function ConditionsCard({
         }
 
         return [
-            ...freeDiagnoses.map((label) => (
-                <FreeConditionRow key={`free-${label}`} label={label} onRemove={() => onRemoveDiagnosis(label)} />
+            ...freeDiagnoses.map((label, i) => (
+                <FreeConditionRow
+                    key={`free-${label}`}
+                    label={label}
+                    cascadeDelay={cascade.delayOf(i)}
+                    onRemove={() => onRemoveDiagnosis(label)}
+                />
             )),
             ...shown.map((intent, i) => (
             <ConditionRow
                 key={intent.intentId}
                 intent={intent}
                 rank={i + 1}
+                /* Continues the run started by the free-text rows above, so
+                   the wave never restarts halfway down one list. */
+                cascadeDelay={cascade.delayOf(freeDiagnoses.length + i)}
                 // A list of one has no other side to the comparison, and the
                 // word could only ever read "High relevance" however weakly the
                 // engine scored it.
@@ -552,6 +560,7 @@ export function ConditionsCard({
                                     (expanded ? "overflow-y-auto pr-1" : "overflow-hidden")
                                 }
                                 ref={listRef}
+                                layoutScroll
                                 /* Search results share this container, and a
                                    staged lead on them would be pure latency:
                                    those are a direct answer to typing, not the
@@ -752,9 +761,18 @@ function FreeMatchRow({
  * bolted above it — but violet instead of green/slate, the one honest tell
  * that this came from the doctor's own notes, not the engine.
  */
-function FreeConditionRow({ label, onRemove }: { label: string; onRemove: () => void }) {
+function FreeConditionRow({ label, onRemove, cascadeDelay }: {
+    label: string; onRemove: () => void; cascadeDelay: number;
+}) {
+    const reduce = useReducedMotion();
     return (
-        <div className="flex items-center gap-2.5 rounded-lg border border-[#e6ddfb] bg-[#faf8ff] px-2.5 py-2">
+        // A sibling of ConditionRow in the same list — it has to slide on
+        // the same terms, or the ranked rows would travel around a pinned
+        // free-text row that jumps.
+        <motion.div
+            {...cascadeRowProps(cascadeDelay, reduce)}
+            className="flex items-center gap-2.5 rounded-lg border border-[#e6ddfb] bg-[#faf8ff] px-2.5 py-2"
+        >
             <span
                 aria-hidden="true"
                 className="grid size-[22px] flex-none place-items-center rounded-full bg-[linear-gradient(180deg,#a78bfa_0%,#8b5cf6_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
@@ -776,13 +794,16 @@ function FreeConditionRow({ label, onRemove }: { label: string; onRemove: () => 
             >
                 <X size={13} />
             </button>
-        </div>
+        </motion.div>
     );
 }
 
 function ConditionRow({
     intent, rank, relevance, confirmed, acknowledged, onAcknowledge, onExplain, onAccept, onRemove,
+    cascadeDelay,
 }: {
+    /** ms this row waits before arriving — see `delayOf` in cascade.ts */
+    cascadeDelay: number;
     intent: PersonalizedIntent;
     /** position in the list, 1-based, for the badge */
     rank: number;
@@ -796,12 +817,15 @@ function ConditionRow({
     onRemove: () => void;
 }) {
     const rowRef = useRef<HTMLDivElement>(null);
+    const reduce = useReducedMotion();
     const isHard = intent.status === "warn_hard";
     const isWarn = intent.status === "warn";
     const locked = isHard && !acknowledged;
 
     return (
-        <div
+        <motion.div
+            /* Fade, slide and blue all off one beat — see cascadeRowProps. */
+            {...cascadeRowProps(cascadeDelay, reduce)}
             ref={rowRef}
             // The second way in. The info button is the discoverable one and
             // the only one a keyboard reaches; double-click is the shortcut for
@@ -888,7 +912,7 @@ function ConditionRow({
                     />
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }
 
