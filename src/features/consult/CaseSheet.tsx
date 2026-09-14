@@ -912,20 +912,43 @@ export function ClinicalCommandBar({
                                 className={
                                     "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] " +
                                     "font-medium text-[var(--cs-ink)] " +
-                                    (i === active ? "bg-[var(--cs-blue-soft)] " : "") +
                                     (on ? "opacity-55 " : "") +
-                                    // A template row is a bigger decision than a
-                                    // chip — a soft violet wash and a left rule
-                                    // keep it visually apart from the symptom it
-                                    // may sit right beside (typing "fever" can
-                                    // return both), never merged into one row.
-                                    (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] bg-[#faf8ff] " : "") +
-                                    // A duration answers the question the box is
-                                    // standing on, so it leads the list and says
-                                    // so with the same left rule a template uses
-                                    // to say "bigger than a chip" — one shape,
-                                    // two meanings kept apart by colour.
-                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] bg-[var(--cs-blue-soft)]/40 " : "")
+                                    // ── EXACTLY ONE BACKGROUND PER ROW ──────
+                                    // Anmol, 2026-09-14: "in the duration
+                                    // thing, down/up arrow doesn't work."
+                                    //
+                                    // The arrows worked. The CURSOR did not
+                                    // move, which is indistinguishable from
+                                    // the doctor's side. A duration row used
+                                    // to carry `bg-…/40` unconditionally AND
+                                    // the active row `bg-…` — two utilities
+                                    // setting the same property, so the class
+                                    // string's order decided nothing and the
+                                    // stylesheet's did. Tailwind emits the
+                                    // `/40` variant LAST, inside an
+                                    // `@supports (color-mix)` block, so it won
+                                    // on every modern browser and every
+                                    // duration row painted identically whether
+                                    // it held the cursor or not. Verified
+                                    // against the built CSS, not guessed.
+                                    //
+                                    // Templates carried the same latent
+                                    // conflict with their violet wash.
+                                    //
+                                    // So the background is now ONE ternary:
+                                    // the cursor always wins, and a row type's
+                                    // own tint only applies when it is not the
+                                    // cursor. Row IDENTITY stays on the left
+                                    // rule below, which nothing competes for —
+                                    // a template is a bigger decision than a
+                                    // chip and a duration answers the question
+                                    // the box is standing on, and both still
+                                    // say so at a glance.
+                                    (i === active
+                                        ? "bg-[var(--cs-blue-soft)] "
+                                        : r.t === "template" ? "bg-[#faf8ff] " : "") +
+                                    (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] " : "") +
+                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "")
                                 }
                             >
                                 <span className="min-w-0 flex-1 truncate">
