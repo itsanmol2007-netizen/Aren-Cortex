@@ -49,6 +49,8 @@ export interface IntentSearchState {
     loading: boolean;
     hits: IntentSearchHit[];
     error: string | null;
+    /** these results came from this device, not the server — coverage differs */
+    offline: boolean;
 }
 
 /**
@@ -64,6 +66,7 @@ export function useIntentSearch(types: IntentType[], limit = 20): IntentSearchSt
     const [hits, setHits] = useState<IntentSearchHit[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [offline, setOffline] = useState(false);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // The type list is rebuilt by every parent render; its CONTENT is the real
@@ -73,15 +76,16 @@ export function useIntentSearch(types: IntentType[], limit = 20): IntentSearchSt
     useEffect(() => {
         if (timer.current) clearTimeout(timer.current);
         const q = query.trim();
-        if (q.length < MIN_QUERY) { setHits([]); setLoading(false); setError(null); return; }
+        if (q.length < MIN_QUERY) { setHits([]); setLoading(false); setError(null); setOffline(false); return; }
 
         setLoading(true);
         timer.current = setTimeout(() => {
             searchIntents({ query: q, types: typeKey.split(",") as IntentType[], limit })
-                .then((r) => { setHits(r); setError(null); })
+                .then((r) => { setHits(r.hits); setOffline(r.offline); setError(null); })
                 .catch((e) => {
                     console.warn("intent search failed:", e);
                     setHits([]);
+                    setOffline(false);
                     setError(e instanceof Error ? e.message : String(e));
                 })
                 .finally(() => setLoading(false));
@@ -97,6 +101,7 @@ export function useIntentSearch(types: IntentType[], limit = 20): IntentSearchSt
         loading,
         hits,
         error,
+        offline,
     };
 }
 
@@ -298,13 +303,32 @@ export function IntentSearchResults({
         return (
             <div className="cs-empty">
                 <strong>Nothing matches “{state.query.trim()}”</strong>
-                <span>Try the name, or the symptom you are treating.</span>
+                {/* Offline, "try the symptom you are treating" is advice that
+                    cannot work — that route needs signal labels this device
+                    does not hold. Saying so beats sending a doctor round a
+                    loop that has no exit until the connection returns. */}
+                <span>
+                    {state.offline
+                        ? "Offline — searching this device's catalogue by name only. Try the brand, or the molecule."
+                        : "Try the name, or the symptom you are treating."}
+                </span>
             </div>
         );
     }
 
     return (
         <>
+            {/* Coverage genuinely differs offline: name and brand still
+                resolve from the mirrored catalogue, the symptom route does
+                not (see `offlineIntentSearch`). A doctor who typed a symptom
+                and got nothing needs to know which of the two they are
+                looking at. */}
+            {state.offline && (
+                <p className="cs-picker-hint">
+                    Offline — searching this device's catalogue. Names and brands
+                    match; searching by the symptom you are treating needs a connection.
+                </p>
+            )}
             {state.hits.map((hit) => {
                 const verdict = verdicts.get(hit.intentId);
                 const isHard = verdict?.status === "warn_hard";

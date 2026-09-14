@@ -44,6 +44,7 @@ import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
 import { syncCatalogue } from "../lib/offline/catalogueSync";
+import { rememberIntentVocabulary } from "../lib/offline/offlineIntentSearch";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
  *  doctor isolation" discipline `lib/offline/db.ts` documents for the other
@@ -228,6 +229,9 @@ export function useSynapse(): UseSynapse {
                 };
                 setData(result);
                 setStatus("ready");
+                // The search box needs this too when the network goes
+                // away — see `offlineIntentSearch`.
+                rememberIntentVocabulary(result.ruleset);
 
                 // Best-effort — IndexedDB being unavailable or full must never
                 // fail an otherwise-successful, already-shown load. Dexie
@@ -248,8 +252,12 @@ export function useSynapse(): UseSynapse {
                 try {
                     const cached = await localDB.meta.get(synapseCacheKey(doctorId));
                     if (cached && mounted.current) {
-                        setData({ ...(cached.value as SynapseData), fromCache: true });
+                        const restored = cached.value as SynapseData;
+                        setData({ ...restored, fromCache: true });
                         setStatus("ready");
+                        // This is the load that matters most for search:
+                        // we are here precisely because the network is gone.
+                        rememberIntentVocabulary(restored.ruleset);
                         return;
                     }
                 } catch (cacheErr) {

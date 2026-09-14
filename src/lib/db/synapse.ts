@@ -43,6 +43,7 @@ import { offlineCompositionBrands } from "../offline/offlineBrands";
 import { getCatalogueSyncState } from "../offline/catalogueSync";
 import { requireOnlineFor } from "../offline/onlineOnly";
 import { getDurableCache, readThroughDurableCache } from "../offline/durableCache";
+import { hasIntentVocabulary, offlineSearchIntents } from "../offline/offlineIntentSearch";
 
 export const RULESET_VERSION = "mvp-1";
 
@@ -1995,22 +1996,43 @@ export interface IntentSearchHit {
  * already knows which molecules answer that reason, so search reads the same
  * rules the ranking does and nothing new is asserted.
  */
+export interface IntentSearchResult {
+    hits: IntentSearchHit[];
+    /** answered from this device's own catalogue — see `offlineIntentSearch` */
+    offline: boolean;
+}
+
 export async function searchIntents(opts: {
     query: string;
     types?: IntentType[];
     limit?: number;
-}): Promise<IntentSearchHit[]> {
+}): Promise<IntentSearchResult> {
     const q = opts.query.trim();
-    if (q.length < 2) return [];
+    if (q.length < 2) return { hits: [], offline: false };
 
-    const { data, error } = await supabase.rpc("search_intents", {
-        p_query: q,
-        p_limit: opts.limit ?? 24,
-        p_types: opts.types ?? null,
-    });
-    if (error) throw new Error(`search: ${error.message}`);
+    let data: any[] = [];
+    try {
+        const res = await supabase.rpc("search_intents", {
+            p_query: q,
+            p_limit: opts.limit ?? 24,
+            p_types: opts.types ?? null,
+        });
+        if (res.error) throw new Error(`search: ${res.error.message}`);
+        data = res.data ?? [];
+    } catch (e) {
+        // Offline, or the RPC is unreachable. The search box is the ONLY way
+        // to a medicine the engine did not rank, so losing it offline loses
+        // half the consult — and the catalogue needed to answer is already on
+        // this device. See `offlineIntentSearch` for what that can and cannot
+        // cover; when this device has never loaded Synapse at all there is no
+        // vocabulary to search and the caller still gets the real error, which
+        // is honest rather than an empty result pretending to be a miss.
+        if (!hasIntentVocabulary()) throw e;
+        console.warn("intent search fell back to the local catalogue:", e);
+        return { hits: await offlineSearchIntents(opts), offline: true };
+    }
 
-    return (data ?? []).map((r: any) => ({
+    const hits = data.map((r: any) => ({
         intentId: Number(r.intent_id),
         type: r.intent_type as IntentType,
         label: r.label,
@@ -2020,6 +2042,7 @@ export async function searchIntents(opts: {
         viaLabel: r.via_label,
         score: Number(r.score),
     }));
+    return { hits, offline: false };
 }
 
 // ============================================================
