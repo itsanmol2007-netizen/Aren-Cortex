@@ -33,6 +33,7 @@ import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import type { DoctorFreeTerm, DoctorFreeTermType } from "../../lib/db/synapse";
 import { GuardReason, RANKED_ROW_H, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
+import { CASCADE_STAGE, rankOrderKey, useRankCascade, type CascadeStage } from "./cascade";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -136,6 +137,14 @@ interface Props {
     topOfType: Map<IntentType, number>;
     /** "Synapse is thinking" cue — see ThinkingRing in parts.tsx */
     thinkingKey: string;
+    /**
+     * Which step of the reasoning this instance is — its lead delay in the
+     * cascade. This card is placed three times with different jobs
+     * (Investigations beside Assessment, the plan row's primary column, the
+     * trailing catch-all), and they are not the same step of a doctor's
+     * thought, so the placement decides rather than the component.
+     */
+    cascadeStage?: CascadeStage;
     acceptedIntentIds: Set<number>;
     acknowledged: Set<number>;
     onAcknowledge: (intentId: number, ack: boolean) => void;
@@ -196,7 +205,8 @@ interface Props {
 }
 
 export function SuggestionsCard({
-    byType, topOfType, thinkingKey, acceptedIntentIds, acknowledged, onAcknowledge, onAccept, onRemove,
+    byType, topOfType, thinkingKey, cascadeStage = CASCADE_STAGE.investigations,
+    acceptedIntentIds, acknowledged, onAcknowledge, onAccept, onRemove,
     isPinned, onTogglePin, freeTerms = [], onAddFreeText,
     selectedTests = [], adviceLines = [],
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
@@ -407,6 +417,10 @@ export function SuggestionsCard({
         ),
         [rows, capped, showAllCapped, acceptedIntentIds]
     );
+
+    // Keyed on the rendered rows, so "Show all" cascades the newly revealed
+    // ones in rather than having them appear mid-list unannounced.
+    const cascade = useRankCascade(cascadeStage, rankOrderKey(visibleRows.map((r) => r.intent)));
 
     const body = () => {
         if (search.isSearching) {
@@ -800,6 +814,7 @@ export function SuggestionsCard({
                             "cs-list " + (capped != null && showAllCapped ? "is-list-expanded" : "is-list-collapsed")
                         }
                         ref={listRef}
+                        {...cascade}
                     >
                         {body()}
                     </motion.div>

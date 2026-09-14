@@ -72,6 +72,7 @@ import { GrowthChartCard } from "./features/consult/GrowthChartCard";
 import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
+import { CASCADE_STAGE } from "./features/consult/cascade";
 import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
 import { relevantFields, JOINT_RANGE_FIELDS } from "./features/consult/measures";
@@ -2289,6 +2290,10 @@ function App() {
                       byType={intelligence.byType}
                       topOfType={topOfType}
                       thinkingKey={intelligence.thinkingKey}
+                      // Investigations sits BESIDE Assessment but is a step after it in
+                      // the reasoning — what would confirm or rule out what was just
+                      // ranked. Siblings on screen, sequential in thought.
+                      cascadeStage={CASCADE_STAGE.investigations}
                       acceptedIntentIds={acceptedIntentIdSet}
                       acknowledged={acknowledgedIntents}
                       onAcknowledge={handleAcknowledge}
@@ -2398,6 +2403,10 @@ function App() {
                     byType={intelligence.byType}
                     topOfType={topOfType}
                     thinkingKey={intelligence.thinkingKey}
+                    // This instance IS the plan row's primary column on a chart whose
+                    // primary type is neither medicine nor exercise — same beat as
+                    // RecommendationsCard, which it stands in for.
+                    cascadeStage={CASCADE_STAGE.plan}
                     acceptedIntentIds={acceptedIntentIdSet}
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}
@@ -2426,6 +2435,9 @@ function App() {
                   byType={intelligence.byType}
                   topOfType={topOfType}
                   thinkingKey={intelligence.thinkingKey}
+                  // The trailing catch-all — referrals, advice, whatever the plan row
+                  // did not take. Last beat of the cascade.
+                  cascadeStage={CASCADE_STAGE.rest}
                   acceptedIntentIds={acceptedIntentIdSet}
                   acknowledged={acknowledgedIntents}
                   onAcknowledge={handleAcknowledge}

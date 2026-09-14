@@ -2283,43 +2283,157 @@ body.cs-locked-shell {
    beautiful appearing one by one. Not like one thing taking 10 seconds...
    it should not feel like you put there and randomly everything pops up."
 
-   One keyframe and nth-child delays, applied at the ONE container every
-   ranked list already shares (.cs-list — Suggestions, Recommendations and
-   Conditions all render into it), so no card needed changing and no row
-   needed a JS animation of its own.
+   Extended 2026-09-14 into a STAGED cascade — see `cascade.ts` for the
+   timing rationale and for why this is structurally not the 2026-08-24
+   ThinkingRing wash. Three things changed here:
 
-   Why CSS and not Framer here: a CSS animation runs once, when the element
-   is first painted. React keeps existing rows by key, so re-ranking an
-   already-visible list does NOT replay this — only rows that genuinely just
-   arrived animate. That is exactly the behaviour a consult wants, and it
-   costs nothing on every keystroke in between.
+     1. A per-card lead (`--cs-cascade-lead`, set by `useRankCascade`). Cards
+        start one after another down the clinical order — assessment, then
+        investigations, then the plan — instead of all at 0ms. They OVERLAP
+        rather than queue: a card starts on its own lead whether or not the
+        one above it has finished, which is what keeps the whole cascade
+        under ~900ms while still reading as ordered.
 
-   The numbers are deliberately small. 200ms per row, 26ms apart, and the
-   stagger stops climbing after the 8th row: a 30-result list must not take
-   a second to finish arriving, and nothing below the fold should be waiting
-   on a delay at all. Rows animate opacity and a 6px lift only — never
-   height — so the list's own scroll position and the card's height are
-   untouched while they land, and a doctor already reading row 1 is never
-   pushed around by row 9 showing up. */
+     2. A blue that travels. Each row arrives carrying a faint wash and a
+        lit leading edge which decay to nothing; because rows arrive 45ms
+        apart and the decay runs 300ms, roughly the last six rows are tinted
+        at any instant, brightest at the newest. Nothing draws a "wave" —
+        the comet tail rolling down the list is purely the stagger plus the
+        decay, which is why it cannot detach from the rows and wash across
+        the screen the way its predecessor did.
+
+     3. `data-cascade` a↔b. A CSS animation runs once per painted element,
+        so a brand-new row animates for free and re-ranking an existing list
+        used to replay nothing at all — which is precisely the case that
+        matters, since a new symptom REORDERS a list already on screen.
+        Flipping the attribute swaps `animation-name` between two identical
+        keyframes, and an `animation-name` change is the one thing that
+        restarts a CSS animation without remounting the element. Remounting
+        is not an option: these rows hold focus, the roving cursor and open
+        brand pickers.
+
+   The tint rides on `box-shadow`, never `background`: these rows already
+   carry meaningful backgrounds (confirmed green, hard-guard red, the
+   free-text violet) and painting over them would overwrite state with
+   decoration. An inset shadow composites above the background and below the
+   text, and touches neither.
+
+   `animation-fill-mode: backwards` — not `both`. Backwards is what holds a
+   row invisible through its delay; `forwards` would additionally pin the
+   final keyframe's transparent shadow onto the row permanently, quietly
+   deleting any real box-shadow it is meant to have once it has landed.
+
+   Rows animate opacity, a 6px lift and the tint only — never height — so
+   the list's scroll position and the card's own height are untouched while
+   they land, and a doctor already reading row 1 is never pushed around by
+   row 9 showing up. */
 @keyframes cs-row-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    0% {
+        opacity: 0;
+        transform: translateY(6px);
+        box-shadow:
+            inset 2px 0 0 0 rgba(18, 104, 232, 0.85),
+            inset 0 0 0 999px rgba(18, 104, 232, 0.1);
+    }
+    /* 200ms of a 300ms animation: the row has fully arrived well before its
+       blue has finished leaving, so the tail lags the motion instead of
+       ending with it. */
+    67% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+        box-shadow:
+            inset 0 0 0 0 rgba(18, 104, 232, 0),
+            inset 0 0 0 999px rgba(18, 104, 232, 0);
+    }
 }
-.cs-list > * {
-    animation: cs-row-in 200ms cubic-bezier(0.22, 0.68, 0, 1) both;
-}
-.cs-list > *:nth-child(1) { animation-delay: 0ms; }
-.cs-list > *:nth-child(2) { animation-delay: 26ms; }
-.cs-list > *:nth-child(3) { animation-delay: 52ms; }
-.cs-list > *:nth-child(4) { animation-delay: 78ms; }
-.cs-list > *:nth-child(5) { animation-delay: 104ms; }
-.cs-list > *:nth-child(6) { animation-delay: 130ms; }
-.cs-list > *:nth-child(7) { animation-delay: 156ms; }
-/* Everything past the 8th lands together — see the note above. */
-.cs-list > *:nth-child(n + 8) { animation-delay: 182ms; }
 
+/* Byte-identical to `cs-row-in` on purpose, and it has to be a separate
+   @keyframes rather than a variable: only a change of `animation-name`
+   restarts a running animation. `useRankCascade` alternates between the two
+   names, so consecutive re-ranks always land on a name different from the
+   one currently playing. */
+@keyframes cs-row-in-alt {
+    0% {
+        opacity: 0;
+        transform: translateY(6px);
+        box-shadow:
+            inset 2px 0 0 0 rgba(18, 104, 232, 0.85),
+            inset 0 0 0 999px rgba(18, 104, 232, 0.1);
+    }
+    67% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+        box-shadow:
+            inset 0 0 0 0 rgba(18, 104, 232, 0),
+            inset 0 0 0 999px rgba(18, 104, 232, 0);
+    }
+}
+
+/* `.cs-list` is the container Suggestions, Recommendations and the exercise
+   card already share; `.cs-cascade` is the opt-in for the ranked lists that
+   do NOT render into one (Assessment's ranked column is a Tailwind
+   `motion.div`, and the exercise card's "suggested" group sits nested inside
+   its own `.cs-list`). */
+.cs-list > *,
+.cs-cascade > * {
+    animation-name: cs-row-in;
+    animation-duration: 300ms;
+    animation-timing-function: cubic-bezier(0.22, 0.68, 0, 1);
+    animation-fill-mode: backwards;
+}
+
+.cs-list[data-cascade="b"] > *,
+.cs-cascade[data-cascade="b"] > * {
+    animation-name: cs-row-in-alt;
+}
+
+/* A container that cascades its own children never animates as one block
+   itself — otherwise the group fades in while its rows fade in inside it and
+   the two opacities multiply, which reads as the group arriving dimmed. */
+.cs-list > .cs-cascade {
+    animation: none;
+}
+
+/* Delay = this card's lead + this row's place in the list. The lead is unset
+   on any list that has not opted into staging, so those keep starting at 0ms
+   exactly as before. */
+.cs-list > *:nth-child(1),
+.cs-cascade > *:nth-child(1) { animation-delay: var(--cs-cascade-lead, 0ms); }
+.cs-list > *:nth-child(2),
+.cs-cascade > *:nth-child(2) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 45ms); }
+.cs-list > *:nth-child(3),
+.cs-cascade > *:nth-child(3) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 90ms); }
+.cs-list > *:nth-child(4),
+.cs-cascade > *:nth-child(4) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 135ms); }
+.cs-list > *:nth-child(5),
+.cs-cascade > *:nth-child(5) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 180ms); }
+.cs-list > *:nth-child(6),
+.cs-cascade > *:nth-child(6) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 225ms); }
+.cs-list > *:nth-child(7),
+.cs-cascade > *:nth-child(7) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 270ms); }
+.cs-list > *:nth-child(8),
+.cs-cascade > *:nth-child(8) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 315ms); }
+/* Everything past the 8th lands together. A 30-result list must not take a
+   second to finish arriving, and nothing below the fold should be waiting on
+   a delay at all. */
+.cs-list > *:nth-child(n + 9),
+.cs-cascade > *:nth-child(n + 9) { animation-delay: calc(var(--cs-cascade-lead, 0ms) + 360ms); }
+
+/* The attribute-qualified selectors are here so this still outranks the
+   `[data-cascade="b"]` rule above, which is more specific than the base one. */
 @media (prefers-reduced-motion: reduce) {
-    .cs-list > * { animation: none; }
+    .cs-list > *,
+    .cs-cascade > *,
+    .cs-list[data-cascade] > *,
+    .cs-cascade[data-cascade] > * { animation: none; }
 }
 
 .cs-list.is-list-collapsed { overflow: hidden; }

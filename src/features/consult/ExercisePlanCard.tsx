@@ -49,6 +49,7 @@ import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
 import { RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
+import { CASCADE_STAGE, rankOrderKey, useRankCascade } from "./cascade";
 import {
     comparePlans, formatDose, formatSide, identityOf,
     type ExerciseLine, type ExerciseSide, type Progression,
@@ -302,6 +303,11 @@ export function ExercisePlanCard({
         [intents, onPlanIntentIds]
     );
 
+    // Same stage as medicines: on a physio chart this card IS the plan's
+    // primary column, so it leads off the same beat rather than inventing a
+    // fourth one.
+    const cascade = useRankCascade(CASCADE_STAGE.plan, rankOrderKey(offered));
+
     // The same walk-and-take every ranked panel has. `.cs-ex-offer` is the
     // offered rows and `.cs-sug` is what the search results render, so one
     // cursor covers both without either knowing about the other — the same
@@ -415,7 +421,14 @@ export function ExercisePlanCard({
 
                         {/* ── What the chart suggests adding ────────────── */}
                         {offered.length > 0 && (
-                            <div className="cs-ex-group">
+                            /* `cs-cascade` staggers this group's OWN children
+                               (its heading, then each offered exercise). The
+                               enclosing `.cs-list` would otherwise animate the
+                               whole group as a single block — see the
+                               `.cs-list > .cs-cascade` rule in consult.css,
+                               which stands this group down from that so the
+                               two opacities cannot multiply. */
+                            <div className="cs-ex-group cs-cascade" {...cascade}>
                                 <p className="cs-ex-grouphead">
                                     {plan.length > 0 ? "Also suggested" : "Suggested for this chart"}
                                 </p>

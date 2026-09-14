@@ -38,6 +38,7 @@ import type { DoctorFreeTerm } from "../../lib/db/synapse";
 import { matchingFreeTerms, topFreeTermMatches } from "./freeTerms";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
 import { GuardReason, RANKED_ROW_H, RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
+import { CASCADE_STAGE, rankOrderKey, useRankCascade } from "./cascade";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -235,6 +236,12 @@ export function ConditionsCard({
             ...intents.slice(CAP).filter((i) => acceptedIntentIds.has(i.intentId)),
         ];
     const hidden = intents.length - shown.length;
+
+    // Stage 0 of the cascade — the head, so it starts at 0ms. Assessment is
+    // what the doctor's signals resolve into first; everything downstream
+    // leads off this panel. Keyed on what is actually RENDERED (`shown`), so
+    // unlocking "Show more" cascades the newly revealed rows in too.
+    const cascade = useRankCascade(CASCADE_STAGE.assessment, rankOrderKey(shown));
 
     const rankedIds = useMemo(
         () => new Set(intents.map((i) => i.intentId)),
@@ -541,10 +548,16 @@ export function ConditionsCard({
                                         : { type: "spring", stiffness: 260, damping: 32 }
                                 }
                                 className={
-                                    "mt-1.5 flex flex-col " +
+                                    "cs-cascade mt-1.5 flex flex-col " +
                                     (expanded ? "overflow-y-auto pr-1" : "overflow-hidden")
                                 }
                                 ref={listRef}
+                                /* Search results share this container, and a
+                                   staged lead on them would be pure latency:
+                                   those are a direct answer to typing, not the
+                                   engine re-reasoning. Unbound while searching,
+                                   so they keep the plain 0ms row stagger. */
+                                {...(search.isSearching ? {} : cascade)}
                             >
                                 {body()}
                             </motion.div>

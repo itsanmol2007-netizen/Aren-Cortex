@@ -40,6 +40,7 @@ import type { ResolvedProduct } from "../../lib/db/medicines";
 import {
     GuardReason, MedicineIdentity, PinButton, RankBar, ThinkingRing, rankFillOf,
 } from "./parts";
+import { CASCADE_STAGE, rankOrderKey, useRankCascade } from "./cascade";
 import { WhyButton } from "./ContributionSheet";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
@@ -168,6 +169,12 @@ export function RecommendationsCard({
     // expanding grew the card, which stretched its row, which left dead white
     // space in the column beside it (Anmol, 2026-08-12).
     const shown = ordered;
+
+    // Stage 2 — the plan. Medicines are what the assessment and the
+    // investigations resolve INTO, so this panel lands last of the three and
+    // reads as the conclusion of the cascade rather than a fourth thing that
+    // happened at the same time.
+    const cascade = useRankCascade(CASCADE_STAGE.plan, rankOrderKey(shown));
 
     const brandsFor = (intent: PersonalizedIntent) =>
         intent.refTable === "compositions" && intent.refId != null
@@ -510,7 +517,9 @@ export function RecommendationsCard({
                 </p>
             )}
 
-            <div className="cs-list" ref={listRef}>{body()}</div>
+            {/* Unbound while searching: search hits answer typing directly and
+                must not sit behind the plan's stage lead. See ConditionsCard. */}
+            <div className="cs-list" ref={listRef} {...(isSearching ? {} : cascade)}>{body()}</div>
         </section>
     );
 }
