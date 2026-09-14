@@ -25,16 +25,23 @@
                                                   configured yet, …)
            5xx { ok: false, error: "server_error", message }   ← a bug
 
-   ── Multilingual prescriptions (2026-09-11) ────────────────────────────────
+   ── Multilingual prescriptions (2026-09-11, templates finalised 2026-09-14) ─
    `language` picks which APPROVED WhatsApp template gets used — never a
    machine translation of anything. Hindi and Hinglish need their own Meta
-   template (same {{1}}/{{2}} shape as the English one — see
-   WHATSAPP_TEMPLATE_PRESCRIPTION_HI / _HI_LATN below) submitted and
-   APPROVED by Anmol first. Until that env var is set for a language,
-   `resolveTemplate` throws a clean, doctor-facing MessagingError BEFORE
-   anything is written — no row, no credit touched, and definitely no send
-   attempted in an unapproved template. Nothing in this file sets those
-   secrets or sends a non-English message on its own.
+   template (env vars WHATSAPP_TEMPLATE_PRESCRIPTION_HI / _HI_LATN below)
+   submitted and APPROVED by Anmol first. Until that env var is set for a
+   language, `resolveTemplate` throws a clean, doctor-facing MessagingError
+   BEFORE anything is written — no row, no credit touched, and definitely
+   no send attempted in an unapproved template. Nothing in this file sets
+   those secrets or sends a non-English message on its own.
+
+   Hindi's approved shape matches English's exactly (header: patient name;
+   body: doctor, clinic). Hinglish's does NOT — see `buildComponents`'s own
+   comment for the real difference (a static header with no variables at
+   all, and a three-parameter body). This is the one place in the file
+   where "another language" stopped meaning "the same shape, different
+   words" — everything else here (phone, credits, logging) is identical
+   across all three.
 ------------------------------------------------------------------- */
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.45.4";
@@ -130,12 +137,26 @@ function formatDoctorName(raw: string | null): string {
 /** The Devanagari name the doctor/admin confirmed once (Clinic page,
  *  `doctors.name_hi` / `hospitals.name_hi` — migration
  *  `20260911_hindi_display_names`), used for the WhatsApp template's own
- *  {{1}}/{{2}} when sending in Hindi. Falls back to `latin` when nothing has
- *  been confirmed yet — never guessed at send time. Mirrors `hiName()` in
+ *  clinic-name variable. Falls back to `latin` when nothing has been
+ *  confirmed yet — never guessed at send time. Mirrors `hiName()` in
  *  the Cortex repo's lib/i18n/prescriptionLabels.ts; this repo copies it
- *  rather than sharing a module. */
+ *  rather than sharing a module.
+ *
+ *  Anmol, 2026-09-14, submitting the actual approved templates: "use actual
+ *  hindi name of clinic which is available in devnagri lang, for fallback
+ *  use english name" — for BOTH Hindi and Hinglish. The Hinglish template's
+ *  own submitted copy already keeps the clinic name distinct from the rest
+ *  of its Latin-script body (its sample used the clinic's plain name, but
+ *  a clinic's own registered identity is exactly the kind of proper noun
+ *  that stays in its native script even inside an otherwise-transliterated
+ *  message — the same instinct that keeps a brand name unchanged across
+ *  languages). Doctor name is NOT widened the same way: nothing asked for
+ *  that, and the submitted Hinglish sample ("Dr SK Pandey") is plainly
+ *  Latin, not Devanagari — so `doctorName`'s own check, in `loadContext`
+ *  below, still reads `language === "hi"` alone. */
 function hiName(language: RxLanguage, latin: string, nameHi: string | null): string {
-  if (language === "hi" && nameHi && nameHi.trim()) return nameHi.trim();
+  const prefersDevanagari = language === "hi" || language === "hi-Latn";
+  if (prefersDevanagari && nameHi && nameHi.trim()) return nameHi.trim();
   return latin;
 }
 
@@ -269,18 +290,53 @@ function urlButtonParam(value: string) {
     : { type: "text", text: value };
 }
 
+/**
+ * The prescription templates, as actually submitted to Meta (2026-09-14):
+ *
+ *   en / hi  (`en_prescription_ready02` / `02prescription_ready_hi`)
+ *     header: {{1}} patient name
+ *     body:   {{1}} doctor name, {{2}} clinic name
+ *
+ *   hi-Latn  (`02prescription_ready_hinglish`, registered under Meta's
+ *             "English" language — there is no dedicated Hinglish code)
+ *     header: STATIC TEXT, no variables at all ("Aapka Prescription Ready
+ *             ho chuka hai") — its header can't carry the patient's name,
+ *             so the body carries it instead.
+ *     body:   {{1}} patient name, {{2}} doctor name, {{3}} clinic name
+ *
+ * English and Hindi share one shape; Hinglish is genuinely different, not
+ * just differently worded — sending the EN/HI shape's two-parameter body
+ * against a template Meta approved with three would be a parameter-count
+ * mismatch the Graph API rejects outright, not a silent wrong-language
+ * substitution. A header component must be OMITTED entirely for Hinglish
+ * (not sent with an empty `parameters` array) — a component for a slot the
+ * approved template has no variables in is itself a malformed request.
+ */
 function buildComponents(m: OutMessage): unknown[] {
   if (m.purpose === "prescription") {
-    const components: unknown[] = [
-      { type: "header", parameters: [{ type: "text", text: m.patientName || "there" }] },
-      {
-        type: "body",
-        parameters: [
-          { type: "text", text: m.doctorName || "your doctor" },
-          { type: "text", text: m.clinicName || "your clinic" },
-        ],
-      },
-    ];
+    const components: unknown[] = [];
+
+    if (m.language !== "hi-Latn") {
+      components.push({
+        type: "header",
+        parameters: [{ type: "text", text: m.patientName || "there" }],
+      });
+    }
+
+    components.push({
+      type: "body",
+      parameters: m.language === "hi-Latn"
+        ? [
+            { type: "text", text: m.patientName || "there" },
+            { type: "text", text: m.doctorName || "your doctor" },
+            { type: "text", text: m.clinicName || "your clinic" },
+          ]
+        : [
+            { type: "text", text: m.doctorName || "your doctor" },
+            { type: "text", text: m.clinicName || "your clinic" },
+          ],
+    });
+
     if (m.documentUrl) {
       components.push({
         type: "button",
