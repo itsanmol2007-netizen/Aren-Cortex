@@ -417,6 +417,25 @@ export function ConditionsCard({
                                 Assessment
                             </h2>
                         </div>
+                        {/* Matches Investigations' `.cs-sort` (SuggestionsCard.tsx)
+                            — this panel is ALSO sorted by relevance, it just
+                            never said so, which was one of the two "still not
+                            symmetric" gaps left after the 2026-08-25 handoff's
+                            three blind passes. Gated on `hasAnyConditions` now
+                            (2026-08-25 follow-up) for the same reason
+                            Investigations' whole controls row is gated on
+                            `anyContent`: a chart with nothing ranked has
+                            nothing for "most relevant first" to describe, and
+                            showing it anyway was the other half of why this
+                            panel's empty state sat in a different amount of
+                            leftover space than its neighbour's. Wording moved
+                            off "Sort by… Relevance" (item 7) — that reads as a
+                            generic list-sorting control; this says what
+                            Cortex is actually doing, without naming the
+                            mechanism. */}
+                        {!search.isSearching && hasAnyConditions && (
+                            <span className="cs-sort">Most relevant first</span>
+                        )}
                     </div>
 
                     <div className="mt-3">
@@ -456,6 +475,32 @@ export function ConditionsCard({
                                 DIFFERENT amounts of leftover space even
                                 though the cards themselves were the same
                                 height. */}
+                            {hasAnyConditions && (
+                                <div className="cs-ranked-head">
+                                    {/* The honesty line still exists — a doctor
+                                        who assumes this column reads only from
+                                        the symptom chips is reading a list that
+                                        silently includes their BP — it is just
+                                        not a standing line of its own any more.
+                                        Anmol, 2026-08-25: "remove most of the
+                                        useless things... you can simply write
+                                        ranked somewhere else instead of
+                                        assigning one line vertical space to
+                                        it." The label already says "ranked";
+                                        the rest is one hover away. */}
+                                    <span
+                                        className="cs-ranked-label"
+                                        title="Ranked from symptoms, findings and measurements. You decide."
+                                    >
+                                        Ranked conditions
+                                    </span>
+                                    {intents.length > 0 && (
+                                        <span className="cs-ranked-count">
+                                            {shown.length} of {intents.length}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                             {/* "Show this to that doctor in future for similar
                                 inputs" — §4, 2026-08-24. A quiet strip, not a
                                 ranked row: these never came from the shared

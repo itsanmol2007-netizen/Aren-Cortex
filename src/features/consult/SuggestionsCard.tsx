@@ -653,6 +653,23 @@ export function SuggestionsCard({
                     </span>
                     {title}
                 </span>
+                {/* A single-section instance (the Assessment side-slot,
+                    "Investigations") never gets tabs — one section IS "all"
+                    — so its sort label stays right here, inline, exactly
+                    where it always sat: this is the reference pair
+                    (`responsive-grid.md`) with Assessment's own `.cs-sort`,
+                    which is ALSO inline in its head row. Moving only THIS
+                    instance's label onto a new row below the search field
+                    would grow it one row taller than Assessment the moment
+                    either has content — reopening the exact header/row-
+                    height mismatch three blind passes fought on
+                    2026-08-25. The multi-section instance (the standalone
+                    "Clinical Suggestions" panel, which item 6 is actually
+                    about) renders its sort label in `.cs-sug-controls`
+                    below the search box instead — see there. */}
+                {SECTIONS.length === 1 && !search.isSearching && anyContent && (
+                    <span className="cs-sort">Most relevant first</span>
+                )}
             </div>
 
             <IntentSearchField
@@ -689,6 +706,7 @@ export function SuggestionsCard({
                 states.md` and `.../responsive-grid.md`. */}
             {SECTIONS.length > 1 && !search.isSearching && anyContent && (
                 <div className="cs-sug-controls">
+                    <span className="cs-sort">Most relevant first</span>
                     {/* §3, 2026-08-24. One button per category — "Tests",
                         "Advice"… — to get straight to that section,
                         replacing a `<select>` that only ever narrowed an
@@ -758,6 +776,31 @@ export function SuggestionsCard({
                 <div className="cs-list" ref={listRef}>{body()}</div>
             ) : (
                 <>
+                    {/* Matches ConditionsCard's identical `.cs-ranked-head`
+                        exactly — same shared classes, and, per Anmol,
+                        2026-08-25 ("remove most of the useless things...
+                        write ranked somewhere else instead of assigning one
+                        line vertical space to it"), the same move of the
+                        explanatory line off its own row and onto a tooltip
+                        on the label. Was a standing `<p>` here for one
+                        round; that was the wrong direction — it made this
+                        card's header TALLER than Assessment's instead of
+                        matching it, which is exactly what was pushing their
+                        "Show more"/"Show less" controls out of alignment
+                        (item 4 of the same message). */}
+                    {capped != null && rows.length > 0 && (
+                        <div className="cs-ranked-head">
+                            <span
+                                className="cs-ranked-label"
+                                title="What confirms or rules out what you've ranked above."
+                            >
+                                Ranked suggestions
+                            </span>
+                            <span className="cs-ranked-count">
+                                {visibleRows.length} of {rows.length}
+                            </span>
+                        </div>
+                    )}
                     <motion.div
                         initial={false}
                         animate={
