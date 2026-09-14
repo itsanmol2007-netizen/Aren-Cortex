@@ -2601,6 +2601,44 @@ body.cs-locked-shell {
     opacity: 0.45;
 }
 
+/* ── The info button holds the top row, and one column ─────────────────────
+   Anmol, 2026-09-14: "that i button is very inconsistent — because of the
+   length of the medicine name it sometimes gets thrown into the lower row."
+
+   `.cs-ident-brand` wraps, and under `flex-wrap` a line is filled by each
+   item's CONTENT width before anything is allowed to shrink. So a long brand
+   ("Sucrafil Suspension Su…") consumed the whole first line on its own and
+   pushed the info button — and the guard flags with it — onto a second row,
+   even though the name itself was already ellipsised.
+
+   On a recommendation row that never wraps now: the name shrinks instead,
+   which is what the ellipsis was always for. And the info button is pushed to
+   the far edge rather than trailing whatever the name's length happens to be,
+   so nine rows of wildly different name lengths still line their buttons up
+   in one column. Scoped to `.cs-rec` because it is the only surface that
+   renders MedicineIdentity WITH an info button — the Plan's copy of the same
+   component has no such trailing slot to align. */
+.cs-rec .cs-ident-brand {
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+
+/* Shrink-only: it must not grow into the gap the info button is claiming. */
+.cs-rec .cs-ident-brand > span:first-child {
+    flex: 0 1 auto;
+    /* Lower than the shared 90px — with nothing able to wrap away any more,
+       the name has to be able to give up room to a Safety + Check pair and
+       still leave the info button on screen. */
+    min-width: 72px;
+}
+
+.cs-rec .cs-ident-brand > :last-child {
+    margin-left: auto;
+    /* A little air before the edge so it never collides with the rank bar
+       column beside it. */
+    padding-left: 6px;
+}
+
 /* Italic 2026-09-11 — the ordinary pharmacy convention for a generic name
    under a brand (brand upright, composition italic) is a second, free signal
    that these two lines are different KINDS of fact, not just different
@@ -2897,6 +2935,41 @@ body.cs-locked-shell {
     font-size: 12px;
     font-weight: 500;
     line-height: 1.5;
+}
+
+/* ── "Ranked, but nothing to dispense" ─────────────────────────────────────
+   Anmol, 2026-09-14, on Honey being ranked for a cough: "there is no product
+   with honey, so it says something like this. This is a great opportunity —
+   I love this one. Polish these kinds of suggestions even better. Things
+   should not look crammed."
+
+   It used to be a bare grey sentence in developer language ("Rankable, but no
+   product in the catalogue contains it on its own"), which reads as an
+   apology for a gap rather than a real clinical answer. Honey for a cough IS
+   the answer; the catalogue simply has nothing to dispense for it.
+
+   So it is a quiet tag now, in the same neutral register as the other row
+   chips, with the full explanation one hover away — the same "the label says
+   the short thing, the rest is a tooltip" move `.cs-ranked-label` already
+   makes. */
+.cs-nobrand-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: var(--cs-page);
+    padding: 2px 9px;
+    color: var(--cs-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    cursor: help;
+}
+
+.cs-nobrand-tag svg {
+    flex: none;
+    opacity: 0.7;
 }
 
 .cs-nobrand button {

@@ -26,7 +26,7 @@
 import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    AlertTriangle, Check, ChevronDown, Heart, Pill, Plus, ShieldAlert, X,
+    AlertTriangle, Check, ChevronDown, Heart, Leaf, Pill, Plus, ShieldAlert, X,
 } from "lucide-react";
 import {
     guardCombination, medicineIntentIndex,
@@ -801,7 +801,18 @@ function MedicineRow({
                                 <button type="button" onClick={onSearchProducts}>Search products</button>
                             </>
                         ) : (
-                            <>Rankable, but no product in the catalogue contains it on its own.</>
+                            /* Not an error and not an apology — see
+                               `.cs-nobrand-tag`. The ranking is right; there
+                               is simply nothing in the catalogue to dispense
+                               against it, which for something like honey is
+                               the honest and expected answer. */
+                            <span
+                                className="cs-nobrand-tag"
+                                title={`Synapse ranked ${intent.label} for this chart. The product catalogue has no single-molecule product for it, so there is no brand to prescribe — the ranking itself is unaffected.`}
+                            >
+                                <Leaf size={11} aria-hidden="true" />
+                                Nothing to dispense
+                            </span>
                         )}
                     </div>
                 )
