@@ -213,13 +213,31 @@ interface OutMessage {
  * notice the substitution until the patient did.
  */
 function resolveTemplate(purpose: OutMessage["purpose"], language: RxLanguage) {
-  if (purpose !== "prescription") {
-    // No follow-up template is approved in any language yet (pre-existing —
-    // see server/messaging/providers/meta.js's own note); language selection
-    // isn't wired for this purpose.
+  // Same three-language shape as prescription, below — added 2026-09-14
+  // alongside the follow-up cron (`follow-up-cron/index.ts`), which is the
+  // first real caller of a follow-up in anything but English. Until then
+  // `language` was silently ignored here; every follow-up sent as English
+  // regardless of what was asked for, which was fine while there was
+  // exactly one follow-up template and no caller ever requested another.
+  if (purpose === "follow_up") {
+    if (language === "en") {
+      return {
+        name: Deno.env.get("WHATSAPP_TEMPLATE_FOLLOW_UP") || "aren_follow_up",
+        language: Deno.env.get("WHATSAPP_TEMPLATE_LANG") || "en",
+      };
+    }
+    const suffix = language === "hi" ? "_HI" : "_HI_LATN";
+    const name = Deno.env.get(`WHATSAPP_TEMPLATE_FOLLOW_UP${suffix}`);
+    if (!name) {
+      const label = language === "hi" ? "Hindi" : "Hinglish";
+      throw new MessagingError(
+        `The ${label} follow-up template isn't approved and configured yet. Switch back to English, or ask support to finish setting it up.`,
+        "template_not_configured",
+      );
+    }
     return {
-      name: Deno.env.get("WHATSAPP_TEMPLATE_FOLLOW_UP") || "aren_follow_up",
-      language: Deno.env.get("WHATSAPP_TEMPLATE_LANG") || "en",
+      name,
+      language: Deno.env.get(`WHATSAPP_TEMPLATE_LANG${suffix}`) || (language === "hi" ? "hi" : "en"),
     };
   }
 
