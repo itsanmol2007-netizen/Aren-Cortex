@@ -691,6 +691,10 @@ export function PlanCard({
                     <button
                         type="button"
                         className="cs-review"
+                        /* First-run walkthrough anchor. `requireEnabled` on its
+                           step means the hint waits until the plan actually has
+                           something on it — see features/onboarding. */
+                        data-coach="plan.review"
                         disabled={isEmpty}
                         onClick={onReviewRx}
                     >

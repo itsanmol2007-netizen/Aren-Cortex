@@ -73,6 +73,8 @@ import { RecommendationsCard } from "./features/consult/RecommendationsCard";
 import { SuggestionsCard } from "./features/consult/SuggestionsCard";
 import { ConditionsCard } from "./features/consult/ConditionsCard";
 import { CASCADE_STAGE } from "./features/consult/cascade";
+import { OnboardingLayer } from "./features/onboarding/OnboardingLayer";
+import { useOnboarding } from "./features/onboarding/useOnboarding";
 import { SpecialtyExamCard } from "./features/consult/SpecialtyExamCard";
 import { ContributionSheet, type ExplainTarget } from "./features/consult/ContributionSheet";
 import { relevantFields, JOINT_RANGE_FIELDS } from "./features/consult/measures";
@@ -172,6 +174,18 @@ function App() {
   // learns is keyed on these, so they have to be the signed-in ones — a bias
   // row written under the wrong doctor cannot be untangled later.
   const identity = useClinicalIdentity();
+
+  /**
+   * The first-run walkthrough. Doctors only, and only once a REAL doctor row
+   * has resolved — `isReal` is false while `useClinicalIdentity` is falling
+   * back to the MVP constant, which belongs to a different hospital, and
+   * marking that row as "walked through" would silence the walkthrough for
+   * somebody else entirely.
+   */
+  const onboarding = useOnboarding(
+    identity.isReal ? identity.doctorId : null,
+    identity.isReal,
+  );
   const DOCTOR = useMemo(
     () => ({ id: identity.doctorId, name: identity.doctorName, specialty: identity.specialization }),
     [identity.doctorId, identity.doctorName, identity.specialization]
@@ -1775,6 +1789,17 @@ function App() {
 
   return (
     <div className={`app-shell ${isFeaturePage ? "is-feature" : "is-consult"}`}>
+
+      {/* Portals to <body>, so its ring can sit over any panel without
+          inheriting a stacking context from one of them. */}
+      <OnboardingLayer
+        showWelcome={onboarding.showWelcome}
+        active={onboarding.active}
+        doctorName={identity.doctorName}
+        onAcceptWelcome={onboarding.acceptWelcome}
+        onSkipAll={onboarding.skipAll}
+        onDismissStep={onboarding.dismissStep}
+      />
 
       <Sidebar
         isOpen={sidebarOpen}

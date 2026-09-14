@@ -121,6 +121,8 @@ export function NavRail({
                 type="button"
                 className="rail-item is-action"
                 onClick={onConsult}
+                /* First-run walkthrough anchor — see features/onboarding. */
+                data-coach="consult.start"
                 data-label={CONSULT_ACTION.label}
                 aria-label={CONSULT_ACTION.label}
             >

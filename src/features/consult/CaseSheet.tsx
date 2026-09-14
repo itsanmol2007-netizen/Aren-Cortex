@@ -1053,6 +1053,8 @@ export function ClinicalCommandBar({
 
                     <input
                         ref={inputRef}
+                        /* First-run walkthrough anchor — see features/onboarding. */
+                        data-coach="case.search"
                         value={query}
                         disabled={disabled}
                         onChange={(e) => setQuery(e.target.value)}

@@ -1,0 +1,245 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   THE FIRST-RUN WALKTHROUGH
+
+   See OnboardingLayer.tsx for why there is no scrim here. The short version:
+   nothing dims, nothing is blocked, and the workspace stays fully usable
+   while a hint is on screen — so the layer is `pointer-events: none` all the
+   way down, and only the card takes clicks back.
+
+   Everything below is in the app's own tokens (`--cs-*`). A walkthrough
+   painted in colours the product does not otherwise use would look like
+   somebody else's component sitting on top of Cortex, which is exactly the
+   bolted-on feeling this is trying to avoid.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.ob-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    pointer-events: none;
+}
+
+/* ── The ring ──────────────────────────────────────────────────────────────
+   Welded to the target's real rect, so it tracks scroll and resize rather
+   than floating near where the element used to be. The pulse is deliberately
+   shallow — a ring that throbs hard reads as an error state, and this is an
+   invitation. */
+.ob-ring {
+    position: fixed;
+    border: 2px solid var(--cs-blue);
+    border-radius: 12px;
+    box-shadow:
+        0 0 0 4px rgba(18, 104, 232, 0.14),
+        0 0 22px rgba(18, 104, 232, 0.28);
+    animation: ob-breathe 2.1s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes ob-breathe {
+    0%, 100% {
+        box-shadow:
+            0 0 0 4px rgba(18, 104, 232, 0.14),
+            0 0 22px rgba(18, 104, 232, 0.28);
+    }
+    50% {
+        box-shadow:
+            0 0 0 7px rgba(18, 104, 232, 0.08),
+            0 0 30px rgba(18, 104, 232, 0.20);
+    }
+}
+
+/* ── The connector ─────────────────────────────────────────────────────────
+   The thing that makes this "pointing at" rather than "floating near" —
+   Anmol's own requirement: "with actual pointing in ui to those buttons and
+   all." A curve, not a straight rule: a straight line between two rounded
+   shapes reads as a technical diagram. */
+.ob-connector {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.ob-connector path {
+    fill: none;
+    stroke: var(--cs-blue);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-dasharray: 4 4;
+    opacity: 0.55;
+}
+
+/* ── The card ──────────────────────────────────────────────────────────────
+   The only thing in the layer that takes a click. */
+/* Position only — see the component's note on why motion lives on a child. */
+.ob-card-anchor {
+    position: fixed;
+    pointer-events: auto;
+}
+
+.ob-card {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 14px;
+    background: var(--cs-card, #fff);
+    padding: 13px 14px 12px;
+    box-shadow: 0 16px 40px rgba(16, 28, 46, 0.18);
+}
+
+.ob-card-x {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease;
+}
+
+.ob-card-x:hover {
+    background: var(--cs-page);
+    color: var(--cs-ink);
+}
+
+.ob-card-title {
+    display: block;
+    padding-right: 22px;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.ob-card-body {
+    margin: 5px 0 11px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.ob-card-go {
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: var(--cs-blue);
+    padding: 6px 15px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: filter 0.14s ease;
+}
+
+.ob-card-go:hover { filter: brightness(1.07); }
+
+/* ── The welcome ───────────────────────────────────────────────────────────
+   The one moment that DOES sit over the app — a first screen with nothing
+   behind it worth clicking yet. Even here the backdrop is a light wash
+   rather than the usual heavy dim: this is a greeting, not a warning. */
+.ob-welcome-wrap {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(16, 28, 46, 0.34);
+    backdrop-filter: blur(3px);
+}
+
+.ob-welcome {
+    width: min(430px, 100%);
+    border: 1px solid var(--cs-line);
+    border-radius: 18px;
+    background: var(--cs-card, #fff);
+    padding: 26px 26px 20px;
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(16, 28, 46, 0.26);
+}
+
+.ob-welcome-mark {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    margin: 0 auto 14px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #f7f2ff 0%, #ede2fe 100%);
+    color: #6d28d9;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.ob-welcome-title {
+    display: block;
+    color: var(--cs-ink);
+    font-size: 19px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+}
+
+.ob-welcome-body {
+    margin: 9px auto 0;
+    max-width: 34ch;
+    color: var(--cs-muted);
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.6;
+}
+
+.ob-welcome-hint {
+    margin: 12px 0 0;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Equal weight, on purpose — see WelcomeCard's own note. */
+.ob-welcome-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.ob-welcome-skip,
+.ob-welcome-go {
+    border-radius: 999px;
+    padding: 9px 20px;
+    font-size: 13px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: filter 0.14s ease, background 0.14s ease;
+}
+
+.ob-welcome-skip {
+    border: 1px solid var(--cs-line-strong);
+    background: #fff;
+    color: var(--cs-muted);
+}
+
+.ob-welcome-skip:hover { background: var(--cs-page); }
+
+.ob-welcome-go {
+    border: 0;
+    background: var(--cs-blue);
+    color: #fff;
+}
+
+.ob-welcome-go:hover { filter: brightness(1.07); }
+
+/* The ring's breathing is the one thing here that never stops on its own,
+   so it is the one thing that has to stop for a doctor who asked for less
+   motion. The card and connector's entrances are handled in the component,
+   off the same `useReducedMotion` the rest of the app already uses. */
+@media (prefers-reduced-motion: reduce) {
+    .ob-ring { animation: none; }
+}
