@@ -405,3 +405,32 @@ export async function savePrescriptionConfig(
         );
     if (error) throw new Error(`savePrescriptionConfig: ${error.message}`);
 }
+
+// ============================================================
+// FOLLOW-UP REMINDERS — off by default, a clinic's own choice
+// ============================================================
+//
+// Anmol, 2026-09-14: "keep it disabled by default. It could be enabled into
+// clinic setting page." `hospitals.follow_up_reminders_enabled` (migration
+// 20260914_follow_up_reminders_opt_in.sql) is the single flag
+// `follow-up-cron` checks before it will ever send a single reminder — see
+// that function's own "OFF BY DEFAULT" note. Nothing here sends a message;
+// this is only the switch a clinic flips to let the daily cron consider it.
+
+export async function fetchFollowUpRemindersEnabled(hospitalId: string): Promise<boolean> {
+    const { data, error } = await supabase
+        .from("hospitals")
+        .select("follow_up_reminders_enabled")
+        .eq("id", hospitalId)
+        .maybeSingle();
+    if (error) throw new Error(`fetchFollowUpRemindersEnabled: ${error.message}`);
+    return !!(data as { follow_up_reminders_enabled?: boolean } | null)?.follow_up_reminders_enabled;
+}
+
+export async function updateFollowUpRemindersEnabled(hospitalId: string, enabled: boolean): Promise<void> {
+    const { error } = await supabase
+        .from("hospitals")
+        .update({ follow_up_reminders_enabled: enabled })
+        .eq("id", hospitalId);
+    if (error) throw new Error(`updateFollowUpRemindersEnabled: ${error.message}`);
+}

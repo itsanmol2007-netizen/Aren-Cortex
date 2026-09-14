@@ -43,7 +43,7 @@ import {
     Activity, AlertTriangle, ArrowRight, Check, ChevronRight,
     ExternalLink, FileText, HelpCircle, Info, Keyboard, Laptop, Loader2, Lock,
     LogOut, Mail, MonitorSmartphone, Receipt, Search, Settings2, Shield,
-    ShieldCheck, Smartphone, Stethoscope, Tablet, Trash2, User, Users, X, CloudOff,
+    ShieldCheck, Smartphone, Sparkles, Stethoscope, Tablet, Trash2, User, Users, X, CloudOff,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useAuth } from "../auth/AuthProvider";
@@ -129,6 +129,10 @@ interface SettingsPageProps {
     /** Fired after the specialty write so the caller updates its cached
      *  hospital row without a refetch. */
     onSpecialtyChanged: (specialtyProfileId: string) => void;
+    /** "Replay the walkthrough" — absent (row hidden) for anyone the
+     *  walkthrough doesn't apply to, same gate App.tsx applies to the
+     *  walkthrough itself (doctors, `identity.isReal` only). */
+    onReplayWalkthrough?: () => void;
 }
 
 // ── Shared shapes ───────────────────────────────────────────────────────────
@@ -962,7 +966,7 @@ function AccountModal({
 
 export function SettingsPage({
     hospitalId, doctorId, hospitalProfile, doctorProfile,
-    doctorName, onNavigate, onSpecialtyChanged,
+    doctorName, onNavigate, onSpecialtyChanged, onReplayWalkthrough,
 }: SettingsPageProps) {
     const logout = useLogout();
     const auth = useAuth();
@@ -1634,7 +1638,34 @@ export function SettingsPage({
                                 </span>
                                 <ChevronRight size={16} className="flex-none text-[var(--cs-faint)]" />
                             </button>
-                        </SettingsCard>
+
+                        {/* Anmol: "some way to actually go to walkthrough again."
+                            Same row shape as Keyboard shortcuts right above it —
+                            this is that shortcut's sibling, not a new card, since
+                            the point was "a couple of good things", not another
+                            surface. Reruns the exact first-sign-in flow (welcome,
+                            then the same hints in the same order) rather than a
+                            separate "replay mode" — a doctor who asks to see it
+                            again should see the same thing a new doctor sees. */}
+                        {onReplayWalkthrough && (
+                            <button
+                                type="button"
+                                onClick={onReplayWalkthrough}
+                                className="mt-[8px] flex items-center gap-[11px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[11px] text-left transition-colors hover:border-[var(--cs-line-strong)] hover:bg-[var(--cs-page)]"
+                            >
+                                <span className="grid h-[32px] w-[32px] flex-none place-items-center rounded-[9px] bg-[var(--cs-page)] text-[var(--cs-blue)]">
+                                    <Sparkles size={16} />
+                                </span>
+                                <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                                    <span className="text-[13.5px] font-semibold text-[var(--cs-ink)]">Replay the walkthrough</span>
+                                    <span className="text-[12px] text-[var(--cs-faint)]">
+                                        The same pointers a brand-new sign-in sees
+                                    </span>
+                                </span>
+                                <ChevronRight size={16} className="flex-none text-[var(--cs-faint)]" />
+                            </button>
+                        )}
+                    </SettingsCard>
 
                         {/* ══ Devices ════════════════════════════════════════
                             A doctor moves between a clinic desktop, a laptop

@@ -143,6 +143,9 @@ export function NavRail({
                                 type="button"
                                 className={`rail-item tone-${d.tone}${d.utility ? " is-utility" : ""}${activePage === d.page ? " is-active" : ""}`}
                                 onClick={() => onNavigate(d.page)}
+                                /* First-run walkthrough anchor, Patients only —
+                                   see features/onboarding. */
+                                data-coach={d.page === "patients" ? "sidebar.patients" : undefined}
                                 data-label={d.label}
                                 aria-label={d.label}
                                 aria-current={activePage === d.page ? "page" : undefined}

@@ -1980,6 +1980,10 @@ function App() {
           onSpecialtyChanged={(id) =>
             setHospitalProfile((prev) => (prev ? { ...prev, specialty_profile: id } : prev))
           }
+          // Same gate as the walkthrough itself — see `useOnboarding`'s own
+          // call above. Absent (row hidden) for front desk/admin/anyone
+          // whose identity hasn't resolved to a real doctor yet.
+          onReplayWalkthrough={identity.isReal ? onboarding.restart : undefined}
         />
       ) : activePage === "practice" ? (
         <PracticePage

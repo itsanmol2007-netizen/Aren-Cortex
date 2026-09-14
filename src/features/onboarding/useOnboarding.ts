@@ -61,6 +61,14 @@ export interface Onboarding {
     skipAll: () => void;
     /** a hint's "Got it" */
     dismissStep: (id: string) => void;
+    /**
+     * "Replay the walkthrough" — Settings. Anmol: "some way to actually go
+     * to walkthrough again." Wipes progress back to brand-new and lets the
+     * normal welcome-then-hints flow run again from the top; there is no
+     * separate "replay mode", because a doctor who asked to see it again
+     * should see the exact same thing a new doctor sees, not a summary.
+     */
+    restart: () => void;
 }
 
 /**
@@ -116,6 +124,12 @@ export function useOnboarding(doctorId: string | null, enabled: boolean): Onboar
         persist({ ...state, seen: [...seen] });
     }, [persist, state]);
 
+    const restart = useCallback(() => {
+        liveId.current = null;
+        setActive(null);
+        persist(EMPTY_ONBOARDING);
+    }, [persist]);
+
     const showWelcome = ready && !state.welcomed && !state.skipped;
 
     // ---- find and track the live hint ------------------------------------
@@ -167,5 +181,5 @@ export function useOnboarding(doctorId: string | null, enabled: boolean): Onboar
         };
     }, [ready, showWelcome, state]);
 
-    return { ready, showWelcome, active, acceptWelcome, skipAll, dismissStep };
+    return { ready, showWelcome, active, acceptWelcome, skipAll, dismissStep, restart };
 }
