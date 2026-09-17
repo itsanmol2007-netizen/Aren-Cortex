@@ -24,6 +24,7 @@
     "check:whatsapp": "node scripts/check-whatsapp.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.1133.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@hookform/resolvers": "^5.4.0",
     "@indic-transliteration/sanscript": "^1.3.3",

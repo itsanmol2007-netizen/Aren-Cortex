@@ -91,6 +91,22 @@ export function BrowseSheet({
                             onChange={(e) => setQuery(e.target.value)}
                             aria-label={`Filter ${TITLE[kind]}`}
                         />
+                        {Boolean(query) && (
+                            <button
+                                type="button"
+                                className="cs-field-clear"
+                                onClick={() => {
+                                    setQuery("");
+                                    searchRef.current?.focus();
+                                }}
+                                onMouseDown={(e) => e.preventDefault()}
+                                aria-label="Clear filter"
+                                title="Clear filter"
+                                tabIndex={-1}
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
                     </div>
                     <button type="button" className="cs-sqbtn" onClick={onClose} aria-label="Close">
                         <X size={16} />

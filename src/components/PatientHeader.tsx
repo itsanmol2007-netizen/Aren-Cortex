@@ -173,8 +173,15 @@ export function PatientHeader({
       centerSlot={
         <div className="tb-visits-zone">
           <span className="tb-visits-label">Past visits</span>
-          {pastVisitsLoading ? (
-            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.28)", fontStyle: "italic" }}>Loading…</span>
+          {pastVisitsLoading && pastVisits.length === 0 ? (
+            <div className="tb-visits-scroll">
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="tb-visit-chip is-skeleton">
+                  <span className="tb-visit-date"><span className="tb-visit-diag-skeleton" style={{ width: 44, height: 8 }} /></span>
+                  <span className="tb-visit-diag-skeleton" style={{ width: 68, marginTop: 3 }} />
+                </div>
+              ))}
+            </div>
           ) : pastVisits.length === 0 ? (
             <span style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontStyle: "italic" }}>No past visits</span>
           ) : (
@@ -193,12 +200,14 @@ export function PatientHeader({
                   // A fuller preview than just the first 3 symptoms — the
                   // chip itself only has room for one line, but the tooltip
                   // can say what the click will actually open into.
-                  const tooltip = [
-                    visit.symptoms.slice(0, 3).join(", "),
-                    visit.findings.length > 0 ? `${visit.findings.length} finding${visit.findings.length > 1 ? "s" : ""}` : "",
-                    visit.medicines.length > 0 ? `${visit.medicines.length} medicine${visit.medicines.length > 1 ? "s" : ""}` : "",
-                    visit.exercise_names.length > 0 ? `${visit.exercise_names.length} exercise${visit.exercise_names.length > 1 ? "s" : ""}` : "",
-                  ].filter(Boolean).join(" · ") || "Visit details";
+                  const tooltip = visit.isStub
+                    ? "Loading visit details…"
+                    : [
+                        visit.symptoms.slice(0, 3).join(", "),
+                        visit.findings.length > 0 ? `${visit.findings.length} finding${visit.findings.length > 1 ? "s" : ""}` : "",
+                        visit.medicines.length > 0 ? `${visit.medicines.length} medicine${visit.medicines.length > 1 ? "s" : ""}` : "",
+                        visit.exercise_names.length > 0 ? `${visit.exercise_names.length} exercise${visit.exercise_names.length > 1 ? "s" : ""}` : "",
+                      ].filter(Boolean).join(" · ") || "Visit details";
                   return (
                     <button
                       key={visit.id}
@@ -214,12 +223,20 @@ export function PatientHeader({
                         <VisitTypeIcon visit={visit} />
                         {formatVisitDate(visit.created_at)}
                       </span>
-                      {session ? (
+                      {visit.isStub ? (
+                        <span className="tb-visit-diag-skeleton" style={{ width: 55, marginTop: 2 }} />
+                      ) : session ? (
                         <span className="tb-visit-diag">{session}</span>
+                      ) : visit.diagnoses && visit.diagnoses.length > 0 ? (
+                        <span className="tb-visit-diag">{visit.diagnoses[0]}</span>
                       ) : visit.medicines.length > 0 ? (
                         <span className="tb-visit-diag">{visit.medicines[0].name}</span>
                       ) : visit.exercise_names.length > 0 ? (
                         <span className="tb-visit-diag">{visit.exercise_names[0]}</span>
+                      ) : visit.tests && visit.tests.length > 0 ? (
+                        <span className="tb-visit-diag">{visit.tests[0]}</span>
+                      ) : visit.symptoms.length > 0 ? (
+                        <span className="tb-visit-diag">{visit.symptoms[0]}</span>
                       ) : null}
                     </button>
                   );

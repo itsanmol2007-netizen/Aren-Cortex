@@ -67,6 +67,7 @@ import {
     cacheSnapshot, isDegraded, probeHealth, readCachedSnapshot, type HealthSnapshot,
 } from "./health/model";
 import type { SidebarPage } from "../sidebar/SidebarNav";
+import { sendSupportRequest } from "../../lib/db/messaging";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
 import { AppLockCard } from "./AppLockCard";
@@ -126,6 +127,8 @@ interface SettingsPageProps {
     doctorName: string;
     /** Takes a search result to the page that owns it. */
     onNavigate: (page: SidebarPage) => void;
+    /** Takes the doctor to Overview's Team modal with AddStaffForm already open. */
+    onAddStaff?: () => void;
     /** Fired after the specialty write so the caller updates its cached
      *  hospital row without a refetch. */
     onSpecialtyChanged: (specialtyProfileId: string) => void;
@@ -442,6 +445,19 @@ function ManageSubscriptionModal({
                 message,
                 contactEmail,
             });
+            // Also notify support / send email via SES (non-fatal)
+            void sendSupportRequest({
+                topic: `Subscription: ${REQUEST_KIND_LABEL[kind] || kind}`,
+                areas: ["Subscription", "Billing"],
+                message: `Subscription request (${REQUEST_KIND_LABEL[kind] || kind}) for plan ${subscription.plan.name}:\n\n${message?.trim() || "No additional message"}`,
+                replyTo: contactEmail || "",
+                diagnostics: {
+                    hospitalId,
+                    subscriptionId: subscription.id,
+                    planCode: subscription.plan.code,
+                },
+            }).catch((err) => console.warn("[settings] subscription notify error (non-fatal):", err));
+
             toast.success("Sent. We'll come back to you on this.");
             onClose();
         } catch (e) {
@@ -759,7 +775,7 @@ function SpecialtyModal({
  * still wired to Supabase Auth for real.
  */
 function AccountModal({
-    doctorId, email, phoneHint, accountReference, onClose, onSaved, onSupport,
+    doctorId, email, phoneHint, accountReference, onClose, onSaved, onSupport, onAddStaff,
 }: {
     /** `null` when the signed-in user has no `doctors` row — rare, but then
      *  there is nowhere to store a contact address and the row says so. */
@@ -771,9 +787,11 @@ function AccountModal({
     accountReference: string;
     onClose: () => void;
     onSaved: (email: string | null) => void;
-    /** The three operations a doctor should not perform alone — see
+    /** The operations a doctor should not perform alone — see
      *  SupportRequestModal.tsx for why they are not self-service. */
     onSupport: (topic: SupportTopic) => void;
+    /** Redirect directly to Manage Team with AddStaffForm open. */
+    onAddStaff?: () => void;
 }) {
     const [mode, setMode] = useState<"menu" | "email" | "password">("menu");
     const [nextEmail, setNextEmail] = useState(email ?? "");
@@ -866,7 +884,7 @@ function AccountModal({
                                         You sign in with your phone number
                                     </span>
                                     <span className="text-[11.5px] text-[var(--cs-faint)]">
-                                        {phoneHint ? `${phoneHint} · ` : ""}changing it needs us — write to care@arenode.com
+                                        {phoneHint ? `${phoneHint} · ` : ""}changing it needs our team — request via support
                                     </span>
                                 </span>
                             </div>
@@ -881,11 +899,18 @@ function AccountModal({
                             />
                             <SettingRow
                                 icon={<Users size={16} />} label="Add a colleague"
-                                sub="We set up additional doctors on your clinic"
-                                onClick={() => onSupport({
-                                    title: "Add a doctor to this clinic",
-                                    reason: "A second doctor changes who can see which patients, so we set it up with you rather than leaving it to a form. Tell us who to add and we will get them signed in.",
-                                })}
+                                sub="Set up additional doctors and staff on your clinic"
+                                onClick={() => {
+                                    if (onAddStaff) {
+                                        onClose();
+                                        onAddStaff();
+                                    } else {
+                                        onSupport({
+                                            title: "Add a doctor to this clinic",
+                                            reason: "A second doctor changes who can see which patients, so we set it up with you rather than leaving it to a form. Tell us who to add and we will get them signed in.",
+                                        });
+                                    }
+                                }}
                             />
                             <SettingRow
                                 icon={<Trash2 size={16} />} label="Close this account"
@@ -966,7 +991,7 @@ function AccountModal({
 
 export function SettingsPage({
     hospitalId, doctorId, hospitalProfile, doctorProfile,
-    doctorName, onNavigate, onSpecialtyChanged, onReplayWalkthrough,
+    doctorName, onNavigate, onAddStaff, onSpecialtyChanged, onReplayWalkthrough,
 }: SettingsPageProps) {
     const logout = useLogout();
     const auth = useAuth();
@@ -1940,6 +1965,7 @@ export function SettingsPage({
                     onClose={() => setAccountOpen(false)}
                     onSaved={setEmailOverride}
                     onSupport={(topic) => { setAccountOpen(false); setSupportTopic(topic); }}
+                    onAddStaff={onAddStaff}
                 />
             )}
             {manageSubOpen && subscription && (
@@ -1966,6 +1992,7 @@ export function SettingsPage({
                 <SupportRequestModal
                     topic={supportTopic}
                     accountReference={hospitalId.slice(0, 8)}
+                    contactEmail={contactEmail}
                     onClose={() => setSupportTopic(null)}
                 />
             )}

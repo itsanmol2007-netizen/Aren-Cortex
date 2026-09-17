@@ -292,6 +292,19 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                                         onChange={(e) => compSearch.setQuery(e.target.value)}
                                         aria-label="Search compositions"
                                     />
+                                    {Boolean(compSearch.query) && (
+                                        <button
+                                            type="button"
+                                            className="cs-field-clear"
+                                            onClick={() => compSearch.setQuery("")}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            aria-label="Clear salt search"
+                                            title="Clear search"
+                                            tabIndex={-1}
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    )}
                                 </div>
                                 {compSearch.isSearching && (
                                     <div className="cs-newmed-comp-hits">

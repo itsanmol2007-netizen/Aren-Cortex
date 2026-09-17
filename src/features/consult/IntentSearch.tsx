@@ -147,6 +147,22 @@ export function IntentSearchField({
                     }}
                     aria-label={placeholder}
                 />
+                {Boolean(state.query) && !disabled && (
+                    <button
+                        type="button"
+                        className="cs-field-clear"
+                        onClick={() => {
+                            state.setQuery("");
+                            inputRef?.current?.focus();
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        aria-label="Clear search"
+                        title="Clear search"
+                        tabIndex={-1}
+                    >
+                        <X size={14} />
+                    </button>
+                )}
             </div>
             {trailing}
         </div>

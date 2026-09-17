@@ -430,7 +430,7 @@ export function ExercisePlanCard({
                                `.cs-list > .cs-cascade` rule in consult.css,
                                which stands this group down from that so the
                                two opacities cannot multiply. */
-                            <div className="cs-ex-group cs-cascade" {...cascade}>
+                            <div className="cs-ex-group cs-cascade" {...cascade.binding}>
                                 <p className="cs-ex-grouphead">
                                     {plan.length > 0 ? "Also suggested" : "Suggested for this chart"}
                                 </p>

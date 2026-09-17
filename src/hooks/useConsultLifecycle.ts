@@ -531,8 +531,11 @@ export function useConsultLifecycle({
       sort_order: i,
     }));
 
+    const importedTests = visit.tests ?? [];
+    const importedDiagnoses = visit.diagnoses ?? [];
+
     chart.replaceChart(validSymptoms, validFindings);
-    plan.loadRepeatRx(importedMeds);
+    plan.loadRepeatRx(importedMeds, importedTests, importedDiagnoses);
 
     const dateLabel = new Date(visit.created_at).toLocaleDateString("en-IN", {
       day: "numeric", month: "short", year: "numeric",

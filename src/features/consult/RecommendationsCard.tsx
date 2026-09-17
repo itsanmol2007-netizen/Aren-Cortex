@@ -147,18 +147,25 @@ export function RecommendationsCard({
     }, [intents]);
 
     /**
-     * Pinned first, then the engine's order.
+     * Pinned first, then accepted/prescribed items, then the engine's ranked order.
      *
-     * A VIEW transform and nothing more — `intent.finalScore` is untouched, so
-     * every bar still draws what the engine actually said. A pin moves a row up
-     * the page; it does not move it up the ranking.
+     * Ensures selected or repeated medicines are always prominently surfaced on top.
      */
     const ordered = useMemo(() => {
         const pins: PersonalizedIntent[] = [];
+        const accepted: PersonalizedIntent[] = [];
         const rest: PersonalizedIntent[] = [];
-        for (const i of intents) (isPinned(i.intentId) ? pins : rest).push(i);
-        return [...pins, ...rest];
-    }, [intents, isPinned]);
+        for (const i of intents) {
+            if (isPinned(i.intentId)) {
+                pins.push(i);
+            } else if (acceptedIntentIds.has(i.intentId)) {
+                accepted.push(i);
+            } else {
+                rest.push(i);
+            }
+        }
+        return [...pins, ...accepted, ...rest];
+    }, [intents, isPinned, acceptedIntentIds]);
 
     // The whole ranked list, always. This card is bounded by the output strip
     // and `.cs-list` scrolls inside it, so there is nothing to expand INTO —
@@ -525,7 +532,7 @@ export function RecommendationsCard({
                 className="cs-list"
                 ref={listRef}
                 layoutScroll
-                {...(isSearching ? {} : cascade)}
+                {...(isSearching ? {} : cascade.binding)}
             >
                 {body()}
             </motion.div>

@@ -107,9 +107,12 @@ function recordedMeasurements(vitals: RealVisit["vitals"]): { label: string; uni
  */
 export function visitHasContent(visit: RealVisit): boolean {
     return (
+        !!visit.isStub ||
         visit.symptoms.length > 0 ||
         visit.findings.length > 0 ||
         visit.medicines.length > 0 ||
+        (visit.diagnoses != null && visit.diagnoses.length > 0) ||
+        (visit.tests != null && visit.tests.length > 0) ||
         visit.body_sites.length > 0 ||
         visit.exercise_names.length > 0 ||
         visit.impairment_names.length > 0 ||

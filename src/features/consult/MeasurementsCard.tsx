@@ -27,7 +27,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Activity, Plus, Search } from "lucide-react";
+import { Activity, Plus, Search, X } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
 import { useRovingList } from "../../hooks/useRovingList";
 import type { Vitals } from "../../types";
@@ -452,6 +452,22 @@ function MeasurementSearch({
                     onKeyDown={onKeyDown}
                     aria-label="Search measurements to add"
                 />
+                {Boolean(query) && (
+                    <button
+                        type="button"
+                        className="cs-field-clear"
+                        onClick={() => {
+                            setQuery("");
+                            inputRef.current?.focus();
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        aria-label="Clear search"
+                        title="Clear search"
+                        tabIndex={-1}
+                    >
+                        <X size={14} />
+                    </button>
+                )}
             </div>
             <div className="cs-meas-menu-group" role="menu">
                 {matches.length === 0 ? (

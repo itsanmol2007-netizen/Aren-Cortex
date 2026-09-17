@@ -347,6 +347,26 @@
     white-space: nowrap;
 }
 
+.tb-visit-chip.is-skeleton {
+    cursor: default;
+    pointer-events: none;
+    animation: tb-chip-shimmer 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes tb-chip-shimmer {
+    0% { opacity: 0.4; }
+    100% { opacity: 0.85; }
+}
+
+.tb-visit-diag-skeleton {
+    display: inline-block;
+    height: 9px;
+    width: 58px;
+    border-radius: 4px;
+    background: rgba(168, 85, 247, 0.22);
+    animation: tb-chip-shimmer 1.4s ease-in-out infinite alternate;
+}
+
 /* ── Actions ──────────────────────────────────────────────── */
 .tb-actions {
     position: relative;

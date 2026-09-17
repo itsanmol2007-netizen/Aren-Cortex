@@ -459,22 +459,22 @@ export function PlanCard({
                                             {(m.dosage || m.frequency || m.duration || m.notes) && (
                                                 <div className="cs-line-tags">
                                                     {m.dosage && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-dose">
                                                             <Pill size={10} aria-hidden="true" /> {m.dosage}
                                                         </span>
                                                     )}
                                                     {m.frequency && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-freq">
                                                             <Clock size={10} aria-hidden="true" /> {m.frequency}
                                                         </span>
                                                     )}
                                                     {m.duration && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-dur">
                                                             <CalendarDays size={10} aria-hidden="true" /> {m.duration}
                                                         </span>
                                                     )}
                                                     {m.notes && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-notes">
                                                             <Utensils size={10} aria-hidden="true" /> {m.notes}
                                                         </span>
                                                     )}

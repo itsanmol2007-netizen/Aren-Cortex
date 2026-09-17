@@ -378,18 +378,30 @@ export function SuggestionsCard({
      * sections in turn. The type stays legible on every row, so nothing is lost
      * by flattening.
      */
-    // Every row of every section, always — the panel is bounded by the output
-    // strip and scrolls internally, so there is nothing to expand into. The
-    // per-type CAP that used to sit here existed only to keep this card short
-    // beside its neighbour; in a stacked strip that job belongs to the scroll.
     const rows = useMemo(() => {
         const out: { intent: PersonalizedIntent; section: (typeof SECTIONS)[number] }[] = [];
         for (const section of SECTIONS) {
             if (scope && section.type !== scope) continue;
             for (const intent of byType[section.type] ?? []) out.push({ intent, section });
         }
-        return out;
-    }, [byType, SECTIONS, scope]);
+
+        const pins: typeof out = [];
+        const accepted: typeof out = [];
+        const rest: typeof out = [];
+        for (const r of out) {
+            if (isPinned?.(r.intent.intentId)) {
+                pins.push(r);
+            } else if (
+                acceptedIntentIds.has(r.intent.intentId) ||
+                (isFreeTextType(r.section.type) && isTaken(r.section.type, r.intent.label))
+            ) {
+                accepted.push(r);
+            } else {
+                rest.push(r);
+            }
+        }
+        return [...pins, ...accepted, ...rest];
+    }, [byType, SECTIONS, scope, isPinned, acceptedIntentIds, selectedTests, adviceLines]);
 
     const total = useMemo(
         () => SECTIONS
@@ -819,7 +831,7 @@ export function SuggestionsCard({
                         }
                         ref={listRef}
                         layoutScroll
-                        {...cascade}
+                        {...cascade.binding}
                     >
                         {body()}
                     </motion.div>

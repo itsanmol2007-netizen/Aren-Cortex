@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import type { Observable } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 
@@ -225,6 +225,22 @@ export function PickerCard({
                         onKeyDown={onKey}
                         aria-label={placeholder}
                     />
+                    {Boolean(query) && !disabled && (
+                        <button
+                            type="button"
+                            className="cs-field-clear"
+                            onClick={() => {
+                                setQuery("");
+                                inputRef.current?.focus();
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            aria-label="Clear search"
+                            title="Clear search"
+                            tabIndex={-1}
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
                 </div>
                 <button
                     type="button"

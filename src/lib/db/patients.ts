@@ -746,49 +746,23 @@ export type RealVisit = {
      * a value that is not a string, is a real possibility. `trend.ts` is the
      * one place that reads it and it treats every value as untrusted.
      */
+    diagnoses: string[];
+    tests: string[];
     vitals: Record<string, unknown> | null;
-    /** The prescription this visit produced, if any — lets a caller open the
-     *  same ReviewModal/fetchPrescriptionRenderData pipeline Print RX and
-     *  Consult already use, instead of a second prescription renderer. */
     prescription_id: string | null;
-    /**
-     * Physio-relevant, added 2026-08-23 — same fields `buildPatientRecordRows`
-     * already fetched for the Overview table, closing the gap documented in
-     * aren-cortex-context.md §7: this loader is the ONLY source for the
-     * per-patient Visit Timeline and Compare Visits, and until now it simply
-     * never selected these columns, so a physio visit's body site, exercises
-     * and the patient's own story were write-only from this page's point of
-     * view even though the data was there. Real reads, same tables, same
-     * shaping as buildPatientRecordRows — not a second implementation.
-     */
-    /** e.g. "Right knee" — from visit_body_sites, this visit only. */
     body_sites: string[];
-    /** exercise labels prescribed this visit, from prescription_exercises. */
     exercise_names: string[];
-    /** functional-limitation labels this visit, from visit_impairments. */
     impairment_names: string[];
-    /** visit_story.duration_text, e.g. "3 weeks". Null if no story recorded. */
     story_duration: string | null;
-    /** visit_story.mechanism, the patient's own words on how it started. */
     story_mechanism: string | null;
+    advice_notes?: string | null;
+    isStub?: boolean;
 };
 
 /**
  * Cached wrapper around `fetchPatientVisitsFromNetwork` — see that function
  * for everything about what this actually fetches. Keyed by `patientId`
- * ONLY, deliberately not `excludeVisitId`: the exclusion is applied EARLY,
- * before the expensive per-visit detail queries run (symptoms, findings,
- * prescriptions), so two calls for the same patient with different
- * exclusions are not equivalent reads of the same data — they are two
- * different result sets. In practice `excludeVisitId` is the current
- * consult's own visit and stays stable for the length of one consult (see
- * the doc comment below on why it's always set before this runs), so this
- * only matters if a device goes offline, then loads the SAME patient with a
- * DIFFERENT exclusion than whatever was last cached online — worst case,
- * today's own visit briefly appears or is missing from the "past visits"
- * strip until the network returns. A real but low-severity, low-probability
- * trade-off, accepted rather than fetching every visit's full detail
- * unconditionally just to make the cache key exact.
+ * ONLY, deliberately not `excludeVisitId`.
  */
 export async function fetchPatientVisits(
     patientId: string,
@@ -803,60 +777,15 @@ export async function fetchPatientVisits(
     });
 }
 
-async function fetchPatientVisitsFromNetwork(
+/**
+ * Phase 1 fast loader: retrieves lightweight visit metadata stubs (id, created_at,
+ * status, vitals) in one single fast query so the UI can immediately display skeleton
+ * visit chips with the exact count and dates.
+ */
+export async function fetchPatientVisitStubs(
     patientId: string,
-    /**
-     * The consult in progress right now, if any. Excluded before it reaches
-     * anything downstream — the topbar's "past visits" strip and the
-     * longitudinal band both READ `pastVisits` as history to compare today
-     * against, and `resolveVisitForConsult` (`useConsultLifecycle.ts`)
-     * always creates or resumes that visit row BEFORE this loader ever
-     * runs. Without this, a patient's very FIRST visit still returns one
-     * row — their own brand-new `waiting`/`serving` visit, symptoms and
-     * findings still empty because nothing has been charted yet — so
-     * `pastVisits.length === 0` (the check both surfaces use to render
-     * nothing for a first-time patient) was never true for anyone, and the
-     * longitudinal band showed an empty "1 previous visit" strip on a
-     * patient's first-ever consult. Found 2026-08-24.
-     */
-    excludeVisitId?: string | null,
+    excludeVisitId?: string | null
 ): Promise<RealVisit[]> {
-    // Used to filter to status="completed" only. That silently dropped every
-    // visit still `serving`/`waiting` — for a patient whose most recent visit
-    // hasn't been finished yet, this page showed a flat empty
-    // timeline/trend graph while the Overview row (a different query) still
-    // showed a nonzero visit count, an unexplained mismatch that just reads
-    // as broken. Found 2026-08-23 after Anmol reported the page looking
-    // "trash" — traced to exactly this: his own test patients have the
-    // most visits stuck `serving` of anyone in the account (see
-    // aren-cortex-context.md §7's "86 stuck visits" entry). Now fetches
-    // every status except the ones `visitStatusKind` categorises "inactive"
-    // (discarded/cancelled) — reusing that shared categorisation (rule 19)
-    // rather than a second hardcoded exclusion list. Callers still derive
-    // `completedVisits` themselves for anything that must be finished data
-    // (trend graphs, frequency counts) — this just stops silently discarding
-    // the rest before it even reaches them.
-    //
-    // 2026-08-25 regression, found and fixed: the single query above ordered
-    // ALL statuses by recency and capped at `CAP`, so a patient whose most
-    // RECENT visits happen to be stuck `serving` (the same test noise this
-    // file already knows about) had those fill the entire window — real,
-    // completed visits from before the noise started existed in the table
-    // but never made it into `liveVisits` at all. Verified live: Rohan
-    // Malhotra has 34 visits, 6 completed — but the 28 most recent (by
-    // `created_at`) are all `serving`/`discarded`, so the old single-query
-    // top-20 returned zero completed rows and the Patient Record page read
-    // "no visit has been finished for this patient yet" even though 6 real
-    // ones exist. Same shape on the doctor's other test accounts (74 of 80
-    // visits non-completed on "Test", 41 of 47 on "Anmol") — not unique to
-    // Rohan. Fixed by fetching two windows and merging rather than one: the
-    // most-recent `CAP` visits of ANY status (unchanged — this is what the
-    // topbar "past visits"/measurement-carry-forward context wants, recency
-    // regardless of status) UNIONed with the most recent `CAP` visits that
-    // are actually `completed` (guaranteed present no matter how much
-    // in-progress noise sits on top of them chronologically). No data was
-    // touched — the 86 stuck `serving` rows are a separate, documented, not-
-    // yet-authorized cleanup (`cortex-open-physio.md`); this is a query fix.
     const CAP = 20;
     const [{ data: recentVisits, error: recentErr }, { data: completedVisits, error: completedErr }] =
         await Promise.all([
@@ -875,8 +804,8 @@ async function fetchPatientVisitsFromNetwork(
                 .limit(CAP),
         ]);
 
-    if (recentErr) throw new Error(`fetchPatientVisits: ${recentErr.message}`);
-    if (completedErr) throw new Error(`fetchPatientVisits (completed): ${completedErr.message}`);
+    if (recentErr) throw new Error(`fetchPatientVisitStubs: ${recentErr.message}`);
+    if (completedErr) throw new Error(`fetchPatientVisitStubs (completed): ${completedErr.message}`);
 
     const byId = new Map<string, { id: string; created_at: string; assigned_doctor_id: string; status: string; vitals: unknown }>();
     for (const v of recentVisits ?? []) byId.set(v.id, v as any);
@@ -888,144 +817,183 @@ async function fetchPatientVisitsFromNetwork(
     const liveVisits = visits
         .filter((v) => visitStatusKind(v.status) !== "inactive")
         .filter((v) => v.id !== excludeVisitId);
-    if (liveVisits.length === 0) return [];
 
+    return liveVisits.map((v) => ({
+        id: v.id,
+        created_at: v.created_at,
+        status: v.status,
+        doctor_name: null,
+        symptoms: [],
+        findings: [],
+        medicines: [],
+        diagnoses: [],
+        tests: [],
+        vitals: (v as { vitals?: Record<string, unknown> | null }).vitals ?? null,
+        prescription_id: null,
+        body_sites: [],
+        exercise_names: [],
+        impairment_names: [],
+        story_duration: null,
+        story_mechanism: null,
+        advice_notes: null,
+        isStub: true,
+    }));
+}
+
+/**
+ * Phase 2 background hydrator: takes visit stubs and resolves all deep relational tables
+ * (symptoms, findings, prescriptions, medicines, tests, body sites, exercises, impairments, story)
+ * in parallelized waves.
+ */
+export async function hydratePatientVisits(
+    liveVisits: { id: string; created_at: string; assigned_doctor_id?: string | null; status: string; vitals?: unknown }[]
+): Promise<RealVisit[]> {
+    if (liveVisits.length === 0) return [];
     const visitIds = liveVisits.map((v) => v.id);
 
     const doctorIds = [...new Set(liveVisits.map((v) => v.assigned_doctor_id).filter(Boolean))];
+
+    const safe = <T>(p: PromiseLike<T>, fallback: T): Promise<T> =>
+        Promise.resolve(p).catch(() => fallback);
+
+    // Wave 1: Parallel fetches for all visit-linked relations
+    const [
+        docsRes,
+        vsRes,
+        obsNamesByVisit,
+        vfRes,
+        rxRes,
+        doRes,
+        bsRes,
+        impRes,
+        storyRes,
+    ] = await Promise.all([
+        doctorIds.length
+            ? safe(supabase.from("doctors").select("id, name").in("id", doctorIds), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        safe(supabase.from("visit_symptoms").select("visit_id, symptom_id").in("visit_id", visitIds), { data: [] } as any),
+        safe(observationNamesByVisit(visitIds), new Map<string, string[]>()),
+        safe(supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("prescriptions").select("id, visit_id, findings_text, advice_notes").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("diagnostic_orders").select("visit_id, test_name").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("visit_body_sites").select("visit_id, region, aspect, side").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("visit_impairments").select("visit_id, label").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("visit_story").select("visit_id, duration_text, mechanism").in("visit_id", visitIds), { data: [] } as any),
+    ]);
+
     const doctorMap = new Map<string, string>();
-    if (doctorIds.length) {
-        const { data: docs } = await supabase
-            .from("doctors").select("id, name").in("id", doctorIds);
-        (docs ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
-    }
+    (docsRes.data ?? []).forEach((d: any) => doctorMap.set(d.id, d.name));
 
-    const { data: vsRows } = await supabase
-        .from("visit_symptoms")
-        .select("visit_id, symptom_id")
-        .in("visit_id", visitIds);
-
+    const vsRows = vsRes.data;
     const allSymptomIds = [...new Set((vsRows ?? []).map((r: any) => Number(r.symptom_id)))];
-    const symptomById = new Map<number, string>();
-    if (allSymptomIds.length) {
-        const { data: symps } = await supabase
-            .from("symptoms").select("id, name").in("id", allSymptomIds);
-        (symps ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
-    }
 
-    // The canonical intake record, which the v1 join above cannot represent in full.
-    const obsNamesByVisit = await observationNamesByVisit(visitIds);
-
-    const { data: vfRows } = await supabase
-        .from("visit_findings")
-        .select("visit_id, finding_id")
-        .in("visit_id", visitIds);
-
+    const vfRows = vfRes.data;
     const allFindingIds = [...new Set((vfRows ?? []).map((r: any) => Number(r.finding_id)))];
-    const findingById = new Map<number, { name: string; is_abnormal: boolean }>();
-    if (allFindingIds.length) {
-        const { data: finds } = await supabase
-            .from("findings").select("id, name, is_abnormal").in("id", allFindingIds);
-        (finds ?? []).forEach((f: any) => findingById.set(f.id, { name: f.name, is_abnormal: f.is_abnormal }));
-    }
 
-    const { data: rxRows } = await supabase
-        .from("prescriptions")
-        .select("id, visit_id")
-        .in("visit_id", visitIds);
-
-    const rxByVisit = new Map<string, string>();
-    (rxRows ?? []).forEach((r: any) => rxByVisit.set(r.visit_id, r.id));
+    const rxRows = rxRes.data;
+    const rxByVisit = new Map<string, { id: string; findings_text: string | null; advice_notes: string | null }>();
+    (rxRows ?? []).forEach((r: any) => rxByVisit.set(r.visit_id, r));
     const rxIds = (rxRows ?? []).map((r: any) => r.id);
 
-    const medsByRx = new Map<string, RealVisitMedicine[]>();
-    // Exercise labels are already text on prescription_exercises — no id
-    // lookup needed, unlike medicines (same as buildPatientRecordRows above).
-    const exByVisitId = new Map<string, string[]>();
-    if (rxIds.length) {
-        const { data: pmRows } = await supabase
-            .from("prescription_medicines")
-            .select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route")
-            .in("prescription_id", rxIds);
+    const testsByVisit = new Map<string, string[]>();
+    (doRes.data ?? []).forEach((r: any) => {
+        if (!r.test_name) return;
+        const list = testsByVisit.get(r.visit_id) ?? [];
+        if (!list.includes(r.test_name)) list.push(r.test_name);
+        testsByVisit.set(r.visit_id, list);
+    });
 
-        const allMedIds = [...new Set((pmRows ?? []).map((r: any) => Number(r.medicine_id)))];
-        const medNameById = new Map<number, string>();
-        if (allMedIds.length) {
-            const { data: meds } = await supabase
-                .from("medicines").select("id, name").in("id", allMedIds);
-            (meds ?? []).forEach((m: any) => medNameById.set(m.id, m.name));
-        }
-
-        for (const pm of (pmRows ?? [])) {
-            const list = medsByRx.get(pm.prescription_id) ?? [];
-            list.push({
-                medicine_id: Number(pm.medicine_id),
-                name: medNameById.get(Number(pm.medicine_id)) ?? "Unknown",
-                dosage_mg: pm.dosage_mg,
-                frequency: pm.frequency,
-                duration_days: pm.duration_days,
-                route: pm.route,
-            });
-            medsByRx.set(pm.prescription_id, list);
-        }
-
-        const { data: peRows } = await supabase
-            .from("prescription_exercises")
-            .select("prescription_id, label, sort_order")
-            .in("prescription_id", rxIds)
-            .order("sort_order", { ascending: true });
-        for (const pe of (peRows ?? [])) {
-            const visitId = [...rxByVisit.entries()].find(([, rxId]) => rxId === pe.prescription_id)?.[0];
-            if (!visitId) continue;
-            const list = exByVisitId.get(visitId) ?? [];
-            list.push(pe.label);
-            exByVisitId.set(visitId, list);
-        }
-    }
-
-    const { data: bsRows } = await supabase
-        .from("visit_body_sites")
-        .select("visit_id, region, aspect, side")
-        .in("visit_id", visitIds);
     const bodySitesByVisit = new Map<string, string[]>();
-    for (const r of (bsRows ?? []) as { visit_id: string; region: BodyRegion; aspect: BodyAspect; side: BodySide | null }[]) {
+    for (const r of (bsRes.data ?? []) as { visit_id: string; region: BodyRegion; aspect: BodyAspect; side: BodySide | null }[]) {
         const list = bodySitesByVisit.get(r.visit_id) ?? [];
         const label = siteLabel(r.region, r.aspect, r.side);
         if (!list.includes(label)) list.push(label);
         bodySitesByVisit.set(r.visit_id, list);
     }
 
-    const { data: impRows } = await supabase
-        .from("visit_impairments")
-        .select("visit_id, label")
-        .in("visit_id", visitIds);
     const impairmentsByVisit = new Map<string, string[]>();
-    for (const r of (impRows ?? []) as { visit_id: string; label: string }[]) {
+    for (const r of (impRes.data ?? []) as { visit_id: string; label: string }[]) {
         const list = impairmentsByVisit.get(r.visit_id) ?? [];
         list.push(r.label);
         impairmentsByVisit.set(r.visit_id, list);
     }
 
-    const { data: storyRows } = await supabase
-        .from("visit_story")
-        .select("visit_id, duration_text, mechanism")
-        .in("visit_id", visitIds);
     const storyByVisit = new Map<string, { duration: string | null; mechanism: string | null }>();
-    for (const r of (storyRows ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
+    for (const r of (storyRes.data ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
         storyByVisit.set(r.visit_id, { duration: r.duration_text, mechanism: r.mechanism });
     }
 
+    // Wave 2: Name resolution & prescription item details
+    const [sympsRes, findsRes, pmRes, peRes] = await Promise.all([
+        allSymptomIds.length
+            ? safe(supabase.from("symptoms").select("id, name").in("id", allSymptomIds), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        allFindingIds.length
+            ? safe(supabase.from("findings").select("id, name, is_abnormal").in("id", allFindingIds), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        rxIds.length
+            ? safe(supabase.from("prescription_medicines").select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route").in("prescription_id", rxIds), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        rxIds.length
+            ? safe(supabase.from("prescription_exercises").select("prescription_id, label, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+    ]);
+
+    const symptomById = new Map<number, string>();
+    (sympsRes.data ?? []).forEach((s: any) => symptomById.set(s.id, s.name));
+
+    const findingById = new Map<number, { name: string; is_abnormal: boolean }>();
+    (findsRes.data ?? []).forEach((f: any) => findingById.set(f.id, { name: f.name, is_abnormal: f.is_abnormal }));
+
+    const pmRows = pmRes.data ?? [];
+    const allMedIds = [...new Set(pmRows.map((r: any) => Number(r.medicine_id)))];
+
+    // Wave 3: Medicine name resolution
+    const medsRes = allMedIds.length
+        ? await safe(supabase.from("medicines").select("id, name").in("id", allMedIds), { data: [] } as any)
+        : { data: [] };
+    const meds = medsRes.data;
+    const medNameById = new Map<number, string>();
+    (meds ?? []).forEach((m: any) => medNameById.set(m.id, m.name));
+
+    const medsByRx = new Map<string, RealVisitMedicine[]>();
+    for (const pm of pmRows) {
+        const list = medsByRx.get(pm.prescription_id) ?? [];
+        list.push({
+            medicine_id: Number(pm.medicine_id),
+            name: medNameById.get(Number(pm.medicine_id)) ?? "Unknown",
+            dosage_mg: pm.dosage_mg,
+            frequency: pm.frequency,
+            duration_days: pm.duration_days,
+            route: pm.route,
+        });
+        medsByRx.set(pm.prescription_id, list);
+    }
+
+    const exByVisitId = new Map<string, string[]>();
+    for (const pe of (peRes.data ?? [])) {
+        const visitId = [...rxByVisit.entries()].find(([, rxData]) => rxData.id === pe.prescription_id)?.[0];
+        if (!visitId) continue;
+        const list = exByVisitId.get(visitId) ?? [];
+        list.push(pe.label);
+        exByVisitId.set(visitId, list);
+    }
+
     return liveVisits.map((v) => {
-        const rxId = rxByVisit.get(v.id);
+        const rx = rxByVisit.get(v.id);
+        const rxId = rx?.id;
         const story = storyByVisit.get(v.id);
+        const rawFindingsText = rx?.findings_text ?? null;
+        const diagnoses = rawFindingsText
+            ? rawFindingsText.split(",").map((s: string) => s.trim()).filter(Boolean)
+            : [];
+        const tests = testsByVisit.get(v.id) ?? [];
+
         return {
             id: v.id,
             created_at: v.created_at,
             status: v.status,
-            doctor_name: doctorMap.get(v.assigned_doctor_id) ?? null,
-            // Canonical first — see observationNamesByVisit. This drives Cortex's
-            // past-visit rail and Repeat Rx, so a visit registered against the
-            // full catalogue has to come back whole.
+            doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
             symptoms: obsNamesByVisit.get(v.id)?.length
                 ? obsNamesByVisit.get(v.id)!
                 : ((vsRows ?? [])
@@ -1037,6 +1005,8 @@ async function fetchPatientVisitsFromNetwork(
                 .map((r: any) => findingById.get(Number(r.finding_id)))
                 .filter(Boolean) as { name: string; is_abnormal: boolean }[],
             medicines: rxId ? (medsByRx.get(rxId) ?? []) : [],
+            diagnoses,
+            tests,
             vitals: (v as { vitals?: Record<string, unknown> | null }).vitals ?? null,
             prescription_id: rxId ?? null,
             body_sites: bodySitesByVisit.get(v.id) ?? [],
@@ -1044,8 +1014,19 @@ async function fetchPatientVisitsFromNetwork(
             impairment_names: impairmentsByVisit.get(v.id) ?? [],
             story_duration: story?.duration ?? null,
             story_mechanism: story?.mechanism ?? null,
+            advice_notes: rx?.advice_notes ?? null,
+            isStub: false,
         };
     });
+}
+
+async function fetchPatientVisitsFromNetwork(
+    patientId: string,
+    excludeVisitId?: string | null,
+): Promise<RealVisit[]> {
+    const stubs = await fetchPatientVisitStubs(patientId, excludeVisitId);
+    if (stubs.length === 0) return [];
+    return hydratePatientVisits(stubs);
 }
 
 // ── PATIENT RECORDS PAGE — TODAY'S PATIENTS ────────────────────────────────────

@@ -216,7 +216,7 @@ export interface ConsultPlan {
    *  `PlanDraft`'s own doc comment for why those aren't part of the draft. */
   restorePlan: (draft: PlanDraft) => void;
   /** Replace the prescription wholesale, for Repeat Rx. */
-  loadRepeatRx: (medicines: PrescriptionMedicine[]) => void;
+  loadRepeatRx: (medicines: PrescriptionMedicine[], tests?: string[], diagnoses?: string[]) => void;
 }
 
 export interface PendingMedicine {
@@ -1098,8 +1098,14 @@ export function useConsultPlan({
     setVisitNotes(draft.visitNotes);
   }, []);
 
-  const loadRepeatRx = useCallback((medicines: PrescriptionMedicine[]) => {
+  const loadRepeatRx = useCallback((medicines: PrescriptionMedicine[], tests?: string[], diagnoses?: string[]) => {
     setPrescription(medicines);
+    if (tests && tests.length > 0) {
+      setSelectedTests(tests);
+    }
+    if (diagnoses && diagnoses.length > 0) {
+      setDiagnoses(diagnoses);
+    }
     setSelectedMedicineId(null);
     setStagedMedicine(null);
   }, []);

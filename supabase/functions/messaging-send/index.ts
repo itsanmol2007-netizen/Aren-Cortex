@@ -3,11 +3,9 @@
    spend the credit, keep the ledger honest.
 
    The Supabase-hosted replacement for server/messaging (routes.js +
-   service.js + providers/*). `server/` needs a public host and has
-   none; this needs neither. Everything the Express version did is
-   here, minus the operational EMAIL (Zoho creds aren't on Supabase —
-   failures are logged instead; the credit refund, which is the part
-   that costs a doctor real money, is a DB RPC and fully preserved).
+   service.js + providers/*). Everything the Express version did is
+   here (failures are logged in DB; operational support emails are handled
+   via support-notify powered by Amazon SES; credit refund is a DB RPC).
 
    verify_jwt is ON. The caller is a signed-in clinic user; their token
    is verified by the platform before this runs, and `getUser()` here
@@ -599,10 +597,8 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
       .update({ status: "failed", error_detail: detail.slice(0, 500), credits_charged: 0 })
       .eq("id", messageId);
 
-    // Operational email alerts (notify / provider_error) are not ported —
-    // Zoho creds aren't on Supabase. The failure is logged; support can read
-    // whatsapp_messages.error_detail. Wire a call to `support-notify` here
-    // once that function accepts a service-role caller.
+    // Operational failure is logged in whatsapp_messages.error_detail;
+    // support can read and action, and support-notify dispatches alerts via Amazon SES.
     console.error(`[messaging-send] send failed (message ${messageId}): ${detail}`);
 
     throw new MessagingError(
