@@ -3630,20 +3630,25 @@ body.cs-locked-shell {
     flex: none;
     display: grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     border: 0;
     border-radius: 6px;
-    background: none;
-    color: var(--cs-faint);
-    font-size: 14.5px;
+    background: transparent;
+    color: #475569;
+    font-size: 14px;
     line-height: 1;
-    transition: background 0.13s ease, color 0.13s ease;
+    cursor: pointer;
+    transition: background 0.13s ease, color 0.13s ease, transform 0.08s ease;
 }
 
 .cs-x:hover {
     background: #fee2e2;
-    color: var(--cs-red);
+    color: #dc2626;
+}
+
+.cs-x:active {
+    transform: scale(0.92);
 }
 
 .cs-pill {

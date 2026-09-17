@@ -2374,6 +2374,8 @@ function App() {
                     combinationsLoading={intelligence.combinationsLoading}
                     brandPreferences={synapse.data?.brandPreferences}
                     acceptedIntentIds={acceptedIntentIdSet}
+                    prescription={prescription}
+                    onRemoveMedicine={removeMedicine}
                     chosenBrands={chosenBrands}
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}

@@ -37,6 +37,7 @@ import type { Medicine } from "../../lib/synapse/brands";
 import { brandKey } from "../../lib/synapse/brands";
 import type { CompositionBrands } from "../../lib/db/synapse";
 import type { ResolvedProduct } from "../../lib/db/medicines";
+import type { PrescriptionMedicine } from "../../types";
 import {
     GuardReason, MedicineIdentity, PinButton, RankBar, ThinkingRing, rankFillOf,
 } from "./parts";
@@ -94,6 +95,9 @@ interface Props {
      * FROM; every real caller today passes `removeAcceptedIntent`.
      */
     onRemove?: (intentId: number, type: IntentType, label: string) => void;
+    /** Prescribed medicines currently on the plan / consultation sheet */
+    prescription?: PrescriptionMedicine[];
+    onRemoveMedicine?: (id: string) => void;
     /** the doctor's pins */
     isPinned: (intentId: number) => boolean;
     onTogglePin: (intentId: number) => void;
@@ -117,6 +121,7 @@ export function RecommendationsCard({
     intents, topScore, thinkingKey, brands, brandsLoading, brandError, combinations,
     combinationsLoading, brandPreferences,
     acceptedIntentIds, chosenBrands, acknowledged, onAcknowledge, onAccept, onRemove,
+    prescription = [], onRemoveMedicine,
     isPinned, onTogglePin, onOpenBrandSheet, onExplain, ruleset, activeSignals,
     hasChart, searchRef, onOpenAddMedicine, className = "",
 }: Props) {
@@ -133,18 +138,23 @@ export function RecommendationsCard({
     /**
      * The engine's rank for each intent, 1-based, captured BEFORE pinning
      * reorders anything.
-     *
-     * The number on a row is the engine's position, not the row's position on
-     * the page. A pinned medicine that the engine ranked fourth sits at the top
-     * still wearing a 4 — renumbering it to 1 would be the interface claiming
-     * the engine said something it did not. The pink badge is what says "you
-     * put this here".
      */
     const engineRank = useMemo(() => {
         const m = new Map<number, number>();
         intents.forEach((i, idx) => m.set(i.intentId, idx + 1));
         return m;
     }, [intents]);
+
+    const isMedicinePrescribed = (intent: PersonalizedIntent) => {
+        if (acceptedIntentIds.has(intent.intentId)) return true;
+        if (!prescription || prescription.length === 0) return false;
+        const target = intent.label.trim().toLowerCase();
+        return prescription.some((p) =>
+            (intent.refTable === "compositions" && p.primary_composition_id === intent.refId) ||
+            p.name.trim().toLowerCase() === target ||
+            p.category.trim().toLowerCase() === target
+        );
+    };
 
     /**
      * Pinned first, then accepted/prescribed items, then the engine's ranked order.
@@ -158,23 +168,35 @@ export function RecommendationsCard({
         for (const i of intents) {
             if (isPinned(i.intentId)) {
                 pins.push(i);
-            } else if (acceptedIntentIds.has(i.intentId)) {
+            } else if (isMedicinePrescribed(i)) {
                 accepted.push(i);
             } else {
                 rest.push(i);
             }
         }
         return [...pins, ...accepted, ...rest];
-    }, [intents, isPinned, acceptedIntentIds]);
+    }, [intents, isPinned, acceptedIntentIds, prescription]);
 
-    // The whole ranked list, always. This card is bounded by the output strip
-    // and `.cs-list` scrolls inside it, so there is nothing to expand INTO —
-    // the rest of the list is simply below the fold of its own panel, which is
-    // where a doctor already expects more rows to be.
-    //
-    // The cap-and-expand it replaces was actively harmful in the strip layout:
-    // expanding grew the card, which stretched its row, which left dead white
-    // space in the column beside it (Anmol, 2026-08-12).
+    /**
+     * Prescribed medicines (from Repeat Rx, template, or manual additions) that
+     * do not correspond to an engine-ranked intent in `intents`.
+     * Pinned prominently at the top of the Medicine Recommendations list so the doctor
+     * always has full visibility and 1-click management of every prescribed medicine.
+     */
+    const standalonePrescribed = useMemo(() => {
+        if (!prescription || prescription.length === 0) return [];
+        return prescription.filter((p) => {
+            const pName = p.name.trim().toLowerCase();
+            const pCat = p.category.trim().toLowerCase();
+            return !intents.some((i) => {
+                const iLabel = i.label.trim().toLowerCase();
+                return (i.refTable === "compositions" && p.primary_composition_id === i.refId) ||
+                    pName === iLabel ||
+                    pCat === iLabel;
+            });
+        });
+    }, [prescription, intents]);
+
     const shown = ordered;
 
 
@@ -443,7 +465,7 @@ export function RecommendationsCard({
             );
         }
 
-        if (!hasChart) {
+        if (!hasChart && standalonePrescribed.length === 0) {
             return (
                 <div className="cs-empty">
                     <BlankMedicineArt />
@@ -453,7 +475,7 @@ export function RecommendationsCard({
             );
         }
 
-        if (ordered.length === 0) {
+        if (ordered.length === 0 && standalonePrescribed.length === 0) {
             return (
                 <div className="cs-empty">
                     <BlankMedicineArt />
@@ -463,21 +485,34 @@ export function RecommendationsCard({
             );
         }
 
-        return shown.map((intent, i) => {
+        const standaloneNodes = standalonePrescribed.map((med, i) => (
+            <PrescribedStandaloneRow
+                key={`standalone-${med.id || med.name}-${i}`}
+                medicine={med}
+                cascadeDelay={cascade.delayOf(i)}
+                onRemove={() => {
+                    if (onRemoveMedicine) onRemoveMedicine(med.id);
+                    else if (onRemove) onRemove(0, "medicine", med.name);
+                }}
+            />
+        ));
+
+        const rankedNodes = shown.map((intent, i) => {
             const combos = combosFor(intent);
             const verdict = effectiveVerdicts.get(intent.intentId)
                 ?? { status: intent.status, reasons: intent.guardReasons };
+            const isAdded = isMedicinePrescribed(intent);
             return (
                 <MedicineRow
                     key={intent.intentId}
                     intent={intent}
-                    cascadeDelay={cascade.delayOf(i)}
+                    cascadeDelay={cascade.delayOf(standalonePrescribed.length + i)}
                     verdict={verdict}
                     position={engineRank.get(intent.intentId) ?? 1}
                     fill={rankFillOf(intent, topScore)}
                     pinned={isPinned(intent.intentId)}
                     onTogglePin={() => onTogglePin(intent.intentId)}
-                    added={acceptedIntentIds.has(intent.intentId)}
+                    added={isAdded}
                     acknowledged={acknowledged.has(intent.intentId)}
                     onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
                     composition={brandsFor(intent)}
@@ -491,10 +526,18 @@ export function RecommendationsCard({
                     onOpenSheet={(rect) => onOpenBrandSheet(intent, rect)}
                     onExplain={(rect) => onExplain(intent, rect)}
                     onSearchProducts={() => { search.setQuery(intent.label); inputRef.current?.focus(); }}
-                    onRemove={onRemove && (() => onRemove(intent.intentId, intent.type, intent.label))}
+                    onRemove={() => {
+                        if (onRemove) onRemove(intent.intentId, intent.type, intent.label);
+                        else if (onRemoveMedicine) {
+                            const match = prescription?.find(p => p.primary_composition_id === intent.refId || p.name.toLowerCase() === intent.label.toLowerCase());
+                            if (match) onRemoveMedicine(match.id);
+                        }
+                    }}
                 />
             );
         });
+
+        return [...standaloneNodes, ...rankedNodes];
     };
 
     return (
@@ -507,8 +550,8 @@ export function RecommendationsCard({
                     </span>
                     Medicine Recommendations
                 </h2>
-                {hasChart && !isSearching && ordered.length > 0 && (
-                    <span className="cs-count is-quiet">{ordered.length} matched</span>
+                {hasChart && !isSearching && (ordered.length > 0 || standalonePrescribed.length > 0) && (
+                    <span className="cs-count is-quiet">{ordered.length + standalonePrescribed.length} matched</span>
                 )}
             </div>
 
@@ -537,6 +580,69 @@ export function RecommendationsCard({
                 {body()}
             </motion.div>
         </section>
+    );
+}
+
+function PrescribedStandaloneRow({
+    medicine,
+    cascadeDelay,
+    onRemove,
+}: {
+    medicine: PrescriptionMedicine;
+    cascadeDelay: number;
+    onRemove: () => void;
+}) {
+    const reduceMotion = useReducedMotion();
+    return (
+        <motion.div
+            {...cascadeRowProps(cascadeDelay, reduceMotion)}
+            className="cs-rec is-added"
+            style={{
+                border: "1px solid rgba(22, 163, 74, 0.4)",
+                background: "#f0fdf4",
+                borderLeft: "3.5px solid #16a34a",
+            }}
+        >
+            <span className="cs-glyph is-green" aria-hidden="true" style={{ background: "#dcfce7", color: "#15803d", width: 28, height: 28 }}>
+                <Pill size={14} />
+            </span>
+
+            <div className="cs-rec-main">
+                <div className="cs-rec-head" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="cs-rec-name" style={{ color: "#0f172a", fontWeight: 700, fontSize: "13.5px" }}>
+                        {medicine.name}
+                    </span>
+                    <span
+                        className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                        style={{ background: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0" }}
+                    >
+                        Prescribed
+                    </span>
+                </div>
+                <div className="cs-rec-sub" style={{ color: "#334155", display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center", marginTop: "3px" }}>
+                    {medicine.composition && <span style={{ fontWeight: 500, color: "#475569" }}>{medicine.composition}</span>}
+                    {medicine.dosage && <span className="cs-line-tag is-dose" style={{ fontSize: "11px", padding: "1px 5px" }}>{medicine.dosage}</span>}
+                    {medicine.frequency && <span className="cs-line-tag is-freq" style={{ fontSize: "11px", padding: "1px 5px" }}>{medicine.frequency}</span>}
+                    {medicine.duration && <span className="cs-line-tag is-dur" style={{ fontSize: "11px", padding: "1px 5px" }}>{medicine.duration}</span>}
+                </div>
+            </div>
+
+            <div className="cs-rec-side">
+                <button
+                    type="button"
+                    className="cs-added is-removable"
+                    aria-label={`Remove ${medicine.name} from the plan`}
+                    title="Prescribed — click to remove"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove();
+                    }}
+                >
+                    <Check size={15} className="cs-added-check" />
+                    <X size={13} className="cs-added-x" />
+                </button>
+            </div>
+        </motion.div>
     );
 }
 

@@ -115,6 +115,12 @@ renumber, append.
     reads a doctor's identity, admin tooling included — see
     `ADMIN-PANEL-INTEGRATION.md` §4/§9.
 
+25. **Use Tailwind CSS for all new design work.** Do not write custom CSS in
+    `consult.css` or other stylesheet files unless absolutely necessary for
+    modifying existing global components (e.g. `.cs-` prefixed elements). Use
+    standard Tailwind utility classes inline to build new UIs to prevent CSS
+    bloat and ensure consistency.
+
 **What's NOT covered here:** *why* each rule exists in narrative form beyond
 the one-liner above (search the git history / `cortex-open-*.md` for the
 session that established it), the engine's own internal doctrine (→

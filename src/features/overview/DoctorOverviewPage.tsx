@@ -212,6 +212,89 @@ function HourBarsSkeleton() {
 
 type ActivityKind = "visits" | "prescriptions" | "new_patients" | "recent_patients";
 
+function MockDashboard({ onStartConsult }: { onStartConsult: () => void }) {
+    return (
+        <div className="relative">
+            {/* The overlay CTA */}
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-[12px] bg-white/40 backdrop-blur-[3px]">
+                <div className="flex max-w-[340px] flex-col items-center gap-[12px] rounded-[16px] border border-[var(--cs-line-strong)] bg-white px-[28px] py-[28px] text-center shadow-[0_16px_32px_rgba(0,0,0,0.08)]">
+                    <div className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[var(--cs-blue-soft)] text-[var(--cs-blue)]">
+                        <Activity size={22} />
+                    </div>
+                    <div className="flex flex-col gap-[4px]">
+                        <h3 className="text-[16px] font-bold text-[var(--cs-ink)]">Your dashboard awaits</h3>
+                        <p className="text-[12.5px] leading-relaxed text-[var(--cs-faint)]">
+                            Complete a few consultations to unlock real-time insights into your patient flow and practice growth.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onStartConsult}
+                        className="mt-[6px] cursor-pointer rounded-full bg-[var(--cs-blue)] px-[20px] py-[10px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(18,104,232,0.25)] transition-shadow hover:shadow-[0_6px_16px_rgba(18,104,232,0.35)]"
+                    >
+                        Start your first consult
+                    </button>
+                </div>
+            </div>
+
+            {/* The blurred fake dashboard underneath */}
+            <div className="flex flex-col gap-[12px] opacity-[0.55] grayscale-[0.2] transition-opacity select-none">
+                <div className="grid grid-cols-4 gap-[10px] max-[1000px]:grid-cols-2">
+                    {/* 4 fake KPI tiles */}
+                    <div className="flex min-w-0 flex-col gap-[2px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[14px] py-[11px] shadow-[var(--cs-shadow)]">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">Patients seen</span>
+                        <span className="text-[23px] font-bold leading-[1.12] text-[var(--cs-ink)] tabular-nums">42</span>
+                        <span className="mt-[4px] text-[11px] font-medium text-emerald-600">↑ 12% vs previous</span>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-[2px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[14px] py-[11px] shadow-[var(--cs-shadow)]">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">New patients</span>
+                        <span className="text-[23px] font-bold leading-[1.12] text-[var(--cs-ink)] tabular-nums">18</span>
+                        <span className="mt-[4px] text-[11px] font-medium text-emerald-600">↑ 5% vs previous</span>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-[2px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[14px] py-[11px] shadow-[var(--cs-shadow)]">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">Prescriptions</span>
+                        <span className="text-[23px] font-bold leading-[1.12] text-[var(--cs-ink)] tabular-nums">38</span>
+                        <span className="mt-[4px] text-[11px] font-medium text-[var(--cs-faint)]">− Same as previous</span>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-[2px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] px-[14px] py-[11px] shadow-[var(--cs-shadow)]">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">Collected</span>
+                        <span className="text-[23px] font-bold leading-[1.12] text-[var(--cs-violet)] tabular-nums">₹ 14,500</span>
+                        <span className="mt-[4px] text-[11px] font-medium text-emerald-600">↑ 22% vs previous</span>
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)] items-stretch gap-[12px] max-[1180px]:grid-cols-1">
+                    <Card tone="blue" icon={<TrendingUp size={14} />} title="Your patient flow" subtitle="Last 7 days">
+                        <div className="relative mt-[8px] flex h-[140px] items-end justify-between gap-[4px] px-[8px]">
+                            {[30, 45, 25, 60, 80, 50, 70].map((h, i) => (
+                                <div key={i} className="w-full rounded-t-[4px] bg-[var(--cs-blue)] opacity-20" style={{ height: `${h}%` }} />
+                            ))}
+                        </div>
+                    </Card>
+                    <Card tone="teal" icon={<PieChart size={14} />} title="Who you saw" subtitle="Last 7 days">
+                         <div className="flex h-[140px] flex-1 items-center justify-center py-[4px]">
+                             <div className="h-[110px] w-[110px] rounded-full border-[18px] border-[var(--cs-teal-soft)] border-t-[var(--cs-teal)] opacity-60" />
+                         </div>
+                    </Card>
+                    <Card tone="blue" icon={<Users size={14} />} title="Recent patients" subtitle="Last 30 days">
+                        <div className="flex flex-col gap-[6px]">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="flex items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[7px]">
+                                    <div className="h-[20px] w-[20px] flex-none rounded-full bg-[var(--cs-blue-soft)]" />
+                                    <div className="flex flex-col gap-[4px]">
+                                        <div className="h-[10px] w-[60px] rounded-[2px] bg-[#e4e7ee]" />
+                                        <div className="h-[8px] w-[40px] rounded-[2px] bg-[#eef0f5]" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function DoctorOverviewPage({
     onStartConsult, onNavigate, onViewPatient,
     queueWaiting, queueLoading, onOpenQueue, onStartFromQueueRow,
@@ -691,22 +774,7 @@ export function DoctorOverviewPage({
                 />
 
                 {neverSeenAnyone ? (
-                    // A brand-new doctor. One bold fact, one short next
-                    // action, and deliberately no skeleton or empty chart
-                    // frames above it — rendering a loading shape for data
-                    // that will resolve to nothing is the bug that was just
-                    // fixed in VisitDetailModal (empty-states.md).
-                    <Card
-                        tone="blue"
-                        icon={<Stethoscope size={14} />}
-                        title="Your practice"
-                        subtitle="Nothing to show yet"
-                    >
-                        <EmptyBlock
-                            fact="You haven't seen a patient yet"
-                            next="Start a consult and your numbers begin building here."
-                        />
-                    </Card>
+                    <MockDashboard onStartConsult={onStartConsult} />
                 ) : (
                     <>
                         {/* ── KPI tiles ────────────────────────────────────
