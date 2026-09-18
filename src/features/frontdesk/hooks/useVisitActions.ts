@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
     createPatient,
     findPatientByPhone,
+    findMatchingPatient,
     createVisit,
     markVisitServing,
     updateVisitStatus,
@@ -79,7 +80,7 @@ async function replayCreateVisit(raw: unknown): Promise<void> {
     const payload = raw as QueuedCreateVisitPayload;
     let patient = payload.existingPatient;
     if (!patient) {
-        const byPhone = await findPatientByPhone(payload.phone.trim());
+        const byPhone = await findMatchingPatient(payload.phone.trim(), payload.name.trim(), payload.gender);
         patient =
             byPhone ??
             (await createPatient(
@@ -341,7 +342,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
             try {
                 let patient = opts.existingPatient;
                 if (!patient) {
-                    const byPhone = await findPatientByPhone(opts.phone.trim());
+                    const byPhone = await findMatchingPatient(opts.phone.trim(), opts.name.trim(), opts.gender);
                     patient =
                         byPhone ??
                         (await createPatient(

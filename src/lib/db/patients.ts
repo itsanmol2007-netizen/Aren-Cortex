@@ -35,6 +35,53 @@ export async function searchPatients(query: string): Promise<DBPatient[]> {
     return data ?? [];
 }
 
+
+function editDistance(a: string, b: string): number {
+    if (!a) return b.length;
+    if (!b) return a.length;
+    const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+        let prev = row[0];
+        row[0] = i;
+        for (let j = 1; j <= b.length; j++) {
+            const tmp = row[j];
+            row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+            prev = tmp;
+        }
+    }
+    return row[b.length];
+}
+
+export async function findMatchingPatient(phone: string, name: string, gender: string): Promise<DBPatient | null> {
+    const { data, error } = await supabase
+        .from("patients")
+        .select("id, name, age, gender, phone, date_of_birth")
+        .eq("phone", phone);
+    if (error) throw new Error(`findMatchingPatient: ${error.message}`);
+    if (!data || data.length === 0) return null;
+
+    const n = name.trim().toLowerCase();
+    
+    // First pass: exact match (ignoring case)
+    for (const p of data) {
+        if (p.gender !== gender) continue;
+        const pn = (p.name || "").trim().toLowerCase();
+        if (n === pn) return p;
+    }
+    
+    // Second pass: fuzzy match
+    // Threshold: allow 1 error per 4 chars (min 1). e.g. "Rahul" -> length 5 -> threshold 1.
+    for (const p of data) {
+        if (p.gender !== gender) continue;
+        const pn = (p.name || "").trim().toLowerCase();
+        const dist = editDistance(n, pn);
+        if (dist <= Math.max(1, Math.floor(n.length / 4))) {
+            return p;
+        }
+    }
+    return null;
+}
+
 export async function findPatientByPhone(phone: string): Promise<DBPatient | null> {
     const { data, error } = await supabase
         .from("patients")
