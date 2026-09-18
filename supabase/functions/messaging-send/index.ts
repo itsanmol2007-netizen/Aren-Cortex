@@ -126,10 +126,17 @@ async function resolveCaller(db: SupabaseClient, jwt: string) {
   };
 }
 
-// ── Phone + name helpers (ported verbatim from service.js) ────────────────
+// ── Phone + name helpers ────────────────────────────────────────────────
+// `doctors.name` is now canonically "Dr. <name>", exactly once, enforced at
+// the data layer (migration 20260919_normalize_doctor_name_prefix.sql —
+// backfilled every existing row and added a trigger that normalizes every
+// future write). This used to strip-and-reapply "Dr. " itself, which is
+// what caused the real, live bug Anmol reported — "sometimes there is two
+// DR, sometimes there is no" — every surface's OWN idea of the honorific
+// disagreeing with what was actually stored. Trust the stored value.
 function formatDoctorName(raw: string | null): string {
-  const bare = String(raw ?? "").trim().replace(/^d[r]\.?\s+/i, "").trim();
-  return bare ? `Dr. ${bare}` : "your doctor";
+  const bare = String(raw ?? "").trim();
+  return bare || "your doctor";
 }
 
 /** The Devanagari name the doctor/admin confirmed once (Clinic page,

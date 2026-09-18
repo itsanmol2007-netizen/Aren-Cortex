@@ -42,7 +42,6 @@ import {
     Sparkles, TrendingUp, Wallet, X, XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { doctorName as formatDoctorName } from "../../lib/format";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { PrescriptionPreviewModal } from "../../components/PrescriptionPreviewModal";
 import {
@@ -1064,7 +1063,7 @@ function ConversationPanel({
                             // activity-feed summary elsewhere on this page.
                             if (out && m.purpose === "prescription") {
                                 const rawDoc = (m.doctor_id && doctorNameById.get(m.doctor_id)) || "";
-                                const doctorName = formatDoctorName(rawDoc) || "your doctor";
+                                const doctorName = rawDoc || "your doctor";
                                 const clinicName = hospital?.name || "your clinic";
                                 return (
                                     <div key={m.id} className="flex max-w-[76%] flex-none flex-col gap-[3px] self-end">
