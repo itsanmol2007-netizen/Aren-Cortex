@@ -49,13 +49,14 @@ import { supabase } from "../supabase";
 import { readCachedIdentity } from "../auth";
 import { localDB, type MirrorRow } from "./db";
 
-export type MirrorKind = "patients" | "visits" | "prescriptions";
+export type MirrorKind = "patients" | "visits" | "prescriptions" | "admin";
 
 function tableFor(kind: MirrorKind) {
     switch (kind) {
         case "patients": return localDB.patientsMirror;
         case "visits": return localDB.visitsMirror;
         case "prescriptions": return localDB.prescriptionsMirror;
+        case "admin": return localDB.adminMirror;
     }
 }
 

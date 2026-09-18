@@ -29,6 +29,7 @@ import { PlanPage } from "./features/admin/pages/PlanPage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { WelcomePage } from "./features/auth/WelcomePage";
 import { AuthLayout } from "./features/auth/AuthLayout";
+import { PublicPrescriptionPage } from "./features/publicRx/PublicPrescriptionPage";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -73,6 +74,13 @@ function RoutedApp() {
               <Route index element={<WelcomePage />} />
               <Route path="signin" element={<LoginPage />} />
             </Route>
+            {/* The public, patient-facing prescription page — the WhatsApp
+                "View Your Prescription" link. No auth: the token in the URL
+                IS the credential (see prescription-preview edge function).
+                Deliberately outside RequireAuth, same as /login above, so an
+                anonymous patient's phone never gets bounced toward a login
+                screen. */}
+            <Route path="/prescriptions/:token" element={<PublicPrescriptionPage />} />
             {/* Everything else — every workspace, every future route — sits
                 behind the auth gate. No verified session + active user +
                 active hospital ⇒ nothing renders but the login screen. */}

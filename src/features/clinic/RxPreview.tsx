@@ -19,6 +19,7 @@ import PrescriptionDocument from "../prescription/PrescriptionDocument";
 import type { PrintFormat } from "../prescription/usePrintFormat";
 import type { DBDoctor, DBHospital } from "../../lib/db";
 import type { PrescriptionConfig } from "../../lib/db/clinic";
+import type { RxLanguage } from "../../lib/i18n/prescriptionLabels";
 import {
     SAMPLE_FINDINGS, SAMPLE_FOLLOW_UP_DAYS, SAMPLE_MEDICINES, SAMPLE_PATIENT,
     SAMPLE_REF, SAMPLE_SYMPTOMS, SAMPLE_TESTS,
@@ -37,12 +38,18 @@ const PAGE_MM: Record<PrintFormat, { w: number; h: number }> = {
 };
 
 export function RxPreview({
-    hospital, doctor, config, format = "a5", maxHeight, frameClass = "",
+    hospital, doctor, config, format = "a5", language = "en", maxHeight, frameClass = "",
 }: {
     hospital: DBHospital | null;
     doctor: DBDoctor | null;
     config: PrescriptionConfig;
     format?: PrintFormat;
+    /** Which of the 3 approved prescription languages to render the
+     *  specimen in — preview-only, same as `format` (see the editor's own
+     *  note: this never changes what a real consult prints, only what this
+     *  sheet demonstrates). Defaults to English, `PrescriptionDocument`'s
+     *  own default. */
+    language?: RxLanguage;
     /**
      * A ceiling on the rendered sheet, in px.
      *
@@ -116,6 +123,7 @@ export function RxPreview({
                         hospital={hospital}
                         format={format}
                         config={config}
+                        language={language}
                     />
                 </div>
             )}

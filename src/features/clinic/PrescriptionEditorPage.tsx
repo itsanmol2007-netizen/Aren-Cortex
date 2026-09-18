@@ -38,6 +38,7 @@ import { BackButton } from "../../components/BackButton";
 import { RxPreview } from "./RxPreview";
 import { Heading, INPUT_CLASS, RemoveButton, RowText, TONE } from "./ui";
 import type { PrintFormat } from "../prescription/usePrintFormat";
+import { RX_LANGUAGE_OPTIONS, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
 import {
     DEFAULT_PRESCRIPTION_CONFIG, fetchPrescriptionConfig, savePrescriptionConfig,
     type PrescriptionConfig,
@@ -179,6 +180,13 @@ export function PrescriptionEditorPage({
      *  doctor's REAL print choice, and looking at how a prescription would sit
      *  on A4 must not quietly change what the next consult prints. */
     const [previewFormat, setPreviewFormat] = useState<PrintFormat>("a5");
+    /** Preview-only, same reasoning as `previewFormat` — there is no
+     *  clinic-wide "default language" to configure here; the real choice is
+     *  made per send, on ReviewModal's own picker. This just lets a doctor
+     *  check the Hindi/Hinglish layout (spacing, the Devanagari font, the
+     *  M/A/E/N legend) against their own real letterhead before it is ever
+     *  used for a real patient. */
+    const [previewLanguage, setPreviewLanguage] = useState<RxLanguage>("en");
 
     useEffect(() => {
         let alive = true;
@@ -280,30 +288,55 @@ export function PrescriptionEditorPage({
                            is live while you are changing something beside it. */
                         className="sticky top-[12px] flex flex-col gap-[9px] rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] p-[12px] shadow-[var(--cs-shadow)] max-[1180px]:static"
                     >
-                        <div className="flex items-center gap-[9px]">
+                        <div className="flex flex-wrap items-center gap-[9px]">
                             <RowText label="Live preview" sub="Specimen patient and medicines — your own layout." />
-                            <div
-                                role="radiogroup"
-                                aria-label="Preview paper size"
-                                className="ml-auto flex flex-none gap-[3px] rounded-full border border-[var(--cs-line)] bg-[var(--cs-page)] p-[3px]"
-                            >
-                                {(["a5", "a4", "thermal"] as PrintFormat[]).map((f) => (
-                                    <button
-                                        key={f}
-                                        type="button"
-                                        role="radio"
-                                        aria-checked={previewFormat === f}
-                                        onClick={() => setPreviewFormat(f)}
-                                        className={
-                                            "cursor-pointer rounded-full border-0 px-[11px] py-[4px] text-[11px] font-semibold transition-colors " +
-                                            (previewFormat === f
-                                                ? "bg-[var(--cs-card)] text-[var(--cs-ink)] shadow-[var(--cs-shadow)]"
-                                                : "bg-transparent text-[var(--cs-label)] hover:text-[var(--cs-ink)]")
-                                        }
-                                    >
-                                        {f === "thermal" ? "Thermal" : f.toUpperCase()}
-                                    </button>
-                                ))}
+                            <div className="ml-auto flex flex-wrap items-center gap-[6px]">
+                                <div
+                                    role="radiogroup"
+                                    aria-label="Preview language"
+                                    className="flex flex-none gap-[3px] rounded-full border border-[var(--cs-line)] bg-[var(--cs-page)] p-[3px]"
+                                >
+                                    {RX_LANGUAGE_OPTIONS.map((opt) => (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={previewLanguage === opt.value}
+                                            onClick={() => setPreviewLanguage(opt.value)}
+                                            className={
+                                                "cursor-pointer rounded-full border-0 px-[11px] py-[4px] text-[11px] font-semibold transition-colors " +
+                                                (previewLanguage === opt.value
+                                                    ? "bg-[var(--cs-card)] text-[var(--cs-ink)] shadow-[var(--cs-shadow)]"
+                                                    : "bg-transparent text-[var(--cs-label)] hover:text-[var(--cs-ink)]")
+                                            }
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div
+                                    role="radiogroup"
+                                    aria-label="Preview paper size"
+                                    className="flex flex-none gap-[3px] rounded-full border border-[var(--cs-line)] bg-[var(--cs-page)] p-[3px]"
+                                >
+                                    {(["a5", "a4", "thermal"] as PrintFormat[]).map((f) => (
+                                        <button
+                                            key={f}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={previewFormat === f}
+                                            onClick={() => setPreviewFormat(f)}
+                                            className={
+                                                "cursor-pointer rounded-full border-0 px-[11px] py-[4px] text-[11px] font-semibold transition-colors " +
+                                                (previewFormat === f
+                                                    ? "bg-[var(--cs-card)] text-[var(--cs-ink)] shadow-[var(--cs-shadow)]"
+                                                    : "bg-transparent text-[var(--cs-label)] hover:text-[var(--cs-ink)]")
+                                            }
+                                        >
+                                            {f === "thermal" ? "Thermal" : f.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                         {/* The paper sits on a tinted well so the sheet's own
@@ -314,6 +347,7 @@ export function PrescriptionEditorPage({
                                 doctor={doctor}
                                 config={config}
                                 format={previewFormat}
+                                language={previewLanguage}
                                 /* Taller than the dashboard's — this IS the
                                    subject of the page — but still bounded, so
                                    the sticky column can't outgrow the

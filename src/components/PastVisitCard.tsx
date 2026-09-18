@@ -50,7 +50,6 @@ import { Activity, Calendar, Dumbbell, MapPin, Pill, Quote, X, RefreshCw } from 
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import type { RealVisit } from "../lib/db";
 import { freqSlotToLabel } from "../lib/db";
-import { doctorName } from "../lib/format";
 import { FIELD_BY_KEY, type MeasureFieldKey } from "../features/consult/measures";
 
 export function formatVisitDate(isoString: string): string {
@@ -224,7 +223,7 @@ export function PastVisitCard({
                     {visit.doctor_name && (
                         <span className="pv-doctor">
                             <span className="pv-doctor-dot" />
-                            {doctorName(visit.doctor_name)}
+                            {visit.doctor_name}
                         </span>
                     )}
                 </div>

@@ -137,11 +137,21 @@ export async function createPatient(
         /** ISO yyyy-mm-dd, optional — see DBPatient.date_of_birth */
         date_of_birth?: string | null;
     },
-    hospitalId: string
+    hospitalId: string,
+    /**
+     * Explicit id, for the offline write-queue replay path only — the
+     * doctor's workspace mints a local UUID the moment a consult starts
+     * offline (so the chart has something to key against immediately) and
+     * the replay must insert THIS SAME id, not a server-generated one, or
+     * every write already queued against that local id (the visit, the
+     * eventual `consult.saveConsult`) would silently orphan. Omitted on the
+     * normal online path — the column's own default generates one.
+     */
+    id?: string
 ): Promise<DBPatient> {
     const { data, error } = await supabase
         .from("patients")
-        .insert({ ...p, date_of_birth: p.date_of_birth || null, hospital_id: hospitalId })
+        .insert({ ...p, date_of_birth: p.date_of_birth || null, hospital_id: hospitalId, ...(id ? { id } : {}) })
         .select("id, name, age, gender, phone, date_of_birth")
         .single();
     if (error) throw new Error(`createPatient: ${error.message}`);
@@ -170,8 +180,11 @@ export async function createVisit(opts: {
     hospitalId: string;
     doctorId: string;
     initialStatus?: "serving" | "waiting";
+    /** Explicit id — same reason and same contract as `createPatient`'s own
+     *  `id` param above; used only by the offline write-queue replay. */
+    id?: string;
 }): Promise<DBVisit> {
-    const { patientId, hospitalId, doctorId, initialStatus = "serving" } = opts;
+    const { patientId, hospitalId, doctorId, initialStatus = "serving", id } = opts;
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const { data: latestToday, error: tokenErr } = await supabase
@@ -185,6 +198,7 @@ export async function createVisit(opts: {
     const nextToken = (latestToday?.[0]?.token_number ?? 0) + 1;
 
     const insertPayload: Record<string, unknown> = {
+        ...(id ? { id } : {}),
         patient_id: patientId,
         assigned_doctor_id: doctorId,
         hospital_id: hospitalId,

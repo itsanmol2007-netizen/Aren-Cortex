@@ -44,6 +44,7 @@ import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
 import { syncCatalogue } from "../lib/offline/catalogueSync";
+import { prefetchRecentPatients } from "../lib/offline/patientPrefetch";
 import { rememberIntentVocabulary } from "../lib/offline/offlineIntentSearch";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
@@ -321,6 +322,24 @@ export function useSynapse(): UseSynapse {
             console.warn("Catalogue sync (non-fatal):", e);
         });
     }, [ready, isReal, hospitalId]);
+
+    useEffect(() => {
+        // The 3-month local patient backup — see lib/offline/patientPrefetch.ts.
+        // Same posture as the catalogue sync just above: fire-and-forget,
+        // doctor-only, never gates or blocks anything else on this page. Runs
+        // on load AND on reconnect (its own interval-gate keeps a flappy
+        // connection from re-walking recent history over and over — see
+        // that module's `PREFETCH_INTERVAL_MS`).
+        if (!ready || !isReal || !doctorId) return;
+        const run = () => {
+            prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
+                console.warn("Patient prefetch (non-fatal):", e);
+            });
+        };
+        run();
+        window.addEventListener("online", run);
+        return () => window.removeEventListener("online", run);
+    }, [ready, isReal, hospitalId, doctorId]);
 
     const reload = useCallback(() => void load(true), [load]);
 
