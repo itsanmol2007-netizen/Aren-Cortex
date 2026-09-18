@@ -1,0 +1,376 @@
+// ---------------------------------------------------------------------------
+// THE PUBLIC PRESCRIPTION PAGE — `/prescriptions/:token`.
+//
+// What a patient sees when they tap "View Your Prescription" on the WhatsApp
+// message. No login, no app shell, no sidebar — a single mobile-first page,
+// built for a low-literacy audience per Anmol's brief: visuals carry the
+// meaning (a Sun/Moon/Plate icon row for WHEN and WHETHER to eat with each
+// dose), text backs them up, nothing is washed-out or faint. Tailwind
+// utilities only — no custom stylesheet, per the same brief.
+//
+// Data comes from ONE call (`fetchPublicPrescription`) to the
+// `prescription-preview` edge function — the token in the URL is the only
+// credential, exactly like `/portal/gateway/:token` elsewhere in this app.
+// See docs/prescription-render-spec.md for the document's own section order
+// and rules (§3, "Public patient page") — this page follows the same advice
+// rule (doctor's own notes only, never canned standing advice) and the same
+// QR rule (encodes THIS page's own URL, not the prescription's details).
+// ---------------------------------------------------------------------------
+
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import {
+    Sunrise, Sun, Sunset, Moon, Utensils, UtensilsCrossed,
+    Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert,
+} from "lucide-react";
+import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine } from "./api";
+import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
+
+type SlotKey = "M" | "A" | "E" | "N";
+
+// docs/prescription-render-spec.md's QR treatment section: the print/review
+// surfaces caption their QR "Scan to verify this prescription" (it encodes
+// the prescription's own details); THIS page's QR instead encodes its own
+// URL, so the caption has to say something different — `RxLabels.qrCaption`
+// is shared by all three surfaces and already carries the #1/#2 wording, so
+// this page keeps its own small override rather than repurposing that field.
+const QR_CAPTION: Record<RxLanguage, string> = {
+    en: "Scan to open this prescription",
+    hi: "पर्ची खोलने के लिए स्कैन करें",
+    "hi-Latn": "Parchi kholne ke liye scan karein",
+};
+
+const SLOT_META: Record<SlotKey, { icon: typeof Sun; label: Record<RxLanguage, string> }> = {
+    M: { icon: Sunrise, label: { en: "Morning", hi: "सुबह", "hi-Latn": "Subah" } },
+    A: { icon: Sun, label: { en: "Afternoon", hi: "दोपहर", "hi-Latn": "Dopahar" } },
+    E: { icon: Sunset, label: { en: "Evening", hi: "शाम", "hi-Latn": "Shaam" } },
+    N: { icon: Moon, label: { en: "Night", hi: "रात", "hi-Latn": "Raat" } },
+};
+
+/** "1-0-1-0" -> [true, false, true, false], in M/A/E/N order — same slot
+ *  convention lib/db/reference.ts's freqSlotToLabel/freqLabelToSlot use. */
+function parseSlots(slot: string | null): boolean[] | null {
+    if (!slot) return null;
+    const parts = slot.split("-");
+    if (parts.length !== 4) return null;
+    return parts.map((p) => p === "1");
+}
+
+function DoseChips({ slot }: { slot: string | null }) {
+    const flags = parseSlots(slot);
+    if (!flags || flags.every((f) => !f)) return null;
+    const keys: SlotKey[] = ["M", "A", "E", "N"];
+    return (
+        <div className="flex gap-2">
+            {keys.map((k, i) => {
+                const on = flags[i];
+                const Icon = SLOT_META[k].icon;
+                return (
+                    <div
+                        key={k}
+                        className={
+                            "flex flex-1 flex-col items-center gap-1 rounded-xl border-2 py-2 " +
+                            (on
+                                ? "border-amber-500 bg-amber-50 text-amber-900"
+                                : "border-slate-200 bg-slate-50 text-slate-300")
+                        }
+                    >
+                        <Icon className="h-5 w-5" strokeWidth={2.5} />
+                        <span className="text-[11px] font-bold leading-none">{k}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function TimingBadge({ instructions, language }: { instructions: string; language: RxLanguage }) {
+    if (!instructions.trim()) return null;
+    const label = localizeTiming(instructions, language);
+    const isEmpty = instructions.trim().toLowerCase() === "empty stomach";
+    const Icon = isEmpty ? UtensilsCrossed : Utensils;
+    return (
+        <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-emerald-900">
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+            <span className="text-sm font-semibold">{label}</span>
+        </div>
+    );
+}
+
+function MedicineCard({ med, language, labels }: { med: PublicRxMedicine; language: RxLanguage; labels: ReturnType<typeof rxLabels> }) {
+    return (
+        <div className="rounded-2xl border-2 border-slate-900 bg-white p-4 shadow-[3px_3px_0_0_rgba(15,23,42,1)]">
+            <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <Pill className="h-5 w-5 shrink-0 text-indigo-700" strokeWidth={2.5} />
+                    <h3 className="text-lg font-black leading-tight text-slate-900">{med.name}</h3>
+                </div>
+                {med.isSos ? (
+                    <span className="shrink-0 rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white">
+                        SOS
+                    </span>
+                ) : null}
+            </div>
+            {med.composition ? (
+                <p className="mt-0.5 pl-7 text-xs font-medium text-slate-500">{med.composition}</p>
+            ) : null}
+
+            <div className="mt-3">
+                <DoseChips slot={med.frequencySlot} />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+                <TimingBadge instructions={med.instructions} language={language} />
+                {med.durationDays ? (
+                    <div className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-indigo-900">
+                        <CalendarClock className="h-4 w-4" strokeWidth={2.5} />
+                        <span className="text-sm font-semibold">{labels.durationDays(med.durationDays)}</span>
+                    </div>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function Section({ icon: Icon, title, children }: { icon: typeof Pill; title: string; children: React.ReactNode }) {
+    return (
+        <section className="mt-6">
+            <div className="mb-2.5 flex items-center gap-2">
+                <Icon className="h-5 w-5 text-slate-700" strokeWidth={2.5} />
+                <h2 className="text-sm font-black uppercase tracking-wide text-slate-700">{title}</h2>
+            </div>
+            {children}
+        </section>
+    );
+}
+
+function LanguagePicker({ value, onChange }: { value: RxLanguage; onChange: (l: RxLanguage) => void }) {
+    return (
+        <div className="flex gap-1.5 rounded-full bg-slate-100 p-1">
+            {RX_LANGUAGE_OPTIONS.map((opt) => (
+                <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onChange(opt.value)}
+                    className={
+                        "flex-1 rounded-full px-3 py-1.5 text-xs font-bold transition-colors " +
+                        (value === opt.value
+                            ? "bg-slate-900 text-white"
+                            : "text-slate-500 hover:text-slate-700")
+                    }
+                >
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function Skeleton() {
+    return (
+        <main className="min-h-dvh bg-slate-50 px-4 py-8">
+            <div className="mx-auto max-w-md animate-pulse space-y-4">
+                <div className="h-20 rounded-2xl bg-slate-200" />
+                <div className="h-16 rounded-2xl bg-slate-200" />
+                <div className="h-32 rounded-2xl bg-slate-200" />
+                <div className="h-32 rounded-2xl bg-slate-200" />
+            </div>
+        </main>
+    );
+}
+
+function ErrorScreen() {
+    return (
+        <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
+            <div className="w-full max-w-md rounded-2xl border-2 border-slate-900 bg-white p-8 text-center shadow-[4px_4px_0_0_rgba(15,23,42,1)]">
+                <ShieldAlert className="mx-auto h-10 w-10 text-rose-600" strokeWidth={2} />
+                <h1 className="mt-3 text-lg font-black text-slate-900">This link isn't valid</h1>
+                <p className="mt-2 text-sm font-medium text-slate-500">
+                    It may have expired or been mistyped. Please ask your clinic to resend it, or use your printed copy.
+                </p>
+            </div>
+        </main>
+    );
+}
+
+export function PublicPrescriptionPage() {
+    const { token } = useParams<{ token: string }>();
+    const [state, setState] = useState<
+        { phase: "loading" } | { phase: "error" } | { phase: "ready"; rx: PublicRxData }
+    >({ phase: "loading" });
+    const [language, setLanguage] = useState<RxLanguage>("en");
+    const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!token) { setState({ phase: "error" }); return; }
+        let live = true;
+        fetchPublicPrescription(token).then((r) => {
+            if (!live) return;
+            setState(r.ok ? { phase: "ready", rx: r.rx } : { phase: "error" });
+        });
+        return () => { live = false; };
+    }, [token]);
+
+    // The QR encodes THIS PAGE'S OWN URL (docs/prescription-render-spec.md's
+    // QR treatment: "#3 patient page: the QR encodes this page's own URL, so
+    // it can be handed to a pharmacist/family without forwarding the
+    // WhatsApp") — never the prescription's contents, which is what the
+    // print/review surfaces encode instead.
+    useEffect(() => {
+        if (state.phase !== "ready") return;
+        let live = true;
+        (async () => {
+            try {
+                const QRCode = await import("qrcode");
+                const url = await QRCode.toDataURL(window.location.href, { width: 160, margin: 1 });
+                if (live) setQrDataUrl(url);
+            } catch { /* silently skip — the page still works without it */ }
+        })();
+        return () => { live = false; };
+    }, [state.phase]);
+
+    if (state.phase === "loading") return <Skeleton />;
+    if (state.phase === "error") return <ErrorScreen />;
+
+    const { rx } = state;
+    const labels = rxLabels(language);
+    const dateStr = new Date(rx.date).toLocaleDateString(
+        language === "en" ? "en-IN" : "hi-IN",
+        { day: "2-digit", month: "short", year: "numeric" }
+    );
+    const doctorName = rx.doctor ? hiName(language, rx.doctor.name, rx.doctor.nameHi) : null;
+    const clinicName = hiName(language, rx.clinic.name, rx.clinic.nameHi);
+
+    // Same rule PrescriptionDocument.tsx/ReviewModal.tsx already apply: Noto
+    // Sans Devanagari (loaded in index.html) for real conjunct/matra shaping
+    // instead of whatever the OS happens to substitute, plus taller line
+    // height — Devanagari's matras and conjuncts extend further above and
+    // below the baseline than Latin text needs. Deliberately covers "hi"
+    // only, not "hi-Latn" — Hinglish is Latin script and reads fine in the
+    // page's own sans-serif.
+    const isDevanagari = language === "hi";
+
+    return (
+        <main
+            className="min-h-dvh bg-slate-50 px-4 pb-10 pt-6"
+            style={isDevanagari ? { fontFamily: "'Noto Sans Devanagari', sans-serif", lineHeight: 1.6 } : undefined}
+        >
+            <div className="mx-auto max-w-md">
+                <div className="mb-4 flex justify-end">
+                    <LanguagePicker value={language} onChange={setLanguage} />
+                </div>
+
+                {/* Letterhead — bold, high-contrast, the clinic's identity first. */}
+                <header className="rounded-2xl border-2 border-slate-900 bg-slate-900 p-5 text-white shadow-[4px_4px_0_0_rgba(79,70,229,1)]">
+                    <div className="flex items-center gap-3">
+                        {rx.clinic.logoUrl ? (
+                            <img src={rx.clinic.logoUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl bg-white object-contain p-1" />
+                        ) : null}
+                        <div className="min-w-0">
+                            <h1 className="truncate text-xl font-black leading-tight">{clinicName}</h1>
+                            {doctorName ? (
+                                <p className="truncate text-sm font-semibold text-slate-300">
+                                    {doctorName}
+                                    {rx.doctor?.specialization ? ` · ${rx.doctor.specialization}` : ""}
+                                </p>
+                            ) : null}
+                        </div>
+                    </div>
+                    {(rx.clinic.address || rx.clinic.phone) ? (
+                        <p className="mt-3 border-t border-white/15 pt-2 text-xs font-medium text-slate-300">
+                            {[rx.clinic.address, rx.clinic.phone].filter(Boolean).join("  ·  ")}
+                        </p>
+                    ) : null}
+                </header>
+
+                {/* Patient strip */}
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border-2 border-slate-900 bg-white px-4 py-3 shadow-[3px_3px_0_0_rgba(15,23,42,1)]">
+                    <div className="min-w-0">
+                        <p className="truncate text-base font-black text-slate-900">{rx.patient.name}</p>
+                        <p className="text-xs font-semibold text-slate-500">
+                            {[rx.patient.age != null ? `${rx.patient.age} ${language === "en" ? "yrs" : "साल"}` : null, rx.patient.gender]
+                                .filter(Boolean).join(" · ")}
+                        </p>
+                    </div>
+                    <div className="shrink-0 text-right text-xs font-semibold text-slate-500">
+                        {rx.ref ? <p>#{rx.ref}</p> : null}
+                        <p>{dateStr}</p>
+                    </div>
+                </div>
+
+                {(rx.symptoms.length || rx.findings.length || rx.diagnosisText) ? (
+                    <Section icon={Stethoscope} title={labels.findings}>
+                        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 text-sm font-medium text-slate-700">
+                            {[rx.diagnosisText, ...rx.symptoms, ...rx.findings].filter(Boolean).join(" · ")}
+                        </div>
+                    </Section>
+                ) : null}
+
+                {rx.medicines.length ? (
+                    <Section icon={Pill} title={labels.prescription}>
+                        <div className="space-y-3">
+                            {rx.medicines.map((m, i) => (
+                                <MedicineCard key={i} med={m} language={language} labels={labels} />
+                            ))}
+                        </div>
+                        <p className="mt-2 text-center text-[11px] font-semibold text-slate-400">{labels.freqLegend}</p>
+                    </Section>
+                ) : null}
+
+                {rx.tests.length ? (
+                    <Section icon={ClipboardList} title={labels.investigations}>
+                        <ul className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.tests.map((t, i) => (
+                                <li key={i} className="text-sm font-semibold text-slate-800">• {t}</li>
+                            ))}
+                        </ul>
+                    </Section>
+                ) : null}
+
+                {rx.advice.length ? (
+                    <Section icon={ShieldAlert} title={labels.advice}>
+                        <ul className="space-y-2 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
+                            {rx.advice.map((a, i) => (
+                                <li key={i} className="flex gap-2 text-sm font-semibold text-amber-900">
+                                    <span className="text-amber-600">›</span>{a}
+                                </li>
+                            ))}
+                        </ul>
+                    </Section>
+                ) : null}
+
+                {rx.followUpDays ? (
+                    <div className="mt-4 rounded-2xl bg-indigo-600 px-4 py-3 text-center font-black text-white">
+                        {labels.followUp(rx.followUpDays)}
+                    </div>
+                ) : null}
+
+                {qrDataUrl ? (
+                    <div className="mt-6 flex flex-col items-center gap-2">
+                        <div className="rounded-xl border-2 border-slate-300 bg-white p-2">
+                            <img src={qrDataUrl} alt="" className="h-24 w-24" />
+                        </div>
+                        <p className="text-xs font-semibold text-slate-400">{QR_CAPTION[language]}</p>
+                    </div>
+                ) : null}
+
+                {rx.doctor?.signatureUrl ? (
+                    <div className="mt-6 flex justify-end">
+                        <div className="text-center">
+                            <img src={rx.doctor.signatureUrl} alt="" className="mx-auto h-12 object-contain" />
+                            <p className="mt-1 border-t-2 border-slate-900 pt-1 text-xs font-bold text-slate-700">{doctorName}</p>
+                        </div>
+                    </div>
+                ) : null}
+
+                {rx.footerNote ? (
+                    <p className="mt-6 border-t-2 border-slate-200 pt-3 text-xs font-medium text-slate-400">{rx.footerNote}</p>
+                ) : null}
+
+                <p className="mt-6 whitespace-pre-line text-center text-[11px] font-semibold text-slate-300">
+                    {labels.footerCredit}
+                </p>
+            </div>
+        </main>
+    );
+}
