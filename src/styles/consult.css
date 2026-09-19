@@ -5572,6 +5572,71 @@ body.cs-locked-shell {
 }
 .cs-addmed-brands { display: flex; flex-direction: column; gap: 5px; }
 
+/* Medicine dispensing billing — MedicineAddSheet's own quantity/price row,
+   opt-in per clinic. Teal, matching this sheet's own accent (see
+   .cs-addmed-input:focus above), never amber/red — an unpriced medicine is
+   a normal state here, not a warning. */
+.cs-addmed-price-hint {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 550;
+}
+.cs-addmed-price-set {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 40px;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 11px;
+    background: rgba(15, 118, 110, 0.06);
+    padding: 0 12px;
+    color: var(--cs-teal);
+    font-size: 12.5px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.cs-addmed-price-set:hover { border-color: rgba(15, 118, 110, 0.45); }
+.cs-addmed-price-set.is-unset { color: var(--cs-faint); background: rgba(248, 250, 252, 0.9); border-color: rgba(0, 0, 0, 0.1); }
+.cs-addmed-price-form {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 11px;
+    background: rgba(15, 118, 110, 0.04);
+    padding: 10px;
+}
+.cs-addmed-price-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cs-addmed-price-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.cs-addmed-price-actions button {
+    border: 0;
+    background: none;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-addmed-price-save {
+    border-radius: 8px !important;
+    background: var(--cs-teal) !important;
+    color: #fff !important;
+}
+.cs-addmed-price-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.cs-addmed-price-save:not(:disabled):hover { background: #0d5f58 !important; }
+
 /* The brand list was hard-sliced to 8 in the component, which made the other
    22 of BRAND_CANDIDATES unreachable on the one panel whose job is choosing
    between them. All of them render now; the list scrolls rather than running

@@ -255,4 +255,17 @@ export type PrescriptionMedicine = Medicine & {
   via_search?: boolean;
   /** this was hard-warned and the doctor acknowledged it before prescribing */
   overridden?: boolean;
+
+  // ── Medicine dispensing billing (added 2026-09-19, opt-in) ──
+  // Present only when the clinic has `medicine_billing_enabled` on — see
+  // lib/db/medicinePricing.ts. `unitPrice` is copied from
+  // `clinic_medicine_prices` at the moment the doctor confirms the dose,
+  // the same principle `doctors.consultation_fee` -> `visit_payments.fee`
+  // already uses: a price change next month must never rewrite a
+  // prescription already handed to a patient.
+  /** how many units were handed over — tablets, capsules, mL, whatever the
+   *  pack is priced in. Absent when medicine billing is off. */
+  quantityDispensed?: number | null;
+  /** this clinic's price per unit, at the moment this was confirmed */
+  unitPrice?: number | null;
 };
