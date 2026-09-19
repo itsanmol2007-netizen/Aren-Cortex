@@ -722,7 +722,7 @@ export function ClinicPage({
                         <p className="m-0 text-[12.5px] leading-[1.55] text-[var(--cs-muted)]">
                             {followUpEnabled
                                 ? "On — when a prescription carries a follow-up date, this clinic's patients get a reminder 24 hours before it, automatically."
-                                : "Off — no reminder is ever sent until this is switched on. Nothing here reschedules a visit; it only reminds a patient that one is due."}
+                                : "Off — no reminder is ever sent until this is switched on. Nothing here reschedules a visit; it only reminds a patient that one is due. Once on, every reminder that actually sends deducts one credit, the same as any other WhatsApp message."}
                         </p>
                     </Card>
                 </div>
