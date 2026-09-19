@@ -1086,6 +1086,7 @@ body.cs-locked-shell {
 }
 
 .cs-meas {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1120,6 +1121,16 @@ body.cs-locked-shell {
     font-weight: 550;
     letter-spacing: 0.01em;
     white-space: nowrap;
+    /* A long label ("Hemoglobin (g/dL)", "TSH (µIU/mL)") plus the suggested
+       mark used to simply overflow the cell sideways rather than wrap or
+       clip — visible in the browser once fields longer than "BP (mmHg)"
+       started actually getting suggested (2026-09-19). Truncated with an
+       ellipsis instead; `title` on the cell (see MeasureCell) carries the
+       full text for a doctor who wants to read it in full. */
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .cs-meas.is-warn .cs-meas-label {
@@ -2068,14 +2079,26 @@ body.cs-locked-shell {
 
 .cs-meas.is-suggested .cs-meas-label {
     color: var(--cs-blue);
+    /* Room for the "+" badge in the corner, so a long label's ellipsis
+       truncates before it, never underneath it. */
+    padding-right: 12px;
 }
 
+/* A fixed corner badge, not inline text after the label — it used to sit
+   inside `.cs-meas-label` and push a long label ("Hemoglobin (g/dL)",
+   "TSH (µIU/mL)") past the cell's edge instead of wrapping or clipping.
+   Absolute here means it never competes with the label for width, whatever
+   the label's own length turns out to be. */
 .cs-meas-mark {
-    margin-left: 4px;
+    position: absolute;
+    top: 7px;
+    right: 8px;
     color: var(--cs-blue);
     font-size: 12.5px;
     font-style: normal;
     font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
 }
 
 /* The custom-measurement fallback's own cell — see CustomMeasureCell.
@@ -2096,8 +2119,16 @@ body.cs-locked-shell {
     justify-content: space-between;
     gap: 6px;
     width: 100%;
+    overflow: visible;
+}
+.cs-meas-custom-labeltext {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .cs-meas-custom-remove {
+    flex: none;
     border: 0;
     background: none;
     padding: 1px;

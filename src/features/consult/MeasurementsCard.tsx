@@ -541,6 +541,10 @@ function MeasurementSearch({
                     onChange={(e) => { setQuery(e.target.value); resetCreate(); }}
                     onKeyDown={onKeyDown}
                     aria-label="Search measurements to add"
+                    spellCheck={false}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
                 />
                 {Boolean(query) && (
                     <button
@@ -587,6 +591,7 @@ function MeasurementSearch({
                                 placeholder="Value"
                                 inputMode="decimal"
                                 autoFocus
+                                spellCheck={false}
                                 onChange={(e) => setCustomValue(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveCustom(); } }}
                                 aria-label={`Value for ${query.trim()}`}
@@ -595,6 +600,7 @@ function MeasurementSearch({
                                 className="cs-addmed-input"
                                 value={customUnit}
                                 placeholder="Unit — optional"
+                                spellCheck={false}
                                 onChange={(e) => setCustomUnit(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveCustom(); } }}
                                 aria-label={`Unit for ${query.trim()}`}
@@ -645,8 +651,8 @@ function CustomMeasureCell({
     const filled = entry.value.trim().length > 0;
     return (
         <div className={`cs-meas is-custom${filled ? " is-filled" : ""}`}>
-            <span className="cs-meas-label">
-                {entry.label}
+            <span className="cs-meas-label" title={entry.label}>
+                <span className="cs-meas-custom-labeltext">{entry.label}</span>
                 <button
                     type="button"
                     className="cs-meas-custom-remove"
@@ -769,10 +775,8 @@ function MeasureCell({
 
         return (
             <div className={className} title={title}>
-                <span className="cs-meas-label">
-                    {field.label}
-                    {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
-                </span>
+                <span className="cs-meas-label">{field.label}</span>
+                {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
                 <div className="cs-meas-value">
                     <input
                         ref={registerRef as React.Ref<HTMLInputElement>}
@@ -809,10 +813,8 @@ function MeasureCell({
         // calculation where that ambiguity would be a real error.
         return (
             <div className={className} title={title}>
-                <span className="cs-meas-label">
-                    {field.label}
-                    {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
-                </span>
+                <span className="cs-meas-label">{field.label}</span>
+                {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
                 <div className="cs-meas-value">
                     <input
                         ref={registerRef as React.Ref<HTMLInputElement>}
@@ -842,10 +844,8 @@ function MeasureCell({
         const LETTERS = ["G", "P", "L", "A"];
         return (
             <div className={className} title={title}>
-                <span className="cs-meas-label">
-                    {field.label}
-                    {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
-                </span>
+                <span className="cs-meas-label">{field.label}</span>
+                {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
                 <div className="cs-meas-value cs-meas-gpla">
                     {LETTERS.map((letter, i) => (
                         <span className="cs-meas-gpla-cell" key={letter}>
@@ -872,10 +872,8 @@ function MeasureCell({
     if (field.kind === "select") {
         return (
             <div className={className} title={title}>
-                <span className="cs-meas-label">
-                    {field.label}
-                    {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
-                </span>
+                <span className="cs-meas-label">{field.label}</span>
+                {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
                 <div className="cs-meas-value">
                     <select
                         ref={registerRef as React.Ref<HTMLSelectElement>}
@@ -898,10 +896,8 @@ function MeasureCell({
 
     return (
         <div className={className} title={title}>
-            <span className="cs-meas-label">
-                {field.label}
-                {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
-            </span>
+            <span className="cs-meas-label">{field.label}</span>
+            {suggested && <i className="cs-meas-mark" aria-hidden="true">+</i>}
             <div className="cs-meas-value">
                 <input
                     ref={registerRef as React.Ref<HTMLInputElement>}

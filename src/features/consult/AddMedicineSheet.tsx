@@ -280,6 +280,8 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                                     placeholder="e.g. Acenac-XT"
                                     onChange={(e) => setName(e.target.value)}
                                     autoFocus
+                                    spellCheck={false}
+                                    autoCorrect="off"
                                 />
                             </section>
 
@@ -379,6 +381,8 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                                             value={compositionNote}
                                             placeholder="Describe what it contains, if you know — optional"
                                             onChange={(e) => setCompositionNote(e.target.value)}
+                                            spellCheck={false}
+                                            autoCorrect="off"
                                         />
                                         <p className="cs-newmed-nocomp-warn">
                                             Without a matched salt, dose and interaction checks
