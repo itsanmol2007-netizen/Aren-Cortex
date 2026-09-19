@@ -2468,6 +2468,14 @@ export function PracticePage({
                         </div>
                         <GroupHeadMark />
                     </div>
+                    {/* Medicine — three cards, one job apiece (preference,
+                        catalogue data-entry, pricing), consecutive and all
+                        teal on purpose: Anmol, 2026-09-19, "place all the
+                        three medicine related card consecutively... give
+                        them some green color hint... so that they feel like
+                        they are of the same category" — not merged into
+                        one card (three different mental models, cramming
+                        them into tabs would make each worse), just grouped. */}
                     <div className="prac-grid">
                         <PreferredMedicinesCard
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
@@ -2476,6 +2484,87 @@ export function PracticePage({
                             anyModalOpen={anyModalOpen}
                         />
 
+                        <PracticeCard
+                            icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
+                            subtitle="Can't find the medicine you need? Add it to our database."
+                            action={
+                                <button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>
+                                    View added{addedMedicines.length > 0 ? ` (${addedMedicines.length})` : ""}
+                                </button>
+                            }
+                        >
+                            <EmptyBlock
+                                art={<BlankAddMedicineArt />}
+                                fact="Not in our database yet?"
+                                next="Submit its details and we'll review and add it."
+                                action={
+                                    <button type="button" className="prac-empty-action" onClick={() => setAddMedicineOpen({ initialName: "" })}>
+                                        <Plus size={14} /> Add new medicine
+                                    </button>
+                                }
+                            />
+                        </PracticeCard>
+
+                        <PracticeCard
+                            icon={<IndianRupee size={13} />} tone="teal" title="Medicine Pricing" fixed
+                            subtitle="What this clinic charges for the medicine it dispenses."
+                            count={medicineBillingPolicy.enabled ? priceRows.length : undefined}
+                            countTone="green"
+                            foot={medicineBillingPolicy.enabled && priceRows.length > 0 ? (
+                                <FootLink label="Manage pricing" onClick={() => setPricingModalOpen(true)} />
+                            ) : undefined}
+                        >
+                            {!medicineBillingPolicy.enabled ? (
+                                <EmptyBlock
+                                    art={<BlankPricingArt />}
+                                    fact="Medicine billing is off"
+                                    next="Turn it on from the admin console to price and bill the medicine this clinic dispenses — off changes nothing here."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={goEnableMedicineBilling}>
+                                            <IndianRupee size={14} /> Turn this on from Overview
+                                        </button>
+                                    }
+                                />
+                            ) : priceRowsLoading ? (
+                                <SkelRows count={3} />
+                            ) : priceRows.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankPricingArt />}
+                                    fact="No medicines priced yet"
+                                    next="Search a medicine and set what this clinic charges — a pack price and how many units the pack holds."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setPricingModalOpen(true)}>
+                                            <IndianRupee size={14} /> Add pricing
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {priceRows.length <= 3 && <div className="prac-fill-art"><BlankPricingArt /></div>}
+                                    <div className="prac-setting-list">
+                                        {priceRows.slice(0, 4).map((row) => (
+                                            <button
+                                                key={row.medicineId} type="button" className="prac-setting-row"
+                                                onClick={() => setPricingModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{row.medicineName}</span>
+                                                    {row.manufacturer && <span className="prac-med-brands">{row.manufacturer}</span>}
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">₹{row.unitPrice.toFixed(2)}/unit</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </PracticeCard>
+                    </div>
+
+                    {/* Clinical tools — investigations, saved setups, and the
+                        cross-intent suggestion engine (Companions pairs ANY
+                        intent type, not only medicine, so it belongs here
+                        and not in the teal group above). */}
+                    <div className="prac-grid">
                         <PracticeCard
                             id="labs"
                             icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length} fixed
@@ -2559,29 +2648,6 @@ export function PracticePage({
                                 />
                             )}
                         </PracticeCard>
-                    </div>
-
-                    <div className="prac-grid">
-                        <PracticeCard
-                            icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
-                            subtitle="Can't find the medicine you need? Add it to our database."
-                            action={
-                                <button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>
-                                    View added{addedMedicines.length > 0 ? ` (${addedMedicines.length})` : ""}
-                                </button>
-                            }
-                        >
-                            <EmptyBlock
-                                art={<BlankAddMedicineArt />}
-                                fact="Not in our database yet?"
-                                next="Submit its details and we'll review and add it."
-                                action={
-                                    <button type="button" className="prac-empty-action" onClick={() => setAddMedicineOpen({ initialName: "" })}>
-                                        <Plus size={14} /> Add new medicine
-                                    </button>
-                                }
-                            />
-                        </PracticeCard>
 
                         <PracticeCard
                             id="companions"
@@ -2626,60 +2692,6 @@ export function PracticePage({
                                         </button>
                                     }
                                 />
-                            )}
-                        </PracticeCard>
-
-                        <PracticeCard
-                            icon={<IndianRupee size={13} />} tone="teal" title="Medicine Pricing" fixed
-                            subtitle="What this clinic charges for the medicine it dispenses."
-                            count={medicineBillingPolicy.enabled ? priceRows.length : undefined}
-                            countTone="green"
-                            foot={medicineBillingPolicy.enabled && priceRows.length > 0 ? (
-                                <FootLink label="Manage pricing" onClick={() => setPricingModalOpen(true)} />
-                            ) : undefined}
-                        >
-                            {!medicineBillingPolicy.enabled ? (
-                                <EmptyBlock
-                                    art={<BlankPricingArt />}
-                                    fact="Medicine billing is off"
-                                    next="Turn it on from the admin console to price and bill the medicine this clinic dispenses — off changes nothing here."
-                                    action={
-                                        <button type="button" className="prac-empty-action" onClick={goEnableMedicineBilling}>
-                                            <IndianRupee size={14} /> Turn this on from Overview
-                                        </button>
-                                    }
-                                />
-                            ) : priceRowsLoading ? (
-                                <SkelRows count={3} />
-                            ) : priceRows.length === 0 ? (
-                                <EmptyBlock
-                                    art={<BlankPricingArt />}
-                                    fact="No medicines priced yet"
-                                    next="Search a medicine and set what this clinic charges — a pack price and how many units the pack holds."
-                                    action={
-                                        <button type="button" className="prac-empty-action" onClick={() => setPricingModalOpen(true)}>
-                                            <IndianRupee size={14} /> Add pricing
-                                        </button>
-                                    }
-                                />
-                            ) : (
-                                <div className="prac-fill">
-                                    {priceRows.length <= 3 && <div className="prac-fill-art"><BlankPricingArt /></div>}
-                                    <div className="prac-setting-list">
-                                        {priceRows.slice(0, 4).map((row) => (
-                                            <button
-                                                key={row.medicineId} type="button" className="prac-setting-row"
-                                                onClick={() => setPricingModalOpen(true)}
-                                            >
-                                                <div className="prac-med-info">
-                                                    <span className="prac-row-label">{row.medicineName}</span>
-                                                    {row.manufacturer && <span className="prac-med-brands">{row.manufacturer}</span>}
-                                                </div>
-                                                <span className="prac-quiet-pill is-alt">₹{row.unitPrice.toFixed(2)}/unit</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
                             )}
                         </PracticeCard>
                     </div>
