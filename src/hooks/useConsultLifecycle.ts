@@ -895,6 +895,7 @@ export function useConsultLifecycle({
       const medicineRows: SaveConsultMedicine[] = plan.prescription.map((m, i) => ({
         medicine_id: m.medicine_id,
         composition_ids: m.composition_ids ?? [],
+        composition_note: m.compositionNote ?? null,
         dosage_mg: m.dosage_mg ?? null,
         frequency: freqLabelToSlot(m.frequency),
         duration_days: m.duration_days ?? null,

@@ -14,7 +14,8 @@ import { registerWriteHandler } from "../offline/writeQueue";
 // ── SAVE PRESCRIPTION ──────────────────────────────────────────────────────────
 export type SaveConsultMedicine = {
     medicine_id: number;
-    composition_ids: number[];     // all composition IDs (1 for single, 2+ for combos)
+    composition_ids: number[];     // all composition IDs (1 for single, 2+ for combos), empty for a composition-less add
+    composition_note?: string | null; // doctor's free-text salt description when composition_ids is empty
     dosage_mg: number | null;
     frequency: string;             // slot string e.g. "1-0-1-0"
     duration_days: number | null;
@@ -108,6 +109,7 @@ export async function saveConsult(opts: {
             medicine_id: m.medicine_id,
             composition_ids: m.composition_ids,          // integer[] array column
             composition_id: m.composition_ids[0] ?? null, // keep legacy column as primary
+            composition_note: m.composition_note ?? null,
             dosage_mg: m.dosage_mg,
             frequency: m.frequency,
             duration_days: m.duration_days,

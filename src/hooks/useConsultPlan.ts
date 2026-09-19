@@ -73,8 +73,12 @@ function toPrescriptionLine(
     // This read `[brand.compositionId]` unconditionally, so a combination was
     // written into the clinical record as a single molecule and its second
     // drug was invisible to duplicate and interaction checking. Absent means
-    // single-molecule, where the fallback is exactly correct.
-    composition_ids: brand.compositionIds ?? [brand.compositionId],
+    // single-molecule, where the fallback is exactly correct — EXCEPT when
+    // `compositionId` is itself null (a composition-less add, 2026-09-19),
+    // where there is no molecule to fall back to at all and this must stay
+    // `[]`, never `[null]` polluting the array every duplicate/interaction
+    // check and DB write downstream reads.
+    composition_ids: brand.compositionIds ?? (brand.compositionId != null ? [brand.compositionId] : []),
     primary_composition_id: brand.compositionId,
     name: brand.name,
     category: payload.label,
@@ -85,10 +89,16 @@ function toPrescriptionLine(
     // the summary rail and the prescription preview were both printing one
     // molecule of a combination. They read this one field, so they are both
     // fixed here. `composition_ids` above is the machine-readable half; this
-    // is what the doctor and the patient actually see on the page.
+    // is what the doctor and the patient actually see on the page. A
+    // composition-less medicine shows its own free-text note instead, or
+    // falls back to empty rather than the misleading intent label (there is
+    // no real composition behind `payload.label` in that case).
     composition: brand.compositionLabels?.length
       ? brand.compositionLabels.join(" + ")
-      : payload.label,
+      : brand.compositionId != null
+        ? payload.label
+        : brand.compositionNote ?? "",
+    compositionNote: brand.compositionNote ?? null,
     dosage: "1 tab",
     frequency: "Morning and Night",
     duration: "5 days",
@@ -355,7 +365,7 @@ export function useConsultPlan({
    */
   const guardProduct = useCallback((brand: SynapseBrand): string[] => {
     const ruleset = data?.ruleset;
-    const compositionIds = brand.compositionIds ?? [brand.compositionId];
+    const compositionIds = brand.compositionIds ?? (brand.compositionId != null ? [brand.compositionId] : []);
     if (!ruleset || compositionIds.length < 2) return [];
 
     const active = intelligence.result?.activeSignals ?? [];
@@ -693,6 +703,16 @@ export function useConsultPlan({
 
   /** Pin (or unpin) the brand the whole clinic sees first for this molecule. */
   const handlePinClinicBrand = useCallback(async (brand: SynapseBrand, pinned: boolean) => {
+    // A clinic default is a preference keyed on a MOLECULE
+    // (`clinic_brand_preference`'s primary key) — meaningless for a
+    // composition-less medicine, which has no molecule to prefer a brand
+    // for. Guarded here rather than only in whatever surface renders the
+    // pin control, so a composition-less medicine can never reach this
+    // write regardless of which screen it was added from.
+    if (brand.compositionId == null) {
+      showToast(`${brand.name} has no composition on file, so it can't be set as a clinic default`);
+      return;
+    }
     try {
       if (pinned) {
         await setClinicBrandDefault({

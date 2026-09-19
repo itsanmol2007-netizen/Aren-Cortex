@@ -975,7 +975,8 @@ export function compositionIdsOf(
 }
 
 export interface AddMedicineResult {
-    compositionId: number;
+    // null for a composition-less add — see `addMedicine`'s `compositionNote`.
+    compositionId: number | null;
     medicine: Medicine;
 }
 
@@ -995,6 +996,12 @@ export interface AddMedicineResult {
  * to wait on `mv_composition_brand`'s refresh to do that: the refresh is what
  * makes the medicine reachable on the *next* search, by anyone, not what this
  * consult needs right now.
+ *
+ * `compositionIds` may now be empty — the RPC no longer requires a linked
+ * composition (doctrine rule 22 relaxed: a real medicine with no catalogued
+ * salt must still be addable, not left for the advice free-text box). In
+ * that case pass `compositionNote`, the doctor's own free-text description of
+ * the salt, and the RPC returns exactly one row with `composition_id: null`.
  */
 export async function addMedicine(opts: {
     name: string;
@@ -1002,6 +1009,7 @@ export async function addMedicine(opts: {
     route?: string | null;
     strengthMg?: number | null;
     manufacturer?: string | null;
+    compositionNote?: string | null;
 }): Promise<AddMedicineResult[]> {
     // Online-only, deliberately — see lib/offline/onlineOnly.ts's header.
     requireOnlineFor("Adding a new medicine");
@@ -1011,6 +1019,7 @@ export async function addMedicine(opts: {
         p_route: opts.route ?? null,
         p_strength_mg: opts.strengthMg ?? null,
         p_manufacturer: opts.manufacturer ?? null,
+        p_composition_note: opts.compositionNote ?? null,
     });
     // The RPC's RAISE EXCEPTION text ("a medicine named … already exists",
     // "unknown composition id(s): …", "no doctor profile linked to this
@@ -1019,13 +1028,14 @@ export async function addMedicine(opts: {
     if (error) throw new Error(error.message);
 
     return (data ?? []).map((r: any) => ({
-        compositionId: Number(r.composition_id),
+        compositionId: r.composition_id == null ? null : Number(r.composition_id),
         medicine: {
             id: Number(r.medicine_id),
-            compositionId: Number(r.composition_id),
+            compositionId: r.composition_id == null ? null : Number(r.composition_id),
             name: r.name as string,
             form: r.route as string | null,
             strengthMg: r.strength_mg == null ? null : Number(r.strength_mg),
+            compositionNote: r.composition_note ?? null,
             prescriptionCount: 0,
             isClinicDefault: false,
             // no catalogueRank — a brand-new product carries no lookup-order

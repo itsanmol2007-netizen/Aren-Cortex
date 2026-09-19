@@ -111,13 +111,26 @@ export type Vitals = {
 export type Medicine = {
   id: string;
   medicine_id: number;
-  composition_ids: number[];        // all compositions (1 or 2+)
-  primary_composition_id: number;   // for dosage lookup
+  composition_ids: number[];        // all compositions (1 or 2+), empty for a composition-less add
+  /**
+   * For dosage lookup. `null` when this medicine has no structured
+   * composition behind it at all — added 2026-09-19, when doctrine rule 22
+   * ("a brand must attach to an existing composition, never mint one") was
+   * relaxed: "you really can't do anything... make the composition
+   * optional... let them complete the consult with just medicine name and
+   * a freeform for composition" (Anmol). A composition-less medicine has
+   * no dosage default to look up, no brand ranking, no personalisation —
+   * it is prescribed on the name and `compositionNote` alone.
+   */
+  primary_composition_id: number | null;
   name: string;
   category: string;
   use: string;
   match: number;
   composition: string;
+  /** the doctor's own free-text description, when there is no structured
+   *  composition to show instead — e.g. "combination, exact salts unknown". */
+  compositionNote?: string | null;
 };
 
 export type SelectedSymptom = {

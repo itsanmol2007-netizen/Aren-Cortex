@@ -37,7 +37,19 @@ export const PEDIATRIC_FORMS: ReadonlySet<Form> = new Set(['syrup', 'drops'])
 
 export interface Medicine {
   id: number
-  compositionId: number
+  /**
+   * `null` for a medicine added with no structured composition at all
+   * (2026-09-19 — doctrine rule 22 relaxed, see `types.ts`'s own Medicine
+   * for the full reasoning). Every function in THIS file only ever
+   * receives candidates fetched by composition in the first place
+   * (`composition_brands`/`medicine_composition_map`), so `compositionId`
+   * is null here in type only — a composition-less medicine never becomes
+   * a ranking candidate, never enters brand preference, never reaches
+   * `resolveBrands`/`buildBrandModel`. The type still says `| null` so a
+   * caller building a `Medicine` from a composition-less `add_medicine`
+   * result cannot silently lie about having one.
+   */
+  compositionId: number | null
   name: string
   /** dosage form / route — part of the preference key */
   form: Form | null
@@ -87,6 +99,9 @@ export interface Medicine {
   compositionIds?: number[]
   /** their display names, same order as `compositionIds`, for the subtitle */
   compositionLabels?: string[]
+  /** the doctor's own free-text description, when `compositionId` is null —
+   *  see `types.ts`'s `Medicine.compositionNote` for the full reasoning. */
+  compositionNote?: string | null
 }
 
 export interface BrandPreference {

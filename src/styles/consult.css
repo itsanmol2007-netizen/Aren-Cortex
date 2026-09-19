@@ -5577,6 +5577,21 @@ body.cs-locked-shell {
     font-weight: 550;
 }
 
+/* No salt picked yet — an optional free-text note plus a brief, non-blocking
+   reminder. Amber, the same "soft guard" colour used everywhere else in
+   Cortex for something worth noticing but never something worth blocking. */
+.cs-newmed-nocomp { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.cs-newmed-nocomp-warn {
+    margin: 0;
+    padding: 7px 9px;
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 550;
+    line-height: 1.4;
+}
+
 /* The composition-request fallback, same-day follow-up ask. Sits under the
    composition search — never inside the "found it" state, since a real hit
    makes the request moot. */

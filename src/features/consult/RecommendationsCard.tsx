@@ -733,6 +733,12 @@ function MedicineRow({
     const comboAlts = all.length > 0 ? combos : combos.slice(1);
 
     const isYours = (m: Medicine) => {
+        // Every `m` reaching this row was resolved BY a composition (this
+        // whole card renders one composition's ranked/alternate brands), so
+        // `compositionId` is never actually null here — a composition-less
+        // medicine never becomes a ranking candidate at all. Guarded anyway
+        // now that the type allows it.
+        if (m.compositionId == null) return false;
         const p = brandPreferences?.get(brandKey(m.compositionId, m.id, m.form));
         return !!p && p.preference > 0.15;
     };

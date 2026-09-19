@@ -146,9 +146,13 @@ export function BrandSheet({
     // it different ("650mg Tablet"); on its own it keeps its full brand name.
     const renderRow = (m: Medicine, inFamily: boolean) => {
         const isCurrent = m.id === currentMedicineId;
-        const clinic = clinicDefaults.get(clinicBrandKey(m.compositionId, m.id));
+        // Every `m` here comes from `composition.families` — resolved BY a
+        // composition, so `compositionId` is never actually null in this
+        // sheet (a composition-less medicine is never a ranking candidate).
+        // Guarded now that the type allows it.
+        const clinic = m.compositionId != null ? clinicDefaults.get(clinicBrandKey(m.compositionId, m.id)) : undefined;
         const isClinic = !!clinic && (clinic.form == null || clinic.form === m.form);
-        const pref = brandPreferences.get(brandKey(m.compositionId, m.id, m.form));
+        const pref = m.compositionId != null ? brandPreferences.get(brandKey(m.compositionId, m.id, m.form)) : undefined;
         const isYours = !!pref && pref.preference > 0.15;
 
         const label = inFamily ? brandVariantLabel(m) : m.name;

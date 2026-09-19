@@ -11,14 +11,21 @@
 // this — enforces exactly that: it raises if the composition id doesn't
 // already exist.
 //
-// So the one thing this sheet FORCES is the salt/composition, searched from
-// our own library, never typed free. Everything else about the brand
-// (dosage, form) is optional and skippable — asking for ten fields (MRP,
-// manufacturer, batch…) on a doctor who is mid-consultation is precisely the
-// friction doctrine rule 17 exists to prevent. Confirming here hands straight
-// off into `MedicineAddSheet` (dose/timing/duration) exactly like any other
-// accepted medicine — this sheet's whole job ends at "the brand now exists
-// and is named", never at "here is how much of it to take".
+// The salt/composition is searched from our own library, never typed free —
+// when it's known. But "when it's known" stopped being the whole story on
+// 2026-09-19: doctrine rule 22 used to hard-block a brand with no linked
+// composition, and a real doctor testing this in a real clinic hit a real
+// medicine that wasn't in our library and had no way to add it — not even a
+// wrong way, just none — and ended up burying the medicine name in the
+// advice free-text box instead. That is a worse clinical record than a
+// brand with an unverified salt, so the block is gone: no composition found
+// is now a brief, polite warning, not a dead end. Everything else about the
+// brand (dosage, form) is optional and skippable — asking for ten fields
+// (MRP, manufacturer, batch…) on a doctor who is mid-consultation is
+// precisely the friction doctrine rule 17 exists to prevent. Confirming here
+// hands straight off into `MedicineAddSheet` (dose/timing/duration) exactly
+// like any other accepted medicine — this sheet's whole job ends at "the
+// brand now exists and is named", never at "here is how much of it to take".
 //
 // Deliberately its own file rather than a mode of `MedicineAddSheet`: that
 // sheet's entire shape (brand list, strength variants, dose/timing) assumes
@@ -77,6 +84,10 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
     // itself (`add_medicine`) already took `p_composition_ids integer[]`
     // from day one, so this was a UI limit, not a backend one.
     const [compositions, setCompositions] = useState<CompositionPick[]>([]);
+    // Free text, only used when no composition is picked — the doctor's own
+    // description of what the brand contains, kept as a note rather than a
+    // structured salt. Never sent when a real composition was chosen.
+    const [compositionNote, setCompositionNote] = useState("");
     const [dosage, setDosage] = useState("");
     const [form, setForm] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -103,6 +114,7 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
         if (!open) return;
         setName(initialName);
         setCompositions([]);
+        setCompositionNote("");
         setDosage("");
         setForm("");
         setError(null);
@@ -141,19 +153,23 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
     const panelRef = useRef<HTMLDivElement>(null);
     useOverlayFocus(panelRef, open);
 
-    const canSubmit = !!name.trim() && compositions.length > 0 && !submitting;
+    // The composition is no longer required to submit — see the header note.
+    // A name is still the one thing that must exist.
+    const canSubmit = !!name.trim() && !submitting;
 
     const submit = async () => {
-        if (!canSubmit || compositions.length === 0) return;
+        if (!canSubmit) return;
         setSubmitting(true);
         setError(null);
         try {
             const strengthMg = dosage.trim() ? Number(dosage.trim().replace(/[^\d.]/g, "")) : null;
+            const hasComposition = compositions.length > 0;
             const results = await addMedicine({
                 name: name.trim(),
                 compositionIds: compositions.map((c) => c.compositionId),
                 route: form || null,
                 strengthMg: strengthMg != null && Number.isFinite(strengthMg) ? strengthMg : null,
+                compositionNote: hasComposition ? null : compositionNote.trim() || null,
             });
             const created = results[0]?.medicine;
             // `brandHint` is what lets `handleAcceptIntent` find this exact
@@ -162,20 +178,40 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
             // reads (see that view's own "must be refreshed manually"
             // gotcha) — so the brand this JUST created is reachable
             // immediately, not only after the next refresh.
-            onAccept({
-                intentId: compositions[0].intentId,
-                type: "medicine",
-                // Every molecule, joined — the same rule `MedicineAddSheet`
-                // already follows for a combination's subtitle (never show
-                // half of what is being prescribed).
-                label: compositions.map((c) => c.label).join(" + "),
-                refTable: "compositions",
-                refId: compositions[0].compositionId,
-                medicine: null,
-                viaSearch: true,
-                overridden: false,
-                brandHint: created?.name ?? name.trim(),
-            });
+            if (hasComposition) {
+                onAccept({
+                    intentId: compositions[0].intentId,
+                    type: "medicine",
+                    // Every molecule, joined — the same rule `MedicineAddSheet`
+                    // already follows for a combination's subtitle (never show
+                    // half of what is being prescribed).
+                    label: compositions.map((c) => c.label).join(" + "),
+                    refTable: "compositions",
+                    refId: compositions[0].compositionId,
+                    medicine: null,
+                    viaSearch: true,
+                    overridden: false,
+                    brandHint: created?.name ?? name.trim(),
+                });
+            } else {
+                // No composition behind this at all. There is no composition
+                // intent to file the accept under, so `refTable`/`refId` stay
+                // null and the created medicine rides along on the payload
+                // itself — `handleAcceptIntent` already takes that path
+                // straight to the prescription, skipping the brand-resolution
+                // sheet that only makes sense when a real composition exists.
+                onAccept({
+                    intentId: -Date.now(),
+                    type: "medicine",
+                    label: name.trim(),
+                    refTable: null,
+                    refId: null,
+                    medicine: created ?? null,
+                    viaSearch: true,
+                    overridden: false,
+                    brandHint: created?.name ?? name.trim(),
+                });
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
@@ -249,7 +285,7 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
 
                             <section className="cs-addmed-sec">
                                 <span className="cs-addmed-label">
-                                    Salt / composition <em className="cs-addmed-keyhint">required</em>
+                                    Salt / composition <em className="cs-addmed-keyhint">optional</em>
                                 </span>
 
                                 {/* One chosen row per salt — most brands are one, some
@@ -331,12 +367,33 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                                     </div>
                                 )}
 
+                                {/* No salt picked — 2026-09-19. Doctrine rule 22 no longer
+                                    blocks the accept over this; a brief, one-time note plus a
+                                    polite reminder of why the salt matters replaces the old
+                                    hard stop. The doctor can still finish with "Add &
+                                    continue" below either way. */}
+                                {compositions.length === 0 && (
+                                    <div className="cs-newmed-nocomp">
+                                        <input
+                                            className="cs-addmed-input"
+                                            value={compositionNote}
+                                            placeholder="Describe what it contains, if you know — optional"
+                                            onChange={(e) => setCompositionNote(e.target.value)}
+                                        />
+                                        <p className="cs-newmed-nocomp-warn">
+                                            Without a matched salt, dose and interaction checks
+                                            can't run on this medicine — link one later if it
+                                            turns up in our library.
+                                        </p>
+                                    </div>
+                                )}
+
                                 {/* The composition-adding fallback — same-day follow-up.
-                                    Deliberately NOT a way to finish adding THIS brand: the
-                                    salt still does not exist, so "Add & continue" below stays
-                                    disabled. This only tells the team it is missing — see
-                                    `requestNewComposition`'s doc comment for why that is a
-                                    request, never a live mint (rule 22). */}
+                                    A separate, slower path: it asks our team to add the salt
+                                    to the library, it does not unblock this accept — that no
+                                    longer needs unblocking. See `requestNewComposition`'s doc
+                                    comment for why that stays a request, never a live mint
+                                    (rule 22). */}
                                 {identity && compSearch.isSearching && !compSearch.loading && (
                                     <div className="cs-newmed-request">
                                         {requestSent ? (
@@ -416,7 +473,7 @@ export function AddMedicineSheet({ open, initialName, onCancel, onAccept, identi
                             <button
                                 type="button"
                                 className="cs-addmed-confirm"
-                                title={compositions.length === 0 ? "Pick the salt this medicine contains first" : undefined}
+                                title={!name.trim() ? "Name the medicine first" : undefined}
                                 disabled={!canSubmit}
                                 onClick={submit}
                             >

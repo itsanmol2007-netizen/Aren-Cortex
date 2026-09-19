@@ -190,7 +190,7 @@ async function fetchPrescriptionRenderDataFromNetwork(prescriptionId: string): P
         supabase.from("visit_symptoms").select("symptom_id").eq("visit_id", rx.visit_id),
         supabase.from("visit_findings").select("finding_id").eq("visit_id", rx.visit_id),
         supabase.from("prescription_medicines")
-            .select("id, medicine_id, composition_id, composition_ids, dosage_mg, frequency, duration_days, route, notes, instructions, is_sos, sort_order")
+            .select("id, medicine_id, composition_id, composition_ids, composition_note, dosage_mg, frequency, duration_days, route, notes, instructions, is_sos, sort_order")
             .eq("prescription_id", prescriptionId)
             .order("sort_order", { ascending: true }),
         supabase.from("diagnostic_orders").select("test_name").eq("prescription_id", prescriptionId),
@@ -227,15 +227,22 @@ async function fetchPrescriptionRenderDataFromNetwork(prescriptionId: string): P
         id: `printrx-${pm.id}`,
         medicine_id: Number(pm.medicine_id),
         composition_ids: (pm.composition_ids ?? []).map(Number),
-        primary_composition_id: pm.composition_id != null ? Number(pm.composition_id) : 0,
+        // `null`, not the old `0` sentinel — 0 is a landmine value (nothing
+        // in the catalogue uses it today, but nothing guarantees it never
+        // will), and every other null-safety check in this codebase already
+        // treats "no composition" as `null`, never a fake id.
+        primary_composition_id: pm.composition_id != null ? Number(pm.composition_id) : null,
         name: medNameById.get(Number(pm.medicine_id)) ?? "Unknown medicine",
         category: "",
         use: "",
         match: 0,
-        composition: (pm.composition_ids ?? [])
-            .map((id: number) => compNameById.get(Number(id)))
-            .filter(Boolean)
-            .join(" + "),
+        composition: (pm.composition_ids ?? []).length
+            ? (pm.composition_ids ?? [])
+                .map((id: number) => compNameById.get(Number(id)))
+                .filter(Boolean)
+                .join(" + ")
+            : (pm.composition_note ?? ""),
+        compositionNote: pm.composition_note ?? null,
         dosage: pm.dosage_mg ? `${pm.dosage_mg}mg` : "",
         // Slot strings ("1-0-1-0") pass through untouched — the renderer
         // resolves them; unknown/null frequencies degrade to blank dots.
