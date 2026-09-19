@@ -71,7 +71,7 @@ serve(async (req) => {
   try {
     const { data: rx } = await db
       .from("prescriptions")
-      .select("id, visit_id, assigned_doctor_id, hospital_id, created_at, follow_up_days, advice_notes, findings_text")
+      .select("id, visit_id, assigned_doctor_id, hospital_id, created_at, follow_up_days, advice_notes, findings_text, last_sent_language")
       .eq("share_token", token)
       .maybeSingle();
     if (!rx) return json({ ok: false, error: "not_found" }, 404);
@@ -141,9 +141,16 @@ serve(async (req) => {
     const adviceLines = String(rx.advice_notes ?? "")
       .split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
 
+    const sentLanguage = rx.last_sent_language as string | null;
+    const defaultLanguage = sentLanguage === "hi" || sentLanguage === "hi-Latn" ? sentLanguage : "en";
+
     const rxOut = {
       ref: (visit as { prescription_ref?: string | null }).prescription_ref ?? null,
       date: rx.created_at,
+      // Which language this prescription was actually sent in — the page
+      // opens here by default instead of always starting in English. See
+      // migration 20260919_prescription_last_sent_language.sql.
+      defaultLanguage,
       clinic: {
         name: hospital?.name ?? "Clinic",
         nameHi: hospital?.name_hi ?? null,

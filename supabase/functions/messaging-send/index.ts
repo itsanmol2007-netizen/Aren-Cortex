@@ -579,6 +579,20 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
       .update({ wa_message_id: result.providerMessageId, status: "sent", credits_charged: cost })
       .eq("id", messageId);
 
+    // Record what language this prescription actually went out in, so the
+    // public page (prescription-preview) can open in the same language
+    // instead of always defaulting to English — see migration
+    // 20260919_prescription_last_sent_language.sql. Best-effort: a doctor's
+    // send must never fail because this one bookkeeping write did.
+    if (input.purpose === "prescription" && input.prescriptionId) {
+      await db.from("prescriptions")
+        .update({ last_sent_language: input.language })
+        .eq("id", input.prescriptionId)
+        .then(({ error }) => {
+          if (error) console.warn(`[messaging-send] last_sent_language update failed: ${error.message}`);
+        });
+    }
+
     const balance = await currentBalance(db, ctx.doctorId);
     return { ok: true as const, messageId, status: "sent", balance, provider: result.name };
   } catch (e) {

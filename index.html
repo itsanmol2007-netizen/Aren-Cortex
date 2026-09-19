@@ -41,9 +41,14 @@
          Newsreader italic 600 added 2026-09-12 for Overview's own greeting
          (`DoctorOverviewPage.tsx`) — without it the browser would have faked
          a bold weight on top of the only italic cut actually loaded (400),
-         which looks distorted on a serif face at that size. -->
+         which looks distorted on a serif face at that size.
+         700/800 added 2026-09-19 for the public prescription page's English
+         mode (PublicPrescriptionPage.tsx) — same reasoning as the Devanagari
+         weight bump just below: headings there are bold/extrabold, and
+         without a real cut loaded the browser fake-bolds Geist's 600,
+         which looks soft rather than "modern" at that weight. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,600&display=swap"
       rel="stylesheet"
     />
     <!-- Devanagari for Hindi prescriptions (PrescriptionDocument.tsx,

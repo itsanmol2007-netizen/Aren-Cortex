@@ -17,7 +17,7 @@
 // QR rule (encodes THIS page's own URL, not the prescription's details).
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
     Sunrise, Sun, Sunset, Moon, Utensils, UtensilsCrossed,
@@ -97,13 +97,13 @@ function TimingBadge({ instructions, language }: { instructions: string; languag
     );
 }
 
-function MedicineCard({ med, language, labels }: { med: PublicRxMedicine; language: RxLanguage; labels: ReturnType<typeof rxLabels> }) {
+function MedicineCard({ med, language, labels, bold }: { med: PublicRxMedicine; language: RxLanguage; labels: ReturnType<typeof rxLabels>; bold: string }) {
     return (
         <div className="rounded-2xl border-2 border-slate-900 bg-white p-4 shadow-[3px_3px_0_0_rgba(15,23,42,1)]">
             <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                     <Pill className="h-5 w-5 shrink-0 text-indigo-700" strokeWidth={2.5} />
-                    <h3 className="text-lg font-black leading-tight text-slate-900">{med.name}</h3>
+                    <h3 className={`text-lg ${bold} leading-tight text-slate-900`}>{med.name}</h3>
                 </div>
                 {med.isSos ? (
                     <span className="shrink-0 rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white">
@@ -132,12 +132,12 @@ function MedicineCard({ med, language, labels }: { med: PublicRxMedicine; langua
     );
 }
 
-function Section({ icon: Icon, title, children }: { icon: typeof Pill; title: string; children: React.ReactNode }) {
+function Section({ icon: Icon, title, bold, children }: { icon: typeof Pill; title: string; bold: string; children: React.ReactNode }) {
     return (
         <section className="mt-6">
             <div className="mb-2.5 flex items-center gap-2">
                 <Icon className="h-5 w-5 text-slate-700" strokeWidth={2.5} />
-                <h2 className="text-sm font-black uppercase tracking-wide text-slate-700">{title}</h2>
+                <h2 className={`text-sm ${bold} uppercase tracking-wide text-slate-700`}>{title}</h2>
             </div>
             {children}
         </section>
@@ -200,6 +200,10 @@ export function PublicPrescriptionPage() {
     >({ phase: "loading" });
     const [language, setLanguage] = useState<RxLanguage>("en");
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    // Once true, the fetched prescription's own defaultLanguage has already
+    // set the starting language — never overwrite a language the PATIENT
+    // then picked for themselves via the switcher.
+    const langInitialized = useRef(false);
 
     useEffect(() => {
         if (!token) { setState({ phase: "error" }); return; }
@@ -210,6 +214,18 @@ export function PublicPrescriptionPage() {
         });
         return () => { live = false; };
     }, [token]);
+
+    // Open in whichever language the doctor actually sent this prescription
+    // in — a doctor who picked Hindi on send must not hand a patient a link
+    // that opens in English by default (see migration
+    // 20260919_prescription_last_sent_language.sql). The switcher still
+    // works either way; this only sets the STARTING point.
+    useEffect(() => {
+        if (state.phase === "ready" && !langInitialized.current) {
+            langInitialized.current = true;
+            setLanguage(state.rx.defaultLanguage);
+        }
+    }, [state]);
 
     // The QR encodes THIS PAGE'S OWN URL (docs/prescription-render-spec.md's
     // QR treatment: "#3 patient page: the QR encodes this page's own URL, so
@@ -246,14 +262,31 @@ export function PublicPrescriptionPage() {
     // instead of whatever the OS happens to substitute, plus taller line
     // height — Devanagari's matras and conjuncts extend further above and
     // below the baseline than Latin text needs. Deliberately covers "hi"
-    // only, not "hi-Latn" — Hinglish is Latin script and reads fine in the
-    // page's own sans-serif.
+    // only, not "hi-Latn" — Hinglish stays on the same large, high-contrast
+    // treatment as Devanagari (Anmol, 2026-09-19: "for better readability
+    // for Hindi users especially" — Hinglish readers are that same audience,
+    // just typing it in Roman letters).
+    //
+    // English gets its own, deliberately different pass: the same Geist face
+    // the rest of this app already uses for its own "modern" identity
+    // (index.html's login-screen comment), a touch tighter tracking, and one
+    // notch down from the Hindi/Hinglish track's maximum boldness (900 ->
+    // 800) — "slightly modern," not a different design language, per the
+    // same brief: keep everything patients already found readable, just
+    // refine the English pass.
     const isDevanagari = language === "hi";
+    const modernEnglish = language === "en";
+    const boldWeight = modernEnglish ? "font-extrabold" : "font-black";
+    const mainStyle: React.CSSProperties | undefined = isDevanagari
+        ? { fontFamily: "'Noto Sans Devanagari', sans-serif", lineHeight: 1.6 }
+        : modernEnglish
+            ? { fontFamily: "'Geist', sans-serif", letterSpacing: "-0.01em" }
+            : undefined;
 
     return (
         <main
             className="min-h-dvh bg-slate-50 px-4 pb-10 pt-6"
-            style={isDevanagari ? { fontFamily: "'Noto Sans Devanagari', sans-serif", lineHeight: 1.6 } : undefined}
+            style={mainStyle}
         >
             <div className="mx-auto max-w-md">
                 <div className="mb-4 flex justify-end">
@@ -267,7 +300,7 @@ export function PublicPrescriptionPage() {
                             <img src={rx.clinic.logoUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl bg-white object-contain p-1" />
                         ) : null}
                         <div className="min-w-0">
-                            <h1 className="truncate text-xl font-black leading-tight">{clinicName}</h1>
+                            <h1 className={`truncate text-xl ${boldWeight} leading-tight`}>{clinicName}</h1>
                             {doctorName ? (
                                 <p className="truncate text-sm font-semibold text-slate-300">
                                     {doctorName}
@@ -286,7 +319,7 @@ export function PublicPrescriptionPage() {
                 {/* Patient strip */}
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border-2 border-slate-900 bg-white px-4 py-3 shadow-[3px_3px_0_0_rgba(15,23,42,1)]">
                     <div className="min-w-0">
-                        <p className="truncate text-base font-black text-slate-900">{rx.patient.name}</p>
+                        <p className={`truncate text-base ${boldWeight} text-slate-900`}>{rx.patient.name}</p>
                         <p className="text-xs font-semibold text-slate-500">
                             {[rx.patient.age != null ? `${rx.patient.age} ${language === "en" ? "yrs" : "साल"}` : null, rx.patient.gender]
                                 .filter(Boolean).join(" · ")}
@@ -299,7 +332,7 @@ export function PublicPrescriptionPage() {
                 </div>
 
                 {(rx.symptoms.length || rx.findings.length || rx.diagnosisText) ? (
-                    <Section icon={Stethoscope} title={labels.findings}>
+                    <Section icon={Stethoscope} title={labels.findings} bold={boldWeight}>
                         <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 text-sm font-medium text-slate-700">
                             {[rx.diagnosisText, ...rx.symptoms, ...rx.findings].filter(Boolean).join(" · ")}
                         </div>
@@ -307,10 +340,10 @@ export function PublicPrescriptionPage() {
                 ) : null}
 
                 {rx.medicines.length ? (
-                    <Section icon={Pill} title={labels.prescription}>
+                    <Section icon={Pill} title={labels.prescription} bold={boldWeight}>
                         <div className="space-y-3">
                             {rx.medicines.map((m, i) => (
-                                <MedicineCard key={i} med={m} language={language} labels={labels} />
+                                <MedicineCard key={i} med={m} language={language} labels={labels} bold={boldWeight} />
                             ))}
                         </div>
                         <p className="mt-2 text-center text-[11px] font-semibold text-slate-400">{labels.freqLegend}</p>
@@ -318,7 +351,7 @@ export function PublicPrescriptionPage() {
                 ) : null}
 
                 {rx.tests.length ? (
-                    <Section icon={ClipboardList} title={labels.investigations}>
+                    <Section icon={ClipboardList} title={labels.investigations} bold={boldWeight}>
                         <ul className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
                             {rx.tests.map((t, i) => (
                                 <li key={i} className="text-sm font-semibold text-slate-800">• {t}</li>
@@ -328,7 +361,7 @@ export function PublicPrescriptionPage() {
                 ) : null}
 
                 {rx.advice.length ? (
-                    <Section icon={ShieldAlert} title={labels.advice}>
+                    <Section icon={ShieldAlert} title={labels.advice} bold={boldWeight}>
                         <ul className="space-y-2 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
                             {rx.advice.map((a, i) => (
                                 <li key={i} className="flex gap-2 text-sm font-semibold text-amber-900">
@@ -340,7 +373,7 @@ export function PublicPrescriptionPage() {
                 ) : null}
 
                 {rx.followUpDays ? (
-                    <div className="mt-4 rounded-2xl bg-indigo-600 px-4 py-3 text-center font-black text-white">
+                    <div className={`mt-4 rounded-2xl bg-indigo-600 px-4 py-3 text-center ${boldWeight} text-white`}>
                         {labels.followUp(rx.followUpDays)}
                     </div>
                 ) : null}
