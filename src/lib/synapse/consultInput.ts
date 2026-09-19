@@ -178,6 +178,23 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
     const hba1c = num(vitals.hba1c);
     if (hba1c !== null) out.push({ measureKey: "HBA1C", value: hba1c, unit: "%" });
 
+    // ── CBC / hematology panel (2026-09-19) ─────────────────────────────
+    // No measurement_rule reads any of these today — same honest state
+    // weight/height and the physio fields are already in. Emitted anyway,
+    // for the same reason: a field that emits nothing is a number the
+    // RECORD never sees either, and these three (Hb, TLC, platelets) are
+    // exactly what a dengue/malaria workup is actually followed on.
+    const hb = num(vitals.hb);
+    if (hb !== null) out.push({ measureKey: "HB", value: hb, unit: "g/dL" });
+
+    const tlc = num(vitals.tlc);
+    if (tlc !== null) out.push({ measureKey: "TLC", value: tlc, unit: "/µL" });
+
+    const plateletCount = num(vitals.plateletCount);
+    if (plateletCount !== null) {
+        out.push({ measureKey: "PLATELET_COUNT", value: plateletCount, unit: "×10³/µL" });
+    }
+
     // ── Obstetric ────────────────────────────────────────────────────────
     // The LMP is entered as a date because that is what the patient knows,
     // but "12 June" means nothing to a rule. What a rule can reason about is
@@ -288,6 +305,7 @@ export function measurementsToVitals(
         ["KNEE_GIRTH_L", "kneeGirthL"], ["KNEE_GIRTH_R", "kneeGirthR"],
         ["GLUCOSE_FASTING", "glucoseFasting"], ["GLUCOSE_RANDOM", "glucoseRandom"],
         ["HBA1C", "hba1c"],
+        ["HB", "hb"], ["TLC", "tlc"], ["PLATELET_COUNT", "plateletCount"],
     ];
     for (const [measureKey, vitalKey] of SIMPLE) {
         const n = numByKey.get(measureKey);

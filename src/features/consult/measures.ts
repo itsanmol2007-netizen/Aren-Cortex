@@ -68,7 +68,7 @@ export type BetterWhen = "lower" | "higher" | "band" | "none";
  * that per-joint ROM exists, and a flat list of that length is a list nobody
  * reads to the end of. Order here is the order the menu prints its headings.
  */
-export type MeasureGroup = "vitals" | "body" | "metabolic" | "musculoskeletal" | "obstetric";
+export type MeasureGroup = "vitals" | "body" | "metabolic" | "hematology" | "musculoskeletal" | "obstetric";
 
 export interface MeasureField {
     key: MeasureFieldKey;
@@ -285,6 +285,44 @@ export const MEASURE_FIELDS: MeasureField[] = [
         // cut-off, which is what the rule fires on.
         warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 5.7; },
         warnText: "5.7–6.4% is prediabetic; ≥6.5% is the diabetic range",
+    },
+    // ── CBC / hematology panel (added 2026-09-19) ───────────────────────
+    // "It really doesn't have to feed CBC reports — what's the Hb count or
+    // TLC count, basic thing in malaria or dengue" (Anmol). Both signals
+    // already exist and already fire (DENGUE_SUSPICION, MALARIA_CONFIRMED
+    // below) but had nothing to surface — a fever workup with no way to
+    // record the three numbers it's actually run on.
+    {
+        key: "hb", label: "Hemoglobin (g/dL)", shortLabel: "Hemoglobin",
+        unit: "g/dL", printLabel: "Hb", rxLabel: "Hb",
+        group: "hematology", betterWhen: "higher", trendNoise: 0.5,
+        placeholder: "13.5", kind: "number",
+        // Normal range is sex-dependent (13–17 male, 12–15 female) and this
+        // field cannot see the patient's sex — same honest limit respRate's
+        // own comment documents for its age-band. Set at the low end valid
+        // for either sex rather than warn wrongly for one of them.
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 11; },
+        warnText: "Under 11 g/dL suggests anemia — normal range is sex-dependent (12–17)",
+    },
+    {
+        key: "tlc", label: "TLC (/µL)", shortLabel: "Total leukocyte count",
+        unit: "/µL", printLabel: "TLC", rxLabel: "TLC",
+        group: "hematology", betterWhen: "band", trendNoise: 500,
+        placeholder: "8000", kind: "number",
+        warn: numberInRange(4000, 11000),
+        warnText: "Outside 4,000–11,000/µL — low fits a viral fever (dengue), high fits a bacterial one",
+    },
+    {
+        // The dengue severity marker — a single low reading matters less
+        // than the TREND across the illness (cortex-longitudinal-spec's own
+        // principle for exactly this kind of serial lab value), which is why
+        // this carries a `trendNoise` at all rather than being a one-off number.
+        key: "plateletCount", label: "Platelet Count (×10³/µL)", shortLabel: "Platelet count",
+        unit: "×10³/µL", printLabel: "Platelets", rxLabel: "Plt",
+        group: "hematology", betterWhen: "higher", trendNoise: 10,
+        placeholder: "250", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 150; },
+        warnText: "Under 150 ×10³/µL is thrombocytopenia — dengue is followed on the trend, not one reading",
     },
     {
         // Deliberately before the obstetric pair: those two are the only
@@ -531,12 +569,13 @@ export const GROUP_LABEL: Record<MeasureGroup, string> = {
     vitals: "Vitals",
     body: "Body",
     metabolic: "Metabolic",
+    hematology: "Blood count (CBC)",
     musculoskeletal: "Movement & function",
     obstetric: "Obstetric",
 };
 
 export const GROUP_ORDER: MeasureGroup[] = [
-    "vitals", "body", "metabolic", "musculoskeletal", "obstetric",
+    "vitals", "body", "metabolic", "hematology", "musculoskeletal", "obstetric",
 ];
 
 /**
@@ -578,7 +617,19 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     FEVER_PROLONGED: ["temp"],
     FEVER_RECURRENT: ["temp"],
     RIGORS: ["temp"],
-    DENGUE_SUSPICION: ["temp"],
+    // The signal already fired here before it had anywhere to send a
+    // doctor — DENGUE_SUSPICION existed with no CBC fields to surface until
+    // the hematology panel above. Platelets and TLC are what the workup and
+    // the monitoring both actually run on; verified against the live
+    // `signals` table before adding (2026-09-19) — see this file's own
+    // "KNOWN_DIABETES" cautionary note above for why that check matters.
+    DENGUE_SUSPICION: ["temp", "plateletCount", "tlc"],
+    // Confirmed malaria is followed the same way — Hb for the hemolysis,
+    // TLC and platelets for the same reason dengue watches them.
+    MALARIA_CONFIRMED: ["temp", "hb", "tlc", "plateletCount"],
+    TYPHOID_CONFIRMED: ["temp", "tlc"],
+    JAUNDICE: ["hb"],
+    PALLOR: ["hb"],
 
     // oxygenation and rate
     // Respiratory rate belongs beside SpO₂ on all of these: it is the vital
@@ -639,8 +690,10 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     VOMITING: ["pulse", "bp"],
     DEHYDRATION: ["pulse", "bp"],
 
-    // bleeding — the one place blood group is genuinely the next question
-    BLEEDING: ["bloodGroup"],
+    // bleeding — blood group for a possible transfusion, platelets because
+    // abnormal bleeding is the platelet count's own clinical question.
+    BLEEDING: ["bloodGroup", "plateletCount"],
+    BLEEDING_GUMS: ["plateletCount"],
     TRAUMA_HISTORY: ["bloodGroup", "bp", "pulse"],
 
     // obstetric — the LMP is the next question for any of these, and for a

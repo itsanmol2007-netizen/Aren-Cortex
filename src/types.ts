@@ -93,6 +93,19 @@ export type Vitals = {
   glucoseRandom?: string;
   /** glycated haemoglobin, % (HBA1C) */
   hba1c?: string;
+  // ── CBC / hematology panel (added 2026-09-19) ────────────────────────
+  // The catalogue had no way to record the basic complete-blood-count
+  // values a fever workup actually runs on — Hb, TLC, platelets — despite
+  // dengue and malaria (the two most common fever presentations this app
+  // already tracks via DENGUE_SUSPICION/MALARIA_CONFIRMED) being diagnosed
+  // and MONITORED on exactly these three numbers. See measures.ts for the
+  // field definitions and warning bands.
+  /** hemoglobin, g/dL */
+  hb?: string;
+  /** total leukocyte count, /µL */
+  tlc?: string;
+  /** platelet count, ×10³/µL — the dengue severity marker */
+  plateletCount?: string;
 };
 
 export type Medicine = {
