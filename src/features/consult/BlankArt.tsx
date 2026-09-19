@@ -213,18 +213,19 @@ export function BlankAddMedicineArt() {
     );
 }
 
-/** Consultation Defaults' own mark (Practice page): the chart Cortex opens
- *  with, at rest — a monitor, unwritten. Neutral slate, the same "hasn't
- *  declared anything of its own" family as `BlankLabArt` — Consultation
- *  Defaults isn't a category with its own hue either (`tone="slate"`). */
-export function BlankConsultDefaultsArt() {
+/** Medicine Pricing's own mark (Practice page): a price tag, unwritten —
+ *  the punched hole and a blank line where a rate would sit. Teal, the same
+ *  tone the dose sheet's own price UI already carries (`.cs-addmed-price-*`
+ *  in consult.css) — money on a medicine reads as this card's established
+ *  hue already, not a new one. */
+export function BlankPricingArt() {
     return (
-        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" aria-hidden="true">
-            <rect x="10" y="7" width="30" height="21" rx="3.5"
-                fill="#fbfcfd" stroke="#c3cad6" strokeWidth="1.7" />
-            <path d="M16.5 13.5h17M16.5 18.5h11" stroke="#dbe1ea" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M25 28v5M19 37h12" stroke="#c3cad6" strokeWidth="1.7" strokeLinecap="round" />
-            <path d="M44 10l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#b7c0cf" />
+        <svg width="52" height="46" viewBox="0 0 52 46" fill="none" aria-hidden="true">
+            <path d="M12 10h16l14 14-16 16-14-14z"
+                fill="#fbfdfc" stroke="#a7ddcb" strokeWidth="1.7" strokeLinejoin="round" />
+            <circle cx="18" cy="16" r="3" fill="#e6f5ee" stroke="#bde0d0" strokeWidth="1.3" />
+            <path d="M22 28h9" stroke="#dbeee6" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M44 8l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#8fcdb7" />
         </svg>
     );
 }

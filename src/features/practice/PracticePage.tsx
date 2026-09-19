@@ -57,13 +57,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import { useNavigate } from "react-router-dom";
 import {
-    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart, Layers,
+    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart,
+    IndianRupee, Layers,
     MoreHorizontal, Pill, Plus, Printer, Settings, Shield, SlidersHorizontal, Sparkles, Star,
     ToggleLeft, ToggleRight, User, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
+import { requestFocus } from "../../lib/ui/focusAnchor";
+import {
+    fetchMedicineBillingPolicy, fetchClinicMedicinePriceList, setClinicMedicinePrice,
+    type MedicineBillingPolicy, type ClinicMedicinePriceRow,
+} from "../../lib/db/medicinePricing";
 import {
     addMedicine, addPreferredLab, clearClinicBrandDefault, clearHospitalCompanionCuration,
     createHospitalCompanionEdge, createPrescriptionTemplate, deleteDoctorFreeTerm,
@@ -85,7 +92,7 @@ import type { IntentType } from "../../lib/synapse/engine";
 import { MEASURE_FIELDS, type MeasureFieldKey } from "../consult/measures";
 import { useCatalogueSearch, KIND_BADGE } from "../consult/CaseSheet";
 import {
-    BlankAddMedicineArt, BlankCompanionArt, BlankConsultDefaultsArt, BlankLabArt, BlankMedicineArt,
+    BlankAddMedicineArt, BlankCompanionArt, BlankPricingArt, BlankLabArt, BlankMedicineArt,
     BlankTemplateArt, BlankTermArt,
 } from "../consult/BlankArt";
 import { resolveProductByName } from "../../lib/db/medicines";
@@ -2027,6 +2034,221 @@ function CompanionsModal({
     );
 }
 
+/**
+ * "Manage pricing" — search a medicine, then set what this clinic charges
+ * for it. Same two-step resolve as Preferred Medicines' own search
+ * (`PreferredMedicinesCard.pickHit`/`openDrill`): a brand hit ("Dolo")
+ * resolves straight to a product; a molecule hit ("paracetamol") drills
+ * into its brands first, because THAT is a real choice a doctor makes here
+ * — pricing is always on a concrete product, never a molecule.
+ *
+ * The list underneath the search is every medicine already priced, newest
+ * edit first — clicking a row reopens the same pack-price/pack-units form
+ * pre-filled, so fixing a price is the same action as setting one for the
+ * first time.
+ */
+function MedicinePricingModal({
+    hospitalId, actorUserId, rows, loading, onSaved, onClose,
+}: {
+    hospitalId: string;
+    actorUserId: string | null;
+    rows: ClinicMedicinePriceRow[];
+    loading: boolean;
+    onSaved: (next: ClinicMedicinePriceRow[]) => void;
+    onClose: () => void;
+}) {
+    const search = useIntentSearch(["medicine"]);
+    const [drill, setDrill] = useState<{ id: number; name: string } | null>(null);
+    const [drillBrands, setDrillBrands] = useState<{ medicineId: number; name: string }[]>([]);
+    const [drillLoading, setDrillLoading] = useState(false);
+
+    // The medicine currently being priced — its form replaces the search/
+    // list body until saved or cancelled, the same "one thing at a time"
+    // shape the price form already uses inside MedicineAddSheet.
+    const [pricing, setPricing] = useState<{ medicineId: number; name: string; manufacturer: string | null } | null>(null);
+    const [packPrice, setPackPrice] = useState("");
+    const [packUnits, setPackUnits] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!search.isSearching) { setDrill(null); setDrillBrands([]); }
+    }, [search.isSearching]);
+
+    const openDrill = (hit: IntentSearchHit) => {
+        if (hit.refId == null) return;
+        setDrill({ id: hit.refId, name: hit.label });
+        setDrillLoading(true);
+        fetchBrandsForComposition(hit.refId).then(setDrillBrands).catch(console.error).finally(() => setDrillLoading(false));
+    };
+
+    const startPricing = (medicineId: number, name: string, manufacturer: string | null = null) => {
+        const existing = rows.find((r) => r.medicineId === medicineId);
+        setPricing({ medicineId, name, manufacturer: manufacturer ?? existing?.manufacturer ?? null });
+        setPackPrice(existing ? String(existing.packPrice) : "");
+        setPackUnits(existing ? String(existing.packUnits) : "");
+        setError(null);
+        search.setQuery("");
+    };
+
+    const pickHit = (hit: IntentSearchHit) => {
+        if (hit.refId == null) return;
+        if (hit.matchKind !== "brand" || !hit.viaLabel) { openDrill(hit); return; }
+        resolveProductByName(hit.viaLabel)
+            .then((product) => {
+                if (!product) { openDrill(hit); return; }
+                startPricing(product.id, product.name);
+            })
+            .catch(console.error);
+    };
+
+    const submitPrice = async () => {
+        if (!pricing) return;
+        const price = Number(packPrice);
+        const units = Number(packUnits);
+        if (!Number.isFinite(price) || price < 0 || !Number.isFinite(units) || units <= 0) {
+            setError("Enter a valid pack price and unit count.");
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const saved = await setClinicMedicinePrice({
+                hospitalId, medicineId: pricing.medicineId, packPrice: price, packUnits: units, setBy: actorUserId,
+            });
+            const nextRow: ClinicMedicinePriceRow = { ...saved, medicineName: pricing.name, manufacturer: pricing.manufacturer };
+            onSaved([nextRow, ...rows.filter((r) => r.medicineId !== pricing.medicineId)]);
+            setPricing(null);
+            setPackPrice("");
+            setPackUnits("");
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that price.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="teal" icon={<IndianRupee size={15} />} eyebrow="Medicine Pricing"
+            title="What this clinic charges" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {!pricing && (
+                <div className="prac-modal-field">
+                    <IntentSearchField state={search} placeholder="Search a medicine to price it…" />
+                </div>
+            )}
+
+            {pricing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setPricing(null)}>
+                        ← Different medicine
+                    </button>
+                    <div className="prac-med-info">
+                        <span className="prac-row-label">{pricing.name}</span>
+                        {pricing.manufacturer && <span className="prac-med-brands">{pricing.manufacturer}</span>}
+                    </div>
+                    <div className="prac-modal-field-row">
+                        <div className="prac-modal-field">
+                            <label>Pack price (₹)</label>
+                            <input
+                                type="text" inputMode="decimal" value={packPrice} placeholder="e.g. 200"
+                                onChange={(e) => setPackPrice(e.target.value)} autoFocus
+                            />
+                        </div>
+                        <div className="prac-modal-field">
+                            <label>Units per pack</label>
+                            <input
+                                type="text" inputMode="numeric" value={packUnits} placeholder="e.g. 10"
+                                onChange={(e) => setPackUnits(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button
+                        type="button" className="prac-modal-btn is-primary is-compact"
+                        disabled={!packPrice.trim() || !packUnits.trim() || saving}
+                        onClick={submitPrice}
+                    >
+                        {saving ? "Saving…" : "Save price"}
+                    </button>
+                </>
+            ) : search.isSearching ? (
+                <div className="prac-search-results">
+                    {drill ? (
+                        <>
+                            <button type="button" className="prac-modal-back" onClick={() => setDrill(null)}>
+                                ← Different molecule
+                            </button>
+                            {drillLoading ? (
+                                <SkelRows count={3} />
+                            ) : drillBrands.length === 0 ? (
+                                <p className="prac-soon">No catalogue brand yet for {drill.name}.</p>
+                            ) : (
+                                drillBrands.map((b) => (
+                                    <button
+                                        key={b.medicineId} type="button" className="prac-modal-row is-pick"
+                                        onClick={() => startPricing(b.medicineId, b.name)}
+                                    >
+                                        <span className="prac-row-label">{b.name}</span>
+                                        {rows.some((r) => r.medicineId === b.medicineId) && (
+                                            <span className="prac-quiet-pill is-alt">already priced</span>
+                                        )}
+                                    </button>
+                                ))
+                            )}
+                        </>
+                    ) : search.hits.length === 0 ? (
+                        <EmptyBlock
+                            art={<BlankPricingArt />} fact={search.loading ? "Searching…" : `Nothing matches "${search.query.trim()}"`}
+                            next="Try the molecule name or a brand."
+                        />
+                    ) : (
+                        search.hits.map((hit) => {
+                            const isBrandHit = hit.matchKind === "brand" && !!hit.viaLabel;
+                            return (
+                                <button
+                                    key={hit.intentId} type="button" className="prac-hit-row"
+                                    onClick={() => (isBrandHit ? pickHit(hit) : openDrill(hit))}
+                                >
+                                    <span className="prac-med-icon" aria-hidden="true"><IndianRupee size={13} /></span>
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label is-catalogue">{isBrandHit ? hit.viaLabel : hit.label}</span>
+                                        <span className="prac-med-brands">
+                                            {isBrandHit ? hit.label : "Molecule. Pick a brand."}
+                                        </span>
+                                    </div>
+                                    {!isBrandHit && <span className="prac-hit-drill">Brands <ChevronDown size={12} /></span>}
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
+            ) : loading ? (
+                <SkelRows count={4} />
+            ) : rows.length === 0 ? (
+                <p className="prac-soon">Nothing priced yet. Search above to add your first one.</p>
+            ) : (
+                <div className="prac-modal-rows">
+                    {rows.map((r) => (
+                        <button
+                            key={r.medicineId} type="button" className="prac-modal-row is-pick"
+                            onClick={() => startPricing(r.medicineId, r.medicineName, r.manufacturer)}
+                        >
+                            <div className="prac-med-info">
+                                <span className="prac-row-label">{r.medicineName}</span>
+                                {r.manufacturer && <span className="prac-med-brands">{r.manufacturer}</span>}
+                            </div>
+                            <span className="prac-quiet-pill is-alt">₹{r.unitPrice.toFixed(2)}/unit</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
 // ===========================================================================
 // THE PAGE
 // ===========================================================================
@@ -2037,6 +2259,7 @@ export function PracticePage({
     templates, onTemplatesChange, observables,
 }: Props) {
     const identity = useClinicalIdentity();
+    const navigate = useNavigate();
 
     const [brands, setBrands] = useState<ClinicBrandDefaultDetail[]>([]);
     const [brandsLoading, setBrandsLoading] = useState(true);
@@ -2061,6 +2284,14 @@ export function PracticePage({
     const [measurementsModalOpen, setMeasurementsModalOpen] = useState(false);
     const [manageTermsOpen, setManageTermsOpen] = useState(false);
 
+    // ── Medicine pricing (opt-in, see lib/db/medicinePricing.ts) ───────────
+    const [medicineBillingPolicy, setMedicineBillingPolicy] = useState<MedicineBillingPolicy>({
+        enabled: false, gstEnabled: false, gstPercent: 18,
+    });
+    const [priceRows, setPriceRows] = useState<ClinicMedicinePriceRow[]>([]);
+    const [priceRowsLoading, setPriceRowsLoading] = useState(true);
+    const [pricingModalOpen, setPricingModalOpen] = useState(false);
+
     // Every Practice-local overlay, ORed together — the same job
     // `App.tsx`'s `isAnyModalOpen` does for the consult workspace, scoped to
     // this page's own modals. `PreferredMedicinesCard` gates its Ctrl+K /
@@ -2069,7 +2300,7 @@ export function PracticePage({
     const anyModalOpen =
         labsModalOpen || addMedicineOpen != null || addedMedicinesOpen ||
         companionModalOpen || editingTemplate != null || measurementsModalOpen ||
-        manageTermsOpen;
+        manageTermsOpen || pricingModalOpen;
 
     useEffect(() => {
         if (!identity.ready) return;
@@ -2096,7 +2327,25 @@ export function PracticePage({
             .then(setTerms)
             .catch(console.error)
             .finally(() => setTermsLoading(false));
+
+        fetchMedicineBillingPolicy(identity.hospitalId).then(setMedicineBillingPolicy).catch(console.error);
+        setPriceRowsLoading(true);
+        fetchClinicMedicinePriceList(identity.hospitalId)
+            .then(setPriceRows)
+            .catch(console.error)
+            .finally(() => setPriceRowsLoading(false));
     }, [identity.ready, identity.doctorId, identity.hospitalId]);
+
+    /** Sends the doctor to the admin console's own "Consultation fees" card
+     *  (which also carries the medicine billing toggle) and asks it to
+     *  scroll to + highlight that exact card on arrival — see
+     *  lib/ui/focusAnchor.ts. Practice never opens FeesModal itself: turning
+     *  the policy on/off is the admin console's job, not this page's
+     *  (lib/db/admin.ts's own header rule). */
+    const goEnableMedicineBilling = () => {
+        requestFocus("adm-card-fees");
+        navigate("/app/admin");
+    };
 
     const forgetTerm = (id: number) => {
         setTerms((curr) => curr.filter((t) => t.id !== id));
@@ -2381,30 +2630,57 @@ export function PracticePage({
                         </PracticeCard>
 
                         <PracticeCard
-                            icon={<SlidersHorizontal size={13} />} tone="slate" title="Consultation Defaults" fixed
-                            subtitle="How Cortex opens a consultation."
+                            icon={<IndianRupee size={13} />} tone="teal" title="Medicine Pricing" fixed
+                            subtitle="What this clinic charges for the medicine it dispenses."
+                            count={medicineBillingPolicy.enabled ? priceRows.length : undefined}
+                            countTone="green"
+                            foot={medicineBillingPolicy.enabled && priceRows.length > 0 ? (
+                                <FootLink label="Manage pricing" onClick={() => setPricingModalOpen(true)} />
+                            ) : undefined}
                         >
-                            <div className="prac-fill">
-                                <div className="prac-fill-art"><BlankConsultDefaultsArt /></div>
-                                <div className="prac-setting-list">
-                                    <button type="button" className="prac-setting-row" onClick={() => onNavigate("settings")}>
-                                        <div className="prac-med-info">
-                                            <span className="prac-row-label">Consultation profile</span>
-                                            <span className="prac-med-brands">Which chart Cortex opens with</span>
-                                            <span className="prac-setting-link">Change profile <ChevronRight size={11} /></span>
-                                        </div>
-                                        <span className="prac-quiet-pill">{specialty.label}</span>
-                                    </button>
-                                    <button type="button" className="prac-setting-row" onClick={() => setMeasurementsModalOpen(true)}>
-                                        <div className="prac-med-info">
-                                            <span className="prac-row-label">Default measurements</span>
-                                            <span className="prac-med-brands">Shown when a consult opens</span>
-                                            <span className="prac-setting-link">Configure measurements <ChevronRight size={11} /></span>
-                                        </div>
-                                        <span className="prac-quiet-pill is-alt">{measureCount} of {specialty.measurements.length}</span>
-                                    </button>
+                            {!medicineBillingPolicy.enabled ? (
+                                <EmptyBlock
+                                    art={<BlankPricingArt />}
+                                    fact="Medicine billing is off"
+                                    next="Turn it on from the admin console to price and bill the medicine this clinic dispenses — off changes nothing here."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={goEnableMedicineBilling}>
+                                            <IndianRupee size={14} /> Turn this on from Overview
+                                        </button>
+                                    }
+                                />
+                            ) : priceRowsLoading ? (
+                                <SkelRows count={3} />
+                            ) : priceRows.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankPricingArt />}
+                                    fact="No medicines priced yet"
+                                    next="Search a medicine and set what this clinic charges — a pack price and how many units the pack holds."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setPricingModalOpen(true)}>
+                                            <IndianRupee size={14} /> Add pricing
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {priceRows.length <= 3 && <div className="prac-fill-art"><BlankPricingArt /></div>}
+                                    <div className="prac-setting-list">
+                                        {priceRows.slice(0, 4).map((row) => (
+                                            <button
+                                                key={row.medicineId} type="button" className="prac-setting-row"
+                                                onClick={() => setPricingModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{row.medicineName}</span>
+                                                    {row.manufacturer && <span className="prac-med-brands">{row.manufacturer}</span>}
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">₹{row.unitPrice.toFixed(2)}/unit</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </PracticeCard>
                     </div>
                 </div>
@@ -2465,6 +2741,29 @@ export function PracticePage({
                         subtitle="Other settings that are often used alongside these."
                     >
                         <div className="prac-settings-grid">
+                            {/* Moved here from the old "Consultation Defaults" card
+                                2026-09-19 — both rows were pure shortcuts to content
+                                owned elsewhere (Settings' own profile picker, the
+                                measurements modal this page already opens), the
+                                exact shape every other tile here already is; that
+                                card's own slot now carries Medicine Pricing
+                                instead. */}
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("settings")}>
+                                <span className="prac-settings-icon is-slate"><SlidersHorizontal size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Consultation Profile</span>
+                                    <span className="prac-med-brands">{specialty.label} — which chart Cortex opens with</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
+                            <button type="button" className="prac-settings-tile" onClick={() => setMeasurementsModalOpen(true)}>
+                                <span className="prac-settings-icon is-slate"><Layers size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Default Measurements</span>
+                                    <span className="prac-med-brands">{measureCount} of {specialty.measurements.length} shown when a consult opens</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
                             <button type="button" className="prac-settings-tile" onClick={() => onNavigate("clinic")}>
                                 <span className="prac-settings-icon is-violet"><Settings size={15} /></span>
                                 <span className="prac-med-info">
@@ -2565,6 +2864,14 @@ export function PracticePage({
                     terms={terms}
                     onForget={forgetTerm}
                     onClose={() => setManageTermsOpen(false)}
+                />
+            )}
+            {pricingModalOpen && (
+                <MedicinePricingModal
+                    hospitalId={identity.hospitalId} actorUserId={identity.userId}
+                    rows={priceRows} loading={priceRowsLoading}
+                    onSaved={setPriceRows}
+                    onClose={() => setPricingModalOpen(false)}
                 />
             )}
         </div>

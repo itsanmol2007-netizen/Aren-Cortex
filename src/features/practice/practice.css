@@ -349,6 +349,7 @@
 .prac-settings-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 .prac-settings-icon.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .prac-settings-icon.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.prac-settings-icon.is-slate { background: #f1f5f9; color: #475569; }
 
 .prac-settings-chevron {
     flex: none;

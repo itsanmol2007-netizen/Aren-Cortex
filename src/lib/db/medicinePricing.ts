@@ -108,6 +108,36 @@ export async function fetchClinicMedicinePrice(
     return data ? toPrice(data) : null;
 }
 
+export interface ClinicMedicinePriceRow extends ClinicMedicinePrice {
+    medicineName: string;
+    manufacturer: string | null;
+}
+
+/**
+ * Every medicine this clinic has ever priced, newest edit first — the
+ * Practice page's Medicine Pricing card (a short preview of the most
+ * recent few) and its management modal (the full list) both read this.
+ * A clinic's own price list is small (it prices what it actually stocks,
+ * not the whole catalogue), so one unpaginated read is the honest shape —
+ * no cursor, no cache, same as `fetchClinicMedicinePrice`.
+ */
+export async function fetchClinicMedicinePriceList(hospitalId: string): Promise<ClinicMedicinePriceRow[]> {
+    const { data, error } = await supabase
+        .from("clinic_medicine_prices")
+        .select("medicine_id, pack_price, pack_units, unit_price, medicines(name, manufacturer)")
+        .eq("hospital_id", hospitalId)
+        .order("updated_at", { ascending: false });
+    if (error) throw new Error(`fetchClinicMedicinePriceList: ${error.message}`);
+    return (data ?? []).map((row) => {
+        const med = row.medicines as unknown as { name: string; manufacturer: string | null } | null;
+        return {
+            ...toPrice(row),
+            medicineName: med?.name ?? `#${row.medicine_id}`,
+            manufacturer: med?.manufacturer ?? null,
+        };
+    });
+}
+
 /**
  * Sets (or replaces) this clinic's price for one medicine — a pack price
  * and how many units the pack contains, never a per-unit rate typed
