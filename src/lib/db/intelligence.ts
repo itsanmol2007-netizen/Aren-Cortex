@@ -25,6 +25,10 @@ export type SaveConsultMedicine = {
     instructions: string;
     is_sos: boolean;
     sort_order: number;
+    /** Medicine dispensing billing (opt-in) — absent/null for every clinic
+     *  that has never turned this on. See lib/db/medicinePricing.ts. */
+    quantity_dispensed?: number | null;
+    unit_price?: number | null;
 };
 
 export async function saveConsult(opts: {
@@ -78,6 +82,15 @@ export async function saveConsult(opts: {
      * referral slip names one destination lab.
      */
     labName?: string | null;
+    /**
+     * Medicine dispensing billing (opt-in) — omitted entirely for the vast
+     * majority of clinics that never turn this on, in which case step 3.5
+     * below is skipped outright and `visit_payments` is never touched by
+     * this function. When present, `gstPercent` is the clinic's OWN GST
+     * rate (`hospitals.gst_percent`) applied to dispensed medicine, not a
+     * second rate — see the `medicine_dispensing_billing` migration.
+     */
+    medicineBilling?: { gstEnabled: boolean; gstPercent: number } | null;
 }): Promise<{ prescriptionId: string }> {
     // 1. Save vitals + mark visit completed
     const { error: visitErr } = await supabase
@@ -123,11 +136,47 @@ export async function saveConsult(opts: {
             instructions: m.instructions,
             is_sos: m.is_sos,
             sort_order: m.sort_order,
+            quantity_dispensed: m.quantity_dispensed ?? null,
+            unit_price: m.unit_price ?? null,
         }));
         const { error: medErr } = await supabase
             .from("prescription_medicines")
             .insert(rows);
         if (medErr) throw new Error(`insertPrescriptionMedicines: ${medErr.message}`);
+    }
+
+    // 3.5. Medicine dispensing billing — folds what was just dispensed into
+    // the visit's payment row. Skipped outright when the clinic has never
+    // turned this on (`opts.medicineBilling` absent) or when nothing on this
+    // prescription was actually priced (`medicineTotal` stays 0, matching
+    // the column's own default — nothing to update). `visit_payments` is
+    // created ONCE at intake (see lib/db/payments.ts's `recordVisitPayment`)
+    // and never by this function, so a visit with no fee configured — no
+    // payment row at all — is a silent no-op here, not an error: there is
+    // nothing to fold the medicine charge into.
+    if (opts.medicineBilling && opts.medicines.length) {
+        const medicineTotal = opts.medicines.reduce((sum, m) => {
+            if (m.quantity_dispensed == null || m.unit_price == null) return sum;
+            return sum + Math.round(m.quantity_dispensed * m.unit_price * 100) / 100;
+        }, 0);
+        if (medicineTotal > 0) {
+            const medicineGstAmount = opts.medicineBilling.gstEnabled
+                ? Math.round((medicineTotal * opts.medicineBilling.gstPercent) / 100)
+                : 0;
+            const { error: billingErr } = await supabase
+                .from("visit_payments")
+                .update({
+                    medicine_total: Math.round(medicineTotal * 100) / 100,
+                    medicine_gst_amount: medicineGstAmount,
+                })
+                .eq("visit_id", opts.visitId);
+            // Non-fatal by design, same as the payment audit trail
+            // (payments.ts's `logPaymentEvent`): the clinical record — the
+            // prescription and its medicines — is already saved by this
+            // point, and a consult must never fail to complete because the
+            // money side of it couldn't be folded in.
+            if (billingErr) console.warn("[intelligence] medicine billing update failed (non-fatal):", billingErr.message);
+        }
     }
 
     // 4. Diagnostic orders

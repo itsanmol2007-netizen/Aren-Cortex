@@ -904,6 +904,8 @@ export function useConsultLifecycle({
         instructions: m.instructions ?? "",
         is_sos: m.is_sos ?? false,
         sort_order: i,
+        quantity_dispensed: m.quantityDispensed ?? null,
+        unit_price: m.unitPrice ?? null,
       }));
 
       const saveConsultOpts = {
@@ -919,6 +921,13 @@ export function useConsultLifecycle({
         adviceNotes: plan.reviewAdvice,
         therapyNotes: plan.therapyNotes || null,
         labName: plan.selectedLabName,
+        // Absent (undefined) for the vast majority of clinics that have
+        // never turned medicine billing on — saveConsult skips its whole
+        // visit_payments fold in that case. See useConsultPlan's
+        // `medicineBillingPolicy`.
+        medicineBilling: plan.medicineBillingPolicy.enabled
+          ? { gstEnabled: plan.medicineBillingPolicy.gstEnabled, gstPercent: plan.medicineBillingPolicy.gstPercent }
+          : null,
       };
 
       let saved: { prescriptionId: string } | null = null;

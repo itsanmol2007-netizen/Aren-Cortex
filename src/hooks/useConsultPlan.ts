@@ -32,10 +32,10 @@
 // learning loop.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PrescriptionMedicine } from "../types";
 import type { AcceptPayload } from "../features/consult/types";
-import type { MedicineDraft } from "../features/consult/MedicineAddSheet";
+import type { MedicineDraft, MedicineBillingContext } from "../features/consult/MedicineAddSheet";
 import { useJustAdded } from "../features/consult/useJustAdded";
 import type { Medicine as SynapseBrand } from "../lib/synapse/brands";
 import type { CompanionSuggestion } from "../lib/synapse/companions";
@@ -48,6 +48,10 @@ import {
   fetchCompositionBrands, resolvePanelTests,
   type SearchedAccept,
 } from "../lib/db/synapse";
+import {
+  fetchMedicineBillingPolicy, fetchClinicMedicinePrices, setClinicMedicinePrice,
+  type MedicineBillingPolicy, type ClinicMedicinePrice,
+} from "../lib/db/medicinePricing";
 import type { SynapseData } from "./useSynapse";
 import type { ConsultIntelligence } from "./useConsultIntelligence";
 import type { AcceptLedger } from "./useAcceptLedger";
@@ -123,6 +127,10 @@ export interface ConsultPlanArgs {
   /** the six intent maps, declared before the engine — see the header */
   ledger: AcceptLedger;
   hospitalId: string;
+  /** `users.id` of the signed-in doctor — attributes a clinic medicine price
+   *  to whoever set it (`clinic_medicine_prices.set_by`). Null while
+   *  unauthenticated, same as `ClinicalIdentity.userId`. */
+  actorUserId: string | null;
   showToast: (msg: string) => void;
   /**
    * Turn a confirmed condition into an engine input and, when it is chronic, a
@@ -189,6 +197,13 @@ export interface ConsultPlan {
   inspectorMedicine: PrescriptionMedicine | null;
   confirmPendingMedicine: (draft: MedicineDraft) => void;
   confirmStagedMedicine: () => void;
+  /** The medicine-billing half of the dose sheet — `enabled: false` for the
+   *  vast majority of clinics that never turn this on. See
+   *  lib/db/medicinePricing.ts and MedicineAddSheet's own doc comment. */
+  medicineBilling: MedicineBillingContext;
+  /** The same policy, in the shape `saveConsult` needs (its GST rate, not
+   *  just the sheet's prices) — see useConsultLifecycle's save path. */
+  medicineBillingPolicy: MedicineBillingPolicy;
 
   // ── Taking things, and taking them back ───────────────────────────────
   handleAcceptIntent: (payload: AcceptPayload) => void;
@@ -242,6 +257,7 @@ export function useConsultPlan({
   intelligence,
   ledger,
   hospitalId,
+  actorUserId,
   showToast,
   confirmCondition,
   unconfirmCondition,
@@ -286,6 +302,56 @@ export function useConsultPlan({
   const [adviceNotes, setAdviceNotes] = useState<string>("");
   const [visitNotes, setVisitNotes] = useState("");
   const [pendingMedicine, setPendingMedicine] = useState<PendingMedicine | null>(null);
+
+  // ── Medicine dispensing billing (opt-in) — see lib/db/medicinePricing.ts ─
+  // Read once per hospital, cheap and rarely changing (durable-cached inside
+  // fetchMedicineBillingPolicy itself, same as the consult-fee policy).
+  const [medicineBillingPolicy, setMedicineBillingPolicy] = useState<MedicineBillingPolicy>({
+    enabled: false, gstEnabled: false, gstPercent: 18,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    fetchMedicineBillingPolicy(hospitalId).then((policy) => {
+      if (!cancelled) setMedicineBillingPolicy(policy);
+    });
+    return () => { cancelled = true; };
+  }, [hospitalId]);
+
+  // This clinic's own price per medicine, batch-fetched for whichever brands
+  // the dose sheet is currently showing — accumulated across sheet openings
+  // (never cleared) so a price already seen this consult doesn't cost a
+  // second round trip the next time the same brand comes up.
+  const [medicinePrices, setMedicinePrices] = useState<Map<number, ClinicMedicinePrice>>(new Map());
+  const [loadingMedicinePrices, setLoadingMedicinePrices] = useState(false);
+  useEffect(() => {
+    if (!medicineBillingPolicy.enabled || !pendingMedicine || pendingMedicine.brands.length === 0) return;
+    let cancelled = false;
+    setLoadingMedicinePrices(true);
+    fetchClinicMedicinePrices(hospitalId, pendingMedicine.brands.map((b) => b.id))
+      .then((prices) => {
+        if (cancelled) return;
+        setMedicinePrices((curr) => {
+          const next = new Map(curr);
+          prices.forEach((v, k) => next.set(k, v));
+          return next;
+        });
+      })
+      .catch((err) => console.warn("fetchClinicMedicinePrices failed:", err))
+      .finally(() => { if (!cancelled) setLoadingMedicinePrices(false); });
+    return () => { cancelled = true; };
+  }, [pendingMedicine, medicineBillingPolicy.enabled, hospitalId]);
+
+  const onSetMedicinePrice = useCallback(async (medicineId: number, packPrice: number, packUnits: number) => {
+    const price = await setClinicMedicinePrice({ hospitalId, medicineId, packPrice, packUnits, setBy: actorUserId });
+    setMedicinePrices((curr) => new Map(curr).set(medicineId, price));
+  }, [hospitalId, actorUserId]);
+
+  const medicineBilling: MedicineBillingContext = useMemo(() => ({
+    enabled: medicineBillingPolicy.enabled,
+    prices: medicinePrices,
+    loadingPrices: loadingMedicinePrices,
+    onSetPrice: onSetMedicinePrice,
+  }), [medicineBillingPolicy.enabled, medicinePrices, loadingMedicinePrices, onSetMedicinePrice]);
 
   /**
    * What was DELIVERED in the clinic today — ultrasound, IFT, manual therapy.
@@ -667,6 +733,19 @@ export function useConsultPlan({
     setPendingMedicine(null);
     commitAccept({ ...payload, medicine: draft.medicine });
 
+    // Copied at confirm time, never read live again — the same principle
+    // `doctors.consultation_fee` -> `visit_payments.fee` already uses. A
+    // price change next month must never rewrite a prescription already
+    // handed to a patient. `undefined` (billing off) stays undefined, never
+    // coerced to null, so PrescriptionMedicine looks exactly as it always
+    // did for a clinic that has never turned this on.
+    const billingFields = medicineBillingPolicy.enabled
+      ? {
+        quantityDispensed: draft.quantityDispensed?.trim() ? Number(draft.quantityDispensed) : null,
+        unitPrice: draft.medicine ? medicinePrices.get(draft.medicine.id)?.unitPrice ?? null : null,
+      }
+      : {};
+
     // The dose the doctor confirmed, applied over whatever the composition
     // defaulted to. Deferred one frame so it lands after commitAccept's own
     // state update rather than racing it.
@@ -681,12 +760,13 @@ export function useConsultPlan({
               duration_days: draft.durationDays ? Number(draft.durationDays) : m.duration_days,
               instructions: draft.instructions,
               is_sos: draft.isSos,
+              ...billingFields,
             }
             : m
         )
       );
     }, 0);
-  }, [pendingMedicine, commitAccept]);
+  }, [pendingMedicine, commitAccept, medicineBillingPolicy.enabled, medicinePrices]);
 
   /** Swap the brand under an already-chosen molecule. Always deliberate. */
   const handleChangeBrand = useCallback((intentId: number, brand: SynapseBrand) => {
@@ -1181,6 +1261,8 @@ export function useConsultPlan({
     inspectorMedicine,
     confirmPendingMedicine,
     confirmStagedMedicine,
+    medicineBilling,
+    medicineBillingPolicy,
 
     handleAcceptIntent,
     handleAcknowledge,

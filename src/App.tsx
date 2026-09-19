@@ -632,6 +632,7 @@ function App() {
     intelligence,
     ledger,
     hospitalId: identity.hospitalId,
+    actorUserId: identity.userId,
     showToast,
     confirmCondition,
     unconfirmCondition,
@@ -645,7 +646,7 @@ function App() {
     adviceLines, therapyLines, therapyNotes, exercisePlan, reviewAdvice, justAdded, unreadPrescribedWarnings,
     selectedMedicineId, setSelectedMedicineId, stagedMedicine, setStagedMedicine,
     pendingMedicine, setPendingMedicine, inspectorMedicine,
-    confirmPendingMedicine, confirmStagedMedicine,
+    confirmPendingMedicine, confirmStagedMedicine, medicineBilling,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
@@ -2631,6 +2632,7 @@ function App() {
             initialBrand={pendingMedicine?.initialBrand ?? null}
             onCancel={() => setPendingMedicine(null)}
             onConfirm={confirmPendingMedicine}
+            billing={medicineBilling}
           />
 
           {/* "Not found in ranking or search" — §5, 2026-08-24. Hands off
