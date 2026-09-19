@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import { registerWriteHandler } from "../offline/writeQueue";
 import type { Vitals } from "../../types";
+import type { ReviewBillingResult } from "./additionalCharges";
 
 // ---------------------------------------------------------------------------
 // What saving a consultation writes.
@@ -91,6 +92,15 @@ export async function saveConsult(opts: {
      * second rate — see the `medicine_dispensing_billing` migration.
      */
     medicineBilling?: { gstEnabled: boolean; gstPercent: number } | null;
+    /**
+     * Additional (non-medicine) service charges added at review time, and a
+     * discount on the visit's FINAL total — separate from front desk's own
+     * intake-time discount on the fee alone (`visit_payments.discount`).
+     * Omitted entirely for the vast majority of consults that use neither;
+     * folded into the SAME `visit_payments` update as `medicineBilling`
+     * below when either is present, never a second round trip for one visit.
+     */
+    reviewBilling?: ReviewBillingResult | null;
 }): Promise<{ prescriptionId: string }> {
     // 1. Save vitals + mark visit completed
     const { error: visitErr } = await supabase
@@ -145,38 +155,54 @@ export async function saveConsult(opts: {
         if (medErr) throw new Error(`insertPrescriptionMedicines: ${medErr.message}`);
     }
 
-    // 3.5. Medicine dispensing billing — folds what was just dispensed into
-    // the visit's payment row. Skipped outright when the clinic has never
-    // turned this on (`opts.medicineBilling` absent) or when nothing on this
-    // prescription was actually priced (`medicineTotal` stays 0, matching
-    // the column's own default — nothing to update). `visit_payments` is
-    // created ONCE at intake (see lib/db/payments.ts's `recordVisitPayment`)
-    // and never by this function, so a visit with no fee configured — no
-    // payment row at all — is a silent no-op here, not an error: there is
-    // nothing to fold the medicine charge into.
+    // 3.5. Billing fold — medicine dispensing AND/OR the review-time
+    // additional charges/discount, in ONE update to the visit's payment
+    // row rather than one per feature. Skipped outright when neither opt
+    // was passed, or when there is genuinely nothing to fold in (no
+    // medicine was priced, no charge was added, no discount was given) —
+    // `visit_payments` is created ONCE at intake (see lib/db/payments.ts's
+    // `recordVisitPayment`) and never by this function, so a visit with no
+    // fee configured — no payment row at all — is a silent no-op here, not
+    // an error: there is nothing to fold anything into.
+    const billingUpdate: Record<string, unknown> = {};
+
     if (opts.medicineBilling && opts.medicines.length) {
         const medicineTotal = opts.medicines.reduce((sum, m) => {
             if (m.quantity_dispensed == null || m.unit_price == null) return sum;
             return sum + Math.round(m.quantity_dispensed * m.unit_price * 100) / 100;
         }, 0);
         if (medicineTotal > 0) {
-            const medicineGstAmount = opts.medicineBilling.gstEnabled
+            billingUpdate.medicine_total = Math.round(medicineTotal * 100) / 100;
+            billingUpdate.medicine_gst_amount = opts.medicineBilling.gstEnabled
                 ? Math.round((medicineTotal * opts.medicineBilling.gstPercent) / 100)
                 : 0;
-            const { error: billingErr } = await supabase
-                .from("visit_payments")
-                .update({
-                    medicine_total: Math.round(medicineTotal * 100) / 100,
-                    medicine_gst_amount: medicineGstAmount,
-                })
-                .eq("visit_id", opts.visitId);
-            // Non-fatal by design, same as the payment audit trail
-            // (payments.ts's `logPaymentEvent`): the clinical record — the
-            // prescription and its medicines — is already saved by this
-            // point, and a consult must never fail to complete because the
-            // money side of it couldn't be folded in.
-            if (billingErr) console.warn("[intelligence] medicine billing update failed (non-fatal):", billingErr.message);
         }
+    }
+
+    if (opts.reviewBilling) {
+        const { additionalCharges, discountPercent, discountAmount } = opts.reviewBilling;
+        if (additionalCharges.length > 0) {
+            billingUpdate.additional_charges = additionalCharges;
+            billingUpdate.additional_charges_total =
+                Math.round(additionalCharges.reduce((sum, c) => sum + c.amount, 0) * 100) / 100;
+        }
+        if (discountAmount > 0) {
+            billingUpdate.review_discount_percent = discountPercent;
+            billingUpdate.review_discount_amount = Math.round(discountAmount * 100) / 100;
+        }
+    }
+
+    if (Object.keys(billingUpdate).length > 0) {
+        const { error: billingErr } = await supabase
+            .from("visit_payments")
+            .update(billingUpdate)
+            .eq("visit_id", opts.visitId);
+        // Non-fatal by design, same as the payment audit trail
+        // (payments.ts's `logPaymentEvent`): the clinical record — the
+        // prescription and its medicines — is already saved by this
+        // point, and a consult must never fail to complete because the
+        // money side of it couldn't be folded in.
+        if (billingErr) console.warn("[intelligence] billing update failed (non-fatal):", billingErr.message);
     }
 
     // 4. Diagnostic orders

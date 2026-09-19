@@ -2927,7 +2927,7 @@ function App() {
             whatsappPhase={whatsappSend.phase}
             whatsappError={whatsappSend.message}
             onEdit={() => setIsReviewOpen(false)}
-            onSave={() => handleConfirmAndSave()}
+            onSave={(billing) => handleConfirmAndSave({ billing })}
             // The dedicated WhatsApp action. Saves + pushes the message and
             // DELIBERATELY leaves Review open — the doctor sees the
             // prescription and the send's outcome before the screen advances.

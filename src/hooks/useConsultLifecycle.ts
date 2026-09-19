@@ -36,6 +36,7 @@ import {
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
+import type { ReviewBillingResult } from "../lib/db/additionalCharges";
 import {
   recordVisitPayment,
   type ConfirmedPayment, type VisitType, type PaymentMethod,
@@ -351,7 +352,7 @@ export interface ConsultLifecycle {
    * "Confirm & Save" omits it, so the save no longer carries the side
    * effect by default.
    */
-  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => Promise<void>;
+  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage; billing?: ReviewBillingResult }) => Promise<void>;
   /** Review's close/back control. Advances ("Complete & Next") when the
    *  consult was already saved via the WhatsApp button; otherwise just
    *  closes Review back to the chart. */
@@ -866,7 +867,7 @@ export function useConsultLifecycle({
 
   // handleConfirmAndSave is defined below; this ref lets the WhatsApp button
   // call it without a declaration cycle.
-  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => Promise<void>) | null>(null);
+  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage; billing?: ReviewBillingResult }) => Promise<void>) | null>(null);
 
   /** ReviewModal's "Send on WhatsApp" button. First press: save the consult
    *  and push the message, keeping Review open. Later presses (after a send
@@ -875,16 +876,16 @@ export function useConsultLifecycle({
    *  is set to right now — English unless the doctor changed it, and a
    *  retry re-sends in whichever language is currently selected, not
    *  whatever the first attempt used. */
-  const sendReviewOnWhatsApp = useCallback(async (language: RxLanguage) => {
+  const sendReviewOnWhatsApp = useCallback(async (language: RxLanguage, billing?: ReviewBillingResult) => {
     if (savedRxIdRef.current) {
       const pid = session.patient?.id;
       if (pid) await pushPrescriptionToWhatsApp(savedRxIdRef.current, pid, language);
       return;
     }
-    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true, language });
+    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true, language, billing });
   }, [session.patient, pushPrescriptionToWhatsApp]);
 
-  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => {
+  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage; billing?: ReviewBillingResult }) => {
     const { visitId } = session;
     if (!visitId) { showToast("No active consult to save"); return; }
     // Already saved via the WhatsApp button and left open — a press on
@@ -928,6 +929,12 @@ export function useConsultLifecycle({
         medicineBilling: plan.medicineBillingPolicy.enabled
           ? { gstEnabled: plan.medicineBillingPolicy.gstEnabled, gstPercent: plan.medicineBillingPolicy.gstPercent }
           : null,
+        // Whatever ReviewModal's own Billing section resolved to — additional
+        // charges, a discount on the final total — absent for the vast
+        // majority of consults that use neither. See ReviewModal's own
+        // `onSave`/`onSendWhatsApp` doc comment for why this rides the save
+        // callback instead of a prop threaded down from here.
+        reviewBilling: opts?.billing ?? null,
       };
 
       let saved: { prescriptionId: string } | null = null;

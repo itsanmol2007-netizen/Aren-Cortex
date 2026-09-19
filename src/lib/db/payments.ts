@@ -349,6 +349,41 @@ export async function logPaymentEvent(opts: {
     if (error) console.warn("[payments] audit event failed (non-fatal):", error.message);
 }
 
+// ── Reading one visit's payment, for the review-time billing summary ───────
+
+export interface VisitPaymentSoFar {
+    fee: number;
+    discount: number;
+    gstAmount: number;
+}
+
+/**
+ * What front desk already recorded for this visit at intake — the fixed
+ * base a doctor's review-time billing summary builds on top of (dispensed
+ * medicine, additional charges, a discount on the grand total — see
+ * ReviewModal's own Billing section). `null` means no row at all: this
+ * clinic never configured a fee, or nobody has recorded one yet, and there
+ * is nothing here for the review screen to show or fold anything into
+ * (same "no visit_payments row, silent no-op" rule `saveConsult`'s own
+ * medicine-billing fold already follows). `visit_payments` carries no
+ * currency of its own — every amount on it is the clinic's own
+ * `hospitals.currency`, same as `BillingPolicy.currency` above.
+ */
+export async function fetchVisitPayment(visitId: string): Promise<VisitPaymentSoFar | null> {
+    const { data, error } = await supabase
+        .from("visit_payments")
+        .select("fee, discount, gst_amount")
+        .eq("visit_id", visitId)
+        .maybeSingle();
+    if (error) throw new Error(`fetchVisitPayment: ${error.message}`);
+    if (!data) return null;
+    return {
+        fee: Number(data.fee ?? 0),
+        discount: Number(data.discount ?? 0),
+        gstAmount: Number(data.gst_amount ?? 0),
+    };
+}
+
 // ── Reading the trail (Parallax) ───────────────────────────────────────────
 
 export interface PaymentEvent {

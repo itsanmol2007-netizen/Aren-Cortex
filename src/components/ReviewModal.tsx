@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import {
   X, Edit2, Printer, MessageCircle, CheckCircle, Loader2,
   User, Calendar, AlertCircle, Sun, Sunrise, Sunset,
   Moon, MapPin, Phone, ChevronRight,
-  FileText, Hash,
+  FileText, Hash, IndianRupee, Plus,
 } from "lucide-react";
 import { freqLabelToSlot, freqSlotToLabel } from "../lib/db";
 import type { DBHospital, DBFinding } from "../lib/db";
 import type { PrescriptionMedicine, Vitals } from "../types";
+import { fetchVisitPayment, type VisitPaymentSoFar } from "../lib/db/payments";
+import { fetchMedicineBillingPolicy, type MedicineBillingPolicy } from "../lib/db/medicinePricing";
+import {
+  fetchAdditionalChargesCatalog, saveAdditionalChargeToCatalog,
+  type AdditionalChargeCatalogEntry, type AdditionalChargeLine, type ReviewBillingResult,
+} from "../lib/db/additionalCharges";
 import { MEASURE_FIELDS } from "../features/consult/measures";
 import PrescriptionDocument from "../features/prescription/PrescriptionDocument";
 import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
@@ -39,7 +45,17 @@ interface ReviewModalProps {
   // Consult review flow (mode "review", the default). Optional so that
   // Print RX can open this same surface without wiring consult actions.
   onEdit?: () => void;
-  onSave?: () => void;
+  /**
+   * `billing` is whatever the Billing section below (additional charges +
+   * a discount on the final total) resolved to — `undefined` for the vast
+   * majority of consults that touch neither, in which case the caller's
+   * own `saveConsult` sees no `reviewBilling` at all and this rides the
+   * existing save with zero new writes. Handed back through this callback
+   * rather than a new prop because it is only ever needed at the MOMENT of
+   * saving, never before — the same reason a form submits its own state
+   * rather than lifting every keystroke to its parent.
+   */
+  onSave?: (billing?: ReviewBillingResult) => void;
   /**
    * The dedicated "WhatsApp" action (2026-09-08) — saves the consultation
    * the same way `onSave` does, but ALSO sends the prescription to the
@@ -49,7 +65,7 @@ interface ReviewModalProps {
    * so Print RX's reprint surface (`mode="print"`, no button for this at
    * all) needs no change.
    */
-  onSendWhatsApp?: (language: RxLanguage) => void;
+  onSendWhatsApp?: (language: RxLanguage, billing?: ReviewBillingResult) => void;
   // "review": the consult screen's edit/confirm flow (default, unchanged).
   // "print":  Print RX's read-only reprint surface — no Edit, no Save; the
   //           primary action is printing. One rendering pipeline, two doors.
@@ -168,9 +184,9 @@ function SlotHeader({ icon: Icon, label, sub }: { icon: React.ElementType; label
   );
 }
 
-function SectionTitle({ icon: Icon, title, accent = "blue" }: { icon: React.ElementType; title: string; accent?: "blue" | "purple" }) {
-  const color = accent === "purple" ? "text-purple-600" : "text-blue-600";
-  const bg = accent === "purple" ? "bg-purple-50" : "bg-blue-50/80";
+function SectionTitle({ icon: Icon, title, accent = "blue" }: { icon: React.ElementType; title: string; accent?: "blue" | "purple" | "green" }) {
+  const color = accent === "purple" ? "text-purple-600" : accent === "green" ? "text-emerald-600" : "text-blue-600";
+  const bg = accent === "purple" ? "bg-purple-50" : accent === "green" ? "bg-emerald-50" : "bg-blue-50/80";
   return (
     <div className={`flex items-center gap-2 ${color}`}>
       <div className={`p-1.5 rounded-lg ${bg}`}><Icon className="w-3.5 h-3.5" /></div>
@@ -261,6 +277,120 @@ export default function ReviewModal({
    * behaviour exactly; printing is always a later, explicit click.
    */
   const prescriptionConfig = usePrescriptionConfig(hospital?.id);
+  const isPrintMode = mode === "print";
+
+  // ── Billing (opt-in — see the Billing section's own JSX further down) ──
+  // Self-contained, same shape `prescriptionConfig` above already is: this
+  // is the one modal every consult passes through, so it fetches its own
+  // billing context rather than needing three call sites to remember to
+  // thread it in. `visitPaymentSoFar` is what front desk already recorded
+  // at intake (fee, its own discount, GST) — the fixed base this section
+  // adds medicine + additional charges + a discount ON TOP of; `null` means
+  // no payment row at all (no fee configured), in which case the whole
+  // section stays hidden unless the clinic ALSO happens to price medicine
+  // or keep an additional-charges catalog — see `showBilling` below.
+  const [visitPaymentSoFar, setVisitPaymentSoFar] = useState<VisitPaymentSoFar | null>(null);
+  const [medicineBillingPolicy, setMedicineBillingPolicy] = useState<MedicineBillingPolicy>({
+    enabled: false, gstEnabled: false, gstPercent: 18,
+  });
+  const [chargeCatalog, setChargeCatalog] = useState<AdditionalChargeCatalogEntry[]>([]);
+  useEffect(() => {
+    if (isPrintMode || !hospital?.id) return;
+    fetchMedicineBillingPolicy(hospital.id).then(setMedicineBillingPolicy).catch(console.error);
+    fetchAdditionalChargesCatalog(hospital.id).then(setChargeCatalog).catch(console.error);
+  }, [isPrintMode, hospital?.id]);
+  useEffect(() => {
+    if (isPrintMode || !visitId) { setVisitPaymentSoFar(null); return; }
+    fetchVisitPayment(visitId).then(setVisitPaymentSoFar).catch(console.error);
+  }, [isPrintMode, visitId]);
+
+  // What was actually dispensed with a price on it this consult — live from
+  // `prescription`, never read back from the database: at review time
+  // nothing has been saved yet, so the DB's own `visit_payments.medicine_total`
+  // is still last visit's stale number (or zero). Same arithmetic
+  // `saveConsult` itself will run a moment later, kept in lockstep on
+  // purpose so this preview never disagrees with what actually gets billed.
+  const medicineTotal = useMemo(
+    () => Math.round(
+      prescription.reduce((sum, m) => (
+        m.quantityDispensed != null && m.unitPrice != null
+          ? sum + m.quantityDispensed * m.unitPrice
+          : sum
+      ), 0) * 100
+    ) / 100,
+    [prescription]
+  );
+  const medicineGstAmount = medicineBillingPolicy.gstEnabled
+    ? Math.round((medicineTotal * medicineBillingPolicy.gstPercent) / 100)
+    : 0;
+
+  const [charges, setCharges] = useState<AdditionalChargeLine[]>([]);
+  const [chargeLabel, setChargeLabel] = useState("");
+  const [chargeAmount, setChargeAmount] = useState("");
+  const [saveChargeToCatalog, setSaveChargeToCatalog] = useState(true);
+  const chargesTotal = useMemo(
+    () => Math.round(charges.reduce((sum, c) => sum + c.amount, 0) * 100) / 100,
+    [charges]
+  );
+
+  const addCharge = () => {
+    const label = chargeLabel.trim();
+    const amount = Number(chargeAmount);
+    if (!label || !Number.isFinite(amount) || amount <= 0) return;
+    setCharges((cur) => [...cur, { label, amount }]);
+    if (saveChargeToCatalog && hospital?.id) {
+      const hid = hospital.id;
+      saveAdditionalChargeToCatalog({ hospitalId: hid, label, defaultAmount: amount })
+        .then((entry) => setChargeCatalog((cur) => [entry, ...cur.filter((c) => c.id !== entry.id)]))
+        .catch(console.error);
+    }
+    setChargeLabel("");
+    setChargeAmount("");
+  };
+  const removeCharge = (i: number) => setCharges((cur) => cur.filter((_, j) => j !== i));
+
+  /** 5%, 10%, or a custom rupee amount — the final total's own discount,
+   *  separate from front desk's intake-time one on the fee alone
+   *  (visitPaymentSoFar.discount, already fixed by the time this modal
+   *  opens). "none" | "5" | "10" | "custom-percent" | "custom-amount". */
+  const [discountMode, setDiscountMode] = useState<"none" | "5" | "10" | "custom-percent" | "custom-amount">("none");
+  const [discountInput, setDiscountInput] = useState("");
+
+  const subtotal = (visitPaymentSoFar
+    ? visitPaymentSoFar.fee - visitPaymentSoFar.discount + visitPaymentSoFar.gstAmount
+    : 0) + medicineTotal + medicineGstAmount + chargesTotal;
+
+  const { discountPercent, discountAmount } = (() => {
+    if (discountMode === "none") return { discountPercent: null as number | null, discountAmount: 0 };
+    if (discountMode === "5" || discountMode === "10") {
+      const pct = Number(discountMode);
+      return { discountPercent: pct, discountAmount: Math.round((subtotal * pct) / 100) };
+    }
+    const n = Number(discountInput);
+    if (!Number.isFinite(n) || n <= 0) return { discountPercent: null as number | null, discountAmount: 0 };
+    return discountMode === "custom-percent"
+      ? { discountPercent: n, discountAmount: Math.round((subtotal * n) / 100) }
+      : { discountPercent: null as number | null, discountAmount: Math.round(n * 100) / 100 };
+  })();
+  const finalTotal = Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
+
+  /** Nothing here unless there is genuinely something billing-related to
+   *  show — a fee recorded at intake, medicine actually priced this
+   *  consult, or a clinic that keeps an additional-charges catalog at all.
+   *  A clinic using none of these sees Review exactly as it always was. */
+  const showBilling = !isPrintMode && (visitPaymentSoFar != null || medicineTotal > 0 || chargeCatalog.length > 0 || charges.length > 0);
+
+  const reviewBilling: ReviewBillingResult | undefined =
+    charges.length > 0 || discountAmount > 0
+      ? { additionalCharges: charges, discountPercent, discountAmount }
+      : undefined;
+  // The keyboard shortcut below closes over whatever `reviewBilling` was at
+  // the LAST time its own effect re-ran (it deliberately does not list every
+  // value it reads — see that effect's own eslint-disable), so a ref is what
+  // keeps Ctrl+Enter honest about a charge or discount typed a moment ago
+  // without widening that effect's dependency list.
+  const reviewBillingRef = useRef(reviewBilling);
+  reviewBillingRef.current = reviewBilling;
   /**
    * The one clinic accent, for every clinic — no longer `hospital.accent_color`.
    * A clinic could pick white and the whole letterhead border/watermark would
@@ -276,7 +406,6 @@ export default function ReviewModal({
    * to this same fixed colour — its own fallback.
    */
   const rx = accentPalette();
-  const isPrintMode = mode === "print";
   const today = formatDate(date);
 
   // Devanagari names, confirmed once (Clinic page) and stored on
@@ -424,7 +553,7 @@ export default function ReviewModal({
         e.stopPropagation();
         // Print mode is a reprint of something already saved — there is no
         // `onSave` wired, and inventing one would write a second consult.
-        if (!isPrintMode && onSave && !isSaving) onSave();
+        if (!isPrintMode && onSave && !isSaving) onSave(reviewBillingRef.current);
         return;
       }
       if (matches(e, "reviewBack")) {
@@ -910,6 +1039,169 @@ export default function ReviewModal({
                 </div>
               )}
 
+              {/* ══ Billing ══ — doctor-facing only, never printed on the Rx
+                  itself (same as Clinical Summary above): what actually
+                  reaches the patient is the finished bill on the document/
+                  WhatsApp send, not this editable form. Hidden entirely for
+                  a clinic using none of consultation fees, medicine
+                  billing or additional charges — see `showBilling`. */}
+              {showBilling && (
+                <div className="px-7 py-4 border-b border-gray-100">
+                  <SectionTitle icon={IndianRupee} title="Billing" accent="green" />
+                  <div className="mt-2.5 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3.5">
+                    <div className="flex flex-col gap-1.5 text-[12.5px]">
+                      {visitPaymentSoFar && (
+                        <div className="flex items-center justify-between text-gray-700">
+                          <span>Consultation fee</span>
+                          <span className="font-semibold tabular-nums">
+                            ₹{(visitPaymentSoFar.fee - visitPaymentSoFar.discount).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {visitPaymentSoFar && visitPaymentSoFar.gstAmount > 0 && (
+                        <div className="flex items-center justify-between text-gray-500">
+                          <span>GST on fee</span>
+                          <span className="tabular-nums">₹{visitPaymentSoFar.gstAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {medicineTotal > 0 && (
+                        <div className="flex items-center justify-between text-gray-700">
+                          <span>Medicine dispensed</span>
+                          <span className="font-semibold tabular-nums">₹{medicineTotal.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {medicineGstAmount > 0 && (
+                        <div className="flex items-center justify-between text-gray-500">
+                          <span>GST on medicine</span>
+                          <span className="tabular-nums">₹{medicineGstAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {charges.map((c, i) => (
+                        <div key={`${c.label}-${i}`} className="flex items-center justify-between text-gray-700">
+                          <span className="flex items-center gap-1.5">
+                            {c.label}
+                            <button
+                              type="button" onClick={() => removeCharge(i)}
+                              aria-label={`Remove ${c.label}`}
+                              className="text-gray-400 hover:text-red-500"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                          <span className="font-semibold tabular-nums">₹{c.amount.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add an additional service charge — a saved catalog
+                        entry is one click, anything else is typed once. */}
+                    <div className="mt-3 flex flex-col gap-2 border-t border-emerald-100 pt-3">
+                      {chargeCatalog.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {chargeCatalog.slice(0, 6).map((entry) => (
+                            <button
+                              key={entry.id} type="button"
+                              onClick={() => setCharges((cur) => [...cur, { label: entry.label, amount: entry.defaultAmount }])}
+                              className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            >
+                              + {entry.label} · ₹{entry.defaultAmount.toFixed(0)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text" value={chargeLabel} placeholder="e.g. Dressing, Physio session"
+                          onChange={(e) => setChargeLabel(e.target.value)}
+                          className="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-emerald-400"
+                        />
+                        <input
+                          type="text" inputMode="decimal" value={chargeAmount} placeholder="₹"
+                          onChange={(e) => setChargeAmount(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCharge(); } }}
+                          className="w-20 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-emerald-400"
+                        />
+                        <button
+                          type="button" onClick={addCharge}
+                          disabled={!chargeLabel.trim() || !chargeAmount.trim()}
+                          className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Add
+                        </button>
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                        <input
+                          type="checkbox" checked={saveChargeToCatalog}
+                          onChange={(e) => setSaveChargeToCatalog(e.target.checked)}
+                        />
+                        Save for next time
+                      </label>
+                    </div>
+
+                    {/* Discount on the final total — separate from front
+                        desk's own intake-time discount on the fee alone,
+                        already folded into "Consultation fee" above. */}
+                    <div className="mt-3 flex items-center gap-1.5 border-t border-emerald-100 pt-3">
+                      <span className="text-[11px] font-semibold text-gray-500 mr-1">Discount</span>
+                      {(["none", "5", "10"] as const).map((m) => (
+                        <button
+                          key={m} type="button"
+                          onClick={() => { setDiscountMode(m); setDiscountInput(""); }}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                            discountMode === m
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {m === "none" ? "None" : `${m}%`}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setDiscountMode((m) => (m === "custom-percent" || m === "custom-amount" ? "none" : "custom-percent"))}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                          discountMode === "custom-percent" || discountMode === "custom-amount"
+                            ? "bg-emerald-600 border-emerald-600 text-white"
+                            : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        Custom
+                      </button>
+                      {(discountMode === "custom-percent" || discountMode === "custom-amount") && (
+                        <>
+                          <input
+                            type="text" inputMode="decimal" value={discountInput} placeholder="0"
+                            onChange={(e) => setDiscountInput(e.target.value)}
+                            className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-emerald-400"
+                          />
+                          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                            <button
+                              type="button" onClick={() => setDiscountMode("custom-percent")}
+                              className={`px-2 py-1 text-[11px] font-semibold ${discountMode === "custom-percent" ? "bg-emerald-100 text-emerald-700" : "text-gray-500"}`}
+                            >%</button>
+                            <button
+                              type="button" onClick={() => setDiscountMode("custom-amount")}
+                              className={`px-2 py-1 text-[11px] font-semibold ${discountMode === "custom-amount" ? "bg-emerald-100 text-emerald-700" : "text-gray-500"}`}
+                            >₹</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {discountAmount > 0 && (
+                      <div className="mt-1.5 flex items-center justify-between text-[12.5px] text-red-600">
+                        <span>Discount{discountPercent != null ? ` (${discountPercent}%)` : ""}</span>
+                        <span className="font-semibold tabular-nums">−₹{discountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex items-center justify-between border-t border-emerald-200 pt-3">
+                      <span className="text-[13px] font-black uppercase tracking-wide text-gray-800">Total</span>
+                      <span className="text-[16px] font-black tabular-nums text-emerald-700">₹{finalTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ══ Investigations ══ */}
               {tests.length > 0 && (
                 <div className="px-7 py-4 border-b border-gray-100">
@@ -1146,7 +1438,7 @@ export default function ReviewModal({
                     : "Send on WhatsApp";
                   const locked = isSaving || whatsappPhase === "sending" || whatsappPhase === "sent";
                   return (
-                    <button onClick={() => onSendWhatsApp(language)} disabled={locked}
+                    <button onClick={() => onSendWhatsApp(language, reviewBilling)} disabled={locked}
                       title="Save and send the prescription to the patient on WhatsApp. Review stays open — you check it, then Complete & Next."
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-[13px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                       {whatsappPhase === "sending"
@@ -1159,7 +1451,7 @@ export default function ReviewModal({
                   );
                 })()}
 
-                <button onClick={onSave} disabled={isSaving}
+                <button onClick={() => onSave?.(reviewBilling)} disabled={isSaving}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ background: "linear-gradient(135deg, #1268e8, #7c3aed)" }}>
                   <CheckCircle className="w-4 h-4" />
