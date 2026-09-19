@@ -18,7 +18,7 @@
 import { useEffect, useState } from "react";
 import { Building2, Clock, FileSignature, Plus, Sparkles, Stethoscope } from "lucide-react";
 import { PracticeModal } from "../practice/PracticeModal";
-import { Field, FieldRow, FormError, FormNote, HindiNameField, ImagePicker, RemoveButton } from "./ui";
+import { Field, FieldRow, FormError, FormNote, HindiNameField, ImagePicker, RemoveButton, TONE, type Tone } from "./ui";
 import type { CompressedImage } from "../../lib/image/compress";
 import {
     WEEKDAYS, replaceClinicHours, updateClinicProfile, updateDoctorProfile,
@@ -29,10 +29,19 @@ import { requestPhotoHandoff, type PhotoHandoffField } from "../../lib/db/photoH
 import type { DBDoctor, DBHospital } from "../../lib/db";
 
 /**
- * "Remove background / real editor →" — hands off to arenode.com's own
+ * "Remove background" / "Update signature" — hands off to arenode.com's own
  * crop + background-removal + signature-ink-lift editors rather than
  * rebuilding any of that here. See lib/db/photoHandoff.ts's header for why
  * this is the one link this app needs, not a second image pipeline.
+ *
+ * Styled as the same small outlined pill every other photo action here uses
+ * (`ImagePicker`'s own "Change photo" trigger) and placed in that same
+ * action row via its `extraAction` slot, rather than as a bare text link on
+ * its own line below — caught in live testing, 2026-09-19: a plain-text
+ * link with a "— opens in a new tab" caption read as a bolted-on extra,
+ * not one of the app's own controls. The "opens in a new tab" detail still
+ * exists, just as a tooltip rather than visible copy every pill doesn't
+ * carry.
  *
  * Opens in a new tab: this modal (and whatever the doctor was doing behind
  * it) stays exactly where it was. The doctor comes back to Cortex, on the
@@ -40,12 +49,13 @@ import type { DBDoctor, DBHospital } from "../../lib/db";
  * they left — a reload here, not a lost place in a form.
  */
 function BetterEditorLink({
-    doctorId, hospitalId, field, children,
+    doctorId, hospitalId, field, tone, label,
 }: {
     doctorId: string;
     hospitalId: string;
     field: PhotoHandoffField;
-    children: React.ReactNode;
+    tone: Tone;
+    label: string;
 }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -70,12 +80,17 @@ function BetterEditorLink({
                 type="button"
                 onClick={open}
                 disabled={busy}
-                className="inline-flex w-fit items-center gap-[5px] text-[11.5px] font-semibold text-[var(--cs-teal)] transition-opacity hover:opacity-80 disabled:opacity-50"
+                title="Opens arenode.com's editor in a new tab"
+                className={
+                    "inline-flex cursor-pointer items-center gap-[5px] rounded-full border bg-transparent " +
+                    `px-[10px] py-[5px] text-[11px] font-semibold outline-none transition-colors disabled:opacity-50 ` +
+                    `${TONE[tone].border} ${TONE[tone].text} ${TONE[tone].softHover}`
+                }
             >
-                <Sparkles size={12} />
-                {busy ? "Opening…" : children}
+                <Sparkles size={11} />
+                {busy ? "Opening…" : label}
             </button>
-            {error && <span className="text-[11px] font-medium text-[var(--cs-red)]">{error}</span>}
+            {error && <span className="text-[10.5px] font-medium text-[var(--cs-red)]">{error}</span>}
         </div>
     );
 }
@@ -223,12 +238,10 @@ export function EditClinicModal({
                         fallbackIcon={<Building2 size={22} />}
                         onPick={(img) => { setLogoPick(img); setLogoRemoved(false); }}
                         onClear={() => { setLogoPick(null); setLogoRemoved(true); }}
+                        extraAction={doctorId && (
+                            <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="logo" tone="blue" label="Remove background" />
+                        )}
                     />
-                    {doctorId && (
-                        <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="logo">
-                            Remove the background instead — opens in a new tab
-                        </BetterEditorLink>
-                    )}
                 </div>
                 <Field id="clin-name" label="Clinic name" value={name} onChange={setName} />
                 {/* Confirmed ONCE, stored forever — a Hindi prescription reads
@@ -365,10 +378,10 @@ export function EditDoctorModal({
                         fallbackIcon={<Stethoscope size={22} />}
                         onPick={(img) => { setPhotoPick(img); setPhotoRemoved(false); }}
                         onClear={() => { setPhotoPick(null); setPhotoRemoved(true); }}
+                        extraAction={
+                            <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="avatar" tone="violet" label="Remove background" />
+                        }
                     />
-                    <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="avatar">
-                        Remove the background instead — opens in a new tab
-                    </BetterEditorLink>
                 </div>
                 {/* No upload surface for this one here — a signature needs
                     the ink lifted off a photographed page onto a clean
@@ -383,9 +396,10 @@ export function EditDoctorModal({
                                 ? <img src={doctor.signature_image_url} alt="" className="block h-full w-full object-contain px-1" />
                                 : <FileSignature size={18} />}
                         </div>
-                        <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="signature">
-                            {doctor?.signature_image_url ? "Update signature" : "Add a signature"} — opens in a new tab
-                        </BetterEditorLink>
+                        <BetterEditorLink
+                            doctorId={doctorId} hospitalId={hospitalId} field="signature" tone="violet"
+                            label={doctor?.signature_image_url ? "Update signature" : "Add signature"}
+                        />
                     </div>
                 </div>
                 <Field id="clin-doc-name" label="Name" value={name} onChange={setName} />
