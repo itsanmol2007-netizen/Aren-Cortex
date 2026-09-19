@@ -17,7 +17,12 @@
 
 import type { Vitals } from "../../types";
 
-export type MeasureFieldKey = keyof Vitals;
+// Every catalogue field is a single value the card can put in a box — the
+// one exception, `customMeasurements`, is an array and belongs to the
+// fallback in consultInput.ts, never to a MeasureField. Excluded here so
+// `vitals[f.key]` stays a string everywhere a MeasureField is read, rather
+// than every reader having to widen for a key that can never actually occur.
+export type MeasureFieldKey = Exclude<keyof Vitals, "customMeasurements">;
 
 /**
  * `bp` is its own input kind because it is ONE control and TWO measurements.
@@ -68,7 +73,7 @@ export type BetterWhen = "lower" | "higher" | "band" | "none";
  * that per-joint ROM exists, and a flat list of that length is a list nobody
  * reads to the end of. Order here is the order the menu prints its headings.
  */
-export type MeasureGroup = "vitals" | "body" | "metabolic" | "hematology" | "musculoskeletal" | "obstetric";
+export type MeasureGroup = "vitals" | "body" | "metabolic" | "hematology" | "labs" | "imaging" | "musculoskeletal" | "obstetric";
 
 export interface MeasureField {
     key: MeasureFieldKey;
@@ -324,6 +329,259 @@ export const MEASURE_FIELDS: MeasureField[] = [
         warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 150; },
         warnText: "Under 150 ×10³/µL is thrombocytopenia — dengue is followed on the trend, not one reading",
     },
+    // ── CBC differential + ESR/RBC (added 2026-09-19) ───────────────────
+    // "WBC, not just WBC — neutrophils or leucocytes and all" (Anmol). The
+    // differential is what actually separates a viral fever workup from a
+    // bacterial one and is the first thing a real CBC report shows under TLC.
+    {
+        key: "neutrophilsPct", label: "Neutrophils (%)", shortLabel: "Neutrophils",
+        unit: "%", printLabel: "Neutrophils", rxLabel: "N%",
+        group: "hematology", betterWhen: "none", trendNoise: 3,
+        placeholder: "60", kind: "number",
+        warn: numberInRange(40, 75), warnText: "Outside 40–75% — high fits bacterial, low fits viral",
+    },
+    {
+        key: "lymphocytesPct", label: "Lymphocytes (%)", shortLabel: "Lymphocytes",
+        unit: "%", printLabel: "Lymphocytes", rxLabel: "L%",
+        group: "hematology", betterWhen: "none", trendNoise: 3,
+        placeholder: "30", kind: "number",
+        warn: numberInRange(20, 45), warnText: "Outside 20–45% — high fits a viral illness",
+    },
+    {
+        key: "eosinophilsPct", label: "Eosinophils (%)", shortLabel: "Eosinophils",
+        unit: "%", printLabel: "Eosinophils", rxLabel: "E%",
+        group: "hematology", betterWhen: "lower", trendNoise: 1,
+        placeholder: "2", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 6; },
+        warnText: "Over 6% — raised in allergy, asthma and worm infestation",
+    },
+    {
+        key: "monocytesPct", label: "Monocytes (%)", shortLabel: "Monocytes",
+        unit: "%", printLabel: "Monocytes", rxLabel: "M%",
+        group: "hematology", betterWhen: "none", trendNoise: 2,
+        placeholder: "5", kind: "number",
+        warn: numberInRange(2, 10), warnText: "Outside 2–10%",
+    },
+    {
+        key: "basophilsPct", label: "Basophils (%)", shortLabel: "Basophils",
+        unit: "%", printLabel: "Basophils", rxLabel: "B%",
+        group: "hematology", betterWhen: "none", trendNoise: 0.5,
+        placeholder: "0.5", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 1; },
+        warnText: "Over 1%",
+    },
+    {
+        // Age- and sex-dependent, same honest limit as hb and respRate — see
+        // their own comments. Set at a conservative adult upper bound rather
+        // than warn wrongly for a child or during pregnancy.
+        key: "esr", label: "ESR (mm/hr)", shortLabel: "ESR",
+        unit: "mm/hr", printLabel: "ESR", rxLabel: "ESR",
+        group: "hematology", betterWhen: "lower", trendNoise: 5,
+        placeholder: "10", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 20; },
+        warnText: "Over 20 mm/hr (adult) — a non-specific marker of inflammation, followed on trend",
+    },
+    {
+        key: "rbcCount", label: "RBC Count (million/µL)", shortLabel: "RBC count",
+        unit: "million/µL", printLabel: "RBC", rxLabel: "RBC",
+        group: "hematology", betterWhen: "higher", trendNoise: 0.2,
+        placeholder: "4.8", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 4; },
+        warnText: "Under 4 million/µL suggests anemia — normal range is sex-dependent",
+    },
+
+    // ── LFT / RFT / electrolytes / thyroid / lipid / CRP (added 2026-09-19)
+    // "Everything measured in blood test... should be in our app" (Anmol).
+    // Reference ranges below are the commonly cited adult ones; like every
+    // band in this file they are a screening line, not a lab-specific cutoff.
+    {
+        key: "totalBilirubin", label: "Total Bilirubin (mg/dL)", shortLabel: "Total bilirubin",
+        unit: "mg/dL", printLabel: "T. Bilirubin", rxLabel: "T.Bil",
+        group: "labs", betterWhen: "lower", trendNoise: 0.2,
+        placeholder: "0.8", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 1.2; },
+        warnText: "Over 1.2 mg/dL — the jaundice threshold",
+    },
+    {
+        key: "sgot", label: "SGOT / AST (U/L)", shortLabel: "SGOT / AST",
+        unit: "U/L", printLabel: "SGOT", rxLabel: "SGOT",
+        group: "labs", betterWhen: "lower", trendNoise: 5,
+        placeholder: "25", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 40; },
+        warnText: "Over 40 U/L",
+    },
+    {
+        key: "sgpt", label: "SGPT / ALT (U/L)", shortLabel: "SGPT / ALT",
+        unit: "U/L", printLabel: "SGPT", rxLabel: "SGPT",
+        group: "labs", betterWhen: "lower", trendNoise: 5,
+        placeholder: "25", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 56; },
+        warnText: "Over 56 U/L",
+    },
+    {
+        key: "alkPhosphatase", label: "Alkaline Phosphatase (U/L)", shortLabel: "Alkaline phosphatase",
+        unit: "U/L", printLabel: "ALP", rxLabel: "ALP",
+        group: "labs", betterWhen: "lower", trendNoise: 10,
+        placeholder: "90", kind: "number",
+        warn: numberInRange(44, 147), warnText: "Outside 44–147 U/L",
+    },
+    {
+        key: "totalProtein", label: "Total Protein (g/dL)", shortLabel: "Total protein",
+        unit: "g/dL", printLabel: "T. Protein", rxLabel: "T.Prot",
+        group: "labs", betterWhen: "band", trendNoise: 0.2,
+        placeholder: "7", kind: "number",
+        warn: numberInRange(6.0, 8.3), warnText: "Outside 6.0–8.3 g/dL",
+    },
+    {
+        key: "albumin", label: "Albumin (g/dL)", shortLabel: "Albumin",
+        unit: "g/dL", printLabel: "Albumin", rxLabel: "Alb",
+        group: "labs", betterWhen: "higher", trendNoise: 0.2,
+        placeholder: "4.2", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 3.5; },
+        warnText: "Under 3.5 g/dL",
+    },
+    {
+        key: "bloodUrea", label: "Blood Urea (mg/dL)", shortLabel: "Blood urea",
+        unit: "mg/dL", printLabel: "Blood Urea", rxLabel: "Urea",
+        group: "labs", betterWhen: "lower", trendNoise: 3,
+        placeholder: "25", kind: "number",
+        warn: numberInRange(15, 40), warnText: "Outside 15–40 mg/dL",
+    },
+    {
+        key: "creatinine", label: "Serum Creatinine (mg/dL)", shortLabel: "Serum creatinine",
+        unit: "mg/dL", printLabel: "Creatinine", rxLabel: "Creat",
+        group: "labs", betterWhen: "lower", trendNoise: 0.1,
+        placeholder: "0.9", kind: "number",
+        warn: numberInRange(0.6, 1.3), warnText: "Outside 0.6–1.3 mg/dL",
+    },
+    {
+        key: "uricAcid", label: "Uric Acid (mg/dL)", shortLabel: "Uric acid",
+        unit: "mg/dL", printLabel: "Uric Acid", rxLabel: "UA",
+        group: "labs", betterWhen: "lower", trendNoise: 0.3,
+        placeholder: "5", kind: "number",
+        warn: numberInRange(3.5, 7.2), warnText: "Outside 3.5–7.2 mg/dL — high fits gout",
+    },
+    {
+        key: "sodium", label: "Sodium (mEq/L)", shortLabel: "Sodium",
+        unit: "mEq/L", printLabel: "Sodium", rxLabel: "Na+",
+        group: "labs", betterWhen: "band", trendNoise: 2,
+        placeholder: "140", kind: "number",
+        warn: numberInRange(135, 145), warnText: "Outside 135–145 mEq/L",
+    },
+    {
+        key: "potassium", label: "Potassium (mEq/L)", shortLabel: "Potassium",
+        unit: "mEq/L", printLabel: "Potassium", rxLabel: "K+",
+        group: "labs", betterWhen: "band", trendNoise: 0.3,
+        placeholder: "4.2", kind: "number",
+        warn: numberInRange(3.5, 5.1), warnText: "Outside 3.5–5.1 mEq/L",
+    },
+    {
+        key: "tsh", label: "TSH (µIU/mL)", shortLabel: "TSH",
+        unit: "µIU/mL", printLabel: "TSH", rxLabel: "TSH",
+        group: "labs", betterWhen: "band", trendNoise: 0.5,
+        placeholder: "2", kind: "number",
+        warn: numberInRange(0.4, 4.0), warnText: "Outside 0.4–4.0 µIU/mL",
+    },
+    {
+        key: "totalCholesterol", label: "Total Cholesterol (mg/dL)", shortLabel: "Total cholesterol",
+        unit: "mg/dL", printLabel: "T. Cholesterol", rxLabel: "T.Chol",
+        group: "labs", betterWhen: "lower", trendNoise: 10,
+        placeholder: "180", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 200; },
+        warnText: "≥200 mg/dL is the borderline-high range",
+    },
+    {
+        key: "triglycerides", label: "Triglycerides (mg/dL)", shortLabel: "Triglycerides",
+        unit: "mg/dL", printLabel: "Triglycerides", rxLabel: "TG",
+        group: "labs", betterWhen: "lower", trendNoise: 15,
+        placeholder: "120", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 150; },
+        warnText: "≥150 mg/dL is the borderline-high range",
+    },
+    {
+        key: "hdl", label: "HDL Cholesterol (mg/dL)", shortLabel: "HDL cholesterol",
+        unit: "mg/dL", printLabel: "HDL", rxLabel: "HDL",
+        group: "labs", betterWhen: "higher", trendNoise: 3,
+        placeholder: "45", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 40; },
+        warnText: "Under 40 mg/dL",
+    },
+    {
+        key: "ldl", label: "LDL Cholesterol (mg/dL)", shortLabel: "LDL cholesterol",
+        unit: "mg/dL", printLabel: "LDL", rxLabel: "LDL",
+        group: "labs", betterWhen: "lower", trendNoise: 10,
+        placeholder: "100", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n >= 130; },
+        warnText: "≥130 mg/dL is the borderline-high range",
+    },
+    {
+        key: "crp", label: "CRP (mg/L)", shortLabel: "CRP",
+        unit: "mg/L", printLabel: "CRP", rxLabel: "CRP",
+        group: "labs", betterWhen: "lower", trendNoise: 3,
+        placeholder: "3", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 10; },
+        warnText: "Over 10 mg/L — assay-dependent, followed on trend",
+    },
+
+    // ── Ultrasound abdomen — general (added 2026-09-19) ──────────────────
+    // "How will he record the findings from that investigation... we don't
+    // have any other way to keep the track record of measurements" (Anmol).
+    // The numeric findings a general abdomen USG report actually gives; the
+    // narrative stays in Findings, this is only what has a number attached.
+    {
+        key: "liverSpan", label: "Liver Span (cm)", shortLabel: "Liver span",
+        unit: "cm", printLabel: "Liver Span", rxLabel: "Liver Span",
+        group: "imaging", betterWhen: "none", trendNoise: 0.5,
+        placeholder: "13", kind: "number",
+        warn: numberInRange(6, 16), warnText: "Outside roughly 6–16 cm — hepatomegaly (high) or a shrunken cirrhotic liver (low)",
+    },
+    {
+        key: "spleenSize", label: "Spleen Length (cm)", shortLabel: "Spleen length",
+        unit: "cm", printLabel: "Spleen", rxLabel: "Spleen",
+        group: "imaging", betterWhen: "lower", trendNoise: 0.5,
+        placeholder: "9", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 13; },
+        warnText: "Over 13 cm suggests splenomegaly",
+    },
+    {
+        key: "gbWallThickness", label: "GB Wall Thickness (mm)", shortLabel: "Gallbladder wall thickness",
+        unit: "mm", printLabel: "GB Wall", rxLabel: "GB Wall",
+        group: "imaging", betterWhen: "lower", trendNoise: 0.5,
+        placeholder: "2", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 3; },
+        warnText: "Over 3 mm suggests cholecystitis",
+    },
+    {
+        key: "cbdDiameter", label: "CBD Diameter (mm)", shortLabel: "CBD diameter",
+        unit: "mm", printLabel: "CBD", rxLabel: "CBD",
+        group: "imaging", betterWhen: "lower", trendNoise: 0.5,
+        placeholder: "4", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 6; },
+        warnText: "Over 6 mm suggests biliary obstruction — the normal upper limit rises after cholecystectomy",
+    },
+    {
+        key: "rightKidneySize", label: "Right Kidney Length (cm)", shortLabel: "Right kidney length",
+        unit: "cm", printLabel: "Right Kidney", rxLabel: "R Kidney",
+        group: "imaging", betterWhen: "none", trendNoise: 0.3,
+        placeholder: "10", kind: "number",
+        warn: numberInRange(9, 12), warnText: "Outside roughly 9–12 cm",
+    },
+    {
+        key: "leftKidneySize", label: "Left Kidney Length (cm)", shortLabel: "Left kidney length",
+        unit: "cm", printLabel: "Left Kidney", rxLabel: "L Kidney",
+        group: "imaging", betterWhen: "none", trendNoise: 0.3,
+        placeholder: "10", kind: "number",
+        warn: numberInRange(9, 12), warnText: "Outside roughly 9–12 cm",
+    },
+    {
+        key: "postVoidResidual", label: "Post-void Residual (mL)", shortLabel: "Post-void residual",
+        unit: "mL", printLabel: "PVR", rxLabel: "PVR",
+        group: "imaging", betterWhen: "lower", trendNoise: 10,
+        placeholder: "20", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n > 50; },
+        warnText: "Over 50 mL suggests incomplete bladder emptying",
+    },
+
     {
         // Deliberately before the obstetric pair: those two are the only
         // fields in the catalogue that are sex-specific, and the "Stable
@@ -553,6 +811,58 @@ export const MEASURE_FIELDS: MeasureField[] = [
         },
         warnText: "G-P-L-A does not add up — living exceeds births, or G is under P+A",
     },
+
+    // ── Obstetric ultrasound biometry (added 2026-09-19) ──────────────────
+    // The numbers an antenatal USG report actually gives, alongside the LMP
+    // and G-P-L-A above. No warn on the biometry fields themselves — every
+    // one of them is read against gestational age on a growth chart, not a
+    // fixed band, and a fixed band here would be a fabricated verdict for
+    // whichever week the pregnancy is actually at. AFI is the one exception:
+    // oligo/polyhydramnios thresholds are absolute, not GA-dependent.
+    {
+        key: "gestationalAgeUsg", label: "Gestational Age by USG (wks)", shortLabel: "Gestational age (USG)",
+        unit: "wks", printLabel: "GA (USG)", rxLabel: "GA(USG)",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+    },
+    {
+        key: "efw", label: "Est. Fetal Weight (g)", shortLabel: "Estimated fetal weight",
+        unit: "g", printLabel: "EFW", rxLabel: "EFW",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+    },
+    {
+        key: "afi", label: "Amniotic Fluid Index (cm)", shortLabel: "Amniotic fluid index",
+        unit: "cm", printLabel: "AFI", rxLabel: "AFI",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && (n < 5 || n > 25); },
+        warnText: "Under 5 is oligohydramnios; over 25 is polyhydramnios",
+    },
+    {
+        key: "bpd", label: "BPD (mm)", shortLabel: "Biparietal diameter",
+        unit: "mm", printLabel: "BPD", rxLabel: "BPD",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+    },
+    {
+        key: "fl", label: "Femur Length (mm)", shortLabel: "Femur length",
+        unit: "mm", printLabel: "FL", rxLabel: "FL",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+    },
+    {
+        key: "hc", label: "HC (mm)", shortLabel: "Head circumference",
+        unit: "mm", printLabel: "HC", rxLabel: "HC",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+    },
+    {
+        key: "ac", label: "AC (mm)", shortLabel: "Abdominal circumference",
+        unit: "mm", printLabel: "AC", rxLabel: "AC",
+        group: "obstetric", betterWhen: "none",
+        placeholder: "—", kind: "number",
+    },
 ];
 
 export const FIELD_BY_KEY: Map<MeasureFieldKey, MeasureField> = new Map(
@@ -570,12 +880,14 @@ export const GROUP_LABEL: Record<MeasureGroup, string> = {
     body: "Body",
     metabolic: "Metabolic",
     hematology: "Blood count (CBC)",
+    labs: "Other blood tests",
+    imaging: "Ultrasound findings",
     musculoskeletal: "Movement & function",
     obstetric: "Obstetric",
 };
 
 export const GROUP_ORDER: MeasureGroup[] = [
-    "vitals", "body", "metabolic", "hematology", "musculoskeletal", "obstetric",
+    "vitals", "body", "metabolic", "hematology", "labs", "imaging", "musculoskeletal", "obstetric",
 ];
 
 /**
@@ -628,7 +940,10 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     // TLC and platelets for the same reason dengue watches them.
     MALARIA_CONFIRMED: ["temp", "hb", "tlc", "plateletCount"],
     TYPHOID_CONFIRMED: ["temp", "tlc"],
-    JAUNDICE: ["hb"],
+    // Jaundice is worked up on the liver panel, not just the Hb it already
+    // had — verified against the live `signals` table (2026-09-19), same as
+    // every row added this pass.
+    JAUNDICE: ["hb", "totalBilirubin", "sgot", "sgpt"],
     PALLOR: ["hb"],
 
     // oxygenation and rate
@@ -647,8 +962,12 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
 
     // circulation
     CHEST_PAIN: ["bp", "pulse"],
-    CHEST_PAIN_TYPICAL: ["bp", "pulse"],
-    PALPITATIONS: ["pulse", "bp"],
+    // The cardiac-risk workup rides along on the "typical, ischaemic" chest
+    // pain specifically — the lipid panel is a risk-factor check, not
+    // something every chest pain warrants.
+    CHEST_PAIN_TYPICAL: ["bp", "pulse", "totalCholesterol", "ldl"],
+    // Palpitations are a thyroid presentation as often as a cardiac one.
+    PALPITATIONS: ["pulse", "bp", "tsh"],
     TACHYCARDIA: ["pulse"],
     HIGH_BP: ["bp"],
     SEVERE_HIGH_BP: ["bp"],
@@ -657,14 +976,49 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     PRESYNCOPE: ["bp", "pulse"],
     SYNCOPE: ["bp", "pulse"],
     HEADACHE: ["bp"],
+    DYSLIPIDEMIA: ["totalCholesterol", "triglycerides", "hdl", "ldl"],
+
+    // abdomen / hepatobiliary — RUQ pain is the gallstone/hepatitis workup;
+    // a mass or distension asks the same two organs be measured.
+    RUQ_PAIN: ["liverSpan", "gbWallThickness", "cbdDiameter", "sgot", "sgpt", "totalBilirubin"],
+    ABDOMINAL_MASS: ["liverSpan", "spleenSize"],
+    ABDOMINAL_DISTENSION: ["liverSpan", "spleenSize"],
+
+    // renal / urinary
+    RENAL_COLIC_CONFIRMED: ["bloodUrea", "creatinine", "rightKidneySize", "leftKidneySize"],
+    RENAL_IMPAIRMENT: ["bloodUrea", "creatinine", "sodium", "potassium", "uricAcid"],
+    DYSURIA: ["bloodUrea", "creatinine"],
+    URINARY_FREQUENCY: ["bloodUrea", "creatinine", "postVoidResidual"],
+    UTI_CONFIRMED: ["bloodUrea", "creatinine"],
+
+    // oedema — the renal/hypoalbuminaemia workup a swollen patient prompts
+    PERIPHERAL_EDEMA: ["creatinine", "totalProtein", "albumin"],
+    GENERALISED_EDEMA: ["creatinine", "totalProtein", "albumin"],
+    PERIORBITAL_EDEMA: ["creatinine", "totalProtein", "albumin"],
+
+    // allergy / atopy / parasites — eosinophilia is the shared lab thread
+    ALLERGIC_REACTION: ["eosinophilsPct"],
+    URTICARIA: ["eosinophilsPct"],
+    ALLERGIC_RHINITIS_HISTORY: ["eosinophilsPct"],
+    ALLERGIC_DERMATITIS_CONFIRMED: ["eosinophilsPct"],
+    FOOD_ALLERGY: ["eosinophilsPct"],
+    ANGIOEDEMA: ["eosinophilsPct"],
+    ASTHMA_COPD_KNOWN: ["eosinophilsPct"],
+    WORMS_IN_STOOL: ["eosinophilsPct"],
 
     // body habitus — dosing and load tolerance
     // Unintentional weight loss with osmotic symptoms is how new diabetes
     // most often presents, so it asks for a sugar as well as the trend.
-    WEIGHT_LOSS: ["weight", "height", "glucoseRandom"],
-    WEIGHT_GAIN: ["weight", "height"],
+    // Thyroid disease is the other classic cause of unexplained weight change
+    // in either direction, so TSH rides along on both.
+    WEIGHT_LOSS: ["weight", "height", "glucoseRandom", "tsh"],
+    WEIGHT_GAIN: ["weight", "height", "tsh"],
     // paediatric dosing is by weight, always
     PEDIATRIC: ["weight"],
+    // thyroid — the other classic presentations, beyond weight change
+    COLD_INTOLERANCE: ["tsh"],
+    HEAT_INTOLERANCE: ["tsh"],
+    FATIGUE: ["tsh", "hb"],
 
     // glycaemic — see the panel in MEASURE_FIELDS above.
     // Once a random sugar has raised HIGH_BLOOD_GLUCOSE, the HbA1c is
@@ -703,14 +1057,19 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     AMENORRHEA: ["lmp"],
     MENSTRUAL_IRREGULAR: ["lmp"],
     INTERMENSTRUAL_BLEEDING: ["lmp"],
-    PREGNANCY: ["lmp", "gpla"],
+    // A confirmed pregnancy is where the antenatal USG numbers belong —
+    // PREGNANCY_NAUSEA is the early sign and stays on LMP/G-P-L-A alone,
+    // since biometry is not usually taken that early.
+    PREGNANCY: ["lmp", "gpla", "gestationalAgeUsg", "efw", "afi", "bpd", "fl", "hc", "ac"],
     PREGNANCY_NAUSEA: ["lmp", "gpla"],
 
     // musculoskeletal — pain scale and range of motion
     LOW_BACK_PAIN: ["painVas"],
     NECK_PAIN: ["painVas"],
     BACK_PAIN_UPPER: ["painVas"],
-    JOINT_PAIN: ["painVas"],
+    // Inflammatory markers — a joint pain that is actually arthritis is
+    // worked up on ESR/CRP, not just described.
+    JOINT_PAIN: ["painVas", "esr", "crp"],
     KNEE_PAIN: ["painVas", "romPct"],
     SHOULDER_PAIN: ["painVas", "romPct"],
     HIP_PAIN: ["painVas", "romPct"],
@@ -723,6 +1082,10 @@ export const RELEVANT_FIELDS: Record<string, MeasureFieldKey[]> = {
     ROM_RESTRICTED_SEVERE: ["romPct"],
     ROM_PAINFUL_ARC: ["romPct", "painVas"],
     STIFFNESS_MORNING: ["romPct"],
+    // Sudden single-joint pain and swelling is the gout/septic-arthritis
+    // presentation — uric acid alongside the same inflammatory markers.
+    ACUTE_MONOARTHRITIS: ["esr", "crp", "uricAcid"],
+    JOINT_SWELLING: ["esr", "crp"],
 };
 
 /**

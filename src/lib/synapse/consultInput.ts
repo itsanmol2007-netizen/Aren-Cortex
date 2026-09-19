@@ -47,6 +47,10 @@ export interface MeasurementRow {
     text?: string;
 }
 
+// Every Vitals key except the one array-valued fallback field — see
+// measures.ts's `MeasureFieldKey`, which excludes it for the same reason.
+type StringVitalKey = Exclude<keyof Vitals, "customMeasurements">;
+
 /** Above this, a temperature can only be Fahrenheit — 45 °C is not survivable. */
 const FAHRENHEIT_FLOOR = 45;
 
@@ -124,7 +128,7 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
     // Left and right stay separate keys for the same reason they are separate
     // fields — see measures.ts. Averaging them, or emitting one KNEE_FLEX,
     // would make the operated knee's recovery invisible behind the good one.
-    const PHYSIO_KEYS: [keyof Vitals, string, string][] = [
+    const PHYSIO_KEYS: [StringVitalKey, string, string][] = [
         ["lefs", "LEFS", "/80"],
         // Phase 6 outcome instruments. No rule reads either today; they are
         // emitted for the same reason every physio field is — a field that
@@ -195,6 +199,93 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
         out.push({ measureKey: "PLATELET_COUNT", value: plateletCount, unit: "×10³/µL" });
     }
 
+    // ── CBC differential / ESR / RBC, and the LFT/RFT/electrolyte/thyroid/
+    // lipid/CRP/ultrasound/obstetric-biometry panels (2026-09-19) ─────────
+    // Same shape as the physio and glycaemic keys above: one row per field,
+    // keyed exactly as `measures.ts` declares it. No measurement_rule reads
+    // most of these today — they are recorded and printed regardless, for
+    // the same reason every field in this file is: a field that emits
+    // nothing is a number the RECORD never sees either.
+    const LAB_KEYS: [StringVitalKey, string, string][] = [
+        ["neutrophilsPct", "NEUTROPHILS_PCT", "%"],
+        ["lymphocytesPct", "LYMPHOCYTES_PCT", "%"],
+        ["eosinophilsPct", "EOSINOPHILS_PCT", "%"],
+        ["monocytesPct", "MONOCYTES_PCT", "%"],
+        ["basophilsPct", "BASOPHILS_PCT", "%"],
+        ["esr", "ESR", "mm/hr"],
+        ["rbcCount", "RBC_COUNT", "million/µL"],
+        ["totalBilirubin", "TOTAL_BILIRUBIN", "mg/dL"],
+        ["sgot", "SGOT", "U/L"],
+        ["sgpt", "SGPT", "U/L"],
+        ["alkPhosphatase", "ALK_PHOSPHATASE", "U/L"],
+        ["totalProtein", "TOTAL_PROTEIN", "g/dL"],
+        ["albumin", "ALBUMIN", "g/dL"],
+        ["bloodUrea", "BLOOD_UREA", "mg/dL"],
+        ["creatinine", "CREATININE", "mg/dL"],
+        ["uricAcid", "URIC_ACID", "mg/dL"],
+        ["sodium", "SODIUM", "mEq/L"],
+        ["potassium", "POTASSIUM", "mEq/L"],
+        ["tsh", "TSH", "µIU/mL"],
+        ["totalCholesterol", "TOTAL_CHOLESTEROL", "mg/dL"],
+        ["triglycerides", "TRIGLYCERIDES", "mg/dL"],
+        ["hdl", "HDL", "mg/dL"],
+        ["ldl", "LDL", "mg/dL"],
+        ["crp", "CRP", "mg/L"],
+        ["liverSpan", "LIVER_SPAN", "cm"],
+        ["spleenSize", "SPLEEN_SIZE", "cm"],
+        ["gbWallThickness", "GB_WALL_THICKNESS", "mm"],
+        ["cbdDiameter", "CBD_DIAMETER", "mm"],
+        ["rightKidneySize", "RIGHT_KIDNEY_SIZE", "cm"],
+        ["leftKidneySize", "LEFT_KIDNEY_SIZE", "cm"],
+        ["postVoidResidual", "POST_VOID_RESIDUAL", "mL"],
+        ["gestationalAgeUsg", "GA_USG", "wks"],
+        ["efw", "EFW", "g"],
+        ["afi", "AFI", "cm"],
+        ["bpd", "BPD", "mm"],
+        ["fl", "FL", "mm"],
+        ["hc", "HC", "mm"],
+        ["ac", "AC", "mm"],
+    ];
+    for (const [vitalKey, measureKey, unit] of LAB_KEYS) {
+        const v = num(vitals[vitalKey]);
+        if (v !== null) out.push({ measureKey, value: v, unit });
+    }
+
+    // ── The custom-measurement fallback (2026-09-19) ────────────────────
+    // "Encourage a doctor to create a new measurement field and then enter
+    // its value" (Anmol) — for whatever the curated catalogue above still
+    // doesn't have. `measureKey` is derived from the doctor's own label,
+    // normalised the same way every time ("WBC count" and "wbc  count" both
+    // become CUSTOM_WBC_COUNT), so the SAME ad hoc field typed by different
+    // doctors — or the same doctor twice — lands on one key rather than
+    // fragmenting across visits. That consistency is what "wired with
+    // signals" actually buys here: an admin can author a real
+    // `measurement_rule` against CUSTOM_WBC_COUNT later, the moment one is
+    // worth writing, without touching a single past visit's data.
+    //
+    // `value_text` normally carries a measurement's own value when it isn't
+    // a number (blood group). A custom field's value IS always a number —
+    // `MeasureCell`'s free-typed value box, same as any "number" kind field
+    // — so `text` is repurposed here to carry the doctor's own LABEL
+    // instead, since nothing else in this row can. `measurementsToVitals`
+    // below reads it back the same way. Keep the two in sync.
+    const seenCustomKeys = new Set<string>();
+    for (const c of vitals.customMeasurements ?? []) {
+        const label = c.label.trim();
+        const value = num(c.value);
+        if (!label || value === null) continue;
+        let measureKey = customMeasureKey(label);
+        // A second custom field that normalises to the same key (two
+        // differently-spelled entries in one visit) gets a suffix rather
+        // than silently overwriting the first — `visit_measurements` is
+        // keyed on (visit_id, measure_key), so a collision here would drop
+        // one of the doctor's own readings.
+        let n = 2;
+        while (seenCustomKeys.has(measureKey)) measureKey = `${customMeasureKey(label)}_${n++}`;
+        seenCustomKeys.add(measureKey);
+        out.push({ measureKey, value, unit: c.unit ?? "", text: label });
+    }
+
     // ── Obstetric ────────────────────────────────────────────────────────
     // The LMP is entered as a date because that is what the patient knows,
     // but "12 June" means nothing to a rule. What a rule can reason about is
@@ -238,6 +329,21 @@ export function vitalsToMeasurements(vitals: Vitals): MeasurementRow[] {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
+ * A doctor-typed measurement label, normalised into a stable measure key.
+ * "WBC count", "wbc  count" and " WBC COUNT " all become `CUSTOM_WBC_COUNT`
+ * — see the custom-measurement block in `vitalsToMeasurements` above for why
+ * that consistency is the whole point.
+ */
+function customMeasureKey(label: string): string {
+    const slug = label
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    return `CUSTOM_${slug || "FIELD"}`;
+}
+
+/**
  * `visit_measurements` back into the `Vitals` shape the card edits — the exact
  * inverse of `vitalsToMeasurements` above, and it lives beside it for the one
  * reason that matters: these two must agree about every key, every unit and
@@ -262,16 +368,18 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  * actually entered.
  */
 export function measurementsToVitals(
-    rows: { measure_key: string; value_num: number | string | null; value_text: string | null }[]
+    rows: { measure_key: string; value_num: number | string | null; value_text: string | null; unit?: string | null }[]
 ): Partial<Vitals> {
     const numByKey = new Map<string, number>();
     const textByKey = new Map<string, string>();
+    const unitByKey = new Map<string, string>();
     for (const r of rows) {
         if (r.value_num !== null && r.value_num !== undefined) {
             const n = typeof r.value_num === "number" ? r.value_num : Number.parseFloat(r.value_num);
             if (Number.isFinite(n)) numByKey.set(r.measure_key, n);
         }
         if (r.value_text) textByKey.set(r.measure_key, r.value_text);
+        if (r.unit) unitByKey.set(r.measure_key, r.unit);
     }
 
     const out: Partial<Vitals> = {};
@@ -306,11 +414,40 @@ export function measurementsToVitals(
         ["GLUCOSE_FASTING", "glucoseFasting"], ["GLUCOSE_RANDOM", "glucoseRandom"],
         ["HBA1C", "hba1c"],
         ["HB", "hb"], ["TLC", "tlc"], ["PLATELET_COUNT", "plateletCount"],
+        ["NEUTROPHILS_PCT", "neutrophilsPct"], ["LYMPHOCYTES_PCT", "lymphocytesPct"],
+        ["EOSINOPHILS_PCT", "eosinophilsPct"], ["MONOCYTES_PCT", "monocytesPct"],
+        ["BASOPHILS_PCT", "basophilsPct"], ["ESR", "esr"], ["RBC_COUNT", "rbcCount"],
+        ["TOTAL_BILIRUBIN", "totalBilirubin"], ["SGOT", "sgot"], ["SGPT", "sgpt"],
+        ["ALK_PHOSPHATASE", "alkPhosphatase"], ["TOTAL_PROTEIN", "totalProtein"], ["ALBUMIN", "albumin"],
+        ["BLOOD_UREA", "bloodUrea"], ["CREATININE", "creatinine"], ["URIC_ACID", "uricAcid"],
+        ["SODIUM", "sodium"], ["POTASSIUM", "potassium"], ["TSH", "tsh"],
+        ["TOTAL_CHOLESTEROL", "totalCholesterol"], ["TRIGLYCERIDES", "triglycerides"],
+        ["HDL", "hdl"], ["LDL", "ldl"], ["CRP", "crp"],
+        ["LIVER_SPAN", "liverSpan"], ["SPLEEN_SIZE", "spleenSize"],
+        ["GB_WALL_THICKNESS", "gbWallThickness"], ["CBD_DIAMETER", "cbdDiameter"],
+        ["RIGHT_KIDNEY_SIZE", "rightKidneySize"], ["LEFT_KIDNEY_SIZE", "leftKidneySize"],
+        ["POST_VOID_RESIDUAL", "postVoidResidual"],
+        ["GA_USG", "gestationalAgeUsg"], ["EFW", "efw"], ["AFI", "afi"],
+        ["BPD", "bpd"], ["FL", "fl"], ["HC", "hc"], ["AC", "ac"],
     ];
     for (const [measureKey, vitalKey] of SIMPLE) {
         const n = numByKey.get(measureKey);
         if (n !== undefined) (out as Record<string, string>)[vitalKey] = str(n);
     }
+
+    // The custom-measurement fallback, reconstructed. Any row whose key we
+    // did not just claim above as a catalogue field, that carries BOTH a
+    // number and a label, is one of these — see the emission side in
+    // `vitalsToMeasurements` for why `text` holds the label here rather than
+    // the value.
+    const customEntries: { id: string; label: string; value: string; unit: string }[] = [];
+    for (const [key, n] of numByKey) {
+        if (!key.startsWith("CUSTOM_")) continue;
+        const label = textByKey.get(key);
+        if (!label) continue;
+        customEntries.push({ id: key, label, value: str(n), unit: unitByKey.get(key) ?? "" });
+    }
+    if (customEntries.length) out.customMeasurements = customEntries;
 
     // The two text rows, entered as text and stored as text.
     const bloodGroup = textByKey.get("BLOOD_GROUP");

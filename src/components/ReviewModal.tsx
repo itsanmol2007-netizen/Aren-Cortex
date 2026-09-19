@@ -729,6 +729,13 @@ export default function ReviewModal({
                       <VitalChip key={f.key} label={localizeMeasureLabel(f.key, f.printLabel, language)} value={value} unit={f.unit} />
                     ) : null;
                   })}
+                  {/* The custom-measurement fallback — never in MEASURE_FIELDS,
+                      since the label itself is doctor-typed, not catalogued.
+                      Printed exactly as entered; no localization exists for a
+                      label nothing here authored. */}
+                  {(vitals.customMeasurements ?? []).map((c) => (
+                    <VitalChip key={c.id} label={c.label} value={c.value} unit={c.unit} />
+                  ))}
                 </div>
               )}
 

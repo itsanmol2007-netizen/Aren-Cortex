@@ -464,6 +464,12 @@ function StandardDocument({
                             <VitalItem key={f.key} label={localizeMeasureLabel(f.key, f.rxLabel, lang)} value={value} unit={f.unit} labelColor={rx.ink} />
                         ) : null;
                     })}
+                    {/* Custom-measurement fallback — doctor-typed label, printed
+                        as-is. Never in MEASURE_FIELDS; see ReviewModal's twin
+                        block for why. */}
+                    {(vitals.customMeasurements ?? []).map((c) => (
+                        <VitalItem key={c.id} label={c.label} value={c.value} unit={c.unit} labelColor={rx.ink} />
+                    ))}
                 </div>
             )}
 

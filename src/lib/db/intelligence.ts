@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { registerWriteHandler } from "../offline/writeQueue";
+import type { Vitals } from "../../types";
 
 // ---------------------------------------------------------------------------
 // What saving a consultation writes.
@@ -53,7 +54,11 @@ export async function saveConsult(opts: {
     hospitalId: string;
     medicines: SaveConsultMedicine[];
     tests: string[];
-    vitals: Record<string, string>;
+    // Was Record<string, string> — widened for `customMeasurements`, the one
+    // array-valued field (see measures.ts's `MeasureFieldKey`). Written
+    // straight into `visits.vitals` jsonb either way; this type only ever
+    // described what the column already accepted.
+    vitals: Vitals;
     findingsText: string;
     followUpDays?: number | null;
     adviceNotes?: string | null;

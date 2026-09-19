@@ -314,7 +314,7 @@ for (const [path, name] of SURFACES) {
 // default in the type; this asserts nobody adds one.
 
 const BETTER_WHEN = new Set(["lower", "higher", "band", "none"]);
-const GROUPS = new Set(["vitals", "body", "metabolic", "hematology", "musculoskeletal", "obstetric"]);
+const GROUPS = new Set(["vitals", "body", "metabolic", "hematology", "labs", "imaging", "musculoskeletal", "obstetric"]);
 for (const f of MEASURE_FIELDS) {
     if (!BETTER_WHEN.has(f.betterWhen)) {
         errors.push(`"${f.key}" (${f.label}) has betterWhen="${f.betterWhen}" — must be one of ${[...BETTER_WHEN].join(", ")}`);

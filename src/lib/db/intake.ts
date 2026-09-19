@@ -65,7 +65,10 @@ export async function fetchVisitIntake(visitId: string): Promise<VisitIntake> {
                 .eq("visit_id", visitId),
             supabase
                 .from("visit_measurements")
-                .select("measure_key, value_num, value_text")
+                // `unit` is only needed for the custom-measurement fallback's
+                // round trip (measurementsToVitals) — every catalogue field
+                // already knows its own unit from measures.ts.
+                .select("measure_key, value_num, value_text, unit")
                 .eq("visit_id", visitId),
             supabase
                 .from("visit_attachments")

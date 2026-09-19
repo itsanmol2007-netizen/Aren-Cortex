@@ -1790,10 +1790,14 @@ export async function persistVisitInput(opts: {
 
     if (opts.measurements.length) {
         const { error } = await supabase.from("visit_measurements").upsert(
-            // A measurement is either a number or a string, never both. Blood
-            // group is the only text one today; the column has existed for it
-            // since the schema was built, and writing it into `value_num` would
-            // fail the numeric cast rather than degrade quietly.
+            // Usually a measurement is a number OR a string, never both —
+            // blood group is the text-only case, and writing it into
+            // `value_num` would fail the numeric cast rather than degrade
+            // quietly. The one exception is a CUSTOM_* key (the ad hoc
+            // measurement fallback, consultInput.ts): there `value_text`
+            // carries the doctor's own label ALONGSIDE a real `value_num`,
+            // because nothing else in this row has anywhere to put it. See
+            // that file's own comment for why.
             opts.measurements.map((m) => ({
                 visit_id: opts.visitId,
                 measure_key: m.measureKey,

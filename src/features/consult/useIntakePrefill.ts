@@ -71,8 +71,12 @@ export function useIntakePrefill(chart: ConsultChart) {
             })));
         }
 
-        const entries = Object.entries(intake.vitals).filter(([, v]) => v !== undefined && v !== "");
-        if (entries.length) {
+        // `customMeasurements` is the one array-valued field in Vitals — see
+        // measures.ts's `MeasureFieldKey` — so it is merged separately below
+        // rather than through the plain string entries this loop expects.
+        const { customMeasurements, ...plainVitals } = intake.vitals;
+        const entries = Object.entries(plainVitals).filter(([, v]) => v !== undefined && v !== "");
+        if (entries.length || customMeasurements?.length) {
             // Merge, never replace, and never over a value that is already
             // there. The chart has just been reset so in practice nothing is,
             // but a rule that only holds "in practice" is the one that breaks
@@ -83,8 +87,16 @@ export function useIntakePrefill(chart: ConsultChart) {
                 for (const [key, value] of entries) {
                     const k = key as keyof typeof next;
                     if (next[k]) continue;
-                    (next as Record<string, string>)[k] = value as string;
+                    (next as unknown as Record<string, string>)[k] = value as string;
                     changed = true;
+                }
+                if (customMeasurements?.length) {
+                    const existingIds = new Set((curr.customMeasurements ?? []).map((c) => c.id));
+                    const incoming = customMeasurements.filter((c) => !existingIds.has(c.id));
+                    if (incoming.length) {
+                        next.customMeasurements = [...(curr.customMeasurements ?? []), ...incoming];
+                        changed = true;
+                    }
                 }
                 return changed ? next : curr;
             });

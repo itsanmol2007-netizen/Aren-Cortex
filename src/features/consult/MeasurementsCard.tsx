@@ -27,10 +27,10 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Activity, Plus, Search, X } from "lucide-react";
+import { Activity, Check, Plus, Search, Trash2, X } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
 import { useRovingList } from "../../hooks/useRovingList";
-import type { Vitals } from "../../types";
+import type { CustomMeasurement, Vitals } from "../../types";
 import {
     FIELD_BY_KEY, MEASURE_FIELDS,
     type MeasureField, type MeasureFieldKey,
@@ -184,6 +184,31 @@ export function MeasurementsCard({
     const set = (key: MeasureFieldKey, value: string) =>
         onChange({ ...vitals, [key]: value });
 
+    // ── The custom-measurement fallback ──────────────────────────────────
+    // Its own three small mutations, parallel to `set` above but shaped for
+    // an array rather than one key — see MeasurementSearch's "create a
+    // field" form for where `addCustom` is actually called.
+    const customMeasurements = vitals.customMeasurements ?? [];
+    const addCustom = (entry: CustomMeasurement) =>
+        onChange({ ...vitals, customMeasurements: [...customMeasurements, entry] });
+    const setCustomValue = (id: string, value: string) =>
+        onChange({
+            ...vitals,
+            customMeasurements: customMeasurements.map((c) => (c.id === id ? { ...c, value } : c)),
+        });
+    const removeCustom = (id: string) => {
+        const next = customMeasurements.filter((c) => c.id !== id);
+        // An empty array is still a TRUTHY value — `Object.values(vitals)
+        // .some(Boolean)` in ReviewModal/PrescriptionDocument would read an
+        // explicit `[]` as "this vitals strip has something to show" even
+        // when every other field is blank too. Dropping the key entirely
+        // once the last custom field is removed is what keeps that check
+        // honest, the same way every other optional Vitals key is simply
+        // absent rather than "" when nothing was ever entered.
+        const { customMeasurements: _drop, ...rest } = vitals;
+        onChange(next.length ? { ...vitals, customMeasurements: next } : rest);
+    };
+
     /**
      * What fits on the card. A field holding a value is never dropped, so the
      * cap trims from the unfilled end and a recorded measurement can never be
@@ -318,6 +343,19 @@ export function MeasurementsCard({
                     />
                 ))}
 
+                {/* Custom measurements — the fallback, always on screen once
+                    one exists, same rule as a catalogue field holding a
+                    value: never behind "More". */}
+                {customMeasurements.map((c) => (
+                    <CustomMeasureCell
+                        key={c.id}
+                        entry={c}
+                        onChange={(v) => setCustomValue(c.id, v)}
+                        onRemove={() => removeCustom(c.id)}
+                        disabled={disabled}
+                    />
+                ))}
+
                 {/* Charts sit AFTER the numbers and BEFORE "Add Measurement":
                     they are things this facility records (so they belong with
                     the fields, not after the way-in), but they are never the
@@ -361,15 +399,27 @@ export function MeasurementsCard({
                         </p>
                     )}
                     {grid(shown)}
-                    {hidden.length > 0 && (
-                        <MeasurementSearch
-                            fields={hidden}
-                            onPick={(key) => {
-                                setAdded((curr) => new Set(curr).add(key));
-                                window.setTimeout(() => refs.current[key]?.focus(), 0);
-                            }}
-                        />
+                    {customMeasurements.length > 0 && (
+                        <div className="cs-meas-grid">
+                            {customMeasurements.map((c) => (
+                                <CustomMeasureCell
+                                    key={c.id}
+                                    entry={c}
+                                    onChange={(v) => setCustomValue(c.id, v)}
+                                    onRemove={() => removeCustom(c.id)}
+                                    disabled={disabled}
+                                />
+                            ))}
+                        </div>
                     )}
+                    <MeasurementSearch
+                        fields={hidden}
+                        onPick={(key) => {
+                            setAdded((curr) => new Set(curr).add(key));
+                            window.setTimeout(() => refs.current[key]?.focus(), 0);
+                        }}
+                        onAddCustom={addCustom}
+                    />
                 </ChartSurface>
             )}
         </section>
@@ -407,14 +457,33 @@ const DEFAULT_VISIBLE = 6;
  * Keyboard keeps the roving-cursor mechanism every other list in this app
  * uses (`useRovingList`) rather than a bespoke one: ↓ ↑ walk the FILTERED
  * fields, Enter adds the highlighted one.
+ *
+ * ── The custom-measurement fallback, 2026-09-19 ───────────────────────────
+ * "There should also be a fallback option that if that measurement is not
+ * in your thing, we should encourage a doctor to create a new measurement
+ * field and then enter its value" (Anmol). This is the one search box the
+ * whole card already funnels through, so it is also where "nothing matches"
+ * turns into "create it" rather than a dead end — the same shape
+ * `AddMedicineSheet` gives a medicine search that comes up empty.
+ *
+ * It only offers to create once NOTHING in the catalogue matches. A query
+ * with real hits never shows it: if "wbc" already finds TLC, creating a
+ * second, differently-keyed field for the same thing is exactly the
+ * fragmentation `customMeasureKey`'s normalisation exists to avoid, and
+ * steering the doctor to the catalogue field is what actually gets this
+ * value in front of a signal.
  */
 function MeasurementSearch({
-    fields, onPick,
+    fields, onPick, onAddCustom,
 }: {
     fields: MeasureField[];
     onPick: (key: MeasureFieldKey) => void;
+    onAddCustom: (entry: CustomMeasurement) => void;
 }) {
     const [query, setQuery] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [customValue, setCustomValue] = useState("");
+    const [customUnit, setCustomUnit] = useState("");
     const ref = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -440,6 +509,27 @@ function MeasurementSearch({
         }
     };
 
+    const resetCreate = () => {
+        setCreating(false);
+        setCustomValue("");
+        setCustomUnit("");
+    };
+
+    const saveCustom = () => {
+        const label = query.trim();
+        const value = customValue.trim();
+        if (!label || !value || !Number.isFinite(Number.parseFloat(value))) return;
+        onAddCustom({
+            id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `custom-${Date.now()}`,
+            label,
+            value,
+            unit: customUnit.trim(),
+        });
+        setQuery("");
+        resetCreate();
+        inputRef.current?.focus();
+    };
+
     return (
         <div ref={ref} className="cs-meas-menu is-inline cx-kbd-surface">
             <div className="cs-field cs-meas-search">
@@ -448,7 +538,7 @@ function MeasurementSearch({
                     ref={inputRef}
                     value={query}
                     placeholder="Search measurements to add…"
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => { setQuery(e.target.value); resetCreate(); }}
                     onKeyDown={onKeyDown}
                     aria-label="Search measurements to add"
                 />
@@ -458,6 +548,7 @@ function MeasurementSearch({
                         className="cs-field-clear"
                         onClick={() => {
                             setQuery("");
+                            resetCreate();
                             inputRef.current?.focus();
                         }}
                         onMouseDown={(e) => e.preventDefault()}
@@ -469,22 +560,115 @@ function MeasurementSearch({
                     </button>
                 )}
             </div>
-            <div className="cs-meas-menu-group" role="menu">
-                {matches.length === 0 ? (
-                    <p className="cs-meas-menu-head">Nothing matches “{query.trim()}”</p>
-                ) : (
-                    matches.map((f) => (
+            {matches.length > 0 && (
+                <div className="cs-meas-menu-group" role="menu">
+                    {matches.map((f) => (
                         <button key={f.key} type="button" role="menuitem" onClick={() => onPick(f.key)}>
                             {f.label}
                         </button>
-                    ))
-                )}
-            </div>
+                    ))}
+                </div>
+            )}
             {/* Points at the search box rather than repeating a catalogue
                 underneath it — the whole point of capping `matches` above. */}
             {restCount > 0 && (
                 <p className="cs-meas-menu-rest">+{restCount} more — search to find them</p>
             )}
+            {q && matches.length === 0 && (
+                creating ? (
+                    <div className="cs-meas-custom-form">
+                        <p className="cs-meas-menu-head">
+                            Add “{query.trim()}” as a new field
+                        </p>
+                        <div className="cs-meas-custom-row">
+                            <input
+                                className="cs-addmed-input"
+                                value={customValue}
+                                placeholder="Value"
+                                inputMode="decimal"
+                                autoFocus
+                                onChange={(e) => setCustomValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveCustom(); } }}
+                                aria-label={`Value for ${query.trim()}`}
+                            />
+                            <input
+                                className="cs-addmed-input"
+                                value={customUnit}
+                                placeholder="Unit — optional"
+                                onChange={(e) => setCustomUnit(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveCustom(); } }}
+                                aria-label={`Unit for ${query.trim()}`}
+                            />
+                        </div>
+                        <div className="cs-meas-custom-actions">
+                            <button type="button" onClick={resetCreate}>Cancel</button>
+                            <button
+                                type="button"
+                                className="cs-meas-custom-save"
+                                disabled={!customValue.trim() || !Number.isFinite(Number.parseFloat(customValue))}
+                                onClick={saveCustom}
+                            >
+                                <Check size={13} /> Add field
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="cs-meas-menu-group" role="menu">
+                        <p className="cs-meas-menu-head">Nothing matches “{query.trim()}”</p>
+                        <button type="button" className="cs-meas-custom-open" onClick={() => setCreating(true)}>
+                            <Plus size={13} /> Add “{query.trim()}” as a new field
+                        </button>
+                    </div>
+                )
+            )}
+        </div>
+    );
+}
+
+/**
+ * One doctor-created field — the custom-measurement fallback's own cell,
+ * parallel to `MeasureCell` but simpler: one input kind (number), a label
+ * that is never edited (renaming would silently orphan whatever measure key
+ * was already saved under the old label), and a remove button nothing in
+ * the fixed catalogue has, because a catalogue field can be left blank but
+ * an ad hoc one that is no longer wanted has no "blank" state worth keeping
+ * on screen.
+ */
+function CustomMeasureCell({
+    entry, onChange, onRemove, disabled,
+}: {
+    entry: CustomMeasurement;
+    onChange: (v: string) => void;
+    onRemove: () => void;
+    disabled: boolean;
+}) {
+    const filled = entry.value.trim().length > 0;
+    return (
+        <div className={`cs-meas is-custom${filled ? " is-filled" : ""}`}>
+            <span className="cs-meas-label">
+                {entry.label}
+                <button
+                    type="button"
+                    className="cs-meas-custom-remove"
+                    onClick={onRemove}
+                    disabled={disabled}
+                    aria-label={`Remove ${entry.label}`}
+                    title="Remove this field"
+                >
+                    <Trash2 size={12} />
+                </button>
+            </span>
+            <div className="cs-meas-value">
+                <input
+                    value={entry.value}
+                    placeholder="—"
+                    inputMode="decimal"
+                    disabled={disabled}
+                    onChange={(e) => onChange(e.target.value)}
+                    aria-label={entry.label}
+                />
+                {entry.unit && <span className="cs-meas-custom-unit">{entry.unit}</span>}
+            </div>
         </div>
     );
 }

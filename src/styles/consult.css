@@ -2078,6 +2078,48 @@ body.cs-locked-shell {
     font-weight: 700;
 }
 
+/* The custom-measurement fallback's own cell — see CustomMeasureCell.
+   Teal rather than the plain grey/blue of a catalogue field, the same
+   accent AddMedicineSheet's own doctor-created-content uses, so a field
+   nothing in the catalogue authored reads as visually distinct from one
+   that did — without implying anything is wrong with it (amber stays
+   reserved for out-of-range and "please measure this"). */
+.cs-meas.is-custom {
+    border-color: rgba(15, 118, 110, 0.28);
+}
+.cs-meas.is-custom.is-filled {
+    border-color: rgba(15, 118, 110, 0.45);
+}
+.cs-meas.is-custom .cs-meas-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+}
+.cs-meas-custom-remove {
+    border: 0;
+    background: none;
+    padding: 1px;
+    margin: -1px;
+    color: var(--cs-faint);
+    display: inline-flex;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.12s ease;
+}
+.cs-meas.is-custom:hover .cs-meas-custom-remove,
+.cs-meas.is-custom:focus-within .cs-meas-custom-remove {
+    opacity: 1;
+}
+.cs-meas-custom-remove:hover { color: #dc2626; }
+.cs-meas-custom-unit {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
+}
+
 /* ════════════════════════════════════════════════════════════
    PRIMARY RECOMMENDATION
 
@@ -5988,6 +6030,71 @@ body.cs-locked-shell {
     font-size: 11px;
     font-weight: 500;
 }
+
+/* The custom-measurement fallback's "nothing matches -> create it" affordance
+   — see MeasurementSearch's own doc comment. `.cs-meas-custom-open` sits
+   inside the same pill-row `.cs-meas-menu-group` the catalogue matches use,
+   so it reads as one more option in the list rather than a separate control. */
+.cs-meas-custom-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-teal);
+    border-color: rgba(15, 118, 110, 0.35) !important;
+}
+.cs-meas-custom-open:hover {
+    border-color: rgba(15, 118, 110, 0.6) !important;
+    background: rgba(15, 118, 110, 0.06);
+}
+
+.cs-meas-custom-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 11px;
+    background: rgba(15, 118, 110, 0.04);
+    padding: 10px;
+    margin-top: 2px;
+}
+.cs-meas-custom-form .cs-meas-menu-head {
+    margin: 0;
+    color: var(--cs-teal);
+    font-weight: 600;
+}
+.cs-meas-custom-row {
+    display: flex;
+    gap: 7px;
+}
+.cs-meas-custom-row input {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.cs-meas-custom-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.cs-meas-custom-actions button {
+    border: 0;
+    background: none;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-meas-custom-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 8px !important;
+    background: var(--cs-teal) !important;
+    color: #fff !important;
+}
+.cs-meas-custom-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.cs-meas-custom-save:not(:disabled):hover { background: #0d5f58 !important; }
 
 /* Plain informational text, not a control — the "N of M shown on the main
    card" line that used to live in the card-foot button that opened this
