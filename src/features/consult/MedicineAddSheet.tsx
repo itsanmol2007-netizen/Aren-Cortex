@@ -98,11 +98,6 @@ export function MedicineAddSheet({
 
     // ── Medicine billing (opt-in) — see MedicineBillingContext ────────────
     const [quantity, setQuantity] = useState("");
-    // Once the doctor edits quantity by hand, the auto-suggest below backs
-    // off for the rest of this sheet's session — same rule `dosage` follows
-    // implicitly by only being pre-filled on brand change, never overwritten
-    // mid-edit.
-    const [quantityTouched, setQuantityTouched] = useState(false);
     const [priceOpen, setPriceOpen] = useState(false);
     const [packPrice, setPackPrice] = useState("");
     const [packUnits, setPackUnits] = useState("");
@@ -131,7 +126,6 @@ export function MedicineAddSheet({
         setTiming(defaultTimingFor(molecules) ?? TIMINGS[0]);
         setSos(false);
         setQuantity("");
-        setQuantityTouched(false);
         setPriceOpen(false);
         setPackPrice("");
         setPackUnits("");
@@ -140,18 +134,26 @@ export function MedicineAddSheet({
 
     // Quantity defaults to "how many units this schedule actually uses" —
     // slots per day × days — the same arithmetic a doctor already does by
-    // hand when counting out a strip. Recomputed whenever the schedule
-    // changes, unless the doctor has typed their own number this session.
-    // SOS carries no schedule to derive from, so it is left blank rather
-    // than guessed.
+    // hand when counting out a strip. Recomputed EVERY time the schedule
+    // changes — duration/timing always drives quantity, never the other way
+    // round (Anmol, 2026-09-19: "adjusting the day should adjust the
+    // quantity, but adjusting the quantity should not adjust the day").
+    // A manual edit is a one-off override for the CURRENT duration — two
+    // extra tablets for this five-day course — and this effect does not
+    // re-run just because `quantity` itself changed (it is not a dependency
+    // below), so the override sticks right up until the doctor changes the
+    // duration or the timing slots again, at which point the schedule has
+    // genuinely changed and the override is recomputed fresh rather than
+    // carried forward as a now-meaningless offset. SOS carries no schedule
+    // to derive from, so it is left blank rather than guessed.
     useEffect(() => {
-        if (!billing?.enabled || quantityTouched || sos) return;
+        if (!billing?.enabled || sos) return;
         const perDay = slots.filter(Boolean).length;
         const days = Number.parseInt(duration, 10);
         if (perDay > 0 && Number.isFinite(days) && days > 0) {
             setQuantity(String(perDay * days));
         }
-    }, [billing?.enabled, slots, duration, sos, quantityTouched]);
+    }, [billing?.enabled, slots, duration, sos]);
 
     const currentPrice = brand ? billing?.prices.get(brand.id) ?? null : null;
     const lineTotal =
@@ -531,7 +533,7 @@ export function MedicineAddSheet({
                                     value={quantity}
                                     placeholder="e.g. 10"
                                     inputMode="numeric"
-                                    onChange={(e) => { setQuantity(e.target.value); setQuantityTouched(true); }}
+                                    onChange={(e) => setQuantity(e.target.value)}
                                     aria-label="Quantity dispensed"
                                 />
                             </section>
