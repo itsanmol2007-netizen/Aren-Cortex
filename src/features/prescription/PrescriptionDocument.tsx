@@ -148,6 +148,15 @@ function StandardDocument({
     config = DEFAULT_PRESCRIPTION_CONFIG,
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    // A URL existing is not the same as it LOADING — the "no image
+    // configured" fallback below only ever checked the former, so a doctor
+    // printing offline before the image was cached (or after a private-
+    // browsing session dropped the cache) got a broken-image glyph on the
+    // real printed page instead of the same monogram crest a clinic with no
+    // logo at all already gets. Two separate flags: a doctor's signature
+    // failing to load must not also blank out the clinic logo.
+    const [headerImgError, setHeaderImgError] = useState(false);
+    const [sigImgError, setSigImgError] = useState(false);
     const lang: RxLanguage = language ?? "en";
     const t = rxLabels(lang);
     // Typography — a first-class design requirement for Hindi, not a fallback
@@ -326,8 +335,9 @@ function StandardDocument({
                     from the clinic and doctor profiles, never from here. */}
                 {showHeaderImage && (
                     <div style={{ flexShrink: 0 }}>
-                        {headerImage ? (
+                        {headerImage && !headerImgError ? (
                             <img src={headerImage} alt={config.profileImage === "doctor_photo" ? doctorName : clinicName}
+                                onError={() => setHeaderImgError(true)}
                                 style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, border: `2px solid ${accentColor}` }} />
                         ) : (
                             /* The fallback crest: initials over the clinic's colour
@@ -579,8 +589,9 @@ function StandardDocument({
                     prescription is a real thing, an anonymous one is not. */}
                 <div>
                     {config.showSignature && (
-                        signatureUrl ? (
+                        signatureUrl && !sigImgError ? (
                             <img src={signatureUrl} alt="Signature"
+                                onError={() => setSigImgError(true)}
                                 style={{ height: format === "a4" ? 56 : 44, objectFit: "contain", objectPosition: "left", display: "block", marginBottom: 4 }} />
                         ) : (
                             <div style={{ height: format === "a4" ? 56 : 44, borderBottom: "1.5px solid #555", marginBottom: 4 }} />
@@ -753,6 +764,10 @@ function ThermalDocument({
     language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
 }: PrescriptionDocumentProps) {
+    // Same "URL existing isn't the same as it loading" gap as
+    // StandardDocument's own `headerImgError`/`sigImgError` — see that
+    // component's comment. Thermal has no logo slot, only a signature.
+    const [sigImgError, setSigImgError] = useState(false);
     const lang: RxLanguage = language ?? "en";
     const t = rxLabels(lang);
     const isDevanagari = lang === "hi";
@@ -910,8 +925,10 @@ function ThermalDocument({
             {/* Signature */}
             <div style={{ marginTop: 8 }}>
                 {config.showSignature && (
-                    signatureUrl ? (
-                        <img src={signatureUrl} alt="Sig" style={{ height: 36, objectFit: "contain", display: "block" }} />
+                    signatureUrl && !sigImgError ? (
+                        <img src={signatureUrl} alt="Sig"
+                            onError={() => setSigImgError(true)}
+                            style={{ height: 36, objectFit: "contain", display: "block" }} />
                     ) : (
                         <div style={{ borderBottom: "1px solid #000", width: 80, marginBottom: 2 }} />
                     )

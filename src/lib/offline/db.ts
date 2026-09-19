@@ -124,6 +124,14 @@ class ArenLocalDB extends Dexie {
     patientsMirror!: EntityTable<MirrorRow, "id">;
     visitsMirror!: EntityTable<MirrorRow, "id">;
     prescriptionsMirror!: EntityTable<MirrorRow, "id">;
+    /** Overview/admin analytics, roster, clinic setup, fee settings — see
+     *  localMirror.ts's `"admin"` kind. A separate table from the three
+     *  above rather than crammed into `visitsMirror`: these reads are
+     *  hospital-wide aggregates (a KPI range, a doctor roster), not a
+     *  single patient/visit/prescription row, and mixing the two would make
+     *  "wipe this doctor's data on logout" (still not built — see this
+     *  file's own header) harder to get right later, not easier. */
+    adminMirror!: EntityTable<MirrorRow, "id">;
     meta!: EntityTable<MetaRow, "key">;
     medicinesCatalogue!: EntityTable<MedicineRow, "id">;
     compositionsCatalogue!: EntityTable<CompositionRow, "id">;
@@ -155,6 +163,19 @@ class ArenLocalDB extends Dexie {
             // medicines contain this molecule" (composition -> medicines),
             // the same direction `medicine_composition_map`'s own read
             // pattern favours server-side.
+            medicineCompositionMap: "id, medicineId, compositionId",
+        });
+        // v3: `adminMirror`, for the Overview page's own analytics/roster/
+        // setup reads — see this table's own doc comment above.
+        this.version(3).stores({
+            writeQueue: "++id, kind, status, createdAt, doctorId",
+            patientsMirror: "id, doctorId, updatedAt",
+            visitsMirror: "id, doctorId, updatedAt",
+            prescriptionsMirror: "id, doctorId, updatedAt",
+            adminMirror: "id, doctorId, updatedAt",
+            meta: "key",
+            medicinesCatalogue: "id, name, hospitalId",
+            compositionsCatalogue: "id, name",
             medicineCompositionMap: "id, medicineId, compositionId",
         });
     }

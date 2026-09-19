@@ -1387,7 +1387,7 @@ function App() {
   // reads as noise (a chip with a date and nothing else, a "1 previous
   // visit" band with an empty last-visit card). Both now read this instead.
   const meaningfulPastVisits = useMemo(
-    () => pastVisits.filter((v) => visitStatusKind(v.status) === "done" && visitHasContent(v)),
+    () => pastVisits.filter((v) => (v.isStub || visitStatusKind(v.status) === "done") && visitHasContent(v)),
     [pastVisits]
   );
 
@@ -1977,9 +1977,14 @@ function App() {
           doctorProfile={doctorProfile}
           doctorName={DOCTOR.name}
           onNavigate={handleSidebarNavigate}
+          onAddStaff={goAddStaffFromClinic}
           onSpecialtyChanged={(id) =>
             setHospitalProfile((prev) => (prev ? { ...prev, specialty_profile: id } : prev))
           }
+          // Same gate as the walkthrough itself — see `useOnboarding`'s own
+          // call above. Absent (row hidden) for front desk/admin/anyone
+          // whose identity hasn't resolved to a real doctor yet.
+          onReplayWalkthrough={identity.isReal ? onboarding.restart : undefined}
         />
       ) : activePage === "practice" ? (
         <PracticePage
@@ -2369,6 +2374,8 @@ function App() {
                     combinationsLoading={intelligence.combinationsLoading}
                     brandPreferences={synapse.data?.brandPreferences}
                     acceptedIntentIds={acceptedIntentIdSet}
+                    prescription={prescription}
+                    onRemoveMedicine={removeMedicine}
                     chosenBrands={chosenBrands}
                     acknowledged={acknowledgedIntents}
                     onAcknowledge={handleAcknowledge}

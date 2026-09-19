@@ -50,7 +50,6 @@ import { Activity, Calendar, Dumbbell, MapPin, Pill, Quote, X, RefreshCw } from 
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import type { RealVisit } from "../lib/db";
 import { freqSlotToLabel } from "../lib/db";
-import { doctorName } from "../lib/format";
 import { FIELD_BY_KEY, type MeasureFieldKey } from "../features/consult/measures";
 
 export function formatVisitDate(isoString: string): string {
@@ -107,9 +106,12 @@ function recordedMeasurements(vitals: RealVisit["vitals"]): { label: string; uni
  */
 export function visitHasContent(visit: RealVisit): boolean {
     return (
+        !!visit.isStub ||
         visit.symptoms.length > 0 ||
         visit.findings.length > 0 ||
         visit.medicines.length > 0 ||
+        (visit.diagnoses != null && visit.diagnoses.length > 0) ||
+        (visit.tests != null && visit.tests.length > 0) ||
         visit.body_sites.length > 0 ||
         visit.exercise_names.length > 0 ||
         visit.impairment_names.length > 0 ||
@@ -221,7 +223,7 @@ export function PastVisitCard({
                     {visit.doctor_name && (
                         <span className="pv-doctor">
                             <span className="pv-doctor-dot" />
-                            {doctorName(visit.doctor_name)}
+                            {visit.doctor_name}
                         </span>
                     )}
                 </div>

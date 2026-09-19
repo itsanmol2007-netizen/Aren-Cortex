@@ -16,7 +16,7 @@
 import { useRef, useState } from "react";
 import {
     Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, Keyboard,
-    NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves,
+    NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves, X,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
@@ -379,8 +379,10 @@ export function PlanCard({
                                             type="button"
                                             className="cs-x"
                                             aria-label={`Remove ${dx}`}
-                                            onClick={() => onRemoveDiagnosis(dx)}
-                                        >×</button>
+                                            onClick={(e) => { e.stopPropagation(); onRemoveDiagnosis(dx); }}
+                                        >
+                                            <X size={13} />
+                                        </button>
                                     </div>
                                 ))}
                             </Group>
@@ -459,22 +461,22 @@ export function PlanCard({
                                             {(m.dosage || m.frequency || m.duration || m.notes) && (
                                                 <div className="cs-line-tags">
                                                     {m.dosage && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-dose">
                                                             <Pill size={10} aria-hidden="true" /> {m.dosage}
                                                         </span>
                                                     )}
                                                     {m.frequency && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-freq">
                                                             <Clock size={10} aria-hidden="true" /> {m.frequency}
                                                         </span>
                                                     )}
                                                     {m.duration && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-dur">
                                                             <CalendarDays size={10} aria-hidden="true" /> {m.duration}
                                                         </span>
                                                     )}
                                                     {m.notes && (
-                                                        <span className="cs-line-tag">
+                                                        <span className="cs-line-tag is-notes">
                                                             <Utensils size={10} aria-hidden="true" /> {m.notes}
                                                         </span>
                                                     )}
@@ -486,7 +488,9 @@ export function PlanCard({
                                             className="cs-x"
                                             aria-label={`Remove ${m.name}`}
                                             onClick={(e) => { e.stopPropagation(); onRemoveMedicine(m.id); }}
-                                        >×</button>
+                                        >
+                                            <X size={13} />
+                                        </button>
 
                                         {openId === m.id && (
                                             <div style={{ gridColumn: "1 / -1" }}>
@@ -530,8 +534,10 @@ export function PlanCard({
                                         type="button"
                                         className="cs-x"
                                         aria-label={`Remove ${t}`}
-                                        onClick={() => onRemoveTest(t)}
-                                    >×</button>
+                                        onClick={(e) => { e.stopPropagation(); onRemoveTest(t); }}
+                                    >
+                                        <X size={13} />
+                                    </button>
                                 </div>
                             ))}
                             {/* The Lab Node foundation: once an investigation
@@ -593,8 +599,10 @@ export function PlanCard({
                                             type="button"
                                             className="cs-x"
                                             aria-label={`Remove ${text}`}
-                                            onClick={() => onRemoveExercise(id)}
-                                        >×</button>
+                                            onClick={(e) => { e.stopPropagation(); onRemoveExercise(id); }}
+                                        >
+                                            <X size={13} />
+                                        </button>
                                     </div>
                                 ))}
                             </Group>
@@ -616,8 +624,10 @@ export function PlanCard({
                                             type="button"
                                             className="cs-x"
                                             aria-label={`Remove ${line}`}
-                                            onClick={() => onRemoveTherapyLine(line)}
-                                        >×</button>
+                                            onClick={(e) => { e.stopPropagation(); onRemoveTherapyLine(line); }}
+                                        >
+                                            <X size={13} />
+                                        </button>
                                     </div>
                                 ))}
                             </Group>
@@ -639,8 +649,10 @@ export function PlanCard({
                                             type="button"
                                             className="cs-x"
                                             aria-label={`Remove ${line}`}
-                                            onClick={() => onRemoveAdviceLine(line)}
-                                        >×</button>
+                                            onClick={(e) => { e.stopPropagation(); onRemoveAdviceLine(line); }}
+                                        >
+                                            <X size={13} />
+                                        </button>
                                     </div>
                                 ))}
                             </Group>

@@ -392,8 +392,8 @@ Postgres logs.
 
 ## 11. Email — transactional
 
-Infrastructure already exists: `ZOHO_*` secrets are on the Supabase project,
-and `support-notify` sends through Zoho. Master Control's emails go through a
+Infrastructure already exists: `SES_*` secrets (`SES_AWS_ACCESS_KEY_ID`, `SES_AWS_SECRET_ACCESS_KEY`, `SES_AWS_REGION`) are on the Supabase project,
+and `support-notify` sends through Amazon SES. Master Control's emails go through a
 **shared function with a template map** — extend `support-notify` or add an
 `admin-notify` edge function / Worker route. Don't overengineer (Anmol's call).
 

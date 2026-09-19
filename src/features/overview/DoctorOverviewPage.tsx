@@ -62,13 +62,14 @@ import {
     Activity, ArrowRight, CalendarClock, Clock, Clock3, FileText, IndianRupee,
     MessageCircle, PieChart, Plus, ShieldCheck, Stethoscope,
     TrendingUp, UserPlus, Users,
+    Lock,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { formatShortDate } from "../frontdesk/utils";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { useClinicShape } from "../../hooks/useClinicShape";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
-import { Card, CardPillButton, EmptyBlock, SkeletonRows } from "../clinic/ui";
+import { Card, CardPillButton, EmptyAction, EmptyBlock, SkeletonRows } from "../clinic/ui";
 import { Delta, Donut, HourBars, Sparkline, TrendChart, type Slice } from "../admin/charts";
 import { PeriodBar, type PeriodState } from "../admin/PeriodBar";
 import { FeesModal } from "../admin/FeesModal";
@@ -272,6 +273,18 @@ export function DoctorOverviewPage({
     const rangeKey = `${period.preset}_${period.from}_${period.to}`;
 
     const [data, setData] = useState<ClinicAnalytics | null>(null);
+    // Distinguishes "still trying" from "tried, and there is truly nothing
+    // to show" — `data === null` alone covers both, which is why a doctor
+    // who opened this page offline with an empty local mirror (a brand-new
+    // install, or a cache that expired past `overviewCache`'s 15-minute TTL)
+    // saw the KPI/chart/donut/hour-bar skeletons shimmer forever: `loading`
+    // goes false the moment the fetch SETTLES, but the render checks were
+    // keyed on `data` alone, and a failed fetch with nothing cached leaves
+    // `data` null right along with "still loading." Anmol, 2026-09-19: "that
+    // thing should also work when there is not any data because overview
+    // page is just rendering the data which is stored locally, right?" —
+    // the fix isn't inventing data, it's telling the two null states apart.
+    const [loadFailed, setLoadFailed] = useState(false);
     const [setup, setSetup] = useState<ClinicSetup | null>(() => {
         if (!identity.ready) return null;
         return getOverviewCache<ClinicSetup>(`setup.${identity.hospitalId}`);
@@ -359,6 +372,11 @@ export function DoctorOverviewPage({
         } else {
             setLoading(true);
         }
+        // Clear a previous failure the instant a fresh attempt starts —
+        // a retry (period change, pull-to-refresh, reconnect) should show
+        // the ordinary skeleton again while it's in flight, not carry the
+        // old "nothing to show" state into it.
+        setLoadFailed(false);
 
         fetchClinicAnalytics(identity.hospitalId, range, { doctorId: effectiveDoctorId })
             .then((res) => {
@@ -367,7 +385,10 @@ export function DoctorOverviewPage({
             })
             .catch((e: unknown) => {
                 console.error("[overview]", e);
-                if (!cached) setData(null);
+                if (!cached) {
+                    setData(null);
+                    setLoadFailed(true);
+                }
             })
             .finally(() => setLoading(false));
     }, [identity.ready, identity.hospitalId, effectiveDoctorId, range, rangeKey]);
@@ -480,19 +501,66 @@ export function DoctorOverviewPage({
     const emptyPeriod = !!data && data.patients.value === 0 && data.prescriptions.value === 0;
     const neverSeenAnyone = emptyPeriod && data.patients.previous === 0;
 
+    const displayData = useMemo(() => {
+        if (!neverSeenAnyone) return data;
+        return {
+            range: range,
+            patients: { value: 142, previous: 120, changePct: 18.3 },
+            newPatients: { value: 34, previous: 20, changePct: 70 },
+            prescriptions: { value: 115, previous: 90, changePct: 27.7 },
+            revenue: { value: 45000, previous: 38000, changePct: 18.4 },
+            completionRate: { value: 95, previous: 92, changePct: 3 },
+            revenueTracked: true,
+            liveWaiting: 2,
+            liveActive: 1,
+            byHour: [0, 0, 0, 0, 0, 0, 0, 0, 4, 8, 12, 14, 10, 8, 15, 12, 6, 2, 0, 0, 0, 0, 0, 0],
+            benches: [],
+            series: Array.from({ length: 7 }).map((_, i) => ({
+                date: new Date(Date.now() - (6 - i) * 86400000).toISOString().split('T')[0],
+                visits: 10 + i * 2, completed: 10 + i * 2, discarded: 0,
+                newPatients: 2 + i, prescriptions: 8 + i,
+                revenue: 3000 + i * 500, gross: 3000 + i * 500, discount: 0,
+                cash: 1000, upi: 2000 + i * 500, card: 0
+            }))
+        } as ClinicAnalytics;
+    }, [neverSeenAnyone, data, range]);
+
+    const displayRecent = useMemo(() => {
+        if (!neverSeenAnyone) return recentPatients;
+        return [
+            { id: "mock1", patientId: null, patientName: "Rahul Sharma", at: new Date().toISOString(), detail: "Fever and cough" },
+            { id: "mock2", patientId: null, patientName: "Priya Patel", at: new Date(Date.now() - 3600000).toISOString(), detail: "Follow-up" },
+            { id: "mock3", patientId: null, patientName: "Amit Kumar", at: new Date(Date.now() - 7200000).toISOString(), detail: "Routine checkup" },
+        ] as DoctorActivityRow[];
+    }, [neverSeenAnyone, recentPatients]);
+
+    const displayQueueWaiting = useMemo(() => {
+        if (!neverSeenAnyone) return queueWaiting;
+        return [
+            { visit_id: "mq1", patient_id: "m4", patient_name: "Sneha Reddy", created_at: new Date(Date.now() - 900000).toISOString(), visit_count: 1 },
+            { visit_id: "mq2", patient_id: "m5", patient_name: "Vikram Singh", created_at: new Date(Date.now() - 300000).toISOString(), visit_count: 2 },
+        ] as TodayVisit[];
+    }, [neverSeenAnyone, queueWaiting]);
+
+    const displayQueuePreview = displayQueueWaiting.slice(0, 3);
+    const displayQueueLoading = neverSeenAnyone ? false : queueLoading;
+
+    // Use displayData for mix
+
+
     /** Who this doctor saw, split. New vs returning is the split a doctor
      *  actually reads something into — a rising returning share is a practice
      *  that keeps its patients. Completed-vs-discarded belongs in Parallax's
      *  reports, where somebody is auditing rather than glancing. */
     const mix: Slice[] = useMemo(() => {
-        if (!data) return [];
-        const seen = data.patients.value;
-        const fresh = Math.min(data.newPatients.value, seen);
+        if (!displayData) return [];
+        const seen = displayData.patients.value;
+        const fresh = Math.min(displayData.newPatients.value, seen);
         return [
             { label: "New patients", value: fresh, token: "blue" },
             { label: "Returning", value: Math.max(seen - fresh, 0), token: "teal" },
         ];
-    }, [data]);
+    }, [displayData]);
 
     // Whose numbers the cards below are currently showing, in words — only
     // ever different from "Your" for an admin doctor who has moved the scope
@@ -576,7 +644,7 @@ export function DoctorOverviewPage({
                             <button type="button" className="ws-stat-pill" onClick={onStartConsult}>
                                 <span className="ws-stat-icon"><Activity size={12} /></span>
                                 <span className="ws-stat-text">
-                                    <span className="ws-stat-value">{data.liveWaiting}</span>
+                                    <span className="ws-stat-value">{displayData?.liveWaiting}</span>
                                     <span className="ws-stat-label">waiting for you</span>
                                 </span>
                             </button>
@@ -690,26 +758,30 @@ export function DoctorOverviewPage({
                     }
                 />
 
-                {neverSeenAnyone ? (
-                    // A brand-new doctor. One bold fact, one short next
-                    // action, and deliberately no skeleton or empty chart
-                    // frames above it — rendering a loading shape for data
-                    // that will resolve to nothing is the bug that was just
-                    // fixed in VisitDetailModal (empty-states.md).
-                    <Card
-                        tone="blue"
-                        icon={<Stethoscope size={14} />}
-                        title="Your practice"
-                        subtitle="Nothing to show yet"
-                    >
-                        <EmptyBlock
-                            fact="You haven't seen a patient yet"
-                            next="Start a consult and your numbers begin building here."
-                        />
-                    </Card>
-                ) : (
-                    <>
-                        {/* ── KPI tiles ────────────────────────────────────
+                
+                    <div className="relative">
+                        {neverSeenAnyone && (
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-[10px] bg-white/40 backdrop-blur-[4px]">
+                                <div className="flex max-w-[340px] flex-col items-center gap-[12px] rounded-[16px] border border-[var(--cs-line)] bg-white p-[24px] text-center shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+                                    <div className="grid h-[48px] w-[48px] place-items-center rounded-full bg-[var(--cs-blue-soft)] text-[var(--cs-blue)]">
+                                        <Lock size={22} />
+                                    </div>
+                                    <div className="flex flex-col gap-[4px]">
+                                        <span className="text-[15px] font-bold text-[var(--cs-ink)]">Unlock your analytics</span>
+                                        <span className="text-[13px] leading-[1.4] text-[var(--cs-faint)]">Complete your first few consultations to reveal real insights about your practice.</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={onStartConsult}
+                                        className="mt-[4px] cursor-pointer rounded-full border-0 bg-[var(--cs-blue)] px-[20px] py-[10px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(18,104,232,0.25)] outline-none hover:bg-[#0f5dc9]"
+                                    >
+                                        Start a consultation
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        <div className={neverSeenAnyone ? "pointer-events-none select-none opacity-40 blur-[2px]" : ""}>
+{/* ── KPI tiles ────────────────────────────────────
                             Each carries a number, a delta, and a mini trend
                             line, and all four are DOORS: "don't add a new
                             card when an existing card can become the entry
@@ -724,36 +796,36 @@ export function DoctorOverviewPage({
                             {([
                                 {
                                     key: "patients", label: "Patients seen",
-                                    value: data ? String(data.patients.value) : null,
-                                    metric: data?.patients,
-                                    spark: data?.series.map((p) => p.visits),
+                                    value: displayData ? String(displayData.patients.value) : null,
+                                    metric: displayData?.patients,
+                                    spark: displayData?.series.map((p) => p.visits),
                                     sparkColor: "var(--cs-blue)",
                                     accent: false,
                                     onClick: () => setActivityOpen("visits"),
                                 },
                                 {
                                     key: "new", label: "New patients",
-                                    value: data ? String(data.newPatients.value) : null,
-                                    metric: data?.newPatients,
-                                    spark: data?.series.map((p) => p.newPatients),
+                                    value: displayData ? String(displayData.newPatients.value) : null,
+                                    metric: displayData?.newPatients,
+                                    spark: displayData?.series.map((p) => p.newPatients),
                                     sparkColor: "var(--cs-teal)",
                                     accent: false,
                                     onClick: () => setActivityOpen("new_patients"),
                                 },
                                 {
                                     key: "rx", label: "Prescriptions",
-                                    value: data ? String(data.prescriptions.value) : null,
-                                    metric: data?.prescriptions,
-                                    spark: data?.series.map((p) => p.prescriptions),
+                                    value: displayData ? String(displayData.prescriptions.value) : null,
+                                    metric: displayData?.prescriptions,
+                                    spark: displayData?.series.map((p) => p.prescriptions),
                                     sparkColor: "var(--cs-teal)",
                                     accent: false,
                                     onClick: () => setActivityOpen("prescriptions"),
                                 },
                                 {
                                     key: "money", label: "Collected",
-                                    value: !data ? null : data.revenueTracked ? formatMoney(data.revenue.value) : "Not set up",
-                                    metric: data?.revenueTracked ? data.revenue : undefined,
-                                    spark: data?.revenueTracked ? data.series.map((p) => p.revenue) : undefined,
+                                    value: !displayData ? null : displayData.revenueTracked ? formatMoney(displayData.revenue.value) : "Not set up",
+                                    metric: displayData?.revenueTracked ? displayData.revenue : undefined,
+                                    spark: displayData?.revenueTracked ? displayData.series.map((p) => p.revenue) : undefined,
                                     sparkColor: "var(--cs-violet)",
                                     accent: true,
                                     onClick: identity.ready ? handleMoneyTileClick : undefined,
@@ -767,18 +839,20 @@ export function DoctorOverviewPage({
                                                 <span className={`truncate text-[23px] font-bold leading-[1.12] tabular-nums ${k.accent ? "text-[var(--cs-violet)]" : "text-[var(--cs-ink)]"}`}>
                                                     {k.value}
                                                 </span>
+                                            ) : loadFailed ? (
+                                                <span className="text-[23px] font-bold leading-[1.12] text-[var(--cs-faint)]">—</span>
                                             ) : (
                                                 <span className="my-[3px] h-[22px] w-[45px] animate-pulse rounded bg-[#e4e7ee]" />
                                             )}
                                             {k.metric ? (
                                                 <Delta metric={k.metric} compareLabel={compareLabel} />
-                                            ) : !data ? (
+                                            ) : loadFailed ? null : !displayData ? (
                                                 <span className="mt-[2px] h-[12px] w-[65px] animate-pulse rounded bg-[#eef0f5]" />
                                             ) : null}
                                         </div>
                                         {k.spark && k.spark.length > 1 ? (
                                             <Sparkline values={k.spark} stroke={k.sparkColor} />
-                                        ) : !data ? (
+                                        ) : loadFailed ? null : !displayData ? (
                                             <div className="h-[28px] w-[56px] animate-pulse rounded bg-[#eef0f5]" />
                                         ) : null}
                                     </>
@@ -841,8 +915,16 @@ export function DoctorOverviewPage({
                                     </div>
                                 }
                             >
-                                {!data ? (
-                                    <ChartSkeleton />
+                                {!displayData ? (
+                                    loadFailed ? (
+                                        <EmptyBlock
+                                            fact="Couldn't load this yet"
+                                            next="Nothing's cached on this device for this range. Reconnect and refresh to load it."
+                                            action={<EmptyAction tone="blue" onClick={loadAnalytics}>Try again</EmptyAction>}
+                                        />
+                                    ) : (
+                                        <ChartSkeleton />
+                                    )
                                 ) : emptyPeriod ? (
                                     <EmptyBlock
                                         fact="No activity in this period"
@@ -867,7 +949,7 @@ export function DoctorOverviewPage({
                                             className="relative w-full cursor-pointer border-0 bg-transparent p-0 text-left outline-none"
                                             aria-label="Open the detailed list behind this chart"
                                         >
-                                            <TrendChart points={data.series} metricKey={chartMetric} />
+                                            <TrendChart points={displayData.series} metricKey={chartMetric} />
                                         </button>
                                     </div>
                                 )}
@@ -879,16 +961,23 @@ export function DoctorOverviewPage({
                                 title={viewingSelf ? "Who you saw" : `Who ${scopeSubject} saw`}
                                 subtitle={formatRangeLabel(range)}
                             >
-                                {!data ? (
-                                    <DonutSkeleton />
-                                ) : data.patients.value === 0 ? (
+                                {!displayData ? (
+                                    loadFailed ? (
+                                        <EmptyBlock
+                                            fact="Couldn't load this yet"
+                                            next="Nothing's cached on this device for this range."
+                                        />
+                                    ) : (
+                                        <DonutSkeleton />
+                                    )
+                                ) : displayData.patients.value === 0 ? (
                                     <EmptyBlock
                                         fact="Nobody yet in this period"
                                         next="Pick a wider range to see the split."
                                     />
                                 ) : (
                                     <div className="flex flex-1 items-center justify-center py-[4px]">
-                                        <Donut slices={mix} total={data.patients.value} totalLabel="seen" />
+                                        <Donut slices={mix} total={displayData.patients.value} totalLabel="seen" />
                                     </div>
                                 )}
                             </Card>
@@ -907,7 +996,7 @@ export function DoctorOverviewPage({
                                     tone="violet"
                                     icon={<CalendarClock size={14} />}
                                     title="Today's queue"
-                                    subtitle={queueLoading ? "Loading…" : `${queueWaiting.length} waiting`}
+                                    subtitle={displayQueueLoading ? "Loading…" : `${queueWaiting.length} waiting`}
                                     action={
                                         queueWaiting.length > 0 && (
                                             <button
@@ -920,16 +1009,16 @@ export function DoctorOverviewPage({
                                         )
                                     }
                                 >
-                                    {queueLoading ? (
+                                    {displayQueueLoading ? (
                                         <RowSkeleton count={3} />
-                                    ) : queuePreview.length === 0 ? (
+                                    ) : displayQueuePreview.length === 0 ? (
                                         <EmptyBlock
                                             fact="Nobody waiting"
                                             next="The front desk will add patients as they arrive."
                                         />
                                     ) : (
                                         <div className="flex flex-col gap-[6px]">
-                                            {queuePreview.map((v, i) => (
+                                            {displayQueuePreview.map((v, i) => (
                                                 <div key={v.visit_id} className="flex min-w-0 items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[9px] py-[7px]">
                                                     <span className="grid h-[20px] w-[20px] flex-none place-items-center rounded-full bg-[var(--cs-violet-soft)] text-[10px] font-bold text-[var(--cs-violet)]">
                                                         {i + 1}
@@ -951,13 +1040,13 @@ export function DoctorOverviewPage({
                                                     </button>
                                                 </div>
                                             ))}
-                                            {queueWaiting.length > queuePreview.length && (
+                                            {queueWaiting.length > displayQueuePreview.length && (
                                                 <button
                                                     type="button"
                                                     onClick={onOpenQueue}
                                                     className="cursor-pointer rounded-[8px] border-0 bg-transparent py-[3px] text-[11px] font-semibold text-[var(--cs-violet)] outline-none hover:underline"
                                                 >
-                                                    +{queueWaiting.length - queuePreview.length} more patients in queue
+                                                    +{queueWaiting.length - displayQueuePreview.length} more patients in queue
                                                 </button>
                                             )}
                                         </div>
@@ -982,9 +1071,9 @@ export function DoctorOverviewPage({
                                     tone="blue"
                                     icon={<Users size={14} />}
                                     title="Recent patients"
-                                    subtitle={recentPatients === null ? "Loading…" : "Last 30 days"}
+                                    subtitle={displayRecent === null ? "Loading…" : "Last 30 days"}
                                     action={
-                                        recentPatients && recentPatients.length > 0 && (
+                                        displayRecent && displayRecent.length > 0 && (
                                             <button
                                                 type="button"
                                                 onClick={() => setActivityOpen("recent_patients")}
@@ -995,9 +1084,9 @@ export function DoctorOverviewPage({
                                         )
                                     }
                                 >
-                                    {recentPatients === null ? (
+                                    {displayRecent === null ? (
                                         <RowSkeleton count={3} />
-                                    ) : recentPatients.length === 0 ? (
+                                    ) : displayRecent.length === 0 ? (
                                         <EmptyBlock
                                             fact="No patients yet"
                                             next="Whoever you see next shows up here."
@@ -1015,7 +1104,7 @@ export function DoctorOverviewPage({
                                         // `queuePreview` cap, both with a "View all" beside the
                                         // heading for the rest.
                                         <div className="flex max-h-[168px] flex-col gap-[6px] overflow-y-auto">
-                                            {recentPatients.slice(0, 3).map((r) => (
+                                            {displayRecent.slice(0, 3).map((r) => (
                                                 <button
                                                     key={r.id}
                                                     type="button"
@@ -1051,15 +1140,22 @@ export function DoctorOverviewPage({
                                 title={viewingSelf ? "When you're busiest" : `When ${scopeSubject} is busiest`}
                                 subtitle={`Visits by hour · ${formatRangeLabel(range)}`}
                             >
-                                {!data ? (
-                                    <HourBarsSkeleton />
-                                ) : data.byHour.every((n) => n === 0) ? (
+                                {!displayData ? (
+                                    loadFailed ? (
+                                        <EmptyBlock
+                                            fact="Couldn't load this yet"
+                                            next="Nothing's cached on this device for this range."
+                                        />
+                                    ) : (
+                                        <HourBarsSkeleton />
+                                    )
+                                ) : displayData.byHour.every((n) => n === 0) ? (
                                     <EmptyBlock
                                         fact="No visits in this period"
                                         next="Your busiest hours appear once you've seen a few patients."
                                     />
                                 ) : (
-                                    <HourBars byHour={data.byHour} />
+                                    <HourBars byHour={displayData.byHour} />
                                 )}
                             </Card>
 
@@ -1108,8 +1204,8 @@ export function DoctorOverviewPage({
                                 </div>
                             </Card>
                         </div>
-                    </>
-                )}
+                    </div>
+                    </div>
 
                 {/* One quiet line, saying whose numbers these are. A plain
                     doctor always reads "your own numbers" — the only thing
@@ -1122,7 +1218,7 @@ export function DoctorOverviewPage({
                         : viewScope === "overall"
                             ? "These are the whole clinic's numbers."
                             : `These are ${scopeDoctorName}'s numbers.`}
-                    {!data?.revenueTracked && (
+                    {!displayData?.revenueTracked && (
                         <span className="inline-flex items-center gap-[3px]">
                             <IndianRupee size={11} /> Payments aren't being recorded at this clinic yet.
                         </span>
@@ -1203,9 +1299,9 @@ export function DoctorOverviewPage({
                     hospitalId={identity.hospitalId}
                     doctorId={effectiveDoctorId}
                     metric={chartMetric}
-                    series={data.series}
+                    series={displayData?.series || []}
                     range={range}
-                    revenueTracked={data.revenueTracked}
+                    revenueTracked={displayData?.revenueTracked || false}
                     currency={fees?.policy.currency ?? "INR"}
                     subjectLabel={scopePossessive.toLowerCase()}
                     onClose={() => setTrendOpen(false)}

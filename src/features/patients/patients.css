@@ -35,16 +35,17 @@
 
 /* ── Skeleton Card ───────────────────────────────────────────────────────── */
 
+/* No `display: flex` here — `.prec-today-card` (patients-list.css) never
+   sets one, real children stack as plain block divs, and `.prec-today-
+   footer` right below is already `flex` on its own, unconditionally. This
+   rule (and the one that duplicated that footer flex, now removed) only
+   applied to the skeleton, giving that ONE state a different layout
+   algorithm than the real card it stands in for — the root cause behind
+   "the skeleton doesn't fit with what content appear" (Anmol, 2026-09-19).
+   See the table-row rules below for the same bug, worse (it reflows the
+   whole row, not just this card). */
 .prec-today-card--skeleton {
    pointer-events: none;
-   display: flex;
-   flex-direction: column;
-}
-
-.prec-today-card--skeleton .prec-today-footer {
-   display: flex;
-   align-items: center;
-   justify-content: space-between;
 }
 
 /* ── Skeleton Table Row ──────────────────────────────────────────────────── */
@@ -53,20 +54,23 @@
    pointer-events: none;
 }
 
-.prec-table-row--skeleton .prec-table-cell--visit {
-   display: flex;
-   flex-direction: column;
-   gap: 2px;
-}
+/* No per-cell `display: flex` here (deleted 2026-09-19) — this table has no
+   `table-layout: fixed` (`.prec-table`, patients-list.css), so every render
+   auto-sizes each column from ALL rows' real content. `display: flex` on a
+   `<td>` un-blockifies it out of that table-cell layout model — a real
+   behavioral difference the browser only ever saw on the SKELETON row,
+   never the real one sitting in the exact same column, which reflows the
+   table's column widths (the WHOLE row, including the avatar/name column)
+   the instant real data replaces it. Anmol: "the skeleton is correct but
+   the position of the skeleton is very terrible... six seven pixel left
+   sided than what actual content is."
 
-.prec-table-row--skeleton .prec-table-cell--status {
-   display: flex;
-   flex-direction: column;
-   align-items: flex-start;
-   gap: 2px;
-}
-
-.prec-table-row--skeleton .prec-table-patient-info {
-   display: flex;
-   flex-direction: column;
-}
+   None of the three deleted rules were doing anything the markup didn't
+   already do without them: `--visit`'s two `SkeletonBlock`s are plain
+   block-level divs, which stack top to bottom with no flex needed, same as
+   the real row's two `display: block` spans (`.prec-table-visit-label`/
+   `-sub`, patients-list.css); `--status`'s skeleton markup already wraps its
+   blocks in `.prec-table-status-wrap`, which is `flex column` on its own,
+   unconditionally, and is the exact wrapper the real row uses too;
+   `--patient-info` was pure duplication of `.prec-table-patient-info`'s own
+   unconditional `flex column`. */

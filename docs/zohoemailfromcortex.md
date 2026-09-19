@@ -1,53 +1,52 @@
-# Sending Zoho email from the Cortex app (doctor-triggered request emails)
+# Sending Email from the Cortex App (Amazon SES Architecture)
 
-This explains how the arenode.com landing page sends real email through
-Zoho, and how to set up the same thing inside **Aren-Cortex** so a doctor
-can click a button ("request a credit recharge", "request a new
-composition", …) and an email lands in the founder's inbox.
+This document describes the email delivery architecture for **Aren-Cortex**.
+All transactional and operational emails (credit recharges, support tickets, low-credit alerts, etc.)
+are powered by **Amazon SES** via Supabase Edge Functions (`support-notify`) and the `@aws-sdk/client-ses` SDK.
 
-Paste this whole file into a Claude Code session opened on the
-`Aren-Cortex-master` repo and let it implement the checklist at the end.
+*(Note: Migrated to Amazon SES in September 2026 from the legacy Zoho REST API).*
 
 ---
 
-## TL;DR — is it possible?
-
-**Yes. Fully. Right now, from localhost, with no domain and nothing
-deployed.**
-
-Sending mail through Zoho is a plain **server-to-server HTTPS API call**.
-It has nothing to do with:
-
-- whether your app has a domain — it doesn't need one
-- whether your app is deployed — localhost is fine
-- any inbound routing, DNS, ngrok, port forwarding — none of that is involved
-
-The only requirement is that the machine running your **backend** (your
-laptop, running the Cortex Express server) can make outbound HTTPS
-requests to `*.zoho.in`. It can — this was already proven from this PC
-when the landing page was built.
-
-The domain (`arenode.com`) only ever mattered for *deliverability* —
-making sure Gmail/Outlook trust mail claiming to be from
-`care@arenode.com`. That's already done (SPF/DKIM/DMARC are configured in
-Zoho for arenode.com, which is why the landing-page emails arrive
-cleanly). Cortex would reuse the **same mailbox and same domain**, so
-there's zero new domain work. And for mail that only goes **to yourself**
-(the founder), deliverability isn't even a concern.
-
----
-
-## How the landing page does it (the model to copy)
+## Architecture Overview
 
 ```
-Doctor's browser                Cortex Express server            Zoho (India DC)
-(has a Supabase session)         (server/, port 4000)            accounts.zoho.in
-        |                                |                        mail.zoho.in
-        |  POST /api/requests/credit     |                             |
-        |  Authorization: Bearer <jwt>   |                             |
-        | -----------------------------> |                             |
-        |                                | 1. verify JWT -> which doctor|
-        |                                | 2. look up clinic + balance  |
+Doctor's Browser                Supabase Edge Function             Amazon SES (AWS)
+(Cortex Web / PWA)              (functions/support-notify)         (ap-south-1)
+        |                                   |                            |
+        | 1. invoke("support-notify", body) |                            |
+        |    Authorization: Bearer <jwt>    |                            |
+        | --------------------------------> |                            |
+        |                                   | 2. verify session & clinic |
+        |                                   | 3. insert support_requests |
+        |                                   | 4. SendEmailCommand        |
+        |                                   | -------------------------> |
+        |                                   |                            | 5. Delivers to
+        |                                   | 6. stamp support_email_log |    support@arenode.com
+        | <-------------------------------- |                            |
+        |    { ok: true, reference: "SR_.." }
+```
+
+### Key Components
+
+1. **Edge Function (`supabase/functions/support-notify/index.ts`)**:
+   - Uses `npm:@aws-sdk/client-ses@3`
+   - Validates caller JWT and enforces RLS context
+   - Creates structured database records in `support_requests`
+   - Sends transactional emails via `SESClient` and `SendEmailCommand`
+   - Logs attempts in `support_email_log` and updates request email status
+
+2. **Node Server / Local Scripts (`server/email/ses.js`, `scripts/check-email.mjs`)**:
+   - Uses `@aws-sdk/client-ses` for local CLI testing (`npm run check:email`)
+
+### Environment & Secrets
+
+Configured on the Supabase project (`supabase secrets set`):
+- `SES_AWS_ACCESS_KEY_ID`
+- `SES_AWS_SECRET_ACCESS_KEY`
+- `SES_AWS_REGION` (defaults to `ap-south-1`)
+- `SES_FROM` (defaults to `care@arenode.com`)
+- `SUPPORT_NOTIFY_EMAIL` (defaults to `support@arenode.com`)
         |                                |    from Supabase (service key)|
         |                                | 3. refresh Zoho access token |
         |                                | ------ POST /oauth/v2/token ->|
@@ -119,136 +118,22 @@ Runtime: Node 18+ (global `fetch` is built in — no `node-fetch` needed).
 
 ## Code
 
-### 1. Reusable Zoho module — `server/email/zoho.js`
+### How Requests & Notifications Work
 
-This is the landing page's logic, trimmed to a plain ESM module that
-matches the existing `server/` style.
+All doctor-triggered operational requests (such as credit purchases, cancellation, support cases) flow through the `support-notify` Edge Function:
 
-```js
-// server/email/zoho.js
-// Outbound transactional email via Zoho Mail's REST API (India / .in DC).
-// Same mechanism the arenode.com landing page uses. No inbound routing,
-// no domain config, no deployment required — a plain server-to-server
-// HTTPS call that works from localhost.
+1. **Frontend Trigger**:
+   - `src/lib/db/messaging.ts` calls `supabase.functions.invoke("support-notify", { body: { kind, ... } })`.
+   - The user's active Supabase session JWT is transmitted automatically.
 
-const ZOHO_TOKEN_URL = "https://accounts.zoho.in/oauth/v2/token";
-const ZOHO_MAIL_BASE = "https://mail.zoho.in/api/accounts";
+2. **Backend Processing (`supabase/functions/support-notify/index.ts`)**:
+   - Resolves the doctor and clinic identity from the session (RLS check).
+   - Stamps the support ticket or event in Supabase Postgres.
+   - Dispatches the email notification via Amazon SES (`@aws-sdk/client-ses`).
+   - Logs the attempt to `support_email_log`.
 
-let tokenCache = null; // { value, expiresAt }
-
-function need(name) {
-  const v = process.env[name];
-  if (!v) throw new Error(`missing env var: ${name}`);
-  return v;
-}
-
-/** Long-lived refresh token -> short-lived access token, cached in memory. */
-export async function getZohoAccessToken(force = false) {
-  if (!force && tokenCache && tokenCache.expiresAt > Date.now() + 60_000) {
-    return tokenCache.value;
-  }
-  const body = new URLSearchParams({
-    refresh_token: need("ZOHO_REFRESH_TOKEN"),
-    client_id: need("ZOHO_CLIENT_ID"),
-    client_secret: need("ZOHO_CLIENT_SECRET"),
-    grant_type: "refresh_token",
-  });
-  const r = await fetch(ZOHO_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data.access_token) {
-    throw new Error(
-      `Zoho token exchange failed: HTTP ${r.status} ${JSON.stringify(data).slice(0, 300)}`
-    );
-  }
-  tokenCache = {
-    value: data.access_token,
-    expiresAt: Date.now() + (Number(data.expires_in) || 3600) * 1000,
-  };
-  return tokenCache.value;
-}
-
-/**
- * Send one HTML email.
- * @param {{ to:string, subject:string, html:string, fromName?:string }} opts
- */
-export async function sendZohoMail({ to, subject, html, fromName }) {
-  const accountId = need("ZOHO_ACCOUNT_ID");
-  const fromBare = process.env.ZOHO_FROM || "care@arenode.com";
-  // Zoho's API accepts an RFC 5322 "Display Name <addr>" here.
-  const fromAddress = fromName ? `${fromName} <${fromBare}>` : fromBare;
-
-  async function attempt(token) {
-    const r = await fetch(`${ZOHO_MAIL_BASE}/${accountId}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        fromAddress,
-        toAddress: to,
-        subject,
-        content: html,
-        mailFormat: "html",
-      }),
-    });
-    const data = await r.json().catch(() => ({}));
-    return {
-      httpStatus: r.status,
-      zohoCode: data?.status?.code,
-      desc: data?.status?.description,
-    };
-  }
-
-  let token = await getZohoAccessToken();
-  let res = await attempt(token);
-  if (res.httpStatus === 401) {
-    // token went stale early — refresh once and retry
-    token = await getZohoAccessToken(true);
-    res = await attempt(token);
-  }
-  const ok = res.httpStatus === 200 && res.zohoCode === 200;
-  if (!ok) {
-    throw new Error(
-      `Zoho send failed: HTTP ${res.httpStatus} code ${res.zohoCode} ${res.desc || ""}`
-    );
-  }
-  return { ok: true };
-}
-```
-
-### 2. Request endpoints — `server/requests/index.js`
-
-Mounts on the existing Express app. Verifies the caller's Supabase
-session, looks up who they are, templates the email, sends it.
-
-```js
-// server/requests/index.js
-import { createClient } from "@supabase/supabase-js";
-import { sendZohoMail } from "../email/zoho.js";
-
-const admin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  { auth: { persistSession: false } }
-);
-
-const FOUNDER_INBOX = process.env.REQUESTS_NOTIFY_EMAIL || "anmol@arenode.com";
-
-function esc(s = "") {
-  return String(s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function wrap(inner) {
-  return `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1f2937;max-width:520px">${inner}</div>`;
-}
+3. **Local CLI Verification (`scripts/check-email.mjs`)**:
+   - Run `node scripts/check-email.mjs` to test SES credentials and deliverability directly from the terminal.
 
 /** Identify the doctor from the Supabase session JWT the browser sends. */
 async function requireDoctor(req, res) {

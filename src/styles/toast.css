@@ -1,0 +1,85 @@
+/* ---------------------------------------------------------------------------
+   TOAST DEPTH PASS — replaces Sonner's `richColors` flat pastel fills.
+   ---------------------------------------------------------------------------
+   Sonner's own `richColors` theme paints a toast as one flat solid HSL fill
+   (`background: var(--success-bg)`, full stop) with a plain 1px border and
+   the same generic `box-shadow: 0px 4px 12px rgba(0,0,0,0.1)` every OTHER
+   toast on the page also gets — nothing in that box says "success" beyond
+   its one flat colour, and nothing about it reads as sitting above the
+   page. Anmol, 2026-09-19: "there are two kind of... which have slight
+   green kind of box that looks so much terrible... they look completely
+   flat and terrible... this would be good and beautiful not flat green
+   color."
+
+   Same idiom the rest of Cortex already uses for a coloured card (see
+   `.symptoms-panel`/`.findings-panel` in layout.css: a white surface, a
+   saturated left accent bar, a soft tinted glow) rather than inventing a
+   second visual language just for toasts. `!important` throughout is load-
+   bearing, not sloppy: Sonner injects its own stylesheet into <head> via JS
+   at mount (there is no static `sonner/dist/styles.css` import to simply
+   load after), so it can land in the DOM after this file regardless of
+   import order — without `!important` a same-specificity rule from Sonner
+   injected later would win the cascade and silently undo this.
+--------------------------------------------------------------------------- */
+
+[data-sonner-toaster][data-sonner-theme='light'] {
+    --success-bg: linear-gradient(165deg, #ffffff 0%, #f0fbf3 100%);
+    --success-border: rgba(34, 197, 94, 0.28);
+    --success-text: #14532d;
+
+    --error-bg: linear-gradient(165deg, #ffffff 0%, #fef2f2 100%);
+    --error-border: rgba(239, 68, 68, 0.28);
+    --error-text: #7f1d1d;
+
+    --warning-bg: linear-gradient(165deg, #ffffff 0%, #fffaeb 100%);
+    --warning-border: rgba(245, 158, 11, 0.30);
+    --warning-text: #78350f;
+
+    --info-bg: linear-gradient(165deg, #ffffff 0%, #eff6ff 100%);
+    --info-border: rgba(59, 130, 246, 0.28);
+    --info-text: #1e3a8a;
+}
+
+[data-sonner-toast][data-styled='true'] {
+    border-radius: 12px !important;
+    border-width: 1px 1px 1px 3px !important;
+    box-shadow:
+        0 10px 26px rgba(20, 35, 66, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+}
+
+[data-rich-colors='true'][data-sonner-toast][data-type='success'] {
+    background: var(--success-bg) !important;
+    border-left-color: #22c55e !important;
+    box-shadow:
+        0 10px 26px rgba(34, 197, 94, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-rich-colors='true'][data-sonner-toast][data-type='error'] {
+    background: var(--error-bg) !important;
+    border-left-color: #ef4444 !important;
+    box-shadow:
+        0 10px 26px rgba(239, 68, 68, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-rich-colors='true'][data-sonner-toast][data-type='warning'] {
+    background: var(--warning-bg) !important;
+    border-left-color: #f59e0b !important;
+    box-shadow:
+        0 10px 26px rgba(245, 158, 11, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-rich-colors='true'][data-sonner-toast][data-type='info'] {
+    background: var(--info-bg) !important;
+    border-left-color: #3b82f6 !important;
+    box-shadow:
+        0 10px 26px rgba(59, 130, 246, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-sonner-toast][data-styled='true'] [data-title] {
+    font-weight: 700 !important;
+}

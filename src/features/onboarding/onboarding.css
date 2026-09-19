@@ -19,16 +19,26 @@
     pointer-events: none;
 }
 
-/* ── The ring ──────────────────────────────────────────────────────────────
+/* ── The dim + the ring, one box-shadow ────────────────────────────────────
+   Anmol: "if it's just floating like another card, nobody will see it...
+   things in the background should get slightly dim." A single extra shadow
+   layer, spread 9999px, paints that dim across the ENTIRE viewport as part
+   of the ring's own box — the cutout over the target falls out for free,
+   already shaped like the ring's own rounded rect, with no second overlay
+   element that could ever drift out of sync with where the ring actually
+   is. `.ob-scrim-band` (four invisible buttons tiling everything BUT the
+   target — see `spotlightBands` in the component) is what makes that
+   dimmed area clickable; this shadow is only ever the paint.
    Welded to the target's real rect, so it tracks scroll and resize rather
-   than floating near where the element used to be. The pulse is deliberately
-   shallow — a ring that throbs hard reads as an error state, and this is an
-   invitation. */
+   than floating near where the element used to be. The accent glow's pulse
+   is deliberately shallow — a ring that throbs hard reads as an error
+   state, and this is an invitation. */
 .ob-ring {
     position: fixed;
     border: 2px solid var(--cs-blue);
     border-radius: 12px;
     box-shadow:
+        0 0 0 9999px rgba(10, 16, 28, 0.5),
         0 0 0 4px rgba(18, 104, 232, 0.14),
         0 0 22px rgba(18, 104, 232, 0.28);
     animation: ob-breathe 2.1s ease-in-out infinite;
@@ -38,14 +48,28 @@
 @keyframes ob-breathe {
     0%, 100% {
         box-shadow:
+            0 0 0 9999px rgba(10, 16, 28, 0.5),
             0 0 0 4px rgba(18, 104, 232, 0.14),
             0 0 22px rgba(18, 104, 232, 0.28);
     }
     50% {
         box-shadow:
+            0 0 0 9999px rgba(10, 16, 28, 0.5),
             0 0 0 7px rgba(18, 104, 232, 0.08),
             0 0 30px rgba(18, 104, 232, 0.20);
     }
+}
+
+/* The click-catchers — see the ring's own comment. Fully invisible; the
+   dim they sit in front of is painted by the ring's shadow, not by these. */
+.ob-scrim-band {
+    position: fixed;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    pointer-events: auto;
 }
 
 /* ── The connector ─────────────────────────────────────────────────────────

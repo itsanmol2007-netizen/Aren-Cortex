@@ -1,18 +1,30 @@
 // ---------------------------------------------------------------------------
 // What the walkthrough actually looks like.
 //
-// ── NO SCRIM ───────────────────────────────────────────────────────────────
-// The familiar pattern — black overlay, cut a hole over one element — is the
-// reason guided tours feel like homework: the app is taken away and handed
-// back a piece at a time. Here nothing dims. A soft ring lights the target
-// where it sits, a thin line runs from it to a small card, and the rest of
-// the workspace stays live and clickable the whole time. A doctor who
-// ignores the hint entirely loses nothing.
+// ── THE DIM, REVISED ──────────────────────────────────────────────────────
+// The first version had no scrim at all — the reasoning was sound (a full
+// black overlay with a cutout is why guided tours feel like homework) but
+// the result read as the opposite problem. Anmol, seeing it live: "if it's
+// just floating like another card, nobody will see it... things in the
+// background should get slightly dim." A hint that costs nothing to ignore
+// is also a hint nobody notices.
 //
-// That also means the layer must not swallow clicks: the overlay is
-// `pointer-events: none` throughout, and only the card itself takes them
-// back. Pointing at the Consult button while making it unclickable would be
-// its own small joke.
+// So the background DOES dim now — everywhere except the target itself,
+// which stays exactly as bright as the rest of the app. That's a single
+// CSS trick: the ring's own `box-shadow` carries a spread of 9999px, which
+// paints the dim across the whole viewport as part of the RING's box, with
+// a cutout automatically shaped like the ring's own rounded rect. No second
+// overlay element, no risk of the dim and the ring ever drifting apart.
+//
+// Dim still is not a full click-blocking scrim, though: the target must
+// stay reachable (pointing at Consult while making Consult unclickable
+// would be its own small joke — this was already true, and stays true),
+// and now the dimmed area itself is clickable too — "we could click on it
+// to cut it" — closing the current hint the same as its own "Got it". Four
+// invisible bands (`spotlightBands`) tile the screen AROUND the target's
+// rect and catch that click; nothing covers the target's own rect, so nei
+// -ther the ring nor the real element underneath ever intercepts a click
+// meant for the button.
 //
 // Motion is the app's existing spring (`stiffness: 420, damping: 34` — the
 // same one `GuardReason` arrives on), so a hint reads as part of this
@@ -30,6 +42,28 @@ const RING_PAD = 6;
 /** Gap between the ring and the callout that points at it. */
 const GAP = 16;
 const CARD_W = 264;
+
+/**
+ * Four rectangles that tile the viewport minus the target's own box (padded
+ * out to the ring's outer edge) — the click-catching, dismiss-on-click
+ * region for "click the dim to close this hint". Computed fresh per
+ * render off the live rect, same as everything else in this file; there is
+ * nothing here to get stale.
+ */
+function spotlightBands(rect: AnchorRect) {
+    const t = rect.top - RING_PAD;
+    const l = rect.left - RING_PAD;
+    const b = rect.top + rect.height + RING_PAD;
+    const r = rect.left + rect.width + RING_PAD;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return [
+        { top: 0, left: 0, width: vw, height: Math.max(0, t) },
+        { top: b, left: 0, width: vw, height: Math.max(0, vh - b) },
+        { top: t, left: 0, width: Math.max(0, l), height: b - t },
+        { top: t, left: r, width: Math.max(0, vw - r), height: b - t },
+    ];
+}
 
 /**
  * Where the card sits, and where the connector runs.
@@ -112,12 +146,32 @@ export function CoachMark({
 }) {
     const reduce = useReducedMotion();
     const { style, from, to } = layout(rect, step.placement);
+    const bands = spotlightBands(rect);
 
     const spring = { type: "spring" as const, stiffness: 420, damping: 34 };
 
     return createPortal(
         <div className="ob-layer" role="presentation">
-            {/* The ring — welded to the element, never a box floating near it. */}
+            {/* Click-to-dismiss, everywhere the dim actually reads as dim. Laid
+                down BEFORE the ring so the ring (and, underneath it, the real
+                target) still win hit-testing at their own rect — these four
+                never overlap it, see `spotlightBands`. */}
+            {bands.map((b, i) => (
+                <button
+                    key={i}
+                    type="button"
+                    className="ob-scrim-band"
+                    style={b}
+                    onClick={onGotIt}
+                    aria-label="Dismiss this hint"
+                    tabIndex={-1}
+                />
+            ))}
+
+            {/* The ring — welded to the element, never a box floating near it.
+                Its own box-shadow does double duty: the tight accent glow
+                AND, via the 9999px spread layered first, the dim across the
+                rest of the screen — see this file's header. */}
             <motion.div
                 className="ob-ring"
                 initial={reduce ? false : { opacity: 0, scale: 0.94 }}
@@ -197,7 +251,17 @@ export function WelcomeCard({
     const first = (doctorName ?? "").trim().replace(/^d[r]\.?\s+/i, "").split(/\s+/)[0];
 
     return createPortal(
-        <div className="ob-welcome-wrap" role="dialog" aria-modal="true" aria-label="Welcome to Cortex">
+        <div
+            className="ob-welcome-wrap"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Welcome to Cortex"
+            // Click the dim, not the card, to close — same "click on it to
+            // cut it" the coach marks now offer. The target-check is what
+            // keeps a click INSIDE the card from bubbling up and closing it
+            // out from under itself.
+            onClick={(e) => { if (e.target === e.currentTarget) onSkip(); }}
+        >
             <motion.div
                 className="ob-welcome"
                 initial={reduce ? false : { opacity: 0, y: 10, scale: 0.985 }}
@@ -215,7 +279,7 @@ export function WelcomeCard({
                     ranks the conditions, tests and medicines worth considering — you
                     never fill in a form.
                 </p>
-                <p className="ob-welcome-hint">Three short pointers as you go. Skip them any time.</p>
+                <p className="ob-welcome-hint">A few short pointers as you go. Skip them any time.</p>
                 <div className="ob-welcome-actions">
                     <button type="button" className="ob-welcome-skip" onClick={onSkip}>Skip</button>
                     <button type="button" className="ob-welcome-go" onClick={onStart}>Show me around</button>

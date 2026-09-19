@@ -56,7 +56,14 @@ body {
        that ambiguity is a clinical problem rather than a typographic one. */
     font-optical-sizing: auto;
     font-feature-settings: "cv05" 1, "cv08" 1;
-    overflow-y: scroll;
+    /* `auto`, not `scroll` — the old value drew the grey scrollbar track on
+       every page regardless of whether there was anything to scroll, which
+       is exactly the "why is this tiny page scrollable" look Anmol flagged
+       (2026-09-19) on Help & Support. `scrollbar-gutter: stable` still
+       reserves the same width either way, so switching to `auto` loses
+       nothing but the track's cosmetic un-clickable presence — it only
+       draws it when a page actually overflows. */
+    overflow-y: auto;
     scrollbar-gutter: stable;
 }
 

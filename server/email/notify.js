@@ -34,7 +34,7 @@
 // ---------------------------------------------------------------------------
 
 import { getSupabase } from "../whatsapp/supabaseClient.js";
-import { emailConfigured, sendZohoMail } from "./zoho.js";
+import { emailConfigured, sendSesMail } from "./ses.js";
 import { renderEmail } from "./templates.js";
 
 /** Where operational mail lands. The spec names support@arenode.com;
@@ -183,12 +183,12 @@ export async function notify(kind, payload = {}) {
     // failure to shout about. Log what WOULD have been sent so a local run
     // can still be verified end to end.
     if (!emailConfigured()) {
-        console.warn(`[email] Zoho not configured — would have sent to ${to}: ${subject}`);
+        console.warn(`[email] Amazon SES not configured — would have sent to ${to}: ${subject}`);
         return { ok: false, skipped: "not_configured" };
     }
 
     try {
-        await sendZohoMail({ to, subject, html, fromName: FROM_NAME });
+        await sendSesMail({ to, subject, html, fromName: FROM_NAME });
         await record({ kind, to, subject, status: "sent", ctx });
         return { ok: true };
     } catch (e) {

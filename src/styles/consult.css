@@ -822,6 +822,31 @@ body.cs-locked-shell {
     font-weight: 450;
 }
 
+.cs-field-clear {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.cs-field-clear:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--cs-ink);
+}
+
+.cs-field-clear svg {
+    color: inherit;
+}
+
 .cs-sqbtn {
     display: grid;
     place-items: center;
@@ -3519,13 +3544,13 @@ body.cs-locked-shell {
     flex-wrap: wrap;
     align-items: center;
     gap: 5px;
-    margin-top: 4px;
+    margin-top: 5px;
 }
 
 .cs-line-tag {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 3.5px;
     border-radius: 5px;
     background: var(--cs-teal-soft);
     padding: 2px 7px;
@@ -3534,46 +3559,96 @@ body.cs-locked-shell {
     font-weight: 650;
     letter-spacing: -0.003em;
     white-space: nowrap;
+    border: 1px solid transparent;
 }
 
-.cs-line-tag svg { flex: none; opacity: 0.68; }
+.cs-line-tag svg { flex: none; opacity: 0.75; }
 
 .cs-line-tag::first-letter { text-transform: uppercase; }
 
-/* Medicine lines carry three rows (name, tags, note) where every other kind
-   of plan line carries one — stacked with the same bare 7px padding as a
-   diagnosis or a test, five of them blurred into a single dense column with
-   nothing marking where one medicine ends and the next begins. A touch more
-   padding and a hairline between consecutive medicines (not the group's own
-   `.cs-group-head` border, which only separates SECTIONS) gives each one a
-   row to itself. */
-.cs-line.is-med {
-    padding-top: 9px;
-    padding-bottom: 9px;
+/* Semantic distinct color themes for tags */
+.cs-line-tag.is-dose {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #dbeafe;
 }
 
-.cs-line.is-med + .cs-line.is-med {
-    border-top: 1px solid var(--cs-line);
+.cs-line-tag.is-freq {
+    background: #ecfdf5;
+    color: #047857;
+    border-color: #a7f3d0;
+}
+
+.cs-line-tag.is-dur {
+    background: #fffbeb;
+    color: #b45309;
+    border-color: #fde68a;
+}
+
+.cs-line-tag.is-notes {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border-color: #ddd6fe;
+}
+
+/* Medicine lines structured as individual cards with distinct visual hierarchy */
+.cs-line.is-med {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 4px 10px;
+    margin: 5px 12px 6px;
+    padding: 10px 12px;
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    border-left: 3px solid #cbd5e1;
+}
+
+.cs-line.is-med:hover {
+    background: #fcfdfe;
+    border-color: rgba(147, 197, 253, 0.8);
+    border-left-color: #60a5fa;
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.08);
+}
+
+.cs-line.is-med.is-active {
+    background: #f8fafc;
+    border-color: #3b82f6;
+    border-left-color: #2563eb;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
+}
+
+.cs-line.is-med.is-new {
+    border-color: #22c55e;
+    border-left-color: #16a34a;
+    background: #f0fdf4;
 }
 
 .cs-x {
     flex: none;
     display: grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     border: 0;
     border-radius: 6px;
-    background: none;
-    color: var(--cs-faint);
-    font-size: 14.5px;
+    background: transparent;
+    color: #475569;
+    font-size: 14px;
     line-height: 1;
-    transition: background 0.13s ease, color 0.13s ease;
+    cursor: pointer;
+    transition: background 0.13s ease, color 0.13s ease, transform 0.08s ease;
 }
 
 .cs-x:hover {
     background: #fee2e2;
-    color: var(--cs-red);
+    color: #dc2626;
+}
+
+.cs-x:active {
+    transform: scale(0.92);
 }
 
 .cs-pill {

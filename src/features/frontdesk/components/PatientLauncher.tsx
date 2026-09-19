@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Search, Plus } from "lucide-react";
 import { searchPatients, type DBPatient } from "@/lib/db";
 import { initials } from "../utils";
+import { useOnline } from "../operational/useOnline";
 import { useT } from "../i18n/i18n";
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
 
 export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
     const t = useT();
+    const online = useOnline();
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
     const [focused, setFocused] = useState(false);
@@ -163,8 +165,8 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                         <button
                             type="button"
                             onMouseEnter={() => setActive(registerIdx)}
-                            onClick={createNew}
-                            className={`mt-[2px] flex h-[42px] cursor-pointer items-center gap-[9px] rounded-[10px] border-0 bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.34)] transition-[background-color,box-shadow] hover:bg-[#1d51c9] hover:shadow-[0_4px_16px_rgba(47,107,237,0.46)] ${
+                            onClick={online ? createNew : undefined}
+                            className={`mt-[2px] flex h-[42px] cursor-pointer items-center gap-[9px] rounded-[10px] border-0 bg-[#2f6bed] px-5 text-[13.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.34)] transition-[background-color,box-shadow] ${!online ? "opacity-50 cursor-not-allowed" : ""} hover:bg-[#1d51c9] hover:shadow-[0_4px_16px_rgba(47,107,237,0.46)] ${
                                 active === registerIdx ? "ring-2 ring-[rgba(47,107,237,0.35)]" : ""
                             }`}
                         >
@@ -175,8 +177,8 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                 ) : (
                     <div
                         onMouseEnter={() => setActive(registerIdx)}
-                        onClick={createNew}
-                        className={`flex min-h-[44px] cursor-pointer items-center gap-[11px] px-4 py-3 text-[13.5px] font-semibold text-[#2f6bed] ${
+                        onClick={online ? createNew : undefined}
+                        className={`flex min-h-[44px] cursor-pointer items-center gap-[11px] px-4 py-3 text-[13.5px] font-semibold text-[#2f6bed] ${!online ? "opacity-50 cursor-not-allowed" : ""} ${
                             active === registerIdx ? "bg-[rgba(47,107,237,0.08)]" : "hover:bg-[rgba(47,107,237,0.055)]"
                         }`}
                     >
@@ -236,8 +238,8 @@ export function PatientLauncher({ onSelectExisting, onCreateNew }: Props) {
                 <button
                     type="button"
                     title={t("launcherAddTitle")}
-                    onClick={() => onCreateNew("")}
-                    className="relative flex h-9 shrink-0 items-center gap-[6px] rounded-[10px] bg-[#2f6bed] px-[13px] text-[12.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[box-shadow,transform,background-color] duration-100 hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(47,107,237,0.28)]"
+                    onClick={online ? () => onCreateNew("") : undefined}
+                    className={`relative flex h-9 shrink-0 items-center gap-[6px] rounded-[10px] bg-[#2f6bed] px-[13px] text-[12.5px] font-bold text-white shadow-[0_3px_12px_rgba(47,107,237,0.4),0_0_16px_rgba(47,107,237,0.28)] transition-[box-shadow,transform,background-color] duration-100 ${!online ? "opacity-50 cursor-not-allowed" : ""} hover:bg-[#1d51c9] hover:shadow-[0_3px_16px_rgba(47,107,237,0.55),0_0_22px_rgba(47,107,237,0.38)] active:scale-[0.97] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(47,107,237,0.28)]`}
                 >
                     <Plus size={15} strokeWidth={2.6} />
                     <span className="max-[900px]:hidden">{t("addPatient")}</span>

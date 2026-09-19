@@ -83,6 +83,13 @@ export const COACH_STEPS: CoachStep[] = [
         placement: "right",
     },
     {
+        id: "sidebar.patients",
+        anchor: "sidebar.patients",
+        title: "Every patient, one click away",
+        body: "Search, past visits, records — this is where your whole patient list lives.",
+        placement: "right",
+    },
+    {
         id: "case.search",
         anchor: "case.search",
         title: "Type what the patient tells you",

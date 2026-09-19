@@ -29,7 +29,7 @@ export function OfflineBanner() {
         <div className="aren-offline-banner" role="status">
             <style>{BANNER_CSS}</style>
             <CloudOff size={13} strokeWidth={2.2} />
-            <span>Offline — showing saved data</span>
+            <span>Offline: showing saved data</span>
             {pendingWrites > 0 && (
                 <span className="aren-offline-pending">
                     {pendingWrites} {pendingWrites === 1 ? "change" : "changes"} waiting
@@ -50,13 +50,18 @@ const BANNER_CSS = `
     gap: 8px;
     padding: 7px 13px;
     border-radius: 999px;
-    background: linear-gradient(180deg, #2a2036 0%, #1d1730 100%);
+    background:
+        radial-gradient(ellipse 90px 40px at 15% 0%, rgba(233, 184, 255, 0.14) 0%, transparent 70%),
+        linear-gradient(180deg, #2e2440 0%, #1a1428 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.92);
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.01em;
-    box-shadow: 0 6px 20px rgba(12, 10, 30, 0.30);
+    box-shadow:
+        0 8px 24px rgba(12, 10, 30, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
     pointer-events: none;
 }
 .aren-offline-banner svg { flex: none; color: #e9b8ff; }

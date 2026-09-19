@@ -29,7 +29,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Plus, Search, Target } from "lucide-react";
+import { Check, Plus, Search, Target, X } from "lucide-react";
 import type { PatientGoal, GoalStatus } from "../../lib/db/story";
 
 interface Props {
@@ -212,6 +212,22 @@ export function GoalsCard({
                             role="combobox"
                             aria-expanded={open}
                         />
+                        {Boolean(query) && !disabled && (
+                            <button
+                                type="button"
+                                className="cs-field-clear"
+                                onClick={() => {
+                                    setQuery("");
+                                    inputRef.current?.focus();
+                                }}
+                                onMouseDown={(e) => e.preventDefault()}
+                                aria-label="Clear goal search"
+                                title="Clear search"
+                                tabIndex={-1}
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
                     </div>
 
                     {open && (

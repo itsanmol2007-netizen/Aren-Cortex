@@ -30,6 +30,8 @@ import type { Sex } from "../lib/growth/growth";
 import {
   replaceVisitSymptoms, replaceVisitFindings,
   fetchPatientVisits,
+  fetchPatientVisitStubs,
+  hydratePatientVisits,
   type RealVisit,
 } from "../lib/db";
 import type { SynapseData } from "./useSynapse";
@@ -174,10 +176,40 @@ export function useConsultSession({ chart, data }: ConsultSessionArgs): ConsultS
 
   const loadPastVisits = useCallback((patientId: string, excludeVisitId?: string | null) => {
     setPastVisitsLoading(true);
-    fetchPatientVisits(patientId, excludeVisitId)
-      .then(setPastVisits)
-      .catch(() => { })
-      .finally(() => setPastVisitsLoading(false));
+    let isCancelled = false;
+
+    // Phase 1: Fast stub query to get visit count and metadata in ~100-200ms
+    fetchPatientVisitStubs(patientId, excludeVisitId)
+      .then(async (stubs) => {
+        if (isCancelled) return;
+        if (stubs.length === 0) {
+          setPastVisits([]);
+          setPastVisitsLoading(false);
+          return;
+        }
+        // Immediately populate stubs so UI renders skeleton chips matching the count
+        setPastVisits(stubs);
+        setPastVisitsLoading(false);
+
+        // Phase 2: Background hydration of deep relations
+        try {
+          const hydrated = await hydratePatientVisits(stubs);
+          if (!isCancelled) {
+            setPastVisits(hydrated);
+          }
+        } catch {
+          // Keep stubs if background hydration fails
+        }
+      })
+      .catch(() => {
+        // Fallback to cached/network full fetch if stub fetch failed
+        if (!isCancelled) {
+          fetchPatientVisits(patientId, excludeVisitId)
+            .then(setPastVisits)
+            .catch(() => {})
+            .finally(() => setPastVisitsLoading(false));
+        }
+      });
   }, []);
 
   const reset = useCallback(() => {

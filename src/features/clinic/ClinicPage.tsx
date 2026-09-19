@@ -46,7 +46,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import {
-    ArrowRight, Award, Building2, CalendarDays, ChevronRight, Clock,
+    ArrowRight, Award, BellRing, Building2, CalendarDays, ChevronRight, Clock,
     FileSignature, Globe, GraduationCap, Mail, MapPin,
     Pencil, Phone, ScrollText, Stethoscope, UserCog, UserPlus, Users,
 } from "lucide-react";
@@ -60,7 +60,8 @@ import { fetchStaff, type StaffMember } from "../../lib/db/staff";
 import { Card, CardAction, CardPillButton, EmptyAction, EmptyBlock, FootLink, Heading, RowText, SkeletonRows } from "./ui";
 import {
     DEFAULT_PRESCRIPTION_CONFIG, WEEKDAYS, emptyClinicHours, fetchClinicHours,
-    fetchPrescriptionConfig, type ClinicDayHours, type PrescriptionConfig,
+    fetchFollowUpRemindersEnabled, fetchPrescriptionConfig, updateFollowUpRemindersEnabled,
+    type ClinicDayHours, type PrescriptionConfig,
 } from "../../lib/db/clinic";
 import type { DBDoctor, DBHospital } from "../../lib/db";
 
@@ -154,6 +155,12 @@ export function ClinicPage({
     const [hoursLoading, setHoursLoading] = useState(true);
     const [rxConfig, setRxConfig] = useState<PrescriptionConfig>(DEFAULT_PRESCRIPTION_CONFIG);
 
+    // Off until this loads — the honest default while the real value is
+    // still in flight, and the same value the column itself defaults to for
+    // every clinic that never touches this card at all.
+    const [followUpEnabled, setFollowUpEnabled] = useState(false);
+    const [followUpSaving, setFollowUpSaving] = useState(false);
+
     const [clinicModalOpen, setClinicModalOpen] = useState(false);
     const [doctorModalOpen, setDoctorModalOpen] = useState(false);
     const [hoursModalOpen, setHoursModalOpen] = useState(false);
@@ -175,7 +182,31 @@ export function ClinicPage({
             .catch(console.error);
 
         fetchStaff(identity.hospitalId).then(setStaff).catch(console.error);
+
+        fetchFollowUpRemindersEnabled(identity.hospitalId)
+            .then(setFollowUpEnabled)
+            .catch(console.error);
     }, [identity.ready, identity.hospitalId]);
+
+    /**
+     * Flips immediately (the toggle should never feel like it's waiting on
+     * the network), and reverts itself if the write actually fails — the
+     * same optimistic-with-rollback shape `StaffModal`'s own role/active
+     * toggles use, so a doctor never has to guess whether a click landed.
+     */
+    const toggleFollowUpReminders = async () => {
+        const next = !followUpEnabled;
+        setFollowUpEnabled(next);
+        setFollowUpSaving(true);
+        try {
+            await updateFollowUpRemindersEnabled(identity.hospitalId, next);
+        } catch (e) {
+            console.error(e);
+            setFollowUpEnabled(!next);
+        } finally {
+            setFollowUpSaving(false);
+        }
+    };
 
     const openDays = week.filter((d) => d.sessions.length > 0).length;
     const anyHoursSet = openDays > 0;
@@ -647,6 +678,52 @@ export function ClinicPage({
                                 )}
                             </div>
                         )}
+                    </Card>
+
+                    {/* ══ Follow-up reminders — off until a clinic says otherwise ══
+                        Anmol, 2026-09-14: "keep it disabled by default. It could
+                        be enabled into clinic setting page." And, correcting
+                        what the message itself is: "there shouldn't be anything
+                        of rescheduling a follow-up... just a message that, oh,
+                        here is a follow-up, you can come. We don't have that
+                        infrastructure yet." One switch, one sentence saying
+                        exactly what it does — no second card of options to
+                        configure, because there is nothing else here to
+                        configure yet. */}
+                    <Card
+                        id="clin-card-followup"
+                        tone="blue"
+                        icon={<BellRing size={14} />}
+                        title="Follow-up Reminders"
+                        subtitle="A one-line WhatsApp nudge, the day before a patient's follow-up."
+                        action={
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={followUpEnabled}
+                                disabled={followUpSaving}
+                                onClick={toggleFollowUpReminders}
+                                className={
+                                    "relative h-[22px] w-[38px] flex-none rounded-full border transition-colors duration-150 disabled:opacity-60 " +
+                                    (followUpEnabled
+                                        ? "border-[var(--cs-blue)] bg-[var(--cs-blue)]"
+                                        : "border-[var(--cs-line-strong)] bg-[var(--cs-page)]")
+                                }
+                            >
+                                <span
+                                    className={
+                                        "absolute top-1/2 h-[16px] w-[16px] -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgba(16,28,46,0.35)] transition-[left] duration-150 " +
+                                        (followUpEnabled ? "left-[19px]" : "left-[3px]")
+                                    }
+                                />
+                            </button>
+                        }
+                    >
+                        <p className="m-0 text-[12.5px] leading-[1.55] text-[var(--cs-muted)]">
+                            {followUpEnabled
+                                ? "On — when a prescription carries a follow-up date, this clinic's patients get a reminder 24 hours before it, automatically."
+                                : "Off — no reminder is ever sent until this is switched on. Nothing here reschedules a visit; it only reminds a patient that one is due."}
+                        </p>
                     </Card>
                 </div>
             </div>

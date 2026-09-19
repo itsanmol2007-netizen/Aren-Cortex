@@ -41,22 +41,35 @@
          Newsreader italic 600 added 2026-09-12 for Overview's own greeting
          (`DoctorOverviewPage.tsx`) — without it the browser would have faked
          a bold weight on top of the only italic cut actually loaded (400),
-         which looks distorted on a serif face at that size. -->
+         which looks distorted on a serif face at that size.
+         700/800 added 2026-09-19 for the public prescription page's English
+         mode (PublicPrescriptionPage.tsx) — same reasoning as the Devanagari
+         weight bump just below: headings there are bold/extrabold, and
+         without a real cut loaded the browser fake-bolds Geist's 600,
+         which looks soft rather than "modern" at that weight. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,600&display=swap"
       rel="stylesheet"
     />
     <!-- Devanagari for Hindi prescriptions (PrescriptionDocument.tsx,
-         ReviewModal.tsx) — a first-class typeface, not a fallback
-         substitution. Arial (the print doc's Latin face) has no Devanagari
-         glyphs at all; without this the browser falls back to whatever
-         Devanagari font the OS happens to have, with no guarantee of correct
-         conjunct/matra shaping. Noto Sans Devanagari is Google's own
-         production font for the script — full shaping support, and it pairs
-         visually with a plain grotesque sans the way Arial/Inter already do.
-         400/500/600/700 to cover body text through headings. -->
+         ReviewModal.tsx, the public /prescriptions/:token page) — a
+         first-class typeface, not a fallback substitution. Arial (the print
+         doc's Latin face) has no Devanagari glyphs at all; without this the
+         browser falls back to whatever Devanagari font the OS happens to
+         have, with no guarantee of correct conjunct/matra shaping. Noto Sans
+         Devanagari is Google's own production font for the script — full
+         shaping support, and it pairs visually with a plain grotesque sans
+         the way Arial/Inter already do.
+         800/900 added (2026-09-19) alongside 400/500/600/700: every heading
+         on the prescription document renders at `fontWeight: 900` (a doctor
+         reading their own printout is not the audience that decision was
+         made for — a patient, often lower-literacy, is), and 900 with no
+         real cut loaded meant the browser synthetically fake-bolded 700,
+         which blurs Devanagari's conjuncts/matras far more visibly than it
+         blurs Latin letterforms. Real 800/900 cuts read crisp at the same
+         size instead. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700;800;900&display=swap"
       rel="stylesheet"
     />
   </head>

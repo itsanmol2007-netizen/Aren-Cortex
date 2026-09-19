@@ -263,24 +263,16 @@ can only ever be about the caller's own clinic and wallet.
 
 ## Email — the plumbing
 
-One door — `notify(kind, ids)` in `server/email/notify.js`. Callers pass IDS,
-never prose, so wording changes never touch a call site. Three files, three
-jobs: `zoho.js` (transport), `templates.js` (what it says), `notify.js` (when,
-and the durable record).
+One door — `support-notify` Edge Function (`supabase/functions/support-notify/index.ts`) powered by **Amazon SES** (`@aws-sdk/client-ses`). (Node server equivalent: `notify(kind, ids)` in `server/email/notify.js` using `server/email/ses.js`). Callers pass IDS, never prose, so wording changes never touch a call site.
 
 `notify` **never throws.** Every caller is doing something more important than
 sending an email, and a recharge request already in the database must not look
-rejected because Zoho rate-limited us.
+rejected because an email provider rate-limited us.
 
-Two Zoho facts that will cost an afternoon if unknown:
-- **India data centre.** A token from `accounts.zoho.in` works only against
-  `accounts.zoho.in` / `mail.zoho.in`. The `.com` hosts return
-  `INVALID_OAUTHTOKEN`, which looks like a bad credential and is not one.
-- **The `from` address is fixed** to `care@arenode.com` or a confirmed alias.
-  Arbitrary from-addresses are rejected.
-
-The access-token cache in `zoho.js` is load-bearing, not an optimisation —
-Zoho rate-limits the token endpoint. Do not remove it.
+Amazon SES configuration:
+- **Secrets:** `SES_AWS_ACCESS_KEY_ID`, `SES_AWS_SECRET_ACCESS_KEY`, `SES_AWS_REGION` (default: `ap-south-1`).
+- **Sender:** `SES_FROM` defaults to `care@arenode.com` (verified identity). Outbound mail arrives reliably without OAuth token refresh overhead.
+- **Log:** All attempts are stamped into `support_email_log`.
 
 ---
 

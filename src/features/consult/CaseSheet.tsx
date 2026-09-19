@@ -1076,6 +1076,23 @@ export function ClinicalCommandBar({
                         aria-label="Add clinical information"
                         className="min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
                     />
+
+                    {Boolean(query) && !disabled && (
+                        <button
+                            type="button"
+                            className="cs-field-clear"
+                            onClick={() => {
+                                setQuery("");
+                                inputRef.current?.focus();
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            aria-label="Clear clinical search"
+                            title="Clear search"
+                            tabIndex={-1}
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
                 </div>
 
                 {/* ── The slot, named and skippable ─────────────────────────

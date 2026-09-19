@@ -3,11 +3,9 @@
    spend the credit, keep the ledger honest.
 
    The Supabase-hosted replacement for server/messaging (routes.js +
-   service.js + providers/*). `server/` needs a public host and has
-   none; this needs neither. Everything the Express version did is
-   here, minus the operational EMAIL (Zoho creds aren't on Supabase —
-   failures are logged instead; the credit refund, which is the part
-   that costs a doctor real money, is a DB RPC and fully preserved).
+   service.js + providers/*). Everything the Express version did is
+   here (failures are logged in DB; operational support emails are handled
+   via support-notify powered by Amazon SES; credit refund is a DB RPC).
 
    verify_jwt is ON. The caller is a signed-in clinic user; their token
    is verified by the platform before this runs, and `getUser()` here
@@ -128,10 +126,17 @@ async function resolveCaller(db: SupabaseClient, jwt: string) {
   };
 }
 
-// ── Phone + name helpers (ported verbatim from service.js) ────────────────
+// ── Phone + name helpers ────────────────────────────────────────────────
+// `doctors.name` is now canonically "Dr. <name>", exactly once, enforced at
+// the data layer (migration 20260919_normalize_doctor_name_prefix.sql —
+// backfilled every existing row and added a trigger that normalizes every
+// future write). This used to strip-and-reapply "Dr. " itself, which is
+// what caused the real, live bug Anmol reported — "sometimes there is two
+// DR, sometimes there is no" — every surface's OWN idea of the honorific
+// disagreeing with what was actually stored. Trust the stored value.
 function formatDoctorName(raw: string | null): string {
-  const bare = String(raw ?? "").trim().replace(/^d[r]\.?\s+/i, "").trim();
-  return bare ? `Dr. ${bare}` : "your doctor";
+  const bare = String(raw ?? "").trim();
+  return bare || "your doctor";
 }
 
 /** The Devanagari name the doctor/admin confirmed once (Clinic page,
@@ -574,6 +579,20 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
       .update({ wa_message_id: result.providerMessageId, status: "sent", credits_charged: cost })
       .eq("id", messageId);
 
+    // Record what language this prescription actually went out in, so the
+    // public page (prescription-preview) can open in the same language
+    // instead of always defaulting to English — see migration
+    // 20260919_prescription_last_sent_language.sql. Best-effort: a doctor's
+    // send must never fail because this one bookkeeping write did.
+    if (input.purpose === "prescription" && input.prescriptionId) {
+      await db.from("prescriptions")
+        .update({ last_sent_language: input.language })
+        .eq("id", input.prescriptionId)
+        .then(({ error }) => {
+          if (error) console.warn(`[messaging-send] last_sent_language update failed: ${error.message}`);
+        });
+    }
+
     const balance = await currentBalance(db, ctx.doctorId);
     return { ok: true as const, messageId, status: "sent", balance, provider: result.name };
   } catch (e) {
@@ -599,10 +618,8 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
       .update({ status: "failed", error_detail: detail.slice(0, 500), credits_charged: 0 })
       .eq("id", messageId);
 
-    // Operational email alerts (notify / provider_error) are not ported —
-    // Zoho creds aren't on Supabase. The failure is logged; support can read
-    // whatsapp_messages.error_detail. Wire a call to `support-notify` here
-    // once that function accepts a service-role caller.
+    // Operational failure is logged in whatsapp_messages.error_detail;
+    // support can read and action, and support-notify dispatches alerts via Amazon SES.
     console.error(`[messaging-send] send failed (message ${messageId}): ${detail}`);
 
     throw new MessagingError(

@@ -25,6 +25,7 @@
 import { supabase } from "../supabase";
 import { visitStatusKind } from "../../features/patients/visitStatus";
 import { requireOnlineFor } from "../offline/onlineOnly";
+import { readThroughValue } from "../offline/localMirror";
 
 const IST_OFFSET = "+05:30";
 const IST_ZONE = "Asia/Kolkata";
@@ -209,7 +210,32 @@ export interface AnalyticsScope {
     doctorId?: string | null;
 }
 
+/**
+ * Network-first, local-fallback (see `localMirror.ts`) — the Overview page
+ * used to be a hard live dependency: every KPI tile, sparkline and bench row
+ * came from this one call, with nothing to fall back to, so losing Wi-Fi
+ * took the doctor's own landing page down with it
+ * (docs/offline-architecture-failure-dump.md: "neither the overview page
+ * work, you can't see anything"). Keyed on every argument that changes the
+ * answer — hospital, scope (whole clinic vs. one bench) and the exact date
+ * range — so switching the period picker while offline shows "last known
+ * good for THIS range", never another range's numbers mislabelled.
+ */
 export async function fetchClinicAnalytics(
+    hospitalId: string,
+    range: DateRange,
+    scope: AnalyticsScope = {}
+): Promise<ClinicAnalytics> {
+    return readThroughValue({
+        kind: "admin",
+        key: `analytics:${hospitalId}:${scope.doctorId ?? "clinic"}:${range.from}:${range.to}`,
+        doctorId: scope.doctorId ?? null,
+        hospitalId,
+        fetcher: () => fetchClinicAnalyticsFromNetwork(hospitalId, range, scope),
+    });
+}
+
+async function fetchClinicAnalyticsFromNetwork(
     hospitalId: string,
     range: DateRange,
     scope: AnalyticsScope = {}
@@ -532,6 +558,16 @@ export interface DoctorRosterRow {
 }
 
 export async function fetchDoctorRoster(hospitalId: string): Promise<DoctorRosterRow[]> {
+    return readThroughValue({
+        kind: "admin",
+        key: `roster:${hospitalId}`,
+        doctorId: null,
+        hospitalId,
+        fetcher: () => fetchDoctorRosterFromNetwork(hospitalId),
+    });
+}
+
+async function fetchDoctorRosterFromNetwork(hospitalId: string): Promise<DoctorRosterRow[]> {
     const { data, error } = await supabase
         .from("doctors")
         .select("id, name, specialization, is_clinic_admin, user_id, users(is_active)")
@@ -605,6 +641,16 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 export async function fetchClinicSetup(hospitalId: string): Promise<ClinicSetup> {
+    return readThroughValue({
+        kind: "admin",
+        key: `clinicSetup:${hospitalId}`,
+        doctorId: null,
+        hospitalId,
+        fetcher: () => fetchClinicSetupFromNetwork(hospitalId),
+    });
+}
+
+async function fetchClinicSetupFromNetwork(hospitalId: string): Promise<ClinicSetup> {
     const [hRes, docRes, staffRes, subRes] = await Promise.all([
         supabase.from("hospitals").select("name, clinic_mode").eq("id", hospitalId).maybeSingle(),
         supabase.from("doctors").select("id", { count: "exact", head: true }).eq("hospital_id", hospitalId),
@@ -664,6 +710,16 @@ export interface FeeSettings {
 }
 
 export async function fetchFeeSettings(hospitalId: string): Promise<FeeSettings> {
+    return readThroughValue({
+        kind: "admin",
+        key: `feeSettings:${hospitalId}`,
+        doctorId: null,
+        hospitalId,
+        fetcher: () => fetchFeeSettingsFromNetwork(hospitalId),
+    });
+}
+
+async function fetchFeeSettingsFromNetwork(hospitalId: string): Promise<FeeSettings> {
     const [hospitalRes, doctorsRes] = await Promise.all([
         supabase.from("hospitals")
             .select("currency, gst_enabled, gst_percent, allow_discount")
@@ -940,6 +996,21 @@ export async function fetchDoctorVisitRows(
     range: DateRange,
     limit = 60
 ): Promise<DoctorActivityRow[]> {
+    return readThroughValue({
+        kind: "admin",
+        key: `visitRows:${hospitalId}:${doctorId}:${range.from}:${range.to}:${limit}`,
+        doctorId,
+        hospitalId,
+        fetcher: () => fetchDoctorVisitRowsFromNetwork(hospitalId, doctorId, range, limit),
+    });
+}
+
+async function fetchDoctorVisitRowsFromNetwork(
+    hospitalId: string,
+    doctorId: string,
+    range: DateRange,
+    limit: number
+): Promise<DoctorActivityRow[]> {
     const { data, error } = await supabase
         .from("visits")
         .select("id, patient_id, created_at, status, patients ( name )")
@@ -989,6 +1060,21 @@ export async function fetchDoctorPrescriptionRows(
     range: DateRange,
     limit = 60
 ): Promise<DoctorActivityRow[]> {
+    return readThroughValue({
+        kind: "admin",
+        key: `rxRows:${hospitalId}:${doctorId}:${range.from}:${range.to}:${limit}`,
+        doctorId,
+        hospitalId,
+        fetcher: () => fetchDoctorPrescriptionRowsFromNetwork(hospitalId, doctorId, range, limit),
+    });
+}
+
+async function fetchDoctorPrescriptionRowsFromNetwork(
+    hospitalId: string,
+    doctorId: string,
+    range: DateRange,
+    limit: number
+): Promise<DoctorActivityRow[]> {
     const { data, error } = await supabase
         .from("prescriptions")
         .select("id, created_at, visits ( patient_id, patients ( name ) )")
@@ -1034,6 +1120,21 @@ export async function fetchNewPatientRows(
     range: DateRange,
     scope: AnalyticsScope = {},
     limit = 100
+): Promise<DoctorActivityRow[]> {
+    return readThroughValue({
+        kind: "admin",
+        key: `newPatientRows:${hospitalId}:${scope.doctorId ?? "clinic"}:${range.from}:${range.to}:${limit}`,
+        doctorId: scope.doctorId ?? null,
+        hospitalId,
+        fetcher: () => fetchNewPatientRowsFromNetwork(hospitalId, range, scope, limit),
+    });
+}
+
+async function fetchNewPatientRowsFromNetwork(
+    hospitalId: string,
+    range: DateRange,
+    scope: AnalyticsScope,
+    limit: number
 ): Promise<DoctorActivityRow[]> {
     const windowStart = startInstant(range.from);
     const windowEnd = endInstantExclusive(range.to);

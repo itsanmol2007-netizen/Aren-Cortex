@@ -10,8 +10,8 @@ which areas are affected, types what happened, and sends. That produces **one
 row in `public.support_requests`** and **one email to support@arenode.com**.
 
 **The row is the ticket. The email is only the notification.** They are
-written in that order on purpose — if Zoho is down, AREN loses the email and
-still has the request. Never treat the mailbox as the record.
+written in that order on purpose — if Amazon SES is temporarily unreachable, AREN loses the email notification and
+still has the request in the database. Never treat the mailbox as the record.
 
 ## The one rule that matters
 

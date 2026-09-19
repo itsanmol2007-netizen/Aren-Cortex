@@ -1,45 +1,35 @@
-// support-notify — emails AREN (Zoho Mail) about an operational event a
+// support-notify — emails AREN (Amazon SES) about an operational event a
 // signed-in doctor's own action raised: a credit recharge request, its
 // withdrawal, a low-credit warning, or a support request.
 //
-// MIGRATED 2026-09-08 from server/messaging/routes.js's `POST
-// /api/support/notify` (+ server/email/{notify,templates,zoho}.js) to a
-// Supabase Edge Function — same reasoning as `admin-staff`: one platform
-// instead of two, and Anmol wants new server-side work to land here going
-// forward rather than growing the separate Express process.
+// MIGRATED to Amazon SES (2026-09-15) from Zoho REST API.
 //
 // SCOPE, on purpose: only the four "kinds" a BROWSER can ever raise
 // (`recharge_request`, `recharge_cancelled`, `low_credit`, `support_request`
-// — the old route's own `CLIENT_KINDS` allow-list). `message_failed`,
-// `provider_error`, `patient_message` and `credits_exhausted` stay on
-// server/email/ for now: all four are raised from INSIDE the WhatsApp send
-// path (server/messaging/service.js), which still needs real Meta
-// credentials nobody has yet (docs/SESSION-HANDOFF.md). Moving them now
-// would be porting code with no way to exercise it. When WhatsApp moves
-// here too, fold those templates in rather than forking this file.
+// — the old route's own `CLIENT_KINDS` allow-list).
 //
 // Same two-client split as `admin-staff`:
 //   - `callerClient` resolves who is calling THROUGH RLS — "ids come from
 //     the session, so an alert can only ever be about the caller's own
-//     clinic and their own wallet" (the original route's own comment,
-//     still true here).
+//     clinic and their own wallet".
 //   - `adminClient` (service-role, auto-injected) does everything the
 //     original `notify.js` already did with `getSupabase()`: reading
 //     doctor/hospital/balance/recharge-request context and writing
-//     `support_email_log`. That was always privileged, cross-clinic-shaped
-//     logic, not something RLS was ever meant to gate.
+//     `support_email_log`.
 //
 // Needs these as Edge Function secrets (`supabase secrets set`, or the
-// Supabase dashboard's Edge Functions → Secrets screen) — NEVER pasted into
-// a chat, a commit, or this file:
-//   ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN, ZOHO_ACCOUNT_ID
-//   ZOHO_FROM              (defaults to care@arenode.com if unset)
+// Supabase dashboard's Edge Functions → Secrets screen):
+//   SES_AWS_ACCESS_KEY_ID
+//   SES_AWS_SECRET_ACCESS_KEY
+//   SES_AWS_REGION         (defaults to ap-south-1 if unset)
+//   SES_FROM               (defaults to care@arenode.com if unset)
 //   SUPPORT_NOTIFY_EMAIL   (defaults to support@arenode.com if unset)
 // `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are
 // already there automatically — do not set those.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SESClient, SendEmailCommand } from 'npm:@aws-sdk/client-ses@3';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -53,106 +43,45 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-// ── Zoho transport (server/email/zoho.js, ported) ──────────────────────────
-//
-// Two facts that will waste an afternoon if forgotten (carried over from
-// the original file's own warning):
-// 1. The account is in Zoho's INDIA data centre — a token from
-//    accounts.zoho.in works ONLY against accounts.zoho.in / mail.zoho.in.
-// 2. The from-address is fixed to a mailbox the Zoho account owns
-//    (care@arenode.com or a confirmed alias).
+// ── Amazon SES transport ───────────────────────────────────────────────────
 
-const ZOHO_TOKEN_URL = 'https://accounts.zoho.in/oauth/v2/token';
-const ZOHO_MAIL_BASE = 'https://mail.zoho.in/api/accounts';
-
-// Edge Functions can reuse a warm instance across invocations the same way
-// a long-lived Node process does, so this module-scope cache is the same
-// optimization the original file relied on — just not GUARANTEED to
-// survive between calls the way it was on a single always-on server. A
-// cold instance re-exchanges the refresh token, which Zoho's token
-// endpoint can handle; what it can't handle is doing that on every send
-// under real volume, which this still prevents within a warm instance.
-let tokenCache: { value: string; expiresAt: number } | null = null;
+let sesClient: SESClient | null = null;
+function getSesClient(): SESClient {
+  if (!sesClient) {
+    sesClient = new SESClient({
+      region: Deno.env.get('SES_AWS_REGION') || 'ap-south-1',
+      credentials: {
+        accessKeyId: Deno.env.get('SES_AWS_ACCESS_KEY_ID')!,
+        secretAccessKey: Deno.env.get('SES_AWS_SECRET_ACCESS_KEY')!,
+      },
+    });
+  }
+  return sesClient;
+}
 
 function emailConfigured(): boolean {
   return Boolean(
-    Deno.env.get('ZOHO_CLIENT_ID') &&
-    Deno.env.get('ZOHO_CLIENT_SECRET') &&
-    Deno.env.get('ZOHO_REFRESH_TOKEN') &&
-    Deno.env.get('ZOHO_ACCOUNT_ID')
+    Deno.env.get('SES_AWS_ACCESS_KEY_ID') &&
+    Deno.env.get('SES_AWS_SECRET_ACCESS_KEY')
   );
 }
 
-function need(name: string): string {
-  const v = Deno.env.get(name);
-  if (!v) throw new Error(`missing secret: ${name}`);
-  return v;
-}
-
-async function getZohoAccessToken(force = false): Promise<string> {
-  if (!force && tokenCache && tokenCache.expiresAt > Date.now() + 60_000) {
-    return tokenCache.value;
-  }
-
-  const body = new URLSearchParams({
-    refresh_token: need('ZOHO_REFRESH_TOKEN'),
-    client_id: need('ZOHO_CLIENT_ID'),
-    client_secret: need('ZOHO_CLIENT_SECRET'),
-    grant_type: 'refresh_token',
-  });
-
-  const r = await fetch(ZOHO_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data.access_token) {
-    throw new Error(`Zoho token exchange failed: HTTP ${r.status} ${JSON.stringify(data).slice(0, 300)}`);
-  }
-
-  tokenCache = {
-    value: data.access_token,
-    expiresAt: Date.now() + (Number(data.expires_in) || 3600) * 1000,
-  };
-  return tokenCache.value;
-}
-
-async function sendZohoMail({ to, subject, html, fromName }: {
+async function sendSesMail({ to, subject, html, fromName }: {
   to: string; subject: string; html: string; fromName?: string;
 }): Promise<void> {
-  const accountId = need('ZOHO_ACCOUNT_ID');
-  const fromBare = Deno.env.get('ZOHO_FROM') || 'care@arenode.com';
+  const client = getSesClient();
+  const fromBare = Deno.env.get('SES_FROM') || 'care@arenode.com';
   const fromAddress = fromName ? `${fromName} <${fromBare}>` : fromBare;
 
-  async function attempt(token: string) {
-    const r = await fetch(`${ZOHO_MAIL_BASE}/${accountId}/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ fromAddress, toAddress: to, subject, content: html, mailFormat: 'html' }),
-    });
-    const data = await r.json().catch(() => ({}));
-    return { httpStatus: r.status, zohoCode: data?.status?.code, desc: data?.status?.description };
-  }
-
-  let token = await getZohoAccessToken();
-  let res = await attempt(token);
-  if (res.httpStatus === 401) {
-    token = await getZohoAccessToken(true);
-    res = await attempt(token);
-  }
-
-  // Zoho answers HTTP 200 with a failure code IN THE BODY on a rejected
-  // send — trusting the status line alone would report success for mail
-  // that was never accepted.
-  const ok = res.httpStatus === 200 && res.zohoCode === 200;
-  if (!ok) {
-    throw new Error(`Zoho send failed: HTTP ${res.httpStatus} code ${res.zohoCode} ${res.desc || ''}`);
-  }
+  const command = new SendEmailCommand({
+    Source: fromAddress,
+    Destination: { ToAddresses: [to] },
+    Message: {
+      Subject: { Data: subject, Charset: 'UTF-8' },
+      Body: { Html: { Data: html, Charset: 'UTF-8' } },
+    },
+  });
+  await client.send(command);
 }
 
 // ── What an email says (server/email/templates.js, the 4 reachable kinds) ──
@@ -263,7 +192,7 @@ const TEMPLATES: Record<string, (ctx: Ctx) => { subject: string; html: string }>
    * table nobody has to read unless the words above it were not enough.
    *
    * `replyTo` is rendered as a mailto: link rather than set as a real
-   * Reply-To header: the send goes out on AREN's own Zoho mailbox, and a
+   * Reply-To header: the send goes out on AREN's own SES identity, and a
    * header claiming a doctor-supplied address would be a spoofable field on
    * outbound mail AREN owns. One click either way; no forged header.
    */
@@ -465,7 +394,7 @@ serve(async (req: Request) => {
     //
     // Order matters and is the whole point of the table. `support_requests`
     // is the record of what a doctor asked; the email is how AREN finds out
-    // about it. Writing the row first means a Zoho outage costs the
+    // about it. Writing the row first means an SES outage costs the
     // notification and never the request — the support dashboard still has
     // it, and it can be chased. The other order would quietly put the mailbox
     // back in charge of the truth.
@@ -504,23 +433,24 @@ serve(async (req: Request) => {
     //
     // This used to read `(body?.to as string) || …`, inherited from the
     // Express route it was ported from. Any signed-in user could therefore
-    // hand it a recipient, which made AREN's authenticated Zoho account able
+    // hand it a recipient, which made an authenticated account able
     // to send attacker-chosen HTML to an attacker-chosen address over AREN's
     // own domain and reputation. Nothing in the product ever passed it.
     // Removed 2026-09-11.
     const to = Deno.env.get('SUPPORT_NOTIFY_EMAIL') || 'support@arenode.com';
+    const { subject, html } = TEMPLATES[kind](ctx);
 
     // Same rule as the original: a caller's own action (filing a recharge
     // request, say) already succeeded before this ever runs, so a failed
     // or unconfigured email is never reported back to them as failure —
     // it is AREN's own problem to notice in `support_email_log`.
     if (!emailConfigured()) {
-      console.warn(`[support-notify] Zoho not configured — would have sent to ${to}: ${subject}`);
+      console.warn(`[support-notify] Amazon SES not configured — would have sent to ${to}: ${subject}`);
       return jsonResponse({ ok: true, skipped: 'not_configured' });
     }
 
     try {
-      await sendZohoMail({ to, subject, html, fromName: FROM_NAME });
+      await sendSesMail({ to, subject, html, fromName: FROM_NAME });
       await record(adminClient, { kind, to, subject, status: 'sent', ctx });
       await stampRequest(adminClient, requestRowId, 'sent', null);
     } catch (e) {

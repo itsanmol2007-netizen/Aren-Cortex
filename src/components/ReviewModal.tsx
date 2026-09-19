@@ -228,6 +228,9 @@ export default function ReviewModal({
   useOverlayFocus(bodyRef);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
+  // Same reasoning as `logoError` just above — a signature URL existing
+  // isn't the same as it having actually loaded (offline, not yet cached).
+  const [sigError, setSigError] = useState(false);
   // Separate from `logoError` — that one tracks the CLINIC's own logo/photo
   // failing to load; this tracks the unrelated AREN wordmark in the footer.
   // The two used to share one flag, so a clinic whose own logo 404'd also
@@ -934,8 +937,9 @@ export default function ReviewModal({
                     there is room (matches the A4/A5 print layout). */}
                 <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 pt-4 pb-3">
                   {prescriptionConfig.showSignature && (
-                    signatureUrl ? (
+                    signatureUrl && !sigError ? (
                       <img src={signatureUrl} alt="Signature"
+                        onError={() => setSigError(true)}
                         className="h-12 w-full object-contain object-left mb-2.5" />
                     ) : (
                       <div className="h-12 border-b-2 border-gray-300 mb-2.5" />

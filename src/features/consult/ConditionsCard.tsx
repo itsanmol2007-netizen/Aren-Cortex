@@ -228,14 +228,46 @@ export function ConditionsCard({
         }
     };
 
+    const isConditionConfirmed = (intent: PersonalizedIntent) => {
+        if (acceptedIntentIds.has(intent.intentId)) return true;
+        const target = intent.label.trim().toLowerCase();
+        return diagnoses.some((d) => d.trim().toLowerCase() === target);
+    };
+
+    const sortedIntents = useMemo(() => {
+        const confirmed: PersonalizedIntent[] = [];
+        const unconfirmed: PersonalizedIntent[] = [];
+        for (const i of intents) {
+            if (isConditionConfirmed(i)) {
+                confirmed.push(i);
+            } else {
+                unconfirmed.push(i);
+            }
+        }
+        return [...confirmed, ...unconfirmed];
+    }, [intents, acceptedIntentIds, diagnoses]);
+
     const shown = expanded
-        ? intents
+        ? sortedIntents
         : [
-            ...intents.slice(0, CAP),
+            ...sortedIntents.slice(0, CAP),
             // Anything already confirmed stays visible regardless of the cap.
-            ...intents.slice(CAP).filter((i) => acceptedIntentIds.has(i.intentId)),
+            ...sortedIntents.slice(CAP).filter(isConditionConfirmed),
         ];
     const hidden = intents.length - shown.length;
+
+    /**
+     * Confirmed diagnoses (from Repeat Rx, past visits, or manual additions) that
+     * do not correspond to an engine-ranked intent in `shown`.
+     * Pinned prominently at the top of the Assessment list so the doctor
+     * always has full visibility and 1-click removal of every confirmed diagnosis.
+     */
+    const unrankedConfirmed = useMemo(() => {
+        return diagnoses.filter((d) => {
+            const target = d.trim().toLowerCase();
+            return !shown.some((i) => i.label.trim().toLowerCase() === target);
+        });
+    }, [diagnoses, shown]);
 
     // Stage 0 of the cascade — the head, so it starts at 0ms. Assessment is
     // what the doctor's signals resolve into first; everything downstream
@@ -277,7 +309,7 @@ export function ConditionsCard({
             );
         }
 
-        if (!hasChart) {
+        if (!hasChart && unrankedConfirmed.length === 0) {
             return (
                 <div className="cs-empty">
                     <BlankConditionArt />
@@ -287,14 +319,7 @@ export function ConditionsCard({
             );
         }
 
-        // §1 follow-up, 2026-08-24: "added assessments should be visible in
-        // the ranked/suggested assessment list too on the very top." A free
-        // diagnosis has no engine rank to sit at, so it is not folded into
-        // `shown` — it is pinned ABOVE the ranked list instead, always, so
-        // confirming it once never has to be repeated to find it again.
-        const freeDiagnoses = diagnoses.filter(isFreeLabel);
-
-        if (intents.length === 0 && freeDiagnoses.length === 0) {
+        if (intents.length === 0 && unrankedConfirmed.length === 0) {
             return (
                 <div className="cs-empty">
                     <BlankConditionArt />
@@ -305,9 +330,9 @@ export function ConditionsCard({
         }
 
         return [
-            ...freeDiagnoses.map((label, i) => (
+            ...unrankedConfirmed.map((label, i) => (
                 <FreeConditionRow
-                    key={`free-${label}`}
+                    key={`unranked-${label}`}
                     label={label}
                     cascadeDelay={cascade.delayOf(i)}
                     onRemove={() => onRemoveDiagnosis(label)}
@@ -318,9 +343,9 @@ export function ConditionsCard({
                 key={intent.intentId}
                 intent={intent}
                 rank={i + 1}
-                /* Continues the run started by the free-text rows above, so
+                /* Continues the run started by the confirmed rows above, so
                    the wave never restarts halfway down one list. */
-                cascadeDelay={cascade.delayOf(freeDiagnoses.length + i)}
+                cascadeDelay={cascade.delayOf(unrankedConfirmed.length + i)}
                 // A list of one has no other side to the comparison, and the
                 // word could only ever read "High relevance" however weakly the
                 // engine scored it.
@@ -329,7 +354,7 @@ export function ConditionsCard({
                         ? RELEVANCE_TEXT[relevanceOf(rankFillOf(intent, topScore))]
                         : null
                 }
-                confirmed={acceptedIntentIds.has(intent.intentId)}
+                confirmed={isConditionConfirmed(intent)}
                 acknowledged={acknowledged.has(intent.intentId)}
                 onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
                 onExplain={(rect) => onExplain(intent, rect)}
@@ -358,11 +383,8 @@ export function ConditionsCard({
     const [primaryDx, ...secondaryDx] = diagnoses;
 
     // Whether there is anything at all for the ranked column to show — an
-    // engine rank, OR a free-text diagnosis pinned above them (body()'s own
-    // `freeDiagnoses`, recomputed there; same check, just needed a level
-    // higher too, to gate `.cs-ranked-head` below without hiding it over a
-    // free-text-only chart that has real rows to show).
-    const hasAnyConditions = intents.length > 0 || diagnoses.some(isFreeLabel);
+    // engine rank, OR a confirmed diagnosis pinned above them.
+    const hasAnyConditions = intents.length > 0 || diagnoses.length > 0;
 
     return (
         <section
@@ -389,17 +411,10 @@ export function ConditionsCard({
                 the SAME height Assessment's now sits at, not a level below
                 it.
 
-                Collapses to one column while searching — the right column
-                would have nothing to show under the ranked list's results
-                anyway, and full width serves the search itself better. */}
-            <div
-                className={
-                    "px-4 pt-3.5 " +
-                    (search.isSearching
-                        ? "flex flex-col"
-                        : "grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]")
-                }
-            >
+                Retains the 2-column layout while searching so Assessment search
+                stays confined to the left column and the right column (sideSlot
+                or confirmed diagnoses) remains visible side-by-side. */}
+            <div className="grid gap-4 px-4 pt-3.5 md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
                 {/* left: Assessment's identity, then either search results or
                     the ranked list */}
                 <div className="min-w-0 flex flex-col">
@@ -452,8 +467,13 @@ export function ConditionsCard({
                         /* Same ref on both branches: only one of them is
                            mounted at a time, so the cursor walks whichever
                            list the card is currently showing — ranked
-                           conditions, or search hits. */
-                        <div className="mt-3" ref={listRef}>{body()}</div>
+                           conditions, or search hits. Bounded within Assessment column. */
+                        <div
+                            className="mt-3 flex flex-col gap-1.5 max-h-[300px] overflow-y-auto pr-1"
+                            ref={listRef}
+                        >
+                            {body()}
+                        </div>
                     ) : (
                         <>
                             {/* `.cs-ranked-*` — shared with SuggestionsCard's
@@ -566,7 +586,7 @@ export function ConditionsCard({
                                    those are a direct answer to typing, not the
                                    engine re-reasoning. Unbound while searching,
                                    so they keep the plain 0ms row stagger. */
-                                {...(search.isSearching ? {} : cascade)}
+                                {...(search.isSearching ? {} : cascade.binding)}
                             >
                                 {body()}
                             </motion.div>
@@ -594,67 +614,64 @@ export function ConditionsCard({
                 </div>
 
                 {/* right: the specialty's own instrument, when it has one —
-                    otherwise what has been taken. See `sideSlot`. Hidden
-                    while searching (see the grid comment above). */}
-                {!search.isSearching && (
-                    sideSlot ? (
-                        <div className="cs-cond-side flex min-w-0 flex-col">{sideSlot}</div>
-                    ) : (
-                        /* A flex column so the blank state can take the space
-                           the ranked list decides. This column is as tall as
-                           its neighbour by grid, and with the blank pinned
-                           under the heading a four-row chart left ~230px of
-                           white below one line of text — the largest single
-                           void left on a WORKING screen rather than an empty
-                           one. */
-                        <div className="flex min-w-0 flex-col">
-                            <div className="flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
-                                <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-label)]">
-                                    Selected / confirmed
+                    otherwise what has been taken. See `sideSlot`. */}
+                {sideSlot ? (
+                    <div className="cs-cond-side flex min-w-0 flex-col">{sideSlot}</div>
+                ) : (
+                    /* A flex column so the blank state can take the space
+                       the ranked list decides. This column is as tall as
+                       its neighbour by grid, and with the blank pinned
+                       under the heading a four-row chart left ~230px of
+                       white below one line of text — the largest single
+                       void left on a WORKING screen rather than an empty
+                       one. */
+                    <div className="flex min-w-0 flex-col">
+                        <div className="flex items-baseline gap-2 border-b border-[var(--cs-line)] pb-1.5">
+                            <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[var(--cs-label)]">
+                                Selected / confirmed
+                            </span>
+                            {diagnoses.length > 0 && (
+                                <span className="ml-auto rounded-[6px] bg-[var(--cs-blue-soft)] px-1.5 py-[2px] text-[11px] font-semibold text-[var(--cs-blue)]">
+                                    {diagnoses.length} selected
                                 </span>
-                                {diagnoses.length > 0 && (
-                                    <span className="ml-auto rounded-[6px] bg-[var(--cs-blue-soft)] px-1.5 py-[2px] text-[11px] font-semibold text-[var(--cs-blue)]">
-                                        {diagnoses.length} selected
-                                    </span>
-                                )}
-                            </div>
-
-                            {diagnoses.length === 0 ? (
-                                /* py-7 was 56px of padding around one line, in a
-                                   column whose neighbour is already short. */
-                                <div className="flex flex-1 flex-col items-center justify-center gap-1.5 py-4 text-center">
-                                    <BlankSelectedArt />
-                                    <span className="text-[12.5px] font-[460] text-[var(--cs-muted)]">
-                                        Confirm a condition from the ranked list
-                                    </span>
-                                </div>
-                            ) : (
-                                <div className="mt-2 flex flex-col gap-1.5">
-                                    {/* First confirmed is PRIMARY, the rest are
-                                        secondary. A convention, never a derivation:
-                                        the engine does not decide which diagnosis
-                                        is primary, because that is the one
-                                        judgement here that is entirely the
-                                        doctor's. */}
-                                    {primaryDx && (
-                                        <DxChip
-                                            label={primaryDx}
-                                            tone="primary"
-                                            onRemove={() => onRemoveDiagnosis(primaryDx)}
-                                        />
-                                    )}
-                                    {secondaryDx.map((dx) => (
-                                        <DxChip
-                                            key={dx}
-                                            label={dx}
-                                            tone="secondary"
-                                            onRemove={() => onRemoveDiagnosis(dx)}
-                                        />
-                                    ))}
-                                </div>
                             )}
                         </div>
-                    )
+
+                        {diagnoses.length === 0 ? (
+                            /* py-7 was 56px of padding around one line, in a
+                               column whose neighbour is already short. */
+                            <div className="flex flex-1 flex-col items-center justify-center gap-1.5 py-4 text-center">
+                                <BlankSelectedArt />
+                                <span className="text-[12.5px] font-[460] text-[var(--cs-muted)]">
+                                    Confirm a condition from the ranked list
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="mt-2 flex flex-col gap-1.5">
+                                {/* First confirmed is PRIMARY, the rest are
+                                    secondary. A convention, never a derivation:
+                                    the engine does not decide which diagnosis
+                                    is primary, because that is the one
+                                    judgement here that is entirely the
+                                    doctor's. */}
+                                {primaryDx && (
+                                    <DxChip
+                                        label={primaryDx}
+                                        tone="primary"
+                                        onRemove={() => onRemoveDiagnosis(primaryDx)}
+                                    />
+                                )}
+                                {secondaryDx.map((dx) => (
+                                    <DxChip
+                                        key={dx}
+                                        label={dx}
+                                        tone="secondary"
+                                        onRemove={() => onRemoveDiagnosis(dx)}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 )}
             </div>
         </section>
@@ -766,23 +783,20 @@ function FreeConditionRow({ label, onRemove, cascadeDelay }: {
 }) {
     const reduce = useReducedMotion();
     return (
-        // A sibling of ConditionRow in the same list — it has to slide on
-        // the same terms, or the ranked rows would travel around a pinned
-        // free-text row that jumps.
         <motion.div
             {...cascadeRowProps(cascadeDelay, reduce)}
-            className="flex items-center gap-2.5 rounded-lg border border-[#e6ddfb] bg-[#faf8ff] px-2.5 py-2"
+            className="flex items-center gap-2.5 rounded-lg border border-[#c4b5fd] bg-[#faf7ff] px-2.5 py-2"
         >
             <span
                 aria-hidden="true"
-                className="grid size-[22px] flex-none place-items-center rounded-full bg-[linear-gradient(180deg,#a78bfa_0%,#8b5cf6_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+                className="grid size-[22px] flex-none place-items-center rounded-full bg-[linear-gradient(180deg,#7c3aed_0%,#6d28d9_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
             >
                 <Check size={12} />
             </span>
             <div className="min-w-0 flex-1">
-                <span className="text-[13.5px] font-semibold leading-tight text-[#5b21b6]">{label}</span>
-                <span className="mt-[1px] block text-[11px] font-semibold text-[#8b5cf6]">
-                    Your term — not from the catalogue
+                <span className="text-[13.5px] font-bold leading-tight text-[#4c1d95]">{label}</span>
+                <span className="mt-[1px] block text-[11px] font-semibold text-[#6d28d9]">
+                    Confirmed diagnosis
                 </span>
             </div>
             <button
@@ -790,9 +804,9 @@ function FreeConditionRow({ label, onRemove, cascadeDelay }: {
                 aria-label={`Remove ${label} from the assessment`}
                 title="Click to remove"
                 onClick={onRemove}
-                className="grid size-[22px] flex-none place-items-center rounded-full border-0 bg-[#ede4fd] text-[#7c3aed] transition-colors duration-150 hover:bg-[#fee2e2] hover:text-[#dc2626]"
+                className="grid size-[24px] flex-none place-items-center rounded-full border-0 bg-[#ede4fd] text-[#6d28d9] transition-colors duration-150 hover:bg-[#fee2e2] hover:text-[#dc2626]"
             >
-                <X size={13} />
+                <X size={14} />
             </button>
         </motion.div>
     );

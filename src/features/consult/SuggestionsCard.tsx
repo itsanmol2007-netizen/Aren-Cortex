@@ -228,16 +228,21 @@ export function SuggestionsCard({
     const freeKey = (type: DoctorFreeTermType, label: string) => `${type}:${label}`;
     const isFreeLabel = (type: DoctorFreeTermType, label: string) =>
         freeAddedNow.has(freeKey(type, label)) || freeTerms.some((f) => f.type === type && f.label === label);
-    const isTaken = (type: DoctorFreeTermType, label: string): boolean => {
-        if (type === "test") return selectedTests.includes(label);
-        if (type === "referral") return adviceLines.includes(`Refer to ${label}`);
-        return adviceLines.includes(label); // advice
+
+    const isTaken = (type: DoctorFreeTermType | IntentType, label: string): boolean => {
+        const target = label.trim().toLowerCase();
+        if (type === "test") return selectedTests.some((t) => t.trim().toLowerCase() === target);
+        if (type === "referral") return adviceLines.some((a) => a.trim().toLowerCase().includes(target));
+        if (type === "advice") return adviceLines.some((a) => a.trim().toLowerCase() === target);
+        return false;
     };
+
     // `intentId` is unused by every branch `removeAcceptedIntent` (the only
     // thing ever passed as `onRemove`) takes for test/referral/advice — see
     // its own doc comment in useConsultPlan.ts — so a free term's removal
     // reuses the SAME dispatcher with a dummy id, no second removal path.
     const removeFree = (type: DoctorFreeTermType, label: string) => onRemove?.(0, type, label);
+
     // The sections this instance renders, in the caller's order.
     const SECTIONS = useMemo(
         () =>
@@ -248,10 +253,12 @@ export function SuggestionsCard({
                 : CATALOGUE.filter((s) => s.type !== "medicine"),
         [types]
     );
+
     const SEARCH_TYPES = useMemo(() => SECTIONS.map((s) => s.type), [SECTIONS]);
     // See MULTI_TYPE_ROW_H's doc comment — the row is a different real
     // height depending on whether the kind label is showing.
     const ROW_H = SECTIONS.length > 1 ? MULTI_TYPE_ROW_H : RANKED_ROW_H;
+
     /**
      * Which category is in view — §3, 2026-08-24 (was: which category the
      * search box was scoped to, via a `<select>` that had no effect on
@@ -269,6 +276,41 @@ export function SuggestionsCard({
      */
     const [scope, setScope] = useState<IntentType | null>(null);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
+
+    /**
+     * Selected tests and advice lines (from Repeat Rx, past visits, or manual additions) that
+     * do not correspond to an engine-ranked intent in `byType`.
+     * Pinned prominently at the top of the Suggestions list so the doctor
+     * always has full visibility and 1-click removal of every ordered test and advice line.
+     */
+    const unrankedTaken = useMemo(() => {
+        const list: { type: IntentType; label: string; icon: React.ReactNode; verb: string }[] = [];
+        // Selected Tests
+        if (!scope || scope === "test") {
+            const testSection = SECTIONS.find((s) => s.type === "test");
+            if (testSection) {
+                const rankedLabels = new Set((byType.test ?? []).map((i) => i.label.trim().toLowerCase()));
+                for (const t of selectedTests) {
+                    if (!rankedLabels.has(t.trim().toLowerCase())) {
+                        list.push({ type: "test", label: t, icon: testSection.icon, verb: testSection.verb });
+                    }
+                }
+            }
+        }
+        // Advice Lines
+        if (!scope || scope === "advice") {
+            const adviceSection = SECTIONS.find((s) => s.type === "advice");
+            if (adviceSection) {
+                const rankedLabels = new Set((byType.advice ?? []).map((i) => i.label.trim().toLowerCase()));
+                for (const a of adviceLines) {
+                    if (!rankedLabels.has(a.trim().toLowerCase())) {
+                        list.push({ type: "advice", label: a, icon: adviceSection.icon, verb: adviceSection.verb });
+                    }
+                }
+            }
+        }
+        return list;
+    }, [scope, SECTIONS, selectedTests, adviceLines, byType]);
     /**
      * Which of this instance's categories actually have something ranked
      * right now — the contextual half of the filter row. A facility whose
@@ -371,6 +413,11 @@ export function SuggestionsCard({
         }
     };
 
+    const isIntentTaken = (intent: PersonalizedIntent) => {
+        if (acceptedIntentIds.has(intent.intentId)) return true;
+        return isTaken(intent.type, intent.label);
+    };
+
     /**
      * One flat, ordered list rather than four sub-lists.
      *
@@ -378,18 +425,27 @@ export function SuggestionsCard({
      * sections in turn. The type stays legible on every row, so nothing is lost
      * by flattening.
      */
-    // Every row of every section, always — the panel is bounded by the output
-    // strip and scrolls internally, so there is nothing to expand into. The
-    // per-type CAP that used to sit here existed only to keep this card short
-    // beside its neighbour; in a stacked strip that job belongs to the scroll.
     const rows = useMemo(() => {
         const out: { intent: PersonalizedIntent; section: (typeof SECTIONS)[number] }[] = [];
         for (const section of SECTIONS) {
             if (scope && section.type !== scope) continue;
             for (const intent of byType[section.type] ?? []) out.push({ intent, section });
         }
-        return out;
-    }, [byType, SECTIONS, scope]);
+
+        const pins: typeof out = [];
+        const accepted: typeof out = [];
+        const rest: typeof out = [];
+        for (const r of out) {
+            if (isPinned?.(r.intent.intentId)) {
+                pins.push(r);
+            } else if (isIntentTaken(r.intent)) {
+                accepted.push(r);
+            } else {
+                rest.push(r);
+            }
+        }
+        return [...pins, ...accepted, ...rest];
+    }, [byType, SECTIONS, scope, isPinned, acceptedIntentIds, selectedTests, adviceLines]);
 
     const total = useMemo(
         () => SECTIONS
@@ -412,10 +468,10 @@ export function SuggestionsCard({
     const visibleRows = useMemo(
         () => (
             capped != null && !showAllCapped
-                ? rows.filter((r, i) => i < capped || acceptedIntentIds.has(r.intent.intentId))
+                ? rows.filter((r, i) => i < capped || isIntentTaken(r.intent))
                 : rows
         ),
-        [rows, capped, showAllCapped, acceptedIntentIds]
+        [rows, capped, showAllCapped, selectedTests, adviceLines, acceptedIntentIds]
     );
 
     // Keyed on the rendered rows, so "Show all" cascades the newly revealed
@@ -447,7 +503,8 @@ export function SuggestionsCard({
                         of the follow-up: "this option should look like just
                         another ranked option belonging to the same list." */}
                     {effectiveType && onAddFreeText && !search.loading && (
-                        <div className="cs-freeterm">
+                        <div className="cs-freeterm cs-freeterm-search">
+                            <span className="cs-freeterm-label">Add to {effectiveType}</span>
                             {matchedFreeTerms.map((f) => (
                                 <FreeMatchRow
                                     key={f.label}
@@ -510,7 +567,7 @@ export function SuggestionsCard({
             );
         }
 
-        if (!hasChart) {
+        if (!hasChart && unrankedTaken.length === 0) {
             return (
                 <div className="cs-empty">
                     <BlankTestArt />
@@ -541,41 +598,25 @@ export function SuggestionsCard({
             </div>
         ) : null;
 
-        // §1 follow-up, 2026-08-24: "added assessments should be visible in
-        // the ranked/suggested... list too on the very top" — the same fix
-        // as ConditionsCard's `freeDiagnoses`, for whichever type is in
-        // view. A free term has no engine rank to sit at, so it is pinned
-        // ABOVE the ranked rows rather than folded into them.
-        const freePinned = effectiveType
-            ? [
-                ...new Set([
-                    ...freeTerms.filter((f) => f.type === effectiveType).map((f) => f.label),
-                    ...[...freeAddedNow]
-                        .filter((k) => k.startsWith(`${effectiveType}:`))
-                        .map((k) => k.slice(effectiveType.length + 1)),
-                ]),
-              ].filter((label) => isTaken(effectiveType, label))
-            : [];
-        const freeRows = freePinned.map((label) => (
+        const unrankedNodes = unrankedTaken.map(({ type, label, icon }) => (
             <FreeSuggestionRow
-                key={`free-${effectiveType}-${label}`}
+                key={`unranked-${type}-${label}`}
                 label={label}
-                onRemove={() => removeFree(effectiveType!, label)}
+                icon={icon}
+                type={type}
+                onRemove={() => removeFree(type as DoctorFreeTermType, label)}
             />
         ));
 
-        if (rows.length === 0) {
+        if (rows.length === 0 && unrankedTaken.length === 0) {
             return (
                 <>
-                    {freeRows}
                     {freeTermsStrip}
-                    {freeRows.length === 0 && (
-                        <div className="cs-empty">
-                            <BlankTestArt />
-                            <strong>Nothing else to suggest for this chart</strong>
-                            <span>Search above to add one directly.</span>
-                        </div>
-                    )}
+                    <div className="cs-empty">
+                        <BlankTestArt />
+                        <strong>Nothing else to suggest for this chart</strong>
+                        <span>Search above to add one directly.</span>
+                    </div>
                 </>
             );
         }
@@ -585,12 +626,13 @@ export function SuggestionsCard({
             const fill = rankFillOf(intent, topOfType.get(section.type) ?? 0);
             // A section of one has no other side to the comparison.
             const relevance = list.length > 1 ? relevanceOf(fill) : null;
+            const isAdded = isIntentTaken(intent);
 
             return (
                 <SuggestionRow
                     key={intent.intentId}
                     intent={intent}
-                    cascadeDelay={cascade.delayOf(i)}
+                    cascadeDelay={cascade.delayOf(unrankedTaken.length + i)}
                     // Redundant on every single row when this instance only
                     // ever shows ONE type — the panel's own title already
                     // says "Investigations"/"Exercise Plans"/etc. Only worth
@@ -600,7 +642,7 @@ export function SuggestionsCard({
                     verb={section.verb}
                     icon={section.icon}
                     relevance={relevance ? RELEVANCE_TEXT[relevance] : null}
-                    added={acceptedIntentIds.has(intent.intentId)}
+                    added={isAdded}
                     acknowledged={acknowledged.has(intent.intentId)}
                     onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
                     onExplain={(rect) => onExplain(intent, rect)}
@@ -625,7 +667,7 @@ export function SuggestionsCard({
         // node the caller drops straight into `.cs-list` — which is why it
         // used to render INSIDE the capped/scrolling box instead of as the
         // box's own footer. It is a sibling now; see the render below.
-        return [...freeRows, freeTermsStrip, ...rowNodes];
+        return [...unrankedNodes, freeTermsStrip, ...rowNodes];
     };
 
     return (
@@ -819,7 +861,7 @@ export function SuggestionsCard({
                         }
                         ref={listRef}
                         layoutScroll
-                        {...cascade}
+                        {...cascade.binding}
                     >
                         {body()}
                     </motion.div>
@@ -930,27 +972,44 @@ function SuggestionRow({
 }
 
 /**
- * A confirmed FREE-TEXT entry, pinned above the ranked rows — §1 follow-up,
- * 2026-08-24. Same shape as `SuggestionRow` (`.cs-sug`), violet instead of
- * the row's type colour, so it reads as part of the same list rather than a
- * second kind of thing bolted above it.
+ * A confirmed entry (free-text or pre-filled from past visit / Repeat Rx),
+ * pinned above the ranked rows. Same shape as `SuggestionRow` (`.cs-sug`),
+ * colored appropriately by section or violet for doctor terms.
  */
-function FreeSuggestionRow({ label, onRemove }: { label: string; onRemove: () => void }) {
+function FreeSuggestionRow({
+    label,
+    icon,
+    type,
+    onRemove,
+}: {
+    label: string;
+    icon?: React.ReactNode;
+    type?: string;
+    onRemove: () => void;
+}) {
+    const kindLabel = type === "test" ? "Ordered test" : type === "advice" ? "Prescribed advice" : type ? type : "Your term";
+    const toneClass = type ? `is-${type}` : "is-free";
+
     return (
-        <div className="cs-sug is-free is-added">
-            <span className="cs-sug-icon is-free" aria-hidden="true">
-                <span className="cs-sug-plus">+</span>
+        <div className={`cs-sug is-added ${type ? `is-${type}-selected` : "is-free"}`}>
+            <span className={`cs-sug-icon ${toneClass}`} aria-hidden="true">
+                {icon ?? <span className="cs-sug-plus">+</span>}
             </span>
             <div className="cs-sug-main">
-                <span className="cs-sug-kind is-free">Your term</span>
+                <span className={`cs-sug-kind ${toneClass}`}>
+                    {kindLabel}
+                </span>
                 <div className="cs-sug-name"><span>{label}</span></div>
             </div>
             <button
                 type="button"
-                className="cs-added is-removable is-free"
+                className="cs-added is-removable"
                 aria-label={`Remove ${label} from the plan`}
                 title="Taken — click to remove"
-                onClick={onRemove}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove();
+                }}
             >
                 <Check size={15} className="cs-added-check" />
                 <X size={13} className="cs-added-x" />

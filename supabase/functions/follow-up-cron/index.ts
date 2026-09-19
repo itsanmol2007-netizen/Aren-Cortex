@@ -14,6 +14,15 @@
    sends one WhatsApp reminder per patient, and stamps the attempt so
    it is never sent twice.
 
+   ── OFF BY DEFAULT ─────────────────────────────────────────────────────
+   `hospitals.follow_up_reminders_enabled` (2026-09-14) gates every
+   candidate — see `findCandidates` below. A clinic opts in from its own
+   Clinic page; nothing here ever sends for a clinic that hasn't. And the
+   message itself is a REMINDER, nothing more — "here's your follow-up, you
+   can come in" — never an offer to reschedule. There is no reschedule
+   flow behind this product yet, so a template or a doctor-facing string
+   that implied one would be promising a reply the app cannot act on.
+
    ── WHY A SEPARATE FUNCTION, NOT A NEW CALL INTO messaging-send ──────────
    Every send still goes through the exact same template resolution,
    provider call, credit debit/refund and `whatsapp_messages` logging
@@ -214,13 +223,26 @@ interface Candidate {
  * always the same day but not definitionally guaranteed to be.
  */
 async function findCandidates(db: SupabaseClient): Promise<Candidate[]> {
+  // Off by default, everywhere — see the `hospitals.follow_up_reminders_
+  // enabled` migration. This is the ONE gate: nothing about a candidate row
+  // below can override it, and a clinic that has never visited its own
+  // Clinic page to opt in gets exactly zero reminders sent, forever.
+  const { data: enabledHospitals, error: hospErr } = await db
+    .from("hospitals")
+    .select("id")
+    .eq("follow_up_reminders_enabled", true);
+  if (hospErr) throw new Error(`follow-up-cron enabled hospitals: ${hospErr.message}`);
+  const enabled = new Set((enabledHospitals ?? []).map((h: { id: string }) => h.id));
+  if (enabled.size === 0) return [];
+
   // `assigned_doctor_id`/`hospital_id` live on `prescriptions` itself —
   // `visits` is joined only for `patient_id`, which does not.
   const { data, error } = await db
     .from("prescriptions")
     .select("id, created_at, follow_up_days, follow_up_reminder_sent_at, assigned_doctor_id, hospital_id, visits(patient_id)")
     .not("follow_up_days", "is", null)
-    .is("follow_up_reminder_sent_at", null);
+    .is("follow_up_reminder_sent_at", null)
+    .in("hospital_id", [...enabled]);
   if (error) throw new Error(`follow-up-cron candidates: ${error.message}`);
 
   // IST "tomorrow", as a plain date — pg_cron itself already schedules this

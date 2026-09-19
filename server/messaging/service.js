@@ -102,10 +102,14 @@ async function loadContext(sb, { doctorId, patientId }) {
         doctorId: doctor.id,
         // `en_prescription_ready03`'s body is "…from {{1}}…" (no baked-in
         // honorific), and its own sample for {{1}} is "Dr. Sk Pandey" — so
-        // the value must carry exactly one "Dr. ". Doctors type it (or don't)
-        // inconsistently into their profile, so normalise: strip whatever is
-        // there, add the one canonical prefix. Mirrors src/lib/format.ts's
-        // `doctorName()`, which the browser can't share with this process.
+        // the value must carry exactly one "Dr. ". `doctors.name` is now
+        // canonically "Dr. <name>", exactly once, enforced at the data layer
+        // (migration 20260919_normalize_doctor_name_prefix.sql — backfilled
+        // every row and added a trigger that normalizes every future write)
+        // — this used to strip-and-reapply the prefix itself, which is what
+        // actually caused "sometimes there is two DR, sometimes there is
+        // no": every surface's OWN idea of the honorific disagreeing with
+        // what was actually stored. Trust the stored value instead.
         doctorName: formatDoctorName(doctor.name),
         hospitalId: doctor.hospital_id,
         clinicName: doctor.hospitals?.name || "your clinic",
@@ -115,12 +119,13 @@ async function loadContext(sb, { doctorId, patientId }) {
     };
 }
 
-/** "Anmol Pandey" / "Dr Anmol Pandey" / "dr. Anmol Pandey" -> "Dr. Anmol
- *  Pandey". Empty -> "your doctor" (a non-empty value is required — Meta
- *  rejects a template param that is blank). */
+/** `doctors.name` trimmed, or "your doctor" for an empty value (a non-empty
+ *  value is required — Meta rejects a template param that is blank). See
+ *  this function's call site for why it no longer touches the honorific
+ *  itself. */
 function formatDoctorName(raw) {
-    const bare = String(raw || "").trim().replace(/^d[r]\.?\s+/i, "").trim();
-    return bare ? `Dr. ${bare}` : "your doctor";
+    const bare = String(raw || "").trim();
+    return bare || "your doctor";
 }
 
 /**

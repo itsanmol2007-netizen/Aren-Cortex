@@ -216,7 +216,7 @@ export interface ConsultPlan {
    *  `PlanDraft`'s own doc comment for why those aren't part of the draft. */
   restorePlan: (draft: PlanDraft) => void;
   /** Replace the prescription wholesale, for Repeat Rx. */
-  loadRepeatRx: (medicines: PrescriptionMedicine[]) => void;
+  loadRepeatRx: (medicines: PrescriptionMedicine[], tests?: string[], diagnoses?: string[]) => void;
 }
 
 export interface PendingMedicine {
@@ -733,21 +733,26 @@ export function useConsultPlan({
   }, [stagedMedicine]);
 
   const removeMedicine = useCallback((id: string) => {
-    const line = prescription.find((m) => m.id === id);
+    const target = id.trim().toLowerCase();
+    const line = prescription.find((m) => m.id === id || String(m.medicine_id) === id || m.name.trim().toLowerCase() === target);
     if (line?.intent_id != null) releaseIntent(line.intent_id);
-    setPrescription((curr) => curr.filter((m) => m.id !== id));
-    if (selectedMedicineId === id) setSelectedMedicineId(null);
+    setPrescription((curr) => curr.filter((m) => m.id !== id && String(m.medicine_id) !== id && m.name.trim().toLowerCase() !== target));
+    if (selectedMedicineId === id || (line && selectedMedicineId === line.id)) setSelectedMedicineId(null);
   }, [prescription, selectedMedicineId, releaseIntent]);
 
   const removeTest = useCallback((label: string) => {
-    setSelectedTests((curr) => curr.filter((t) => t !== label));
+    const target = label.trim().toLowerCase();
+    setSelectedTests((curr) => curr.filter((t) => t.trim().toLowerCase() !== target));
     for (const [intentId, p] of acceptedIntents) {
-      if (p.type === "test" && p.label === label) releaseIntent(intentId);
+      if (p.type === "test" && (p.label.trim().toLowerCase() === target || target.includes(p.label.trim().toLowerCase()))) {
+        releaseIntent(intentId);
+      }
     }
   }, [acceptedIntents, releaseIntent]);
 
   const removeDiagnosis = useCallback((label: string) => {
-    setDiagnoses((curr) => curr.filter((d) => d !== label));
+    const target = label.trim().toLowerCase();
+    setDiagnoses((curr) => curr.filter((d) => d.trim().toLowerCase() !== target));
     // Found first, released after: `unconfirmCondition` needs to know which
     // OTHER finding intents are still confirmed so a chip shared by two
     // confirmed diagnoses is not pulled out from under the one that stays.
@@ -755,7 +760,7 @@ export function useConsultPlan({
     const stillConfirmed: number[] = [];
     for (const [intentId, p] of acceptedIntents) {
       if (p.type !== "finding") continue;
-      if (p.label === label) removedIntentId = intentId;
+      if (p.label.trim().toLowerCase() === target) removedIntentId = intentId;
       else stillConfirmed.push(intentId);
     }
     if (removedIntentId != null) {
@@ -889,9 +894,18 @@ export function useConsultPlan({
     (intentId: number, type: AcceptPayload["type"], label: string) => {
       switch (type) {
         case "medicine": {
-          const line = prescription.find((m) => m.intent_id === intentId);
+          const target = label.trim().toLowerCase();
+          const line = prescription.find(
+            (m) =>
+              (intentId !== 0 && m.intent_id === intentId) ||
+              m.name.trim().toLowerCase() === target ||
+              m.category.trim().toLowerCase() === target
+          );
           if (line) removeMedicine(line.id);
-          else releaseIntent(intentId); // staged but never confirmed in the sheet
+          else if (intentId !== 0) releaseIntent(intentId);
+          else {
+            setPrescription((curr) => curr.filter((m) => m.name.trim().toLowerCase() !== target));
+          }
           break;
         }
         case "test":
@@ -907,19 +921,20 @@ export function useConsultPlan({
           removeAdviceLine(label);
           break;
         case "exercise": {
-          const line = exercisePlan.find((l) => l.intentId === intentId && l.side === null);
+          const line = exercisePlan.find(
+            (l) =>
+              (intentId !== 0 && l.intentId === intentId && l.side === null) ||
+              l.label.trim().toLowerCase() === label.trim().toLowerCase()
+          );
           if (line) removeExercise(line.id);
-          else releaseIntent(intentId);
+          else if (intentId !== 0) releaseIntent(intentId);
           break;
         }
         case "modality":
           removeTherapyLine(label);
           break;
-        // Not persisted anywhere queryable yet (docs §7, "Accepted impairments
-        // are not persisted") — releasing the intent is the whole of "taken
-        // back" until that lands.
         case "impairment":
-          releaseIntent(intentId);
+          if (intentId !== 0) releaseIntent(intentId);
           break;
       }
     },
@@ -1098,8 +1113,14 @@ export function useConsultPlan({
     setVisitNotes(draft.visitNotes);
   }, []);
 
-  const loadRepeatRx = useCallback((medicines: PrescriptionMedicine[]) => {
+  const loadRepeatRx = useCallback((medicines: PrescriptionMedicine[], tests?: string[], diagnoses?: string[]) => {
     setPrescription(medicines);
+    if (tests && tests.length > 0) {
+      setSelectedTests(tests);
+    }
+    if (diagnoses && diagnoses.length > 0) {
+      setDiagnoses(diagnoses);
+    }
     setSelectedMedicineId(null);
     setStagedMedicine(null);
   }, []);

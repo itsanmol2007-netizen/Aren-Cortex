@@ -28,7 +28,7 @@ import type { Patient, PrescriptionMedicine } from "../types";
 import type { SidebarPage } from "../features/sidebar/SidebarNav";
 import { commitConsultation, type Observable } from "../lib/db/synapse";
 import {
-  createPatient, findPatientByPhone, createVisit,
+  createPatient, findPatientByPhone, findMatchingPatient, createVisit,
   findQueuedVisit, markVisitServing, startConsultVisit,
   ActiveConsultExistsError, PaymentDecisionRequiredError,
   saveConsult,
@@ -36,7 +36,10 @@ import {
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
-import { type ConfirmedPayment } from "../lib/db/payments";
+import {
+  recordVisitPayment,
+  type ConfirmedPayment, type VisitType, type PaymentMethod,
+} from "../lib/db/payments";
 import {
   sendPrescription,
   LOW_CREDIT_THRESHOLD,
@@ -44,13 +47,155 @@ import {
   formatCredits,
 } from "../lib/db/messaging";
 import type { RxLanguage } from "../lib/i18n/prescriptionLabels";
-import { enqueueWrite } from "../lib/offline/writeQueue";
+import { enqueueWrite, registerWriteHandler } from "../lib/offline/writeQueue";
+import { OfflineLockError } from "../lib/offline/lockGate";
 import type { ClinicalIdentity } from "./useClinicalIdentity";
 import type { ConsultChart } from "./useConsultChart";
 import type { AcceptLedger } from "./useAcceptLedger";
 import type { ConsultSession } from "./useConsultSession";
 import type { ConsultPlan } from "./useConsultPlan";
 import type { ConsultIntelligence } from "./useConsultIntelligence";
+
+// ---------------------------------------------------------------------------
+// OFFLINE CONSULT START — the doctor-side counterpart to `useVisitActions.ts`'s
+// `"frontdesk.createVisit"`, and the fix for the bug docs/offline-
+// architecture-failure-dump.md called out by name: `handlePatientConfirm`
+// (PatientModal) and `handleStartConsultFromRecord` (Patients page) both
+// called `createPatient`/`startConsultVisit`/`createVisit` live, with
+// nothing queuing the write when the network wasn't there — unlike
+// `handleConfirmAndSave` a few hundred lines down, which already queues
+// `"consult.saveConsult"`. A doctor who went offline could not even START a
+// consult, so the save-side queue had nothing to ever queue.
+//
+// The shape differs from front desk's own queue in one load-bearing way:
+// front desk's optimistic row is throwaway UI (a temp id gets swapped out by
+// `refetch()` the moment the real visit lands), but a DOCTOR keeps charting
+// against `session.visitId` for the whole consult, entirely offline,
+// and `handleConfirmAndSave` queues its OWN write (`"consult.saveConsult"`)
+// referencing that same visit id. So the id minted here cannot be thrown
+// away at replay time — it has to become the visit's REAL id in the
+// database, or the later `consult.saveConsult` replay would reference a row
+// that never existed. `createPatient`/`createVisit` both grew an optional
+// explicit `id` param for exactly this (see lib/db/patients.ts).
+//
+// Patient merge is deterministic, not a live lookup: `findMatchingPatient`
+// (phone + gender + Levenshtein-fuzzy name, already correct in
+// lib/db/patients.ts) runs at REPLAY time, once the network is back — an
+// offline device has no reliable way to ask "does this patient already
+// exist" in the first place, which is exactly why this waits rather than
+// guessing. A match means the queued visit attaches to the EXISTING
+// patient's real id instead of minting a duplicate.
+//
+// Deliberately narrower than the online RPC (`start_consult_visit`): the
+// one-active-consult-per-doctor and payment-decision-required checks are
+// enforced server-side by that RPC and cannot be evaluated offline without a
+// live query. Same "core features survivable, not a full offline HMS"
+// boundary docs/context/offline-security.md already documents for medicine
+// additions — accepted here for the same reason, not an oversight.
+// ---------------------------------------------------------------------------
+
+type QueuedStartVisitPayload = {
+  /** Becomes the visit row's own id at replay — see this block's header. */
+  localVisitId: string;
+  /** Set when the doctor picked an already-real patient (search result or
+   *  the Patients page) — no lookup/merge needed, the id is already correct. */
+  existingPatientId: string | null;
+  /** Set only when the doctor typed a brand-new patient into PatientModal. */
+  newPatient: {
+    name: string;
+    phone: string;
+    age: string;
+    gender: string;
+    dateOfBirth?: string;
+  } | null;
+  /** The id the offline session showed on screen for a brand-new patient —
+   *  used ONLY if replay finds no existing match (a genuinely new patient),
+   *  so nothing minted locally during this consult needs reconciling. */
+  localPatientId: string | null;
+  hospitalId: string;
+  doctorId: string;
+  payment: {
+    visitType: VisitType;
+    base: number;
+    discount: number;
+    gstAmount: number;
+    total: number;
+    discountKind: "none" | "percent" | "amount";
+    discountPercent: number | null;
+    gstPercent: number;
+    status: "paid" | "pending";
+    method: PaymentMethod | null;
+    splitMethod?: PaymentMethod | null;
+    splitAmount?: number | null;
+  } | null;
+  actor: { id: string | null; name: string | null; role: string | null };
+};
+
+async function replayStartVisit(raw: unknown): Promise<void> {
+  const payload = raw as QueuedStartVisitPayload;
+
+  let patientId: string;
+  if (payload.existingPatientId) {
+    patientId = payload.existingPatientId;
+  } else if (payload.newPatient) {
+    const match = await findMatchingPatient(
+      payload.newPatient.phone.trim(),
+      payload.newPatient.name.trim(),
+      payload.newPatient.gender
+    );
+    patientId = match
+      ? match.id
+      : (await createPatient(
+          {
+            name: payload.newPatient.name.trim(),
+            age: Number(payload.newPatient.age) || 0,
+            gender: payload.newPatient.gender,
+            phone: payload.newPatient.phone.trim(),
+            date_of_birth: payload.newPatient.dateOfBirth || null,
+          },
+          payload.hospitalId,
+          payload.localPatientId ?? undefined
+        )).id;
+  } else {
+    throw new Error("replayStartVisit: payload has neither an existing nor a new patient");
+  }
+
+  await createVisit({
+    id: payload.localVisitId,
+    patientId,
+    hospitalId: payload.hospitalId,
+    doctorId: payload.doctorId,
+    initialStatus: "serving",
+  });
+
+  if (payload.payment) {
+    const pay = payload.payment;
+    try {
+      await recordVisitPayment({
+        visitId: payload.localVisitId,
+        hospitalId: payload.hospitalId,
+        doctorId: payload.doctorId || null,
+        visitType: pay.visitType,
+        breakdown: { base: pay.base, discount: pay.discount, gstAmount: pay.gstAmount, total: pay.total },
+        discountKind: pay.discountKind,
+        discountPercent: pay.discountPercent,
+        gstPercent: pay.gstPercent,
+        status: pay.status,
+        method: pay.method,
+        splitMethod: pay.splitMethod ?? null,
+        splitAmount: pay.splitAmount ?? null,
+        actor: payload.actor,
+      });
+    } catch (err) {
+      // Same best-effort contract front desk's own replay uses: the visit
+      // above is already committed, and a fee that fails to write must
+      // never be mistaken for a lost consult.
+      console.warn("replayStartVisit: recordVisitPayment failed (non-fatal):", err);
+    }
+  }
+}
+
+registerWriteHandler("consult.startVisit", replayStartVisit);
 
 /** Turn whatever the send path threw into one plain sentence a doctor can
  *  act on. The server's `MessagingError` messages are already written for a
@@ -304,6 +449,83 @@ export function useConsultLifecycle({
     });
   }, [identity.hospitalId, identity.doctorId]);
 
+  /**
+   * The offline fallback shared by `handlePatientConfirm` and
+   * `handleStartConsultFromRecord` below — mints local ids, queues
+   * `"consult.startVisit"` durably (see that block's header, above the
+   * hook), and puts the doctor straight into a chartable consult, exactly
+   * as the online path would, just without a real visit row existing on the
+   * server yet. Throws `OfflineLockError` (from `enqueueWrite`'s 72-hour
+   * guard) synchronously enough for the caller to catch and show as-is.
+   */
+  const beginOfflineVisit = useCallback(async (
+    incoming: Patient,
+    payment: ConfirmedPayment | null,
+  ): Promise<boolean> => {
+    const localVisitId = crypto.randomUUID();
+    const localPatientId = incoming.id ?? crypto.randomUUID();
+
+    const payload: QueuedStartVisitPayload = {
+      localVisitId,
+      existingPatientId: incoming.id ?? null,
+      newPatient: incoming.id
+        ? null
+        : {
+            name: incoming.name,
+            phone: incoming.phone,
+            age: incoming.age,
+            gender: incoming.gender,
+            dateOfBirth: incoming.dateOfBirth,
+          },
+      localPatientId: incoming.id ? null : localPatientId,
+      hospitalId: identity.hospitalId,
+      doctorId: identity.doctorId,
+      payment: payment
+        ? {
+            visitType: payment.visitType,
+            base: payment.breakdown.base,
+            discount: payment.breakdown.discount,
+            gstAmount: payment.breakdown.gstAmount,
+            total: payment.breakdown.total,
+            discountKind: payment.discountKind,
+            discountPercent: payment.discountPercent,
+            gstPercent: payment.gstPercent,
+            status: payment.status,
+            method: payment.method,
+            splitMethod: payment.splitMethod ?? null,
+            splitAmount: payment.splitAmount ?? null,
+          }
+        : null,
+      actor: { id: identity.userId, name: identity.doctorName, role: "doctor" },
+    };
+
+    // Throws OfflineLockError synchronously (before any queue row is
+    // written) if this device has been unreachable 72+ hours — let it
+    // propagate to the caller rather than swallowing it here.
+    await enqueueWrite("consult.startVisit", payload, {
+      hospitalId: identity.hospitalId,
+      doctorId: identity.isReal ? identity.doctorId : null,
+      isNewPatientCreation: true,
+    });
+
+    const dbPatient: Patient = incoming.id ? incoming : { ...incoming, id: localPatientId };
+
+    session.setVisitId(null);
+    session.setPatient(dbPatient);
+    clearWorkspace();
+    session.setVisitId(localVisitId);
+    session.setRepeatRxBanner(null);
+    session.setPatientModalOpen(false);
+    setActivePage(null);
+    setSidebarOpen(false);
+    showToast(`${startedMessage(dbPatient.name)} — saved offline, will sync once you're back online`);
+    focusChartSearch();
+
+    session.loadPastVisits(dbPatient.id!, localVisitId);
+    carryForwardFor(dbPatient.id!);
+    return true;
+  }, [identity, session, clearWorkspace, setActivePage, setSidebarOpen, showToast, focusChartSearch, carryForwardFor]);
+
   const handleStartConsultFromRecord = useCallback(async (incomingPatient: Patient) => {
     try {
       const visit = await resolveVisitForConsult(incomingPatient.id!);
@@ -332,10 +554,24 @@ export function useConsultLifecycle({
         if (!handled) showToast("You already have a consult in progress — finish or cancel it first");
         return;
       }
+      // Offline is the one failure mode worth a different outcome — same
+      // rule `handleConfirmAndSave` already applies to the save side.
+      // `resolveVisitForConsult` above failed reaching the server (either
+      // `findQueuedVisit` or `createVisit`); queue the whole start instead
+      // of leaving the doctor stuck on a dead-end toast.
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        try {
+          await beginOfflineVisit(incomingPatient, null);
+        } catch (qErr: any) {
+          showToast(qErr instanceof OfflineLockError ? qErr.message : `Error starting consult: ${qErr.message}`);
+        }
+        return;
+      }
       showToast(`Error starting consult: ${err.message}`);
     }
   }, [resolveVisitForConsult, session, clearWorkspace, setActivePage, setSidebarOpen,
-      showToast, onActiveConsultCollision, focusChartSearch, carryForwardFor, prefillFromIntake]);
+      showToast, onActiveConsultCollision, focusChartSearch, carryForwardFor, prefillFromIntake,
+      beginOfflineVisit]);
 
   /**
    * Re-enter a visit that is ALREADY in progress — the Patients page's
@@ -477,6 +713,27 @@ export function useConsultLifecycle({
       carryForwardFor(dbPatient.id!);
       return true;
     } catch (err: any) {
+      // Offline is the one failure mode worth a different outcome, same
+      // rule `handleConfirmAndSave` already applies to the save side (see
+      // its own comment) — everything above (`findPatientByPhone`,
+      // `createPatient`, `startConsultVisit`) is a live call with nowhere
+      // else to fall back to, and this used to be the exact crash
+      // docs/offline-architecture-failure-dump.md calls out: "you can't
+      // create patient... whatever bullshit you just did here, that patient
+      // creation module doesn't work when you're offline." A REAL failure
+      // (validation, RLS, a genuine server error) already reached the
+      // server and got an answer and must still surface exactly as before —
+      // `PaymentDecisionRequiredError`/`ActiveConsultExistsError` are caught
+      // and returned above, before this block, so they never reach here.
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        try {
+          return await beginOfflineVisit(incoming, payment ?? null);
+        } catch (qErr: any) {
+          showToast(qErr instanceof OfflineLockError ? qErr.message : `Could not start the consult: ${qErr.message}`);
+          return false;
+        }
+      }
+
       // Leave the modal OPEN on an unexpected failure (a 409, an RLS reject)
       // so the doctor sees the toast and can retry or Cancel — clearing
       // `registerRequested` here (the caller only does so on `true`) would
@@ -488,7 +745,7 @@ export function useConsultLifecycle({
     }
   }, [resolveVisitForConsult, session, clearWorkspace, identity.hospitalId, identity.doctorId,
       identity.userId, identity.doctorName, setActivePage, showToast, onActiveConsultCollision,
-      focusChartSearch, carryForwardFor, prefillFromIntake]);
+      focusChartSearch, carryForwardFor, prefillFromIntake, beginOfflineVisit]);
 
   const handleRepeatRx = useCallback((visit: RealVisit) => {
     // A past visit stores v1 names ("fever"); the catalogue now speaks
@@ -531,8 +788,11 @@ export function useConsultLifecycle({
       sort_order: i,
     }));
 
+    const importedTests = visit.tests ?? [];
+    const importedDiagnoses = visit.diagnoses ?? [];
+
     chart.replaceChart(validSymptoms, validFindings);
-    plan.loadRepeatRx(importedMeds);
+    plan.loadRepeatRx(importedMeds, importedTests, importedDiagnoses);
 
     const dateLabel = new Date(visit.created_at).toLocaleDateString("en-IN", {
       day: "numeric", month: "short", year: "numeric",
@@ -701,7 +961,7 @@ export function useConsultLifecycle({
         session.setIsReviewOpen(false);
         resetConsultState();
         showToast(
-          "Saved offline — will sync once you're back online. " +
+          "Saved offline. Will sync once you're back online. " +
           "WhatsApp, the exercise plan, and follow-up learning are skipped for this consult."
         );
         onConsultSaved?.(seen);

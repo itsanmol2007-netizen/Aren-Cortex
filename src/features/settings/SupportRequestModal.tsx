@@ -2,35 +2,20 @@
 // "OUR TEAM HANDLES THIS" — the one surface for operations a doctor should
 // never perform alone.
 //
-// Anmol, 2026-08-31, on data export: "data export or something like that is
-// not a feature which someone will even use autonomously — because if
-// situations end up like that, then obviously we will take over, and not just
-// the software."
+// Anmol, 2026-08-31: operations like deleting an account or closing records
+// carry clinical retention obligations and need team review.
 //
-// That is true of a whole class of operations, and they share one shape:
-// exporting a clinic's records, deleting an account, changing the number an
-// account is keyed on, adding a second doctor. Each is rare, each is
-// irreversible or legally loaded, and each is better done by a person who can
-// see the whole picture. Building self-service UI for any of them would be
-// building a loaded gun for a case that happens twice a year.
-//
-// So they all route HERE instead: one component, one explanation, the account
-// reference already quoted so the first support reply doesn't have to ask for
-// it. Adding another such operation is a row that opens this — never a new
-// half-built flow.
-//
-// This is deliberately NOT a dead end dressed as a feature. It states what the
-// operation is, that a person handles it, and exactly how to start that.
+// Rather than exposing a mailto: link or raw email address, this modal
+// provides a direct, template-based submission that creates a case in
+// `support_requests` (via `sendSupportRequest` / `support-notify`), sends an
+// email notification to support via Amazon SES, and gives the doctor a
+// durable reference ID (SR_...) they can track.
 // ---------------------------------------------------------------------------
 
-import { LifeBuoy, Mail, X } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, LifeBuoy, Loader2, Send, X } from "lucide-react";
 import { toast } from "sonner";
-
-/** Where a support request actually goes. NOT invented — this is the address
- *  the login screen already publishes ("Trouble signing in or forgot your
- *  password? Write to care@arenode.com"), so the product speaks with one
- *  voice instead of sending doctors to two different inboxes. */
-const SUPPORT_EMAIL = "care@arenode.com";
+import { sendSupportRequest } from "../../lib/db/messaging";
 
 export interface SupportTopic {
     /** What the doctor clicked — becomes the subject line. */
@@ -40,15 +25,51 @@ export interface SupportTopic {
 }
 
 export function SupportRequestModal({
-    topic, accountReference, onClose,
+    topic, accountReference, contactEmail, onClose,
 }: {
     topic: SupportTopic;
     /** Quoted in the message so support can find the clinic immediately. */
     accountReference: string;
+    contactEmail?: string | null;
     onClose: () => void;
 }) {
-    const subject = `${topic.title} — clinic ${accountReference}`;
-    const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}`;
+    const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [reference, setReference] = useState<string | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+
+        const messageBody = [
+            topic.reason,
+            `Account Reference: ${accountReference}`,
+            note.trim() ? `Doctor Note:\n${note.trim()}` : "",
+        ].filter(Boolean).join("\n\n");
+
+        try {
+            const res = await sendSupportRequest({
+                topic: topic.title,
+                areas: ["Account", "Settings"],
+                message: messageBody,
+                replyTo: contactEmail || "",
+                diagnostics: {
+                    accountReference,
+                    screen: "settings_account",
+                },
+            });
+
+            setReference(res.reference || `SR_${accountReference.slice(0, 6)}`);
+            toast.success("Support request sent successfully.");
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Could not submit your request. Please try again.";
+            setError(msg);
+        } finally {
+            setBusy(false);
+        }
+    };
 
     return (
         <div
@@ -60,7 +81,7 @@ export function SupportRequestModal({
                 role="dialog"
                 aria-modal="true"
                 aria-label={topic.title}
-                className="w-[min(430px,100%)] overflow-hidden rounded-[20px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(246,248,252,0.94))] shadow-[0_40px_80px_-32px_rgba(11,23,51,0.55)]"
+                className="w-[min(460px,100%)] overflow-hidden rounded-[20px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(246,248,252,0.94))] shadow-[0_40px_80px_-32px_rgba(11,23,51,0.55)]"
             >
                 <div className="h-[4px] bg-[linear-gradient(90deg,#f472b6_0%,#a855f7_50%,#6366f1_100%)]" />
 
@@ -85,41 +106,100 @@ export function SupportRequestModal({
                 </div>
 
                 <div className="px-[18px] pb-[18px]">
-                    <p className="m-0 mt-[4px] text-[12.5px] leading-[1.55] text-[var(--cs-muted)]">
-                        {topic.reason}
-                    </p>
-
-                    <div className="mt-[14px] flex items-center justify-between gap-[10px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[10px]">
-                        <span className="flex flex-col gap-[2px]">
-                            <span className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
-                                Account reference
+                    {reference ? (
+                        <div className="mt-[12px] flex flex-col items-center gap-[12px] text-center">
+                            <span className="grid h-[48px] w-[48px] place-items-center rounded-full bg-[rgba(22,163,74,0.12)] text-[var(--cs-green)]">
+                                <CheckCircle2 size={28} />
                             </span>
-                            <code className="text-[13px] font-semibold tracking-[0.04em] text-[var(--cs-ink)]">
-                                {accountReference}
-                            </code>
-                        </span>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                navigator.clipboard?.writeText(accountReference)
-                                    .then(() => toast.success("Account reference copied."))
-                                    .catch(() => toast.error("Could not copy — select it by hand."));
-                            }}
-                            className="rounded-full border border-[var(--cs-line-strong)] bg-white px-[12px] py-[6px] text-[11.5px] font-bold text-[var(--cs-label)] transition-colors hover:border-[var(--cs-violet)] hover:text-[var(--cs-violet)]"
-                        >
-                            Copy
-                        </button>
-                    </div>
+                            <div>
+                                <h3 className="m-0 text-[15px] font-bold text-[var(--cs-ink)]">
+                                    Request Submitted
+                                </h3>
+                                <p className="m-0 mt-[4px] text-[12.5px] leading-[1.5] text-[var(--cs-muted)]">
+                                    Our support team has received your request and will follow up with you.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[14px] py-[8px]">
+                                <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
+                                    Case Reference:
+                                </span>
+                                <code className="text-[13px] font-bold tracking-[0.04em] text-[var(--cs-ink)]">
+                                    {reference}
+                                </code>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="mt-[6px] h-[38px] w-full rounded-[10px] bg-[var(--cs-violet)] text-[13px] font-bold text-white transition-colors hover:bg-[#7c3aed]"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleSubmit} className="mt-[6px] flex flex-col gap-[12px]">
+                            <p className="m-0 text-[12.5px] leading-[1.55] text-[var(--cs-muted)]">
+                                {topic.reason}
+                            </p>
 
-                    <a
-                        href={mailto}
-                        className="mt-[12px] flex h-[42px] w-full items-center justify-center gap-[8px] rounded-[11px] bg-[var(--cs-blue)] text-[13px] font-bold text-white transition-colors hover:bg-[#0e56c4]"
-                    >
-                        <Mail size={15} /> Email support
-                    </a>
-                    <p className="m-0 mt-[8px] text-center text-[11.5px] text-[var(--cs-faint)]">
-                        {SUPPORT_EMAIL}
-                    </p>
+                            <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[12px] py-[8px]">
+                                <span className="flex flex-col gap-[1px]">
+                                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
+                                        Account reference
+                                    </span>
+                                    <code className="text-[12.5px] font-semibold tracking-[0.04em] text-[var(--cs-ink)]">
+                                        {accountReference}
+                                    </code>
+                                </span>
+                                {contactEmail && (
+                                    <span className="flex flex-col items-end gap-[1px]">
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--cs-faint)]">
+                                            Reply to
+                                        </span>
+                                        <span className="text-[11.5px] font-medium text-[var(--cs-label)]">
+                                            {contactEmail}
+                                        </span>
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="flex flex-col gap-[5px]">
+                                <label className="text-[11.5px] font-semibold text-[var(--cs-label)]">
+                                    Additional details (optional)
+                                </label>
+                                <textarea
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                    rows={3}
+                                    placeholder="Add any specific context or instructions for our team..."
+                                    className="w-full resize-none rounded-[10px]! border! border-[var(--cs-line-strong)] bg-white! px-[12px]! py-[9px]! text-[12.5px]! leading-[1.5] text-[var(--cs-ink)]! outline-none focus:border-[var(--cs-violet)]"
+                                />
+                            </div>
+
+                            {error && (
+                                <p className="m-0 text-[12px] font-semibold text-[var(--cs-red)]">
+                                    {error}
+                                </p>
+                            )}
+
+                            <button
+                                type="submit"
+                                disabled={busy}
+                                className="flex h-[40px] w-full items-center justify-center gap-[8px] rounded-[11px] bg-[var(--cs-violet)] text-[13px] font-bold text-white transition-colors hover:bg-[#7c3aed] disabled:opacity-60!"
+                            >
+                                {busy ? (
+                                    <>
+                                        <Loader2 size={15} className="animate-spin" />
+                                        Submitting request…
+                                    </>
+                                ) : (
+                                    <>
+                                        <Send size={15} />
+                                        Submit request
+                                    </>
+                                )}
+                            </button>
+                        </form>
+                    )}
                 </div>
             </div>
         </div>
