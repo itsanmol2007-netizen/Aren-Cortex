@@ -310,8 +310,20 @@ export function syncCatalogue(hospitalId: string): Promise<void> {
 async function runSync(hospitalId: string): Promise<void> {
     setState({ phase: "checking", error: null });
     try {
-        const [local, remote] = await Promise.all([getLocalVersion(), fetchRemoteMeta()]);
-        setState({ localVersion: local });
+        // `localVersion` is published the MOMENT the local read resolves —
+        // a Dexie get, near-instant — rather than waiting on
+        // `fetchRemoteMeta()` too. `fetchCompositionBrands` (synapse.ts)
+        // gates its whole local-vs-network decision on this number being
+        // > 0, and the two used to be bundled in one `Promise.all`: for
+        // however long the network round trip to `catalogue_meta` took
+        // (several seconds is normal, worse on a fresh reconnect), every
+        // brand lookup in that window was forced onto the slow network RPC
+        // even though the local mirror was already sitting there, current,
+        // ready to read — caught live 2026-09-19 as ranked medicine rows
+        // stuck showing a skeleton for 5-10s after a page reload.
+        const localPromise = getLocalVersion();
+        localPromise.then((v) => setState({ localVersion: v }));
+        const [local, remote] = await Promise.all([localPromise, fetchRemoteMeta()]);
 
         if (local >= remote.currentVersion) {
             await syncHospitalMedicines(hospitalId).catch(() => { /* best-effort, never blocks "done" */ });

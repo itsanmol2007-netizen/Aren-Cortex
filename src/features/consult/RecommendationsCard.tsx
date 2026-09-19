@@ -899,7 +899,18 @@ function MedicineRow({
             {/* The brand picker is WITHHELD while a hard warning is unread, for
                 the same reason the accept is: a row of pickable brands invites
                 the doctor to click past the reason. */}
-            {added || locked ? null : brandsLoading ? (
+            {/* `brandsLoading` is ONE flag for the whole card (useConsultIntelligence.ts
+                fetches every row's missing brands in one batch, not per row),
+                so a LATER fetch cycle — a companion resolving, a new intent
+                arriving as consult data streams in on resume — flips it true
+                again for rows that were already resolved in an EARLIER cycle.
+                `!composition` is what keeps those rows on their real content
+                instead of flashing back to a skeleton: it only overrides to
+                the skeleton for a row that has never had data at all. Caught
+                live 2026-09-19 alongside the local-catalogue-version fix in
+                catalogueSync.ts — together they were "some rows fine, some
+                stuck on a spinner, no pattern to it." */}
+            {added || locked ? null : brandsLoading && !composition ? (
                 <div className="cs-brands">
                     <span className="cs-brand is-skeleton" />
                     <span className="cs-brand is-skeleton" />
