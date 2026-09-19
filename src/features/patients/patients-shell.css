@@ -24,8 +24,18 @@
        silently swallowing it. Found + fixed 2026-08-25 — reported on
        Patient Record specifically ("content cut off at the bottom");
        Communication/Practice/Clinic already carry their own version of this
-       fix and are unaffected by this change. */
-    height: 100dvh;
+       fix and are unaffected by this change.
+
+       `calc(100dvh - 24px)`, not a plain `100dvh` — `.app-shell` (layout.css)
+       adds `padding-bottom: 24px` OUTSIDE this box, so a plain `100dvh` here
+       made the shell's real rendered height 24px taller than the viewport:
+       a genuine, if tiny, page-level scrollbar on a page that has no content
+       needing one. Confirmed live (2026-09-19): `documentScrollHeight` was
+       974px against a 950px viewport, exactly the missing 24px. Netting the
+       padding out of the height fixes the overflow without touching
+       `.app-shell` itself, which plenty of other (normally-scrolling) pages
+       still rely on that 24px for as real bottom breathing room. */
+    height: calc(100dvh - 24px);
     /* NO `overflow` HERE — it used to be `hidden`, and it is why
        `WorkspaceHeader`'s `position: sticky` (its direct child, two lines
        below in Patients/PatientRecord) could silently un-stick from the

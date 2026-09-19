@@ -97,7 +97,15 @@ export function SupportPage({ doctorEmail, clinicName }: Props) {
         // (`flex-1 overflow-y-auto`/`min-h-0`), so nothing here relied on the
         // root clipping anything. Same bug, same fix as `.prac-page` in
         // practice.css.
-        <div className="flex h-dvh flex-col bg-[#f0f2f7]">
+        //
+        // `calc(100dvh-24px)`, not a plain `h-dvh` — `.app-shell` adds
+        // `padding-bottom: 24px` outside this root, so a plain `100dvh` here
+        // rendered 24px taller than the viewport: a real page-level
+        // scrollbar on a page with barely any content ("why is this page
+        // scrollable at all", Anmol, 2026-09-19). See patients-shell.css's
+        // `.prec-page` for the identical fix and the live measurement that
+        // confirmed it.
+        <div className="flex h-[calc(100dvh-24px)] flex-col bg-[#f0f2f7]">
             <WorkspaceHeader
                 title="Help & Support"
                 subtitle={mode === "new" ? "Tell us what you need — a real person reads every one" : "Your clinic's requests, and our replies"}
