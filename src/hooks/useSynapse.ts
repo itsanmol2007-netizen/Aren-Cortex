@@ -44,7 +44,7 @@ import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
 import { syncCatalogue } from "../lib/offline/catalogueSync";
-import { prefetchRecentPatients } from "../lib/offline/patientPrefetch";
+import { prefetchRecentPatients, PREFETCH_START_DELAY_MS } from "../lib/offline/patientPrefetch";
 import { rememberIntentVocabulary } from "../lib/offline/offlineIntentSearch";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
@@ -330,15 +330,34 @@ export function useSynapse(): UseSynapse {
         // on load AND on reconnect (its own interval-gate keeps a flappy
         // connection from re-walking recent history over and over — see
         // that module's `PREFETCH_INTERVAL_MS`).
+        //
+        // Delayed, not fired the instant identity resolves — a doctor's own
+        // FIRST click after signing in (almost always straight into Patients
+        // or a consult) shares the browser's ~6-connections-per-origin
+        // budget with whatever this walks, and this can be dozens of
+        // patients deep. Measured live, 2026-09-19: opening Patients right
+        // after login left it stuck rendering skeletons for 80+ seconds —
+        // not a CSS bug, a real page load starved of connections by this
+        // background walk racing it for the same pool. A doctor's own
+        // click always deserves the connection more than a backup that has
+        // no deadline; giving the foreground a clear head start is enough
+        // to stop the two from ever colliding in the case that matters most.
         if (!ready || !isReal || !doctorId) return;
         const run = () => {
             prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
                 console.warn("Patient prefetch (non-fatal):", e);
             });
         };
-        run();
-        window.addEventListener("online", run);
-        return () => window.removeEventListener("online", run);
+        const initialDelay = window.setTimeout(run, PREFETCH_START_DELAY_MS);
+        // A reconnect is exactly the other moment a doctor is likely to be
+        // actively waiting on a page right then too — same delay, same
+        // reasoning, not just the cold-start case.
+        const onOnline = () => { window.setTimeout(run, PREFETCH_START_DELAY_MS); };
+        window.addEventListener("online", onOnline);
+        return () => {
+            window.clearTimeout(initialDelay);
+            window.removeEventListener("online", onOnline);
+        };
     }, [ready, isReal, hospitalId, doctorId]);
 
     const reload = useCallback(() => void load(true), [load]);

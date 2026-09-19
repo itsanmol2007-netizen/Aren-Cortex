@@ -30,10 +30,21 @@ import { fetchPatientById, fetchPatientVisits } from "../db/patients";
 
 const WINDOW_DAYS = 90;
 const PREFETCH_INTERVAL_MS = 6 * 60 * 60 * 1000;
-// Chrome caps concurrent requests per origin at ~6 (see cortex-gotchas.md) —
-// staying well under that leaves room for whatever else is in flight
-// (the ruleset load, catalogue sync) at the same moment.
-const CONCURRENCY = 4;
+// Chrome caps concurrent requests per origin at ~6 (see cortex-gotchas.md).
+// 4 alone already leaves only 2 free for everything else sharing that pool
+// at the same moment (the ruleset load, catalogue sync, and — critically —
+// whatever page the doctor is actually looking at) — measured live,
+// 2026-09-19, starving the Patients page's own fetch for 80+ seconds on an
+// account with real patient volume. 2 leaves real headroom; this walk has
+// no deadline, so trading some of its own speed for that is the right
+// trade. See `useSynapse.ts`'s start-delay for the other half of the fix —
+// concurrency alone doesn't help if this is still mid-walk exactly when a
+// doctor's first click needs the same pool.
+const CONCURRENCY = 2;
+/** How long after identity resolves this walk waits before firing — see
+ *  `useSynapse.ts`'s own comment on why. Exported so that's the one place
+ *  both the initial-load and reconnect triggers read the same number from. */
+export const PREFETCH_START_DELAY_MS = 8000;
 
 const metaKey = (doctorId: string) => `patientPrefetchAt:${doctorId}`;
 

@@ -4,18 +4,21 @@
 // mirror yet." This is that.
 //
 // ── The contract ────────────────────────────────────────────────────────
-// Network first, local fallback, refresh on reconnect:
-//   1. Always attempt the real fetch first. Online means fresh, same as
-//      `referenceCache.ts`'s cache-first-but-always-refreshing doctors/
-//      symptoms lists — this is the same idea, just backed by Dexie instead
+// Cache first, always; network refreshes it in the background — a doctor
+// re-opening something they've already seen this session should never wait
+// on a round trip for an answer already sitting on the device:
+//   1. A cached copy answers IMMEDIATELY, online or offline. The real fetch
+//      still runs, unattended, purely to keep the cache warm for the NEXT
+//      call — same idea `referenceCache.ts`'s doctors/symptoms lists already
+//      use (cache-first-but-always-refreshing), just backed by Dexie instead
 //      of localStorage, because patient/visit/prescription data is bigger
 //      and per-doctor rather than a handful of small shared lists.
-//   2. On success, the result is written into the mirror before it is
-//      returned — so the NEXT offline attempt has something to fall back
-//      to, not just the next one after that.
-//   3. On failure (offline, timeout, a real error), fall back to whatever
-//      was last cached under this exact key. Nothing to fall back to means
-//      the original error surfaces — this never invents data.
+//   2. Only a key with NOTHING cached yet waits on the network — there is
+//      nothing else to show. Even then, a browser that already knows it's
+//      offline skips the attempt rather than running it to a doomed failure.
+//   3. Every successful fetch (foreground or background) is written into
+//      the mirror before anything happens with it — so the NEXT call, cached
+//      or not, has the freshest available answer to work from.
 // "Refresh on reconnect" falls out of (1) automatically for anything that
 // re-fetches on its own when connectivity returns (a mount, a manual
 // refresh) — this module does not itself schedule polling; see `useOnline`
@@ -115,28 +118,26 @@ export interface ReadThroughOpts<T> {
     fetcher: () => Promise<T>;
 }
 
-// A doctor on a degraded connection could wait on the BROWSER's own default
-// fetch timeout (commonly 30s+, and Supabase's own client has no timeout of
-// its own) before this ever fell back to data already sitting on the
-// device — measured live as "5 to 10 seconds just to load" (Anmol,
-// 2026-09-19) for patient records that were RIGHT THERE in IndexedDB the
-// whole time. The fix races the network against a short clock: if the
-// network hasn't answered by then, serve the cache immediately (when there
-// is one) rather than making the doctor wait out however long the socket
-// takes to actually fail. The network attempt is never cancelled — it keeps
-// running in the background and still warms the cache for next time, so a
-// slow-but-working connection loses nothing except the wait.
-const NETWORK_TIMEOUT_MS = 2500;
-const TIMEOUT = Symbol("localMirror-timeout");
-
-/**
- * Network first, local fallback — but capped, so "first" doesn't mean
- * "however long the network takes to give up." See this file's header for
- * the full contract. Every `lib/db/*.ts` fetch wrapped in this keeps its
- * existing signature and return type — callers never know the difference
- * except that a call made while offline (or just slow) now returns the
- * last-known-good answer quickly instead of hanging or throwing.
- */
+// ── Cache-first, always — not "network first, race a clock" ────────────────
+//
+// The previous version of this function still raced the network against a
+// 2.5s clock on EVERY call, cache or no cache — so a doctor re-opening a
+// patient they had already opened five minutes ago still waited on that
+// clock (or a fast network reply) before anything appeared, even though the
+// exact answer was already sitting in IndexedDB. Anmol, 2026-09-19: "every
+// single time you click on the patient page it load for three seconds...
+// cache the data and... load that thing in background and update it." And
+// separately: "if the browser itself is saying you're offline... why even
+// wait... just directly fetch the local data" — the old version still ran
+// the full 2.5s race even when `navigator.onLine` already said there was no
+// point trying.
+//
+// So: a cached copy now answers INSTANTLY, unconditionally, online or not —
+// zero wait, not a capped one. The network still runs (never cancelled), to
+// silently refresh the cache for the NEXT call; this one just doesn't wait
+// on it. Only a key with NOTHING cached yet — genuinely nothing to show —
+// ever waits on the network at all, and even then, if the browser already
+// knows it is offline, that attempt is skipped rather than run to fail.
 export async function readThrough<T>(opts: ReadThroughOpts<T>): Promise<ReadThroughResult<T>> {
     const table = tableFor(opts.kind);
     const cacheRow = () => table.get(opts.key).catch(() => undefined);
@@ -152,43 +153,29 @@ export async function readThrough<T>(opts: ReadThroughOpts<T>): Promise<ReadThro
         });
     };
 
-    const networkPromise = opts.fetcher();
-
-    let winner: T | typeof TIMEOUT;
-    try {
-        winner = await Promise.race([
-            networkPromise,
-            new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), NETWORK_TIMEOUT_MS)),
-        ]);
-    } catch (err) {
-        // A real, fast failure (not a timeout) — same fallback as always.
-        const cached = await cacheRow();
-        if (cached) return { data: cached.data as T, fromCache: true, cachedAt: cached.updatedAt };
-        throw err;
-    }
-
-    if (winner !== TIMEOUT) {
-        await cacheData(winner);
-        return { data: winner, fromCache: false, cachedAt: null };
-    }
-
-    // Timed out. Whatever's already on the device answers THIS call; the
-    // network attempt is handled separately below so it's never awaited
-    // twice.
     const cached = await cacheRow();
+
     if (cached) {
-        // Let the network attempt keep running unattended — it still gets
-        // to warm the cache for next time, or logs a real failure — while
-        // this call itself has already moved on with the cached answer.
-        networkPromise.then(cacheData).catch((err) => {
-            console.warn(`localMirror: background fetch failed after timeout for ${opts.kind}:${opts.key}`, err);
+        // Answer THIS call immediately with what's already on the device.
+        // The network fetch still runs, unattended, purely to keep the
+        // cache warm for the call after this one — a slow-but-working
+        // connection loses nothing except making this particular call wait
+        // for it, which it no longer needs to.
+        opts.fetcher().then(cacheData).catch((err) => {
+            console.warn(`localMirror: background refresh failed for ${opts.kind}:${opts.key}`, err);
         });
         return { data: cached.data as T, fromCache: true, cachedAt: cached.updatedAt };
     }
 
-    // Nothing cached either — there is nothing else to show, so this ONE
-    // case still waits for the real answer, however long it takes.
-    const data = await networkPromise;
+    // Nothing cached at all — genuinely nothing to show without the network.
+    // If the browser already knows there is no connection, don't spend time
+    // finding that out the hard way; fail straight to the caller's own
+    // existing empty/error handling instead of waiting out a doomed request.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+        throw new Error(`Offline, and nothing cached yet for ${opts.kind}:${opts.key}`);
+    }
+
+    const data = await opts.fetcher();
     await cacheData(data);
     return { data, fromCache: false, cachedAt: null };
 }
