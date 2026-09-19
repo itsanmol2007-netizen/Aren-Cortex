@@ -155,6 +155,25 @@ export function MedicineAddSheet({
         }
     }, [billing?.enabled, slots, duration, sos]);
 
+    /**
+     * ↑ ↓ steps a numeric field by `step`, held to `min`. Local to whichever
+     * input is focused (not the panel's own capture-phase listener above —
+     * that one already backs off inside any field, per its own doc comment,
+     * so this never fights it) — a quick nudge without reaching for the
+     * mouse, the same convenience a native `<input type="number">` spinner
+     * gives, on fields that stay `inputMode` text for their own formatting
+     * reasons. Any other key falls through untouched.
+     */
+    const stepOnArrow = (value: string, setValue: (v: string) => void, step: number, min: number) =>
+        (e: React.KeyboardEvent<HTMLInputElement>) => {
+            if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+            e.preventDefault();
+            const current = Number(value);
+            const base = Number.isFinite(current) ? current : min;
+            const next = e.key === "ArrowUp" ? base + step : base - step;
+            setValue(String(Math.max(min, next)));
+        };
+
     const currentPrice = brand ? billing?.prices.get(brand.id) ?? null : null;
     const lineTotal =
         currentPrice && quantity.trim() && Number.isFinite(Number(quantity))
@@ -534,7 +553,8 @@ export function MedicineAddSheet({
                                     placeholder="e.g. 10"
                                     inputMode="numeric"
                                     onChange={(e) => setQuantity(e.target.value)}
-                                    aria-label="Quantity dispensed"
+                                    onKeyDown={stepOnArrow(quantity, setQuantity, 1, 0)}
+                                    aria-label="Quantity dispensed — arrow up or down to adjust by one"
                                 />
                             </section>
 
@@ -576,7 +596,8 @@ export function MedicineAddSheet({
                                             placeholder="Pack price (₹)"
                                             inputMode="decimal"
                                             onChange={(e) => setPackPrice(e.target.value)}
-                                            aria-label="Pack price in rupees"
+                                            onKeyDown={stepOnArrow(packPrice, setPackPrice, 10, 0)}
+                                            aria-label="Pack price in rupees — arrow up or down to adjust by ten"
                                         />
                                         <input
                                             className="cs-addmed-input"
@@ -584,7 +605,8 @@ export function MedicineAddSheet({
                                             placeholder="Units per pack"
                                             inputMode="numeric"
                                             onChange={(e) => setPackUnits(e.target.value)}
-                                            aria-label="Units per pack"
+                                            onKeyDown={stepOnArrow(packUnits, setPackUnits, 1, 1)}
+                                            aria-label="Units per pack — arrow up or down to adjust by one"
                                         />
                                     </div>
                                     {priceError && <p className="cs-newmed-error">{priceError}</p>}
