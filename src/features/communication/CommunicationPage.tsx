@@ -391,7 +391,7 @@ export function CommunicationPage({
         setCancelling(true);
         try {
             await cancelRechargeRequest(pendingRecharge.id);
-            toast.success("Request withdrawn — you can raise a new one");
+            toast.success("Request withdrawn. You can raise a new one.");
             await load();
         } catch (e) {
             // The database's own refusal, shown verbatim: it is written for

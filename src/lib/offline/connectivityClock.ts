@@ -164,12 +164,12 @@ export function initConnectivityClock(): void {
         if (level === "warn24") {
             toast.warning(
                 `This device hasn't reached the AREN server in over ${formatOffline(getOfflineDurationMs())}. ` +
-                    "Reconnect soon — new patient registration, Synapse ranking and WhatsApp sends pause at 72 hours offline.",
+                    "Reconnect soon. New patient registration, Synapse ranking and WhatsApp sends pause at 72 hours offline.",
                 { id: "connectivity-warn24", duration: 10000 }
             );
         } else if (level === "hard72") {
             toast.error(
-                "72 hours without reaching the server. New patients, Synapse ranking and WhatsApp sends are paused until this device reconnects — everything already saved here is still fully readable.",
+                "72 hours without reaching the server. New patients, Synapse ranking and WhatsApp sends are paused until this device reconnects. Everything already saved here is still fully readable.",
                 { id: "connectivity-hard72", duration: 15000 }
             );
         }

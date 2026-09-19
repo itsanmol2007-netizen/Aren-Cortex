@@ -76,7 +76,7 @@ export function BuyCreditsModal({
         setError(null);
         try {
             await cancelRechargeRequest(pending.id);
-            toast.success("Request withdrawn — you can raise a new one");
+            toast.success("Request withdrawn. You can raise a new one.");
             onWithdrawn?.();
             onClose();
         } catch (e) {

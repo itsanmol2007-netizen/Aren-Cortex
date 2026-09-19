@@ -46,6 +46,7 @@ import "./styles/workspace.css";
 import "./styles/consult.css";
 import "./features/sidebar/sidebar.css";
 import "./features/onboarding/onboarding.css";
+import "./styles/toast.css";
 
 const queryClient = new QueryClient();
 
