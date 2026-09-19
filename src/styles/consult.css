@@ -826,6 +826,7 @@ body.cs-locked-shell {
     display: grid;
     place-items: center;
     flex: none;
+    align-self: center;
     width: 22px;
     height: 22px;
     padding: 0;
@@ -834,6 +835,7 @@ body.cs-locked-shell {
     border-radius: 50%;
     background: transparent;
     color: var(--cs-faint);
+    line-height: 0;
     cursor: pointer;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
