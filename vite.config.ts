@@ -118,6 +118,28 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // Doctor/clinic photos, logos and signatures — Supabase Storage
+            // public objects, referenced directly as <img src> all over the
+            // app (letterhead, sidebar avatar, ReviewModal, the public
+            // prescription page). Without this they simply vanished offline
+            // — the blank-image icon — even though the clinical DATA
+            // pointing at them loaded fine from the local mirror. Anmol,
+            // 2026-09-19: "when you're offline, you can't see doctor's
+            // profile photo also... you should just cache this logo for the
+            // first time of installation." CacheFirst does exactly that —
+            // once a photo has loaded successfully online, it's on the
+            // device for good. A real re-upload gets a new object path, so
+            // a stale cached entry for an OLD url is simply never requested
+            // again rather than needing active invalidation.
+            urlPattern: /^https:\/\/[^/]+\.supabase\.co\/storage\/v1\/object\/public\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "supabase-storage-images",
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
         cleanupOutdatedCaches: true,
       },

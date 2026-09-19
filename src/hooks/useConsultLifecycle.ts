@@ -961,7 +961,7 @@ export function useConsultLifecycle({
         session.setIsReviewOpen(false);
         resetConsultState();
         showToast(
-          "Saved offline — will sync once you're back online. " +
+          "Saved offline. Will sync once you're back online. " +
           "WhatsApp, the exercise plan, and follow-up learning are skipped for this consult."
         );
         onConsultSaved?.(seen);

@@ -24,8 +24,18 @@
        silently swallowing it. Found + fixed 2026-08-25 — reported on
        Patient Record specifically ("content cut off at the bottom");
        Communication/Practice/Clinic already carry their own version of this
-       fix and are unaffected by this change. */
-    height: 100dvh;
+       fix and are unaffected by this change.
+
+       `calc(100dvh - 24px)`, not a plain `100dvh` — `.app-shell` (layout.css)
+       adds `padding-bottom: 24px` OUTSIDE this box, so a plain `100dvh` here
+       made the shell's real rendered height 24px taller than the viewport:
+       a genuine, if tiny, page-level scrollbar on a page that has no content
+       needing one. Confirmed live (2026-09-19): `documentScrollHeight` was
+       974px against a 950px viewport, exactly the missing 24px. Netting the
+       padding out of the height fixes the overflow without touching
+       `.app-shell` itself, which plenty of other (normally-scrolling) pages
+       still rely on that 24px for as real bottom breathing room. */
+    height: calc(100dvh - 24px);
     /* NO `overflow` HERE — it used to be `hidden`, and it is why
        `WorkspaceHeader`'s `position: sticky` (its direct child, two lines
        below in Patients/PatientRecord) could silently un-stick from the
@@ -67,16 +77,35 @@
     align-items: center;
 }
 
-/* Picks up the field's own focus state — a search whose icon never changes
-   reads as decoration sitting next to a box, not as one control. */
-.prec-search-icon {
+/* A rounded chip behind the icon, not a bare glyph floating in the field —
+   2026-09-19, on top of the 2026-08-31 pass below: that fix gave the FIELD
+   real presence, but the field's own background is white sitting on
+   `.prec-page-header`'s own white, and against that the search icon was
+   still the one bit of "visual widget" doing all the work alone. The chip
+   gives the icon its own small surface (the same soft-tint-circle idiom
+   `.prec-table-count-label`-style badges and every avatar chip on this page
+   already use), so it reads as a piece of UI rather than a decoration. */
+.prec-search-icon-chip {
     position: absolute;
-    left: 14px;
-    color: #94a3b8;
+    left: 7px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: rgba(18, 104, 232, 0.08);
     pointer-events: none;
-    flex-shrink: 0;
     z-index: 1;
+    transition: background 0.14s;
+}
+
+.prec-search-icon {
+    color: #6d84a8;
     transition: color 0.14s;
+}
+
+.prec-search-wrap:focus-within .prec-search-icon-chip {
+    background: rgba(18, 104, 232, 0.14);
 }
 
 .prec-search-wrap:focus-within .prec-search-icon {
@@ -87,33 +116,39 @@
    patient page, that's looking so much washed out and visually terrible."
    It was a 36px, near-white box on a near-white page behind a hairline, so
    the one control that gets a doctor to a patient read as the least
-   important thing on the row. Now: taller, white against the page ground
-   with a defined edge and a real resting shadow, and typography sized for
-   THIS page rather than borrowed from the consult screen's denser scale
-   (typography.md rule 12). */
+   important thing on the row. Made taller, with a defined edge and a real
+   resting shadow — but the field's OWN background stayed pure white, the
+   exact same white as `.prec-page-header` sitting behind it, so the field
+   was still only as visible as one faint 1px border could make it: "the
+   search bar in the patient page... looks completely worn off" (Anmol,
+   2026-09-19, still). The idle state now carries a soft blue-grey tint of
+   its own — a real surface distinct from the header behind it — and turns
+   pure white only once it actually has focus, the same "lights up" cue a
+   field gaining attention gets elsewhere in Cortex. */
 .prec-search-input {
     width: 100%;
     height: 44px;
-    background: #ffffff;
-    border: 1px solid #cbd5e8;
+    background: #f2f5fb;
+    border: 1.5px solid #d3ddef;
     border-radius: 10px;
-    padding: 0 38px 0 42px;
+    padding: 0 38px 0 46px;
     font-size: 14px;
     font-weight: 500;
     color: #1a2035;
     outline: none;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
     transition: border-color 0.14s, box-shadow 0.14s, background 0.14s;
     font-family: inherit;
 }
 
 .prec-search-input::placeholder {
-    color: #94a3b8;
+    color: #7b8aa3;
     font-weight: 450;
 }
 
 .prec-search-input:hover:not(:focus) {
     border-color: #b8c8e4;
+    background: #edf1f9;
 }
 
 .prec-search-input:focus {
@@ -121,7 +156,7 @@
     background: #ffffff;
     box-shadow:
         0 0 0 3px rgba(18, 104, 232, 0.14),
-        0 1px 2px rgba(15, 23, 42, 0.05);
+        0 2px 10px rgba(18, 104, 232, 0.10);
 }
 
 .prec-search-clear {
@@ -130,7 +165,7 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: #e8ecf4;
+    background: #e2e8f4;
     border: none;
     cursor: pointer;
     display: flex;
@@ -141,7 +176,7 @@
 }
 
 .prec-search-clear:hover {
-    background: #dde3ef;
+    background: #d3ddef;
     color: #1268e8;
 }
 

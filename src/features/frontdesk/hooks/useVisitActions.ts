@@ -292,7 +292,7 @@ export function useVisitActions({ visits, setVisits, refetch }: UseVisitActionsA
         onSuccess?: (result: { patientName: string; patientId: string; visitId: string }) => void;
     }): void => {
         if (!hospitalId) {
-            toast.error("Not signed in to a clinic — cannot register a visit.");
+            toast.error("Not signed in to a clinic. Cannot register a visit.");
             return;
         }
 

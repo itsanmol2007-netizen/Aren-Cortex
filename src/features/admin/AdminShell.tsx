@@ -135,7 +135,13 @@ export function AdminShell() {
         // viewport. Unneeded anyway — the nav (`overflow-y-auto`) and
         // `<main>` (`overflow-hidden`) below already bound and clip
         // themselves.
-        <div className="flex h-screen flex-col bg-[var(--cs-page)]">
+        //
+        // `calc(100vh-24px)`, not a plain `h-screen` — `.app-shell` adds
+        // `padding-bottom: 24px` outside this root, so a plain `100vh` here
+        // rendered 24px taller than the viewport, producing a phantom
+        // page-level scrollbar. See patients-shell.css's `.prec-page` for
+        // the identical fix and the live measurement that confirmed it.
+        <div className="flex h-[calc(100vh-24px)] flex-col bg-[var(--cs-page)]">
             <div className="shrink-0">
                 <WorkspaceHeader
                     logoRef={logoRef}

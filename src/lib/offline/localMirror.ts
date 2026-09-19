@@ -115,42 +115,82 @@ export interface ReadThroughOpts<T> {
     fetcher: () => Promise<T>;
 }
 
+// A doctor on a degraded connection could wait on the BROWSER's own default
+// fetch timeout (commonly 30s+, and Supabase's own client has no timeout of
+// its own) before this ever fell back to data already sitting on the
+// device — measured live as "5 to 10 seconds just to load" (Anmol,
+// 2026-09-19) for patient records that were RIGHT THERE in IndexedDB the
+// whole time. The fix races the network against a short clock: if the
+// network hasn't answered by then, serve the cache immediately (when there
+// is one) rather than making the doctor wait out however long the socket
+// takes to actually fail. The network attempt is never cancelled — it keeps
+// running in the background and still warms the cache for next time, so a
+// slow-but-working connection loses nothing except the wait.
+const NETWORK_TIMEOUT_MS = 2500;
+const TIMEOUT = Symbol("localMirror-timeout");
+
 /**
- * Network first, local fallback. See this file's header for the full
- * contract. Every `lib/db/*.ts` fetch wrapped in this keeps its existing
- * signature and return type — callers never know the difference except
- * that a call made while offline now returns the last-known-good answer
- * instead of throwing.
+ * Network first, local fallback — but capped, so "first" doesn't mean
+ * "however long the network takes to give up." See this file's header for
+ * the full contract. Every `lib/db/*.ts` fetch wrapped in this keeps its
+ * existing signature and return type — callers never know the difference
+ * except that a call made while offline (or just slow) now returns the
+ * last-known-good answer quickly instead of hanging or throwing.
  */
 export async function readThrough<T>(opts: ReadThroughOpts<T>): Promise<ReadThroughResult<T>> {
     const table = tableFor(opts.kind);
-    try {
-        const data = await opts.fetcher();
-        const row: MirrorRow = {
-            id: opts.key,
-            doctorId: opts.doctorId,
-            hospitalId: opts.hospitalId,
-            updatedAt: Date.now(),
-            data,
-        };
+    const cacheRow = () => table.get(opts.key).catch(() => undefined);
+    const cacheData = (data: T) => {
+        const row: MirrorRow = { id: opts.key, doctorId: opts.doctorId, hospitalId: opts.hospitalId, updatedAt: Date.now(), data };
         // Never let a mirror write failure (IndexedDB full, private-mode
         // browser, ...) turn a SUCCESSFUL network read into a thrown error —
         // the doctor got their real answer; the cache is a bonus for next
         // time, exactly the rule `referenceCache.ts`'s writeCache already
         // follows for the smaller lists it caches.
-        try {
-            await table.put(row);
-        } catch (cacheErr) {
+        return table.put(row).catch((cacheErr) => {
             console.warn(`localMirror: failed to cache ${opts.kind}:${opts.key}`, cacheErr);
-        }
-        return { data, fromCache: false, cachedAt: null };
+        });
+    };
+
+    const networkPromise = opts.fetcher();
+
+    let winner: T | typeof TIMEOUT;
+    try {
+        winner = await Promise.race([
+            networkPromise,
+            new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), NETWORK_TIMEOUT_MS)),
+        ]);
     } catch (err) {
-        const cached = await table.get(opts.key).catch(() => undefined);
-        if (cached) {
-            return { data: cached.data as T, fromCache: true, cachedAt: cached.updatedAt };
-        }
+        // A real, fast failure (not a timeout) — same fallback as always.
+        const cached = await cacheRow();
+        if (cached) return { data: cached.data as T, fromCache: true, cachedAt: cached.updatedAt };
         throw err;
     }
+
+    if (winner !== TIMEOUT) {
+        await cacheData(winner);
+        return { data: winner, fromCache: false, cachedAt: null };
+    }
+
+    // Timed out. Whatever's already on the device answers THIS call; the
+    // network attempt is handled separately below so it's never awaited
+    // twice.
+    const cached = await cacheRow();
+    if (cached) {
+        // Let the network attempt keep running unattended — it still gets
+        // to warm the cache for next time, or logs a real failure — while
+        // this call itself has already moved on with the cached answer.
+        networkPromise.then(cacheData).catch((err) => {
+            console.warn(`localMirror: background fetch failed after timeout for ${opts.kind}:${opts.key}`, err);
+        });
+        return { data: cached.data as T, fromCache: true, cachedAt: cached.updatedAt };
+    }
+
+    // Nothing cached either — there is nothing else to show, so this ONE
+    // case still waits for the real answer, however long it takes.
+    const data = await networkPromise;
+    await cacheData(data);
+    return { data, fromCache: false, cachedAt: null };
 }
 
 /** Convenience for the common case: callers that don't need `fromCache`/

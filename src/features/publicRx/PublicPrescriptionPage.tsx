@@ -25,6 +25,14 @@ import {
 } from "lucide-react";
 import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine } from "./api";
 import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
+// The same clinic-agnostic marks the printed prescription and the doctor's
+// on-screen review already carry (`ReviewModal`/`PrescriptionDocument`) —
+// reused here, not reinvented, so the sheet a patient opens on their phone
+// is visibly the same family of document as the one printed at the clinic.
+// Anmol, 2026-09-19: "can't we have some modern look of the prescription...
+// and some SVG and all for all kind of users" — for every language, not
+// only the English typography pass done separately.
+import { RxMonogram, RxWatermark } from "../../components/RxMarks";
 
 type SlotKey = "M" | "A" | "E" | "N";
 
@@ -132,11 +140,27 @@ function MedicineCard({ med, language, labels, bold }: { med: PublicRxMedicine; 
     );
 }
 
-function Section({ icon: Icon, title, bold, children }: { icon: typeof Pill; title: string; bold: string; children: React.ReactNode }) {
+const SECTION_TONE = {
+    slate: "bg-slate-100 text-slate-700",
+    indigo: "bg-indigo-100 text-indigo-700",
+    purple: "bg-purple-100 text-purple-700",
+    amber: "bg-amber-100 text-amber-700",
+} as const;
+
+/** A soft rounded chip behind each section's icon, rather than the icon
+ *  floating bare — same "give the icon its own surface" idiom used for the
+ *  Patients page search field (2026-09-19), so this page's headings read as
+ *  designed sections rather than a plain bolded label with a glyph next to
+ *  it. Every language gets the same chip; only the label text changes. */
+function Section({
+    icon: Icon, title, bold, tone = "slate", children,
+}: { icon: typeof Pill; title: string; bold: string; tone?: keyof typeof SECTION_TONE; children: React.ReactNode }) {
     return (
         <section className="mt-6">
-            <div className="mb-2.5 flex items-center gap-2">
-                <Icon className="h-5 w-5 text-slate-700" strokeWidth={2.5} />
+            <div className="mb-2.5 flex items-center gap-2.5">
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${SECTION_TONE[tone]}`}>
+                    <Icon className="h-4 w-4" strokeWidth={2.5} />
+                </span>
                 <h2 className={`text-sm ${bold} uppercase tracking-wide text-slate-700`}>{title}</h2>
             </div>
             {children}
@@ -294,8 +318,16 @@ export function PublicPrescriptionPage() {
                 </div>
 
                 {/* Letterhead — bold, high-contrast, the clinic's identity first. */}
-                <header className="rounded-2xl border-2 border-slate-900 bg-slate-900 p-5 text-white shadow-[4px_4px_0_0_rgba(79,70,229,1)]">
-                    <div className="flex items-center gap-3">
+                <header className="relative overflow-hidden rounded-2xl border-2 border-slate-900 bg-slate-900 p-5 text-white shadow-[4px_4px_0_0_rgba(79,70,229,1)]">
+                    {/* The same caduceus monogram the printed letterhead's own
+                        fallback crest draws (RxMonogram) — held faint in the
+                        corner as a mark of provenance, never competing with
+                        the clinic's own logo beside it. */}
+                    <RxMonogram
+                        color="#ffffff"
+                        className="pointer-events-none absolute -right-2 -top-2 h-20 w-20 opacity-[0.08]"
+                    />
+                    <div className="relative flex items-center gap-3">
                         {rx.clinic.logoUrl ? (
                             <img src={rx.clinic.logoUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl bg-white object-contain p-1" />
                         ) : null}
@@ -332,7 +364,7 @@ export function PublicPrescriptionPage() {
                 </div>
 
                 {(rx.symptoms.length || rx.findings.length || rx.diagnosisText) ? (
-                    <Section icon={Stethoscope} title={labels.findings} bold={boldWeight}>
+                    <Section icon={Stethoscope} title={labels.findings} bold={boldWeight} tone="slate">
                         <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 text-sm font-medium text-slate-700">
                             {[rx.diagnosisText, ...rx.symptoms, ...rx.findings].filter(Boolean).join(" · ")}
                         </div>
@@ -340,18 +372,30 @@ export function PublicPrescriptionPage() {
                 ) : null}
 
                 {rx.medicines.length ? (
-                    <Section icon={Pill} title={labels.prescription} bold={boldWeight}>
-                        <div className="space-y-3">
-                            {rx.medicines.map((m, i) => (
-                                <MedicineCard key={i} med={m} language={language} labels={labels} bold={boldWeight} />
-                            ))}
+                    <Section icon={Pill} title={labels.prescription} bold={boldWeight} tone="indigo">
+                        {/* The watermark behind the medicines block — the exact
+                            same mark, in the same spot relative to this section,
+                            that the printed prescription and the doctor's own
+                            review already carry (ReviewModal/PrescriptionDocument's
+                            `RxWatermark`). Kept faint enough to sit under the
+                            dosage text without ever competing with it. */}
+                        <div className="relative overflow-hidden rounded-2xl">
+                            <RxWatermark
+                                color="#4f46e5"
+                                className="pointer-events-none absolute -right-3 -top-3 h-28 w-28 opacity-[0.05]"
+                            />
+                            <div className="relative space-y-3">
+                                {rx.medicines.map((m, i) => (
+                                    <MedicineCard key={i} med={m} language={language} labels={labels} bold={boldWeight} />
+                                ))}
+                            </div>
                         </div>
                         <p className="mt-2 text-center text-[11px] font-semibold text-slate-400">{labels.freqLegend}</p>
                     </Section>
                 ) : null}
 
                 {rx.tests.length ? (
-                    <Section icon={ClipboardList} title={labels.investigations} bold={boldWeight}>
+                    <Section icon={ClipboardList} title={labels.investigations} bold={boldWeight} tone="purple">
                         <ul className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
                             {rx.tests.map((t, i) => (
                                 <li key={i} className="text-sm font-semibold text-slate-800">• {t}</li>
@@ -361,7 +405,7 @@ export function PublicPrescriptionPage() {
                 ) : null}
 
                 {rx.advice.length ? (
-                    <Section icon={ShieldAlert} title={labels.advice} bold={boldWeight}>
+                    <Section icon={ShieldAlert} title={labels.advice} bold={boldWeight} tone="amber">
                         <ul className="space-y-2 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
                             {rx.advice.map((a, i) => (
                                 <li key={i} className="flex gap-2 text-sm font-semibold text-amber-900">

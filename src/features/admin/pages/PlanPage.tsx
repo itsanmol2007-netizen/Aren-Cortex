@@ -81,7 +81,7 @@ export function PlanPage() {
                 contactEmail: email,
             });
             setMessage("");
-            toast.success("Sent to AREN — we'll be in touch");
+            toast.success("Sent to AREN. We'll be in touch.");
         } catch (e) {
             toast.error(e instanceof Error ? e.message : "Could not send that request.");
         } finally {

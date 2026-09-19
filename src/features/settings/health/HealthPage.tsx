@@ -264,8 +264,8 @@ export function HealthPage({
         if (!snapshot) return;
         const report = diagnosticsReport(snapshot, { clinic: clinicName, accountRef: hospitalId.slice(0, 8) });
         navigator.clipboard?.writeText(report)
-            .then(() => toast.success("Diagnostics copied — paste them to us."))
-            .catch(() => toast.error("Could not copy — select the text by hand."));
+            .then(() => toast.success("Diagnostics copied. Paste them to us."))
+            .catch(() => toast.error("Could not copy. Select the text by hand."));
     };
 
     return (
