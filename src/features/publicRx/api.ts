@@ -39,6 +39,12 @@ export interface PublicRxMedicine {
 export interface PublicRxData {
     ref: string | null;
     date: string;
+    /** The language the doctor actually sent this prescription in
+     *  (en/hi/hi-Latn) — the page opens here by default; the switcher can
+     *  still change it. Always one of the three, never null (the edge
+     *  function falls back to "en" itself when nothing was ever sent in a
+     *  specific language). */
+    defaultLanguage: "en" | "hi" | "hi-Latn";
     clinic: {
         name: string;
         nameHi: string | null;
