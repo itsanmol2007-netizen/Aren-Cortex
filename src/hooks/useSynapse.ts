@@ -45,6 +45,7 @@ import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
 import { syncCatalogue } from "../lib/offline/catalogueSync";
 import { prefetchRecentPatients } from "../lib/offline/patientPrefetch";
+import { isBackgroundSyncEnabled } from "../lib/offline/syncPreference";
 import { rememberIntentVocabulary } from "../lib/offline/offlineIntentSearch";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
@@ -318,10 +319,15 @@ export function useSynapse(): UseSynapse {
         // Doctor-only, matching the role-scoping rule (front desk never
         // reaches useSynapse at all — see App.tsx's single call site).
         if (!ready || !isReal) return;
-        syncCatalogue(hospitalId).catch((e) => {
-            console.warn("Catalogue sync (non-fatal):", e);
+        let cancelled = false;
+        isBackgroundSyncEnabled(doctorId).then((enabled) => {
+            if (cancelled || !enabled) return;
+            syncCatalogue(hospitalId).catch((e) => {
+                console.warn("Catalogue sync (non-fatal):", e);
+            });
         });
-    }, [ready, isReal, hospitalId]);
+        return () => { cancelled = true; };
+    }, [ready, isReal, hospitalId, doctorId]);
 
     useEffect(() => {
         // The 3-month local patient backup — see lib/offline/patientPrefetch.ts.
@@ -332,8 +338,11 @@ export function useSynapse(): UseSynapse {
         // that module's `PREFETCH_INTERVAL_MS`).
         if (!ready || !isReal || !doctorId) return;
         const run = () => {
-            prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
-                console.warn("Patient prefetch (non-fatal):", e);
+            isBackgroundSyncEnabled(doctorId).then((enabled) => {
+                if (!enabled) return;
+                prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
+                    console.warn("Patient prefetch (non-fatal):", e);
+                });
             });
         };
         run();
