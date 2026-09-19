@@ -741,6 +741,7 @@ export function ClinicPage({
             {clinicModalOpen && (
                 <EditClinicModal
                     hospitalId={identity.hospitalId}
+                    doctorId={identity.doctorId}
                     hospital={hospital}
                     onClose={() => setClinicModalOpen(false)}
                     onSaved={onHospitalChange}
