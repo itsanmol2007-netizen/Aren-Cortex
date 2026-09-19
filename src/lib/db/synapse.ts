@@ -1748,7 +1748,16 @@ const DB_SOURCE: Record<"doctor" | "confirmed" | "carried" | "reception", string
     reception: "reception",
 };
 
-export async function persistVisitInput(opts: {
+/**
+ * One in-flight write per visit — see `persistVisitInput`'s own comment for
+ * the race this closes. A later call for the same visit is chained onto
+ * whatever is already running rather than dispatched alongside it, and
+ * `.catch(() => {})` on the link (not the caller's own promise) keeps one
+ * failed write from poisoning the chain for every write after it.
+ */
+const visitInputQueue = new Map<string, Promise<void>>();
+
+export interface PersistVisitInputOpts {
     visitId: string;
     observableIds: number[];
     measurements: MeasurementRow[];
@@ -1773,7 +1782,23 @@ export async function persistVisitInput(opts: {
      * zero days would mean "started today" and is not the same thing.
      */
     durations?: Map<number, number>;
-}): Promise<void> {
+}
+
+/**
+ * The write itself — DELETE then INSERT, because a full replace is the only
+ * honest way to also drop an observable the doctor just un-ticked. Never
+ * call this directly: two calls for the SAME visit, close enough together
+ * that the first one's round trip hasn't finished, interleave their delete
+ * and insert and the second's insert dies on
+ * `visit_observations_visit_id_observable_id_key` — caught live 2026-09-19,
+ * reproducing right after a page reload (a fresh reconnect is exactly the
+ * slow-network case where the 600ms debounce upstream in
+ * useConsultIntelligence.ts no longer guarantees the PREVIOUS call has
+ * actually landed before the next one fires). `persistVisitInput` below is
+ * the real export — it serialises calls per visit so this body never
+ * overlaps itself.
+ */
+async function persistVisitInputNow(opts: PersistVisitInputOpts): Promise<void> {
     await supabase.from("visit_observations").delete().eq("visit_id", opts.visitId);
     if (opts.observableIds.length) {
         const { error } = await supabase.from("visit_observations").insert(
@@ -1809,6 +1834,29 @@ export async function persistVisitInput(opts: {
         );
         if (error) throw new Error(`visit_measurements: ${error.message}`);
     }
+}
+
+/**
+ * The real export. Chains onto whatever write is already in flight for this
+ * SAME visit, so `persistVisitInputNow`'s delete-then-insert never overlaps
+ * itself — see that function's own comment for the bug this closes. A
+ * failed link does not poison the chain: the `.catch` here is on what the
+ * NEXT call waits on, not on what this call's own caller awaits, so one bad
+ * write still surfaces to ITS caller while the queue moves on.
+ */
+export function persistVisitInput(opts: PersistVisitInputOpts): Promise<void> {
+    const prior = visitInputQueue.get(opts.visitId) ?? Promise.resolve();
+    const settled = prior.catch(() => {});
+    const run = settled.then(() => persistVisitInputNow(opts));
+    const link = run.catch(() => {});
+    visitInputQueue.set(opts.visitId, link);
+    // Tidy up once nothing is queued behind this call — a clinic's session
+    // runs many visits in a day, and a Map entry per visit that nothing ever
+    // removed would grow for as long as the tab stays open.
+    link.finally(() => {
+        if (visitInputQueue.get(opts.visitId) === link) visitInputQueue.delete(opts.visitId);
+    });
+    return run;
 }
 
 // ============================================================
