@@ -579,7 +579,9 @@ interface SearchBarProps {
 export function PatientsSearchBar({ value, onChange }: SearchBarProps) {
     return (
         <div className="prec-search-wrap">
-            <Search size={15} className="prec-search-icon" />
+            <span className="prec-search-icon-chip">
+                <Search size={14} className="prec-search-icon" />
+            </span>
             <input
                 type="text"
                 className="prec-search-input"
