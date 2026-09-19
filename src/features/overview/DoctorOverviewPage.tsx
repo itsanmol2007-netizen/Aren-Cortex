@@ -69,7 +69,7 @@ import { formatShortDate } from "../frontdesk/utils";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { useClinicShape } from "../../hooks/useClinicShape";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
-import { Card, CardPillButton, EmptyBlock, SkeletonRows } from "../clinic/ui";
+import { Card, CardPillButton, EmptyAction, EmptyBlock, SkeletonRows } from "../clinic/ui";
 import { Delta, Donut, HourBars, Sparkline, TrendChart, type Slice } from "../admin/charts";
 import { PeriodBar, type PeriodState } from "../admin/PeriodBar";
 import { FeesModal } from "../admin/FeesModal";
@@ -273,6 +273,18 @@ export function DoctorOverviewPage({
     const rangeKey = `${period.preset}_${period.from}_${period.to}`;
 
     const [data, setData] = useState<ClinicAnalytics | null>(null);
+    // Distinguishes "still trying" from "tried, and there is truly nothing
+    // to show" — `data === null` alone covers both, which is why a doctor
+    // who opened this page offline with an empty local mirror (a brand-new
+    // install, or a cache that expired past `overviewCache`'s 15-minute TTL)
+    // saw the KPI/chart/donut/hour-bar skeletons shimmer forever: `loading`
+    // goes false the moment the fetch SETTLES, but the render checks were
+    // keyed on `data` alone, and a failed fetch with nothing cached leaves
+    // `data` null right along with "still loading." Anmol, 2026-09-19: "that
+    // thing should also work when there is not any data because overview
+    // page is just rendering the data which is stored locally, right?" —
+    // the fix isn't inventing data, it's telling the two null states apart.
+    const [loadFailed, setLoadFailed] = useState(false);
     const [setup, setSetup] = useState<ClinicSetup | null>(() => {
         if (!identity.ready) return null;
         return getOverviewCache<ClinicSetup>(`setup.${identity.hospitalId}`);
@@ -360,6 +372,11 @@ export function DoctorOverviewPage({
         } else {
             setLoading(true);
         }
+        // Clear a previous failure the instant a fresh attempt starts —
+        // a retry (period change, pull-to-refresh, reconnect) should show
+        // the ordinary skeleton again while it's in flight, not carry the
+        // old "nothing to show" state into it.
+        setLoadFailed(false);
 
         fetchClinicAnalytics(identity.hospitalId, range, { doctorId: effectiveDoctorId })
             .then((res) => {
@@ -368,7 +385,10 @@ export function DoctorOverviewPage({
             })
             .catch((e: unknown) => {
                 console.error("[overview]", e);
-                if (!cached) setData(null);
+                if (!cached) {
+                    setData(null);
+                    setLoadFailed(true);
+                }
             })
             .finally(() => setLoading(false));
     }, [identity.ready, identity.hospitalId, effectiveDoctorId, range, rangeKey]);
@@ -819,18 +839,20 @@ export function DoctorOverviewPage({
                                                 <span className={`truncate text-[23px] font-bold leading-[1.12] tabular-nums ${k.accent ? "text-[var(--cs-violet)]" : "text-[var(--cs-ink)]"}`}>
                                                     {k.value}
                                                 </span>
+                                            ) : loadFailed ? (
+                                                <span className="text-[23px] font-bold leading-[1.12] text-[var(--cs-faint)]">—</span>
                                             ) : (
                                                 <span className="my-[3px] h-[22px] w-[45px] animate-pulse rounded bg-[#e4e7ee]" />
                                             )}
                                             {k.metric ? (
                                                 <Delta metric={k.metric} compareLabel={compareLabel} />
-                                            ) : !displayData ? (
+                                            ) : loadFailed ? null : !displayData ? (
                                                 <span className="mt-[2px] h-[12px] w-[65px] animate-pulse rounded bg-[#eef0f5]" />
                                             ) : null}
                                         </div>
                                         {k.spark && k.spark.length > 1 ? (
                                             <Sparkline values={k.spark} stroke={k.sparkColor} />
-                                        ) : !displayData ? (
+                                        ) : loadFailed ? null : !displayData ? (
                                             <div className="h-[28px] w-[56px] animate-pulse rounded bg-[#eef0f5]" />
                                         ) : null}
                                     </>
@@ -894,7 +916,15 @@ export function DoctorOverviewPage({
                                 }
                             >
                                 {!displayData ? (
-                                    <ChartSkeleton />
+                                    loadFailed ? (
+                                        <EmptyBlock
+                                            fact="Couldn't load this yet"
+                                            next="Nothing's cached on this device for this range. Reconnect and refresh to load it."
+                                            action={<EmptyAction tone="blue" onClick={loadAnalytics}>Try again</EmptyAction>}
+                                        />
+                                    ) : (
+                                        <ChartSkeleton />
+                                    )
                                 ) : emptyPeriod ? (
                                     <EmptyBlock
                                         fact="No activity in this period"
@@ -932,7 +962,14 @@ export function DoctorOverviewPage({
                                 subtitle={formatRangeLabel(range)}
                             >
                                 {!displayData ? (
-                                    <DonutSkeleton />
+                                    loadFailed ? (
+                                        <EmptyBlock
+                                            fact="Couldn't load this yet"
+                                            next="Nothing's cached on this device for this range."
+                                        />
+                                    ) : (
+                                        <DonutSkeleton />
+                                    )
                                 ) : displayData.patients.value === 0 ? (
                                     <EmptyBlock
                                         fact="Nobody yet in this period"
@@ -1104,7 +1141,14 @@ export function DoctorOverviewPage({
                                 subtitle={`Visits by hour · ${formatRangeLabel(range)}`}
                             >
                                 {!displayData ? (
-                                    <HourBarsSkeleton />
+                                    loadFailed ? (
+                                        <EmptyBlock
+                                            fact="Couldn't load this yet"
+                                            next="Nothing's cached on this device for this range."
+                                        />
+                                    ) : (
+                                        <HourBarsSkeleton />
+                                    )
                                 ) : displayData.byHour.every((n) => n === 0) ? (
                                     <EmptyBlock
                                         fact="No visits in this period"
