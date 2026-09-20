@@ -1,16 +1,18 @@
 // ---------------------------------------------------------------------------
-// Settings' "Install App" card — sits right beside AppLockCard, same
-// SettingsCard treatment (description strip, gradient CTA, status row) so
-// the two read as one family of "make this device yours" settings rather
-// than one being a real setting and the other a banner bolted on.
+// Settings' "Install app" content — folded into the Data & Sync card as its
+// third subsection (2026-09-20) rather than a card of its own. With App Lock
+// as the only other card sharing this row, a third card here left the grid's
+// second cell permanently empty (Anmol, screenshot: "this empty space, sign
+// of unoptimised design") — "Install app" is close enough in spirit to
+// "make this device yours" that it reads as at home alongside sync rather
+// than needing its own header.
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
 import { CheckCircle2, Download, Share } from "lucide-react";
-import { SettingsCard } from "./SettingsPage";
 import { useInstallPrompt } from "../../hooks/useInstallPrompt";
 
-export function InstallAppCard() {
+export function InstallAppSection() {
     const { installable, installed, isIOSSafari, promptInstall } = useInstallPrompt();
     const [busy, setBusy] = useState(false);
     const [declined, setDeclined] = useState(false);
@@ -26,12 +28,11 @@ export function InstallAppCard() {
     };
 
     return (
-        <SettingsCard
-            id="set-card-install-app"
-            icon={<Download size={17} />}
-            tint="bg-[rgba(18,104,232,0.10)] text-[var(--cs-blue)]"
-            title="Install App"
-        >
+        <div className="flex flex-col gap-[8px]">
+            <div className="flex items-center gap-[8px]">
+                <Download size={14} className="text-[var(--cs-blue)]" />
+                <span className="text-[13px] font-semibold text-[var(--cs-ink)]">Install app</span>
+            </div>
             {installed ? (
                 <div className="flex items-center gap-[8px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[10px] text-[12.5px] font-semibold text-[var(--cs-ink)]">
                     <CheckCircle2 size={15} className="text-[#16a34a]" /> Already installed on this device
@@ -84,6 +85,6 @@ export function InstallAppCard() {
                     first.
                 </p>
             )}
-        </SettingsCard>
+        </div>
     );
 }

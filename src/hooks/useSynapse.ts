@@ -45,7 +45,7 @@ import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
 import { syncCatalogue } from "../lib/offline/catalogueSync";
 import { prefetchRecentPatients, PREFETCH_START_DELAY_MS } from "../lib/offline/patientPrefetch";
-import { isBackgroundSyncEnabled } from "../lib/offline/syncPreference";
+import { isCatalogueSyncEnabled, isPatientPrefetchEnabled } from "../lib/offline/syncPreference";
 import { rememberIntentVocabulary } from "../lib/offline/offlineIntentSearch";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
@@ -320,7 +320,7 @@ export function useSynapse(): UseSynapse {
         // reaches useSynapse at all — see App.tsx's single call site).
         if (!ready || !isReal) return;
         let cancelled = false;
-        isBackgroundSyncEnabled(doctorId).then((enabled) => {
+        isCatalogueSyncEnabled(doctorId).then((enabled) => {
             if (cancelled || !enabled) return;
             syncCatalogue(hospitalId).catch((e) => {
                 console.warn("Catalogue sync (non-fatal):", e);
@@ -350,7 +350,7 @@ export function useSynapse(): UseSynapse {
         // to stop the two from ever colliding in the case that matters most.
         if (!ready || !isReal || !doctorId) return;
         const run = () => {
-            isBackgroundSyncEnabled(doctorId).then((enabled) => {
+            isPatientPrefetchEnabled(doctorId).then((enabled) => {
                 if (!enabled) return;
                 prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
                     console.warn("Patient prefetch (non-fatal):", e);
