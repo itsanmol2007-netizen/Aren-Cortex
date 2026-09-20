@@ -256,10 +256,23 @@ function StandardDocument({
     const followUpBorder = monochrome ? "#999999" : "#fcd34d";
     const dotColor = monochrome ? "#171717" : "#1268e8";
 
+    // `width` is 100% rather than a fixed "210mm"/"148mm" on purpose
+    // (Anmol, 2026-09-20: dead space "on the right side... and the bottom,
+    // that's just a scaling problem... stuck in the corner"). `@page` in
+    // ReviewModal.tsx already declares the true physical page size
+    // (`size: A4 portrait; margin: 0`), but a print driver's actual
+    // printable area frequently doesn't land on that exact number — when it
+    // doesn't, a FIXED-mm content width renders at its own true size and
+    // simply sits in whatever corner the page box starts from, instead of
+    // filling it. `width: 100%` always resolves against whatever page box
+    // the print pipeline actually produces, so it fills the real page
+    // regardless of any driver-level mismatch. `minHeight` stays a fixed mm
+    // value — the bottom dead space on a short prescription is real paper
+    // left over, not a bug (confirmed, not fixing).
     const pageStyle: React.CSSProperties =
         format === "a4"
-            ? { width: "210mm", minHeight: "297mm", padding: "16mm 18mm" }
-            : { width: "148mm", minHeight: "210mm", padding: "10mm 12mm" };
+            ? { width: "100%", minHeight: "297mm", padding: "16mm 18mm", boxSizing: "border-box" }
+            : { width: "100%", minHeight: "210mm", padding: "10mm 12mm", boxSizing: "border-box" };
 
     // Devanagari reads visibly smaller/lighter than Latin at the same pixel
     // size — lower x-height ratio, thinner default stroke contrast in most
@@ -449,27 +462,39 @@ function StandardDocument({
                 {prescriptionRef && <PatientCell label={t.ref} value={prescriptionRef} mono />}
             </div>
 
-            {/* ── Vitals ── */}
+            {/* ── Vitals ── same bordered-card treatment Complaints/Findings
+                already carry below — was a bare, unbordered inline strip of
+                8-11px text sitting directly under the patient strip, which
+                against those two proper boxed cards read as "unnecessary
+                hierarchy to useless things and the actual measurements just
+                getting shit" (Anmol, 2026-09-20). The measurements a doctor
+                actually recorded earn the same visual weight as a complaint
+                list, not less. */}
             {vitals && Object.values(vitals).some(Boolean) && (
-                <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
-                    {/* Read from the catalogue — see the note on the twin
-                        block in ReviewModal for why these two lists stopped
-                        being hand-maintained on 2026-08-16. `rxLabel` rather
-                        than `printLabel` is what keeps this surface's shorter
-                        vocabulary: FBS and RBS are what an Indian prescription
-                        says, and what the test catalogue itself calls them. */}
-                    {MEASURE_FIELDS.map((f) => {
-                        const value = vitals[f.key];
-                        return value ? (
-                            <VitalItem key={f.key} label={localizeMeasureLabel(f.key, f.rxLabel, lang)} value={value} unit={f.unit} labelColor={rx.ink} />
-                        ) : null;
-                    })}
-                    {/* Custom-measurement fallback — doctor-typed label, printed
-                        as-is. Never in MEASURE_FIELDS; see ReviewModal's twin
-                        block for why. */}
-                    {(vitals.customMeasurements ?? []).map((c) => (
-                        <VitalItem key={c.id} label={c.label} value={c.value} unit={c.unit} labelColor={rx.ink} />
-                    ))}
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.measurements}
+                    </div>
+                    <div style={{ display: "flex", gap: "10px 20px", flexWrap: "wrap" }}>
+                        {/* Read from the catalogue — see the note on the twin
+                            block in ReviewModal for why these two lists stopped
+                            being hand-maintained on 2026-08-16. `rxLabel` rather
+                            than `printLabel` is what keeps this surface's shorter
+                            vocabulary: FBS and RBS are what an Indian prescription
+                            says, and what the test catalogue itself calls them. */}
+                        {MEASURE_FIELDS.map((f) => {
+                            const value = vitals[f.key];
+                            return value ? (
+                                <VitalItem key={f.key} label={localizeMeasureLabel(f.key, f.rxLabel, lang)} value={value} unit={f.unit} labelColor={rx.ink} />
+                            ) : null;
+                        })}
+                        {/* Custom-measurement fallback — doctor-typed label,
+                            printed as-is. Never in MEASURE_FIELDS; see
+                            ReviewModal's twin block for why. */}
+                        {(vitals.customMeasurements ?? []).map((c) => (
+                            <VitalItem key={c.id} label={c.label} value={c.value} unit={c.unit} labelColor={rx.ink} />
+                        ))}
+                    </div>
                 </div>
             )}
 
