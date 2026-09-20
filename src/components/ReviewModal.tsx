@@ -2,9 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import {
   X, Edit2, Printer, MessageCircle, CheckCircle, Loader2,
-  User, Calendar, AlertCircle, Sun, Sunrise, Sunset,
-  Moon, MapPin, Phone, ChevronRight,
-  FileText, Hash, IndianRupee, Plus, Check,
+  AlertCircle, IndianRupee, Plus, Check,
 } from "lucide-react";
 import { freqLabelToSlot, freqSlotToLabel } from "../lib/db";
 import type { DBHospital, DBFinding } from "../lib/db";
@@ -15,17 +13,14 @@ import {
   fetchAdditionalChargesCatalog, saveAdditionalChargeToCatalog,
   type AdditionalChargeCatalogEntry, type AdditionalChargeLine, type ReviewBillingResult,
 } from "../lib/db/additionalCharges";
-import { MEASURE_FIELDS } from "../features/consult/measures";
 import PrescriptionDocument, { type PrescriptionBillingSummary } from "../features/prescription/PrescriptionDocument";
+import { ScaledPrescriptionSheet } from "../features/prescription/ScaledPrescriptionSheet";
 import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
 import { usePrintFormat } from "../features/prescription/usePrintFormat";
-import { accentPalette } from "../lib/brand/accent";
-import { RxMonogram, RxWatermark, RxRule } from "./RxMarks";
 import { matches } from "../lib/keyboard/keymap";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import { usePrescriptionConfig } from "../features/prescription/usePrescriptionConfig";
-import { rxLabels, hiName, localizeTiming, localizeMeasureLabel, RX_LANGUAGE_OPTIONS, type RxLanguage } from "../lib/i18n/prescriptionLabels";
-import arenLogo from "../assets/aren-logo-w.png";
+import { rxLabels, hiName, RX_LANGUAGE_OPTIONS, type RxLanguage } from "../lib/i18n/prescriptionLabels";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,10 +144,6 @@ function resolveLabel(frequency: string): string {
 function formatDate(d = new Date()): string {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 }
-function initials(name: string): string {
-  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
-}
-
 // `INSTRUCTION_GROUPS`/`pickInstructions` used to live here: four lines of
 // canned text, pseudo-randomly selected from a fixed pool by hashing
 // `visitId`. They never printed — `PrescriptionDocument` has no equivalent
@@ -243,15 +234,6 @@ export default function ReviewModal({
   const bodyRef = useRef<HTMLDivElement>(null);
   useOverlayFocus(bodyRef);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [logoError, setLogoError] = useState(false);
-  // Same reasoning as `logoError` just above — a signature URL existing
-  // isn't the same as it having actually loaded (offline, not yet cached).
-  const [sigError, setSigError] = useState(false);
-  // Separate from `logoError` — that one tracks the CLINIC's own logo/photo
-  // failing to load; this tracks the unrelated AREN wordmark in the footer.
-  // The two used to share one flag, so a clinic whose own logo 404'd also
-  // silently lost its footer attribution for no connected reason.
-  const [arenLogoError, setArenLogoError] = useState(false);
   const [showFormatPicker, setShowFormatPicker] = useState(false);
   /** Which language the DOCUMENT (this preview, the print/PDF, the WhatsApp
    *  send) renders in. English until the doctor picks otherwise, every time —
@@ -259,12 +241,6 @@ export default function ReviewModal({
    *  send to one patient never leaks into the next patient's default. */
   const [language, setLanguage] = useState<RxLanguage>("en");
   const t = rxLabels(language);
-  // Typography — see the matching comment in PrescriptionDocument.tsx. Arial/
-  // the app's default sans have no real Devanagari shaping; this review IS
-  // meant to look like the document the patient receives, so it gets the
-  // same font + extra line-height, not the tight Latin-tuned spacing.
-  const isDevanagari = language === "hi";
-  const docFontFamily = isDevanagari ? "'Noto Sans Devanagari', 'Inter', sans-serif" : undefined;
 
   const { format, remembered, choose } = usePrintFormat();
   /**
@@ -460,47 +436,18 @@ export default function ReviewModal({
    * lib/brand/accent.ts. `accentPalette()` with no argument already resolves
    * to this same fixed colour — its own fallback.
    */
-  const rx = accentPalette();
   const today = formatDate(date);
 
   // Devanagari names, confirmed once (Clinic page) and stored on
-  // doctors.name_hi / hospitals.name_hi — never guessed at render time.
+  // doctors.name_hi / hospitals.name_hi — never guessed at render time. Both
+  // still needed here: `doctorName` for the WhatsApp send caption below,
+  // `clinicName` for that same caption. The rest of what this section used
+  // to compute (address/phone/email/website, logo vs. doctor-photo choice,
+  // identity-mode flags) was ONLY for the hand-styled preview this component
+  // no longer renders — see `ScaledPrescriptionSheet`'s call below, which
+  // reads `hospital`/`doctor`/`prescriptionConfig` directly instead.
   const doctorName = hiName(language, doctor?.name ?? "Dr. —", doctor?.name_hi);
-  const doctorQual = doctor?.qualification ?? "";
-  const doctorReg = doctor?.registration_number ?? "";
-  const doctorSpec = doctor?.specialization ?? "";
   const clinicName = hiName(language, hospital?.name ?? "Clinic", hospital?.name_hi);
-  const clinicAddress = hospital?.address ?? "";
-  const clinicPhone = hospital?.phone ?? "";
-  const clinicLogo = hospital?.logo_url;
-  const doctorAvatar = doctor?.avatar_url;
-  const signatureUrl = doctor?.signature_image_url;
-  const isBranded = hospital?.is_branded !== false;
-  const clinicEmail = hospital?.email ?? "";
-  const clinicWebsite = hospital?.website ?? "";
-
-  /**
-   * This on-screen review is a SEPARATE hand-styled surface from
-   * `PrescriptionDocument` (standing rule 6) — it never pixel-matches the
-   * print output and isn't meant to. But it went further than that: it
-   * NEVER read `prescriptionConfig` at all, so a doctor who customised their
-   * prescription (hid a field, chose "doctor only", switched off a photo)
-   * saw an unchanged review screen every time, then a DIFFERENT-looking
-   * print output. These mirror the exact same flags `PrescriptionDocument`
-   * computes from the same config, applied to this component's own layout —
-   * not a second copy of the print doc, but no longer blind to the config
-   * either. `monochrome` is NOT mirrored here: this screen's dark gradient
-   * header and colour-coded sections are an on-screen reviewing aid, not a
-   * simulation of paper output, and forcing them to grey would not actually
-   * tell a doctor anything true about how a black-and-white printer will
-   * render the real document.
-   */
-  const showClinicIdentity = prescriptionConfig.identityMode !== "doctor";
-  const showDoctorIdentity = prescriptionConfig.identityMode !== "clinic";
-  const headerImage = prescriptionConfig.profileImage === "clinic_logo" ? clinicLogo
-    : prescriptionConfig.profileImage === "doctor_photo" ? doctorAvatar
-      : null;
-  const showHeaderImage = prescriptionConfig.profileImage !== "none";
 
   // QR generation
   useEffect(() => {
@@ -741,538 +688,43 @@ export default function ReviewModal({
             className="overflow-y-auto flex-1 bg-gray-50/80 outline-none focus:ring-[3px] focus:ring-blue-100 focus:ring-inset focus:shadow-[inset_0_0_0_1px_#1268e8]"
           >
             <div className="flex items-start gap-4 m-3">
-            <div
-              className="flex-1 min-w-0 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white"
-              style={docFontFamily ? { fontFamily: docFontFamily, lineHeight: 1.6 } : undefined}
-            >
-
-              {/* ══ Letterhead ══ — white and calm, the same identity band the
-                  printed prescription (`PrescriptionDocument`) and the
-                  patient's web copy (`RxView`) use: clinic name in ink, a
-                  short `RxRule` accent under it, a solid 3px accent border at
-                  the foot. Was a dark RGB-gradient panel with decorative orbs
-                  and a pink specialty pill until 2026-09-09 — Anmol: the
-                  review should look like the document a patient receives, "not
-                  like a gaming PC RGB bill". */}
-              <div
-                className="relative px-7 py-5 bg-white"
-                style={{ borderBottom: `3px solid ${accentColor}` }}
-              >
-                <div className="flex items-start gap-5">
-                  {/* Logo — a SELECTION between the clinic logo and the
-                      doctor photo (`prescriptionConfig.profileImage`), same
-                      choice the print output honours; "none" drops the image
-                      entirely rather than falling back to one anyway. */}
-                  {showHeaderImage && (
-                    <div className="shrink-0">
-                      {headerImage && !logoError ? (
-                        <img
-                          src={headerImage}
-                          alt={prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName}
-                          onError={() => setLogoError(true)}
-                          className="w-14 h-14 rounded-xl object-cover"
-                          style={{ border: `2px solid ${accentColor}` }}
-                        />
-                      ) : (
-                        /* The fallback crest. Initials over the clinic's own
-                           colour, with the monogram behind them, so a clinic
-                           that has not uploaded a logo still gets a mark that is
-                           theirs rather than a coloured square. */
-                        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative overflow-hidden"
-                          style={{ background: rx.base }}>
-                          <RxMonogram
-                            color={rx.onBase}
-                            className="absolute inset-0 w-full h-full opacity-20"
-                          />
-                          <span className="relative text-lg font-black" style={{ color: rx.onBase }}>
-                            {initials(prescriptionConfig.profileImage === "doctor_photo" ? doctorName : clinicName)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Clinic info */}
-                  {showClinicIdentity && (
-                    <div className="flex-1 min-w-0">
-                      <h1
-                        className="text-[20px] font-black leading-tight tracking-tight"
-                        style={{ color: "#0d1b35", ...(isDevanagari ? { fontSize: 22, lineHeight: 1.4, letterSpacing: "normal" } : null) }}
-                      >
-                        {clinicName}
-                      </h1>
-                      <div className="w-11 mt-1"><RxRule color={rx.mid} /></div>
-                      {prescriptionConfig.showClinicAddress && clinicAddress && (
-                        <div className="flex items-start gap-1.5 mt-2">
-                          <MapPin className="w-3 h-3 mt-0.5 shrink-0 text-gray-400" />
-                          <p className="text-[11px] leading-relaxed text-gray-500">{clinicAddress}</p>
-                        </div>
-                      )}
-                      {prescriptionConfig.showClinicPhone && clinicPhone && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <Phone className="w-3 h-3 shrink-0 text-gray-400" />
-                          <p className="text-[11px] text-gray-500">{clinicPhone}</p>
-                        </div>
-                      )}
-                      {prescriptionConfig.showClinicEmail && clinicEmail && (
-                        <p className="text-[11px] text-gray-500 mt-1">{clinicEmail}</p>
-                      )}
-                      {prescriptionConfig.showWebsite && clinicWebsite && (
-                        <p className="text-[11px] text-gray-500 mt-1">{clinicWebsite}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Divider — only ever between two identities. */}
-                  {showClinicIdentity && showDoctorIdentity && (
-                    <div className="w-px self-stretch mx-1 shrink-0 bg-gray-200" />
-                  )}
-
-                  {/* Doctor info — right-aligned beside the clinic, filling
-                      the row and left-aligned when it IS the letterhead. */}
-                  {showDoctorIdentity && (
-                    <div className={showClinicIdentity ? "shrink-0 text-right min-w-[150px]" : "flex-1 min-w-0 text-left"}>
-                      <p
-                        className="text-[17px] font-black leading-tight tracking-tight"
-                        style={{ color: "#0d1b35", ...(isDevanagari ? { fontSize: 19, lineHeight: 1.4, letterSpacing: "normal" } : null) }}
-                      >{doctorName}</p>
-                      {prescriptionConfig.showQualification && doctorQual && (
-                        <p className="text-[12px] font-bold mt-0.5" style={{ color: rx.ink }}>{doctorQual}</p>
-                      )}
-                      {prescriptionConfig.showSpecialty && doctorSpec && (
-                        <p className="text-[11px] text-gray-500 mt-0.5">{doctorSpec}</p>
-                      )}
-                      {prescriptionConfig.showRegistration && doctorReg && (
-                        <p className="text-[10px] text-gray-400 mt-0.5">{t.regNo} {doctorReg}</p>
-                      )}
-                      {/* A doctor-only letterhead still has to say where this
-                          was prescribed from — folds the clinic's own enabled
-                          contact lines in here rather than losing them along
-                          with the clinic's name. */}
-                      {!showClinicIdentity && prescriptionConfig.showClinicAddress && clinicAddress && (
-                        <p className="text-[11px] leading-relaxed text-gray-500 mt-1.5">{clinicAddress}</p>
-                      )}
-                      {!showClinicIdentity && prescriptionConfig.showClinicPhone && clinicPhone && (
-                        <p className="text-[11px] text-gray-500 mt-1">{clinicPhone}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ══ Patient strip ══ — this and the prescription table below
-                  are the content the header/footer trims above make room
-                  for; sized to read clearly, not to shrink further. */}
-              <div className="px-7 py-4 border-b border-gray-100 bg-gradient-to-b from-blue-50/40 to-white">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-xl bg-blue-100/80">
-                    <User className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black tracking-[0.14em] text-blue-500 uppercase leading-none mb-1">{t.patient}</p>
-                    <h3 className="text-[20px] font-black text-gray-900 leading-tight tracking-tight">{patient.name}</h3>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-8 gap-y-3 pl-[52px]">
-                  <PatientField label={t.ageSex} value={`${patient.age}Y / ${patient.gender}`} />
-                  {patient.phone && <PatientField label={t.phone} value={patient.phone} />}
-                  <PatientField label={t.date} value={today} />
-                  {prescriptionRef ? (
-                    <div>
-                      <p className="text-[8px] font-black tracking-[0.12em] text-gray-500 uppercase leading-none mb-1">{t.ref}</p>
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono text-[12px] font-bold tracking-wider shadow-sm">
-                        <Hash className="w-3 h-3" />
-                        {prescriptionRef}
-                      </span>
-                    </div>
-                  ) : visitId ? (
-                    <PatientField label={t.ref} value={"#" + visitId.slice(0, 8).toUpperCase()} mono />
-                  ) : null}
-                </div>
-              </div>
-
-              {/* ══ Vitals ══ */}
-              {vitals && Object.values(vitals).some(Boolean) && (
-                <div className="px-7 py-2.5 border-b border-blue-100/60 bg-blue-50/40 flex flex-wrap gap-6">
-                  {/* Read from the catalogue rather than hand-listed, since
-                      2026-08-16. This was fifteen literal lines, and its twin
-                      in PrescriptionDocument was fifteen more — a pair of
-                      hand-maintained lists that BOTH had to be extended for
-                      every new field, and had both silently fallen behind
-                      twice already (§10.6 for height/blood group/pain/ROM,
-                      2026-08-11 for LMP and G-P-L-A). §14.22's rule applies:
-                      when two things must agree, make one of them read the
-                      other. The seventeen physiotherapy fields added the same
-                      day would have been thirty-four more lines to keep in
-                      step by discipline alone.
-
-                      Catalogue order is print order, which is what it already
-                      was. `check:measures` now asserts this file contains no
-                      hand-written `vitals.<key>` reference at all. */}
-                  {MEASURE_FIELDS.map((f) => {
-                    const value = vitals[f.key];
-                    return value ? (
-                      <VitalChip key={f.key} label={localizeMeasureLabel(f.key, f.printLabel, language)} value={value} unit={f.unit} />
-                    ) : null;
-                  })}
-                  {/* The custom-measurement fallback — never in MEASURE_FIELDS,
-                      since the label itself is doctor-typed, not catalogued.
-                      Printed exactly as entered; no localization exists for a
-                      label nothing here authored. */}
-                  {(vitals.customMeasurements ?? []).map((c) => (
-                    <VitalChip key={c.id} label={c.label} value={c.value} unit={c.unit} />
-                  ))}
-                </div>
-              )}
-
-              {/* ══ Clinical Summary ══ */}
-              {(symptoms.length > 0 || findings.length > 0 || storySummary.length > 0 || goalSummary.length > 0) && (
-                <div className="px-7 py-4 border-b border-gray-100">
-                  <SectionTitle icon={FileText} title="Clinical Summary" />
-                  <div className="mt-2.5 grid grid-cols-2 gap-3">
-                    {symptoms.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-                        <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-3">
-                          {t.complaints}
-                        </p>
-                        <ul className="space-y-2">
-                          {symptoms.map((s) => (
-                            <li key={s} className="flex items-center gap-2 text-[12px] text-gray-700 font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />{s}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {findings.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-                        <p className="text-[9px] font-black tracking-[0.12em] text-purple-600 uppercase mb-3">
-                          {t.findings}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {findings.map((f) => (
-                            <span key={f}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
-                              <AlertCircle className="w-3 h-3" />{f}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Physiotherapy Phase 1 — how the symptom behaves and
-                        what the patient wants back. Doctor-facing review
-                        only: rendered here, in Clinical Summary, and NOT in
-                        the printable Rx sections below (plan §5). */}
-                    {storySummary.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-                        <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-3">
-                          Story
-                        </p>
-                        <ul className="space-y-2">
-                          {storySummary.map((line, i) => (
-                            <li key={i} className="flex items-center gap-2 text-[12px] text-gray-700 font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />{line}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {goalSummary.length > 0 && (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-                        <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-3">
-                          Goals
-                        </p>
-                        <ul className="space-y-2">
-                          {goalSummary.map((line, i) => (
-                            <li key={i} className="flex items-center gap-2 text-[12px] text-gray-700 font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />{line}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ══ Prescription table ══ — the reason this document exists;
-                  trimmed less than everything around it. */}
-              {prescription.length > 0 && (
-                <div className="px-7 py-4 border-b border-gray-100 relative">
-                  {/* The watermark. Held at 4% and pinned behind the table, in
-                      the clinic's colour, so the sheet is recognisably theirs
-                      at arm's length. Stroke-drawn rather than filled so a
-                      printer that renders it heavy still leaves the dosage
-                      text on top readable. `pointer-events-none` so it can
-                      never intercept a click on a row. */}
-                  <RxWatermark
-                    color={rx.base}
-                    className="pointer-events-none absolute right-6 top-8 w-[132px] h-[132px] opacity-[0.04]"
-                  />
-                  <div className="relative">
-                    <SectionTitle icon={() => <RxIcon />} title={t.prescription} />
-                  </div>
-
-                  <div className="relative mt-3 rounded-xl border border-gray-200/80 overflow-hidden">
-                    {/* Header */}
-                    <div className="bg-gray-50/80 border-b border-gray-200">
-                      <div className="grid items-center"
-                        style={{ gridTemplateColumns: "32px 1fr 168px 88px 1fr" }}>
-                        <div className="px-3 py-3 text-center text-[9px] font-black tracking-wider text-blue-600 uppercase">#</div>
-                        <div className="px-3 py-3 text-[9px] font-black tracking-wider text-blue-600 uppercase">
-                          {t.colMedicine}<br />
-                          <span className="text-gray-500 font-normal normal-case tracking-normal text-[9px]">(Generic)</span>
-                        </div>
-                        <div className="px-2 py-2 text-[9px] font-black tracking-wider text-blue-600 uppercase">
-                          <div className="text-center mb-2">Dosage</div>
-                          <div className="grid grid-cols-4 text-center">
-                            <SlotHeader icon={Sunrise} label="Morn" sub="M" />
-                            <SlotHeader icon={Sun} label="Noon" sub="A" />
-                            <SlotHeader icon={Sunset} label="Eve" sub="E" />
-                            <SlotHeader icon={Moon} label="Night" sub="N" />
-                          </div>
-                        </div>
-                        <div className="px-3 py-3 text-center text-[9px] font-black tracking-wider text-blue-600 uppercase">{t.colDuration}</div>
-                        <div className="px-3 py-3 text-[9px] font-black tracking-wider text-blue-600 uppercase">{t.colInstructions}</div>
-                      </div>
-                    </div>
-
-                    {/* Rows */}
-                    {prescription.map((med, idx) => {
-                      const [m, a, e, n] = resolveSlot(med.frequency);
-                      return (
-                        <div key={idx}
-                          className={`grid items-center border-b border-gray-100 last:border-0 ${idx % 2 === 1 ? "bg-gray-50/40" : "bg-white"}`}
-                          style={{ gridTemplateColumns: "32px 1fr 168px 88px 1fr" }}>
-                          <div className="px-3 py-3 flex justify-center">
-                            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white bg-blue-600">
-                              {idx + 1}
-                            </span>
-                          </div>
-                          <div className="px-3 py-3">
-                            <p className="text-[13px] font-bold text-gray-900 leading-tight">{med.name}</p>
-                            {(med.composition || med.dosage_mg) && (
-                              <p className="text-[10px] text-gray-500 mt-0.5">
-                                {[med.composition, med.dosage_mg ? `${med.dosage_mg}mg` : ""].filter(Boolean).join(" · ")}
-                              </p>
-                            )}
-                          </div>
-                          <div className="px-2 py-3">
-                            <div className="grid grid-cols-4 gap-1 justify-items-center">
-                              <DosageDot active={m} />
-                              <DosageDot active={a} />
-                              <DosageDot active={e} />
-                              <DosageDot active={n} />
-                            </div>
-                          </div>
-                          <div className="px-3 py-3 text-center">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-700">
-                              <Calendar className="w-3 h-3 text-blue-400 shrink-0" />
-                              {/* Structured, system-generated value — see PrescriptionDocument's
-                                  matching comment. Never the doctor's own words. */}
-                              {med.duration_days != null ? t.durationDays(med.duration_days) : med.duration}
-                            </span>
-                          </div>
-                          <div className="px-3 py-3">
-                            {med.instructions && (
-                              <p className="text-[10px] text-gray-600 leading-relaxed italic">{localizeTiming(med.instructions, language)}</p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center gap-5 mt-2.5 px-1">
-                    <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                      <div className="w-3 h-3 rounded-full bg-blue-600" /> = {t.takeLabel}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                      <div className="w-3 h-3 rounded-full border-2 border-gray-300" /> = {t.skipLabel}
-                    </div>
-                    <span className="text-[10px] text-gray-500">{t.freqLegend}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* ══ Investigations ══ */}
-              {tests.length > 0 && (
-                <div className="px-7 py-4 border-b border-gray-100">
-                  <SectionTitle icon={FileText} title={t.investigations} accent="purple" />
-                  <div className="flex flex-wrap gap-2 mt-2.5">
-                    {tests.map((test) => (
-                      <span key={test}
-                        className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                        {test}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ══ Bottom: Signature+QR | Instructions ══
-                  Was a flat `grid-cols-3` over up to FIVE children
-                  (signature, QR, therapy, exercise, instructions) — fine
-                  with one or two present, but a physiotherapy consult with
-                  BOTH therapy notes and a home programme pushed a 4th/5th
-                  item onto a SECOND grid row, stranding signature/QR alone
-                  above a mostly-empty row and roughly doubling this
-                  section's height for no reason (real cause of "why do I
-                  have to scroll so much"). Two fixed columns instead:
-                  signature+QR stacked on the left, everything else stacked
-                  in natural reading order on the right — always exactly one
-                  row, however many of the right-hand blocks are present. */}
-              <div className="px-7 py-5 grid grid-cols-[188px_1fr] gap-6 border-b border-gray-100 items-start">
-
-                {/* LEFT — prescriber identity only. Signature + name + creds,
-                    nothing else crammed here; the QR moved to the right where
-                    there is room (matches the A4/A5 print layout). */}
-                <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 pt-4 pb-3">
-                  {prescriptionConfig.showSignature && (
-                    signatureUrl && !sigError ? (
-                      <img src={signatureUrl} alt="Signature"
-                        onError={() => setSigError(true)}
-                        className="h-12 w-full object-contain object-left mb-2.5" />
-                    ) : (
-                      <div className="h-12 border-b-2 border-gray-300 mb-2.5" />
-                    )
-                  )}
-                  <div className="border-t border-gray-100 pt-2">
-                    <p className="text-[13px] font-black text-gray-900 leading-tight">{doctorName}</p>
-                    {prescriptionConfig.showQualification && doctorQual && (
-                      <p className="text-[11px] font-bold leading-tight mt-0.5" style={{ color: accentColor }}>{doctorQual}</p>
-                    )}
-                    {prescriptionConfig.showRegistration && doctorReg && (
-                      <p className="text-[10px] text-gray-500 leading-tight mt-0.5">{t.regNo} {doctorReg}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right column — the advice the patient leaves with, then
-                    (bottom-right, in the empty space) the QR + follow-up. */}
-                <div className="flex flex-col gap-4">
-                  {/* Delivered in the clinic today — a record of what was
-                      DONE rather than something to do (see IntentType in
-                      engine.ts). Teal, the "examined" colour. */}
-                  {therapyNotes && (
-                    <div>
-                      <p className="text-[9px] font-black tracking-[0.12em] text-teal-700 uppercase mb-2">
-                        {t.therapyPerformed}
-                      </p>
-                      <div className="space-y-1.5">
-                        {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
-                          <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
-                            <ChevronRight className="w-3 h-3 text-teal-400 mt-0.5 shrink-0" />{line}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* The home programme, between what the clinic did and the
-                      general instructions. A physiotherapy patient's
-                      prescription is mostly this. */}
-                  {exerciseLines.length > 0 && (
-                    <div>
-                      <p className="text-[9px] font-black tracking-[0.12em] text-blue-600 uppercase mb-2">
-                        {t.homeExercise}
-                      </p>
-                      <div className="space-y-1.5">
-                        {exerciseLines.map((line, i) => (
-                          <p key={i} className="flex items-start gap-1.5 text-[11px] text-gray-700 font-medium">
-                            <ChevronRight className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />{line}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Advice — ONLY what the doctor wrote for this patient.
-                      The clinic's canned/standing lines used to print under
-                      here as small grey dots; they were noise on a document
-                      whose whole value is the doctor's own words, so they're
-                      gone (Anmol, 2026-09-09). Richer, chevron-led lines. */}
-                  {adviceNotes && adviceNotes.trim() && (
-                    <div>
-                      <p className="text-[9px] font-black tracking-[0.12em] uppercase mb-2" style={{ color: accentColor }}>
-                        {t.advice}
-                      </p>
-                      <div className="space-y-2">
-                        {adviceNotes.split("\n").map((l) => l.trim()).filter(Boolean).map((line, i) => (
-                          <p key={i} className="flex items-start gap-2 text-[11.5px] text-gray-800 font-medium leading-relaxed">
-                            <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accentColor }} />{line}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* QR — centered in a bordered frame, caption under it, the
-                      follow-up pill beneath that. The framed-and-centered
-                      treatment is the one from the printed prescription
-                      (Anmol's Windows print-preview reference: "centered with
-                      a border, looked beautiful"), so the review shows the
-                      same thing. The code encodes the prescription's own
-                      details for a records check, not a link — the caption
-                      says only that. */}
-                  <div className="mt-auto flex flex-col items-center gap-1.5 pt-1">
-                    <div className="rounded-lg border p-1.5" style={{ borderColor: rx.mid }}>
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR Code" className="block w-[72px] h-[72px]" />
-                      ) : (
-                        <div className="w-[72px] h-[72px] flex items-center justify-center">
-                          <span className="text-[8px] text-gray-400">QR</span>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-[9.5px] text-gray-400 text-center leading-tight">
-                      {t.qrCaption}
-                    </p>
-                    {followUpDays && (
-                      <div className="mt-0.5 inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-bold text-amber-700">
-                        {t.followUp(followUpDays)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* The clinic's own closing line (Prescription Editor → Footer
-                  note) — an emergency number, a timing note. */}
-              {prescriptionConfig.footerNote.trim() && (
-                <div className="px-7 pt-3 text-[10px] text-gray-600 leading-relaxed border-t border-gray-100 whitespace-pre-line">
-                  {prescriptionConfig.footerNote.trim()}
-                </div>
-              )}
-
-              {/* ══ Footer ══ — one line, provenance only. The "Secure /
-                  Private / Generated: <date>" badges were removed (Anmol,
-                  2026-09-09: "just unnecessary data"). */}
-              <div className="px-7 py-3 flex items-center justify-center border-t border-gray-100">
-                {/* English: mark beside one line, centered. Hindi/Hinglish:
-                    Anmol's own two-line quote — the mark sits ABOVE it as its
-                    own small lockup rather than pinned beside just the first
-                    line, which read as orphaned from the second once the
-                    quote wrapped (Anmol, 2026-09-11: "isolated logo
-                    placement"). One stacked, centered unit instead. */}
-                <div className={`flex gap-[4px] ${isDevanagari ? "flex-col items-center" : "items-center gap-[7px]"}`}>
-                  {isBranded && !arenLogoError && (
-                    <img src={arenLogo} alt="" onError={() => setArenLogoError(true)}
-                      className="w-[15px] h-[15px] object-contain shrink-0" />
-                  )}
-                  <span
-                    className="font-bold whitespace-pre-line text-center"
-                    style={{
-                      color: "#5b7fc7", fontSize: isDevanagari ? 11 : 9,
-                      letterSpacing: isDevanagari ? "normal" : "0.02em",
-                      lineHeight: isDevanagari ? 1.5 : 1.3,
-                    }}
-                  >
-                    {t.footerCredit}
-                  </span>
-                </div>
-              </div>
+            <div className="flex-1 min-w-0">
+              {/* ══ The prescription itself ══ — mounts the REAL
+                  `PrescriptionDocument` at true paper size, scaled to fit
+                  this column, through the same `ScaledPrescriptionSheet`
+                  shell the Clinic page's own preview uses (standing rule 6,
+                  "one prescription renderer"). This used to be a second,
+                  hand-styled reimplementation of the document that never
+                  matched what actually printed — every field mirrored by
+                  hand, every drift a silent lie about what a patient would
+                  receive (Anmol, 2026-09-20: "prescription preview... so
+                  much cramped up and terrible... that file [the real
+                  document] already solved all those visual problems").
+                  Same props as the hidden print/PDF instance above, so the
+                  two can never show two different prescriptions. */}
+              <ScaledPrescriptionSheet format={format}>
+                <PrescriptionDocument
+                  patient={patient}
+                  visitId={visitId}
+                  prescriptionRef={prescriptionRef}
+                  symptoms={symptoms}
+                  findings={findings}
+                  prescription={prescription}
+                  tests={tests}
+                  followUpDays={followUpDays}
+                  adviceNotes={adviceNotes}
+                  therapyNotes={therapyNotes}
+                  exerciseLines={exerciseLines}
+                  doctor={doctor}
+                  hospital={hospital}
+                  vitals={vitals}
+                  format={format}
+                  date={date}
+                  language={language}
+                  config={prescriptionConfig}
+                  billing={printBilling}
+                />
+              </ScaledPrescriptionSheet>
             </div>
 
             {/* ══ Billing rail ══ — screen-only, beside the Rx preview rather
