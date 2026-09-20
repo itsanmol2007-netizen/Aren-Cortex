@@ -88,3 +88,33 @@ export async function saveAdditionalChargeToCatalog(opts: {
     if (error) throw new Error(`saveAdditionalChargeToCatalog: ${error.message}`);
     return { id: Number(data.id), label: data.label as string, defaultAmount: Number(data.default_amount) };
 }
+
+/**
+ * Edits an existing catalog entry BY ID — the Practice page's own "Additional
+ * Charges" card manages the full catalog directly (add, reprice, rename,
+ * remove), unlike Review's quiet upsert-by-label above. Going by id rather
+ * than `(hospital_id, label)` is the whole point: a rename would otherwise
+ * either violate the unique constraint or, worse, insert a second row instead
+ * of editing the first.
+ */
+export async function updateAdditionalCharge(opts: {
+    id: number;
+    label: string;
+    defaultAmount: number;
+}): Promise<AdditionalChargeCatalogEntry> {
+    const { data, error } = await supabase
+        .from("clinic_additional_charges")
+        .update({ label: opts.label.trim(), default_amount: opts.defaultAmount })
+        .eq("id", opts.id)
+        .select("id, label, default_amount")
+        .single();
+    if (error) throw new Error(`updateAdditionalCharge: ${error.message}`);
+    return { id: Number(data.id), label: data.label as string, defaultAmount: Number(data.default_amount) };
+}
+
+/** Removes a catalog entry — visits that already billed it keep their own
+ *  `visit_payments.additional_charges` snapshot untouched (see the header). */
+export async function deleteAdditionalCharge(id: number): Promise<void> {
+    const { error } = await supabase.from("clinic_additional_charges").delete().eq("id", id);
+    if (error) throw new Error(`deleteAdditionalCharge: ${error.message}`);
+}

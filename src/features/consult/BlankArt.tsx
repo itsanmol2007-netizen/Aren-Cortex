@@ -299,6 +299,39 @@ export function BlankHealthArt() {
     );
 }
 
+/** The empty Exercise Library (Practice page): a dumbbell, unweighted —
+ *  the thing this list fills with (a saved exercise + its default dose), at
+ *  rest. Blue, the "declared clinic default" family `BlankBrandArt` already
+ *  uses — a library entry is exactly that: a declared default, not a
+ *  reading and not the doctor's own free-text (which would be violet). */
+export function BlankExerciseArt() {
+    return (
+        <svg width="54" height="40" viewBox="0 0 54 40" fill="none" aria-hidden="true">
+            <rect x="5" y="13" width="11" height="14" rx="3.5" fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" />
+            <rect x="38" y="13" width="11" height="14" rx="3.5" fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" />
+            <path d="M16 20h22" stroke="#dbe4f5" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M46 4l.75 1.75L48.5 6.5l-1.75.75L46 9l-.75-1.75L43.5 6.5l1.75-.75z" fill="#b9d1f7" />
+        </svg>
+    );
+}
+
+/** The empty Additional Charges catalog (Practice page): a receipt, nothing
+ *  billed to it yet — the perforated bottom edge is the same "ticket" read
+ *  as `BlankPricingArt`'s price tag, just the clinic's own non-medicine
+ *  service list rather than a per-medicine rate. Blue, same family as
+ *  `BlankExerciseArt` just above — a saved catalog entry is a declared
+ *  default either way. */
+export function BlankChargesArt() {
+    return (
+        <svg width="48" height="46" viewBox="0 0 48 46" fill="none" aria-hidden="true">
+            <path d="M13 7h22v27l-4-3-4 3-4-3-4 3-4-3-2 1.5V7z"
+                fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" strokeLinejoin="round" />
+            <path d="M18 15h12M18 20.5h8" stroke="#dbe4f5" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M40 9l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="#b9d1f7" />
+        </svg>
+    );
+}
+
 /** The empty attachments strip: a sheet with nothing clipped to it. */
 export function BlankAttachmentArt() {
     return (

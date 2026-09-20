@@ -67,9 +67,9 @@ import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import {
-    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart,
+    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, Dumbbell, FlaskConical, Heart,
     IndianRupee, Layers,
-    MoreHorizontal, Pill, Plus, Printer, Settings, Shield, SlidersHorizontal, Sparkles, Star,
+    MoreHorizontal, Pill, Plus, Printer, Receipt, Settings, Shield, SlidersHorizontal, Sparkles, Star,
     ToggleLeft, ToggleRight, User, X,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
@@ -79,6 +79,15 @@ import {
     fetchMedicineBillingPolicy, fetchClinicMedicinePriceList, setClinicMedicinePrice,
     type MedicineBillingPolicy, type ClinicMedicinePriceRow,
 } from "../../lib/db/medicinePricing";
+import {
+    fetchAdditionalChargesCatalog, saveAdditionalChargeToCatalog, updateAdditionalCharge,
+    deleteAdditionalCharge, type AdditionalChargeCatalogEntry,
+} from "../../lib/db/additionalCharges";
+import {
+    fetchExerciseLibrary, setExerciseLibraryEntry, deleteExerciseLibraryEntry,
+    type ExerciseLibraryEntry,
+} from "../../lib/db/exerciseLibrary";
+import { formatDose } from "../consult/exercisePlan";
 import {
     addMedicine, addPreferredLab, clearClinicBrandDefault, clearHospitalCompanionCuration,
     createHospitalCompanionEdge, createPrescriptionTemplate, deleteDoctorFreeTerm,
@@ -100,8 +109,8 @@ import type { IntentType } from "../../lib/synapse/engine";
 import { MEASURE_FIELDS, type MeasureFieldKey } from "../consult/measures";
 import { useCatalogueSearch, KIND_BADGE } from "../consult/CaseSheet";
 import {
-    BlankAddMedicineArt, BlankCompanionArt, BlankPricingArt, BlankLabArt, BlankMedicineArt,
-    BlankTemplateArt, BlankTermArt,
+    BlankAddMedicineArt, BlankChargesArt, BlankCompanionArt, BlankExerciseArt, BlankPricingArt,
+    BlankLabArt, BlankMedicineArt, BlankTemplateArt, BlankTermArt,
 } from "../consult/BlankArt";
 import { resolveProductByName } from "../../lib/db/medicines";
 import { IntentSearchField, useIntentSearch } from "../consult/IntentSearch";
@@ -2257,6 +2266,327 @@ function MedicinePricingModal({
     );
 }
 
+/**
+ * Physiotherapy's exercise library — search the same flat `intents` catalog
+ * ExercisePlanCard's own search reads (no composition/brand drill: an
+ * exercise IS the intent, never a two-level pick the way medicine is), then
+ * save the dose this clinic starts it on. Same "one thing at a time" shape
+ * `MedicinePricingModal` already uses just above.
+ */
+function ExerciseLibraryModal({
+    hospitalId, actorUserId, rows, loading, onSaved, onClose,
+}: {
+    hospitalId: string;
+    actorUserId: string | null;
+    rows: ExerciseLibraryEntry[];
+    loading: boolean;
+    onSaved: (next: ExerciseLibraryEntry[]) => void;
+    onClose: () => void;
+}) {
+    const search = useIntentSearch(["exercise"]);
+    const [dosing, setDosing] = useState<{ intentId: number; label: string } | null>(null);
+    const [sets, setSets] = useState("");
+    const [reps, setReps] = useState("");
+    const [holdSeconds, setHoldSeconds] = useState("");
+    const [perDay, setPerDay] = useState("");
+    const [notes, setNotes] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const startDosing = (intentId: number, label: string) => {
+        const existing = rows.find((r) => r.intentId === intentId);
+        setDosing({ intentId, label });
+        setSets(existing?.defaultSets != null ? String(existing.defaultSets) : "");
+        setReps(existing?.defaultReps != null ? String(existing.defaultReps) : "");
+        setHoldSeconds(existing?.defaultHoldSeconds != null ? String(existing.defaultHoldSeconds) : "");
+        setPerDay(existing?.defaultPerDay != null ? String(existing.defaultPerDay) : "");
+        setNotes(existing?.notes ?? "");
+        setError(null);
+        search.setQuery("");
+    };
+
+    const toIntOrNull = (v: string) => {
+        const n = Number(v.trim());
+        return v.trim() && Number.isFinite(n) ? Math.round(n) : null;
+    };
+
+    const submitDose = async () => {
+        if (!dosing) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const saved = await setExerciseLibraryEntry({
+                hospitalId, intentId: dosing.intentId,
+                defaultSets: toIntOrNull(sets), defaultReps: toIntOrNull(reps),
+                defaultHoldSeconds: toIntOrNull(holdSeconds), defaultPerDay: toIntOrNull(perDay),
+                notes, setBy: actorUserId,
+            });
+            const nextRow: ExerciseLibraryEntry = { ...saved, label: dosing.label };
+            onSaved([nextRow, ...rows.filter((r) => r.intentId !== dosing.intentId)]);
+            setDosing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that exercise.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const removeFromLibrary = async () => {
+        if (!dosing) return;
+        setSaving(true);
+        try {
+            await deleteExerciseLibraryEntry(hospitalId, dosing.intentId);
+            onSaved(rows.filter((r) => r.intentId !== dosing.intentId));
+            setDosing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not remove that exercise.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="blue" icon={<Dumbbell size={15} />} eyebrow="Exercise Library"
+            title="What this practice prescribes" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {!dosing && (
+                <div className="prac-modal-field">
+                    <IntentSearchField state={search} placeholder="Search an exercise to dose it…" />
+                </div>
+            )}
+
+            {dosing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setDosing(null)}>
+                        ← Different exercise
+                    </button>
+                    <div className="prac-med-info">
+                        <span className="prac-row-label">{dosing.label}</span>
+                    </div>
+                    <div className="prac-modal-field-row">
+                        <div className="prac-modal-field">
+                            <label>Sets</label>
+                            <input type="text" inputMode="numeric" value={sets} placeholder="e.g. 3"
+                                onChange={(e) => setSets(e.target.value)} autoFocus />
+                        </div>
+                        <div className="prac-modal-field">
+                            <label>Times per day</label>
+                            <input type="text" inputMode="numeric" value={perDay} placeholder="e.g. 1"
+                                onChange={(e) => setPerDay(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="prac-modal-field-row">
+                        <div className="prac-modal-field">
+                            <label>Reps</label>
+                            <input type="text" inputMode="numeric" value={reps} placeholder="e.g. 10"
+                                onChange={(e) => setReps(e.target.value)} />
+                        </div>
+                        <div className="prac-modal-field">
+                            <label>Or hold (sec)</label>
+                            <input type="text" inputMode="numeric" value={holdSeconds} placeholder="e.g. 30"
+                                onChange={(e) => setHoldSeconds(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="prac-modal-field">
+                        <label>Notes (optional)</label>
+                        <input type="text" value={notes} placeholder="e.g. hold at end range"
+                            onChange={(e) => setNotes(e.target.value)} />
+                    </div>
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button
+                        type="button" className="prac-modal-btn is-primary is-compact"
+                        disabled={saving} onClick={submitDose}
+                    >
+                        {saving ? "Saving…" : "Save to library"}
+                    </button>
+                    {rows.some((r) => r.intentId === dosing.intentId) && (
+                        <button type="button" className="prac-modal-btn is-ghost" disabled={saving} onClick={removeFromLibrary}>
+                            Remove from library
+                        </button>
+                    )}
+                </>
+            ) : search.isSearching ? (
+                <div className="prac-search-results">
+                    {search.hits.length === 0 ? (
+                        <EmptyBlock
+                            art={<BlankExerciseArt />} fact={search.loading ? "Searching…" : `Nothing matches "${search.query.trim()}"`}
+                            next="Try the exercise's name."
+                        />
+                    ) : (
+                        search.hits.map((hit) => (
+                            <button
+                                key={hit.intentId} type="button" className="prac-hit-row"
+                                onClick={() => startDosing(hit.intentId, hit.label)}
+                            >
+                                <span className="prac-med-icon is-blue" aria-hidden="true"><Dumbbell size={13} /></span>
+                                <div className="prac-med-info">
+                                    <span className="prac-row-label is-catalogue">{hit.label}</span>
+                                    {rows.some((r) => r.intentId === hit.intentId) && (
+                                        <span className="prac-med-brands">Already in your library</span>
+                                    )}
+                                </div>
+                            </button>
+                        ))
+                    )}
+                </div>
+            ) : loading ? (
+                <SkelRows count={4} />
+            ) : rows.length === 0 ? (
+                <p className="prac-soon">Nothing saved yet. Search above to add your first one.</p>
+            ) : (
+                <div className="prac-modal-rows">
+                    {rows.map((ex) => (
+                        <button
+                            key={ex.intentId} type="button" className="prac-modal-row is-pick"
+                            onClick={() => startDosing(ex.intentId, ex.label)}
+                        >
+                            <div className="prac-med-info">
+                                <span className="prac-row-label">{ex.label}</span>
+                            </div>
+                            <span className="prac-quiet-pill is-alt">
+                                {formatDose({
+                                    sets: ex.defaultSets, reps: ex.defaultReps,
+                                    holdSeconds: ex.defaultHoldSeconds, perDay: ex.defaultPerDay,
+                                }) || "no dose saved"}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
+/**
+ * The clinic's non-medicine billing catalog — a flat, self-authored list
+ * (no global catalog to search, unlike medicine/exercise), so this is just
+ * add/edit/remove on `clinic_additional_charges` directly.
+ */
+function AdditionalChargesModal({
+    rows, hospitalId, onSaved, onClose,
+}: {
+    rows: AdditionalChargeCatalogEntry[];
+    hospitalId: string;
+    onSaved: (next: AdditionalChargeCatalogEntry[]) => void;
+    onClose: () => void;
+}) {
+    const [editing, setEditing] = useState<AdditionalChargeCatalogEntry | "new" | null>(null);
+    const [label, setLabel] = useState("");
+    const [amount, setAmount] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const startEdit = (entry: AdditionalChargeCatalogEntry | "new") => {
+        setEditing(entry);
+        setLabel(entry === "new" ? "" : entry.label);
+        setAmount(entry === "new" ? "" : String(entry.defaultAmount));
+        setError(null);
+    };
+
+    const submit = async () => {
+        if (!editing) return;
+        const amt = Number(amount);
+        if (!label.trim() || !Number.isFinite(amt) || amt < 0) {
+            setError("Enter a name and a valid amount.");
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            // Always UPDATE an existing row by id, never upsert-by-label for
+            // one — a rename through the label-keyed upsert would insert a
+            // fresh row under the new label and leave the old one behind
+            // (orphaned, invisible in this list, back on the next reload).
+            const saved = editing === "new"
+                ? await saveAdditionalChargeToCatalog({ hospitalId, label: label.trim(), defaultAmount: amt })
+                : await updateAdditionalCharge({ id: editing.id, label: label.trim(), defaultAmount: amt });
+            onSaved([saved, ...rows.filter((r) => r.id !== saved.id)]);
+            setEditing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that charge.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const remove = async () => {
+        if (!editing || editing === "new") return;
+        setSaving(true);
+        try {
+            await deleteAdditionalCharge(editing.id);
+            onSaved(rows.filter((r) => r.id !== editing.id));
+            setEditing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not remove that charge.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="blue" icon={<Receipt size={15} />} eyebrow="Additional Charges"
+            title="What this clinic bills besides medicine" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {editing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setEditing(null)}>
+                        ← Back to the list
+                    </button>
+                    <div className="prac-modal-field">
+                        <label>Service</label>
+                        <input type="text" value={label} placeholder="e.g. Physio session, Dressing, Filling"
+                            onChange={(e) => setLabel(e.target.value)} autoFocus />
+                    </div>
+                    <div className="prac-modal-field">
+                        <label>Usual amount (₹)</label>
+                        <input type="text" inputMode="decimal" value={amount} placeholder="e.g. 300"
+                            onChange={(e) => setAmount(e.target.value)} />
+                    </div>
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button
+                        type="button" className="prac-modal-btn is-primary is-compact"
+                        disabled={!label.trim() || !amount.trim() || saving} onClick={submit}
+                    >
+                        {saving ? "Saving…" : "Save"}
+                    </button>
+                    {editing !== "new" && (
+                        <button type="button" className="prac-modal-btn is-ghost" disabled={saving} onClick={remove}>
+                            Remove
+                        </button>
+                    )}
+                </>
+            ) : (
+                <>
+                    <button type="button" className="prac-modal-btn is-primary is-compact" onClick={() => startEdit("new")}>
+                        <Plus size={14} /> Add a charge
+                    </button>
+                    {rows.length === 0 ? (
+                        <p className="prac-soon">Nothing saved yet. Add your first one above.</p>
+                    ) : (
+                        <div className="prac-modal-rows">
+                            {rows.map((c) => (
+                                <button
+                                    key={c.id} type="button" className="prac-modal-row is-pick"
+                                    onClick={() => startEdit(c)}
+                                >
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label">{c.label}</span>
+                                    </div>
+                                    <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </>
+            )}
+        </PracticeModal>
+    );
+}
+
 // ===========================================================================
 // THE PAGE
 // ===========================================================================
@@ -2300,6 +2630,23 @@ export function PracticePage({
     const [priceRowsLoading, setPriceRowsLoading] = useState(true);
     const [pricingModalOpen, setPricingModalOpen] = useState(false);
 
+    // ── Additional charges (opt-in, see lib/db/additionalCharges.ts) ───────
+    // The SAME catalog ReviewModal's Billing rail quietly reads/writes —
+    // this card is where a doctor actually manages it: add, reprice,
+    // rename, remove. No enable/disable toggle, same as medicine pricing
+    // above — an empty catalog IS the off state.
+    const [chargeCatalog, setChargeCatalog] = useState<AdditionalChargeCatalogEntry[]>([]);
+    const [chargeCatalogLoading, setChargeCatalogLoading] = useState(true);
+    const [chargesModalOpen, setChargesModalOpen] = useState(false);
+
+    // ── Exercise library (opt-in, see lib/db/exerciseLibrary.ts) ───────────
+    // Physiotherapy's Practice-page analog of Preferred Medicines — which
+    // exercises this clinic actually prescribes, and the default dose a
+    // newly accepted line starts on.
+    const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryEntry[]>([]);
+    const [exerciseLibraryLoading, setExerciseLibraryLoading] = useState(true);
+    const [exerciseModalOpen, setExerciseModalOpen] = useState(false);
+
     // Every Practice-local overlay, ORed together — the same job
     // `App.tsx`'s `isAnyModalOpen` does for the consult workspace, scoped to
     // this page's own modals. `PreferredMedicinesCard` gates its Ctrl+K /
@@ -2308,7 +2655,7 @@ export function PracticePage({
     const anyModalOpen =
         labsModalOpen || addMedicineOpen != null || addedMedicinesOpen ||
         companionModalOpen || editingTemplate != null || measurementsModalOpen ||
-        manageTermsOpen || pricingModalOpen;
+        manageTermsOpen || pricingModalOpen || chargesModalOpen || exerciseModalOpen;
 
     useEffect(() => {
         if (!identity.ready) return;
@@ -2342,6 +2689,18 @@ export function PracticePage({
             .then(setPriceRows)
             .catch(console.error)
             .finally(() => setPriceRowsLoading(false));
+
+        setChargeCatalogLoading(true);
+        fetchAdditionalChargesCatalog(identity.hospitalId)
+            .then(setChargeCatalog)
+            .catch(console.error)
+            .finally(() => setChargeCatalogLoading(false));
+
+        setExerciseLibraryLoading(true);
+        fetchExerciseLibrary(identity.hospitalId)
+            .then(setExerciseLibrary)
+            .catch(console.error)
+            .finally(() => setExerciseLibraryLoading(false));
     }, [identity.ready, identity.doctorId, identity.hospitalId]);
 
     /** Sends the doctor to the admin console's own "Consultation fees" card
@@ -2392,20 +2751,31 @@ export function PracticePage({
     };
 
     /**
-     * Clinical Defaults' two rows, reordered by which intent this facility's
-     * profile actually elevates (`specialty.primary` — the same field that
-     * decides Consult's own Primary Recommendation slot, see
-     * `specialtyProfile.ts`). No new cards, no new data: General OPD,
-     * Cardiology, Paediatrics, Gynaecology, Dentistry and Dermatology are
-     * all medicine-primary today, so this is a no-op for six of the eight
-     * profiles and the medicine row keeps leading exactly as it always has.
-     * Diagnostics (test-primary) and Physiotherapy (exercise-primary) are
-     * the two where it isn't — the medicine group drops behind Preferred
-     * Labs/Templates/Companions instead of leading it (Anmol, 2026-09-20).
-     * Physiotherapy is a stopgap: nothing here is actually exercise-specific
-     * yet, that's the still-to-build Exercise/Session Library's job.
+     * Clinical Defaults' three rows, reordered by which intent this
+     * facility's profile actually elevates (`specialty.primary` — the same
+     * field that decides Consult's own Primary Recommendation slot, see
+     * `specialtyProfile.ts`). No new cards for the first two rows, no new
+     * data: General OPD, Cardiology, Paediatrics, Gynaecology and
+     * Dermatology are all medicine-primary and see the default order
+     * (medicine, tools, extras) unchanged. Three exceptions:
+     *  - Diagnostics (test-primary): tools row (Preferred Labs leads it)
+     *    moves ahead of medicine.
+     *  - Physiotherapy (exercise-primary): the extras row leads — Exercise
+     *    Library is the one card in it that's actually exercise-specific —
+     *    ahead of tools, ahead of medicine.
+     *  - Dentistry: still medicine-primary (a dental consult still ends in
+     *    a prescription, see that profile's own comment), but a dentist
+     *    bills per procedure, not per medicine pack, so the extras row
+     *    (Additional Charges, doubling as a procedure price list) moves
+     *    ahead of tools — medicine still leads, dentistry's real distinction
+     *    is the second slot, not the first.
      */
-    const medicineLeads = specialty.primary === "medicine";
+    const rowOrder = ((): { medicine: number; tools: number; extras: number } => {
+        if (specialty.primary === "exercise") return { extras: 1, tools: 2, medicine: 3 };
+        if (specialty.primary === "test") return { tools: 1, medicine: 2, extras: 3 };
+        if (specialty.id === "dentistry") return { medicine: 1, extras: 2, tools: 3 };
+        return { medicine: 1, tools: 2, extras: 3 };
+    })();
 
     return (
         <div className="prac-page">
@@ -2500,7 +2870,7 @@ export function PracticePage({
                         they are of the same category" — not merged into
                         one card (three different mental models, cramming
                         them into tabs would make each worse), just grouped. */}
-                    <div className="prac-grid" style={{ order: medicineLeads ? 1 : 2 }}>
+                    <div className="prac-grid" style={{ order: rowOrder.medicine }}>
                         <PreferredMedicinesCard
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
                             onBrandsChange={setBrands}
@@ -2588,7 +2958,7 @@ export function PracticePage({
                         cross-intent suggestion engine (Companions pairs ANY
                         intent type, not only medicine, so it belongs here
                         and not in the teal group above). */}
-                    <div className="prac-grid" style={{ order: medicineLeads ? 2 : 1 }}>
+                    <div className="prac-grid" style={{ order: rowOrder.tools }}>
                         <PracticeCard
                             id="labs"
                             icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length} fixed
@@ -2716,6 +3086,104 @@ export function PracticePage({
                                         </button>
                                     }
                                 />
+                            )}
+                        </PracticeCard>
+                    </div>
+
+                    {/* Extras — physiotherapy's own preference list and the
+                        clinic's non-medicine billing catalog, paired rather
+                        than each floating full-width alone (the same rule
+                        "Your Clinical Terms"/"Related Settings" already
+                        follow below). Blue on both: `PracticeModalAccent`'s
+                        "a declared clinic default" tone — a saved dose or a
+                        saved charge is exactly that, neither the medicine
+                        group's own teal nor the doctor-authored violet the
+                        tools row's Templates/Companions carry. */}
+                    <div className="prac-grid is-2col" style={{ order: rowOrder.extras }}>
+                        <PracticeCard
+                            id="exercises"
+                            icon={<Dumbbell size={14} />} tone="blue" title="Exercise Library" count={exerciseLibrary.length} fixed
+                            subtitle="Exercises this practice prescribes often, and the dose they start on."
+                            foot={exerciseLibrary.length > 0 ? (
+                                <FootLink label="Manage library" onClick={() => setExerciseModalOpen(true)} />
+                            ) : undefined}
+                        >
+                            {exerciseLibraryLoading ? (
+                                <SkelRows count={3} />
+                            ) : exerciseLibrary.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankExerciseArt />}
+                                    fact="No exercises saved yet"
+                                    next="Search an exercise and save the dose you usually start it on."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setExerciseModalOpen(true)}>
+                                            <Dumbbell size={14} /> Add to library
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {exerciseLibrary.length <= 3 && <div className="prac-fill-art"><BlankExerciseArt /></div>}
+                                    <div className="prac-setting-list">
+                                        {exerciseLibrary.slice(0, 4).map((ex) => (
+                                            <button
+                                                key={ex.intentId} type="button" className="prac-setting-row"
+                                                onClick={() => setExerciseModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{ex.label}</span>
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">
+                                                    {formatDose({
+                                                        sets: ex.defaultSets, reps: ex.defaultReps,
+                                                        holdSeconds: ex.defaultHoldSeconds, perDay: ex.defaultPerDay,
+                                                    }) || "no dose saved"}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </PracticeCard>
+
+                        <PracticeCard
+                            id="charges"
+                            icon={<Receipt size={14} />} tone="blue" title="Additional Charges" count={chargeCatalog.length} fixed
+                            subtitle="Non-medicine services this clinic bills for — a session, a dressing, a procedure."
+                            foot={chargeCatalog.length > 0 ? (
+                                <FootLink label="Manage charges" onClick={() => setChargesModalOpen(true)} />
+                            ) : undefined}
+                        >
+                            {chargeCatalogLoading ? (
+                                <SkelRows count={3} />
+                            ) : chargeCatalog.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankChargesArt />}
+                                    fact="No charges saved yet"
+                                    next="Add a service and the amount you usually charge for it — offered again at review time."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setChargesModalOpen(true)}>
+                                            <Receipt size={14} /> Add a charge
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {chargeCatalog.length <= 3 && <div className="prac-fill-art"><BlankChargesArt /></div>}
+                                    <div className="prac-setting-list">
+                                        {chargeCatalog.slice(0, 4).map((c) => (
+                                            <button
+                                                key={c.id} type="button" className="prac-setting-row"
+                                                onClick={() => setChargesModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{c.label}</span>
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                         </PracticeCard>
                     </div>
@@ -2908,6 +3376,24 @@ export function PracticePage({
                     rows={priceRows} loading={priceRowsLoading}
                     onSaved={setPriceRows}
                     onClose={() => setPricingModalOpen(false)}
+                />
+            )}
+
+            {exerciseModalOpen && (
+                <ExerciseLibraryModal
+                    hospitalId={identity.hospitalId} actorUserId={identity.userId}
+                    rows={exerciseLibrary} loading={exerciseLibraryLoading}
+                    onSaved={setExerciseLibrary}
+                    onClose={() => setExerciseModalOpen(false)}
+                />
+            )}
+
+            {chargesModalOpen && (
+                <AdditionalChargesModal
+                    hospitalId={identity.hospitalId}
+                    rows={chargeCatalog}
+                    onSaved={setChargeCatalog}
+                    onClose={() => setChargesModalOpen(false)}
                 />
             )}
         </div>

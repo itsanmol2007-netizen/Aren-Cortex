@@ -818,6 +818,7 @@
    still wearing the teal default before this. */
 .prac-med-icon.is-slate { background: #f1f5f9; color: #475569; }
 .prac-med-icon.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.prac-med-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 
 .prac-med-info {
     flex: 1;
