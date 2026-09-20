@@ -4,7 +4,7 @@ import {
   X, Edit2, Printer, MessageCircle, CheckCircle, Loader2,
   User, Calendar, AlertCircle, Sun, Sunrise, Sunset,
   Moon, MapPin, Phone, ChevronRight,
-  FileText, Hash, IndianRupee, Plus,
+  FileText, Hash, IndianRupee, Plus, Check,
 } from "lucide-react";
 import { freqLabelToSlot, freqSlotToLabel } from "../lib/db";
 import type { DBHospital, DBFinding } from "../lib/db";
@@ -328,6 +328,10 @@ export default function ReviewModal({
   const [chargeLabel, setChargeLabel] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [saveChargeToCatalog, setSaveChargeToCatalog] = useState(true);
+  // Collapsed by default — the rail's "+ Add charge" button reveals this
+  // form rather than always showing two loose inputs (Anmol, 2026-09-20:
+  // the always-open form read as "ambiguous").
+  const [addingCharge, setAddingCharge] = useState(false);
   const chargesTotal = useMemo(
     () => Math.round(charges.reduce((sum, c) => sum + c.amount, 0) * 100) / 100,
     [charges]
@@ -614,7 +618,7 @@ export default function ReviewModal({
           below are trimmed MORE than the content sections for the same
           reason: this is a document a doctor reviews, not a cover page. */}
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-        <div className="relative w-full max-w-[680px] max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white">
+        <div className={`relative w-full max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white transition-[max-width] ${showBilling ? "max-w-[988px]" : "max-w-[680px]"}`}>
 
           {/* Top bar */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-white shrink-0">
@@ -684,8 +688,9 @@ export default function ReviewModal({
             tabIndex={-1}
             className="overflow-y-auto flex-1 bg-gray-50/80 outline-none focus:ring-[3px] focus:ring-blue-100 focus:ring-inset focus:shadow-[inset_0_0_0_1px_#1268e8]"
           >
+            <div className="flex items-start gap-4 m-3">
             <div
-              className="m-3 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white"
+              className="flex-1 min-w-0 rounded-2xl overflow-hidden shadow-lg border border-gray-200/80 bg-white"
               style={docFontFamily ? { fontFamily: docFontFamily, lineHeight: 1.6 } : undefined}
             >
 
@@ -1039,169 +1044,6 @@ export default function ReviewModal({
                 </div>
               )}
 
-              {/* ══ Billing ══ — doctor-facing only, never printed on the Rx
-                  itself (same as Clinical Summary above): what actually
-                  reaches the patient is the finished bill on the document/
-                  WhatsApp send, not this editable form. Hidden entirely for
-                  a clinic using none of consultation fees, medicine
-                  billing or additional charges — see `showBilling`. */}
-              {showBilling && (
-                <div className="px-7 py-4 border-b border-gray-100">
-                  <SectionTitle icon={IndianRupee} title="Billing" accent="green" />
-                  <div className="mt-2.5 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3.5">
-                    <div className="flex flex-col gap-1.5 text-[12.5px]">
-                      {visitPaymentSoFar && (
-                        <div className="flex items-center justify-between text-gray-700">
-                          <span>Consultation fee</span>
-                          <span className="font-semibold tabular-nums">
-                            ₹{(visitPaymentSoFar.fee - visitPaymentSoFar.discount).toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      {visitPaymentSoFar && visitPaymentSoFar.gstAmount > 0 && (
-                        <div className="flex items-center justify-between text-gray-500">
-                          <span>GST on fee</span>
-                          <span className="tabular-nums">₹{visitPaymentSoFar.gstAmount.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {medicineTotal > 0 && (
-                        <div className="flex items-center justify-between text-gray-700">
-                          <span>Medicine dispensed</span>
-                          <span className="font-semibold tabular-nums">₹{medicineTotal.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {medicineGstAmount > 0 && (
-                        <div className="flex items-center justify-between text-gray-500">
-                          <span>GST on medicine</span>
-                          <span className="tabular-nums">₹{medicineGstAmount.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {charges.map((c, i) => (
-                        <div key={`${c.label}-${i}`} className="flex items-center justify-between text-gray-700">
-                          <span className="flex items-center gap-1.5">
-                            {c.label}
-                            <button
-                              type="button" onClick={() => removeCharge(i)}
-                              aria-label={`Remove ${c.label}`}
-                              className="text-gray-400 hover:text-red-500"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                          <span className="font-semibold tabular-nums">₹{c.amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Add an additional service charge — a saved catalog
-                        entry is one click, anything else is typed once. */}
-                    <div className="mt-3 flex flex-col gap-2 border-t border-emerald-100 pt-3">
-                      {chargeCatalog.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {chargeCatalog.slice(0, 6).map((entry) => (
-                            <button
-                              key={entry.id} type="button"
-                              onClick={() => setCharges((cur) => [...cur, { label: entry.label, amount: entry.defaultAmount }])}
-                              className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                            >
-                              + {entry.label} · ₹{entry.defaultAmount.toFixed(0)}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text" value={chargeLabel} placeholder="e.g. Dressing, Physio session"
-                          onChange={(e) => setChargeLabel(e.target.value)}
-                          className="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-emerald-400"
-                        />
-                        <input
-                          type="text" inputMode="decimal" value={chargeAmount} placeholder="₹"
-                          onChange={(e) => setChargeAmount(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCharge(); } }}
-                          className="w-20 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-emerald-400"
-                        />
-                        <button
-                          type="button" onClick={addCharge}
-                          disabled={!chargeLabel.trim() || !chargeAmount.trim()}
-                          className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add
-                        </button>
-                      </div>
-                      <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                        <input
-                          type="checkbox" checked={saveChargeToCatalog}
-                          onChange={(e) => setSaveChargeToCatalog(e.target.checked)}
-                        />
-                        Save for next time
-                      </label>
-                    </div>
-
-                    {/* Discount on the final total — separate from front
-                        desk's own intake-time discount on the fee alone,
-                        already folded into "Consultation fee" above. */}
-                    <div className="mt-3 flex items-center gap-1.5 border-t border-emerald-100 pt-3">
-                      <span className="text-[11px] font-semibold text-gray-500 mr-1">Discount</span>
-                      {(["none", "5", "10"] as const).map((m) => (
-                        <button
-                          key={m} type="button"
-                          onClick={() => { setDiscountMode(m); setDiscountInput(""); }}
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
-                            discountMode === m
-                              ? "bg-emerald-600 border-emerald-600 text-white"
-                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                          }`}
-                        >
-                          {m === "none" ? "None" : `${m}%`}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setDiscountMode((m) => (m === "custom-percent" || m === "custom-amount" ? "none" : "custom-percent"))}
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
-                          discountMode === "custom-percent" || discountMode === "custom-amount"
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        Custom
-                      </button>
-                      {(discountMode === "custom-percent" || discountMode === "custom-amount") && (
-                        <>
-                          <input
-                            type="text" inputMode="decimal" value={discountInput} placeholder="0"
-                            onChange={(e) => setDiscountInput(e.target.value)}
-                            className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-emerald-400"
-                          />
-                          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-                            <button
-                              type="button" onClick={() => setDiscountMode("custom-percent")}
-                              className={`px-2 py-1 text-[11px] font-semibold ${discountMode === "custom-percent" ? "bg-emerald-100 text-emerald-700" : "text-gray-500"}`}
-                            >%</button>
-                            <button
-                              type="button" onClick={() => setDiscountMode("custom-amount")}
-                              className={`px-2 py-1 text-[11px] font-semibold ${discountMode === "custom-amount" ? "bg-emerald-100 text-emerald-700" : "text-gray-500"}`}
-                            >₹</button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    {discountAmount > 0 && (
-                      <div className="mt-1.5 flex items-center justify-between text-[12.5px] text-red-600">
-                        <span>Discount{discountPercent != null ? ` (${discountPercent}%)` : ""}</span>
-                        <span className="font-semibold tabular-nums">−₹{discountAmount.toFixed(2)}</span>
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex items-center justify-between border-t border-emerald-200 pt-3">
-                      <span className="text-[13px] font-black uppercase tracking-wide text-gray-800">Total</span>
-                      <span className="text-[16px] font-black tabular-nums text-emerald-700">₹{finalTotal.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* ══ Investigations ══ */}
               {tests.length > 0 && (
                 <div className="px-7 py-4 border-b border-gray-100">
@@ -1379,6 +1221,214 @@ export default function ReviewModal({
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* ══ Billing rail ══ — screen-only, beside the Rx preview rather
+                than inside it (Anmol, 2026-09-20: "prescription sheet is
+                entirely different than receipt"). Deliberately NOT the Rx
+                document's own white/blue palette — warm paper tones, a
+                dashed "tear" rule, monospace amounts — so it reads as a
+                second, unrelated slip sitting next to the prescription, the
+                same way a receipt clips to a chart rather than printing on
+                it. Never rendered in `isPrintMode` (`showBilling` already
+                excludes it) and never reaches `PrescriptionDocument` itself —
+                what actually prints/sends is a separate, still-open piece of
+                work (appended at the BOTTOM there, since a printed page or a
+                WhatsApp message can't sit two documents side by side). */}
+            {showBilling && (
+              <div className="w-[280px] shrink-0 sticky top-0 self-start rounded-2xl overflow-hidden shadow-lg border border-[#e2d6ae] bg-[#fefcf5]">
+                <div className="px-4 py-3 border-b border-dashed border-[#d9c896] bg-[#faf3dd] flex items-center gap-2">
+                  <IndianRupee className="w-3.5 h-3.5 text-[#8a6d1f] shrink-0" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8a6d1f]">
+                    Billing — not part of the Rx
+                  </span>
+                </div>
+
+                <div className="px-4 py-3.5 flex flex-col gap-1.5 text-[12.5px] font-mono">
+                  {visitPaymentSoFar && (
+                    <div className="flex items-center justify-between text-[#5c4d22]">
+                      <span className="font-sans">Consultation fee</span>
+                      <span className="tabular-nums font-semibold">
+                        ₹{(visitPaymentSoFar.fee - visitPaymentSoFar.discount).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {visitPaymentSoFar && visitPaymentSoFar.gstAmount > 0 && (
+                    <div className="flex items-center justify-between text-[#8a7a4d]">
+                      <span className="font-sans">GST on fee</span>
+                      <span className="tabular-nums">₹{visitPaymentSoFar.gstAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {medicineTotal > 0 && (
+                    <div className="flex items-center justify-between text-[#5c4d22]">
+                      <span className="font-sans">Medicine dispensed</span>
+                      <span className="tabular-nums font-semibold">₹{medicineTotal.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {medicineGstAmount > 0 && (
+                    <div className="flex items-center justify-between text-[#8a7a4d]">
+                      <span className="font-sans">GST on medicine</span>
+                      <span className="tabular-nums">₹{medicineGstAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {charges.length === 0 && !visitPaymentSoFar && medicineTotal === 0 && (
+                    <p className="font-sans text-[11.5px] text-[#a3915f]">Nothing billed yet.</p>
+                  )}
+                  {charges.map((c, i) => (
+                    <div key={`${c.label}-${i}`} className="flex items-center justify-between text-[#5c4d22]">
+                      <span className="font-sans flex items-center gap-1 min-w-0">
+                        <span className="truncate">{c.label}</span>
+                        <button
+                          type="button" onClick={() => removeCharge(i)}
+                          aria-label={`Remove ${c.label}`}
+                          className="text-[#c4b078] hover:text-red-500 shrink-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                      <span className="tabular-nums font-semibold shrink-0">₹{c.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add an additional service charge — collapsed behind a
+                    single button; typing starts only once that's clicked, so
+                    the rail's resting state is never two loose inputs. */}
+                <div className="px-4 pb-3 border-b border-dashed border-[#d9c896]">
+                  {chargeCatalog.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {chargeCatalog.slice(0, 4).map((entry) => (
+                        <button
+                          key={entry.id} type="button"
+                          onClick={() => setCharges((cur) => [...cur, { label: entry.label, amount: entry.defaultAmount }])}
+                          className="px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-white border border-[#e2d6ae] text-[#8a6d1f] hover:bg-[#faf3dd]"
+                        >
+                          + {entry.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {addingCharge ? (
+                    <div className="flex flex-col gap-1.5">
+                      <input
+                        type="text" value={chargeLabel} placeholder="Service, e.g. Dressing" autoFocus
+                        onChange={(e) => setChargeLabel(e.target.value)}
+                        className="w-full rounded-lg border border-[#e2d6ae] bg-white px-2 py-1.5 text-[12px] font-sans outline-none focus:border-[#b89a4a]"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text" inputMode="decimal" value={chargeAmount} placeholder="₹"
+                          onChange={(e) => setChargeAmount(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCharge(); setAddingCharge(false); } }}
+                          className="w-16 rounded-lg border border-[#e2d6ae] bg-white px-2 py-1.5 text-[12px] font-sans outline-none focus:border-[#b89a4a]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { addCharge(); setAddingCharge(false); }}
+                          disabled={!chargeLabel.trim() || !chargeAmount.trim()}
+                          className="flex-1 rounded-lg bg-[#8a6d1f] px-2 py-1.5 text-[11.5px] font-bold text-white disabled:opacity-40"
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddingCharge(false); setChargeLabel(""); setChargeAmount(""); }}
+                          className="rounded-lg border border-[#e2d6ae] px-1.5 py-1.5 text-[#8a7a4d] hover:bg-[#faf3dd]"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <button
+                        type="button" onClick={() => setSaveChargeToCatalog((v) => !v)}
+                        className={`self-start flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold font-sans border transition-colors ${
+                          saveChargeToCatalog
+                            ? "bg-[#8a6d1f] border-[#8a6d1f] text-white"
+                            : "bg-white border-[#e2d6ae] text-[#8a7a4d]"
+                        }`}
+                      >
+                        {saveChargeToCatalog && <Check className="w-2.5 h-2.5" />} Save for next time
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button" onClick={() => setAddingCharge(true)}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#d9c896] py-1.5 text-[11.5px] font-semibold font-sans text-[#8a6d1f] hover:bg-[#faf3dd]"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add charge
+                    </button>
+                  )}
+                </div>
+
+                {/* Discount on the final total — separate from front desk's
+                    own intake-time discount on the fee alone, already folded
+                    into "Consultation fee" above. */}
+                <div className="px-4 py-3 border-b border-dashed border-[#d9c896] flex flex-col gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-[#8a7a4d] font-sans">
+                    Discount
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(["none", "5", "10"] as const).map((m) => (
+                      <button
+                        key={m} type="button"
+                        onClick={() => { setDiscountMode(m); setDiscountInput(""); }}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold font-sans border transition-colors ${
+                          discountMode === m
+                            ? "bg-[#8a6d1f] border-[#8a6d1f] text-white"
+                            : "bg-white border-[#e2d6ae] text-[#8a7a4d] hover:bg-[#faf3dd]"
+                        }`}
+                      >
+                        {m === "none" ? "None" : `${m}%`}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setDiscountMode((m) => (m === "custom-percent" || m === "custom-amount" ? "none" : "custom-percent"))}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-semibold font-sans border transition-colors ${
+                        discountMode === "custom-percent" || discountMode === "custom-amount"
+                          ? "bg-[#8a6d1f] border-[#8a6d1f] text-white"
+                          : "bg-white border-[#e2d6ae] text-[#8a7a4d] hover:bg-[#faf3dd]"
+                      }`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+                  {(discountMode === "custom-percent" || discountMode === "custom-amount") && (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text" inputMode="decimal" value={discountInput} placeholder="0"
+                        onChange={(e) => setDiscountInput(e.target.value)}
+                        className="w-16 rounded-lg border border-[#e2d6ae] bg-white px-2 py-1 text-[12px] outline-none focus:border-[#b89a4a]"
+                      />
+                      <div className="flex rounded-lg border border-[#e2d6ae] overflow-hidden">
+                        <button
+                          type="button" onClick={() => setDiscountMode("custom-percent")}
+                          className={`px-2 py-1 text-[11px] font-semibold ${discountMode === "custom-percent" ? "bg-[#faf3dd] text-[#8a6d1f]" : "text-[#8a7a4d]"}`}
+                        >%</button>
+                        <button
+                          type="button" onClick={() => setDiscountMode("custom-amount")}
+                          className={`px-2 py-1 text-[11px] font-semibold ${discountMode === "custom-amount" ? "bg-[#faf3dd] text-[#8a6d1f]" : "text-[#8a7a4d]"}`}
+                        >₹</button>
+                      </div>
+                    </div>
+                  )}
+                  {discountAmount > 0 && (
+                    <div className="flex items-center justify-between text-[12px] text-red-600">
+                      <span className="font-sans">Discount{discountPercent != null ? ` (${discountPercent}%)` : ""}</span>
+                      <span className="font-semibold tabular-nums font-mono">−₹{discountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-4 py-3.5 flex items-center justify-between bg-[#faf3dd]">
+                  <span className="text-[11.5px] font-black uppercase tracking-[0.08em] text-[#5c4d22] font-sans">
+                    Total
+                  </span>
+                  <span className="text-[19px] font-black tabular-nums font-mono text-[#5c4d22]">
+                    ₹{finalTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
             </div>
           </div>
 

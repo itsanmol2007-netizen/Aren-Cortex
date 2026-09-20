@@ -1251,6 +1251,20 @@
     color: var(--cs-blue);
 }
 
+/* `.prac-quiet-pill`'s own `align-self: flex-start` is right for the column
+   layout it was built for (`.prac-quiet-row`), but inside a `.prac-modal-row`
+   — a horizontal row, `align-items: center` — that same flex-start pins the
+   pill to the row's top edge instead of centering it beside the label,
+   which on a two-line label (name + manufacturer) reads as the price
+   floating above the row rather than sitting next to it (Medicine Pricing
+   list, Anmol 2026-09-20: "one is tag on the top, one is on the bottom").
+   Same fix `.prac-setting-row .prac-quiet-pill` already has, just for the
+   modal row list instead of the settings list. */
+.prac-modal-row .prac-quiet-pill {
+    align-self: center;
+    flex: none;
+}
+
 /* ── Your Clinical Terms — inline add, then a wrapped chip cloud instead
    of a single-column row list: a doctor's vocabulary reads better as tags
    than as an itemised ledger, and chips fill a full-width card's space the
