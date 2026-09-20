@@ -1260,8 +1260,15 @@
    floating above the row rather than sitting next to it (Medicine Pricing
    list, Anmol 2026-09-20: "one is tag on the top, one is on the bottom").
    Same fix `.prac-setting-row .prac-quiet-pill` already has, just for the
-   modal row list instead of the settings list. */
-.prac-modal-row .prac-quiet-pill {
+   modal row list instead of the settings list. `.prac-row` gets the same
+   fix for the same reason — Medicine Pricing/Exercise Library/Additional
+   Charges' card-body rows (2026-09-20 round two: the actual bug was
+   `.prac-setting-row`'s `flex: 1`, built for exactly the 1-2-row Related
+   Settings tile it stretches to fill, wrongly reused for a real row list —
+   fixed by moving those three onto this same `.prac-row`/`.prac-rows`
+   pattern instead of inventing a third one). */
+.prac-modal-row .prac-quiet-pill,
+.prac-row .prac-quiet-pill {
     align-self: center;
     flex: none;
 }

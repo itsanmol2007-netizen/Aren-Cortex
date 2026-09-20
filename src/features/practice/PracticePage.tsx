@@ -2935,10 +2935,11 @@ export function PracticePage({
                             ) : (
                                 <div className="prac-fill">
                                     {priceRows.length <= 3 && <div className="prac-fill-art"><BlankPricingArt /></div>}
-                                    <div className="prac-setting-list">
+                                    <div className="prac-rows">
                                         {priceRows.slice(0, 4).map((row) => (
+                                            <div key={row.medicineId} className="prac-row">
                                             <button
-                                                key={row.medicineId} type="button" className="prac-setting-row"
+                                                type="button" className="prac-template-row"
                                                 onClick={() => setPricingModalOpen(true)}
                                             >
                                                 <div className="prac-med-info">
@@ -2947,6 +2948,7 @@ export function PracticePage({
                                                 </div>
                                                 <span className="prac-quiet-pill is-alt">₹{row.unitPrice.toFixed(2)}/unit</span>
                                             </button>
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
@@ -3124,10 +3126,11 @@ export function PracticePage({
                             ) : (
                                 <div className="prac-fill">
                                     {exerciseLibrary.length <= 3 && <div className="prac-fill-art"><BlankExerciseArt /></div>}
-                                    <div className="prac-setting-list">
+                                    <div className="prac-rows">
                                         {exerciseLibrary.slice(0, 4).map((ex) => (
+                                            <div key={ex.intentId} className="prac-row">
                                             <button
-                                                key={ex.intentId} type="button" className="prac-setting-row"
+                                                type="button" className="prac-template-row"
                                                 onClick={() => setExerciseModalOpen(true)}
                                             >
                                                 <div className="prac-med-info">
@@ -3140,6 +3143,7 @@ export function PracticePage({
                                                     }) || "no dose saved"}
                                                 </span>
                                             </button>
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
@@ -3170,10 +3174,11 @@ export function PracticePage({
                             ) : (
                                 <div className="prac-fill">
                                     {chargeCatalog.length <= 3 && <div className="prac-fill-art"><BlankChargesArt /></div>}
-                                    <div className="prac-setting-list">
+                                    <div className="prac-rows">
                                         {chargeCatalog.slice(0, 4).map((c) => (
+                                            <div key={c.id} className="prac-row">
                                             <button
-                                                key={c.id} type="button" className="prac-setting-row"
+                                                type="button" className="prac-template-row"
                                                 onClick={() => setChargesModalOpen(true)}
                                             >
                                                 <div className="prac-med-info">
@@ -3181,6 +3186,7 @@ export function PracticePage({
                                                 </div>
                                                 <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
                                             </button>
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
