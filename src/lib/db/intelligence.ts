@@ -156,14 +156,30 @@ export async function saveConsult(opts: {
     }
 
     // 3.5. Billing fold — medicine dispensing AND/OR the review-time
-    // additional charges/discount, in ONE update to the visit's payment
+    // additional charges/discount, in ONE upsert to the visit's payment
     // row rather than one per feature. Skipped outright when neither opt
     // was passed, or when there is genuinely nothing to fold in (no
-    // medicine was priced, no charge was added, no discount was given) —
-    // `visit_payments` is created ONCE at intake (see lib/db/payments.ts's
-    // `recordVisitPayment`) and never by this function, so a visit with no
-    // fee configured — no payment row at all — is a silent no-op here, not
-    // an error: there is nothing to fold anything into.
+    // medicine was priced, no charge was added, no discount was given).
+    //
+    // Was a plain `.update()`, on the assumption `visit_payments` is always
+    // created at intake (lib/db/payments.ts's `recordVisitPayment`) before
+    // a consult ever reaches this point — true only for a visit whose
+    // doctor has a consultation fee configured. For any other visit there
+    // is no row for `.update()` to touch, so it silently affected zero rows:
+    // the doctor priced medicines, the on-screen review and the printed
+    // receipt showed the total correctly (both compute it live from the
+    // dose sheet, never from this table), and NOTHING reached the database
+    // — so the WhatsApp page, which only ever reads `visit_payments`, showed
+    // nothing (Anmol, 2026-09-20: "I just did a consult, added some
+    // medicines with their prices... it's not showing on WhatsApp side").
+    // `.upsert(..., { onConflict: "visit_id" })` creates the row when it's
+    // missing — every OTHER column (fee, discount, gst_percent, status,
+    // visit_type, …) has a real default (`0`/`'paid'`/`'new'`/`'none'`, see
+    // the table's own DDL), so a medicine-only visit gets a fee-less row
+    // rather than needing one manufactured here. When the row already
+    // exists, Postgres's `ON CONFLICT DO UPDATE` only touches the columns
+    // actually present in this payload — `fee`/`discount`/etc. from the
+    // real intake-time row are left exactly as they were.
     const billingUpdate: Record<string, unknown> = {};
 
     if (opts.medicineBilling && opts.medicines.length) {
@@ -195,8 +211,15 @@ export async function saveConsult(opts: {
     if (Object.keys(billingUpdate).length > 0) {
         const { error: billingErr } = await supabase
             .from("visit_payments")
-            .update(billingUpdate)
-            .eq("visit_id", opts.visitId);
+            .upsert(
+                {
+                    visit_id: opts.visitId,
+                    hospital_id: opts.hospitalId,
+                    doctor_id: opts.doctorId,
+                    ...billingUpdate,
+                },
+                { onConflict: "visit_id" }
+            );
         // Non-fatal by design, same as the payment audit trail
         // (payments.ts's `logPaymentEvent`): the clinical record — the
         // prescription and its medicines — is already saved by this
