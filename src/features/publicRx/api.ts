@@ -34,6 +34,11 @@ export interface PublicRxMedicine {
      *  in practice — localized client-side via localizeTiming. */
     instructions: string;
     isSos: boolean;
+    /** Per-medicine dispensing billing (opt-in) — null for every clinic
+     *  that has never turned this on, in which case the Billing card's
+     *  medicine line stays a single lump total. */
+    quantityDispensed: number | null;
+    unitPrice: number | null;
 }
 
 export interface PublicRxBilling {

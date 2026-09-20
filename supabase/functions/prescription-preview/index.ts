@@ -91,7 +91,7 @@ serve(async (req) => {
           .select("show_qualification, show_specialty, show_registration, show_clinic_address, show_clinic_phone, show_clinic_email, show_website, show_signature, footer_note")
           .eq("hospital_id", rx.hospital_id).maybeSingle(),
         db.from("prescription_medicines")
-          .select("medicine_id, composition_ids, dosage_mg, frequency, duration_days, route, instructions, is_sos, sort_order")
+          .select("medicine_id, composition_ids, dosage_mg, frequency, duration_days, route, instructions, is_sos, sort_order, quantity_dispensed, unit_price")
           .eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
         db.from("diagnostic_orders").select("test_name").eq("prescription_id", rx.id),
         db.from("visit_symptoms").select("symptom_id").eq("visit_id", rx.visit_id),
@@ -131,6 +131,7 @@ serve(async (req) => {
       medicine_id: number; composition_ids: number[] | null; dosage_mg: number | null;
       frequency: string | null; duration_days: number | null; route: string | null;
       instructions: string | null; is_sos: boolean; sort_order: number;
+      quantity_dispensed: number | string | null; unit_price: number | string | null;
     }[];
 
     const medIds = [...new Set(pmRows.map((r) => Number(r.medicine_id)).filter(Boolean))];
@@ -235,6 +236,15 @@ serve(async (req) => {
         // localizeTiming, which the page reuses to localize this.
         instructions: pm.instructions ?? "",
         isSos: !!pm.is_sos,
+        // Per-medicine dispensing billing (opt-in — see medicineBilling on
+        // saveConsult) — null for every clinic that never turned this on,
+        // in which case the Billing card's medicine line stays a single
+        // lump total exactly as before. When present, lets the receipt
+        // itemize price × quantity per medicine rather than only naming
+        // the combined figure (Anmol, 2026-09-20: "detailed breakdown of
+        // medicine pricing per medicine").
+        quantityDispensed: pm.quantity_dispensed != null ? Number(pm.quantity_dispensed) : null,
+        unitPrice: pm.unit_price != null ? Number(pm.unit_price) : null,
       })),
       tests: ((doRes.data ?? []) as { test_name: string }[]).map((x) => x.test_name).filter(Boolean),
       // Doctor's own advice for THIS visit only — never the clinic's canned

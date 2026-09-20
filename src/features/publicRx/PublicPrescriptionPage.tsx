@@ -170,14 +170,48 @@ function BillingLine({ label, amount, muted, negative }: { label: string; amount
     );
 }
 
-function BillingCard({ billing, language }: { billing: PublicRxBilling; language: RxLanguage }) {
+/** One medicine's own price line — name and line total on top, the
+ *  quantity × rate it was computed from underneath, same "show the working,
+ *  not just the number" ask that drove `ClinicalLine` (Anmol, 2026-09-20:
+ *  "detailed breakdown of medicine pricing per medicine... right now just
+ *  showing that medicine pricing and consumer pricing no everything"). Its
+ *  own row shape rather than `BillingLine` — a bare label/amount pair has
+ *  nowhere to put the qty × rate working without cramming both onto one
+ *  line and risking a long medicine name colliding with the amount. */
+function MedicineBillingLine({ name, qty, unitPrice }: { name: string; qty: number; unitPrice: number }) {
+    return (
+        <div className="py-1.5">
+            <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-700">{name}</span>
+                <span className="shrink-0 text-sm font-bold text-slate-900">₹{(qty * unitPrice).toFixed(2)}</span>
+            </div>
+            <p className="text-xs font-medium text-slate-400">{qty} × ₹{unitPrice.toFixed(2)}</p>
+        </div>
+    );
+}
+
+function BillingCard({ billing, medicines, language }: { billing: PublicRxBilling; medicines: PublicRxMedicine[]; language: RxLanguage }) {
     const t = BILLING_LABELS[language];
+    // Only medicines this billing pass actually priced — most clinics never
+    // turn dispensing billing on, in which case every medicine here has
+    // `unitPrice: null` and the card falls back to `billing.medicineTotal`
+    // as one lump line, same as before this itemization existed.
+    const pricedMedicines = medicines.filter(
+        (m): m is PublicRxMedicine & { quantityDispensed: number; unitPrice: number } =>
+            m.quantityDispensed != null && m.unitPrice != null
+    );
     return (
         <div className="rounded-2xl border-2 border-slate-200 bg-white p-4">
             <div className="divide-y divide-slate-100">
                 {billing.consultationFee != null && <BillingLine label={t.fee} amount={billing.consultationFee} />}
                 {billing.feeGstAmount > 0 && <BillingLine label="GST" amount={billing.feeGstAmount} muted />}
-                {billing.medicineTotal > 0 && <BillingLine label={t.medicine} amount={billing.medicineTotal} />}
+                {pricedMedicines.length > 0 ? (
+                    pricedMedicines.map((m, i) => (
+                        <MedicineBillingLine key={`${m.name}-${i}`} name={m.name} qty={m.quantityDispensed} unitPrice={m.unitPrice} />
+                    ))
+                ) : (
+                    billing.medicineTotal > 0 && <BillingLine label={t.medicine} amount={billing.medicineTotal} />
+                )}
                 {billing.medicineGstAmount > 0 && <BillingLine label="GST" amount={billing.medicineGstAmount} muted />}
                 {billing.additionalCharges.map((c, i) => (
                     <BillingLine key={`${c.label}-${i}`} label={c.label} amount={c.amount} />
@@ -550,7 +584,7 @@ export function PublicPrescriptionPage() {
                     (Anmol, 2026-09-20: "no receipt into... WhatsApp"). */}
                 {rx.billing ? (
                     <Section icon={IndianRupee} title={BILLING_LABELS[language].title} bold={boldWeight} tone="emerald">
-                        <BillingCard billing={rx.billing} language={language} />
+                        <BillingCard billing={rx.billing} medicines={rx.medicines} language={language} />
                     </Section>
                 ) : null}
 
