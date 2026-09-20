@@ -297,6 +297,15 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
             }
             setBrands(next);
             setBrandError(null);
+            // A prior run's fetch can still be in flight when THIS run finds
+            // nothing missing (its own ids arrived via an earlier, now-
+            // superseded fetch that hadn't set `cancelled` here) — without
+            // this, `brandsLoading` stays stuck at whatever a superseded
+            // run last set it to, permanently skeleton-locking any row whose
+            // own fetch got cancelled before it ever populated the cache
+            // (found live: some ranked rows stuck on skeleton forever while
+            // siblings rendered fine, no pattern to which — 2026-09-20).
+            setBrandsLoading(false);
             return;
         }
 
@@ -364,6 +373,9 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
                 if (hit) next.set(id, hit);
             }
             setCombinations(next);
+            // Same reset gap as the brands effect just above — a superseded
+            // run leaves this stuck at `true` forever otherwise.
+            setCombinationsLoading(false);
             return;
         }
 
