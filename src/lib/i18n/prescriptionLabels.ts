@@ -60,6 +60,11 @@ export interface RxLabels {
     measurements: string;
     complaints: string;
     findings: string;
+    /** The doctor's own confirmed diagnosis — kept apart from `findings`
+     *  (what examination turned up) so a patient reading the WhatsApp/print
+     *  page can tell "what was found" from "what it was judged to be",
+     *  rather than one run-on sentence blending the two. */
+    assessment: string;
     /** The ℞ section heading — print keeps the symbol, this is the word after it. */
     prescription: string;
     colMedicine: string;
@@ -141,6 +146,7 @@ const en: RxLabels = {
     measurements: "Measurements",
     complaints: "Presenting Complaints",
     findings: "Clinical Findings",
+    assessment: "Assessment",
     prescription: "Prescription",
     colMedicine: "Medicine",
     colDuration: "Duration",
@@ -176,6 +182,7 @@ const hi: RxLabels = {
     measurements: "रीडिंग",
     complaints: "शिकायत",
     findings: "जांच में क्या मिला",
+    assessment: "डायग्नोसिस",
     prescription: "पर्ची",
     colMedicine: "दवाई",
     colDuration: "कितने दिन",
@@ -216,6 +223,7 @@ const hiLatn: RxLabels = {
     measurements: "Reading",
     complaints: "Shikayat",
     findings: "Jaanch mein kya mila",
+    assessment: "Diagnosis",
     prescription: "Parchi",
     colMedicine: "Dawai",
     colDuration: "Kitne din",

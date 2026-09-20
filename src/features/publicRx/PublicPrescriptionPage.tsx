@@ -197,6 +197,27 @@ function BillingCard({ billing, language }: { billing: PublicRxBilling; language
     );
 }
 
+/** One labelled line inside the Clinical Notes card — Complaints
+ *  (symptoms), Findings (what examination turned up) and Assessment (the
+ *  confirmed diagnosis) used to be joined into one undifferentiated
+ *  sentence with " · " (Anmol, 2026-09-20: "distinguish between Symptoms
+ *  and what doctor examined... and obviously Assessment"). A small
+ *  uppercase micro-label ahead of each, same idiom `BillingLine` already
+ *  uses for its own label/value pairs just above — never a full second
+ *  `Section` per group, which would mean three illustrated empty states in
+ *  a row for a visit that only has one of the three ("avoiding adding
+ *  unnecessary empty state" — each line already only renders when it has
+ *  something to say). `alert` matches the printed document's own red
+ *  treatment for findings (`PrescriptionDocument.tsx`'s `⚠` rows). */
+function ClinicalLine({ label, text, alert }: { label: string; text: string; alert?: boolean }) {
+    return (
+        <p className="text-sm leading-relaxed">
+            <span className="mr-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400">{label}:</span>
+            <span className={`font-medium ${alert ? "text-rose-700" : "text-slate-700"}`}>{text}</span>
+        </p>
+    );
+}
+
 /** A soft rounded chip behind each section's icon, rather than the icon
  *  floating bare — same "give the icon its own surface" idiom used for the
  *  Patients page search field (2026-09-19), so this page's headings read as
@@ -324,6 +345,28 @@ export function PublicPrescriptionPage() {
 
     const { rx } = state;
     const labels = rxLabels(language);
+
+    // `rx.diagnosisText` is `findings_text` on the `prescriptions` row — a
+    // legacy column written as `[...plan.diagnoses, ...chart.selectedFindings]
+    // .join(", ")` (see useConsultLifecycle.ts's `findingsText`), so it's
+    // ALREADY a blend of the confirmed diagnosis and the very same findings
+    // `rx.findings` lists separately and cleanly. Showing it verbatim next to
+    // `rx.findings` would print most findings twice, under two different
+    // labels — worse than the run-on sentence this replaces. Stripping out
+    // any comma-separated part that exact-matches (case-insensitive) a
+    // symptom or finding already shown elsewhere leaves just the doctor's
+    // own diagnosis words for the Assessment line — an honest reading of a
+    // combined field, not a perfect one (a diagnosis whose name happens to
+    // equal a finding's name would drop here too), but it beats duplicating
+    // the same text under a second heading.
+    const namedElsewhere = new Set(
+        [...rx.symptoms, ...rx.findings].map((s) => s.toLowerCase().trim())
+    );
+    const assessmentText = (rx.diagnosisText ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s && !namedElsewhere.has(s.toLowerCase()))
+        .join(", ");
     const dateStr = new Date(rx.date).toLocaleDateString(
         language === "en" ? "en-IN" : "hi-IN",
         { day: "2-digit", month: "short", year: "numeric" }
@@ -413,10 +456,18 @@ export function PublicPrescriptionPage() {
                     </div>
                 </div>
 
-                {(rx.symptoms.length || rx.findings.length || rx.diagnosisText) ? (
+                {(rx.symptoms.length || rx.findings.length || assessmentText) ? (
                     <Section icon={Stethoscope} title={labels.findings} bold={boldWeight} tone="slate">
-                        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 text-sm font-medium text-slate-700">
-                            {[rx.diagnosisText, ...rx.symptoms, ...rx.findings].filter(Boolean).join(" · ")}
+                        <div className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.symptoms.length > 0 && (
+                                <ClinicalLine label={labels.complaints} text={rx.symptoms.join(", ")} />
+                            )}
+                            {rx.findings.length > 0 && (
+                                <ClinicalLine label={labels.findings} text={rx.findings.join(", ")} alert />
+                            )}
+                            {assessmentText && (
+                                <ClinicalLine label={labels.assessment} text={assessmentText} />
+                            )}
                         </div>
                     </Section>
                 ) : null}
