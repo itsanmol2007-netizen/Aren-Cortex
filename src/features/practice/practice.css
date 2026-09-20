@@ -598,6 +598,22 @@
 .prac-card--violet .prac-card-add:hover {
     background: var(--cs-violet-soft); border-color: transparent;
 }
+/* Medicine Pricing (teal) and Exercise Library/Additional Charges (blue)
+   gained their own "+ Add" header buttons 2026-09-20 (Anmol: "no any
+   obvious button for adding new charge") — same tone-matched treatment
+   the slate/violet cards already had, so hovering theirs isn't inert. */
+.prac-card--teal .prac-card-add {
+    border-color: rgba(15, 118, 110, 0.35); color: var(--cs-teal);
+}
+.prac-card--teal .prac-card-add:hover {
+    background: var(--cs-teal-soft); border-color: transparent;
+}
+.prac-card--blue .prac-card-add {
+    border-color: rgba(18, 104, 232, 0.35); color: var(--cs-blue);
+}
+.prac-card--blue .prac-card-add:hover {
+    background: var(--cs-blue-soft); border-color: transparent;
+}
 
 /* The inline call to action inside an empty state — a real button, not a
    sentence describing where to go. */
@@ -708,6 +724,10 @@
     z-index: 0;
     opacity: 0.55;
     pointer-events: none;
+    /* Anchors the corner it's already pinned to as `fillArtScale` scales it
+       up in the near-empty case — the CSS default (center) would grow the
+       mark away from that corner instead of INTO the dead space below it. */
+    transform-origin: bottom right;
 }
 
 .prac-rows {

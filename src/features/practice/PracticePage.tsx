@@ -163,6 +163,23 @@ const ROW_H = 34;
  *  against the actual rendered row (icon tile + two text lines + padding). */
 const MED_ROW_H = 54;
 
+/**
+ * The corner mark's scale for a card sitting between empty and full — was a
+ * hard on/off (shown at `count <= 3`, gone past it), which read as a sudden
+ * jump rather than the SVG actually filling less dead space as real rows
+ * arrive (Anmol, 2026-09-20, Additional Charges at one row: "very terrible
+ * empty state or semi empty or half fill state"). Bigger in the near-empty
+ * case where there's real white space to fill, shrinking a step at a time,
+ * gone once the card is within one row of its own cap — there's no dead
+ * space left by then for it to fill. `null` means "don't render it".
+ */
+function fillArtScale(count: number, cap: number): number | null {
+    if (count >= cap - 1) return null;
+    if (count === 1) return 1.6;
+    if (count === 2) return 1.3;
+    return 1;
+}
+
 function CappedRows<T>({
     items, cap, rowH = ROW_H, rowClassName, renderRow, keyOf, showAllLabel, hideTrigger,
 }: {
@@ -2464,6 +2481,27 @@ function ExerciseLibraryModal({
  * (no global catalog to search, unlike medicine/exercise), so this is just
  * add/edit/remove on `clinic_additional_charges` directly.
  */
+/**
+ * A starting point, not a catalogue this clinic is expected to adopt
+ * wholesale — common non-medicine services across specialties, so the
+ * empty/near-empty list has something real to look at instead of one lone
+ * button (Anmol, 2026-09-20: "not like a government portal... this will
+ * look like detailed"). Off by default in the real sense: clicking one
+ * PRE-FILLS the add form with its name so the doctor still sets and
+ * confirms their own amount — nothing is saved to the clinic's actual
+ * catalog until they do.
+ */
+const SUGGESTED_CHARGES: { label: string; description: string }[] = [
+    { label: "Dressing", description: "A wound dressing or a dressing change" },
+    { label: "Suturing", description: "Wound closure — stitches" },
+    { label: "Minor procedure", description: "An in-clinic procedure beyond the consult itself" },
+    { label: "Injection administration", description: "Giving an injection, separate from the injection's own cost" },
+    { label: "Nebulization", description: "A nebulizer session given in-clinic" },
+    { label: "ECG", description: "An ECG taken and read in-clinic" },
+    { label: "Physiotherapy session", description: "One in-clinic therapy session" },
+    { label: "Vaccination administration", description: "Giving a vaccine, separate from the vaccine's own cost" },
+];
+
 function AdditionalChargesModal({
     rows, hospitalId, onSaved, onClose,
 }: {
@@ -2484,6 +2522,16 @@ function AdditionalChargesModal({
         setAmount(entry === "new" ? "" : String(entry.defaultAmount));
         setError(null);
     };
+
+    const startFromSuggestion = (s: { label: string; description: string }) => {
+        setEditing("new");
+        setLabel(s.label);
+        setAmount("");
+        setError(null);
+    };
+
+    const savedLabels = new Set(rows.map((r) => r.label.trim().toLowerCase()));
+    const suggestions = SUGGESTED_CHARGES.filter((s) => !savedLabels.has(s.label.toLowerCase())).slice(0, 5);
 
     const submit = async () => {
         if (!editing) return;
@@ -2564,21 +2612,45 @@ function AdditionalChargesModal({
                     <button type="button" className="prac-modal-btn is-primary is-compact" onClick={() => startEdit("new")}>
                         <Plus size={14} /> Add a charge
                     </button>
+
+                    {suggestions.length > 0 && (
+                        <div className="prac-modal-field">
+                            <label>Suggested — one click starts the form, nothing saves until you set an amount</label>
+                            <div className="prac-modal-rows">
+                                {suggestions.map((s) => (
+                                    <button
+                                        key={s.label} type="button" className="prac-modal-row is-pick"
+                                        onClick={() => startFromSuggestion(s)}
+                                    >
+                                        <div className="prac-med-info">
+                                            <span className="prac-row-label">{s.label}</span>
+                                            <span className="prac-med-brands">{s.description}</span>
+                                        </div>
+                                        <span className="prac-quiet-pill is-alt"><Plus size={11} /></span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {rows.length === 0 ? (
-                        <p className="prac-soon">Nothing saved yet. Add your first one above.</p>
+                        <p className="prac-soon">Nothing saved yet. Add your first one above, or pick a suggestion.</p>
                     ) : (
-                        <div className="prac-modal-rows">
-                            {rows.map((c) => (
-                                <button
-                                    key={c.id} type="button" className="prac-modal-row is-pick"
-                                    onClick={() => startEdit(c)}
-                                >
-                                    <div className="prac-med-info">
-                                        <span className="prac-row-label">{c.label}</span>
-                                    </div>
-                                    <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
-                                </button>
-                            ))}
+                        <div className="prac-modal-field">
+                            {suggestions.length > 0 && <label>Your saved charges</label>}
+                            <div className="prac-modal-rows">
+                                {rows.map((c) => (
+                                    <button
+                                        key={c.id} type="button" className="prac-modal-row is-pick"
+                                        onClick={() => startEdit(c)}
+                                    >
+                                        <div className="prac-med-info">
+                                            <span className="prac-row-label">{c.label}</span>
+                                        </div>
+                                        <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </>
@@ -2904,6 +2976,11 @@ export function PracticePage({
                             subtitle="What this clinic charges for the medicine it dispenses."
                             count={medicineBillingPolicy.enabled ? priceRows.length : undefined}
                             countTone="green"
+                            action={medicineBillingPolicy.enabled ? (
+                                <button type="button" className="prac-card-add" onClick={() => setPricingModalOpen(true)}>
+                                    <Plus size={12} /> Add price
+                                </button>
+                            ) : undefined}
                             foot={medicineBillingPolicy.enabled && priceRows.length > 0 ? (
                                 <FootLink label="Manage pricing" onClick={() => setPricingModalOpen(true)} />
                             ) : undefined}
@@ -2934,10 +3011,15 @@ export function PracticePage({
                                 />
                             ) : (
                                 <div className="prac-fill">
-                                    {priceRows.length <= 3 && <div className="prac-fill-art"><BlankPricingArt /></div>}
-                                    <div className="prac-rows">
-                                        {priceRows.slice(0, 4).map((row) => (
-                                            <div key={row.medicineId} className="prac-row">
+                                    {fillArtScale(priceRows.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(priceRows.length, 4)})` }}>
+                                            <BlankPricingArt />
+                                        </div>
+                                    )}
+                                    <CappedRows
+                                        items={priceRows} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                        showAllLabel="View all priced medicines" keyOf={(r) => r.medicineId}
+                                        renderRow={(row) => (
                                             <button
                                                 type="button" className="prac-template-row"
                                                 onClick={() => setPricingModalOpen(true)}
@@ -2948,9 +3030,8 @@ export function PracticePage({
                                                 </div>
                                                 <span className="prac-quiet-pill is-alt">₹{row.unitPrice.toFixed(2)}/unit</span>
                                             </button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                        )}
+                                    />
                                 </div>
                             )}
                         </PracticeCard>
@@ -3106,6 +3187,11 @@ export function PracticePage({
                             id="exercises"
                             icon={<Dumbbell size={14} />} tone="blue" title="Exercise Library" count={exerciseLibrary.length} fixed
                             subtitle="Exercises this practice prescribes often, and the dose they start on."
+                            action={
+                                <button type="button" className="prac-card-add" onClick={() => setExerciseModalOpen(true)}>
+                                    <Plus size={12} /> Add exercise
+                                </button>
+                            }
                             foot={exerciseLibrary.length > 0 ? (
                                 <FootLink label="Manage library" onClick={() => setExerciseModalOpen(true)} />
                             ) : undefined}
@@ -3125,10 +3211,15 @@ export function PracticePage({
                                 />
                             ) : (
                                 <div className="prac-fill">
-                                    {exerciseLibrary.length <= 3 && <div className="prac-fill-art"><BlankExerciseArt /></div>}
-                                    <div className="prac-rows">
-                                        {exerciseLibrary.slice(0, 4).map((ex) => (
-                                            <div key={ex.intentId} className="prac-row">
+                                    {fillArtScale(exerciseLibrary.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(exerciseLibrary.length, 4)})` }}>
+                                            <BlankExerciseArt />
+                                        </div>
+                                    )}
+                                    <CappedRows
+                                        items={exerciseLibrary} cap={4} rowH={ROW_H}
+                                        showAllLabel="View all exercises" keyOf={(ex) => ex.intentId}
+                                        renderRow={(ex) => (
                                             <button
                                                 type="button" className="prac-template-row"
                                                 onClick={() => setExerciseModalOpen(true)}
@@ -3143,9 +3234,8 @@ export function PracticePage({
                                                     }) || "no dose saved"}
                                                 </span>
                                             </button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                        )}
+                                    />
                                 </div>
                             )}
                         </PracticeCard>
@@ -3154,6 +3244,11 @@ export function PracticePage({
                             id="charges"
                             icon={<Receipt size={14} />} tone="blue" title="Additional Charges" count={chargeCatalog.length} fixed
                             subtitle="Non-medicine services this clinic bills for — a session, a dressing, a procedure."
+                            action={
+                                <button type="button" className="prac-card-add" onClick={() => setChargesModalOpen(true)}>
+                                    <Plus size={12} /> Add charge
+                                </button>
+                            }
                             foot={chargeCatalog.length > 0 ? (
                                 <FootLink label="Manage charges" onClick={() => setChargesModalOpen(true)} />
                             ) : undefined}
@@ -3173,10 +3268,15 @@ export function PracticePage({
                                 />
                             ) : (
                                 <div className="prac-fill">
-                                    {chargeCatalog.length <= 3 && <div className="prac-fill-art"><BlankChargesArt /></div>}
-                                    <div className="prac-rows">
-                                        {chargeCatalog.slice(0, 4).map((c) => (
-                                            <div key={c.id} className="prac-row">
+                                    {fillArtScale(chargeCatalog.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(chargeCatalog.length, 4)})` }}>
+                                            <BlankChargesArt />
+                                        </div>
+                                    )}
+                                    <CappedRows
+                                        items={chargeCatalog} cap={4} rowH={ROW_H}
+                                        showAllLabel="View all charges" keyOf={(c) => c.id}
+                                        renderRow={(c) => (
                                             <button
                                                 type="button" className="prac-template-row"
                                                 onClick={() => setChargesModalOpen(true)}
@@ -3186,9 +3286,8 @@ export function PracticePage({
                                                 </div>
                                                 <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
                                             </button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                        )}
+                                    />
                                 </div>
                             )}
                         </PracticeCard>
