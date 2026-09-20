@@ -382,7 +382,7 @@ function VisitRow({
                                     className="prec-tl-action-btn"
                                     onClick={() => onViewPrescription(visit.prescription_id!)}
                                 >
-                                    <FileText size={11} />
+                                    <FileText size={13} />
                                     View Prescription
                                 </button>
                                 <button
@@ -390,7 +390,7 @@ function VisitRow({
                                     className="prec-tl-action-btn prec-tl-action-btn--whatsapp"
                                     onClick={() => onSendWhatsApp(visit)}
                                 >
-                                    <MessageCircle size={11} />
+                                    <MessageCircle size={13} />
                                     Send via WhatsApp
                                 </button>
                             </div>
@@ -411,7 +411,7 @@ function VisitRow({
                                         <div className="prec-snapshot-chips">
                                             {visit.findings.map((f) => (
                                                 <span key={f.name} className={`prec-finding-chip${f.is_abnormal ? " is-abnormal" : ""}`}>
-                                                    {f.is_abnormal && <AlertCircle size={8} style={{ marginRight: 2 }} />}
+                                                    {f.is_abnormal && <AlertCircle size={10} style={{ marginRight: 3 }} />}
                                                     {f.name}
                                                 </span>
                                             ))}
@@ -459,7 +459,7 @@ function VisitRow({
                                 <div className="prec-tl-med-list">
                                     {visit.medicines.map((m) => (
                                         <div key={m.medicine_id} className="prec-tl-med-row">
-                                            <Pill size={10} className="prec-tl-med-icon" />
+                                            <Pill size={13} className="prec-tl-med-icon" />
                                             <span className="prec-tl-med-name">{m.name}</span>
                                             <span className="prec-tl-med-detail">
                                                 {m.dosage_mg && `${m.dosage_mg}mg`}
@@ -477,7 +477,7 @@ function VisitRow({
                                 <div className="prec-tl-med-list">
                                     {visit.exercise_names.map((label) => (
                                         <div key={label} className="prec-tl-med-row">
-                                            <TrendingUp size={10} className="prec-tl-med-icon" />
+                                            <TrendingUp size={13} className="prec-tl-med-icon" />
                                             <span className="prec-tl-med-name">{label}</span>
                                         </div>
                                     ))}
