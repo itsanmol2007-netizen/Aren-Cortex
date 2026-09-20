@@ -96,6 +96,38 @@ export interface PrescriptionDocumentProps {
      * the editor, both print what they always printed.
      */
     config?: PrescriptionConfig;
+    /**
+     * What the visit actually billed to — the exact same figures
+     * ReviewModal's own screen-only Billing rail computes (fee, medicine,
+     * additional charges, discount, final total), handed down so the
+     * PRINTED/thermal document carries them too. `undefined`/`null` renders
+     * nothing, same as every other optional section here — a clinic using
+     * none of consultation fees, medicine billing or additional charges
+     * prints exactly the document it always did.
+     *
+     * Deliberately a plain, already-resolved snapshot rather than the raw
+     * ingredients ReviewModal computes it from: this component has no
+     * business re-deriving GST math or reading `clinic_medicine_prices`
+     * itself, and a print target (offline reprint, Print RX) may not have
+     * those sources in scope at all.
+     */
+    billing?: PrescriptionBillingSummary | null;
+}
+
+export interface PrescriptionBillingSummary {
+    /** Net of front-desk's own intake-time discount — the same number
+     *  ReviewModal's rail labels "Consultation fee". Null when no fee row
+     *  exists for this visit at all (never shown as a zero). */
+    consultationFee: number | null;
+    feeGstAmount: number;
+    medicineTotal: number;
+    medicineGstAmount: number;
+    additionalCharges: { label: string; amount: number }[];
+    /** Percent of the final total — null when a flat rupee amount was typed
+     *  instead (`discountAmount` is always the resolved number either way). */
+    discountPercent: number | null;
+    discountAmount: number;
+    total: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -146,6 +178,7 @@ function StandardDocument({
     date,
     language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
+    billing,
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     // A URL existing is not the same as it LOADING — the "no image
@@ -728,6 +761,51 @@ function StandardDocument({
                 </div>
             </div>
 
+            {/* ── Billing ── the printed twin of ReviewModal's screen-only
+                rail — same figures, appended at the bottom rather than
+                beside the document, because a printed page (or a WhatsApp
+                send) can't place two documents side by side the way the
+                on-screen review can (Anmol, 2026-09-20: "I don't see the
+                receipt thing... there is no receipt into the printed
+                documents"). `billing` is undefined for the vast majority of
+                consults (no fee configured, no medicine billing, no
+                additional charges), in which case this renders nothing. */}
+            {billing && (billing.consultationFee != null || billing.medicineTotal > 0 || billing.additionalCharges.length > 0) && (
+                <div style={{ border: `1px solid ${rx.mid}`, borderRadius: 6, padding: "8px 12px", marginTop: 12 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                        {t.billing}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {billing.consultationFee != null && (
+                            <BillingRow label={t.consultationFee} amount={billing.consultationFee} size={bodySize} />
+                        )}
+                        {billing.feeGstAmount > 0 && <BillingRow label="GST" amount={billing.feeGstAmount} size={smallSize} muted />}
+                        {billing.medicineTotal > 0 && (
+                            <BillingRow label={t.medicineCharge} amount={billing.medicineTotal} size={bodySize} />
+                        )}
+                        {billing.medicineGstAmount > 0 && <BillingRow label="GST" amount={billing.medicineGstAmount} size={smallSize} muted />}
+                        {billing.additionalCharges.map((c, i) => (
+                            <BillingRow key={`${c.label}-${i}`} label={c.label} amount={c.amount} size={bodySize} />
+                        ))}
+                        {billing.discountAmount > 0 && (
+                            <BillingRow
+                                label={`${t.discount}${billing.discountPercent != null ? ` (${billing.discountPercent}%)` : ""}`}
+                                amount={-billing.discountAmount} size={bodySize}
+                            />
+                        )}
+                    </div>
+                    <div style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        marginTop: 6, paddingTop: 6, borderTop: `1px solid ${rx.mid}`,
+                    }}>
+                        <span style={{ fontSize: bodySize, fontWeight: 900, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                            {t.total}
+                        </span>
+                        <span style={{ fontSize: headingSize, fontWeight: 900, color: rx.ink }}>₹{billing.total.toFixed(2)}</span>
+                    </div>
+                </div>
+            )}
+
             {/* ── Footer ── */}
             {/* The clinic's own closing line — an emergency number, a timing
                 note, a disclaimer. Sits ABOVE the generated/branding strip
@@ -794,6 +872,7 @@ function ThermalDocument({
     date,
     language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
+    billing,
 }: PrescriptionDocumentProps) {
     // Same "URL existing isn't the same as it loading" gap as
     // StandardDocument's own `headerImgError`/`sigImgError` — see that
@@ -967,6 +1046,50 @@ function ThermalDocument({
                 <div style={{ fontSize: "9px", fontWeight: 700 }}>{doctorName}</div>
                 {config.showQualification && doctorQual && <div style={{ fontSize: "8px" }}>{doctorQual}</div>}
             </div>
+
+            {/* Billing — the same printed twin StandardDocument carries, see
+                that component's own comment on why. */}
+            {billing && (billing.consultationFee != null || billing.medicineTotal > 0 || billing.additionalCharges.length > 0) && (
+                <>
+                    {divider}
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.billing}</div>
+                    {billing.consultationFee != null && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{t.consultationFee}</span><span>Rs.{billing.consultationFee.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.feeGstAmount > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>GST</span><span>Rs.{billing.feeGstAmount.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.medicineTotal > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{t.medicineCharge}</span><span>Rs.{billing.medicineTotal.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.medicineGstAmount > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>GST</span><span>Rs.{billing.medicineGstAmount.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.additionalCharges.map((c, i) => (
+                        <div key={`${c.label}-${i}`} style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{c.label}</span><span>Rs.{c.amount.toFixed(2)}</span>
+                        </div>
+                    ))}
+                    {billing.discountAmount > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{t.discount}{billing.discountPercent != null ? ` (${billing.discountPercent}%)` : ""}</span>
+                            <span>-Rs.{billing.discountAmount.toFixed(2)}</span>
+                        </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "11px", marginTop: 3 }}>
+                        <span>{t.total.toUpperCase()}</span><span>Rs.{billing.total.toFixed(2)}</span>
+                    </div>
+                </>
+            )}
+
             {config.footerNote.trim() && (
                 <div style={{ ...th, textAlign: "center", marginTop: 4 }}>{config.footerNote.trim()}</div>
             )}
@@ -1033,6 +1156,22 @@ function PatientCell({ label, value, bold, mono }: { label: string; value: strin
             }}>
                 {value}
             </div>
+        </div>
+    );
+}
+
+/** One line of the Billing card — label left, amount right, a negative
+ *  amount (the discount row) prints in the same red Clinical Findings
+ *  already uses for an abnormal reading, so it reads as "subtracted"
+ *  without a second colour vocabulary. */
+function BillingRow({ label, amount, size, muted }: { label: string; amount: number; size: string; muted?: boolean }) {
+    const negative = amount < 0;
+    return (
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontSize: size, color: muted ? "#999" : "#333" }}>{label}</span>
+            <span style={{ fontSize: size, fontWeight: 700, color: negative ? "#c0392b" : "#111" }}>
+                {negative ? "−" : ""}₹{Math.abs(amount).toFixed(2)}
+            </span>
         </div>
     );
 }

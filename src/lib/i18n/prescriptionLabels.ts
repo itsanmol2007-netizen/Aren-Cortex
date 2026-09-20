@@ -76,6 +76,14 @@ export interface RxLabels {
     advice: string;
     therapyPerformed: string;
     homeExercise: string;
+    /** The printed billing section's own heading — see PrescriptionDocument's
+     *  Billing block. Separate from `measurements`'s "reading" sense even
+     *  though both are short catch-all nouns; this one is money. */
+    billing: string;
+    consultationFee: string;
+    medicineCharge: string;
+    discount: string;
+    total: string;
     qrCaption: string;
     /** n -> "Follow-up in 5 days" / the localised equivalent. */
     followUp: (days: number) => string;
@@ -145,6 +153,11 @@ const en: RxLabels = {
     advice: "Advice",
     therapyPerformed: "Therapy Performed",
     homeExercise: "Home Exercise Programme",
+    billing: "Billing",
+    consultationFee: "Consultation Fee",
+    medicineCharge: "Medicine Charges",
+    discount: "Discount",
+    total: "Total",
     qrCaption: "Scan to verify this prescription",
     followUp: (n) => `Follow-up in ${n} day${n === 1 ? "" : "s"}`,
     durationDays: (n) => `${n} day${n === 1 ? "" : "s"}`,
@@ -175,6 +188,11 @@ const hi: RxLabels = {
     advice: "सलाह",
     therapyPerformed: "आज की थेरेपी",
     homeExercise: "घर पर करने वाली एक्सरसाइज़",
+    billing: "बिल",
+    consultationFee: "परामर्श शुल्क",
+    medicineCharge: "दवाई का शुल्क",
+    discount: "छूट",
+    total: "कुल",
     qrCaption: "पर्ची चेक करने के लिए स्कैन करें",
     followUp: (n) => `${n} दिन बाद दोबारा दिखाएं`,
     durationDays: (n) => (n === 1 ? "1 दिन तक" : `${n} दिनों तक`),
@@ -210,6 +228,11 @@ const hiLatn: RxLabels = {
     advice: "Advice",
     therapyPerformed: "Aaj ki Therapy",
     homeExercise: "Ghar par karne wali Exercise",
+    billing: "Bill",
+    consultationFee: "Consultation Fee",
+    medicineCharge: "Dawai ka Charge",
+    discount: "Discount",
+    total: "Total",
     qrCaption: "Parchi check karne ke liye scan karein",
     followUp: (n) => `${n} din baad dobara dikhayein`,
     durationDays: (n) => `${n} din tak`,

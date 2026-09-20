@@ -16,7 +16,7 @@ import {
   type AdditionalChargeCatalogEntry, type AdditionalChargeLine, type ReviewBillingResult,
 } from "../lib/db/additionalCharges";
 import { MEASURE_FIELDS } from "../features/consult/measures";
-import PrescriptionDocument from "../features/prescription/PrescriptionDocument";
+import PrescriptionDocument, { type PrescriptionBillingSummary } from "../features/prescription/PrescriptionDocument";
 import PrintFormatSelector from "../features/prescription/PrintFormatSelector";
 import { usePrintFormat } from "../features/prescription/usePrintFormat";
 import { accentPalette } from "../lib/brand/accent";
@@ -300,9 +300,15 @@ export default function ReviewModal({
     fetchAdditionalChargesCatalog(hospital.id).then(setChargeCatalog).catch(console.error);
   }, [isPrintMode, hospital?.id]);
   useEffect(() => {
-    if (isPrintMode || !visitId) { setVisitPaymentSoFar(null); return; }
+    // Fetched in BOTH modes now — `mode="print"` (a reprint: Print RX,
+    // Communication's "View Prescription", Overview's prescription list)
+    // needs this too, to print the SAME billing block a fresh save shows,
+    // just read back from what was actually saved rather than computed live
+    // (see `medicineTotal`/`discountPercent`/`finalTotal` below, each of
+    // which prefers this saved row once `isPrintMode` is true).
+    if (!visitId) { setVisitPaymentSoFar(null); return; }
     fetchVisitPayment(visitId).then(setVisitPaymentSoFar).catch(console.error);
-  }, [isPrintMode, visitId]);
+  }, [visitId]);
 
   // What was actually dispensed with a price on it this consult — live from
   // `prescription`, never read back from the database: at review time
@@ -310,7 +316,12 @@ export default function ReviewModal({
   // is still last visit's stale number (or zero). Same arithmetic
   // `saveConsult` itself will run a moment later, kept in lockstep on
   // purpose so this preview never disagrees with what actually gets billed.
-  const medicineTotal = useMemo(
+  //
+  // A REPRINT (`isPrintMode`) is the opposite case — nothing is live here,
+  // the visit already saved, and `prescription` (from
+  // `fetchPrescriptionRenderData`) may not even carry `quantityDispensed`/
+  // `unitPrice`. Prefer the saved figure whenever one exists.
+  const liveMedicineTotal = useMemo(
     () => Math.round(
       prescription.reduce((sum, m) => (
         m.quantityDispensed != null && m.unitPrice != null
@@ -320,11 +331,20 @@ export default function ReviewModal({
     ) / 100,
     [prescription]
   );
-  const medicineGstAmount = medicineBillingPolicy.gstEnabled
-    ? Math.round((medicineTotal * medicineBillingPolicy.gstPercent) / 100)
-    : 0;
+  const medicineTotal = isPrintMode && visitPaymentSoFar ? visitPaymentSoFar.medicineTotal : liveMedicineTotal;
+  const medicineGstAmount = isPrintMode && visitPaymentSoFar
+    ? visitPaymentSoFar.medicineGstAmount
+    : medicineBillingPolicy.gstEnabled
+      ? Math.round((medicineTotal * medicineBillingPolicy.gstPercent) / 100)
+      : 0;
 
   const [charges, setCharges] = useState<AdditionalChargeLine[]>([]);
+  // A reprint has no interactive "+ Add charge" — seed straight from what
+  // was actually billed and saved, the same source `medicineTotal` above
+  // reads for the same reason.
+  useEffect(() => {
+    if (isPrintMode && visitPaymentSoFar) setCharges(visitPaymentSoFar.additionalCharges);
+  }, [isPrintMode, visitPaymentSoFar]);
   const [chargeLabel, setChargeLabel] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [saveChargeToCatalog, setSaveChargeToCatalog] = useState(true);
@@ -365,6 +385,13 @@ export default function ReviewModal({
     : 0) + medicineTotal + medicineGstAmount + chargesTotal;
 
   const { discountPercent, discountAmount } = (() => {
+    // Reprint: the discount was already resolved and saved — read it back
+    // rather than re-deriving from `discountMode`/`discountInput`, which
+    // stay at their untouched defaults ("none"/"") since nothing here is
+    // interactive in print mode.
+    if (isPrintMode && visitPaymentSoFar) {
+      return { discountPercent: visitPaymentSoFar.reviewDiscountPercent, discountAmount: visitPaymentSoFar.reviewDiscountAmount };
+    }
     if (discountMode === "none") return { discountPercent: null as number | null, discountAmount: 0 };
     if (discountMode === "5" || discountMode === "10") {
       const pct = Number(discountMode);
@@ -376,7 +403,31 @@ export default function ReviewModal({
       ? { discountPercent: n, discountAmount: Math.round((subtotal * n) / 100) }
       : { discountPercent: null as number | null, discountAmount: Math.round(n * 100) / 100 };
   })();
-  const finalTotal = Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
+  // Reprint: the resolved total was already saved — read it back rather
+  // than recomputing from `subtotal`, the authoritative number rather than
+  // one this component re-derives.
+  const finalTotal = isPrintMode && visitPaymentSoFar
+    ? visitPaymentSoFar.total
+    : Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
+
+  /** The printed twin of the rail below — same figures, handed to
+   *  `PrescriptionDocument` so the actual printed/reprinted page carries
+   *  them too (Anmol, 2026-09-20: "there is no receipt into the printed
+   *  documents"). Independent of `showBilling` (which excludes
+   *  `isPrintMode` — the ON-SCREEN rail is review-only) since the PRINT
+   *  OUTPUT itself needs to show billing in both modes: live, about-to-be-
+   *  saved figures during review, and the already-saved figures on a
+   *  reprint (both threaded through the same `medicineTotal`/`charges`/
+   *  `discountPercent`/`finalTotal` above). */
+  const printBilling: PrescriptionBillingSummary | undefined =
+    visitPaymentSoFar != null || medicineTotal > 0 || charges.length > 0
+      ? {
+        consultationFee: visitPaymentSoFar ? visitPaymentSoFar.fee - visitPaymentSoFar.discount : null,
+        feeGstAmount: visitPaymentSoFar?.gstAmount ?? 0,
+        medicineTotal, medicineGstAmount, additionalCharges: charges,
+        discountPercent, discountAmount, total: finalTotal,
+      }
+      : undefined;
 
   /** Nothing here unless there is genuinely something billing-related to
    *  show — a fee recorded at intake, medicine actually priced this
@@ -607,6 +658,7 @@ export default function ReviewModal({
             date={date}
             language={language}
             config={prescriptionConfig}
+            billing={printBilling}
           />
         </div>
       </div>
