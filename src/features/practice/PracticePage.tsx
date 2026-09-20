@@ -8,10 +8,18 @@
 // informational summary and never a dead-end "not built yet."
 //
 // ── Clinical defaults, two rows of three ────────────────────────────────
-//  Row 1 — Preferred Medicines, Preferred Labs, Prescription Templates:
-//    concrete practice preferences that directly influence a consultation.
-//  Row 2 — Add New Medicine, Clinical Companions, Consultation Defaults:
-//    the surfaces that extend or configure those preferences.
+//  Medicine row  — Preferred Medicines, Add New Medicine, Medicine Pricing:
+//    consecutive and teal on purpose (2026-09-19), three different mental
+//    models (preference, catalogue data-entry, pricing) that all revolve
+//    around the same thing rather than one merged card.
+//  Tools row     — Preferred Labs, Prescription Templates, Clinical
+//    Companions: investigations, saved setups, and the cross-intent
+//    suggestion engine.
+//  Which row leads is NOT fixed — `medicineLeads` (computed from
+//  `specialty.primary`, just above the page's `return`) sets each row's
+//  flex `order`. Six of the eight specialty profiles are medicine-primary
+//  and see no change; Diagnostics and Physiotherapy see the tools row lead
+//  instead (2026-09-20) — see that constant's own comment.
 //  PRACTICE VOCABULARY — Your Clinical Terms: this doctor's own words,
 //    remembered so Cortex can offer them back.
 //
@@ -2383,6 +2391,22 @@ export function PracticePage({
             ?.scrollIntoView({ block: "center", behavior: reduceMotionForScroll ? "auto" : "smooth" });
     };
 
+    /**
+     * Clinical Defaults' two rows, reordered by which intent this facility's
+     * profile actually elevates (`specialty.primary` — the same field that
+     * decides Consult's own Primary Recommendation slot, see
+     * `specialtyProfile.ts`). No new cards, no new data: General OPD,
+     * Cardiology, Paediatrics, Gynaecology, Dentistry and Dermatology are
+     * all medicine-primary today, so this is a no-op for six of the eight
+     * profiles and the medicine row keeps leading exactly as it always has.
+     * Diagnostics (test-primary) and Physiotherapy (exercise-primary) are
+     * the two where it isn't — the medicine group drops behind Preferred
+     * Labs/Templates/Companions instead of leading it (Anmol, 2026-09-20).
+     * Physiotherapy is a stopgap: nothing here is actually exercise-specific
+     * yet, that's the still-to-build Exercise/Session Library's job.
+     */
+    const medicineLeads = specialty.primary === "medicine";
+
     return (
         <div className="prac-page">
             {/* A faint node-diagram/constellation texture, not a blown-up
@@ -2476,7 +2500,7 @@ export function PracticePage({
                         they are of the same category" — not merged into
                         one card (three different mental models, cramming
                         them into tabs would make each worse), just grouped. */}
-                    <div className="prac-grid">
+                    <div className="prac-grid" style={{ order: medicineLeads ? 1 : 2 }}>
                         <PreferredMedicinesCard
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
                             onBrandsChange={setBrands}
@@ -2564,7 +2588,7 @@ export function PracticePage({
                         cross-intent suggestion engine (Companions pairs ANY
                         intent type, not only medicine, so it belongs here
                         and not in the teal group above). */}
-                    <div className="prac-grid">
+                    <div className="prac-grid" style={{ order: medicineLeads ? 2 : 1 }}>
                         <PracticeCard
                             id="labs"
                             icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length} fixed
