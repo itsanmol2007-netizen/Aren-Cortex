@@ -18,7 +18,7 @@
 // comes out of the printer.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PrintFormat } from "./usePrintFormat";
 
@@ -71,7 +71,17 @@ export function ScaledPrescriptionSheet({
     // column (or the review modal's own width, at the format picker) changes
     // width, and a stale scale factor would leave the page either clipped or
     // floating in dead space.
-    useEffect(() => {
+    //
+    // `useLayoutEffect`, not `useEffect` — the first measurement used to run
+    // AFTER the browser had already painted one frame at `scale=0` (a
+    // collapsed, invisible frame), then a second frame with the real size a
+    // beat later: exactly the "two things loading at different times...
+    // jittery" a doctor watching the review modal pop open actually saw
+    // (Anmol, 2026-09-20). A layout effect runs synchronously after the DOM
+    // mounts but BEFORE that first paint, so `el.clientWidth` is already
+    // correct and the very first frame shown is the fully-scaled one — one
+    // settle, not two.
+    useLayoutEffect(() => {
         const el = boxRef.current;
         if (!el) return;
         const measure = () => {

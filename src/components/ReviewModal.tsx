@@ -307,6 +307,15 @@ export default function ReviewModal({
     ) / 100,
     [prescription]
   );
+  // The per-medicine breakdown this rail shows when it has one — same
+  // "which medicines actually carried a price" filter `liveMedicineTotal`
+  // sums over, kept separate so the rail can show name + qty × rate per
+  // line instead of only the combined figure (Anmol, 2026-09-20 again:
+  // "don't just write medicine charges... show what medicine charges").
+  const pricedMedicines = useMemo(
+    () => prescription.filter((m) => m.quantityDispensed != null && m.unitPrice != null),
+    [prescription]
+  );
   const medicineTotal = isPrintMode && visitPaymentSoFar ? visitPaymentSoFar.medicineTotal : liveMedicineTotal;
   const medicineGstAmount = isPrintMode && visitPaymentSoFar
     ? visitPaymentSoFar.medicineGstAmount
@@ -764,10 +773,29 @@ export default function ReviewModal({
                     </div>
                   )}
                   {medicineTotal > 0 && (
-                    <div className="flex items-center justify-between text-[#5c4d22]">
-                      <span className="font-sans">Medicine dispensed</span>
-                      <span className="tabular-nums font-semibold">₹{medicineTotal.toFixed(2)}</span>
-                    </div>
+                    pricedMedicines.length > 0 ? (
+                      pricedMedicines.map((m, i) => (
+                        <div key={`${m.id}-${i}`} className="flex flex-col">
+                          <div className="flex items-center justify-between gap-2 text-[#5c4d22]">
+                            <span className="font-sans truncate">{m.name}</span>
+                            <span className="tabular-nums font-semibold shrink-0">
+                              ₹{(m.quantityDispensed! * m.unitPrice!).toFixed(2)}
+                            </span>
+                          </div>
+                          <span className="font-sans text-[10.5px] text-[#a3915f]">
+                            {m.quantityDispensed} × ₹{m.unitPrice!.toFixed(2)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      // A reprint (`isPrintMode`) never reaches this rail at
+                      // all (`showBilling` excludes it) — this fallback is
+                      // only theoretical insurance, not a real path today.
+                      <div className="flex items-center justify-between text-[#5c4d22]">
+                        <span className="font-sans">Medicine dispensed</span>
+                        <span className="tabular-nums font-semibold">₹{medicineTotal.toFixed(2)}</span>
+                      </div>
+                    )
                   )}
                   {medicineGstAmount > 0 && (
                     <div className="flex items-center justify-between text-[#8a7a4d]">
