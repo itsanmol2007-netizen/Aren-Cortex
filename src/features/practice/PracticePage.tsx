@@ -295,7 +295,7 @@ function SkelRows({ count }: { count: number }) {
 function EmptyBlock({ art, fact, next, action }: { art: ReactNode; fact: string; next: string; action?: ReactNode }) {
     return (
         <div className="prac-empty">
-            {art}
+            <div className="prac-empty-art">{art}</div>
             <strong>{fact}</strong>
             <span>{next}</span>
             {action}
@@ -3055,7 +3055,11 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : preferredLabs.length > 0 ? (
                                 <div className="prac-fill">
-                                    {preferredLabs.length <= 2 && <div className="prac-fill-art"><BlankLabArt /></div>}
+                                    {fillArtScale(preferredLabs.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(preferredLabs.length, 4)})` }}>
+                                            <BlankLabArt />
+                                        </div>
+                                    )}
                                     {/* Two-line rows (icon + name + a real subtitle), same
                                         shape Templates/Companions already use — a bare
                                         34px name-and-remove line was reading as
@@ -3103,7 +3107,11 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : templates.length > 0 ? (
                                 <div className="prac-fill">
-                                    {templates.length <= 3 && <div className="prac-fill-art"><BlankTemplateArt /></div>}
+                                    {fillArtScale(templates.length, 3) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(templates.length, 3)})` }}>
+                                            <BlankTemplateArt />
+                                        </div>
+                                    )}
                                     <CappedRows
                                         items={templates} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
                                         showAllLabel="View all templates" keyOf={(t) => t.id}
@@ -3140,7 +3148,11 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : companions.length > 0 ? (
                                 <div className="prac-fill">
-                                    {companions.length <= 2 && <div className="prac-fill-art"><BlankCompanionArt /></div>}
+                                    {fillArtScale(companions.length, 3) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(companions.length, 3)})` }}>
+                                            <BlankCompanionArt />
+                                        </div>
+                                    )}
                                     <CappedRows
                                         items={companions} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
                                         showAllLabel="View all companions" hideTrigger

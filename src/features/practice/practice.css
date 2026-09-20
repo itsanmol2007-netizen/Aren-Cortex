@@ -1122,6 +1122,34 @@
     line-height: 1.5;
 }
 
+/* The empty-state SVG used to sit directly on the card's white body — a
+   44-62px line mark (BlankArt.tsx's own size rule, unchanged here) reads
+   as thin rather than designed once nothing else is on the card
+   (Anmol, 2026-09-20: "if there is nothing to show, show a beautiful
+   svg... it should look beautiful, like really beautiful"). A soft,
+   tone-matched medallion gives it somewhere to sit — the SAME four tint
+   tokens every glyph tile on this page already carries
+   (`.prac-glyph.is-teal` etc.), reused rather than a fifth treatment
+   invented for just this spot. 72px = 24 × the page's own 3px rhythm
+   (`--cs-s1`), not picked by eye; the 3px margin below is one more step
+   of that same scale, so the gap to the headline reads as `--cs-s3` (8px)
+   total rather than an arbitrary number. */
+.prac-empty-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    margin-bottom: var(--cs-s1);
+    background: #f8fafc;
+}
+
+.prac-card--teal .prac-empty-art { background: var(--cs-teal-soft); }
+.prac-card--violet .prac-empty-art { background: var(--cs-violet-soft); }
+.prac-card--blue .prac-empty-art { background: var(--cs-blue-soft); }
+.prac-card--slate .prac-empty-art { background: #f1f5f9; }
+
 /* ── The card foot — `PracticeCard`'s `foot` prop, one shape (`FootLink`)
    for the persistent "Manage all X →" / "View all X →" link every
    populated primary card carries, replacing the dashed "add another" row
