@@ -76,7 +76,7 @@ serve(async (req) => {
       .maybeSingle();
     if (!rx) return json({ ok: false, error: "not_found" }, 404);
 
-    const [visitRes, doctorRes, hospitalRes, settingsRes, pmRes, doRes, vsRes, vfRes] =
+    const [visitRes, doctorRes, hospitalRes, settingsRes, pmRes, doRes, vsRes, vfRes, paymentRes] =
       await Promise.all([
         db.from("visits").select("patient_id, vitals, prescription_ref").eq("id", rx.visit_id).maybeSingle(),
         rx.assigned_doctor_id
@@ -96,6 +96,18 @@ serve(async (req) => {
         db.from("diagnostic_orders").select("test_name").eq("prescription_id", rx.id),
         db.from("visit_symptoms").select("symptom_id").eq("visit_id", rx.visit_id),
         db.from("visit_findings").select("finding_id").eq("visit_id", rx.visit_id),
+        // The same figures ReviewModal's Billing rail and the printed
+        // document's own Billing card show — see PrescriptionDocument.tsx's
+        // `PrescriptionBillingSummary` (same field names, same source
+        // table). A patient reading this page over WhatsApp is exactly the
+        // audience the printed receipt already reaches; this closes the
+        // one surface that didn't (Anmol, 2026-09-20: "no receipt into...
+        // WhatsApp"). `maybeSingle` — most visits have no `visit_payments`
+        // row at all (no fee configured), which is a real "nothing to
+        // show" rather than an error.
+        db.from("visit_payments")
+          .select("fee, discount, gst_amount, medicine_total, medicine_gst_amount, additional_charges, review_discount_percent, review_discount_amount, total")
+          .eq("visit_id", rx.visit_id).maybeSingle(),
       ]);
 
     const visit = visitRes.data;
@@ -143,6 +155,28 @@ serve(async (req) => {
 
     const sentLanguage = rx.last_sent_language as string | null;
     const defaultLanguage = sentLanguage === "hi" || sentLanguage === "hi-Latn" ? sentLanguage : "en";
+
+    const payment = paymentRes.data as {
+      fee: number | string; discount: number | string; gst_amount: number | string | null;
+      medicine_total: number | string | null; medicine_gst_amount: number | string | null;
+      additional_charges: { label: string; amount: number }[] | null;
+      review_discount_percent: number | string | null; review_discount_amount: number | string | null;
+      total: number | string | null;
+    } | null;
+    const medicineTotal = Number(payment?.medicine_total ?? 0);
+    const additionalCharges = Array.isArray(payment?.additional_charges) ? payment!.additional_charges : [];
+    const billing = payment && (Number(payment.fee) > 0 || medicineTotal > 0 || additionalCharges.length > 0)
+      ? {
+          consultationFee: Number(payment.fee) - Number(payment.discount),
+          feeGstAmount: Number(payment.gst_amount ?? 0),
+          medicineTotal,
+          medicineGstAmount: Number(payment.medicine_gst_amount ?? 0),
+          additionalCharges,
+          discountPercent: payment.review_discount_percent != null ? Number(payment.review_discount_percent) : null,
+          discountAmount: Number(payment.review_discount_amount ?? 0),
+          total: Number(payment.total ?? 0),
+        }
+      : null;
 
     const rxOut = {
       ref: (visit as { prescription_ref?: string | null }).prescription_ref ?? null,
@@ -211,6 +245,7 @@ serve(async (req) => {
       advice: adviceLines,
       followUpDays: rx.follow_up_days ?? null,
       footerNote: s?.footer_note ?? null,
+      billing,
     };
 
     return json({ ok: true, rx: rxOut });

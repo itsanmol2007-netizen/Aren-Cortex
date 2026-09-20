@@ -21,9 +21,9 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
     Sunrise, Sun, Sunset, Moon, Utensils, UtensilsCrossed,
-    Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert,
+    Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert, IndianRupee,
 } from "lucide-react";
-import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine } from "./api";
+import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine, type PublicRxBilling } from "./api";
 import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
 // The same clinic-agnostic marks the printed prescription and the doctor's
 // on-screen review already carry (`ReviewModal`/`PrescriptionDocument`) —
@@ -145,7 +145,57 @@ const SECTION_TONE = {
     indigo: "bg-indigo-100 text-indigo-700",
     purple: "bg-purple-100 text-purple-700",
     amber: "bg-amber-100 text-amber-700",
+    emerald: "bg-emerald-100 text-emerald-700",
 } as const;
+
+const BILLING_LABELS: Record<RxLanguage, {
+    title: string; fee: string; medicine: string; discount: string; total: string;
+}> = {
+    en: { title: "Billing", fee: "Consultation Fee", medicine: "Medicine Charges", discount: "Discount", total: "Total" },
+    hi: { title: "बिल", fee: "परामर्श शुल्क", medicine: "दवाई का शुल्क", discount: "छूट", total: "कुल" },
+    "hi-Latn": { title: "Bill", fee: "Consultation Fee", medicine: "Dawai ka Charge", discount: "Discount", total: "Total" },
+};
+
+/** One billing line — label left, amount right, same shape the printed
+ *  document's own `BillingRow` uses, redrawn in this page's bolder,
+ *  higher-contrast idiom instead of imported wholesale. */
+function BillingLine({ label, amount, muted, negative }: { label: string; amount: number; muted?: boolean; negative?: boolean }) {
+    return (
+        <div className="flex items-center justify-between gap-3 py-1">
+            <span className={`text-sm font-semibold ${muted ? "text-slate-400" : "text-slate-700"}`}>{label}</span>
+            <span className={`text-sm font-bold ${negative ? "text-rose-600" : "text-slate-900"}`}>
+                {negative ? "−" : ""}₹{Math.abs(amount).toFixed(2)}
+            </span>
+        </div>
+    );
+}
+
+function BillingCard({ billing, language }: { billing: PublicRxBilling; language: RxLanguage }) {
+    const t = BILLING_LABELS[language];
+    return (
+        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4">
+            <div className="divide-y divide-slate-100">
+                {billing.consultationFee != null && <BillingLine label={t.fee} amount={billing.consultationFee} />}
+                {billing.feeGstAmount > 0 && <BillingLine label="GST" amount={billing.feeGstAmount} muted />}
+                {billing.medicineTotal > 0 && <BillingLine label={t.medicine} amount={billing.medicineTotal} />}
+                {billing.medicineGstAmount > 0 && <BillingLine label="GST" amount={billing.medicineGstAmount} muted />}
+                {billing.additionalCharges.map((c, i) => (
+                    <BillingLine key={`${c.label}-${i}`} label={c.label} amount={c.amount} />
+                ))}
+                {billing.discountAmount > 0 && (
+                    <BillingLine
+                        label={`${t.discount}${billing.discountPercent != null ? ` (${billing.discountPercent}%)` : ""}`}
+                        amount={billing.discountAmount} negative
+                    />
+                )}
+            </div>
+            <div className="mt-2 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2.5">
+                <span className="text-xs font-black uppercase tracking-wide text-emerald-800">{t.total}</span>
+                <span className="text-lg font-black text-emerald-800">₹{billing.total.toFixed(2)}</span>
+            </div>
+        </div>
+    );
+}
 
 /** A soft rounded chip behind each section's icon, rather than the icon
  *  floating bare — same "give the icon its own surface" idiom used for the
@@ -438,6 +488,19 @@ export function PublicPrescriptionPage() {
                             <p className="mt-1 border-t-2 border-slate-900 pt-1 text-xs font-bold text-slate-700">{doctorName}</p>
                         </div>
                     </div>
+                ) : null}
+
+                {/* Billing — appended at the bottom, same relative position
+                    as the printed document's own Billing card (after
+                    signature, before the clinic's closing note). A single-
+                    column mobile page has no "beside the prescription"
+                    option the way the doctor's on-screen review does, so
+                    this follows the printed/thermal placement instead
+                    (Anmol, 2026-09-20: "no receipt into... WhatsApp"). */}
+                {rx.billing ? (
+                    <Section icon={IndianRupee} title={BILLING_LABELS[language].title} bold={boldWeight} tone="emerald">
+                        <BillingCard billing={rx.billing} language={language} />
+                    </Section>
                 ) : null}
 
                 {rx.footerNote ? (

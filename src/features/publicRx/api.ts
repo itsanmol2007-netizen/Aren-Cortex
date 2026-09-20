@@ -36,6 +36,19 @@ export interface PublicRxMedicine {
     isSos: boolean;
 }
 
+export interface PublicRxBilling {
+    /** Net of front-desk's own intake-time discount. Null when this visit
+     *  never had a consultation fee at all. */
+    consultationFee: number | null;
+    feeGstAmount: number;
+    medicineTotal: number;
+    medicineGstAmount: number;
+    additionalCharges: { label: string; amount: number }[];
+    discountPercent: number | null;
+    discountAmount: number;
+    total: number;
+}
+
 export interface PublicRxData {
     ref: string | null;
     date: string;
@@ -74,6 +87,11 @@ export interface PublicRxData {
     advice: string[];
     followUpDays: number | null;
     footerNote: string | null;
+    /** The same figures the printed prescription's own Billing card shows —
+     *  null when this visit never had a fee, medicine billing or an
+     *  additional charge (the vast majority; most clinics show nothing
+     *  here, exactly as before this existed). */
+    billing: PublicRxBilling | null;
 }
 
 type Ok = { ok: true; rx: PublicRxData };
