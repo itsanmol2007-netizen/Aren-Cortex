@@ -631,6 +631,27 @@
     gap: 8px;
 }
 
+/* The SVG (`BlankSnapshotArt`/`BlankTrendArt`/`BlankTimelineArt`) used to sit
+   directly on the card's white body — a bare 50-60px line mark with nothing
+   grounding it read as thin rather than designed (Anmol, 2026-09-20: "so
+   much... terrible kind of SVG"). A soft, tone-matched medallion — the same
+   treatment Practice page's own empty cards now use — gives it somewhere to
+   sit, tinted to match the card's OWN header icon colour rather than a new
+   hue invented for this spot. */
+.prec-timeline-empty-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    margin-bottom: 2px;
+}
+
+.prec-timeline-empty-art.is-pink { background: #fdedf5; }
+.prec-timeline-empty-art.is-blue { background: #eaf1fd; }
+.prec-timeline-empty-art.is-violet { background: #f5f3ff; }
+
 .prec-timeline-empty-title {
     color: #334155;
     font-size: 13px;

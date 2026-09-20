@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
     AlertCircle,
     ArrowDown,
@@ -137,6 +138,27 @@ function computeVisitPattern(visits: RealVisit[]): {
 
 function SkelBlock({ width, height = 12, style }: { width: string | number; height?: number; style?: React.CSSProperties }) {
     return <div className="prec-skeleton" style={{ width, height, borderRadius: 4, ...style }} />;
+}
+
+/**
+ * The right sidebar's own compact empty state — Care Plan / Frequent
+ * Complaints / Common Medicines / Visit Pattern used to fall back to a bare
+ * inline-styled sentence the instant a patient had nothing to show (Anmol,
+ * 2026-09-20: "so much crammed small text with... terrible kind of SVG, so
+ * much stressed out section"). A 304px sidebar card has no room for a full
+ * illustrated well (`.prec-timeline-empty`'s own 150-220px minimum would
+ * make FOUR of these stack into a much taller sidebar than the main column
+ * beside it) — this reuses each card's OWN header icon, tone-matched, at
+ * rest in a small circle instead, so an empty card still reads as designed
+ * without inventing a new illustration or a second empty-state language for
+ * one column of the page. */
+function PanelEmpty({ icon, tone, label }: { icon: ReactNode; tone: "blue" | "green" | "pink" | "violet"; label: string }) {
+    return (
+        <div className="prec-panel-empty">
+            <span className={`prec-panel-empty-icon is-${tone}`}>{icon}</span>
+            <span className="prec-panel-empty-label">{label}</span>
+        </div>
+    );
 }
 
 /**
@@ -773,7 +795,7 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         // on a patient with almost no history instead of
                                         // collapsing into slivers of different sizes.
                                         <div className="prec-timeline-empty is-compact">
-                                            <BlankSnapshotArt />
+                                            <div className="prec-timeline-empty-art is-pink"><BlankSnapshotArt /></div>
                                             <p className="prec-timeline-empty-title">Nothing charted yet</p>
                                             <p className="prec-timeline-empty-sub">
                                                 Complaints and findings from a completed consult show up here.
@@ -816,7 +838,7 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         // real reason once: a trend is two readings of the
                                         // same measurement, so it cannot exist yet.
                                         <div className="prec-timeline-empty is-compact">
-                                            <BlankTrendArt />
+                                            <div className="prec-timeline-empty-art is-blue"><BlankTrendArt /></div>
                                             <p className="prec-timeline-empty-title">No trend to plot yet</p>
                                             <p className="prec-timeline-empty-sub">
                                                 A trend needs the same measurement recorded at two visits.
@@ -882,7 +904,7 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         // just a sentence, since this page already knows
                                         // how to start one.
                                         <div className="prec-timeline-empty">
-                                            <BlankTimelineArt />
+                                            <div className="prec-timeline-empty-art is-violet"><BlankTimelineArt /></div>
                                             <p className="prec-timeline-empty-title">
                                                 {inProgressVisits.length > 0
                                                     ? "No visit has been finished for this patient yet"
@@ -995,7 +1017,10 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="prec-placeholder-dash">No active care plan</div>
+                                    <PanelEmpty
+                                        icon={<TrendingUp size={14} />} tone="blue"
+                                        label="No active care plan yet"
+                                    />
                                 )}
                             </div>
                         </div>
@@ -1012,12 +1037,13 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                             </div>
                         ))
                     ) : (
-                        // All three always render now — `RankedBarList` already
-                        // says "No data yet." for an empty list, and Visit
-                        // Pattern gets the same dash fallback below; a card
+                        // All three always render now, empty or not — a card
                         // that disappears whenever a new patient has nothing
                         // to rank yet is the "half the sidebar is missing"
-                        // look this pass is fixing.
+                        // look this pass is fixing. Empty, each falls back to
+                        // `PanelEmpty` (its own header icon, at rest) rather
+                        // than `RankedBarList`'s bare "No data yet." line —
+                        // see `PanelEmpty`'s own comment for why.
                         <>
                             <div className="prec-panel-section">
                                 <div className="prec-panel-card">
@@ -1026,7 +1052,14 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         <span className="prec-panel-card-title">Frequent Complaints</span>
                                     </div>
                                     <div className="prec-panel-card-body">
-                                        <RankedBarList items={frequentComplaints} />
+                                        {frequentComplaints.length > 0 ? (
+                                            <RankedBarList items={frequentComplaints} />
+                                        ) : (
+                                            <PanelEmpty
+                                                icon={<Stethoscope size={14} />} tone="violet"
+                                                label="No complaints charted yet"
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1038,7 +1071,14 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         <span className="prec-panel-card-title">Common Medicines</span>
                                     </div>
                                     <div className="prec-panel-card-body">
-                                        <RankedBarList items={commonMedicines} />
+                                        {commonMedicines.length > 0 ? (
+                                            <RankedBarList items={commonMedicines} />
+                                        ) : (
+                                            <PanelEmpty
+                                                icon={<Pill size={14} />} tone="blue"
+                                                label="No medicines prescribed yet"
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1070,7 +1110,10 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                                 )}
                                             </>
                                         ) : (
-                                            <div className="prec-placeholder-dash">No visits recorded yet</div>
+                                            <PanelEmpty
+                                                icon={<Calendar size={14} />} tone="pink"
+                                                label="Not enough visits yet"
+                                            />
                                         )}
                                     </div>
                                 </div>
