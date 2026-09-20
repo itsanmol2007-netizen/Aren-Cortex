@@ -231,9 +231,14 @@
     border-radius: 2px;
 }
 
-/* Right column — operational panel, fixed width, scrolls independently */
+/* Right column — operational panel, fixed width, scrolls independently.
+   Widened from 304 to 340 (2026-09-20) so Care Plan/Visit Pattern can pair
+   side by side (`.prec-panel-pair` below) without cramming — this sidebar
+   reading as its own small grid, not one narrow stacked strip, is the same
+   "more than a single column" ask that landed on the page's overall shape
+   (Anmol: "we can make it kind of three grid or maybe even more better"). */
 .prec-right-col {
-    width: 304px;
+    width: 340px;
     flex-shrink: 0;
     border-left: 1px solid #d0d8e8;
     background: #f7f8fc;
@@ -260,6 +265,18 @@
 
 .prec-panel-section:last-child {
     margin-bottom: 0;
+}
+
+/* Two compact cards side by side instead of stacked — Care Plan + Visit
+   Pattern, the only pair in this sidebar short enough to share a row
+   without a bar-list's rows getting squeezed. `.prec-panel-pair` itself
+   carries the section's own bottom margin; the two `.prec-panel-card`s
+   inside it lose the standalone card's implicit vertical rhythm since
+   `align-items: stretch` (grid default) already matches their heights. */
+.prec-panel-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
 }
 
 /* Section card — white card on panel ground */
