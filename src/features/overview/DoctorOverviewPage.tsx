@@ -254,12 +254,28 @@ export function DoctorOverviewPage({
     useEffect(checkActiveReception, [checkActiveReception]);
     const showQueueCard = clinic.frontDesk && hasActiveReception !== false;
 
-    const [period, setPeriod] = useState<PeriodState>({ preset: "7d", from: today, to: today });
+    // Defaults to "today" — a doctor opening this page wants to know what
+    // happened TODAY (money collected, prescriptions written), not this
+    // week's rollup (Anmol, 2026-09-20: "obviously if you go there they want
+    // to see how many money collected today not this week").
+    const [period, setPeriod] = useState<PeriodState>({ preset: "today", from: today, to: today });
 
     const range = useMemo(
         () => buildRange(period.preset, { from: period.from, to: period.to }),
         [period]
     );
+
+    // The trend chart's own window — deliberately NEVER the period toggle's
+    // range. A "Today" (or "Yesterday") selection collapses `range` to a
+    // single day, which gives the chart a one-point series with nothing to
+    // draw a trend across — the exact bug this fixes (Anmol, 2026-09-20:
+    // "clicking on today makes the graph disappear... a one day graph
+    // doesn't make sense, it doesn't have anything to compare"). The KPI
+    // tiles above stay scoped to `period`; only the chart (and its own
+    // per-tile sparklines) read this fixed 30-day window instead, same
+    // "last 30 days" scope `recentPatientsRange` below already uses for
+    // Recent Patients.
+    const chartRange = useMemo(() => buildRange("30d"), []);
 
     // ── The scope toggle (admin-doctors only) ─────────────────────────────
     const [viewScope, setViewScope] = useState<string>("");
@@ -273,6 +289,12 @@ export function DoctorOverviewPage({
     const rangeKey = `${period.preset}_${period.from}_${period.to}`;
 
     const [data, setData] = useState<ClinicAnalytics | null>(null);
+    // The chart's own analytics, fetched against `chartRange` (fixed, see
+    // that constant's own comment) rather than `range` — a second, small
+    // fetch (cached exactly like `data`'s own) so a "Today"/"Yesterday"
+    // period never starves the trend chart of the points it needs.
+    const [chartData, setChartData] = useState<ClinicAnalytics | null>(null);
+    const [chartLoadFailed, setChartLoadFailed] = useState(false);
     // Distinguishes "still trying" from "tried, and there is truly nothing
     // to show" — `data === null` alone covers both, which is why a doctor
     // who opened this page offline with an empty local mirror (a brand-new
@@ -393,6 +415,27 @@ export function DoctorOverviewPage({
             .finally(() => setLoading(false));
     }, [identity.ready, identity.hospitalId, effectiveDoctorId, range, rangeKey]);
 
+    const loadChartAnalytics = useCallback(() => {
+        if (!identity.ready) return;
+        const cacheKey = `analytics.${identity.hospitalId}.chart_30d.${effectiveDoctorId || 'overall'}`;
+        const cached = getOverviewCache<ClinicAnalytics>(cacheKey);
+        if (cached) setChartData(cached);
+        setChartLoadFailed(false);
+
+        fetchClinicAnalytics(identity.hospitalId, chartRange, { doctorId: effectiveDoctorId })
+            .then((res) => {
+                setChartData(res);
+                setOverviewCache(cacheKey, res);
+            })
+            .catch((e: unknown) => {
+                console.error("[overview] chart:", e);
+                if (!cached) {
+                    setChartData(null);
+                    setChartLoadFailed(true);
+                }
+            });
+    }, [identity.ready, identity.hospitalId, effectiveDoctorId, chartRange]);
+
     const loadContext = useCallback(() => {
         if (!identity.ready) return;
         const setupKey = `setup.${identity.hospitalId}`;
@@ -447,6 +490,7 @@ export function DoctorOverviewPage({
     }, [identity.ready, identity.hospitalId, isAdminDoctor]);
 
     useEffect(loadAnalytics, [loadAnalytics]);
+    useEffect(loadChartAnalytics, [loadChartAnalytics]);
     useEffect(loadContext, [loadContext]);
     useEffect(loadManagement, [loadManagement]);
 
@@ -524,6 +568,22 @@ export function DoctorOverviewPage({
             }))
         } as ClinicAnalytics;
     }, [neverSeenAnyone, data, range]);
+
+    // "No activity in the last 30 days" — a much rarer, more honest signal
+    // than `emptyPeriod` (which is just "nothing today"). Computed from
+    // `chartData`, never `data`, so a quiet morning with the period toggle
+    // on "Today" doesn't make the trend chart claim there's nothing to
+    // show when the last month plainly has a shape.
+    const chartEmptyPeriod = !!chartData && chartData.patients.value === 0 && chartData.prescriptions.value === 0;
+
+    // Same "never seen anyone at all" demo fallback `displayData` uses,
+    // reused rather than forked — a brand-new doctor's mock KPI tiles and
+    // mock trend chart should agree with each other, not tell two
+    // different demo stories.
+    const displayChartData = useMemo(
+        () => (neverSeenAnyone ? displayData : chartData),
+        [neverSeenAnyone, chartData, displayData]
+    );
 
     const displayRecent = useMemo(() => {
         if (!neverSeenAnyone) return recentPatients;
@@ -798,7 +858,7 @@ export function DoctorOverviewPage({
                                     key: "patients", label: "Patients seen",
                                     value: displayData ? String(displayData.patients.value) : null,
                                     metric: displayData?.patients,
-                                    spark: displayData?.series.map((p) => p.visits),
+                                    spark: displayChartData?.series.map((p) => p.visits),
                                     sparkColor: "var(--cs-blue)",
                                     accent: false,
                                     onClick: () => setActivityOpen("visits"),
@@ -807,7 +867,7 @@ export function DoctorOverviewPage({
                                     key: "new", label: "New patients",
                                     value: displayData ? String(displayData.newPatients.value) : null,
                                     metric: displayData?.newPatients,
-                                    spark: displayData?.series.map((p) => p.newPatients),
+                                    spark: displayChartData?.series.map((p) => p.newPatients),
                                     sparkColor: "var(--cs-teal)",
                                     accent: false,
                                     onClick: () => setActivityOpen("new_patients"),
@@ -816,7 +876,7 @@ export function DoctorOverviewPage({
                                     key: "rx", label: "Prescriptions",
                                     value: displayData ? String(displayData.prescriptions.value) : null,
                                     metric: displayData?.prescriptions,
-                                    spark: displayData?.series.map((p) => p.prescriptions),
+                                    spark: displayChartData?.series.map((p) => p.prescriptions),
                                     sparkColor: "var(--cs-teal)",
                                     accent: false,
                                     onClick: () => setActivityOpen("prescriptions"),
@@ -825,7 +885,7 @@ export function DoctorOverviewPage({
                                     key: "money", label: "Collected",
                                     value: !displayData ? null : displayData.revenueTracked ? formatMoney(displayData.revenue.value) : "Not set up",
                                     metric: displayData?.revenueTracked ? displayData.revenue : undefined,
-                                    spark: displayData?.revenueTracked ? displayData.series.map((p) => p.revenue) : undefined,
+                                    spark: displayChartData?.revenueTracked ? displayChartData.series.map((p) => p.revenue) : undefined,
                                     sparkColor: "var(--cs-violet)",
                                     accent: true,
                                     onClick: identity.ready ? handleMoneyTileClick : undefined,
@@ -879,7 +939,7 @@ export function DoctorOverviewPage({
                                 tone="blue"
                                 icon={<TrendingUp size={14} />}
                                 title={`${scopePossessive} ${chartMetric === "visits" ? "patient flow" : "collections"}`}
-                                subtitle={formatRangeLabel(range)}
+                                subtitle={formatRangeLabel(chartRange)}
                                 action={
                                     <div className="flex items-center gap-[6px]">
                                         <div className="flex items-center gap-[3px]">
@@ -903,7 +963,7 @@ export function DoctorOverviewPage({
                                             Reports table (OverviewPage.tsx's DetailLink) — a modal
                                             here rather than a route, since a plain doctor has no
                                             business landing on /app/admin. */}
-                                        {data && !emptyPeriod && (
+                                        {chartData && !chartEmptyPeriod && (
                                             <button
                                                 type="button"
                                                 onClick={() => setTrendOpen(true)}
@@ -915,20 +975,20 @@ export function DoctorOverviewPage({
                                     </div>
                                 }
                             >
-                                {!displayData ? (
-                                    loadFailed ? (
+                                {!displayChartData ? (
+                                    chartLoadFailed ? (
                                         <EmptyBlock
                                             fact="Couldn't load this yet"
-                                            next="Nothing's cached on this device for this range. Reconnect and refresh to load it."
-                                            action={<EmptyAction tone="blue" onClick={loadAnalytics}>Try again</EmptyAction>}
+                                            next="Nothing's cached on this device for the last 30 days. Reconnect and refresh to load it."
+                                            action={<EmptyAction tone="blue" onClick={loadChartAnalytics}>Try again</EmptyAction>}
                                         />
                                     ) : (
                                         <ChartSkeleton />
                                     )
-                                ) : emptyPeriod ? (
+                                ) : chartEmptyPeriod ? (
                                     <EmptyBlock
-                                        fact="No activity in this period"
-                                        next="Pick a wider range, or a different date."
+                                        fact="No activity in the last 30 days"
+                                        next="Once a visit or prescription is recorded, the trend shows up here."
                                     />
                                 ) : (
                                     // `relative overflow-hidden` scopes the glow to this
@@ -949,7 +1009,7 @@ export function DoctorOverviewPage({
                                             className="relative w-full cursor-pointer border-0 bg-transparent p-0 text-left outline-none"
                                             aria-label="Open the detailed list behind this chart"
                                         >
-                                            <TrendChart points={displayData.series} metricKey={chartMetric} />
+                                            <TrendChart points={displayChartData.series} metricKey={chartMetric} />
                                         </button>
                                     </div>
                                 )}
@@ -1294,14 +1354,14 @@ export function DoctorOverviewPage({
                 </PracticeModal>
             )}
 
-            {trendOpen && data && (
+            {trendOpen && chartData && (
                 <TrendDetailModal
                     hospitalId={identity.hospitalId}
                     doctorId={effectiveDoctorId}
                     metric={chartMetric}
-                    series={displayData?.series || []}
-                    range={range}
-                    revenueTracked={displayData?.revenueTracked || false}
+                    series={displayChartData?.series || []}
+                    range={chartRange}
+                    revenueTracked={displayChartData?.revenueTracked || false}
                     currency={fees?.policy.currency ?? "INR"}
                     subjectLabel={scopePossessive.toLowerCase()}
                     onClose={() => setTrendOpen(false)}
