@@ -137,13 +137,43 @@ export function AppLockCard({ userId }: { userId: string }) {
                     </button>
                 </div>
             ) : (
-                <button
-                    type="button"
-                    onClick={() => setMode("setup")}
-                    className="mt-[10px] flex h-[38px] w-fit cursor-pointer items-center gap-[8px] rounded-[10px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] px-[16px] text-[12.5px] font-bold text-white transition-opacity hover:opacity-90"
-                >
-                    <Lock size={14} /> Set up a PIN
-                </button>
+                <>
+                    <button
+                        type="button"
+                        onClick={() => setMode("setup")}
+                        className="mt-[10px] flex h-[38px] w-fit cursor-pointer items-center gap-[8px] rounded-[10px] border-0 bg-gradient-to-br from-[#f472b6] to-[#a855f7] px-[16px] text-[12.5px] font-bold text-white transition-opacity hover:opacity-90"
+                    >
+                        <Lock size={14} /> Set up a PIN
+                    </button>
+
+                    {/* What turning this on actually gets you — a preview of
+                        the same three rows the `configured` state shows,
+                        rather than the card ending at one button with a lot
+                        of card left under it (this card's own dead space
+                        once its neighbour, Data & Sync, grew a third
+                        subsection — Anmol, 2026-09-20: "let's put something
+                        in this dead white space"). Not interactive — it
+                        turns real the moment a PIN is actually set up. */}
+                    <div className="mt-[14px] flex flex-col gap-[8px] border-t border-[var(--cs-line)] pt-[12px]">
+                        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+                            What this turns on
+                        </span>
+                        <div className="flex items-center gap-[10px] text-[12px] leading-[1.4] text-[var(--cs-muted)]">
+                            <ShieldCheck size={14} className="flex-none text-[var(--cs-line-strong)]" />
+                            A lock screen that shows only your name and clinic
+                        </div>
+                        <div className="flex items-center gap-[10px] text-[12px] leading-[1.4] text-[var(--cs-muted)]">
+                            <Lock size={14} className="flex-none text-[var(--cs-line-strong)]" />
+                            Automatic recovery backup, so a forgotten PIN never costs your data
+                        </div>
+                        {platformSupported && (
+                            <div className="flex items-center gap-[10px] text-[12px] leading-[1.4] text-[var(--cs-muted)]">
+                                <Fingerprint size={14} className="flex-none text-[var(--cs-line-strong)]" />
+                                Fast unlock with this device's own fingerprint/face check
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
         </SettingsCard>
     );

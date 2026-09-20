@@ -209,6 +209,22 @@
 
 .prac-modal-btn.is-ghost:hover { background: rgba(0, 0, 0, 0.06); }
 
+/* A destructive action, plainly one — `.is-ghost`'s neutral grey read as
+   inert/decorative rather than a real button (Anmol, screenshot: "the
+   remove button should be obvious"). Same full-width `.prac-modal-btn`
+   shape and weight as Save right above it, just red instead of the
+   modal's own tone, so it can't be mistaken for another neutral option. */
+.prac-modal-btn.is-danger {
+    border: 1.5px solid var(--cs-red);
+    background: var(--cs-red-soft);
+    color: var(--cs-red);
+}
+
+.prac-modal-btn.is-danger:hover {
+    background: var(--cs-red);
+    color: #fff;
+}
+
 .prac-modal-btn.is-primary {
     border: 0;
     color: #fff;

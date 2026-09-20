@@ -2419,8 +2419,8 @@ function ExerciseLibraryModal({
                         {saving ? "Saving…" : "Save to library"}
                     </button>
                     {rows.some((r) => r.intentId === dosing.intentId) && (
-                        <button type="button" className="prac-modal-btn is-ghost" disabled={saving} onClick={removeFromLibrary}>
-                            Remove from library
+                        <button type="button" className="prac-modal-btn is-danger" disabled={saving} onClick={removeFromLibrary}>
+                            <X size={14} /> Remove from library
                         </button>
                     )}
                 </>
@@ -2602,8 +2602,8 @@ function AdditionalChargesModal({
                         {saving ? "Saving…" : "Save"}
                     </button>
                     {editing !== "new" && (
-                        <button type="button" className="prac-modal-btn is-ghost" disabled={saving} onClick={remove}>
-                            Remove
+                        <button type="button" className="prac-modal-btn is-danger" disabled={saving} onClick={remove}>
+                            <X size={14} /> Remove this charge
                         </button>
                     )}
                 </>
@@ -2613,44 +2613,46 @@ function AdditionalChargesModal({
                         <Plus size={14} /> Add a charge
                     </button>
 
-                    {suggestions.length > 0 && (
-                        <div className="prac-modal-field">
-                            <label>Suggested — one click starts the form, nothing saves until you set an amount</label>
-                            <div className="prac-modal-rows">
-                                {suggestions.map((s) => (
-                                    <button
-                                        key={s.label} type="button" className="prac-modal-row is-pick"
-                                        onClick={() => startFromSuggestion(s)}
-                                    >
-                                        <div className="prac-med-info">
-                                            <span className="prac-row-label">{s.label}</span>
-                                            <span className="prac-med-brands">{s.description}</span>
-                                        </div>
-                                        <span className="prac-quiet-pill is-alt"><Plus size={11} /></span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {rows.length === 0 ? (
-                        <p className="prac-soon">Nothing saved yet. Add your first one above, or pick a suggestion.</p>
+                    {/* One continuous list — saved charges first, suggestions
+                        after, rather than two separately-boxed sections
+                        (Anmol, 2026-09-20: "these suggestions should appear
+                        in the main section" / "how much cramped they are
+                        looking"). `.prac-hit-row`'s 46px rows (not
+                        `.prac-modal-row`'s 38px, sized for a single line)
+                        give the label+description pair room to breathe. */}
+                    {rows.length === 0 && suggestions.length === 0 ? (
+                        <p className="prac-soon">Nothing saved yet. Add your first one above.</p>
                     ) : (
-                        <div className="prac-modal-field">
-                            {suggestions.length > 0 && <label>Your saved charges</label>}
-                            <div className="prac-modal-rows">
-                                {rows.map((c) => (
-                                    <button
-                                        key={c.id} type="button" className="prac-modal-row is-pick"
-                                        onClick={() => startEdit(c)}
-                                    >
-                                        <div className="prac-med-info">
-                                            <span className="prac-row-label">{c.label}</span>
-                                        </div>
-                                        <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
-                                    </button>
-                                ))}
-                            </div>
+                        <div className="prac-modal-rows">
+                            {rows.map((c) => (
+                                <button
+                                    key={c.id} type="button" className="prac-hit-row"
+                                    onClick={() => startEdit(c)}
+                                >
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label">{c.label}</span>
+                                    </div>
+                                    <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
+                                </button>
+                            ))}
+                            {suggestions.length > 0 && (
+                                <div className="prac-modal-section-title" style={{ padding: "8px 2px 2px" }}>
+                                    <span>Suggested</span>
+                                    <span>one click starts the form, nothing saves yet</span>
+                                </div>
+                            )}
+                            {suggestions.map((s) => (
+                                <button
+                                    key={s.label} type="button" className="prac-hit-row"
+                                    onClick={() => startFromSuggestion(s)}
+                                >
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label is-catalogue">{s.label}</span>
+                                        <span className="prac-med-brands">{s.description}</span>
+                                    </div>
+                                    <span className="prac-hit-drill"><Plus size={11} /> Add</span>
+                                </button>
+                            ))}
                         </div>
                     )}
                 </>

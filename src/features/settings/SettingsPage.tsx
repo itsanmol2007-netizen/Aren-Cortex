@@ -78,6 +78,7 @@ import { AppLockCard } from "./AppLockCard";
 import { InstallAppSection } from "./InstallAppCard";
 import { requestSettingFocus } from "./settingsFocus";
 import { toast } from "sonner";
+import arenLogo from "../../assets/aren-logo.png";
 import "./settings.css";
 
 /** Where "Privacy & security" goes — the one external URL we were actually
@@ -288,6 +289,63 @@ function SettingRow({
         >
             {body}
         </button>
+    );
+}
+
+/**
+ * "About AREN" — was a label and a version number with no `onClick` at all
+ * (Anmol, 2026-09-20: "this button is dead"). Kept deliberately modest:
+ * the product's name, its version, what it is, and the one line of brand
+ * copy that already exists elsewhere in this app (the printed
+ * prescription's own footer credit, `prescriptionLabels.ts`'s
+ * `footerCredit`) rather than new "profound" prose invented here — that's
+ * the founder's own words to write, not this page's to guess at.
+ */
+function AboutAppModal({ onClose }: { onClose: () => void }) {
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
+
+    return (
+        <div
+            className="fixed inset-0 z-[9998] flex items-center justify-center bg-[rgba(11,23,51,0.45)] p-[16px] backdrop-blur-[6px]"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
+            <div
+                role="dialog" aria-modal="true" aria-label="About AREN Cortex"
+                className="w-full max-w-[380px] overflow-hidden rounded-[20px] bg-white shadow-[0_24px_60px_rgba(16,28,46,0.28)]"
+            >
+                <div className="flex items-start justify-between px-[22px] pt-[22px]">
+                    <img src={arenLogo} alt="" className="h-[34px] w-[34px] object-contain" />
+                    <button
+                        type="button" onClick={onClose} aria-label="Close"
+                        className="rounded-full p-[6px] text-[var(--cs-faint)] hover:bg-[var(--cs-page)] hover:text-[var(--cs-ink)]"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+                <div className="px-[22px] pb-[22px] pt-[10px]">
+                    <h2 className="m-0 text-[19px] font-black text-[var(--cs-ink)]">AREN Cortex</h2>
+                    <p className="m-0 mt-[2px] text-[12px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+                        Version 1.0.0
+                    </p>
+                    <p className="m-0 mt-[14px] text-[13px] leading-[1.6] text-[var(--cs-muted)]">
+                        A clinical workspace for the consult, the prescription and everything
+                        a clinic runs on besides — built by Arenode.
+                    </p>
+                    <p className="m-0 mt-[14px] rounded-[12px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[14px] py-[12px] text-[13px] font-semibold italic leading-[1.6] text-[var(--cs-ink)]">
+                        "Generated with care, through Arenode."
+                    </p>
+                    <div className="mt-[16px] flex items-center gap-[10px] border-t border-[var(--cs-line)] pt-[14px] text-[12px] text-[var(--cs-faint)]">
+                        <a href="https://www.arenode.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-[var(--cs-blue)]">
+                            arenode.com
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -1148,6 +1206,10 @@ export function SettingsPage({
     // the consult screen already owns rather than spending a card on a
     // 44-row scrolling list.
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
+    // "About AREN" had a label and a version number but no `onClick` at
+    // all — a row that looked pressable and did nothing (Anmol, 2026-09-20:
+    // "this button is dead"). See `AboutAppModal` below.
+    const [aboutOpen, setAboutOpen] = useState(false);
 
     // Health is SUMMARISED here and explained on its own page.
     const [view, setView] = useState<"settings" | "health">("settings");
@@ -2042,7 +2104,7 @@ export function SettingsPage({
                     >
                         {[
                             { icon: <HelpCircle size={15} />, label: "Help & support", sub: "Guides, and a way to reach us", onClick: () => onNavigate("support") },
-                            { icon: <Info size={15} />, label: "About AREN", sub: "Cortex v1.0.0" },
+                            { icon: <Info size={15} />, label: "About AREN", sub: "Cortex v1.0.0", onClick: () => setAboutOpen(true) },
                             { icon: <FileText size={15} />, label: "Terms of service", sub: "Read our terms", href: TERMS_URL },
                             { icon: <Shield size={15} />, label: "Privacy policy", sub: "arenode.com/privacy", href: PRIVACY_URL },
                         ].map((item) => {
@@ -2126,6 +2188,7 @@ export function SettingsPage({
                 />
             )}
             {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
+            {aboutOpen && <AboutAppModal onClose={() => setAboutOpen(false)} />}
 
             {supportTopic && (
                 <SupportRequestModal

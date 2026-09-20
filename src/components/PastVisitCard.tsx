@@ -52,6 +52,11 @@ import type { RealVisit } from "../lib/db";
 import { freqSlotToLabel } from "../lib/db";
 import { FIELD_BY_KEY, type MeasureFieldKey } from "../features/consult/measures";
 
+/** `--rail-w` (60px, sidebar.css) plus a small gutter — the dark tone's own
+ *  left clamp keeps clear of the nav rail's actual footprint rather than
+ *  relying on z-index, which the rail deliberately wins (see below). */
+const RAIL_CLEARANCE = 76;
+
 export function formatVisitDate(isoString: string): string {
     const d = new Date(isoString);
     const day = d.getDate();
@@ -179,7 +184,17 @@ export function PastVisitCard({
                 style={light ? undefined : {
                     position: "fixed",
                     top: 90,
-                    left: Math.min(Math.max(x - 210, 12), window.innerWidth - 432),
+                    // The lower clamp used to be a flat 12px — enough room from
+                    // the viewport edge, but not from the nav rail (`--rail-w`,
+                    // 60px), which sits at z-index 10000 ABOVE every modal on
+                    // purpose (sidebar.css: "Above the modals... toasts still
+                    // win"). A chip clicked near the left edge clamped this
+                    // card's left portion right under the rail's own opaque
+                    // surface, clipping the text it covered ("Calpol" reading
+                    // as "o...") rather than a z-index fight this card cannot
+                    // win. RAIL_CLEARANCE keeps the card entirely to the
+                    // rail's right instead.
+                    left: Math.min(Math.max(x - 210, RAIL_CLEARANCE), window.innerWidth - 432),
                 }}
             >
                 <div className="pv-stripe" aria-hidden="true" />
