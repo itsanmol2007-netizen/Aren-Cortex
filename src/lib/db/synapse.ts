@@ -328,6 +328,8 @@ export interface PatientCondition {
     status: "active" | "resolved" | "refuted";
     confirmedAt: string;
     visitId: string | null;
+    /** "since when" — see `onset_note` on the table and `conditionDetail.ts`. */
+    onsetNote: string | null;
 }
 
 /**
@@ -341,7 +343,7 @@ export interface PatientCondition {
 export async function loadPatientConditions(patientId: string): Promise<PatientCondition[]> {
     const { data, error } = await supabase
         .from("patient_conditions")
-        .select("observable_id, status, confirmed_at, visit_id")
+        .select("observable_id, status, confirmed_at, visit_id, onset_note")
         .eq("patient_id", patientId)
         .eq("status", "active");
     if (error) throw new Error(`patient_conditions: ${error.message}`);
@@ -351,6 +353,7 @@ export async function loadPatientConditions(patientId: string): Promise<PatientC
         status: r.status,
         confirmedAt: r.confirmed_at,
         visitId: r.visit_id,
+        onsetNote: r.onset_note ?? null,
     }));
 }
 
@@ -444,6 +447,31 @@ export async function upsertPatientCondition(opts: {
             { onConflict: "patient_id,observable_id" }
         );
     if (error) throw new Error(`patient_conditions upsert: ${error.message}`);
+}
+
+/**
+ * Records "since when" on an already-standing condition — the `OnsetPrompt`
+ * in CaseSheet.tsx, for the curated detail-worthy history chips (Previous
+ * MI, PCI, CABG, pacemaker, ICD). A plain update rather than routing through
+ * `upsertPatientCondition`: the row already exists (the chip earning this
+ * button was just confirmed or carried forward), and re-running the full
+ * upsert would also reset `confirmed_at`/`source`, which is not what typing
+ * a date is doing.
+ *
+ * Non-fatal by rule, same as `upsertPatientCondition` — a missed detail is
+ * not a reason to interrupt the consult.
+ */
+export async function setPatientConditionOnsetNote(opts: {
+    patientId: string;
+    observableId: number;
+    onsetNote: string;
+}): Promise<void> {
+    const { error } = await supabase
+        .from("patient_conditions")
+        .update({ onset_note: opts.onsetNote, updated_at: new Date().toISOString() })
+        .eq("patient_id", opts.patientId)
+        .eq("observable_id", opts.observableId);
+    if (error) throw new Error(`patient_conditions onset_note: ${error.message}`);
 }
 
 // ============================================================

@@ -54,6 +54,9 @@ interface Props {
     onSetSymptomDuration?: (label: string, days: number | null) => void;
     /** take a carried-forward condition off the patient — see CaseSheet's RetireMenu */
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
+    /** Cardiac History enrichment — see CaseSheet's OnsetPrompt / conditionDetail.ts */
+    detailWorthyLabels?: Set<string>;
+    onSetOnsetNote?: (label: string, note: string) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     /** findings that co-occur with what is already charted — see examSuggestions.ts */
@@ -84,6 +87,7 @@ export function GeneralOpdInputs({
     observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     symptomDurations, onSetSymptomDuration,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
+    detailWorthyLabels, onSetOnsetNote,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
@@ -161,6 +165,8 @@ export function GeneralOpdInputs({
                     onToggle={onObservableToggle}
                     onRemove={onCaseSheetRemove}
                     onRetireCarried={onRetireCarried}
+                    detailWorthyLabels={detailWorthyLabels}
+                    onSetOnsetNote={onSetOnsetNote}
                     intensities={intensities}
                     onIntensityChange={onIntensityChange}
                     related={relatedFindings}

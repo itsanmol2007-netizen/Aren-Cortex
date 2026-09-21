@@ -63,6 +63,7 @@ import { padToken } from "./features/frontdesk/utils";
 import type { TodayVisit } from "./lib/db";
 import type { Patient } from "./types";
 import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
+import { detailWorthyLabels } from "./features/consult/conditionDetail";
 import { PhysioInputs } from "./features/consult/PhysioInputs";
 import { SoapInputs } from "./features/consult/SoapInputs";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
@@ -466,7 +467,7 @@ function App() {
   // and, when it is chronic, a fact that survives the visit. Sits between the
   // session and the plan because it needs the patient at render time and the
   // plan needs it at render time. See useLongitudinalRecord.ts.
-  const { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition } = useLongitudinalRecord({
+  const { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition, setConditionOnsetNote } = useLongitudinalRecord({
     data: synapse.data,
     chart,
     session,
@@ -560,6 +561,27 @@ function App() {
         .catch((e) => showToast(`Could not update ${label}: ${e?.message ?? e}`));
     },
     [retireCondition, showToast]
+  );
+
+  /**
+   * "Previous MI — since when?" — the write behind `CaseSheet`'s
+   * `OnsetPrompt`, for the curated conditions `conditionDetail.ts` names.
+   * Surfaced on failure like `handleRetireCarried` beside it: the doctor
+   * just typed this, and a silent failure would leave the chip claiming a
+   * date that never reached the record.
+   */
+  const handleSetOnsetNote = useCallback(
+    (label: string, note: string) => {
+      setConditionOnsetNote(label, note)
+        .catch((e) => showToast(`Could not save "${note}" for ${label}: ${e?.message ?? e}`));
+    },
+    [setConditionOnsetNote, showToast]
+  );
+
+  /** Which of this chart's labels are worth an optional "since when" — see conditionDetail.ts. */
+  const cardiacDetailWorthyLabels = useMemo(
+    () => detailWorthyLabels(synapse.data?.observables ?? []),
+    [synapse.data?.observables]
   );
 
   const carePlan = useCarePlan({
@@ -2176,6 +2198,8 @@ function App() {
                   symptomDurations={chart.symptomDurations}
                   onSetSymptomDuration={chart.setSymptomDuration}
                   onRetireCarried={handleRetireCarried}
+                  detailWorthyLabels={cardiacDetailWorthyLabels}
+                  onSetOnsetNote={handleSetOnsetNote}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}
                   relatedFindings={relatedFindings}

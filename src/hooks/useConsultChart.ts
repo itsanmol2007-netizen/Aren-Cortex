@@ -89,6 +89,16 @@ export interface ConsultChart {
   /** Record — or, with `null`, clear — how long one complaint has been going on. */
   setSymptomDuration: (label: string, days: number | null) => void;
 
+  // ── Cardiac History enrichment, Project Pulse Point (2026-09-21) ─────────
+  /**
+   * label -> free text, for the curated "detail-worthy" history chips (Previous
+   * MI, PCI, CABG, pacemaker, ICD — see `conditionDetail.ts`). Sparse like
+   * `symptomDurations`: most history chips never earn one.
+   */
+  onsetNotes: Map<string, string>;
+  /** Record — or, with `""`/`null`, clear — a history chip's "since when". */
+  setOnsetNote: (label: string, note: string | null) => void;
+
   // ── The longitudinal record ───────────────────────────────────────────
   /**
    * How each chip got onto the chart, for the chips that did not get there by
@@ -114,8 +124,12 @@ export interface ConsultChart {
    * debounce and no loading state.
    */
   addContextObservable: (label: string, origin: ChipOrigin) => void;
-  /** Seed carried-forward conditions at the start of a consult. */
-  carryForward: (labels: string[]) => void;
+  /**
+   * Seed carried-forward conditions at the start of a consult. `onsetNote`
+   * rides the same entry when the standing fact has one on record (Previous
+   * MI · 2019) — see `conditionDetail.ts`.
+   */
+  carryForward: (entries: { label: string; onsetNote?: string | null }[]) => void;
   /**
    * Put the front desk's intake onto a fresh chart — the whole opening
    * move. See `useIntakePrefill`.
@@ -172,6 +186,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
   const [selectedFindings, setSelectedFindings] = useState<string[]>([]);
   const [chipOrigins, setChipOrigins] = useState<Map<string, ChipOrigin>>(new Map());
   const [symptomDurations, setSymptomDurations] = useState<Map<string, number>>(new Map());
+  const [onsetNotes, setOnsetNotes] = useState<Map<string, string>>(new Map());
 
   /** Patient context — pregnancy, comorbidities, exposures. */
   const historyLabels = useMemo(
@@ -270,9 +285,10 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
         label,
         kind: "history" as const,
         origin: chipOrigins.get(label),
+        onsetNote: onsetNotes.get(label),
       })),
     ],
-    [symptomChips, selectedFindings, contextChips, chipOrigins, symptomDurations]
+    [symptomChips, selectedFindings, contextChips, chipOrigins, symptomDurations, onsetNotes]
   );
 
   // The chart, as observable ids. Both panels hold display LABELS; this is the
@@ -382,6 +398,19 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     });
   }, []);
 
+  const setOnsetNote = useCallback((label: string, note: string | null) => {
+    setOnsetNotes((curr) => {
+      if (!note) {
+        if (!curr.has(label)) return curr;
+        const next = new Map(curr);
+        next.delete(label);
+        return next;
+      }
+      if (curr.get(label) === note) return curr;
+      return new Map(curr).set(label, note);
+    });
+  }, []);
+
   // ── The longitudinal record ─────────────────────────────────────────────
 
   const observableSources = useMemo(() => {
@@ -410,8 +439,9 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setChipOrigins((curr) => (curr.has(label) ? curr : new Map(curr).set(label, origin)));
   }, []);
 
-  const carryForward = useCallback((labels: string[]) => {
-    if (!labels.length) return;
+  const carryForward = useCallback((entries: { label: string; onsetNote?: string | null }[]) => {
+    if (!entries.length) return;
+    const labels = entries.map((e) => e.label);
     setSelectedSymptoms((curr) => {
       const missing = labels.filter((l) => !curr.includes(l));
       return missing.length ? [...curr, ...missing] : curr;
@@ -419,6 +449,11 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setChipOrigins((curr) => {
       const next = new Map(curr);
       for (const l of labels) if (!next.has(l)) next.set(l, "carried");
+      return next;
+    });
+    setOnsetNotes((curr) => {
+      const next = new Map(curr);
+      for (const e of entries) if (e.onsetNote && !next.has(e.label)) next.set(e.label, e.onsetNote);
       return next;
     });
   }, []);
@@ -486,6 +521,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setSelectedFindings([]);
     setChipOrigins(new Map());
     setSymptomDurations(new Map());
+    setOnsetNotes(new Map());
   }, []);
 
   const replaceChart = useCallback((symptoms: string[], findings: string[]) => {
@@ -499,6 +535,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     // prescription carries the previous visit's complaints forward, not how
     // long they had been going on THEN.
     setSymptomDurations(new Map());
+    setOnsetNotes(new Map());
   }, []);
 
   const restoreChart = useCallback((draft: ChartDraft) => {
@@ -530,6 +567,8 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     symptomDurations,
     observableDurations,
     setSymptomDuration,
+    onsetNotes,
+    setOnsetNote,
 
     chipOrigins,
     observableSources,

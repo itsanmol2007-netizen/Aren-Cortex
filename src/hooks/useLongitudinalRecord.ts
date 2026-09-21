@@ -71,6 +71,7 @@ import type { SynapseData } from "./useSynapse";
 import {
   loadPatientConditions,
   retirePatientCondition,
+  setPatientConditionOnsetNote,
   upsertPatientCondition,
   type Observable,
 } from "../lib/db/synapse";
@@ -128,6 +129,14 @@ export interface LongitudinalRecord {
    * and returned at the next visit — which is the exact bug being fixed.
    */
   retireCondition: (label: string, status: "resolved" | "refuted") => Promise<void>;
+  /**
+   * "Since when" for a detail-worthy standing condition (Previous MI, PCI,
+   * CABG, pacemaker, ICD — see `conditionDetail.ts`) — the write behind
+   * `CaseSheet`'s `OnsetPrompt`. Looks the observable up by label, the same
+   * boundary `retireCondition` sits on. Throws: the doctor just typed this,
+   * a silent failure would show it saved on a chip that reverts on reload.
+   */
+  setConditionOnsetNote: (label: string, note: string) => Promise<void>;
 }
 
 export function useLongitudinalRecord({
@@ -239,10 +248,13 @@ export function useLongitudinalRecord({
     async (patientId: string) => {
       try {
         const rows = await loadPatientConditions(patientId);
-        const labels = rows
-          .map((r) => labelOf(r.observableId))
-          .filter((l): l is string => !!l);
-        carryForward(labels);
+        const entries = rows
+          .map((r) => {
+            const label = labelOf(r.observableId);
+            return label ? { label, onsetNote: r.onsetNote } : null;
+          })
+          .filter((e): e is { label: string; onsetNote: string | null } => !!e);
+        carryForward(entries);
       } catch (e) {
         // Same rule as above. A consult that cannot load history is a consult
         // without carried-forward context, not a broken consult.
@@ -252,5 +264,22 @@ export function useLongitudinalRecord({
     [labelOf, carryForward]
   );
 
-  return { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition };
+  const setConditionOnsetNote = useCallback(
+    async (label: string, note: string) => {
+      const patientId = session.patient?.id;
+      if (!patientId) return;
+
+      const observable = data?.observables.find((o: Observable) => o.label === label);
+      if (!observable) return;
+
+      await setPatientConditionOnsetNote({ patientId, observableId: observable.id, onsetNote: note });
+      // Reflect it on the chip immediately rather than waiting for a reload —
+      // same optimistic-update principle `addContextObservable` already
+      // follows for the confirm itself.
+      chart.setOnsetNote(label, note);
+    },
+    [data, session.patient?.id, chart]
+  );
+
+  return { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition, setConditionOnsetNote };
 }

@@ -208,6 +208,15 @@ export interface CaseSheetEntry {
      * everything. Absent means nobody was asked or the question was skipped.
      */
     durationDays?: number;
+    /**
+     * "Since when" for a standing history chip that earns the detail — e.g.
+     * "2019" on a Previous MI chip, "2023" on a Pacemaker chip. Free text,
+     * never forced (Anmol, 2026-09-21: "obviously loosey, it will not
+     * force... you can skip from when if you don't know"). Rides the chip
+     * the same way `durationDays` rides a symptom's — see the badge next to
+     * this one in the chip render.
+     */
+    onsetNote?: string | null;
 }
 
 /**
@@ -1380,6 +1389,87 @@ function RetireMenu({ label, onPick, onDismiss }: {
     );
 }
 
+/**
+ * "Previous MI — since when?" A single free-text field, save or skip. Same
+ * popover shell as `RetireMenu` deliberately — one small-popup idiom on this
+ * card, not two — but its own component: the question and the one control
+ * are nothing like a 3-option menu.
+ *
+ * Cardiac History enrichment, Project Pulse Point (2026-09-21): "type
+ * previous MI, it will ask from when, which will be obviously loosey, it
+ * will not force. You can skip from when if you don't know." (Anmol) — the
+ * input is plain text (a year is plenty — "2019", not a date picker), Enter
+ * or Save records it, Escape/Skip dismisses with nothing written.
+ */
+function OnsetPrompt({ label, onSave, onDismiss }: {
+    label: string;
+    onSave: (note: string) => void;
+    onDismiss: () => void;
+}) {
+    const [value, setValue] = useState("");
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        inputRef.current?.focus();
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onDismiss(); };
+        const onDown = (e: MouseEvent) => {
+            if (!ref.current?.contains(e.target as Node)) onDismiss();
+        };
+        window.addEventListener("keydown", onKey);
+        const t = window.setTimeout(() => window.addEventListener("mousedown", onDown), 0);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            window.removeEventListener("mousedown", onDown);
+            window.clearTimeout(t);
+        };
+    }, [onDismiss]);
+
+    const save = () => {
+        const trimmed = value.trim();
+        if (trimmed) onSave(trimmed);
+        else onDismiss();
+    };
+
+    return (
+        <div
+            ref={ref}
+            className="cx-retire absolute left-0 top-[calc(100%+6px)] z-50 w-[220px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white p-2 shadow-[0_12px_28px_rgba(16,28,46,0.16)]"
+            role="dialog"
+            aria-label={`Since when — ${label}`}
+        >
+            <p className="m-0 px-0.5 pb-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)]">
+                Since when? <span className="normal-case font-medium">(optional)</span>
+            </p>
+            <input
+                ref={inputRef}
+                type="text"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+                placeholder="e.g. 2019"
+                className="w-full rounded-[7px] border border-[var(--cs-line-strong)] px-2 py-[6px] text-[12.5px] font-medium text-[var(--cs-ink)] outline-none focus:border-[var(--cs-blue)]"
+            />
+            <div className="mt-1.5 flex justify-end gap-1.5">
+                <button
+                    type="button"
+                    onClick={onDismiss}
+                    className="rounded-[6px] px-2 py-[5px] text-[11.5px] font-semibold text-[var(--cs-faint)] hover:bg-black/5"
+                >
+                    Skip
+                </button>
+                <button
+                    type="button"
+                    onClick={save}
+                    className="rounded-[6px] bg-[var(--cs-blue)] px-2.5 py-[5px] text-[11.5px] font-semibold text-white hover:opacity-90"
+                >
+                    Save
+                </button>
+            </div>
+        </div>
+    );
+}
+
 interface SheetProps {
     entries: CaseSheetEntry[];
     onRemove: (label: string) => void;
@@ -1392,6 +1482,16 @@ interface SheetProps {
      * removal means. See `RetireMenu`.
      */
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
+    /**
+     * Labels worth asking "since when" — the curated, detail-worthy subset of
+     * chronic history (Previous MI, PCI, CABG, pacemaker, ICD — see
+     * `conditionDetail.ts`). Absent/empty means the "+ since when" affordance
+     * never renders, same optional-prop-off-by-default pattern `onRetireCarried`
+     * uses.
+     */
+    detailWorthyLabels?: Set<string>;
+    /** Records the free-text onset answer from `OnsetPrompt`. */
+    onSetOnsetNote?: (label: string, note: string) => void;
     onToggle: (o: Observable) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
@@ -1437,9 +1537,12 @@ export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
     storyChips = [], story: storyOf, onStoryRemove, onFocusSearch,
+    detailWorthyLabels, onSetOnsetNote,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
+    /** which chip's "since when" popover is open */
+    const [editingOnset, setEditingOnset] = useState<string | null>(null);
 
     const reduce = useReducedMotion();
 
@@ -1731,6 +1834,36 @@ export function CaseSheet({
                                                 >
                                                     {shortDuration(entry.durationDays)}
                                                 </span>
+                                            )}
+                                            {entry.onsetNote && (
+                                                <span
+                                                    title={`Since ${entry.onsetNote}`}
+                                                    className="rounded-[5px] bg-black/[0.07] px-[4px] py-[1px] text-[10.5px] font-bold leading-none opacity-80"
+                                                >
+                                                    · {entry.onsetNote}
+                                                </span>
+                                            )}
+                                            {!entry.onsetNote && detailWorthyLabels?.has(entry.label) && onSetOnsetNote && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingOnset((c) => (c === entry.label ? null : entry.label))}
+                                                    title="Add when this happened"
+                                                    aria-haspopup="dialog"
+                                                    aria-expanded={editingOnset === entry.label}
+                                                    className="rounded-[5px] border border-dashed border-current px-[4px] py-[1px] text-[10.5px] font-bold leading-none opacity-55 hover:opacity-90"
+                                                >
+                                                    + since
+                                                </button>
+                                            )}
+                                            {editingOnset === entry.label && onSetOnsetNote && (
+                                                <OnsetPrompt
+                                                    label={entry.label}
+                                                    onDismiss={() => setEditingOnset(null)}
+                                                    onSave={(note) => {
+                                                        setEditingOnset(null);
+                                                        onSetOnsetNote(entry.label, note);
+                                                    }}
+                                                />
                                             )}
                                             <button
                                                 type="button"
