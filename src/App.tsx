@@ -1385,6 +1385,27 @@ function App() {
     [hospitalProfile?.specialty_profile]
   );
 
+  /**
+   * `intelligence.byType`, with a referral to this facility's OWN specialty
+   * dropped — "Refer to Cardiology" ranked for a cardiologist is nonsense the
+   * engine has no way to know about; it ranks "Cardiology" as a referral
+   * target the same way for every specialty, because a chest-pain patient
+   * seeing a General OPD doctor genuinely should see it. Filtered here,
+   * at the one place that already knows both the ranked intents and the
+   * facility's own specialty, rather than teaching `useConsultIntelligence`
+   * (specialty-agnostic by design) or `SuggestionsCard` (generic across
+   * every facility) about this one case.
+   */
+  const filteredByType = useMemo(() => {
+    const referrals = intelligence.byType.referral;
+    if (!referrals?.length) return intelligence.byType;
+    const trimmed = referrals.filter(
+      (r) => r.label.trim().toLowerCase() !== specialty.label.trim().toLowerCase()
+    );
+    if (trimmed.length === referrals.length) return intelligence.byType;
+    return { ...intelligence.byType, referral: trimmed };
+  }, [intelligence.byType, specialty.label]);
+
   /** The doctor's override, narrowed to keys this specialty actually
    *  supports — it can only ever trim or reorder the baseline, never
    *  introduce a field the specialty profile doesn't already carry. Falls
@@ -2342,7 +2363,7 @@ function App() {
                       // unbounded list, the same mechanism that column
                       // already uses.
                       capped={4}
-                      byType={intelligence.byType}
+                      byType={filteredByType}
                       topOfType={topOfType}
                       thinkingKey={intelligence.thinkingKey}
                       // Investigations sits BESIDE Assessment but is a step after it in
@@ -2457,7 +2478,7 @@ function App() {
                     // like every other instance now; only "Show all"
                     // actually grows it, and only into its own scroll box.
                     capped={5}
-                    byType={intelligence.byType}
+                    byType={filteredByType}
                     topOfType={topOfType}
                     thinkingKey={intelligence.thinkingKey}
                     // This instance IS the plan row's primary column on a chart whose
@@ -2489,7 +2510,7 @@ function App() {
                   types={planSlots.restTypes}
                   // Same fix, same reason — see the sibling instance above.
                   capped={5}
-                  byType={intelligence.byType}
+                  byType={filteredByType}
                   topOfType={topOfType}
                   thinkingKey={intelligence.thinkingKey}
                   // The trailing catch-all — referrals, advice, whatever the plan row
