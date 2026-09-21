@@ -1137,6 +1137,14 @@ export type PatientRecordRow = {
      * Reassessment Due count) rather than parse a display string back apart.
      */
     care_plan_progress: { sessionsCompleted: number; targetSessions: number } | null;
+    // ── Cardiology — Project Pulse Point (added 2026-09-21) ───────────────
+    // Straight off this visit's own `vitals` blob, same "real field, no
+    // fabrication" rule the rest of this type follows — null means the
+    // doctor didn't record one this visit, not "no data available".
+    /** ejection fraction, % (echo), this visit. */
+    ef_percent: string | null;
+    /** NYHA class 1-4 (I-IV), this visit. */
+    nyha_class: string | null;
 };
 
 type RawVisitRow = {
@@ -1146,6 +1154,11 @@ type RawVisitRow = {
     started_at: string | null;
     completed_at: string | null;
     care_plan_id: string | null;
+    /** raw `visits.vitals` jsonb — only read for `ef_percent`/`nyha_class`
+     *  today, by `cardiologySnapshot` in patientSnapshot.ts. See its own
+     *  fetchTodayPatients/fetchRecentPatients call sites for why this is
+     *  cheap to add: `vitals` rides the same row already being selected. */
+    vitals?: Record<string, unknown> | null;
 };
 
 /**
@@ -1407,6 +1420,8 @@ async function buildPatientRecordRows(
                 ? `Session ${progress.sessionsCompleted} of ${progress.targetSessions}`
                 : null,
             care_plan_progress: progress,
+            ef_percent: typeof v.vitals?.efPercent === "string" ? v.vitals.efPercent : null,
+            nyha_class: typeof v.vitals?.nyhaClass === "string" ? v.vitals.nyhaClass : null,
         });
     }
 
@@ -1429,7 +1444,7 @@ export async function fetchTodayPatients(doctorId: string): Promise<PatientRecor
 
             const { data: visits, error } = await supabase
                 .from("visits")
-                .select("id, patient_id, status, started_at, completed_at, care_plan_id")
+                .select("id, patient_id, status, started_at, completed_at, care_plan_id, vitals")
                 .eq("assigned_doctor_id", doctorId)
                 .gte("started_at", todayStart.toISOString())
                 .order("started_at", { ascending: false });
@@ -1456,7 +1471,7 @@ export async function fetchRecentPatients(doctorId: string, limit = 40): Promise
         fetcher: async () => {
             const { data: visits, error } = await supabase
                 .from("visits")
-                .select("id, patient_id, status, started_at, completed_at, care_plan_id")
+                .select("id, patient_id, status, started_at, completed_at, care_plan_id, vitals")
                 .eq("assigned_doctor_id", doctorId)
                 .eq("status", "completed")
                 .order("started_at", { ascending: false })

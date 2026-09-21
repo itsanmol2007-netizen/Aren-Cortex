@@ -73,7 +73,7 @@ export type BetterWhen = "lower" | "higher" | "band" | "none";
  * that per-joint ROM exists, and a flat list of that length is a list nobody
  * reads to the end of. Order here is the order the menu prints its headings.
  */
-export type MeasureGroup = "vitals" | "body" | "metabolic" | "hematology" | "labs" | "imaging" | "musculoskeletal" | "obstetric";
+export type MeasureGroup = "vitals" | "body" | "metabolic" | "hematology" | "labs" | "imaging" | "musculoskeletal" | "obstetric" | "cardiac";
 
 export interface MeasureField {
     key: MeasureFieldKey;
@@ -226,6 +226,44 @@ export const MEASURE_FIELDS: MeasureField[] = [
         group: "vitals", betterWhen: "band", trendNoise: 0.4,
         placeholder: "98.6", kind: "number",
         warn: numberInRange(96, 99.5), warnText: "Outside 96–99.5 °F",
+    },
+    // ── Cardiology — Project Pulse Point (added 2026-09-21) ─────────────────
+    // Two numbers, not a new input mechanism: both are `kind: "number"` like
+    // everything else in this catalogue, specifically so they ride the
+    // existing trend/graph pipeline for free — "EF 35% → 38% → 42%" and
+    // "NYHA III → II" are just `trend.ts` doing what it already does for BP,
+    // applied to two more keys. See `CARDIOLOGY.measurements`/`.trend` in
+    // specialtyProfile.ts for how a cardiology facility sees these by default.
+    {
+        key: "efPercent", label: "EF (%)", shortLabel: "Ejection fraction",
+        unit: "%", printLabel: "EF", rxLabel: "EF",
+        group: "cardiac", betterWhen: "higher", trendNoise: 3,
+        placeholder: "60", kind: "number",
+        // Only a low reading is ever a concern — EF has no meaningful upper
+        // bound the way BP does, same precedent as SpO₂'s one-sided warn.
+        // 50% is the conservative edge of "normal" (55–70%); everything from
+        // there down to the 41–49% "mildly reduced" band still deserves the
+        // amber, not just the ≤40% HFrEF cutoff.
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && n < 50; },
+        warnText: "Below the normal 55–70% range",
+    },
+    {
+        // Stored as a plain integer 1–4 (I–IV), NOT `kind: "select"` — a
+        // text select lands in `value_text`, which the trend pipeline never
+        // reads, and NYHA's whole point here is "III → II" as a real trend
+        // line. The cost of that choice: this pass prints the raw digit
+        // everywhere (measurements card, Rx, trend chart) rather than the
+        // roman numeral a cardiologist actually writes. A `formatNyha(n)`
+        // display-layer helper is the honest follow-up, not done here —
+        // touches several render surfaces (MeasurementsCard, PrescriptionDocument,
+        // TrendMiniCard) and isn't required for the data model or the
+        // trending to be correct today.
+        key: "nyhaClass", label: "NYHA Class (1=I … 4=IV)", shortLabel: "NYHA class",
+        unit: "", printLabel: "NYHA", rxLabel: "NYHA",
+        group: "cardiac", betterWhen: "lower",
+        placeholder: "2", kind: "number",
+        warn: (v) => { const n = Number.parseFloat(v); return Number.isFinite(n) && (n < 1 || n > 4); },
+        warnText: "NYHA class is I–IV (enter 1–4)",
     },
     {
         // `betterWhen: "none"` is load-bearing here, not laziness. Weight
@@ -884,6 +922,7 @@ export const GROUP_LABEL: Record<MeasureGroup, string> = {
     imaging: "Ultrasound findings",
     musculoskeletal: "Movement & function",
     obstetric: "Obstetric",
+    cardiac: "Cardiac",
 };
 
 export const GROUP_ORDER: MeasureGroup[] = [

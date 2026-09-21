@@ -419,8 +419,11 @@ export const CARDIOLOGY: SpecialtyProfile = {
     ],
     // Weight matters here beyond general vitals — trending it is how fluid
     // overload in heart failure gets caught early. Pain/ROM stay excluded;
-    // they're physiotherapy's signal, not cardiology's.
-    measurements: ["bp", "pulse", "spo2", "weight", "height"],
+    // they're physiotherapy's signal, not cardiology's. EF%/NYHA (added for
+    // Project Pulse Point, 2026-09-21) are the two numbers a cardiologist
+    // actually stages a patient by — see measures.ts for why both ride the
+    // ordinary numeric trend pipeline instead of a bespoke input.
+    measurements: ["bp", "pulse", "spo2", "efPercent", "nyhaClass", "weight", "height"],
     charts: [],
     // Visits are weeks to months apart and the spec wants the trend to span
     // that, not just the last few readings — `trend.ts` puts the points on a
@@ -433,12 +436,15 @@ export const CARDIOLOGY: SpecialtyProfile = {
     // paediatrics reads the identical number the opposite way.
     trend: [
         { key: "bp" },
+        { key: "efPercent" },
+        { key: "nyhaClass" },
         { key: "weight", betterWhen: "lower" },
         { key: "pulse" },
         { key: "spo2" },
     ],
-    // Not its turn yet — still the three-picker fallback. See `inputLayout`.
-    inputLayout: "soap",
+    // Now onto the same V2 workspace as General OPD/Physiotherapy — the SOAP
+    // screen was V1 and is discarded (see Project Pulse Point spec, 2026-09-21).
+    inputLayout: "case-sheet",
 };
 
 /**

@@ -68,6 +68,8 @@ function stubPatientRow(p: DBPatient): PatientRecordRow {
         story_mechanism: null,
         care_plan_session_label: null,
         care_plan_progress: null,
+        ef_percent: null,
+        nyha_class: null,
     };
 }
 

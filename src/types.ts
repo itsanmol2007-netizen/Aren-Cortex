@@ -163,6 +163,18 @@ export type Vitals = {
   hc?: string;
   /** abdominal circumference, mm */
   ac?: string;
+  // ── Cardiology — Project Pulse Point (added 2026-09-21) ───────────────
+  // Two numbers, deliberately both stored as plain numeric strings like
+  // every other field here rather than as anything bespoke — see
+  // measures.ts's own entries for why NYHA in particular is a NUMBER (I–IV
+  // as "1"–"4"), not a `kind: "select"` text field: only a numeric field
+  // rides the existing trend/graph pipeline for free, which is the entire
+  // point of recording it at all ("NYHA III → II" as a real trend line).
+  /** ejection fraction, % (echo) */
+  efPercent?: string;
+  /** NYHA functional class, stored as 1–4 (I–IV) — see measures.ts's
+   *  `formatNyha` for the roman-numeral display. */
+  nyhaClass?: string;
   /**
    * The fallback for everything the catalogue above still doesn't have —
    * "there should also be a fallback option that if that measurement is not
