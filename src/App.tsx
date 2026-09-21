@@ -1988,6 +1988,7 @@ function App() {
              Cortex clinic opens the patient form. */
           onStartConsult={handleSidebarConsult}
           onNavigate={handleSidebarNavigate}
+          specialty={specialty}
           onViewPatient={(patientId, name) => {
             handleSidebarNavigate("patients");
             setPatientRecordSeed({ id: patientId, name });

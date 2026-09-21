@@ -118,6 +118,7 @@ import { PracticeModal } from "./PracticeModal";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
+import { SpecialtyMark, hasSpecialtyMark } from "../synapse/specialtyIcons";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import "./practice.css";
 
@@ -3372,7 +3373,18 @@ export function PracticePage({
                                 card's own slot now carries Medicine Pricing
                                 instead. */}
                             <button type="button" className="prac-settings-tile" onClick={() => onNavigate("settings")}>
-                                <span className="prac-settings-icon is-slate"><SlidersHorizontal size={15} /></span>
+                                {/* The specialty's own mark, when it has one — see
+                                    specialtyIcons.tsx. Falls back to the plain
+                                    slate settings icon for every profile that
+                                    hasn't earned a mark yet, same "nothing
+                                    rather than a fake placeholder" rule that
+                                    file documents. No slate background behind
+                                    a mark that already carries its own fill. */}
+                                {hasSpecialtyMark(specialty.id) ? (
+                                    <span className="prac-settings-icon"><SpecialtyMark specialtyId={specialty.id} size={20} /></span>
+                                ) : (
+                                    <span className="prac-settings-icon is-slate"><SlidersHorizontal size={15} /></span>
+                                )}
                                 <span className="prac-med-info">
                                     <span className="prac-row-label">Consultation Profile</span>
                                     <span className="prac-med-brands">{specialty.label} — which chart Cortex opens with</span>

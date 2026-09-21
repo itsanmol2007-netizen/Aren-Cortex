@@ -89,6 +89,8 @@ import { PrescriptionPreviewModal } from "../../components/PrescriptionPreviewMo
 import { fetchHospitalCached } from "../../lib/db/profileCache";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import type { TodayVisit, DBHospital } from "../../lib/db";
+import type { SpecialtyProfile } from "../synapse/specialtyProfile";
+import { SpecialtyMark, hasSpecialtyMark } from "../synapse/specialtyIcons";
 
 interface Props {
     /** The sidebar's own Consult action, reused rather than reimplemented —
@@ -104,6 +106,9 @@ interface Props {
      *  fallback otherwise. See `PatientsPage`'s own `initialPatientId` doc
      *  comment. */
     onViewPatient: (patientId: string | null, name: string | null) => void;
+    /** For the greeting's own specialty mark — see specialtyIcons.tsx. Renders
+     *  nothing extra for a specialty that hasn't earned one yet. */
+    specialty: SpecialtyProfile;
 
     // ── Today's Queue — a READ of App.tsx's own `useConsultQueue`, never a
     // second poll of "who is waiting". Empty and inert in Cortex, where
@@ -214,7 +219,7 @@ function HourBarsSkeleton() {
 type ActivityKind = "visits" | "prescriptions" | "new_patients" | "recent_patients";
 
 export function DoctorOverviewPage({
-    onStartConsult, onNavigate, onViewPatient,
+    onStartConsult, onNavigate, onViewPatient, specialty,
     queueWaiting, queueLoading, onOpenQueue, onStartFromQueueRow,
     openTeamAddStaff,
 }: Props) {
@@ -746,11 +751,23 @@ export function DoctorOverviewPage({
                         <span className="text-[13px] font-medium text-[var(--cs-faint)]">
                             {greetingFor(new Date().getHours())},
                         </span>
-                        <span
-                            className="truncate text-[34px] leading-[1.15] text-[var(--cs-ink)]"
-                            style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: "italic", fontWeight: 600, letterSpacing: "-0.01em" }}
-                        >
-                            {identity.doctorName}
+                        <span className="flex min-w-0 items-center gap-[10px]">
+                            <span
+                                className="truncate text-[34px] leading-[1.15] text-[var(--cs-ink)]"
+                                style={{ fontFamily: '"Newsreader", Georgia, serif', fontStyle: "italic", fontWeight: 600, letterSpacing: "-0.01em" }}
+                            >
+                                {identity.doctorName}
+                            </span>
+                            {/* The specialty's own mark, once it has one — see
+                                specialtyIcons.tsx. A quiet accent beside the
+                                name, not a badge competing with it; renders
+                                nothing for a specialty that hasn't earned a
+                                mark yet. */}
+                            {hasSpecialtyMark(specialty.id) && (
+                                <span className="flex-none translate-y-[1px]" title={specialty.label}>
+                                    <SpecialtyMark specialtyId={specialty.id} size={26} />
+                                </span>
+                            )}
                         </span>
                         <span className="mt-[2px] text-[12px] text-[var(--cs-muted)]">
                             Here's how your clinic is doing today.
