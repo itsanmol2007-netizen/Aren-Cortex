@@ -17,7 +17,13 @@ export const ATTACHMENT_TYPES: AttachmentType[] = ["xray", "scan", "lab_report",
 
 export const ATTACHMENT_TYPE_LABEL: Record<AttachmentType, string> = {
     xray: "X-ray",
-    scan: "Scan (ultrasound, etc.)",
+    // Was "Scan (ultrasound, etc.)" — read as ultrasound-first, a mislabel
+    // for MRI/CT, which are exactly as central to orthopaedics as X-ray.
+    // A relabel, not a new type: the enum stays a small fixed set matching
+    // the CHECK constraint above (Anmol, 2026-09-21 — "it's just another
+    // walk in library, nothing else"). Add a distinct mri/ct value later
+    // only if doctors actually want to filter by it.
+    scan: "Scan (MRI / CT / ultrasound)",
     lab_report: "Lab report",
     photo: "Photo",
     other: "Other",
