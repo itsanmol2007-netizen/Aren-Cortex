@@ -2026,6 +2026,131 @@ body.cs-locked-shell {
     text-underline-offset: 2px;
 }
 
+.cs-attach-preview-fullscreen-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--cs-ink);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+    z-index: 10;
+}
+
+.cs-attach-preview-fullscreen-btn:hover {
+    background: rgba(255, 255, 255, 1);
+}
+
+.cs-attach-fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 23, 51, 0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    animation: cs-attach-fullscreen-fade 0.15s ease;
+}
+
+@keyframes cs-attach-fullscreen-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.cs-attach-fullscreen-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.cs-attach-fullscreen-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.cs-attach-fullscreen-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    z-index: 10001;
+}
+
+.cs-attach-fullscreen-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 1);
+}
+
+.cs-attach-fullscreen-zoom-in,
+.cs-attach-fullscreen-zoom-out {
+    position: fixed;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    z-index: 10001;
+}
+
+.cs-attach-fullscreen-zoom-in:hover,
+.cs-attach-fullscreen-zoom-out:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 1);
+}
+
+.cs-attach-fullscreen-zoom-in {
+    bottom: 20px;
+    right: 70px;
+}
+
+.cs-attach-fullscreen-zoom-out {
+    bottom: 20px;
+    right: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-attach-fullscreen-overlay {
+        animation: none;
+    }
+
+    .cs-attach-preview-fullscreen-btn,
+    .cs-attach-fullscreen-close,
+    .cs-attach-fullscreen-zoom-in,
+    .cs-attach-fullscreen-zoom-out {
+        transition: none;
+    }
+}
+
 /* UploadFromPhoneModal.tsx's body used to be styled with a dedicated
    `.cs-phoneup-*` family here — rewritten to Tailwind utilities in place
    (2026-08-30, matching Front Desk's GatewayQrModal.tsx, which was always
