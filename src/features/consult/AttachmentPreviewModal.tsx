@@ -2,20 +2,46 @@
 // Cortex's copy of Front Desk's `AttachmentPreviewModal.tsx` — opening an
 // attachment used to be `window.open(presignedUrl)`, a new tab whose address
 // bar reads as leaving Aren entirely. This renders the same presigned URL
-// inline instead, inside `ChartSurface` (Cortex's own modal shell), so
-// viewing a file never leaves the consult screen.
+// inline instead, as a full-viewport overlay of its own, so viewing a file
+// never leaves the consult screen.
 //
-// Skeleton is sized to the file's REAL dimensions, not a generic spinner —
-// `visit_attachments.width`/`height` are captured for free at compress.ts's
-// resize step and carried through on the row, so the placeholder is already
-// the right shape before a single byte of the actual image has arrived.
+// ── One stage, not two (2026-09-21b)
+//
+// This used to open a small in-modal preview with its own "view fullscreen"
+// button as a second step. Anmol: "remove this intermediate half screen
+// view, less clicks — clicking on any attachment should directly open it
+// in full screen." There is now exactly one view: full viewport, straight
+// away. `ChartSurface` (this app's small-modal shell) is not used here at
+// all any more — Escape/backdrop-click/× are handled directly on this
+// overlay instead.
+//
+// ── Zoom is anchored to the image's own current position, never the cursor
+//
+// The first version centered zoom on wherever the mouse/pinch happened to
+// be, which drifted the image toward a corner on repeated scrolling — the
+// transform was `scale(s) translate(x,y)`, which scales the pan offset
+// itself on every zoom step, compounding error each time. Anmol: "always
+// zoom it from center, like scale it from center, and then by left click
+// of mouse you can drag it around." Fixed two ways: the transform order is
+// `translate(x,y) scale(s)` (pan happens in screen pixels, outside the
+// scale, so it is never itself scaled), and every zoom control just changes
+// `scale` — nothing here ever reads a cursor or touch position to decide
+// where to center a zoom. Panning is the separate, explicit left-click/
+// touch drag it was asked to be.
+//
+// ── The skeleton doesn't flash on a fast load
+//
+// Showing a placeholder the instant this opens means every fast-loading
+// image flashes a skeleton for one frame before the real thing replaces
+// it — worse than showing nothing. `showSkeleton` only flips on after a
+// short delay (`SKELETON_DELAY_MS`) if the media is STILL not loaded by
+// then; a normal load never has time to trigger it.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, Paperclip, Maximize2, Minimize2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { FileText, X, ZoomIn, ZoomOut } from "lucide-react";
 import { getViewUrl } from "../../lib/db/attachments";
 import { ATTACHMENT_TYPE_LABEL, type Attachment } from "../../lib/attachments/types";
-import { ChartSurface } from "./ChartSurface";
 
 type Props = {
     attachment: Attachment;
@@ -28,107 +54,109 @@ interface ZoomState {
     panY: number;
 }
 
+const MIN_SCALE = 1;
+const MAX_SCALE = 4;
+const DOUBLE_CLICK_SCALE = 2.5;
+const SKELETON_DELAY_MS = 300;
+const FIT: ZoomState = { scale: MIN_SCALE, panX: 0, panY: 0 };
+
 export function AttachmentPreviewModal({ attachment, onClose }: Props) {
     const [url, setUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [mediaLoaded, setMediaLoaded] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [zoom, setZoom] = useState<ZoomState>({ scale: 1, panX: 0, panY: 0 });
+    const [showSkeleton, setShowSkeleton] = useState(false);
+    const [zoom, setZoom] = useState<ZoomState>(FIT);
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
     const imgRef = useRef<HTMLImageElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    // The fullscreen overlay is a physically separate element from the
-    // inline preview frame above (a different size, a different position in
-    // the viewport) — zoomAtPoint/clampPan need to measure whichever one is
-    // actually on screen, not always the inline frame. See activeRefs().
-    const fullscreenContainerRef = useRef<HTMLDivElement>(null);
-    const fullscreenImgRef = useRef<HTMLImageElement>(null);
     const lastTapRef = useRef<number>(0);
     const lastTouchDistanceRef = useRef<number>(0);
 
     useEffect(() => {
         let cancelled = false;
+        setUrl(null);
+        setError(null);
         getViewUrl(attachment.storagePath)
             .then((u) => { if (!cancelled) setUrl(u); })
             .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Could not open this attachment"); });
         return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [attachment.storagePath]);
 
-    // Reset zoom/pan/fullscreen when attachment changes
+    // Reset zoom/pan/load state on a new attachment.
     useEffect(() => {
-        setZoom({ scale: 1, panX: 0, panY: 0 });
-        setIsFullscreen(false);
+        setZoom(FIT);
         setMediaLoaded(false);
     }, [attachment.storagePath]);
 
-    // Escape in fullscreen closes fullscreen, not the modal
+    // The skeleton only appears if loading is still going after a beat —
+    // see header note. Cleared immediately the moment loading resolves
+    // either way, so a slow load that finally arrives never leaves a
+    // stray skeleton behind.
     useEffect(() => {
-        if (!isFullscreen) return;
+        if (mediaLoaded || error) { setShowSkeleton(false); return; }
+        const t = window.setTimeout(() => setShowSkeleton(true), SKELETON_DELAY_MS);
+        return () => window.clearTimeout(t);
+    }, [mediaLoaded, error, attachment.storagePath]);
+
+    useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
-                e.stopPropagation();
-                setIsFullscreen(false);
-                setZoom({ scale: 1, panX: 0, panY: 0 });
+                onClose();
             } else if (e.key === "+" || e.key === "=") {
                 e.preventDefault();
-                zoomRelative(0.1);
+                zoomBy(0.4);
             } else if (e.key === "-" || e.key === "_") {
                 e.preventDefault();
-                zoomRelative(-0.1);
+                zoomBy(-0.4);
             } else if (e.key === "0") {
                 e.preventDefault();
                 resetZoom();
             } else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
                 e.preventDefault();
-                const step = 20;
-                const offset = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : e.key === "ArrowUp" ? step : -step;
-                if (["ArrowLeft", "ArrowRight"].includes(e.key)) {
-                    setZoom(z => ({ ...z, panX: z.panX + offset }));
-                } else {
-                    setZoom(z => ({ ...z, panY: z.panY + offset }));
-                }
+                const step = 30;
+                setZoom((z) => {
+                    if (z.scale <= MIN_SCALE) return z;
+                    if (e.key === "ArrowLeft") return clampPan({ ...z, panX: z.panX + step });
+                    if (e.key === "ArrowRight") return clampPan({ ...z, panX: z.panX - step });
+                    if (e.key === "ArrowUp") return clampPan({ ...z, panY: z.panY + step });
+                    return clampPan({ ...z, panY: z.panY - step });
+                });
             }
         };
-        window.addEventListener("keydown", onKeyDown, true);
-        return () => window.removeEventListener("keydown", onKeyDown, true);
-    }, [isFullscreen]);
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onClose]);
 
     const resetZoom = () => {
         setIsTransitioning(true);
-        setZoom({ scale: 1, panX: 0, panY: 0 });
-        setTimeout(() => setIsTransitioning(false), 150);
+        setZoom(FIT);
+        window.setTimeout(() => setIsTransitioning(false), 150);
     };
 
-    const zoomRelative = (delta: number) => {
-        setZoom(z => {
-            const newScale = Math.max(1, Math.min(4, z.scale + delta));
-            return { ...z, scale: newScale };
-        });
+    /**
+     * The one zoom primitive everything else calls — wheel, pinch, the
+     * +/− buttons, keyboard. Only ever changes `scale`; `panX`/`panY` are
+     * re-clamped against the new scale's bounds but never recomputed from
+     * a cursor or touch position. This is what "always zoom from center"
+     * means here: the image grows or shrinks around whatever point it is
+     * already anchored at (the container's center at panX=0/panY=0, or
+     * wherever a previous drag left it), never around where the pointer
+     * happens to be.
+     */
+    const zoomBy = (delta: number) => {
+        setZoom((z) => clampPan({ ...z, scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, z.scale + delta)) }));
     };
 
-    // Which pair of refs is actually visible right now — the fullscreen
-    // overlay and the inline preview are two different DOM elements at two
-    // different sizes, not the same box resized.
-    const activeContainerEl = () => (isFullscreen ? fullscreenContainerRef.current : containerRef.current);
-    const activeImgEl = () => (isFullscreen ? fullscreenImgRef.current : imgRef.current);
+    const zoomByFactor = (factor: number) => {
+        setZoom((z) => clampPan({ ...z, scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, z.scale * factor)) }));
+    };
 
-    const zoomAtPoint = (centerX: number, centerY: number, factor: number) => {
-        const container = activeContainerEl();
-        if (!container) return;
-        const rect = container.getBoundingClientRect();
-        const relX = centerX - rect.left;
-        const relY = centerY - rect.top;
-
-        setZoom(z => {
-            const newScale = Math.max(1, Math.min(4, z.scale * factor));
-            const scaleDiff = newScale - z.scale;
-            const newPanX = z.panX - (relX * scaleDiff) / newScale;
-            const newPanY = z.panY - (relY * scaleDiff) / newScale;
-            return clampPan({ scale: newScale, panX: newPanX, panY: newPanY });
-        });
+    const toggleZoom = () => {
+        if (zoom.scale > MIN_SCALE + 0.1) resetZoom();
+        else setZoom(clampPan({ scale: DOUBLE_CLICK_SCALE, panX: 0, panY: 0 }));
     };
 
     const getTouchDistance = (touch1: React.Touch, touch2: React.Touch): number => {
@@ -137,25 +165,40 @@ export function AttachmentPreviewModal({ attachment, onClose }: Props) {
         return Math.sqrt(dx * dx + dy * dy);
     };
 
-    const getTouchMidpoint = (touch1: React.Touch, touch2: React.Touch): { x: number; y: number } => ({
-        x: (touch1.clientX + touch2.clientX) / 2,
-        y: (touch1.clientY + touch2.clientY) / 2,
-    });
-
+    /**
+     * Bounds panning to what the current zoom level can actually show —
+     * derived from the image's OWN natural size plus the container's real
+     * size (both untransformed measurements), replicating what `object-fit:
+     * contain` renders at scale=1, then scaling that up. Deliberately does
+     * NOT read the already-transformed image's `getBoundingClientRect()` —
+     * that box already includes the CSS transform, so measuring it to
+     * decide the next transform is circular and was the root of the old
+     * drift bug.
+     */
     const clampPan = (state: ZoomState): ZoomState => {
-        const img = activeImgEl();
-        const container = activeContainerEl();
+        const img = imgRef.current;
+        const container = containerRef.current;
         if (!img || !container) return state;
-        const containerRect = container.getBoundingClientRect();
-        const containerWidth = containerRect.width;
-        const containerHeight = containerRect.height;
-        const imgWidth = img.naturalWidth || img.width;
-        const imgHeight = img.naturalHeight || img.height;
-        const scaledWidth = imgWidth * state.scale;
-        const scaledHeight = imgHeight * state.scale;
+        const naturalW = img.naturalWidth || img.width;
+        const naturalH = img.naturalHeight || img.height;
+        if (!naturalW || !naturalH) return state;
 
-        const maxPanX = Math.max(0, (scaledWidth - containerWidth) / 2 / state.scale);
-        const maxPanY = Math.max(0, (scaledHeight - containerHeight) / 2 / state.scale);
+        const containerRect = container.getBoundingClientRect();
+        const containerAspect = containerRect.width / containerRect.height;
+        const imgAspect = naturalW / naturalH;
+
+        // The size the image renders at when scale=1 (object-fit: contain).
+        const fitWidth = imgAspect > containerAspect ? containerRect.width : containerRect.height * imgAspect;
+        const fitHeight = imgAspect > containerAspect ? containerRect.width / imgAspect : containerRect.height;
+
+        const scaledWidth = fitWidth * state.scale;
+        const scaledHeight = fitHeight * state.scale;
+
+        // Panning is in screen pixels now (transform order is translate()
+        // then scale() — see header note), so the clamp is plain pixels too,
+        // no division by scale.
+        const maxPanX = Math.max(0, (scaledWidth - containerRect.width) / 2);
+        const maxPanY = Math.max(0, (scaledHeight - containerRect.height) / 2);
 
         return {
             ...state,
@@ -164,54 +207,35 @@ export function AttachmentPreviewModal({ attachment, onClose }: Props) {
         };
     };
 
-    const handleImageWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-        if (!isFullscreen) return;
+    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        zoomAtPoint(e.clientX, e.clientY, 1 + delta);
+        zoomBy(e.deltaY > 0 ? -0.25 : 0.25);
     };
 
-    const handleImageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
         if (e.touches.length === 2) {
             lastTouchDistanceRef.current = getTouchDistance(e.touches[0], e.touches[1]);
         } else if (e.touches.length === 1) {
             const now = Date.now();
-            const isDoubleClick = now - lastTapRef.current < 300;
+            const isDoubleTap = now - lastTapRef.current < 300;
             lastTapRef.current = now;
-            if (isDoubleClick) {
-                const midpoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-                if (zoom.scale > 1.2) {
-                    resetZoom();
-                } else {
-                    setZoom(z => {
-                        const newScale = 2.5;
-                        const rect = containerRef.current?.getBoundingClientRect();
-                        if (!rect) return z;
-                        const relX = midpoint.x - rect.left;
-                        const relY = midpoint.y - rect.top;
-                        const scaleDiff = newScale - z.scale;
-                        return clampPan({
-                            scale: newScale,
-                            panX: z.panX - (relX * scaleDiff) / newScale,
-                            panY: z.panY - (relY * scaleDiff) / newScale,
-                        });
-                    });
-                }
+            if (isDoubleTap) {
+                toggleZoom();
             } else {
                 setDragStart({ x: e.touches[0].clientX - zoom.panX, y: e.touches[0].clientY - zoom.panY });
             }
         }
     };
 
-    const handleImageTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
         if (e.touches.length === 2) {
             const distance = getTouchDistance(e.touches[0], e.touches[1]);
-            const factor = distance / lastTouchDistanceRef.current;
-            const midpoint = getTouchMidpoint(e.touches[0], e.touches[1]);
-            zoomAtPoint(midpoint.x, midpoint.y, factor);
+            if (lastTouchDistanceRef.current > 0) {
+                zoomByFactor(distance / lastTouchDistanceRef.current);
+            }
             lastTouchDistanceRef.current = distance;
-        } else if (e.touches.length === 1 && dragStart && zoom.scale > 1) {
-            setZoom(z => clampPan({
+        } else if (e.touches.length === 1 && dragStart && zoom.scale > MIN_SCALE) {
+            setZoom((z) => clampPan({
                 ...z,
                 panX: e.touches[0].clientX - dragStart.x,
                 panY: e.touches[0].clientY - dragStart.y,
@@ -219,192 +243,118 @@ export function AttachmentPreviewModal({ attachment, onClose }: Props) {
         }
     };
 
-    const handleImageTouchEnd = () => {
+    const handleTouchEnd = () => {
         setDragStart(null);
+        lastTouchDistanceRef.current = 0;
     };
 
-    const handleImageMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (zoom.scale <= 1) return;
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (zoom.scale <= MIN_SCALE) return;
         setIsDragging(true);
         setDragStart({ x: e.clientX - zoom.panX, y: e.clientY - zoom.panY });
     };
 
-    const handleImageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!isDragging || !dragStart) return;
-        setZoom(z => clampPan({
-            ...z,
-            panX: e.clientX - dragStart.x,
-            panY: e.clientY - dragStart.y,
-        }));
+        setZoom((z) => clampPan({ ...z, panX: e.clientX - dragStart.x, panY: e.clientY - dragStart.y }));
     };
 
-    const handleImageMouseUp = () => {
+    const handleMouseUp = () => {
         setIsDragging(false);
         setDragStart(null);
-    };
-
-    const handleImageDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (zoom.scale > 1.2) {
-            resetZoom();
-        } else {
-            zoomAtPoint(e.clientX, e.clientY, 2.5);
-        }
     };
 
     const isImage = attachment.mimeType?.startsWith("image/");
     const isPdf = attachment.mimeType === "application/pdf";
     const label = attachment.attachmentType ? ATTACHMENT_TYPE_LABEL[attachment.attachmentType] : "Attachment";
 
-    // Known dimensions (images) size the skeleton exactly; a PDF has no
-    // stored dimensions but a document page shape is a close-enough guess
-    // for the brief moment before the iframe reports loaded.
-    const aspect = isImage && attachment.width && attachment.height
-        ? attachment.width / attachment.height
-        : isPdf ? 0.77 : 4 / 3;
-    const showSkeleton = !error && !mediaLoaded && (isImage || isPdf);
-
     return (
-        <>
-            <ChartSurface title={label} eyebrow="Attachment" icon={<Paperclip size={15} />} expanded onClose={onClose} maxWidth={640} preventDismiss={isFullscreen}>
-                <div className="cs-attach-preview">
-                    {error ? (
-                        <p className="cs-attach-error">{error}</p>
-                    ) : (
-                        <div
-                            className="cs-attach-preview-frame"
-                            ref={containerRef}
+        <div
+            className="cs-attach-fullscreen-overlay"
+            onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+            aria-label={label}
+        >
+            <div className="cs-attach-fullscreen-header" onClick={(e) => e.stopPropagation()}>
+                <span className="cs-attach-fullscreen-label">{label}</span>
+            </div>
+
+            <button
+                type="button"
+                className="cs-attach-fullscreen-close"
+                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                aria-label="Close"
+                title="Close"
+            >
+                <X size={20} />
+            </button>
+
+            {error ? (
+                <p className="cs-attach-fullscreen-error" onClick={(e) => e.stopPropagation()}>{error}</p>
+            ) : (
+                <div
+                    className="cs-attach-fullscreen-container"
+                    ref={containerRef}
+                    onClick={(e) => e.stopPropagation()}
+                    onWheel={isImage ? handleWheel : undefined}
+                    onMouseMove={isImage ? handleMouseMove : undefined}
+                    onMouseUp={isImage ? handleMouseUp : undefined}
+                    onMouseLeave={isImage ? handleMouseUp : undefined}
+                >
+                    {showSkeleton && (isImage || isPdf) && (
+                        <div className="cs-attach-fullscreen-skel">
+                            <div className="cs-attach-fullscreen-skel-shimmer" />
+                        </div>
+                    )}
+                    {url && isImage && (
+                        <img
+                            ref={imgRef}
+                            src={url}
+                            alt={label}
+                            onLoad={() => setMediaLoaded(true)}
+                            className="cs-attach-fullscreen-img"
                             style={{
-                                aspectRatio: showSkeleton || isImage || isPdf ? aspect : undefined,
-                                maxWidth: aspect >= 1 ? "100%" : `calc(60vh * ${aspect})`,
-                                position: "relative",
-                                cursor: isFullscreen && zoom.scale > 1 ? (isDragging ? "grabbing" : "grab") : "auto",
+                                opacity: mediaLoaded ? 1 : 0,
+                                transform: `translate(${zoom.panX}px, ${zoom.panY}px) scale(${zoom.scale})`,
+                                transition: isTransitioning && !isDragging ? "transform 0.15s ease" : "none",
+                                cursor: zoom.scale > MIN_SCALE ? (isDragging ? "grabbing" : "grab") : "auto",
                             }}
-                            onWheel={handleImageWheel}
-                            onMouseMove={handleImageMouseMove}
-                            onMouseUp={handleImageMouseUp}
-                            onMouseLeave={handleImageMouseUp}
-                        >
-                            {showSkeleton && <div className="cs-attach-preview-skel" />}
-                            {url && isImage && (
-                                <div style={{ position: "relative", width: "100%", height: "100%" }}>
-                                    <img
-                                        ref={imgRef}
-                                        src={url}
-                                        alt={label}
-                                        onLoad={() => setMediaLoaded(true)}
-                                        className="cs-attach-preview-img"
-                                        style={{
-                                            opacity: mediaLoaded ? 1 : 0,
-                                            transform: `scale(${zoom.scale}) translate(${zoom.panX}px, ${zoom.panY}px)`,
-                                            transition: isTransitioning && !isDragging ? "transform 0.15s ease" : "none",
-                                        }}
-                                        onMouseDown={handleImageMouseDown}
-                                        onDoubleClick={handleImageDoubleClick}
-                                        onTouchStart={handleImageTouchStart}
-                                        onTouchMove={handleImageTouchMove}
-                                        onTouchEnd={handleImageTouchEnd}
-                                    />
-                                    {mediaLoaded && (
-                                        <button
-                                            type="button"
-                                            className="cs-attach-preview-fullscreen-btn"
-                                            onClick={() => {
-                                                setIsFullscreen(!isFullscreen);
-                                                if (isFullscreen) {
-                                                    resetZoom();
-                                                }
-                                            }}
-                                            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                                            title={isFullscreen ? "Exit fullscreen" : "View fullscreen"}
-                                        >
-                                            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                            {url && isPdf && (
-                                <iframe
-                                    src={url}
-                                    title={label}
-                                    onLoad={() => setMediaLoaded(true)}
-                                    className="cs-attach-preview-pdf"
-                                    style={{ opacity: mediaLoaded ? 1 : 0 }}
-                                />
-                            )}
-                            {url && !isImage && !isPdf && (
-                                <div className="cs-attach-preview-other">
-                                    <FileText size={26} />
-                                    <a href={url} target="_blank" rel="noopener noreferrer">Open file</a>
-                                </div>
-                            )}
+                            onMouseDown={handleMouseDown}
+                            onDoubleClick={toggleZoom}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                        />
+                    )}
+                    {url && isPdf && (
+                        <iframe
+                            src={url}
+                            title={label}
+                            onLoad={() => setMediaLoaded(true)}
+                            className="cs-attach-fullscreen-pdf"
+                            style={{ opacity: mediaLoaded ? 1 : 0 }}
+                        />
+                    )}
+                    {url && !isImage && !isPdf && (
+                        <div className="cs-attach-fullscreen-other">
+                            <FileText size={32} />
+                            <a href={url} target="_blank" rel="noopener noreferrer">Open file</a>
                         </div>
                     )}
                 </div>
-            </ChartSurface>
+            )}
 
-            {isFullscreen && url && isImage && (
-                <div
-                    className="cs-attach-fullscreen-overlay"
-                    onClick={() => {
-                        setIsFullscreen(false);
-                        setZoom({ scale: 1, panX: 0, panY: 0 });
-                    }}
-                >
-                    <div
-                        className="cs-attach-fullscreen-container"
-                        ref={fullscreenContainerRef}
-                        onClick={(e) => e.stopPropagation()}
-                        onWheel={handleImageWheel}
-                        onMouseMove={handleImageMouseMove}
-                        onMouseUp={handleImageMouseUp}
-                        onMouseLeave={handleImageMouseUp}
-                    >
-                        <img
-                            ref={fullscreenImgRef}
-                            src={url}
-                            alt={label}
-                            className="cs-attach-fullscreen-img"
-                            style={{
-                                transform: `scale(${zoom.scale}) translate(${zoom.panX}px, ${zoom.panY}px)`,
-                                transition: isTransitioning && !isDragging ? "transform 0.15s ease" : "none",
-                                cursor: zoom.scale > 1 ? (isDragging ? "grabbing" : "grab") : "auto",
-                            }}
-                            onMouseDown={handleImageMouseDown}
-                            onDoubleClick={handleImageDoubleClick}
-                            onTouchStart={handleImageTouchStart}
-                            onTouchMove={handleImageTouchMove}
-                            onTouchEnd={handleImageTouchEnd}
-                        />
-                        <button
-                            type="button"
-                            className="cs-attach-fullscreen-close"
-                            onClick={() => {
-                                setIsFullscreen(false);
-                                setZoom({ scale: 1, panX: 0, panY: 0 });
-                            }}
-                            aria-label="Close fullscreen"
-                        >
-                            <X size={20} />
-                        </button>
-                        <button
-                            type="button"
-                            className="cs-attach-fullscreen-zoom-in"
-                            onClick={() => zoomRelative(0.25)}
-                            aria-label="Zoom in"
-                        >
-                            <ZoomIn size={18} />
-                        </button>
-                        <button
-                            type="button"
-                            className="cs-attach-fullscreen-zoom-out"
-                            onClick={() => zoomRelative(-0.25)}
-                            aria-label="Zoom out"
-                        >
-                            <ZoomOut size={18} />
-                        </button>
-                    </div>
+            {isImage && url && (
+                <div className="cs-attach-fullscreen-zoom-controls" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="cs-attach-fullscreen-zoom-btn" onClick={() => zoomBy(0.4)} aria-label="Zoom in" title="Zoom in">
+                        <ZoomIn size={18} />
+                    </button>
+                    <button type="button" className="cs-attach-fullscreen-zoom-btn" onClick={() => zoomBy(-0.4)} aria-label="Zoom out" title="Zoom out">
+                        <ZoomOut size={18} />
+                    </button>
                 </div>
             )}
-        </>
+        </div>
     );
 }

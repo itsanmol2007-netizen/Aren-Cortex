@@ -1956,105 +1956,18 @@ body.cs-locked-shell {
     font-size: 12.5px;
 }
 
-/* ATTACHMENT PREVIEW — see `AttachmentPreviewModal.tsx`'s own header. Inline
-   inside ChartSurface instead of a new browser tab. */
-.cs-attach-preview {
-    display: flex;
-    min-height: 30vh;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    border: 1px solid var(--cs-line);
-    border-radius: 12px;
-    background: var(--cs-page);
-}
-
-.cs-attach-preview-frame {
-    position: relative;
-    width: 100%;
-    max-height: 62vh;
-    margin: 0 auto;
-}
-
-.cs-attach-preview-skel {
-    position: absolute;
-    inset: 0;
-    border-radius: 10px;
-    background: linear-gradient(90deg, #eef0f4 25%, #e4e7ee 37%, #eef0f4 63%);
-    background-size: 200% 100%;
-    animation: cs-attach-preview-shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes cs-attach-preview-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .cs-attach-preview-skel { animation: none; }
-}
-
-.cs-attach-preview-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    transition: opacity 0.2s ease;
-}
-
-.cs-attach-preview-pdf {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    transition: opacity 0.2s ease;
-}
-
-.cs-attach-preview-other {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 40px 24px;
-    color: var(--cs-faint);
-    text-align: center;
-}
-
-.cs-attach-preview-other a {
-    color: var(--cs-blue);
-    font-size: 13px;
-    font-weight: 700;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.cs-attach-preview-fullscreen-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 36px;
-    height: 36px;
-    border: 0;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.9);
-    color: var(--cs-ink);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s ease;
-    z-index: 10;
-}
-
-.cs-attach-preview-fullscreen-btn:hover {
-    background: rgba(255, 255, 255, 1);
-}
-
+/* ATTACHMENT PREVIEW — see `AttachmentPreviewModal.tsx`'s own header.
+   One stage, always full viewport (2026-09-21b) — no small in-modal
+   preview any more, so this is the whole surface: a dark overlay, a
+   thin header carrying the file's label, the content area (image with
+   zoom/pan, a PDF iframe, or the plain-file fallback), and the image's
+   own zoom controls in the corner. */
 .cs-attach-fullscreen-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(11, 23, 51, 0.92);
+    background: rgba(11, 23, 51, 0.94);
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
     z-index: 10000;
     animation: cs-attach-fullscreen-fade 0.15s ease;
 }
@@ -2064,14 +1977,30 @@ body.cs-locked-shell {
     to { opacity: 1; }
 }
 
+.cs-attach-fullscreen-header {
+    flex: none;
+    padding: 18px 72px 0 24px;
+}
+
+.cs-attach-fullscreen-label {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
 .cs-attach-fullscreen-container {
     position: relative;
-    width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    padding: 12px 24px 24px;
 }
 
 .cs-attach-fullscreen-img {
@@ -2080,6 +2009,73 @@ body.cs-locked-shell {
     object-fit: contain;
     user-select: none;
     -webkit-user-drag: none;
+}
+
+.cs-attach-fullscreen-pdf {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 10px;
+    background: #fff;
+    transition: opacity 0.2s ease;
+}
+
+.cs-attach-fullscreen-other {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    text-align: center;
+}
+
+.cs-attach-fullscreen-other a {
+    color: #9cc2ff;
+    font-size: 13.5px;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.cs-attach-fullscreen-error {
+    margin: auto;
+    color: #ff9d8f;
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+/* The delayed skeleton — see AttachmentPreviewModal.tsx's own note on
+   why this only appears after a beat, never instantly. A shimmer band
+   sweeping left -> right, slow (2.2s, not the ~1.4s a small inline
+   thumbnail used) since it now fills a much bigger, calmer surface. */
+.cs-attach-fullscreen-skel {
+    position: absolute;
+    inset: 24px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.cs-attach-fullscreen-skel-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        100deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.09) 50%,
+        transparent 70%
+    );
+    background-size: 250% 100%;
+    animation: cs-attach-fullscreen-shimmer 2.2s ease-in-out infinite;
+}
+
+@keyframes cs-attach-fullscreen-shimmer {
+    0% { background-position: -150% 0; }
+    100% { background-position: 150% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-attach-fullscreen-skel-shimmer { animation: none; }
 }
 
 .cs-attach-fullscreen-close {
@@ -2105,9 +2101,16 @@ body.cs-locked-shell {
     color: rgba(255, 255, 255, 1);
 }
 
-.cs-attach-fullscreen-zoom-in,
-.cs-attach-fullscreen-zoom-out {
+.cs-attach-fullscreen-zoom-controls {
     position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10001;
+    display: flex;
+    gap: 8px;
+}
+
+.cs-attach-fullscreen-zoom-btn {
     width: 44px;
     height: 44px;
     border: 0;
@@ -2119,23 +2122,11 @@ body.cs-locked-shell {
     align-items: center;
     justify-content: center;
     transition: all 0.15s ease;
-    z-index: 10001;
 }
 
-.cs-attach-fullscreen-zoom-in:hover,
-.cs-attach-fullscreen-zoom-out:hover {
+.cs-attach-fullscreen-zoom-btn:hover {
     background: rgba(255, 255, 255, 0.25);
     color: rgba(255, 255, 255, 1);
-}
-
-.cs-attach-fullscreen-zoom-in {
-    bottom: 20px;
-    right: 70px;
-}
-
-.cs-attach-fullscreen-zoom-out {
-    bottom: 20px;
-    right: 20px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2143,10 +2134,8 @@ body.cs-locked-shell {
         animation: none;
     }
 
-    .cs-attach-preview-fullscreen-btn,
     .cs-attach-fullscreen-close,
-    .cs-attach-fullscreen-zoom-in,
-    .cs-attach-fullscreen-zoom-out {
+    .cs-attach-fullscreen-zoom-btn {
         transition: none;
     }
 }
