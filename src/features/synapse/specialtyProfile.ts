@@ -211,11 +211,13 @@ export interface SpecialtyProfile {
 
 /**
  * Every per-joint range field, in catalogue order, as the tail of a
- * physiotherapy trend list. Only the joints a patient is actually being
- * treated for will have readings, so listing them all costs nothing and means
- * a shoulder course and a knee course both work with no configuration.
+ * physiotherapy or orthopedics trend list. Only the joints a patient is
+ * actually being treated for will have readings, so listing them all costs
+ * nothing and means a shoulder course and a knee course both work with no
+ * configuration. Shared by both profiles — same joints, same fields,
+ * `measures.ts` never knew this was physio's to begin with.
  */
-const PHYSIO_JOINTS: TrendEntry[] = [
+const JOINT_TREND_FIELDS: TrendEntry[] = [
     { key: "cervicalRotL" }, { key: "cervicalRotR" },
     { key: "shoulderFlexL" }, { key: "shoulderFlexR" },
     { key: "shoulderAbdL" }, { key: "shoulderAbdR" },
@@ -357,7 +359,7 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         { key: "lefs" },
         { key: "odi" },
         { key: "quickdash" },
-        ...PHYSIO_JOINTS,
+        ...JOINT_TREND_FIELDS,
         // Last resort. `romPct` is one number for "how restricted", which is
         // what a non-physiotherapy facility records; a physio who has been
         // using the degree fields should never see this one reached.
@@ -365,6 +367,68 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     ],
     // `"physio"` since 2026-08-17 — its own copy of the input surface,
     // Story and Goals ahead of the command bar. See `inputLayout`.
+    inputLayout: "physio",
+};
+
+/**
+ * Orthopedics — Project Pulse Point (2026-09-21c). Scoped the same way
+ * Cardiology was: maximum depth, minimum new architecture, reusing
+ * whatever AREN already knows how to do rather than building a parallel
+ * screen. The investigation behind this profile found most of what
+ * orthopedics needs already exists, built for physiotherapy but generic
+ * in substance — `JointMapCard`'s body map (`visit_body_sites`, all 9
+ * major joints), the special-test examination catalogue (Lachman,
+ * McMurray, FADIR, Spurling's...), the Story mechanism's
+ * `onsetMode: "post_traumatic"` (mechanism-of-injury, already dormant and
+ * working), and the per-joint ROM degree fields. None of it needed to be
+ * rebuilt; it needed a profile that reads it.
+ *
+ * `inputLayout: "physio"` reuses `PhysioInputs.tsx` verbatim — zero new
+ * input file, the same "just point an existing layout at a new profile"
+ * move Cardiology made with `GeneralOpdInputs.tsx`. The one known
+ * imperfection: PhysioInputs' Goals card ("Session 4 of 12") is phrased
+ * for a physiotherapy course, which reads a little oddly on a one-off
+ * fracture follow-up. Left as-is rather than forked preemptively — the
+ * same "fix it the day real use shows it's actually wrong" risk
+ * tolerance CARDIOLOGY's own `primary` field states for itself above.
+ *
+ * `primary: "medicine"`, not `"exercise"` — most orthopedic OPD visits
+ * end in a prescription (analgesics, NSAIDs) or a referral for surgery,
+ * not an in-clinic exercise programme; that is physiotherapy's own
+ * output, reached from here by referral like any other specialty.
+ * `sections` therefore matches General OPD's own order rather than
+ * Physiotherapy's modality-led one.
+ */
+export const ORTHOPEDICS: SpecialtyProfile = {
+    id: "orthopedics",
+    label: "Orthopedics",
+    primary: "medicine",
+    primaryLabel: "Medicines",
+    sections: [
+        { type: "finding", label: "Possible Finding" },
+        { type: "test", label: "Investigation" },
+        { type: "referral", label: "Referral" },
+        { type: "advice", label: "Advice" },
+        { type: "exercise", label: "Exercise" },
+    ],
+    measurements: ["bp", "pulse", "spo2", "temp", "weight"],
+    // Same reasoning as Physiotherapy's own `anatomical` — pain and range
+    // are properties of a SITE ("right knee", "left wrist"), not a general
+    // vital, so they live in the body-map examination (`regionPainKey`,
+    // the range grid) rather than General Measurements. See that card's
+    // own comment for why a shared field with no site column can't hold
+    // "two joints, two readings."
+    anatomical: ["painVas", "romPct"],
+    // `JointMapCard`, reused unmodified — same anatomy, same chips, same
+    // exam regions (including the special tests: Lachman, drawer, McMurray,
+    // valgus/varus, FADIR, Spurling's...) physiotherapy already built.
+    charts: ["joints"],
+    trend: [
+        { key: "painVas" },
+        { key: "lefs" }, { key: "odi" }, { key: "quickdash" },
+        ...JOINT_TREND_FIELDS,
+        { key: "romPct" },
+    ],
     inputLayout: "physio",
 };
 
@@ -622,6 +686,7 @@ export const PROFILES: Record<string, SpecialtyProfile> = {
     [PHYSIOTHERAPY.id]: PHYSIOTHERAPY,
     [DIAGNOSTICS.id]: DIAGNOSTICS,
     [CARDIOLOGY.id]: CARDIOLOGY,
+    [ORTHOPEDICS.id]: ORTHOPEDICS,
     [PEDIATRICS.id]: PEDIATRICS,
     [GYNAECOLOGY.id]: GYNAECOLOGY,
     [DENTISTRY.id]: DENTISTRY,

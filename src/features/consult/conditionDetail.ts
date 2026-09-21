@@ -53,6 +53,22 @@
 // Congenital heart disease, rheumatic heart disease, cardiomyopathy and
 // valvular disease stay plain chips, same as hypertension: active-or-not is
 // the fact that matters, not a date.
+//
+// ── Third pass (2026-09-21c): Orthopedics
+//
+// Same file, same mechanism — no separate "orthopedic history" module.
+// Checked against the live catalogue first: Previous fracture, Rheumatoid
+// arthritis, Joint replacement (arthroplasty) and Osteoporosis did not
+// exist at all, same story as the cardiac five. Added as real catalogue
+// rows the same way.
+//
+// Previous fracture and joint replacement join the detail-worthy set —
+// "since when" is really "since when, and which site", and there is no
+// separate site field to add: the free-text `onset_note` this same prompt
+// already writes holds "right wrist, 2019" or "left knee, 2021" exactly as
+// loosely as Anmol's own spec asked for ("obviously loosey, it will not
+// force"). Rheumatoid arthritis and osteoporosis stay plain chips, same
+// reasoning as hypertension: active-or-not is the fact that matters.
 // ---------------------------------------------------------------------------
 
 /**
@@ -68,6 +84,8 @@ export const DETAIL_WORTHY_CONDITIONS: ReadonlySet<string> = new Set([
     "icd_in_situ",
     "known_stroke_tia",
     "known_vte",
+    "known_previous_fracture",
+    "known_joint_replacement",
 ]);
 
 /**

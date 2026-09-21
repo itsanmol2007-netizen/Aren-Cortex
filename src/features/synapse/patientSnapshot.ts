@@ -165,12 +165,42 @@ const cardiologySnapshot = (row: PatientRecordRow): ClinicalSnapshot => {
     return { chips: chips.slice(0, 3), detail };
 };
 
+// ── Orthopedics ──────────────────────────────────────────────────────────
+// Added for Project Pulse Point (2026-09-21c). Site leads, because "Knee
+// pain" alone is half a fact for this specialty — `body_sites` is where the
+// laterality actually lives (see specialtyProfile.ts's own note on why the
+// engine doesn't rank left/right; this snapshot at least SHOWS it, off the
+// same real body-map tag physiotherapy already records). Finding is the
+// exam sign (a special test result, a deformity). Detail prefers the
+// story's mechanism-of-injury — "fall on outstretched hand" is exactly the
+// kind of line a doctor scanning the patient list wants to see for a
+// trauma case — before falling back to the investigation advised, the same
+// order cardiologySnapshot uses for its own detail line.
+const orthopedicsSnapshot = (row: PatientRecordRow): ClinicalSnapshot => {
+    const chips: SnapshotChip[] = [];
+    if (row.symptom_names[0]) chips.push({ label: row.symptom_names[0], tone: "primary" });
+    if (row.body_sites[0]) chips.push({ label: row.body_sites[0], tone: "neutral" });
+    if (row.finding_names[0]) chips.push({ label: row.finding_names[0], tone: "neutral" });
+
+    if (chips.length) chips.push(countChip(row, "visit"));
+
+    let detail: string | null = row.story_mechanism || null;
+    if (!detail && row.test_names.length) {
+        const rest = row.test_names.length - 1;
+        detail = `${row.test_names[0]}${rest > 0 ? ` +${rest} more` : ""} advised`;
+    }
+
+    if (!chips.length && !detail) return EMPTY_SNAPSHOT;
+    return { chips: chips.slice(0, 3), detail };
+};
+
 type SnapshotBuilder = (row: PatientRecordRow) => ClinicalSnapshot;
 
 const SNAPSHOT_BUILDERS: Record<string, SnapshotBuilder> = {
     general_opd: generalOpdSnapshot,
     physiotherapy: physiotherapySnapshot,
     cardiology: cardiologySnapshot,
+    orthopedics: orthopedicsSnapshot,
 };
 
 /**

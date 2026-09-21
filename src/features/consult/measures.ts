@@ -926,7 +926,7 @@ export const GROUP_LABEL: Record<MeasureGroup, string> = {
 };
 
 export const GROUP_ORDER: MeasureGroup[] = [
-    "vitals", "body", "metabolic", "hematology", "labs", "imaging", "musculoskeletal", "obstetric",
+    "vitals", "body", "metabolic", "hematology", "labs", "imaging", "musculoskeletal", "obstetric", "cardiac",
 ];
 
 /**
