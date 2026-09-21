@@ -24,7 +24,7 @@
 // branch to the picker in App.tsx. Nothing else moves.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ClinicalCommandBar, CaseSheet, type CaseSheetEntry } from "./CaseSheet";
 import { durationCandidates } from "./duration";
 import { MeasurementsCard } from "./MeasurementsCard";
@@ -134,6 +134,25 @@ export function GeneralOpdInputs({
         [onSetSymptomDuration, caseSheetEntries, slugByLabel]
     );
 
+    /**
+     * "Type Previous MI, get asked since when" — in the search box's own
+     * motion, not a separate click on the chip afterward. See
+     * `CaseSheet.tsx`'s `autoOpenOnsetLabel` doc comment for the full
+     * mechanism; this is the one place that decides WHEN to fire it: a
+     * detail-worthy history observable, picked from THIS bar specifically
+     * (not a Related chip, not the browse sheet, not CaseSheet's own "+
+     * since"), and only on the ADD half of the toggle — `onChartSet.has`
+     * checked BEFORE the toggle runs is what tells add and remove apart.
+     */
+    const [autoOnsetLabel, setAutoOnsetLabel] = useState<string | null>(null);
+    const handleCommandBarToggle = useCallback((o: Observable) => {
+        const isAdding = !onChartSet.has(o.label);
+        onObservableToggle(o);
+        if (isAdding && o.kind === "history" && detailWorthyLabels?.has(o.label) && onSetOnsetNote) {
+            setAutoOnsetLabel(o.label);
+        }
+    }, [onChartSet, onObservableToggle, detailWorthyLabels, onSetOnsetNote]);
+
     return (
         <>
             {/* The page's one input, above every card because it belongs to the
@@ -141,7 +160,7 @@ export function GeneralOpdInputs({
             <ClinicalCommandBar
                 observables={observables}
                 onSheet={onChartSet}
-                onToggle={onObservableToggle}
+                onToggle={handleCommandBarToggle}
                 disabled={disabled}
                 searchRef={searchRef}
                 onEmptyDown={() => relatedRoving.move(1)}
@@ -167,6 +186,8 @@ export function GeneralOpdInputs({
                     onRetireCarried={onRetireCarried}
                     detailWorthyLabels={detailWorthyLabels}
                     onSetOnsetNote={onSetOnsetNote}
+                    autoOpenOnsetLabel={autoOnsetLabel}
+                    onAutoOpenOnsetHandled={() => setAutoOnsetLabel(null)}
                     intensities={intensities}
                     onIntensityChange={onIntensityChange}
                     related={relatedFindings}

@@ -1492,6 +1492,19 @@ interface SheetProps {
     detailWorthyLabels?: Set<string>;
     /** Records the free-text onset answer from `OnsetPrompt`. */
     onSetOnsetNote?: (label: string, note: string) => void;
+    /**
+     * Open `OnsetPrompt` for this label the instant it renders, no click
+     * needed — the command bar sets this the moment a detail-worthy history
+     * observable is picked from SEARCH (`GeneralOpdInputs.tsx`'s
+     * `handleCommandBarToggle`), so "type Previous MI, get asked since when"
+     * happens in one motion instead of a pick now and a second click later.
+     * A chip ticked any other way (Related, the browse sheet, CaseSheet's
+     * own "+ since" button) is unaffected — this only fires for a fresh
+     * search pick. Cleared via `onAutoOpenOnsetHandled` once consumed, so it
+     * never reopens on an unrelated re-render.
+     */
+    autoOpenOnsetLabel?: string | null;
+    onAutoOpenOnsetHandled?: () => void;
     onToggle: (o: Observable) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
@@ -1537,12 +1550,21 @@ export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
     storyChips = [], story: storyOf, onStoryRemove, onFocusSearch,
-    detailWorthyLabels, onSetOnsetNote,
+    detailWorthyLabels, onSetOnsetNote, autoOpenOnsetLabel, onAutoOpenOnsetHandled,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
     /** which chip's "since when" popover is open */
     const [editingOnset, setEditingOnset] = useState<string | null>(null);
+
+    // See `autoOpenOnsetLabel`'s own doc comment — a fresh search pick opens
+    // this without waiting for the doctor to find and click "+ since" on the
+    // chip that pick just created.
+    useEffect(() => {
+        if (!autoOpenOnsetLabel) return;
+        setEditingOnset(autoOpenOnsetLabel);
+        onAutoOpenOnsetHandled?.();
+    }, [autoOpenOnsetLabel, onAutoOpenOnsetHandled]);
 
     const reduce = useReducedMotion();
 
