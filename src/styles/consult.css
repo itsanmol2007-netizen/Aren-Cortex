@@ -335,6 +335,18 @@ body.cs-locked-shell {
    The strip does not scroll with the page. Every ranked column and the plan
    are reachable at any point in the consultation, because the doctor moves
    between examining and prescribing continuously, not in one direction. */
+/* Extra clearance when the longitudinal band sits directly above, collapsed
+   or not — its border-bottom reads as a second header line, and .cs-page's
+   normal 12px top padding isn't enough breathing room off of it, which
+   pushed the Case Sheet's search bar right up against it (annotated
+   screenshot, 2026-09-21: "Fix this Cramped Up UI, we need some Padding
+   here its also there when the top longitudinal strip is there with the
+   Case sheet Search bar"). `.cs-lt` renders nothing at all for a first
+   visit, so this never fires there and the normal padding stays correct. */
+.cs-lt + .cs-page {
+    padding-top: 24px;
+}
+
 .cs-page {
     flex: 1;
     min-height: 0;
