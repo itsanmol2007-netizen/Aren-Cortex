@@ -33,6 +33,26 @@
 // pass that added this file — this is content curation on the existing
 // mechanism, not new architecture. Atrial fibrillation already existed
 // (`intent_id` 658, mapped to `ecg_afib_rhythm`) and needed nothing added.
+//
+// ── Second pass (2026-09-21b): broader than the five original examples
+//
+// Anmol's own correction to a narrow reading of the first pass: "I just
+// gave a couple of examples... there is a lot more things, findings and the
+// history... verify the actual things from WHO or some other sources, not
+// just the example I gave." Checked against a standard cardiovascular
+// history/examination reference (cited in the commit) rather than guessed:
+// added the exam findings a cardiovascular exam routinely records (S4
+// gallop, displaced apex beat, carotid bruit, diminished peripheral pulses,
+// peripheral cyanosis, clubbing, pericardial rub — JVP/S3/murmurs/irregular
+// pulse/pedal oedema already existed) and the chronic-history facts a cardiac
+// history routinely screens for (rheumatic heart disease, congenital heart
+// disease, cardiomyopathy, valvular disease, prior stroke/TIA, prior VTE).
+//
+// Stroke/TIA and VTE join the detail-worthy set below for the same reason MI
+// did — recency changes management directly (anticoagulation timing).
+// Congenital heart disease, rheumatic heart disease, cardiomyopathy and
+// valvular disease stay plain chips, same as hypertension: active-or-not is
+// the fact that matters, not a date.
 // ---------------------------------------------------------------------------
 
 /**
@@ -46,6 +66,8 @@ export const DETAIL_WORTHY_CONDITIONS: ReadonlySet<string> = new Set([
     "cabg_done",
     "pacemaker_in_situ",
     "icd_in_situ",
+    "known_stroke_tia",
+    "known_vte",
 ]);
 
 /**
