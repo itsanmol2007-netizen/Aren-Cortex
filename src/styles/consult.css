@@ -715,6 +715,7 @@ body.cs-locked-shell {
 .cs-glyph.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 .cs-glyph.is-rose { background: var(--cs-rose-soft); color: var(--cs-rose); }
 .cs-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-glyph.is-orange { background: var(--cs-orange-soft); color: var(--cs-orange); }
 .cs-glyph.is-slate { background: #f1f5f9; color: #475569; }
 
 /* Anchors the ThinkingRing (parts.tsx) to the glyph it sits on, rather than
@@ -6213,6 +6214,202 @@ body.cs-locked-shell {
     min-height: 58px;
     line-height: 1.5;
 }
+
+/* ── Intervention Inspector (.cs-intv-*) — docs/aren-modal-design.md's own
+   shape, orange as the accent: not teal (medicine's), not green (means
+   TAKEN elsewhere), not blue (the generic action colour every other
+   primary button already uses), not the violet ThinkingRing sits in.
+   Structurally close to `.cs-addmed-*` but not sharing it — no brand list,
+   no billing grid, a different footer action — so it gets its own family
+   per that doc's own fallback rule rather than overloading the medicine
+   one with conditionals. */
+.cs-intv {
+    position: fixed;
+    inset: 0;
+    z-index: 820;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+}
+.cs-intv-scrim {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(11, 23, 51, 0.3);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    cursor: default;
+}
+.cs-intv-panel {
+    position: relative;
+    z-index: 1;
+    width: min(440px, 100%);
+    border: none;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.10),
+        0 32px 80px rgba(0, 0, 0, 0.20);
+    overflow: hidden;
+}
+.cs-intv-topstripe {
+    height: 4px;
+    background: linear-gradient(90deg, #fb923c 0%, #c2410c 50%, #9a3412 100%);
+}
+.cs-intv-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 16px 20px 12px;
+}
+.cs-intv-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.cs-intv-eyebrow {
+    margin: 0 0 1px;
+    font-size: 10px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--cs-orange);
+}
+.cs-intv-title strong {
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+}
+.cs-intv-x {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    margin-left: auto;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--cs-faint);
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.cs-intv-x:hover { background: rgba(194, 65, 12, 0.12); border-color: rgba(194, 65, 12, 0.3); color: var(--cs-orange); }
+.cs-intv-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 20px;
+}
+.cs-intv-sec { display: flex; flex-direction: column; gap: 7px; }
+.cs-intv-label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+.cs-intv-optional {
+    font-style: normal;
+    font-weight: 550;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--cs-faint);
+    opacity: 0.7;
+}
+.cs-intv-input {
+    width: 100%;
+    height: 40px;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 11px;
+    background: rgba(248, 250, 252, 0.9);
+    padding: 0 12px;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 600;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.cs-intv-input:focus {
+    outline: none;
+    border-color: var(--cs-orange);
+    box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.12);
+    background: #fff;
+}
+.cs-intv-textarea {
+    height: auto;
+    padding: 8px 12px;
+    resize: vertical;
+    min-height: 58px;
+    line-height: 1.5;
+    font-weight: 500;
+}
+.cs-intv-sides { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-intv-side {
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 7px 14px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+.cs-intv-side.is-on {
+    border-color: rgba(194, 65, 12, 0.4);
+    background: var(--cs-orange-soft);
+    color: var(--cs-orange);
+}
+.cs-intv-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 20px 20px;
+}
+.cs-intv-cancel {
+    height: 42px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 0 16px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.cs-intv-cancel:hover { background: rgba(0, 0, 0, 0.07); color: #334155; }
+.cs-intv-confirm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 42px;
+    flex: 1;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #fb923c 0%, #c2410c 100%);
+    padding: 0 16px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 750;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(194, 65, 12, 0.3);
+    transition: opacity 0.15s, transform 0.1s;
+}
+.cs-intv-confirm:hover { opacity: 0.92; transform: translateY(-1px); }
+.cs-intv-confirm:active { transform: translateY(0); }
 
 /* The overflow row on a capped Attachments card. Deliberately quiet: it is a
    way to the rest of the files, not a file itself. */

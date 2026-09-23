@@ -3,6 +3,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
+import { InterventionInspector } from "./components/InterventionInspector";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -665,14 +666,15 @@ function App() {
     followUpDays, setFollowUpDays,
     acceptedIntents, acceptedIntentIdSet, chosenBrands, deliberateBrands,
     searchedAccepts, acknowledgedIntents,
-    adviceLines, therapyLines, therapyNotes, exercisePlan, reviewAdvice, justAdded, unreadPrescribedWarnings,
+    adviceLines, interventionPlan, therapyNotes, exercisePlan, reviewAdvice, justAdded, unreadPrescribedWarnings,
     selectedMedicineId, setSelectedMedicineId, stagedMedicine, setStagedMedicine,
     pendingMedicine, setPendingMedicine, inspectorMedicine,
     confirmPendingMedicine, confirmStagedMedicine, medicineBilling,
+    pendingIntervention, confirmPendingIntervention, cancelPendingIntervention,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
-    removeTherapyLine, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
+    removeIntervention, addAnotherInterventionSite, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -923,6 +925,7 @@ function App() {
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
+      !!pendingIntervention ||
       !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
       !!activeVisit || !!trendDetail || !!trendVisit || carePlanSheetOpen || addMedicineQuery != null,
   });
@@ -2561,11 +2564,12 @@ function App() {
                 onSelectLabName={setSelectedLabName}
                 onManageLabs={() => handleSidebarNavigate("practice")}
                 adviceLines={adviceLines}
-                therapyLines={therapyLines}
+                interventions={interventionPlan}
                 exerciseLines={exercisePlan.map((l) => ({ id: l.id, text: formatLine(l) }))}
                 onRemoveExercise={removeExercise}
                 onRemoveAdviceLine={removeAdviceLine}
-                onRemoveTherapyLine={removeTherapyLine}
+                onRemoveIntervention={removeIntervention}
+                onAddAnotherInterventionSite={addAnotherInterventionSite}
                 followUpDays={followUpDays}
                 onFollowUpChange={setFollowUpDays}
                 notes={visitNotes}
@@ -2680,6 +2684,17 @@ function App() {
             onConfirm={confirmPendingMedicine}
             billing={medicineBilling}
           />
+
+          {/* Site + side confirmation, between "ranked" and "on the plan" —
+              the same slot MedicineAddSheet occupies one line up. */}
+          {pendingIntervention && (
+            <InterventionInspector
+              label={pendingIntervention.payload.label}
+              initialSite={pendingIntervention.initialSite}
+              onCancel={cancelPendingIntervention}
+              onConfirm={confirmPendingIntervention}
+            />
+          )}
 
           {/* "Not found in ranking or search" — §5, 2026-08-24. Hands off
               into the sheet above unmodified: once `add_medicine` names the

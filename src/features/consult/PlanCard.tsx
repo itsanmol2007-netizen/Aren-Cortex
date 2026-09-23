@@ -16,11 +16,13 @@
 import { useRef, useState } from "react";
 import {
     Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, Keyboard,
-    NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves, X,
+    MapPin, NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves, X,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
 import type { PreferredLab } from "../../lib/db/synapse";
+import type { InterventionLine } from "./interventionPlan";
+import { formatSide as formatInterventionSide } from "./interventionPlan";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
 import { BlankPlanArt } from "./BlankArt";
 import { CompanionLine, MedicineIdentity } from "./parts";
@@ -122,7 +124,7 @@ function Group({
     icon, tone, title, count, onAdd, children,
 }: {
     icon: React.ReactNode;
-    tone: "blue" | "teal" | "rose" | "slate";
+    tone: "blue" | "teal" | "rose" | "slate" | "orange";
     title: string;
     count?: number;
     onAdd?: () => void;
@@ -164,12 +166,13 @@ interface Props {
     /** "+ Add your preferred lab" when the list is empty — jumps to Practice. */
     onManageLabs: () => void;
     adviceLines: string[];
-    therapyLines: string[];
+    interventions: InterventionLine[];
     /** the home programme, already formatted — see exercisePlan.formatLine */
     exerciseLines: { id: string; text: string }[];
     onRemoveExercise: (id: string) => void;
     onRemoveAdviceLine: (line: string) => void;
-    onRemoveTherapyLine: (line: string) => void;
+    onRemoveIntervention: (id: string) => void;
+    onAddAnotherInterventionSite: (id: string) => void;
     followUpDays: number | null;
     onFollowUpChange: (days: number | null) => void;
     notes: string;
@@ -206,7 +209,7 @@ export function PlanCard({
     tests, onRemoveTest,
     preferredLabs, selectedLabName, onSelectLabName, onManageLabs,
     adviceLines, onRemoveAdviceLine,
-    therapyLines, onRemoveTherapyLine,
+    interventions, onRemoveIntervention, onAddAnotherInterventionSite,
     exerciseLines, onRemoveExercise,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
@@ -608,28 +611,55 @@ export function PlanCard({
                             </Group>
                         )}
 
-                        {therapyLines.length > 0 && (
+                        {interventions.length > 0 && (
                             <Group
                                 icon={<Waves size={12} />}
-                                tone="teal"
-                                title="Therapy — this session"
-                                count={therapyLines.length}
+                                tone="orange"
+                                title="Interventions — this visit"
+                                count={interventions.length}
                             >
-                                {therapyLines.map((line) => (
-                                    <div key={line} className={`cs-line${justAdded.has(line) ? " is-new" : ""}`}>
-                                        <div className="cs-line-main">
-                                            <div className="cs-line-name"><span>{line}</span></div>
+                                {interventions.map((line) => {
+                                    const sideTag = formatInterventionSide(line.side);
+                                    return (
+                                        <div key={line.id} className={`cs-line${justAdded.has(line.id) ? " is-new" : ""}`}>
+                                            <div className="cs-line-main">
+                                                <div className="cs-line-name"><span>{line.label}</span></div>
+                                                {(line.site || sideTag || line.notes) && (
+                                                    <div className="cs-line-tags">
+                                                        {line.site && (
+                                                            <span className="cs-line-tag is-dose">
+                                                                <MapPin size={10} aria-hidden="true" /> {line.site}
+                                                            </span>
+                                                        )}
+                                                        {sideTag && (
+                                                            <span className="cs-line-tag is-freq">{sideTag}</span>
+                                                        )}
+                                                        {line.notes && (
+                                                            <span className="cs-line-tag is-notes">
+                                                                <Utensils size={10} aria-hidden="true" /> {line.notes}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="cs-x"
+                                                aria-label={`Remove ${line.label}`}
+                                                onClick={(e) => { e.stopPropagation(); onRemoveIntervention(line.id); }}
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="cs-dose-more"
+                                                onClick={(e) => { e.stopPropagation(); onAddAnotherInterventionSite(line.id); }}
+                                            >
+                                                + Another site
+                                            </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            className="cs-x"
-                                            aria-label={`Remove ${line}`}
-                                            onClick={(e) => { e.stopPropagation(); onRemoveTherapyLine(line); }}
-                                        >
-                                            <X size={13} />
-                                        </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </Group>
                         )}
 

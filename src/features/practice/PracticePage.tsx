@@ -489,7 +489,7 @@ function intentTypeLabel(type: IntentType): string {
         case "advice": return "Advice";
         case "finding": return "Condition";
         case "exercise": return "Exercise";
-        case "modality": return "Modality";
+        case "modality": return "Intervention";
         case "impairment": return "Impairment";
         default: return type;
     }

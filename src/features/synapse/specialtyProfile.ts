@@ -291,7 +291,7 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
         // between sessions and the modalities are relatively stable for a
         // given condition. If that turns out to be backwards in real use, the
         // fix is to swap `primary` — one word, no layout change.
-        { type: "modality", label: "Therapy" },
+        { type: "modality", label: "Interventions" },
         // Impairments lead the findings, 2026-08-18 (Phase 4). A
         // physiotherapist's impression is "what is limiting this person" —
         // reduced range, weakness, guarding — and the pathology behind it
@@ -397,7 +397,16 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
  * not an in-clinic exercise programme; that is physiotherapy's own
  * output, reached from here by referral like any other specialty.
  * `sections` therefore matches General OPD's own order rather than
- * Physiotherapy's modality-led one.
+ * Physiotherapy's modality-led one — with one addition General OPD does
+ * not carry: `modality` ("Interventions"), ranked second, right after the
+ * working impression. Same `modality` IntentType physiotherapy already
+ * uses for its own in-clinic treatment, same underlying mechanism, a
+ * different catalogue behind it (casting, closed reduction, splinting,
+ * joint injection rather than ultrasound/IFT/manual therapy) — the
+ * concrete answer to Anmol's own edge case: "what will happen if a guy
+ * with multiple fractures will appear to the doctor... he have a
+ * facility to do bandages and all." See interventionPlan.ts for the
+ * structure this now writes to (one line per procedure, its own site).
  */
 export const ORTHOPEDICS: SpecialtyProfile = {
     id: "orthopedics",
@@ -406,6 +415,7 @@ export const ORTHOPEDICS: SpecialtyProfile = {
     primaryLabel: "Medicines",
     sections: [
         { type: "finding", label: "Possible Finding" },
+        { type: "modality", label: "Interventions" },
         { type: "test", label: "Investigation" },
         { type: "referral", label: "Referral" },
         { type: "advice", label: "Advice" },

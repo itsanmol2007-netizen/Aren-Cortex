@@ -107,8 +107,12 @@ const CATALOGUE: Section[] = [
     { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
     // Delivered in the clinic, during this session — see IntentType in
     // engine.ts for why this is not filed under Exercise. "Perform" rather
-    // than "Add" because that is what the physiotherapist is agreeing to do.
-    { type: "modality", label: "Therapy", verb: "Perform", icon: <Waves size={14} /> },
+    // than "Add" because that is what the doctor is agreeing to do.
+    // "Interventions", not "Modality" or "Therapy" — Anmol, 2026-09-23: one
+    // shared clinical word across every specialty this renders for (cast
+    // application, closed reduction, IFT, manual therapy are all
+    // "interventions" underneath, whichever specialty is asking).
+    { type: "modality", label: "Interventions", verb: "Perform", icon: <Waves size={14} /> },
     // Phase 4. "Note" rather than "Add" because an impairment is something
     // the physiotherapist RECOGNISES about the patient, not something they
     // hand over — the verb is the difference between a finding and a

@@ -36,6 +36,7 @@ import {
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
+import { saveInterventionPlan } from "../lib/db/interventions";
 import type { ReviewBillingResult } from "../lib/db/additionalCharges";
 import {
   recordVisitPayment,
@@ -1006,6 +1007,21 @@ export function useConsultLifecycle({
         } catch (e: any) {
           console.error("saveExercisePlan:", e);
           showToast(`Prescription saved, but the exercise programme did not: ${e?.message ?? e}`);
+        }
+      }
+
+      // Interventions, as rows rather than prose — same caught-not-thrown
+      // posture as the programme above, and the same reason: the visit is
+      // already committed by this line, and `therapy_notes` (written above,
+      // as part of `saved`) already carries the formatted text either way,
+      // so a doctor's printed Rx is correct even if this one write fails.
+      // What would be lost is only the structured site/side record.
+      if (plan.interventionPlan.length > 0) {
+        try {
+          await saveInterventionPlan(saved.prescriptionId, plan.interventionPlan);
+        } catch (e: any) {
+          console.error("saveInterventionPlan:", e);
+          showToast(`Prescription saved, but the intervention record did not: ${e?.message ?? e}`);
         }
       }
 
