@@ -12,10 +12,7 @@
    features/patients.
    ============================================================ */
 
-/* Overlay backdrop blur, shared by the medicine editor and the
-   patient modal. It lives here rather than in
-   components-modals.css only because it applies to both. */
-.mi-overlay,
+/* Overlay backdrop blur, the patient modal. */
 .pm-overlay {
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);

@@ -45,6 +45,7 @@
 import { useMemo, useRef } from "react";
 import { Activity, Check, Plus, X } from "lucide-react";
 import { useRovingList } from "../../hooks/useRovingList";
+import { BlankExerciseArt } from "./BlankArt";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
@@ -338,15 +339,19 @@ export function ExercisePlanCard({
         <section className={`cs-card cs-ex-card ${className}`} aria-label={title}>
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-blue"><Activity size={16} /></span>
+                    <span className="cs-glyph is-blue cs-glyph-live">
+                        <ThinkingRing pulseKey={thinkingKey} />
+                        <Activity size={16} />
+                    </span>
                     {title}
-                    <ThinkingRing pulseKey={thinkingKey} />
                 </h2>
-                <span className="cs-card-count">
-                    {plan.length > 0
-                        ? `${plan.length} prescribed`
-                        : `${intents.length} suggested`}
-                </span>
+                {(plan.length > 0 || intents.length > 0) && (
+                    <span className="cs-count is-quiet">
+                        {plan.length > 0
+                            ? `${plan.length} prescribed`
+                            : `${intents.length} suggested`}
+                    </span>
+                )}
             </div>
 
             {/* Not a convenience — the only way to an exercise. See the header. */}
@@ -477,11 +482,20 @@ export function ExercisePlanCard({
                         )}
 
                         {plan.length === 0 && offered.length === 0 && (
-                            <p className="cs-ex-empty">
-                                {hasChart
-                                    ? "No exercise ranked for this chart — search above to add one."
-                                    : "Record the complaint first, or search above."}
-                            </p>
+                            <div className="cs-empty">
+                                <BlankExerciseArt />
+                                {hasChart ? (
+                                    <>
+                                        <strong>No exercise ranked for this chart</strong>
+                                        <span>Search above to add one directly.</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>Nothing on the chart yet</strong>
+                                        <span>Record the complaint first, or search above.</span>
+                                    </>
+                                )}
+                            </div>
                         )}
                     </>
                 )}
