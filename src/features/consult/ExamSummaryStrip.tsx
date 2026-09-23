@@ -46,8 +46,12 @@ interface Props {
     disabled?: boolean;
 }
 
-/** "Right knee" / "Lumbar spine" — the side is part of the name, never beside it. */
-function siteName(regionKey: string, side: MeasureSide | null): string {
+/** "Right knee" / "Lumbar spine" — the side is part of the name, never beside
+ *  it. Exported for App.tsx's intervention-accept pre-fill (the body map's
+ *  most recently marked site becomes an intervention's starting `site`
+ *  value) — same catalogue, same format, so a site named here and a site
+ *  named there are never two different strings for one place. */
+export function siteName(regionKey: string, side: MeasureSide | null): string {
     const region = REGION_BY_KEY.get(regionKey);
     if (!region) return regionKey;
     if (!region.paired || !side) return region.label;

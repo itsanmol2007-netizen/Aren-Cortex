@@ -411,24 +411,49 @@ export function JointMapCard({
                     </div>
                 </div>
 
-                {shown.map((f) => (
-                    <div key={f.id} className="cs-attach-row">
-                        <span className="cs-attach-icon">
-                            <i className="cs-dchart-dot is-cond-teal" />
-                        </span>
-                        <span className="cs-attach-meta">
-                            <span className="cs-attach-label">
-                                {siteLabel(f.region, f.aspect, f.side)}
-                                <i className="cs-attach-tagbadge">{regionLabel(f.region, f.aspect)}</i>
-                            </span>
-                            {f.note && <span className="cs-attach-size">{f.note}</span>}
-                        </span>
-                        <button type="button" className="cs-attach-action is-danger"
-                            onClick={() => onDelete(f)} aria-label="Remove site" title="Remove">
-                            <Trash2 size={13} />
-                        </button>
-                    </div>
-                ))}
+                {/* Reserved height, same principle as the two-column split
+                    above — Anmol, live (re: the same shift happening again
+                    here): "whenever you are adding more and more joints, you
+                    click on that and the model expands." This list used to
+                    grow the surrounding column with every site marked, which
+                    grew the modal, which re-centered it. One row's worth of
+                    height is reserved even when nothing is marked yet; past
+                    three rows it scrolls internally instead of pushing the
+                    modal taller. */}
+                <div className="cs-jmap-marked">
+                    {shown.length === 0 ? (
+                        <p className="cs-jmap-marked-empty">No sites marked yet on this view.</p>
+                    ) : (
+                        shown.map((f) => (
+                            <div key={f.id} className="cs-attach-row">
+                                {/* Was `.cs-dchart-dot` — an 8px legend dot
+                                    borrowed from the dental chart, where it
+                                    distinguishes SEVERAL condition colours in
+                                    one legend. There is only ever one kind of
+                                    thing marked here, so the dot had nothing
+                                    to distinguish and just read as an icon
+                                    tile with nothing in it — Anmol, live:
+                                    "you are trying to give some icon... that
+                                    is not appearing." A real icon, matching
+                                    the strip that opens this card. */}
+                                <span className="cs-attach-icon">
+                                    <PersonStanding size={16} />
+                                </span>
+                                <span className="cs-attach-meta">
+                                    <span className="cs-attach-label">
+                                        {siteLabel(f.region, f.aspect, f.side)}
+                                        <i className="cs-attach-tagbadge">{regionLabel(f.region, f.aspect)}</i>
+                                    </span>
+                                    {f.note && <span className="cs-attach-size">{f.note}</span>}
+                                </span>
+                                <button type="button" className="cs-attach-action is-danger"
+                                    onClick={() => onDelete(f)} aria-label="Remove site" title="Remove">
+                                    <Trash2 size={13} />
+                                </button>
+                            </div>
+                        ))
+                    )}
+                </div>
 
                 {items.length > shown.length && (
                     <p className="cs-odo-scope">

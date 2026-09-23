@@ -40,6 +40,7 @@ import { useVisitStory } from "./hooks/useVisitStory";
 import { useConsultDraftPersistence } from "./hooks/useConsultDraftPersistence";
 import { useExamination } from "./hooks/useExamination";
 import { REGION_BY_KEY } from "./features/consult/examination";
+import { siteName } from "./features/consult/ExamSummaryStrip";
 import { listBodySites } from "./lib/db/bodySites";
 import {
   DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
@@ -645,6 +646,15 @@ function App() {
     hospitalId: identity.hospitalId,
   });
 
+  // The body map's most recently marked site, for an intervention accept to
+  // pre-fill from — see useConsultPlan.ts's `lastMarkedSiteRef` doc comment.
+  // A ref because `markedExam` (below, `useState`) is declared after `plan`
+  // is created, and a ref's `.current` can be written from an effect no
+  // matter which order the two hooks were declared in, where a plain value
+  // captured at `useConsultPlan(...)` call time would be stuck on `null`
+  // forever.
+  const lastMarkedSiteRef = useRef<string | null>(null);
+
   // ★ The plan — everything the doctor has TAKEN, and the accept-to-plan
   // pipeline that gets it there. Sits after the intelligence hook because the
   // accept path reads the brand index and the engine's active signals; see
@@ -659,6 +669,7 @@ function App() {
     showToast,
     confirmCondition,
     unconfirmCondition,
+    lastMarkedSiteRef,
   });
   const {
     prescription, selectedTests, selectedLabName, setSelectedLabName,
@@ -1669,6 +1680,17 @@ function App() {
       .catch(() => { if (!cancelled) setMarkedExam({ regions: [], sides: new Map() }); });
     return () => { cancelled = true; };
   }, [visitId, openChart, specialty.charts]);
+
+  // Feeds `lastMarkedSiteRef` above — the most recently marked region,
+  // formatted the same way `ExamSummaryStrip` prints it ("Right knee"), so
+  // an intervention accepted right after marking a joint opens its confirm
+  // step already pointed at that joint.
+  useEffect(() => {
+    const last = markedExam.regions[markedExam.regions.length - 1];
+    lastMarkedSiteRef.current = last
+      ? siteName(last, markedExam.sides.get(last) ?? null)
+      : null;
+  }, [markedExam]);
 
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);

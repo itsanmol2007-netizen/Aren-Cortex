@@ -124,7 +124,7 @@ function Group({
     icon, tone, title, count, onAdd, children,
 }: {
     icon: React.ReactNode;
-    tone: "blue" | "teal" | "rose" | "slate" | "orange";
+    tone: "blue" | "teal" | "rose" | "slate";
     title: string;
     count?: number;
     onAdd?: () => void;
@@ -614,7 +614,7 @@ export function PlanCard({
                         {interventions.length > 0 && (
                             <Group
                                 icon={<Waves size={12} />}
-                                tone="orange"
+                                tone="teal"
                                 title="Interventions — this visit"
                                 count={interventions.length}
                             >

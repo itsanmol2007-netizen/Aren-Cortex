@@ -144,6 +144,16 @@ export interface ConsultPlanArgs {
    * about a patient is not a line on a prescription. See useLongitudinalRecord.
    */
   confirmCondition: (intentId: number) => string | null;
+  /**
+   * The body map's most recently marked site, formatted ("Right knee"), or
+   * null when nothing has been marked this visit. A ref, not a value — read
+   * only at the moment of an intervention accept, so it never has to be a
+   * dependency the way a plain prop would. Anmol: "we should pre-fill the
+   * things there with the help of synapse... site and then type of that
+   * thing." This is the site half of that; the type/site is already implied
+   * by which ranked row the doctor clicked.
+   */
+  lastMarkedSiteRef: React.RefObject<string | null>;
   /** The inverse — see useLongitudinalRecord.ts's doc comment. */
   unconfirmCondition: (intentId: number, stillConfirmedIntentIds: Iterable<number>) => void;
 }
@@ -284,6 +294,7 @@ export function useConsultPlan({
   showToast,
   confirmCondition,
   unconfirmCondition,
+  lastMarkedSiteRef,
 }: ConsultPlanArgs): ConsultPlan {
   const {
     acceptedIntents, setAcceptedIntents,
@@ -664,7 +675,7 @@ export function useConsultPlan({
     // it happens to matter, and asking after the fact means the doctor has
     // to remember to go back and add it. See PendingIntervention.
     if (payload.type === "modality") {
-      setPendingIntervention({ payload, initialSite: "" });
+      setPendingIntervention({ payload, initialSite: lastMarkedSiteRef.current ?? "" });
       return;
     }
 

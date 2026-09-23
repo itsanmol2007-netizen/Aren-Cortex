@@ -724,7 +724,6 @@ body.cs-locked-shell {
 .cs-glyph.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 .cs-glyph.is-rose { background: var(--cs-rose-soft); color: var(--cs-rose); }
 .cs-glyph.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
-.cs-glyph.is-orange { background: var(--cs-orange-soft); color: var(--cs-orange); }
 .cs-glyph.is-slate { background: #f1f5f9; color: #475569; }
 
 /* Anchors the ThinkingRing (parts.tsx) to the glyph it sits on, rather than
@@ -4976,6 +4975,33 @@ body.cs-locked-shell {
     padding-right: 4px;
 }
 
+/* The marked-sites list, below the figure/detail row. Same recentering bug
+   as the two rules above, same fix: Anmol, live, on this list specifically:
+   "whenever you are adding more and more joints, you click on that and the
+   model expands." Min-height reserves one row's worth of space even when
+   nothing is marked, so the FIRST site added never changes the modal's
+   height either; past three rows it scrolls in place instead of growing. */
+.cs-jmap-marked {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 56px;
+}
+.cs-chartmodal-body .cs-jmap-marked {
+    max-height: 176px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.cs-jmap-marked-empty {
+    display: flex;
+    align-items: center;
+    height: 56px;
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
+}
+
 /* The chart modal — where the odontogram and the body map go when the doctor
    needs room to aim. The scrim blurs what is behind it rather than dimming
    it: the consult underneath stays legible as context, which is the point of
@@ -6225,201 +6251,44 @@ body.cs-locked-shell {
     line-height: 1.5;
 }
 
-/* ── Intervention Inspector (.cs-intv-*) — docs/aren-modal-design.md's own
-   shape, orange as the accent: not teal (medicine's), not green (means
-   TAKEN elsewhere), not blue (the generic action colour every other
-   primary button already uses), not the violet ThinkingRing sits in.
-   Structurally close to `.cs-addmed-*` but not sharing it — no brand list,
-   no billing grid, a different footer action — so it gets its own family
-   per that doc's own fallback rule rather than overloading the medicine
-   one with conditionals. */
-.cs-intv {
-    position: fixed;
-    inset: 0;
-    z-index: 820;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 28px;
-}
-.cs-intv-scrim {
+/* Intervention Inspector's own width narrowing — no brand list to scroll,
+   unlike MedicineAddSheet. */
+.cs-addmed-inspector { width: min(460px, 100%); }
+
+/* The Site field's dropdown — InterventionInspector.tsx. Anmol, live: "he's
+   not going to invent a new body part name by himself... show them the
+   result, like simple dropdown search." Same list/result shape as the Goals
+   search (`.cs-goalx-results`) and the medicine brand list, teal instead of
+   either of their accents. */
+.cs-addmed-sitewrap { position: relative; }
+.cs-addmed-siteresults {
     position: absolute;
-    inset: 0;
-    border: none;
-    background: rgba(11, 23, 51, 0.3);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    cursor: default;
-}
-.cs-intv-panel {
-    position: relative;
-    z-index: 1;
-    width: min(440px, 100%);
-    border: none;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.97);
-    box-shadow:
-        0 2px 4px rgba(0, 0, 0, 0.04),
-        0 8px 24px rgba(0, 0, 0, 0.10),
-        0 32px 80px rgba(0, 0, 0, 0.20);
-    overflow: hidden;
-}
-.cs-intv-topstripe {
-    height: 4px;
-    background: linear-gradient(90deg, #fb923c 0%, #c2410c 50%, #9a3412 100%);
-}
-.cs-intv-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-    padding: 16px 20px 12px;
-}
-.cs-intv-title {
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-}
-.cs-intv-eyebrow {
-    margin: 0 0 1px;
-    font-size: 10px;
-    font-weight: 750;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--cs-orange);
-}
-.cs-intv-title strong {
-    color: #0f172a;
-    font-size: 15px;
-    font-weight: 750;
-    letter-spacing: -0.01em;
-    line-height: 1.2;
-}
-.cs-intv-x {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 26px;
-    height: 26px;
-    margin-left: auto;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.04);
-    color: var(--cs-faint);
-    cursor: pointer;
-    transition: background 0.12s;
-}
-.cs-intv-x:hover { background: rgba(194, 65, 12, 0.12); border-color: rgba(194, 65, 12, 0.3); color: var(--cs-orange); }
-.cs-intv-body {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 16px 20px;
-}
-.cs-intv-sec { display: flex; flex-direction: column; gap: 7px; }
-.cs-intv-label {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    color: var(--cs-faint);
-    font-size: 10.5px;
-    font-weight: 650;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-}
-.cs-intv-optional {
-    font-style: normal;
-    font-weight: 550;
-    letter-spacing: 0;
-    text-transform: none;
-    color: var(--cs-faint);
-    opacity: 0.7;
-}
-.cs-intv-input {
-    width: 100%;
-    height: 40px;
-    box-sizing: border-box;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    border-radius: 11px;
-    background: rgba(248, 250, 252, 0.9);
-    padding: 0 12px;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 600;
-    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.cs-intv-input:focus {
-    outline: none;
-    border-color: var(--cs-orange);
-    box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.12);
-    background: #fff;
-}
-.cs-intv-textarea {
-    height: auto;
-    padding: 8px 12px;
-    resize: vertical;
-    min-height: 58px;
-    line-height: 1.5;
-    font-weight: 500;
-}
-.cs-intv-sides { display: flex; flex-wrap: wrap; gap: 6px; }
-.cs-intv-side {
+    max-height: 210px;
+    overflow-y: auto;
     border: 1px solid var(--cs-line-strong);
-    border-radius: 999px;
+    border-radius: 11px;
     background: #fff;
-    padding: 7px 14px;
-    color: var(--cs-muted);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(16, 28, 46, 0.12);
 }
-.cs-intv-side.is-on {
-    border-color: rgba(194, 65, 12, 0.4);
-    background: var(--cs-orange-soft);
-    color: var(--cs-orange);
-}
-.cs-intv-foot {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 14px 20px 20px;
-}
-.cs-intv-cancel {
-    height: 42px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    border-radius: 12px;
-    background: rgba(0, 0, 0, 0.03);
-    padding: 0 16px;
-    color: #64748b;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s;
-}
-.cs-intv-cancel:hover { background: rgba(0, 0, 0, 0.07); color: #334155; }
-.cs-intv-confirm {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    height: 42px;
-    flex: 1;
+.cs-addmed-siteresult {
     border: 0;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #fb923c 0%, #c2410c 100%);
-    padding: 0 16px;
-    color: #fff;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
     font-size: 13px;
-    font-weight: 750;
+    font-weight: 560;
+    text-align: left;
     cursor: pointer;
-    box-shadow: 0 4px 14px rgba(194, 65, 12, 0.3);
-    transition: opacity 0.15s, transform 0.1s;
 }
-.cs-intv-confirm:hover { opacity: 0.92; transform: translateY(-1px); }
-.cs-intv-confirm:active { transform: translateY(0); }
+.cs-addmed-siteresult:hover { background: var(--cs-teal-soft); color: var(--cs-teal); }
 
 /* The overflow row on a capped Attachments card. Deliberately quiet: it is a
    way to the rest of the files, not a file itself. */
@@ -8682,10 +8551,13 @@ body.cs-locked-shell {
    GOALS — patient-authored, re-scored per visit.
    Rewritten 2026-08-20 alongside Story: same search field, same
    confirmation chip, because two adjacent cards must not teach
-   two different ways to add a fact. The per-goal 0-10 slider
-   this block used to style now lives in `.cs-goal-pop`, one
-   click behind the chip — see `GoalsCard.tsx` for why the score
-   moved rather than went away.
+   two different ways to add a fact. Rewritten again 2026-09-23:
+   the score picker is a real modal now (`.cs-addmed-*`'s shape,
+   rose as the accent — colour.md's own meaning for rose is
+   "reported (by the patient)"), and this card's every other
+   accent — search focus ring, result hover, chip press — is
+   threaded to the same rose rather than defaulting to blue, per
+   colour.md's "thread the tone through" rule.
    ════════════════════════════════════════════════════════════ */
 
 .cs-goals-body {
@@ -8736,8 +8608,8 @@ body.cs-locked-shell {
 }
 
 .cs-goalx-search:focus-within {
-    border-color: rgba(18, 104, 232, 0.5);
-    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+    border-color: rgba(225, 29, 72, 0.5);
+    box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
 }
 
 .cs-goalx-search input {
@@ -8785,7 +8657,7 @@ body.cs-locked-shell {
     cursor: pointer;
 }
 
-.cs-goalx-result.is-active { background: var(--cs-blue-soft); }
+.cs-goalx-result.is-active { background: var(--cs-rose-soft); }
 
 .cs-goalx-result-label {
     flex: 1;
@@ -8801,17 +8673,30 @@ body.cs-locked-shell {
 .cs-goalx-result-dim {
     flex: none;
     border-radius: 5px;
-    background: var(--cs-blue-soft);
+    background: var(--cs-rose-soft);
     padding: 2px 7px;
-    color: var(--cs-blue);
+    color: var(--cs-rose);
     font-size: 11px;
     font-weight: 650;
 }
 
+/* Reserved height for one row, always — Anmol, live: "there will be already
+   a little bit of reserved white space for at least one row of pills to be
+   there." Empty is a rendered state (a hint line), not the absence of this
+   row, so the card never ends abruptly right after the search box. */
 .cs-goalx-chips {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
+    min-height: 40px;
+}
+
+.cs-goalx-empty {
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
 }
 
 .cs-goalx-chip {
@@ -8848,53 +8733,40 @@ body.cs-locked-shell {
     font-weight: 600;
 }
 
-.cs-goalx-more {
+/* "+N more" — Anmol: "I don't think someone have like 14 goals. If more than
+   that, then a simple show more option." A button, not a dashed box: the old
+   "Add another goal" trailing action this replaces just refocused the
+   search field already visible above, which the search box being ALWAYS on
+   screen in this card makes redundant — see PlanCard's own removal of an
+   analogous "+ Add" for the same reason. */
+.cs-goalx-showmore {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    border: 1px dashed var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
+    gap: 4px;
+    border: 0;
     background: none;
-    padding: 5px 10px;
-    color: var(--cs-faint);
+    padding: 5px 6px;
+    color: var(--cs-rose);
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 650;
     cursor: pointer;
 }
 
-.cs-goalx-more:hover { border-color: var(--cs-blue); color: var(--cs-blue); }
-
-/* A goal chip is pressable — the score sits behind it. Positioned so the
-   picker can anchor to it. */
-.cs-goal-chipwrap { position: relative; }
+.cs-goalx-showmore:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .cs-goalx-chip.is-press {
     cursor: pointer;
     transition: border-color 0.13s ease, background 0.13s ease;
 }
 
-.cs-goalx-chip.is-press:hover,
-.cs-goalx-chip.is-press.is-open {
-    border-color: var(--cs-blue);
-    background: var(--cs-blue-soft);
+.cs-goalx-chip.is-press:hover {
+    border-color: var(--cs-rose);
+    background: var(--cs-rose-soft);
 }
 
 .cs-goalx-chip-aim {
     flex: none;
     color: var(--cs-label);
-}
-
-.cs-goal-pop {
-    position: absolute;
-    top: calc(100% + 5px);
-    left: 0;
-    z-index: 30;
-    width: 268px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-card);
-    padding: var(--cs-s2);
-    box-shadow: 0 10px 26px -8px rgba(11, 23, 51, 0.26);
 }
 
 .cs-goal-pop-q {
@@ -8937,10 +8809,10 @@ body.cs-locked-shell {
 }
 
 .cs-goal-tick:last-child { border-right: 0; }
-.cs-goal-tick:hover { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-goal-tick:hover { background: var(--cs-rose-soft); color: var(--cs-rose); }
 
 .cs-goal-tick.is-on {
-    background: var(--cs-blue);
+    background: var(--cs-rose);
     color: #fff;
 }
 
@@ -8954,23 +8826,17 @@ body.cs-locked-shell {
     font-weight: 550;
 }
 
-.cs-goal-pop-actions {
-    display: inline-flex;
-    gap: 4px;
-    margin-left: auto;
+/* The Goal modal — `.cs-addmed-*`'s shape, rose overrides on top of it
+   (colour.md: rose means "reported (by the patient)"). Narrower than the
+   medicine sheet — no brand list, just the scale. */
+.cs-goal-modal { width: min(400px, 100%); }
+.cs-goal-modal-stripe { background: linear-gradient(90deg, #fb7185 0%, #e11d48 50%, #9f1239 100%); }
+.cs-goal-modal-eyebrow { color: var(--cs-rose); }
+.cs-goal-modal-confirm {
+    background: linear-gradient(135deg, #fb7185 0%, #e11d48 100%) !important;
+    box-shadow: 0 4px 14px rgba(225, 29, 72, 0.3) !important;
 }
-
-.cs-goal-pop-actions button {
-    border: 0;
-    border-radius: 5px;
-    background: var(--cs-page);
-    padding: 3px 7px;
-    color: var(--cs-muted);
-    font-size: 10.5px;
-    font-weight: 650;
-}
-
-.cs-goal-pop-actions button:hover { background: var(--cs-line); color: var(--cs-ink); }
+.cs-goal-modal .cs-addmed-x:hover { background: rgba(225, 29, 72, 0.12) !important; border-color: rgba(225, 29, 72, 0.3) !important; color: var(--cs-rose) !important; }
 
 /* ════════════════════════════════════════════════════════════
    EXAMINATION — Phase 3, plus Phase 5's within-session re-test.
