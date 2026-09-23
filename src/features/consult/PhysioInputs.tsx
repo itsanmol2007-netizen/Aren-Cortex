@@ -188,30 +188,38 @@ export function PhysioInputs({
                 </div>
             </div>
 
-            {/* One line for the whole anatomical examination. Opens the body
-                map; everything measurable lives in there, next to the joint it
-                was measured on. */}
-            <ExamSummaryStrip
-                exam={examination}
-                markedRegions={markedRegions}
-                markedSides={markedSides}
-                onOpen={onOpenBodyMap}
-                disabled={disabled}
-            />
+            {/* Body map launcher beside Goals, same 60/40 ratio as Case Sheet
+                beside Measurements above (`.cs-row-obj`) — Anmol, 2026-09-23:
+                Goals on its own full-width row was mostly empty vertical
+                space under a short search box; pairing it here uses that
+                space the same way the row above already does, rather than
+                inventing a second layout rule for one card. */}
+            <div className="cs-row cs-row-bodygoal">
+                {/* One line for the whole anatomical examination. Opens the
+                    body map; everything measurable lives in there, next to
+                    the joint it was measured on. */}
+                <ExamSummaryStrip
+                    exam={examination}
+                    markedRegions={markedRegions}
+                    markedSides={markedSides}
+                    onOpen={onOpenBodyMap}
+                    disabled={disabled}
+                />
 
-            {/* Goals sit after the record rather than before it. They are
-                context for the PLAN — what this person wants back — and a
-                physiotherapist writes them once the complaint is on the page,
-                not before the patient has said what is wrong. */}
-            <GoalsCard
-                goals={goals}
-                lastScores={lastGoalScores}
-                todayScores={todayGoalScores}
-                onScoreChange={onGoalScoreChange}
-                onAdd={onAddGoal}
-                onRetire={onRetireGoal}
-                disabled={disabled}
-            />
+                {/* Goals sit after the record rather than before it. They are
+                    context for the PLAN — what this person wants back — and a
+                    physiotherapist writes them once the complaint is on the
+                    page, not before the patient has said what is wrong. */}
+                <GoalsCard
+                    goals={goals}
+                    lastScores={lastGoalScores}
+                    todayScores={todayGoalScores}
+                    onScoreChange={onGoalScoreChange}
+                    onAdd={onAddGoal}
+                    onRetire={onRetireGoal}
+                    disabled={disabled}
+                />
+            </div>
         </>
     );
 }

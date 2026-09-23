@@ -448,6 +448,15 @@ body.cs-locked-shell {
     grid-template-columns: minmax(0, 72fr) minmax(0, 28fr);
 }
 
+/* Body map launcher beside Goals — physio/orthopedics only (PhysioInputs.tsx).
+   Same 60/40 as `.cs-row-obj` above, on purpose: two rows on this page
+   already establish "the wide thing is 60, the narrow thing is 40", and
+   Goals sitting alone at full width read as mostly-empty space under one
+   short search box rather than a second, different ratio to learn. */
+.cs-row-bodygoal {
+    grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+}
+
 /* Plan — the two output placeholders, side by side.
 
    ── The dead-space rule ──────────────────────────────────────────────────
@@ -4781,7 +4790,8 @@ body.cs-locked-shell {
     .cs-page { grid-template-columns: 1fr; }
     .cs-row-sub,
     .cs-row-obj,
-    .cs-row-exam { grid-template-columns: 1fr; }
+    .cs-row-exam,
+    .cs-row-bodygoal { grid-template-columns: 1fr; }
     /* Nothing is beside anything at this width, so there is no neighbour to
        stretch and a bounded height would crop for no reason. */
     .cs-row-plan {
