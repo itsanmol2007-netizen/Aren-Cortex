@@ -272,124 +272,144 @@ export function JointMapCard({
 
     const body = (
             <div className="cs-attach-body">
-                <div className="cs-attach-tagrow cs-body-aspect">
-                    {(["front", "back"] as BodyAspect[]).map((a) => (
-                        <button
-                            key={a}
-                            type="button"
-                            className={`cs-attach-chip${aspect === a ? " is-on" : ""}`}
-                            onClick={() => setAspect(a)}
-                        >
-                            {a === "front" ? "Front" : "Back"}
-                        </button>
-                    ))}
-                </div>
-
-                <div className={`cs-body${disabled || !visitId ? " is-disabled" : ""}`}>
-                    <svg viewBox={FIGURE_VIEWBOX} className="cs-body-svg" role="img"
-                        aria-label="Joint map — click a joint to record what it is doing">
-                        {BODY_ZONES.map((z) => {
-                            const isMarked = marked.has(`${z.region}-${z.side ?? "mid"}`);
-                            const isSel = sel?.region === z.region && sel?.side === z.side;
-                            return (
-                                <path
-                                    key={z.key}
-                                    d={z.path}
-                                    data-region={z.region}
-                                    data-side={z.side ?? "mid"}
-                                    className={
-                                        "cs-body-zone" +
-                                        (isMarked ? " is-marked" : "") +
-                                        (isSel ? " is-sel" : "")
-                                    }
-                                    onClick={() => {
-                                        if (disabled || !visitId) return;
-                                        setSel((c) =>
-                                            c && c.region === z.region && c.side === z.side
-                                                ? null
-                                                : { region: z.region, side: z.side }
-                                        );
-                                    }}
-                                >
-                                    <title>{siteLabel(z.region, aspect, z.side)}</title>
-                                </path>
-                            );
-                        })}
-                    </svg>
-                    <span className="cs-body-orient">
-                        {aspect === "front"
-                            ? "Facing you — the patient's right is on your left"
-                            : "From behind — the patient's right is on your right"}
-                    </span>
-                </div>
-
-                {sel ? (
-                    <div className="cs-dchart-panel">
-                        <div className="cs-dchart-panel-head">
-                            <span className="cs-dchart-panel-title">
-                                {siteLabel(sel.region, aspect, sel.side)}
-                            </span>
-                            <button type="button" className="cs-dchart-panel-close"
-                                onClick={() => setSel(null)} aria-label="Close">
-                                <X size={13} />
-                            </button>
-                        </div>
-
-                        {/* Chips first — see file header. Each one IS the
-                            Case Sheet's own toggle, so a chip lit here is lit
-                            there too, and vice versa. */}
-                        <div className="cs-attach-tagrow">
-                            {chipsFor(sel.region).map((o) => (
+                {/* ── Fixed two-column layout, on purpose (2026-09-23) ──────
+                    Selecting a joint used to insert the whole detail panel
+                    (chips + exam fields + note) into this same vertical flow,
+                    right below the figure. That grew the panel's own height,
+                    which grew the modal's height, which — because the modal
+                    is centered on screen — re-centered the WHOLE thing,
+                    visibly shifting the joint the doctor had just clicked.
+                    Reported directly: "you click on it and then it moves...
+                    because the thing inside of it is grown up." The figure
+                    column and the detail column are now fixed-size siblings:
+                    the detail column has its own reserved height and its own
+                    scroll, so filling it in never changes what the figure
+                    column — or the modal around both of them — is doing. */}
+                <div className="cs-jmap-layout">
+                    <div className={`cs-body cs-jmap-figure-col${disabled || !visitId ? " is-disabled" : ""}`}>
+                        <div className="cs-attach-tagrow cs-body-aspect">
+                            {(["front", "back"] as BodyAspect[]).map((a) => (
                                 <button
-                                    key={o.id}
+                                    key={a}
                                     type="button"
-                                    className={`cs-attach-chip${onChart.has(o.label) ? " is-on" : ""}`}
-                                    onClick={() => onObservableToggle(o)}
+                                    className={`cs-attach-chip${aspect === a ? " is-on" : ""}`}
+                                    onClick={() => setAspect(a)}
                                 >
-                                    {o.label}
+                                    {a === "front" ? "Front" : "Back"}
                                 </button>
                             ))}
                         </div>
 
-                        {/* ── The examination for THIS joint ────────────────
-                            Pain, range, strength and special tests, scoped to
-                            the zone that was just clicked and to the side it
-                            was clicked on. This is the whole of brief §4's
-                            "generic ROM card is ambiguous" complaint answered:
-                            there is no way to reach these fields except
-                            through a site, so they cannot be recorded without
-                            one. Renders nothing for a zone the catalogue has
-                            no movements for (a hand, the chest). */}
-                        {examination && REGION_BY_KEY.has(sel.region) && (
-                            <RegionExam
-                                exam={examination}
-                                regionKey={sel.region}
-                                side={sel.side}
-                                disabled={disabled}
-                            />
-                        )}
-
-                        {/* Last resort, not the only option — doctrine's own
-                            rule, applied here instead of a note field. */}
-                        <div className="cs-attach-tagrow">
-                            <input
-                                className="cs-attach-region-input"
-                                placeholder="Anything a chip doesn't capture"
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
-                            />
-                            <button type="button" className="cs-attach-tagsave" disabled={saving} onClick={onAdd}>
-                                {saving ? <Loader2 size={13} className="cs-spin" /> : "Mark site"}
-                            </button>
-                        </div>
+                        <svg viewBox={FIGURE_VIEWBOX} className="cs-body-svg" role="img"
+                            aria-label="Joint map — click a joint to record what it is doing">
+                            {BODY_ZONES.map((z) => {
+                                const isMarked = marked.has(`${z.region}-${z.side ?? "mid"}`);
+                                const isSel = sel?.region === z.region && sel?.side === z.side;
+                                return (
+                                    <path
+                                        key={z.key}
+                                        d={z.path}
+                                        data-region={z.region}
+                                        data-side={z.side ?? "mid"}
+                                        className={
+                                            "cs-body-zone" +
+                                            (isMarked ? " is-marked" : "") +
+                                            (isSel ? " is-sel" : "")
+                                        }
+                                        onClick={() => {
+                                            if (disabled || !visitId) return;
+                                            setSel((c) =>
+                                                c && c.region === z.region && c.side === z.side
+                                                    ? null
+                                                    : { region: z.region, side: z.side }
+                                            );
+                                        }}
+                                    >
+                                        <title>{siteLabel(z.region, aspect, z.side)}</title>
+                                    </path>
+                                );
+                            })}
+                        </svg>
+                        <span className="cs-body-orient">
+                            {aspect === "front"
+                                ? "Facing you — the patient's right is on your left"
+                                : "From behind — the patient's right is on your right"}
+                        </span>
                     </div>
-                ) : (
-                    <p className="cs-attach-empty">
-                        Click the joint. Side and site are recorded here; what's wrong with it
-                        is a chip, the same ones Synapse ranks from everywhere else.
-                    </p>
-                )}
+
+                    <div className="cs-jmap-detail-col">
+                        {sel ? (
+                            <div className="cs-dchart-panel">
+                                <div className="cs-dchart-panel-head">
+                                    <span className="cs-dchart-panel-title">
+                                        {siteLabel(sel.region, aspect, sel.side)}
+                                    </span>
+                                    <button type="button" className="cs-dchart-panel-close"
+                                        onClick={() => setSel(null)} aria-label="Close">
+                                        <X size={13} />
+                                    </button>
+                                </div>
+
+                                {/* Chips first — see file header. Each one IS
+                                    the Case Sheet's own toggle, so a chip lit
+                                    here is lit there too, and vice versa. */}
+                                <div className="cs-attach-tagrow">
+                                    {chipsFor(sel.region).map((o) => (
+                                        <button
+                                            key={o.id}
+                                            type="button"
+                                            className={`cs-attach-chip${onChart.has(o.label) ? " is-on" : ""}`}
+                                            onClick={() => onObservableToggle(o)}
+                                        >
+                                            {o.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* ── The examination for THIS joint ────────
+                                    Pain, range, strength and special tests,
+                                    scoped to the zone that was just clicked
+                                    and to the side it was clicked on. This is
+                                    the whole of brief §4's "generic ROM card
+                                    is ambiguous" complaint answered: there is
+                                    no way to reach these fields except
+                                    through a site, so they cannot be recorded
+                                    without one. Renders nothing for a zone
+                                    the catalogue has no movements for (a
+                                    hand, the chest). */}
+                                {examination && REGION_BY_KEY.has(sel.region) && (
+                                    <RegionExam
+                                        exam={examination}
+                                        regionKey={sel.region}
+                                        side={sel.side}
+                                        disabled={disabled}
+                                    />
+                                )}
+
+                                {/* Last resort, not the only option —
+                                    doctrine's own rule, applied here instead
+                                    of a note field. */}
+                                <div className="cs-attach-tagrow">
+                                    <input
+                                        className="cs-attach-region-input"
+                                        placeholder="Anything a chip doesn't capture"
+                                        value={note}
+                                        onChange={(e) => setNote(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
+                                    />
+                                    <button type="button" className="cs-attach-tagsave" disabled={saving} onClick={onAdd}>
+                                        {saving ? <Loader2 size={13} className="cs-spin" /> : "Mark site"}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="cs-attach-empty">
+                                Click the joint. Side and site are recorded here; what's wrong with it
+                                is a chip, the same ones Synapse ranks from everywhere else.
+                            </p>
+                        )}
+                    </div>
+                </div>
 
                 {shown.map((f) => (
                     <div key={f.id} className="cs-attach-row">
@@ -424,7 +444,7 @@ export function JointMapCard({
     if (presentation === "modal") {
         if (!open) return null;
         return (
-            <ChartSurface title="Body map & examination" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})}>
+            <ChartSurface title="Body map & examination" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})} maxWidth={800}>
                 {body}
             </ChartSurface>
         );
@@ -449,7 +469,7 @@ export function JointMapCard({
                 </button>
             </div>
 
-            <ChartSurface title="Joint map" icon={<PersonStanding size={15} />} expanded={expanded} onClose={() => setExpanded(false)}>
+            <ChartSurface title="Joint map" icon={<PersonStanding size={15} />} expanded={expanded} onClose={() => setExpanded(false)} maxWidth={800}>
                 {body}
             </ChartSurface>
         </section>
