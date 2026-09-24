@@ -4,7 +4,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
 import { InterventionInspector, type SiteAssessment } from "./components/InterventionInspector";
-import { fetchEarlierInterventions, type EarlierIntervention } from "./lib/db/interventions";
+import {
+  fetchEarlierInterventions, fetchPlannedInterventions, type EarlierIntervention, type PlannedIntervention,
+} from "./lib/db/interventions";
 import { interventionFamilyFor, removableFamilies } from "./features/consult/interventionFamilies";
 import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
 import { sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
@@ -680,7 +682,7 @@ function App() {
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
-    removeIntervention, addAnotherInterventionSite, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
+    removeIntervention, addAnotherInterventionSite, performPlanned, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -1713,6 +1715,18 @@ function App() {
     return () => { cancelled = true; };
   }, [pendingIntervention, patient?.id]);
 
+  /** What earlier visits planned for this patient and nobody has done yet
+   *  ("Suture removal, due 3 Oct") — offered on the plan rail to perform. */
+  const [plannedEarlier, setPlannedEarlier] = useState<PlannedIntervention[]>([]);
+  useEffect(() => {
+    setPlannedEarlier([]);
+    const pid = patient?.id;
+    if (!pid) return;
+    let cancelled = false;
+    fetchPlannedInterventions(pid).then((rows) => { if (!cancelled) setPlannedEarlier(rows); });
+    return () => { cancelled = true; };
+  }, [patient?.id, visitId]);
+
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
 
@@ -2616,6 +2630,8 @@ function App() {
                 onRemoveAdviceLine={removeAdviceLine}
                 onRemoveIntervention={removeIntervention}
                 onAddAnotherInterventionSite={addAnotherInterventionSite}
+                plannedEarlier={plannedEarlier}
+                onPerformPlanned={performPlanned}
                 followUpDays={followUpDays}
                 onFollowUpChange={setFollowUpDays}
                 notes={visitNotes}
@@ -2759,6 +2775,10 @@ function App() {
               autoPrefill={!pendingIntervention.another}
               siteAssessments={siteAssessments}
               earlier={earlierInterventions}
+              fromPlanned={pendingIntervention.fromPlanned ?? null}
+              initialStatus={pendingIntervention.initialStatus}
+              initialDueDays={pendingIntervention.initialDueDays ?? null}
+              initialDetails={pendingIntervention.initialDetails}
               onCancel={cancelPendingIntervention}
               onConfirm={confirmPendingIntervention}
             />

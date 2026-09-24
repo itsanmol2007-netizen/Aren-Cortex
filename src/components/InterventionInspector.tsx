@@ -1,6 +1,6 @@
 import { Check, FlaskConical, Link2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { InterventionSide } from "../features/consult/interventionPlan";
+import { dueInDays, formatDue, type InterventionSide } from "../features/consult/interventionPlan";
 import { AnatomyFigure, SiteField } from "../features/consult/AnatomyPicker";
 import { DetailInput } from "../features/consult/DetailInput";
 import {
@@ -24,6 +24,9 @@ export interface InterventionDraft {
     text: string;
     removesId: string | null;
     assessmentText: string | null;
+    status: "performed" | "planned";
+    dueDate: string | null;
+    fulfilsId: string | null;
 }
 
 /** An assessment already placed on the body this visit. */
@@ -47,6 +50,13 @@ type Props = {
     siteAssessments?: SiteAssessment[];
     /** this patient's earlier interventions, for a removal to point at */
     earlier?: EarlierIntervention[];
+    /** performing something an earlier visit planned: its values, and the
+     *  planned row this fulfils */
+    fromPlanned?: { id: string; siteRef: SiteRef | null; details: AssessmentDetails } | null;
+    /** open as Planned (a follow-on "Suture removal on day 10") */
+    initialStatus?: "performed" | "planned";
+    initialDueDays?: number | null;
+    initialDetails?: AssessmentDetails;
     onConfirm: (draft: InterventionDraft) => void;
     onCancel: () => void;
 };
@@ -65,7 +75,9 @@ type Props = {
  */
 export function InterventionInspector({
     label, initialSite = "", knownSites = [], autoPrefill = false,
-    siteAssessments = [], earlier = [], onConfirm, onCancel,
+    siteAssessments = [], earlier = [], fromPlanned = null,
+    initialStatus = "performed", initialDueDays = null, initialDetails,
+    onConfirm, onCancel,
 }: Props) {
     const family = useMemo(() => interventionFamilyFor(label), [label]);
 
@@ -73,10 +85,22 @@ export function InterventionInspector({
     // place; two or more become "Which site?" in the field; none leaves the
     // body map. Never invents one.
     const [site, setSite] = useState<SiteRef | null>(() =>
-        siteFromLabel(initialSite) ?? (autoPrefill && knownSites.length === 1 ? knownSites[0] : null));
-    const [details, setDetails] = useState<AssessmentDetails>(() => ({ ...(family?.preset ?? {}) }));
+        fromPlanned?.siteRef
+        ?? siteFromLabel(initialSite)
+        ?? (autoPrefill && knownSites.length === 1 ? knownSites[0] : null));
+    const startDetails = { ...(family?.preset ?? {}), ...(initialDetails ?? {}), ...(fromPlanned?.details ?? {}) };
+    const [details, setDetails] = useState<AssessmentDetails>(() => startDetails);
     /** fields the doctor set by hand — a site change never overwrites them */
-    const touched = useRef(new Set<string>(Object.keys(family?.preset ?? {})));
+    const touched = useRef(new Set<string>(Object.keys(startDetails)));
+
+    // ── Lifecycle (Phase 5): done today, or planned for later with a due
+    // date. Performing a planned one from an earlier visit is always
+    // "performed" — that is the point of opening it.
+    const [status, setStatus] = useState<"performed" | "planned">(fromPlanned ? "performed" : initialStatus);
+    const [dueN, setDueN] = useState<string>(initialDueDays ? String(initialDueDays) : "");
+    const [dueUnit, setDueUnit] = useState<"days" | "weeks">("days");
+    const dueDate = status === "planned" && Number(dueN) > 0
+        ? dueInDays(Number(dueN) * (dueUnit === "weeks" ? 7 : 1)) : null;
     const [showDetails, setShowDetails] = useState(false);
     const [notes, setNotes] = useState("");
     const [removesId, setRemovesId] = useState<string | null>(null);
@@ -122,6 +146,7 @@ export function InterventionInspector({
     const clean = family ? pruneDetails(family, site, details) : {};
     const baseText = family ? composeAssessmentText(label, family, site, clean) : "";
     const text = baseText && linked ? `${baseText}, from ${linked.when}` : baseText;
+    const statusNote = status === "planned" ? ` · planned${dueDate ? `, due ${formatDue(dueDate)}` : ""}` : "";
 
     const draft = (): InterventionDraft => ({
         site: site ? clinicalSiteLabel(site) : "",
@@ -135,6 +160,9 @@ export function InterventionInspector({
         text,
         removesId: linked?.id ?? null,
         assessmentText: treats?.text ?? null,
+        status,
+        dueDate,
+        fulfilsId: fromPlanned?.id ?? null,
     });
 
     const panelRef = useRef<HTMLDivElement>(null);
@@ -183,6 +211,56 @@ export function InterventionInspector({
                 rows={2}
                 onChange={(e) => setNotes(e.target.value)}
             />
+        </section>
+    );
+
+    const whenInput = (
+        <section className="cs-addmed-sec">
+            <span className="cs-addmed-label">When</span>
+            <div className="cs-intv-when">
+                <div className="cs-intv-seg" role="radiogroup" aria-label="When">
+                    {(["performed", "planned"] as const).map((st) => (
+                        <button
+                            key={st}
+                            type="button"
+                            role="radio"
+                            aria-checked={status === st}
+                            className={status === st ? "is-on" : undefined}
+                            disabled={!!fromPlanned && st === "planned"}
+                            onClick={() => setStatus(st)}
+                        >
+                            {st === "performed" ? "Performed today" : "Planned"}
+                        </button>
+                    ))}
+                </div>
+                {status === "planned" && (
+                    <span className="cs-intv-due">
+                        due in
+                        <input
+                            className="cs-anat-input is-num"
+                            value={dueN}
+                            inputMode="numeric"
+                            placeholder="—"
+                            aria-label="Due in"
+                            onChange={(e) => setDueN(e.target.value.replace(/[^0-9]/g, ""))}
+                        />
+                        <span className="cs-intv-seg is-small" role="radiogroup" aria-label="Unit">
+                            {(["days", "weeks"] as const).map((u) => (
+                                <button
+                                    key={u}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={dueUnit === u}
+                                    className={dueUnit === u ? "is-on" : undefined}
+                                    onClick={() => setDueUnit(u)}
+                                >
+                                    {u}
+                                </button>
+                            ))}
+                        </span>
+                    </span>
+                )}
+            </div>
         </section>
     );
 
@@ -259,6 +337,7 @@ export function InterventionInspector({
                                             ))}
                                         </section>
                                     )}
+                                    {whenInput}
                                     {showDetails ? (
                                         <>
                                             {extraFields.length > 0 && (
@@ -284,7 +363,10 @@ export function InterventionInspector({
                                     )}
                                 </>
                             ) : (
-                                notesInput
+                                <>
+                                    {whenInput}
+                                    {notesInput}
+                                </>
                             )}
                         </div>
                     </div>
@@ -293,7 +375,7 @@ export function InterventionInspector({
                 {family && (
                     <div className="cs-dx-preview" aria-live="polite">
                         <span>Will read</span>
-                        <b>{text}</b>
+                        <b>{text}{statusNote && <em>{statusNote}</em>}</b>
                     </div>
                 )}
 
@@ -303,7 +385,7 @@ export function InterventionInspector({
                     </button>
                     <button className="cs-addmed-confirm" type="button" onClick={() => onConfirm(draft())}>
                         <Check size={15} />
-                        Add to Plan
+                        {status === "planned" ? "Add as planned" : fromPlanned ? "Mark performed" : "Add to Plan"}
                         <span className="cs-kbd">Enter</span>
                     </button>
                 </div>

@@ -6696,6 +6696,47 @@ body.cs-locked-shell {
     font-weight: 600;
 }
 
+/* Performed today / Planned — a two-way segmented control, then "due in
+   N days|weeks" when planned. */
+.cs-intv-when { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cs-intv-seg {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #f5f7fa;
+    padding: 2px;
+}
+.cs-intv-seg button {
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 0 12px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.cs-intv-seg button.is-on {
+    background: #fff;
+    color: var(--anat-accent);
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.12);
+}
+.cs-intv-seg button:disabled { cursor: not-allowed; opacity: 0.45; }
+.cs-intv-seg.is-small button { height: 26px; padding: 0 9px; font-size: 12px; }
+.cs-intv-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.cs-intv-due .cs-anat-input.is-num { width: 58px; height: 32px; text-align: center; font-variant-numeric: tabular-nums; }
+.cs-dx-preview b em { color: var(--cs-muted); font-style: normal; font-weight: 600; }
+
 /* "For Fracture — Left forearm": the assessment at this site, which the
    intervention is linked to. */
 .cs-intv-for {

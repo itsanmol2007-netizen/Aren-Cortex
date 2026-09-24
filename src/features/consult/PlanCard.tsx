@@ -22,7 +22,8 @@ import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
 import type { PreferredLab } from "../../lib/db/synapse";
 import type { InterventionLine } from "./interventionPlan";
-import { formatSide as formatInterventionSide } from "./interventionPlan";
+import { formatDue, formatSide as formatInterventionSide } from "./interventionPlan";
+import type { PlannedIntervention } from "../../lib/db/interventions";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
 import { BlankPlanArt } from "./BlankArt";
 import { CompanionLine, MedicineIdentity } from "./parts";
@@ -173,6 +174,9 @@ interface Props {
     onRemoveAdviceLine: (line: string) => void;
     onRemoveIntervention: (id: string) => void;
     onAddAnotherInterventionSite: (id: string) => void;
+    /** planned at an earlier visit and not yet done — each with Perform */
+    plannedEarlier?: PlannedIntervention[];
+    onPerformPlanned?: (p: PlannedIntervention) => void;
     followUpDays: number | null;
     onFollowUpChange: (days: number | null) => void;
     notes: string;
@@ -210,6 +214,7 @@ export function PlanCard({
     preferredLabs, selectedLabName, onSelectLabName, onManageLabs,
     adviceLines, onRemoveAdviceLine,
     interventions, onRemoveIntervention, onAddAnotherInterventionSite,
+    plannedEarlier = [], onPerformPlanned,
     exerciseLines, onRemoveExercise,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
@@ -281,9 +286,18 @@ export function PlanCard({
         }
     };
 
+    // Interventions and exercises count: a visit that was only a cast is
+    // not an empty plan, and must still reach Review & Print.
     const itemCount =
         diagnoses.length + prescription.length + tests.length + adviceLines.length +
+        interventions.length + exerciseLines.length +
         (followUpDays != null ? 1 : 0);
+
+    // Performing an earlier plan takes it off "due" the moment it is added.
+    const fulfilledIds = new Set(interventions.map((l) => l.fulfilsId).filter(Boolean));
+    const dueEarlier = plannedEarlier.filter((p) => !fulfilledIds.has(p.id));
+    const doneToday = interventions.filter((l) => l.status !== "planned");
+    const plannedNow = interventions.filter((l) => l.status === "planned");
 
     const isEmpty = itemCount === 0;
 
@@ -339,7 +353,7 @@ export function PlanCard({
                 the arrows have to keep working from there as the cursor moves
                 to lines that were never focused. */}
             <div className="cs-plan-scroll" ref={scrollRef} onKeyDown={onListKeyDown}>
-                {isEmpty ? (
+                {isEmpty && dueEarlier.length === 0 ? (
                     <div className="cs-plan-empty">
                         <BlankPlanArt />
                         <strong>Nothing planned yet</strong>
@@ -611,14 +625,47 @@ export function PlanCard({
                             </Group>
                         )}
 
-                        {interventions.length > 0 && (
+                        {dueEarlier.length > 0 && (
                             <Group
                                 icon={<Waves size={12} />}
                                 tone="teal"
-                                title="Interventions — this visit"
-                                count={interventions.length}
+                                title="Due from earlier visits"
+                                count={dueEarlier.length}
                             >
-                                {interventions.map((line) => {
+                                {dueEarlier.map((p) => (
+                                    <div key={p.id} className="cs-line">
+                                        <div className="cs-line-main">
+                                            <div className="cs-line-name"><span>{p.text}</span></div>
+                                            <div className="cs-line-tags">
+                                                <span className="cs-line-tag is-freq">
+                                                    {p.dueDate ? `Due ${formatDue(p.dueDate)}` : "Planned"} · from {p.when}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {onPerformPlanned && (
+                                            <button
+                                                type="button"
+                                                className="cs-dose-more"
+                                                onClick={(e) => { e.stopPropagation(); onPerformPlanned(p); }}
+                                            >
+                                                Perform
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </Group>
+                        )}
+
+                        {([["Interventions — done today", doneToday], ["Interventions — planned", plannedNow]] as const).map(([title, lines]) =>
+                            lines.length > 0 && (
+                            <Group
+                                key={title}
+                                icon={<Waves size={12} />}
+                                tone="teal"
+                                title={title}
+                                count={lines.length}
+                            >
+                                {lines.map((line) => {
                                     const sideTag = formatInterventionSide(line.side);
                                     return (
                                         <div key={line.id} className={`cs-line${justAdded.has(line.id) ? " is-new" : ""}`}>
@@ -627,8 +674,13 @@ export function PlanCard({
                                                     ("Cast — Left forearm, below-elbow, backslab, POP");
                                                     its site is inside that line, not a second tag. */}
                                                 <div className="cs-line-name"><span>{line.text || line.label}</span></div>
-                                                {((!line.text && line.site) || sideTag || line.notes) && (
+                                                {((!line.text && line.site) || sideTag || line.notes || line.status === "planned") && (
                                                     <div className="cs-line-tags">
+                                                        {line.status === "planned" && (
+                                                            <span className="cs-line-tag is-freq">
+                                                                {line.dueDate ? `Due ${formatDue(line.dueDate)}` : "Planned"}
+                                                            </span>
+                                                        )}
                                                         {!line.text && line.site && (
                                                             <span className="cs-line-tag is-dose">
                                                                 <MapPin size={10} aria-hidden="true" /> {line.site}
@@ -664,7 +716,7 @@ export function PlanCard({
                                     );
                                 })}
                             </Group>
-                        )}
+                        ))}
 
                         {adviceLines.length > 0 && (
                             <Group

@@ -72,6 +72,22 @@ export interface InterventionLine {
     status?: "performed" | "planned";
     /** when a planned one is due, yyyy-mm-dd (Phase 5) */
     dueDate?: string | null;
+    /** the planned row (database id, from an earlier visit) this performs */
+    fulfilsId?: string | null;
+}
+
+/** "12 Oct" — a due date as the rail and the print show it. */
+export function formatDue(iso: string | null | undefined): string {
+    if (!iso) return "";
+    const d = new Date(`${iso}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+/** yyyy-mm-dd, `days` from today. */
+export function dueInDays(days: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + Math.round(days));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /**
@@ -100,7 +116,7 @@ export function formatSide(side: InterventionSide | null): string {
 export function formatLine(line: InterventionLine): string {
     if (line.text) {
         const planned = line.status === "planned"
-            ? ` [planned${line.dueDate ? ` — due ${line.dueDate}` : ""}]` : "";
+            ? ` [planned${line.dueDate ? `, due ${formatDue(line.dueDate)}` : ""}]` : "";
         return line.notes.trim() ? `${line.text}${planned} (${line.notes.trim()})` : `${line.text}${planned}`;
     }
     const sideTag = formatSide(line.side);

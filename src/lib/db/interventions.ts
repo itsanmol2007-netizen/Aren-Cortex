@@ -51,6 +51,7 @@ export async function saveInterventionPlan(
         due_date: l.dueDate ?? null,
         assessment_text: l.assessmentText ?? null,
         removes_id: l.removesId ?? null,
+        fulfils_id: l.fulfilsId ?? null,
     }));
     const { error } = await supabase.from("prescription_interventions").insert(rows);
     if (error) throw new Error(`saveInterventionPlan: ${error.message}`);
@@ -78,6 +79,7 @@ export async function fetchEarlierInterventions(patientId: string): Promise<Earl
         .from("prescription_interventions")
         .select("id, family, label, text, site, region, side, aspect, details, created_at, removes_id, prescriptions!inner(visits!inner(patient_id))")
         .eq("prescriptions.visits.patient_id", patientId)
+        .eq("status", "performed")
         .not("family", "is", null)
         .order("created_at", { ascending: false })
         .limit(60);
@@ -96,5 +98,52 @@ export async function fetchEarlierInterventions(patientId: string): Promise<Earl
             details: r.details ?? {},
             when: new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
             createdAt: r.created_at,
+        }));
+}
+
+/** A planned intervention from an earlier visit, not yet performed. */
+export interface PlannedIntervention extends EarlierIntervention {
+    intentId: number | null;
+    label: string;
+    dueDate: string | null;
+}
+
+/**
+ * What an earlier visit planned for this patient and nobody has performed
+ * yet — "Suture removal, due 3 Oct" — so this visit can mark it done in
+ * one click. Offline or on error: [] (nothing is lost, it just waits).
+ */
+export async function fetchPlannedInterventions(patientId: string): Promise<PlannedIntervention[]> {
+    const { data, error } = await supabase
+        .from("prescription_interventions")
+        .select("id, intent_id, family, label, text, region, side, aspect, details, created_at, due_date, status, prescriptions!inner(visits!inner(patient_id))")
+        .eq("prescriptions.visits.patient_id", patientId)
+        .eq("status", "planned")
+        .order("due_date", { ascending: true })
+        .limit(40);
+    if (error || !data) {
+        if (error) console.warn("fetchPlannedInterventions:", error.message);
+        return [];
+    }
+    const ids = data.map((r: any) => r.id);
+    if (ids.length === 0) return [];
+    const { data: done } = await supabase
+        .from("prescription_interventions")
+        .select("fulfils_id")
+        .in("fulfils_id", ids);
+    const fulfilled = new Set((done ?? []).map((r: any) => r.fulfils_id));
+    return data
+        .filter((r: any) => !fulfilled.has(r.id))
+        .map((r: any) => ({
+            id: r.id,
+            intentId: r.intent_id,
+            label: r.label,
+            family: r.family,
+            text: r.text ?? r.label,
+            siteRef: r.region ? normalizeSite({ region: r.region, side: r.side === "left" || r.side === "right" ? r.side : null, aspect: r.aspect ?? "front" }) : null,
+            details: r.details ?? {},
+            when: new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+            createdAt: r.created_at,
+            dueDate: r.due_date,
         }));
 }

@@ -256,6 +256,8 @@ export interface ConsultPlan {
    *  inspector again rather than cloning silently, because a second site
    *  is as much a clinical decision as the first. */
   addAnotherInterventionSite: (id: string) => void;
+  /** perform, this visit, a planned item from an earlier one */
+  performPlanned: (p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => void;
   /** Undo any accept, from the row it was accepted on — see the doc comment. */
   removeAcceptedIntent: (intentId: number, type: AcceptPayload["type"], label: string) => void;
   updateExercise: (id: string, patch: Partial<ExerciseLine>) => void;
@@ -292,6 +294,13 @@ export interface PendingIntervention {
   initialSite: string;
   /** opened from "+ Another site": the known site is not the answer */
   another: boolean;
+  /** performing a planned item from an earlier visit (Phase 5) */
+  fromPlanned?: { id: string; siteRef: SiteRef | null; details: AssessmentDetails } | null;
+  /** a follow-on that opens as Planned, with what it already knows (Phase 6) */
+  initialStatus?: "performed" | "planned";
+  initialDueDays?: number | null;
+  initialDetails?: AssessmentDetails;
+  initialSiteRef?: SiteRef | null;
 }
 
 export interface PendingAssessment {
@@ -941,8 +950,9 @@ export function useConsultPlan({
       text: draft.text || undefined,
       removesId: draft.removesId,
       assessmentText: draft.assessmentText,
-      status: "performed",
-      dueDate: null,
+      status: draft.status,
+      dueDate: draft.dueDate,
+      fulfilsId: draft.fulfilsId,
     }]);
   }, [pendingIntervention, commitAccept]);
 
@@ -1090,6 +1100,19 @@ export function useConsultPlan({
       another: true,
     });
   }, [interventionPlan]);
+
+  /** Perform, this visit, something an earlier visit planned. */
+  const performPlanned = useCallback((p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => {
+    setPendingIntervention({
+      payload: {
+        intentId: p.intentId ?? 0, type: "modality", label: p.label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      initialSite: "",
+      another: true,
+      fromPlanned: { id: p.id, siteRef: p.siteRef, details: p.details },
+    });
+  }, []);
 
   const updateMedicine = useCallback((updated: PrescriptionMedicine) => {
     if (stagedMedicine && stagedMedicine.id === updated.id) {
@@ -1597,6 +1620,7 @@ export function useConsultPlan({
     removeAdviceLine,
     removeIntervention,
     addAnotherInterventionSite,
+    performPlanned,
     removeAcceptedIntent,
     updateExercise,
     removeExercise,
