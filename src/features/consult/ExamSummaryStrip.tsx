@@ -66,14 +66,14 @@ export function ExamSummaryStrip({
     return (
         <section
             aria-label="Body map and examination"
-            className="mb-1.5 overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] shadow-[var(--cs-shadow)]"
+            className="flex overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line)] bg-[var(--cs-card)] shadow-[var(--cs-shadow)]"
         >
             <button
                 type="button"
                 disabled={disabled}
                 onClick={onOpen}
                 aria-label="Open the body map and examination"
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-[var(--cs-blue-soft)] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--cs-blue-soft)] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
             >
                 <span className="grid size-[30px] flex-none place-items-center rounded-lg bg-[linear-gradient(180deg,#f3f6fc_0%,#e6ecf7_100%)] text-[#41506b] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
                     <PersonStanding size={17} />

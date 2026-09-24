@@ -37,13 +37,35 @@ export interface ExamReading {
 
 const COLUMNS = "measure_key, side, method, context, value_num, value_text, qualifier";
 
+/**
+ * The key a reading is STORED under.
+ *
+ * `visit_measurements` carries a unique index on `(visit_id, measure_key)`
+ * alone — it predates the side/method/context columns, and the vitals save
+ * (`onConflict: "visit_id,measure_key"`) depends on it, including on the
+ * branch the test devices run. So one examination measure can hold only one
+ * row per visit under its plain key, and the second of active/passive,
+ * left/right or baseline/re-test died on that index ("duplicate key value
+ * violates unique constraint visit_measurements_unique").
+ *
+ * Each slot is therefore stored under its own key. The real side / method /
+ * context columns are still written, so the row stays queryable by column;
+ * the key suffix only exists to keep the old index satisfied. Swap this for
+ * a `NULLS NOT DISTINCT` index on all five columns once every deployed
+ * branch has the updated vitals `onConflict`.
+ */
+function storedKey(key: string, side: MeasureSide | null, method: string | null, context: MeasureContext): string {
+    return `${key}|${side ?? "-"}|${method ?? "-"}|${context}`;
+}
+
 function fromRow(r: {
     measure_key: string; side: string | null; method: string | null;
     context: string; value_num: number | null; value_text: string | null;
     qualifier: string | null;
 }): ExamReading {
     return {
-        measureKey: r.measure_key,
+        // Plain keys are rows written before `storedKey` existed.
+        measureKey: r.measure_key.split("|")[0],
         side: (r.side as MeasureSide | null) ?? null,
         method: r.method,
         context: r.context as MeasureContext,
@@ -72,13 +94,9 @@ export async function fetchExamReadings(visitId: string): Promise<ExamReading[]>
 /**
  * One reading, written or overwritten.
  *
- * There is no natural unique constraint on
- * (visit, key, side, method, context) in the table — `visit_measurements`
- * predates all four of those columns — so this deletes the exact match
- * before inserting rather than relying on an upsert that has nothing to
- * conflict on. Two statements, not one, and that is deliberate: an upsert
- * with the wrong conflict target silently writes duplicates, which is the
- * class of failure this project has been bitten by often enough
+ * Delete-then-insert under the slot's `storedKey`, rather than an upsert:
+ * an upsert with the wrong conflict target silently writes duplicates, which
+ * is the class of failure this project has been bitten by often enough
  * (§14.21's CHECK constraint, `care_plans`' missing policy) to prefer the
  * explicit version.
  */
@@ -93,16 +111,23 @@ export async function saveExamReading(args: {
     unit?: string | null;
     qualifier?: string | null;
 }): Promise<void> {
-    let del = supabase
+    const key = storedKey(args.measureKey, args.side, args.method, args.context);
+
+    // Clears this slot under its current key AND any legacy plain-key row for
+    // the same slot, so an old reading can never shadow the new one.
+    let legacy = supabase
         .from("visit_measurements")
         .delete()
         .eq("visit_id", args.visitId)
         .eq("measure_key", args.measureKey)
         .eq("context", args.context);
-    del = args.side === null ? del.is("side", null) : del.eq("side", args.side);
-    del = args.method === null ? del.is("method", null) : del.eq("method", args.method);
-    const { error: delErr } = await del;
-    if (delErr) throw new Error(`saveExamReading (clear): ${delErr.message}`);
+    legacy = args.side === null ? legacy.is("side", null) : legacy.eq("side", args.side);
+    legacy = args.method === null ? legacy.is("method", null) : legacy.eq("method", args.method);
+    const [{ error: delErr }, { error: legacyErr }] = await Promise.all([
+        supabase.from("visit_measurements").delete().eq("visit_id", args.visitId).eq("measure_key", key),
+        legacy,
+    ]);
+    if (delErr || legacyErr) throw new Error(`saveExamReading (clear): ${(delErr ?? legacyErr)!.message}`);
 
     // A cleared field is a delete, not a null row — an empty box means the
     // physiotherapist did not measure it, and a row saying so is a claim.
@@ -110,7 +135,7 @@ export async function saveExamReading(args: {
 
     const { error } = await supabase.from("visit_measurements").insert({
         visit_id: args.visitId,
-        measure_key: args.measureKey,
+        measure_key: key,
         side: args.side,
         method: args.method,
         context: args.context,

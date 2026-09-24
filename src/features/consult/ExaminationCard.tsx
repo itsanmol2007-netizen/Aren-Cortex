@@ -108,21 +108,22 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
     ) => (
         <input
             type="number"
+            inputMode="numeric"
             placeholder="—"
-            // `is-outside` is a HINT that a reading sits outside the published
-            // normal, never a warning: a restricted range is the reason the
-            // patient is in the room.
+            aria-label={`${method ?? ""} ${context === "post_intervention" ? "after treatment" : ""}`.trim()}
+            // A real class, not Tailwind utilities: base.css styles the bare
+            // `input` element (transparent border, fixed height) as unlayered
+            // CSS, which beats every layered utility regardless of
+            // specificity — why these boxes rendered borderless no matter
+            // which border class was put on them. See `.cs-exam-num`.
             //
-            // An empty cell used to be a 1px `--cs-line-strong` border on a
-            // WHITE input over a white card — Anmol, live: "no any text box
-            // no any boxes visible there." A filled `--cs-page` background
-            // plus a darker resting border is what makes an EMPTY field still
-            // read as a field rather than blank space; focus still lifts it
-            // to white so typing feels like landing in something, not
-            // changing nothing.
+            // `is-hint` marks a reading outside the published normal — a
+            // HINT, never a warning: a restricted range is the reason the
+            // patient is in the room.
             className={
-                "h-[26px] w-full rounded-md border px-1.5 text-center text-[12.5px] font-semibold tabular-nums text-[var(--cs-ink)] outline-none transition-colors placeholder:font-normal placeholder:text-[var(--cs-faint)] focus:border-[var(--cs-blue)] focus:bg-white focus:shadow-[0_0_0_2px_rgba(18,104,232,0.12)] " +
-                (hint ? "border-[#e3c9a0] bg-[#fffdf6]" : "border-[#c7ccd6] bg-[var(--cs-page)]")
+                "cs-exam-num" +
+                (hint ? " is-hint" : "") +
+                (context === "post_intervention" ? " is-retest" : "")
             }
             value={exam.getNumber(key, side, method, context) ?? ""}
             disabled={disabled}
@@ -137,7 +138,7 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
     const pain = exam.getNumber(painKey, side, null);
 
     return (
-        <div className="mt-3 space-y-4 border-t border-[var(--cs-line)] pt-3.5">
+        <div className="cs-exam">
             {/* ── Pain, for THIS site ───────────────────────────────────────
                 First, because it is the reading a physiotherapist takes first
                 and the one the patient volunteers. Picked, not typed: 0-10 is
@@ -150,11 +151,9 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                 "somewhere between none and worst", which is the actual
                 question. The anchors underneath name both ends, so nobody has
                 to remember which direction is bad. */}
-            <section>
-                <header className="mb-1.5 flex items-baseline justify-between">
-                    <h4 className="m-0 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
-                        Pain
-                    </h4>
+            <section className="cs-exam-sec">
+                <header className="cs-exam-head">
+                    <h4 className="cs-exam-h">Pain</h4>
                     <span className="text-[12.5px] font-bold tabular-nums text-[var(--cs-ink)]">
                         {pain === null ? <span className="font-medium text-[var(--cs-faint)]">Not recorded</span> : `${pain} / 10`}
                     </span>
@@ -202,26 +201,24 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                 or neurological involvement, a small one at a mechanical block.
                 Two fields far apart would make the physiotherapist do that
                 subtraction on every row. */}
-            <section>
-                <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
-                    Range of motion
-                </h4>
-                <div className="overflow-hidden rounded-lg border border-[var(--cs-line)]">
-                    {/* The last column used to be `auto` — sized to whatever it
-                        was showing right now. A "Re-test" button and the
-                        wider re-test cluster (two fields + a delta + undo)
-                        are different widths, and since each row is its OWN
-                        grid (independent of its siblings), an `auto` column
-                        widening on ONE row shrank that row's `1fr` Movement
-                        column to compensate — Anmol, live: "they are just
-                        instantaneously thrown to the left side." Fixed width,
-                        sized for the WIDEST state up front, so no row ever
-                        renegotiates against its neighbours. */}
-                    <div className="grid grid-cols-[minmax(96px,1fr)_64px_64px_52px_172px] items-center gap-x-2 border-b border-[var(--cs-line)] bg-[var(--cs-page)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+            <section className="cs-exam-sec">
+                <h4 className="cs-exam-h">Range of motion</h4>
+                {/* One grid template for the header, every movement row and
+                    every re-test row, all fixed-width except the label — so
+                    no cell's content can ever push another column sideways.
+
+                    The re-test is its own ROW under the movement, in the SAME
+                    Active / Passive columns at the SAME box size, not a
+                    squeezed cluster at the row's end. Anmol, live: "what are
+                    you even supposed to type there?" — the after-treatment
+                    numbers now sit directly beneath the numbers they are
+                    compared with, and the Gap column shows the change. */}
+                <div className="cs-rom">
+                    <div className="cs-rom-row is-head">
                         <span>Movement</span>
-                        <span className="text-center">Active</span>
-                        <span className="text-center">Passive</span>
-                        <span className="text-center">Gap</span>
+                        <span>Active</span>
+                        <span>Passive</span>
+                        <span>Gap</span>
                         <span />
                     </div>
 
@@ -231,90 +228,70 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                         const p = exam.getNumber(key, side, "passive");
                         const gap = activePassiveGap(a, p);
                         const isRetesting = retesting.has(key);
-                        const post = exam.getNumber(key, side, "active", "post_intervention");
-                        const delta = post !== null && a !== null ? post - a : null;
-
-                        const postPassive = exam.getNumber(key, side, "passive", "post_intervention");
+                        const postA = exam.getNumber(key, side, "active", "post_intervention");
+                        const postP = exam.getNumber(key, side, "passive", "post_intervention");
+                        // The change that matters most is active range (what
+                        // the patient can do themselves); passive only when
+                        // active was never measured.
+                        const delta =
+                            postA !== null && a !== null ? postA - a
+                                : postP !== null && p !== null ? postP - p
+                                    : null;
 
                         return (
-                            <div
-                                key={m.key}
-                                className="grid grid-cols-[minmax(96px,1fr)_64px_64px_52px_172px] items-center gap-x-2 border-b border-[var(--cs-line)] px-2.5 py-1.5 last:border-b-0"
-                            >
-                                <span className="text-[12.5px] font-semibold text-[var(--cs-ink)]">
-                                    {m.label}
-                                    {/* The published normal, stated quietly. A
-                                        physiotherapist knows these; a locum
-                                        covering a shoulder clinic may not. */}
-                                    <i className="ml-1.5 text-[10.5px] font-medium not-italic text-[var(--cs-faint)]">
-                                        {m.normal}°
-                                    </i>
-                                </span>
-                                {numInput(key, "active", "baseline", outsideExpected(m, a))}
-                                {numInput(key, "passive", "baseline", outsideExpected(m, p))}
-                                <span className="text-center text-[12px] font-bold tabular-nums text-[var(--cs-muted)]">
-                                    {gap === null ? <span className="font-normal text-[var(--cs-faint)]">—</span> : `${gap}°`}
-                                </span>
-
-                                {isRetesting ? (
-                                    // Mirrors baseline — active AND passive, not
-                                    // just active. Anmol, live: "if you are
-                                    // entering two fields, active and passive,
-                                    // and then you are trying to retest it, so
-                                    // why you just have one field now?" Only
-                                    // the field(s) that actually had a
-                                    // baseline offer a re-test box — retesting
-                                    // a number that was never taken has
-                                    // nothing to compare against.
-                                    <span className="flex items-center gap-1">
-                                        {a !== null && (
-                                            <span className="flex flex-col items-center gap-[1px]">
-                                                <em className="text-[7.5px] font-bold not-italic leading-none text-[var(--cs-faint)]">A</em>
-                                                <span className="w-9">{numInput(key, "active", "post_intervention", false)}</span>
-                                            </span>
-                                        )}
-                                        {p !== null && (
-                                            <span className="flex flex-col items-center gap-[1px]">
-                                                <em className="text-[7.5px] font-bold not-italic leading-none text-[var(--cs-faint)]">P</em>
-                                                <span className="w-9">{numInput(key, "passive", "post_intervention", false)}</span>
-                                            </span>
-                                        )}
-                                        {delta !== null && (
-                                            <b className={
-                                                "text-[11px] font-bold tabular-nums " +
-                                                (delta > 0 ? "text-[var(--cs-teal)]" : delta < 0 ? "text-[var(--cs-amber)]" : "text-[var(--cs-faint)]")
-                                            }>
-                                                {delta > 0 ? "+" : ""}{delta}°
-                                            </b>
-                                        )}
+                            <div key={m.key} className="cs-rom-group">
+                                <div className="cs-rom-row">
+                                    <span className="cs-rom-label">
+                                        {m.label}
+                                        {/* The published normal, stated quietly. */}
+                                        <i>{m.normal}°</i>
+                                    </span>
+                                    {numInput(key, "active", "baseline", outsideExpected(m, a))}
+                                    {numInput(key, "passive", "baseline", outsideExpected(m, p))}
+                                    <span className="cs-rom-gap">
+                                        {gap === null ? <em>—</em> : `${gap}°`}
+                                    </span>
+                                    {!isRetesting && (a !== null || p !== null) ? (
+                                        // Only offered once there is a baseline to compare against.
                                         <button
                                             type="button"
-                                            aria-label="Cancel re-test"
-                                            className="grid size-[18px] flex-none place-items-center rounded text-[var(--cs-faint)] hover:bg-[var(--cs-line)] hover:text-[var(--cs-muted)]"
+                                            className="cs-rom-retest"
+                                            disabled={disabled}
+                                            onClick={() => setRetesting((st) => new Set(st).add(key))}
+                                        >
+                                            Re-test
+                                        </button>
+                                    ) : (
+                                        // An empty grid cell still has to BE a cell.
+                                        <span aria-hidden="true" />
+                                    )}
+                                </div>
+
+                                {isRetesting && (
+                                    <div className="cs-rom-row is-retest">
+                                        <span className="cs-rom-label is-sub">After treatment</span>
+                                        {a !== null ? numInput(key, "active", "post_intervention", false) : <span aria-hidden="true" />}
+                                        {p !== null ? numInput(key, "passive", "post_intervention", false) : <span aria-hidden="true" />}
+                                        <span className={
+                                            "cs-rom-gap" +
+                                            (delta === null ? "" : delta > 0 ? " is-up" : delta < 0 ? " is-down" : "")
+                                        }>
+                                            {delta === null ? <em>—</em> : `${delta > 0 ? "+" : ""}${delta}°`}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="cs-rom-undo"
+                                            aria-label="Remove re-test"
+                                            title="Remove re-test"
                                             onClick={() => {
-                                                exam.setNumber(key, side, "active", null, "post_intervention");
-                                                if (postPassive !== null) exam.setNumber(key, side, "passive", null, "post_intervention");
+                                                if (postA !== null) exam.setNumber(key, side, "active", null, "post_intervention");
+                                                if (postP !== null) exam.setNumber(key, side, "passive", null, "post_intervention");
                                                 setRetesting((st) => { const n = new Set(st); n.delete(key); return n; });
                                             }}
                                         >
-                                            <Undo2 size={11} />
+                                            <Undo2 size={13} />
                                         </button>
-                                    </span>
-                                ) : a !== null || p !== null ? (
-                                    // Only offered once there is a baseline to compare against.
-                                    <button
-                                        type="button"
-                                        disabled={disabled}
-                                        onClick={() => setRetesting((st) => new Set(st).add(key))}
-                                        className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[10.5px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-blue)] hover:text-[var(--cs-blue)]"
-                                    >
-                                        Re-test
-                                    </button>
-                                ) : (
-                                    // MUST render an element, not `false` — an empty
-                                    // grid cell still has to BE a cell, or every row
-                                    // below shifts one column left.
-                                    <span aria-hidden="true" />
+                                    </div>
                                 )}
                             </div>
                         );
@@ -327,10 +304,8 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                 from a segmented control and never typed, and each grade carries
                 its meaning on hover — "4" is not self-explanatory to anyone who
                 does not use the scale daily. */}
-            <section>
-                <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
-                    Strength <span className="font-semibold normal-case tracking-normal text-[var(--cs-faint)]">(MMT)</span>
-                </h4>
+            <section className="cs-exam-sec">
+                <h4 className="cs-exam-h">Strength <small>MMT 0–5</small></h4>
                 <div className="space-y-1">
                     {region.muscles.map((mu) => {
                         const key = mmtMeasureKey(mu.key);
@@ -378,10 +353,8 @@ export function RegionExam({ exam, regionKey, side, disabled = false }: Props) {
                 readable without colour alone. What a positive SUGGESTS is on
                 hover and never on screen as a verdict — a positive Lachman is
                 evidence, not a diagnosis. */}
-            <section>
-                <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.07em] text-[var(--cs-label)]">
-                    Special tests
-                </h4>
+            <section className="cs-exam-sec">
+                <h4 className="cs-exam-h">Special tests <small>click to cycle: not done · negative · positive</small></h4>
                 <div className="flex flex-wrap gap-1.5">
                     {region.tests.map((t) => {
                         const key = testMeasureKey(t.key);

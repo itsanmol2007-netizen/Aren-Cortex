@@ -42,7 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Plus, Search, Target, X } from "lucide-react";
+import { Check, ChevronDown, Search, Target, X } from "lucide-react";
 import type { PatientGoal, GoalStatus } from "../../lib/db/story";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
@@ -224,24 +224,15 @@ export function GoalsCard({
 
     return (
         <section className="cs-card cs-goals" aria-label="Goals">
-            <div className="cs-card-head">
-                <span className="cs-card-num" aria-hidden="true">2</span>
-                <span className="cs-card-title">
+            {/* Title and search share ONE row — Anmol: "the simple heading
+                just beside the search bar... literally just beside it". No
+                explanatory subtitle (a doctor knows what a goal is) and no
+                separate "+ Goal" button — the search field IS the add. */}
+            <div className="cs-goals-top">
+                <h2 className="cs-card-title cs-goals-title">
+                    <span className="cs-glyph is-rose"><Target size={14} /></span>
                     Goals
-                    <em>What does the patient want to achieve?</em>
-                </span>
-                <button
-                    type="button"
-                    className="cs-goal-headbtn"
-                    disabled={disabled}
-                    onClick={() => inputRef.current?.focus()}
-                >
-                    <Plus size={13} aria-hidden="true" />
-                    Goal
-                </button>
-            </div>
-
-            <div className="cs-goals-body">
+                </h2>
                 <div className="cs-goalx-searchwrap">
                     <div className="cs-goalx-search">
                         <Search size={15} aria-hidden="true" />
@@ -295,16 +286,13 @@ export function GoalsCard({
                         </div>
                     )}
                 </div>
+            </div>
 
-                {/* Reserved height for one row of chips, always — Anmol, live:
-                    "there will be already a little bit of reserved white
-                    space for at least one row of pills to be there... I
-                    don't think someone have like 14 goals. If more than
-                    that, then a simple show more option." Empty is still a
-                    real state here, not absence of the row. */}
-                <div className="cs-goalx-chips">
+            {/* One slim reserved row for the goal buttons — present even when
+                empty, so the card keeps its height; "+N more" past four. */}
+            <div className="cs-goalx-chips">
                     {goals.length === 0 ? (
-                        <p className="cs-goalx-empty">No goals recorded yet — search above to add one.</p>
+                        <p className="cs-goalx-empty">No goals yet</p>
                     ) : (
                         <>
                             {visibleGoals.map((g, i) => {
@@ -323,28 +311,25 @@ export function GoalsCard({
                                         onClick={() => setOpenGoalId(g.id)}
                                     >
                                         {today !== undefined
-                                            ? <Check size={13} className="cs-goalx-chip-tick" aria-hidden="true" />
-                                            : <Target size={13} className="cs-goalx-chip-aim" aria-hidden="true" />}
-                                        <span className="cs-goalx-chip-text">
-                                            <b>{g.activity}</b>
-                                            <em>
-                                                {scored !== undefined
-                                                    ? `${scored}/10${today === undefined ? " · last visit" : ""}`
-                                                    : i === 0 ? "Primary" : "Not scored yet"}
-                                            </em>
-                                        </span>
+                                            ? <Check size={12} className="cs-goalx-chip-tick" aria-hidden="true" />
+                                            : <Target size={12} className="cs-goalx-chip-aim" aria-hidden="true" />}
+                                        <b>{g.activity}</b>
+                                        <em>
+                                            {scored !== undefined
+                                                ? `${scored}/10`
+                                                : i === 0 ? "Primary" : "—"}
+                                        </em>
                                     </button>
                                 );
                             })}
                             {hiddenCount > 0 && (
                                 <button type="button" className="cs-goalx-showmore" onClick={() => setShowAll(true)}>
-                                    <ChevronDown size={13} aria-hidden="true" />
+                                    <ChevronDown size={12} aria-hidden="true" />
                                     {hiddenCount} more
                                 </button>
                             )}
                         </>
                     )}
-                </div>
             </div>
 
             {openGoal && (

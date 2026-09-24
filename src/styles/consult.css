@@ -455,6 +455,9 @@ body.cs-locked-shell {
    short search box rather than a second, different ratio to learn. */
 .cs-row-bodygoal {
     grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+    /* Both cells share the taller one's height, so the shorter body-map
+       strip never leaves a dead white gap under itself. */
+    align-items: stretch;
 }
 
 /* Plan — the two output placeholders, side by side.
@@ -8560,29 +8563,16 @@ body.cs-locked-shell {
    colour.md's "thread the tone through" rule.
    ════════════════════════════════════════════════════════════ */
 
-.cs-goals-body {
+/* Title and search on one row; one slim chip row below. */
+.cs-goals-top {
     display: flex;
-    flex-direction: column;
-    gap: var(--cs-s2);
-    padding: var(--cs-s2) var(--cs-s3) var(--cs-s3);
-}
-
-/* `+ Goal` — the card's own action, pushed to the far end of the head. */
-.cs-goal-headbtn {
-    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    border: 0;
-    border-radius: 6px;
-    background: var(--cs-blue);
-    padding: 4px 10px;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 650;
+    gap: 12px;
+    padding: 12px 14px 0;
 }
+.cs-goals-title { flex: none; }
+.cs-goals-top .cs-goalx-searchwrap { flex: 1; min-width: 0; }
 
-.cs-goal-headbtn:hover { background: #0f5ccd; }
 
 /* ── Goals' own search + chip vocabulary ───────────────────────────────
    These rules were `.cs-story-*` until 2026-08-20 — Goals was built beside
@@ -8689,7 +8679,8 @@ body.cs-locked-shell {
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    min-height: 40px;
+    min-height: 28px;
+    padding: 10px 14px 12px;
 }
 
 .cs-goalx-empty {
@@ -8699,38 +8690,41 @@ body.cs-locked-shell {
     font-weight: 550;
 }
 
+/* One line per goal: icon · activity · score. Small on purpose. */
 .cs-goalx-chip {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
+    height: 28px;
+    max-width: 100%;
     border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
+    border-radius: 7px;
     background: #fff;
-    padding: 5px 10px;
+    padding: 0 9px;
+}
+
+.cs-goalx-chip b {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-goalx-chip em {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
 .cs-goalx-chip-tick {
     flex: none;
     color: var(--cs-green);
-}
-
-.cs-goalx-chip-text {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.15;
-}
-
-.cs-goalx-chip-text b {
-    color: var(--cs-ink);
-    font-size: 12.5px;
-    font-weight: 650;
-}
-
-.cs-goalx-chip-text em {
-    color: var(--cs-label);
-    font-size: 10.5px;
-    font-style: normal;
-    font-weight: 600;
 }
 
 /* "+N more" — Anmol: "I don't think someone have like 14 goals. If more than
@@ -8844,6 +8838,177 @@ body.cs-locked-shell {
    can; the only genuinely new control is the 0-5 strength segment,
    which is an ordinal grade and therefore picked, never typed.
    ════════════════════════════════════════════════════════════ */
+
+/* The per-joint examination block, and its section rhythm. Each section is
+   separated by a hairline and opens with a heading that reads as a heading
+   — larger, darker, with a teal tick (colour.md: teal = "examined") — so
+   "Range of motion" and "Strength" can never be mistaken for another data
+   row like "Extension" or "Quadriceps", which they previously matched. */
+.cs-exam {
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+    border-top: 1px solid var(--cs-line);
+}
+.cs-exam-sec {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--cs-line);
+}
+.cs-exam-sec:last-of-type { border-bottom: 0; }
+.cs-exam-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+.cs-exam-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 750;
+    letter-spacing: -0.005em;
+    text-transform: none;
+}
+.cs-exam-h::before {
+    content: "";
+    flex: none;
+    width: 3px;
+    height: 15px;
+    border-radius: 2px;
+    background: var(--cs-teal);
+}
+.cs-exam-h small {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 550;
+}
+
+/* The number box. A class rather than utilities because base.css styles the
+   bare `input` element (transparent border, 31px height) as unlayered CSS,
+   which beats layered Tailwind utilities regardless of specificity — the
+   reason these boxes were invisible no matter which border utility they
+   carried. A class selector beats the element selector outright. */
+.cs-exam-num {
+    width: 100%;
+    height: 32px;
+    border: 1px solid #c3cad6;
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 6px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    box-shadow: inset 0 1px 2px rgba(16, 28, 46, 0.05);
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.cs-exam-num::-webkit-outer-spin-button,
+.cs-exam-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cs-exam-num::placeholder { color: #aeb5c2; font-weight: 500; }
+.cs-exam-num:hover { border-color: #a5aebd; }
+.cs-exam-num:focus {
+    outline: none;
+    border-color: var(--cs-blue);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.13);
+}
+.cs-exam-num:disabled { background: var(--cs-page); cursor: default; }
+.cs-exam-num.is-hint { border-color: #dcbd8c; background: #fffcf4; }
+.cs-exam-num.is-retest { border-color: rgba(15, 118, 110, 0.45); }
+.cs-exam-num.is-retest:focus { border-color: var(--cs-teal); box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13); }
+
+/* Range of motion. ONE grid template shared by the header, every movement
+   row and every re-test row, and every column but the label is a fixed
+   width — so no cell's content can push another column sideways. */
+.cs-rom {
+    overflow: hidden;
+    border: 1px solid var(--cs-line);
+    border-radius: 10px;
+}
+.cs-rom-group + .cs-rom-group { border-top: 1px solid var(--cs-line); }
+.cs-rom-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) 72px 72px 56px 76px;
+    align-items: center;
+    gap: 8px;
+    min-height: 46px;
+    padding: 7px 12px;
+}
+.cs-rom-row.is-head {
+    min-height: 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--cs-line);
+    background: var(--cs-page);
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.cs-rom-row.is-head span:not(:first-child) { text-align: center; }
+.cs-rom-row.is-retest {
+    border-top: 1px dashed rgba(15, 118, 110, 0.28);
+    background: var(--cs-teal-soft);
+}
+.cs-rom-label {
+    min-width: 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 650;
+}
+.cs-rom-label i {
+    margin-left: 6px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 550;
+}
+.cs-rom-label.is-sub {
+    padding-left: 12px;
+    color: var(--cs-teal);
+    font-size: 12px;
+    font-weight: 650;
+}
+.cs-rom-gap {
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+.cs-rom-gap em { color: var(--cs-faint); font-style: normal; font-weight: 500; }
+.cs-rom-gap.is-up { color: var(--cs-teal); }
+.cs-rom-gap.is-down { color: var(--cs-amber); }
+.cs-rom-retest {
+    justify-self: end;
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 0 10px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    transition: border-color 0.12s ease, color 0.12s ease;
+}
+.cs-rom-retest:hover:not(:disabled) { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-rom-undo {
+    justify-self: end;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--cs-faint);
+}
+.cs-rom-undo:hover { background: rgba(15, 118, 110, 0.1); color: var(--cs-teal); }
 
 .cs-exam-card .cs-card-head {
     display: flex;

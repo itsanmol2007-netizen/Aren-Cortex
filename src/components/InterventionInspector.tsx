@@ -14,12 +14,6 @@ type Props = {
     onCancel: () => void;
 };
 
-const SIDES: { key: InterventionSide; label: string }[] = [
-    { key: "left", label: "Left" },
-    { key: "right", label: "Right" },
-    { key: "both", label: "Bilateral" },
-];
-
 /**
  * Every site name a doctor could mean, so typing is picking rather than
  * inventing — Anmol, live: "he's not going to invent a new body part name by
@@ -55,7 +49,9 @@ const SITE_OPTIONS: string[] = EXAM_REGIONS.flatMap((r) =>
 export function InterventionInspector({ label, initialSite = "", onConfirm, onCancel }: Props) {
     const [site, setSite] = useState(initialSite);
     const [siteOpen, setSiteOpen] = useState(false);
-    const [side, setSide] = useState<InterventionSide | null>(null);
+    // No separate Left/Right question: the site already carries its side
+    // ("Right knee") wherever a side exists, and the spine has none.
+    const side: InterventionSide | null = null;
     const [notes, setNotes] = useState("");
     const siteWrapRef = useRef<HTMLDivElement>(null);
 
@@ -142,23 +138,6 @@ export function InterventionInspector({ label, initialSite = "", onConfirm, onCa
                                     ))}
                                 </div>
                             )}
-                        </div>
-                    </section>
-
-                    <section className="cs-addmed-sec">
-                        <span className="cs-addmed-label">Side <em className="cs-addmed-keyhint">optional</em></span>
-                        <div className="cs-addmed-slots">
-                            {SIDES.map((s) => (
-                                <button
-                                    key={s.key}
-                                    type="button"
-                                    className={`cs-addmed-slot${side === s.key ? " is-on" : ""}`}
-                                    aria-pressed={side === s.key}
-                                    onClick={() => setSide((cur) => (cur === s.key ? null : s.key))}
-                                >
-                                    {s.label}
-                                </button>
-                            ))}
                         </div>
                     </section>
 
