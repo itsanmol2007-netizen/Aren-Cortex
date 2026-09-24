@@ -63,6 +63,25 @@ export interface ExerciseLine extends ExerciseDose {
     side: ExerciseSide | null;
     notes: string;
     sortOrder: number;
+    /** added load, kg ("with 2 kg") — optional */
+    loadKg?: number | null;
+    /** days a week, when not every day */
+    daysPerWeek?: number | null;
+    /** how many weeks this programme runs */
+    weeks?: number | null;
+}
+
+/** Everything the exercise sheet sets on a line. */
+export type ExerciseDraft = Pick<ExerciseLine,
+    "side" | "sets" | "reps" | "holdSeconds" | "perDay" | "loadKg" | "daysPerWeek" | "weeks" | "notes">;
+
+/** Load, days a week and duration, printed — "2 kg · 5 days/wk · 4 wk". */
+export function formatSchedule(l: Pick<ExerciseLine, "loadKg" | "daysPerWeek" | "weeks">): string {
+    const parts: string[] = [];
+    if (l.loadKg != null) parts.push(`${l.loadKg} kg`);
+    if (l.daysPerWeek != null && l.daysPerWeek !== 7) parts.push(`${l.daysPerWeek} days/wk`);
+    if (l.weeks != null) parts.push(`${l.weeks} wk`);
+    return parts.join(" · ");
 }
 
 /**
@@ -213,8 +232,10 @@ export function formatSide(side: ExerciseSide | null): string {
 export function formatLine(line: ExerciseLine): string {
     const dose = formatDose(line);
     const side = formatSide(line.side);
-    const head = side ? `${line.label} (${side})` : line.label;
-    const tail = [dose, line.notes.trim()].filter(Boolean).join(" · ");
+    // The line's own dose replaces whatever the catalogue name said.
+    const name = dose ? exerciseName(line.label) : line.label;
+    const head = side ? `${name} (${side})` : name;
+    const tail = [dose, formatSchedule(line), line.notes.trim()].filter(Boolean).join(" · ");
     return tail ? `${head} — ${tail}` : head;
 }
 
@@ -237,8 +258,42 @@ export const DEFAULT_DOSE: ExerciseDose = {
 
 /** A label like "…hold" or "…sec" is an isometric — start it on a hold, not reps. */
 export function doseFor(label: string): ExerciseDose {
+    // The catalogue often names its own dose — "Terminal knee extension —
+    // 3 sets x 15", "Quadriceps isometrics — 10 × 10 sec hold". Start there.
+    const parsed = parseCatalogueDose(label);
+    if (parsed) return parsed;
+    // A timed activity ("Walk — 30 min") is not sets and reps; its name
+    // already says the dose, so the line starts with none of its own.
+    if (catalogueDose(label)) return { sets: null, reps: null, holdSeconds: null, perDay: 1 };
     const isHold = /\bhold\b|\bsec\b|\bisometric|\bplank\b|\bwall sit\b/i.test(label);
     return isHold
         ? { sets: 3, reps: null, holdSeconds: 10, perDay: 1 }
         : { ...DEFAULT_DOSE };
+}
+
+/** The dose a catalogue name carries after its dash ("3 sets x 15"), or null. */
+function catalogueDose(label: string): string | null {
+    const m = label.match(/\s+[—–-]\s+([^—–]*\d[^—–]*)$/);
+    return m ? m[1].trim() : null;
+}
+
+/** That dose as numbers, when it is sets × reps or × a timed hold. */
+function parseCatalogueDose(label: string): ExerciseDose | null {
+    const tail = catalogueDose(label);
+    if (!tail) return null;
+    const hold = tail.match(/(\d+)\s*[x×]\s*(\d+)\s*sec/i);
+    if (hold) return { sets: Number(hold[1]), reps: null, holdSeconds: Number(hold[2]), perDay: 1 };
+    const sr = tail.match(/(\d+)\s*sets?\s*[x×]\s*(\d+)/i) ?? tail.match(/^(\d+)\s*[x×]\s*(\d+)$/);
+    if (sr) return { sets: Number(sr[1]), reps: Number(sr[2]), holdSeconds: null, perDay: 1 };
+    return null;
+}
+
+/**
+ * The exercise's name without the catalogue's dose — "Quadriceps
+ * isometrics". Used wherever the line's own structured dose is shown, so
+ * the name and the numbers never say two different things.
+ */
+export function exerciseName(label: string): string {
+    // Only when that dose was understood — "Walk — 30 min" keeps its minutes.
+    return parseCatalogueDose(label) ? label.replace(/\s+[—–-]\s+[^—–]*\d[^—–]*$/, "") : label;
 }

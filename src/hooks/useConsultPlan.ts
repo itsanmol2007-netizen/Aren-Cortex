@@ -39,7 +39,7 @@ import type { MedicineDraft, MedicineBillingContext } from "../features/consult/
 import { useJustAdded } from "../features/consult/useJustAdded";
 import type { Medicine as SynapseBrand } from "../lib/synapse/brands";
 import type { CompanionSuggestion } from "../lib/synapse/companions";
-import { doseFor, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
+import { doseFor, type ExerciseDraft, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
 import { formatLine as formatIntervention, type InterventionLine, type InterventionSide } from "../features/consult/interventionPlan";
 import type { InterventionDraft } from "../components/InterventionInspector";
 import type { AssessmentLine } from "../features/consult/assessmentPlan";
@@ -260,6 +260,11 @@ export interface ConsultPlan {
     site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails;
   }) => void;
   openImagingAt: (payload: AcceptPayload, site: SiteRef | null) => void;
+  /** the exercise waiting on its dose sheet */
+  pendingExercise: PendingExercise | null;
+  confirmPendingExercise: (draft: ExerciseDraft) => void;
+  cancelPendingExercise: () => void;
+  editExercise: (id: string) => void;
   /** perform, this visit, a planned item from an earlier one */
   performPlanned: (p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => void;
   /** Undo any accept, from the row it was accepted on — see the doc comment. */
@@ -305,6 +310,15 @@ export interface PendingIntervention {
   initialDueDays?: number | null;
   initialDetails?: AssessmentDetails;
   initialSiteRef?: SiteRef | null;
+}
+
+/** An exercise waiting on its dose — see ExerciseSheet.tsx. */
+export interface PendingExercise {
+  payload: AcceptPayload;
+  /** the prescribed line being edited; null for a new one */
+  editId: string | null;
+  /** the line's current values, when editing */
+  initial: ExerciseDraft | null;
 }
 
 export interface PendingAssessment {
@@ -465,6 +479,7 @@ export function useConsultPlan({
    * line's `text` also lives in `diagnoses`; see assessmentPlan.ts.
    */
   const [assessmentLines, setAssessmentLines] = useState<AssessmentLine[]>([]);
+  const [pendingExercise, setPendingExercise] = useState<PendingExercise | null>(null);
   const [pendingAssessment, setPendingAssessment] = useState<PendingAssessment | null>(null);
 
   const appendAdvice = useCallback((line: string) => {
@@ -610,20 +625,27 @@ export function useConsultPlan({
       // above. A newly accepted exercise starts on a sensible dose that the
       // physiotherapist edits on the row; `doseFor` picks reps or a hold from
       // the exercise's own name.
-      case "exercise":
+      // Since 2026-09-24 the dose normally arrives from the exercise sheet
+      // (`exerciseDraft`); a caller without one still gets `doseFor`.
+      case "exercise": {
+        const d = payload.exerciseDraft;
+        const side = d?.side ?? null;
         setExercisePlan((curr) => {
-          if (curr.some((l) => l.intentId === payload.intentId && l.side === null)) return curr;
+          if (curr.some((l) => l.intentId === payload.intentId && l.side === side)) return curr;
           return [...curr, {
             id: `ex-${payload.intentId}-${Date.now()}`,
             intentId: payload.intentId,
             label: payload.label,
-            side: null,
-            notes: "",
+            side,
+            notes: d?.notes ?? "",
             sortOrder: curr.length,
-            ...doseFor(payload.label),
+            ...(d
+              ? { sets: d.sets, reps: d.reps, holdSeconds: d.holdSeconds, perDay: d.perDay, loadKg: d.loadKg, daysPerWeek: d.daysPerWeek, weeks: d.weeks }
+              : doseFor(payload.label)),
           }];
         });
         break;
+      }
       // Nothing to do here: `handleAcceptIntent` never reaches `commitAccept`
       // for a fresh `modality` accept — it stages into `pendingIntervention`
       // instead, and `confirmPendingIntervention` calls this function ONLY
@@ -731,6 +753,11 @@ export function useConsultPlan({
     // still lands in one tap.
     if (payload.type === "finding" && familyFor(payload.label)) {
       setPendingAssessment({ kind: "assessment", another: false, payload, editId: null, initialSite: null, initialDetails: {} });
+      return;
+    }
+    // An exercise opens its dose sheet: side, sets × reps or hold, how often.
+    if (payload.type === "exercise") {
+      setPendingExercise({ payload, editId: null, initial: null });
       return;
     }
     // A limb X-ray or MRI asks which side, the same way.
@@ -1104,6 +1131,37 @@ export function useConsultPlan({
       another: true,
     });
   }, [interventionPlan]);
+
+  /** The dose is set — a new line, or the edited one. */
+  const confirmPendingExercise = useCallback((draft: ExerciseDraft) => {
+    if (!pendingExercise) return;
+    const { payload, editId } = pendingExercise;
+    setPendingExercise(null);
+    if (editId) {
+      setExercisePlan((curr) => curr.map((l) => (l.id === editId ? { ...l, ...draft } : l)));
+      return;
+    }
+    commitAccept({ ...payload, exerciseDraft: draft });
+  }, [pendingExercise, commitAccept]);
+
+  const cancelPendingExercise = useCallback(() => setPendingExercise(null), []);
+
+  /** Reopen a prescribed exercise's sheet to change its dose. */
+  const editExercise = useCallback((id: string) => {
+    const l = exercisePlan.find((x) => x.id === id);
+    if (!l) return;
+    setPendingExercise({
+      payload: {
+        intentId: l.intentId ?? 0, type: "exercise", label: l.label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      editId: id,
+      initial: {
+        side: l.side, sets: l.sets, reps: l.reps, holdSeconds: l.holdSeconds, perDay: l.perDay,
+        loadKg: l.loadKg ?? null, daysPerWeek: l.daysPerWeek ?? null, weeks: l.weeks ?? null, notes: l.notes,
+      },
+    });
+  }, [exercisePlan]);
 
   /**
    * Open the Perform modal for a follow-on (followOns.ts): already at the
@@ -1544,6 +1602,7 @@ export function useConsultPlan({
     setDiagnoses([]);
     setAssessmentLines([]);
     setPendingAssessment(null);
+    setPendingExercise(null);
     setFollowUpDays(null);
     setAdviceNotes("");
     setInterventionPlan([]);
@@ -1650,6 +1709,10 @@ export function useConsultPlan({
     performPlanned,
     openIntervention,
     openImagingAt,
+    pendingExercise,
+    confirmPendingExercise,
+    cancelPendingExercise,
+    editExercise,
     removeAcceptedIntent,
     updateExercise,
     removeExercise,

@@ -50,4 +50,6 @@ export interface AcceptPayload {
      *  list ("X-Ray Knee — Left, AP + Lateral"); `label` stays the catalogue
      *  name. */
     orderText?: string;
+    /** For an exercise: the dose set in its sheet (ExerciseSheet.tsx). */
+    exerciseDraft?: import("./exercisePlan").ExerciseDraft;
 }

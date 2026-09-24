@@ -7019,6 +7019,60 @@ body.cs-locked-shell {
     letter-spacing: -0.01em;
 }
 
+/* ── EXERCISE SHEET — ExerciseSheet.tsx. −/+ steppers that also take
+   typing: a dose is small whole numbers, nudged far more often than typed. */
+.cs-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+}
+.cs-step > button {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 34px;
+    border: 1px solid #c3cad6;
+    background: #fff;
+    color: var(--cs-ink);
+    cursor: pointer;
+}
+.cs-step > button:first-child { border-radius: 10px 0 0 10px; border-right: 0; }
+.cs-step > button:nth-of-type(2) { border-radius: 0 10px 10px 0; border-left: 0; }
+.cs-step > button:hover:not(:disabled) { background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-step > button:disabled { color: #cbd5e1; cursor: default; }
+.cs-step > input {
+    width: 48px;
+    height: 34px;
+    box-sizing: border-box;
+    border: 1px solid #c3cad6;
+    border-radius: 0;
+    background: #fff;
+    padding: 0 4px;
+    color: var(--cs-ink);
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+.cs-step > input:focus { outline: none; border-color: var(--anat-accent, var(--cs-teal)); box-shadow: 0 0 0 3px var(--anat-accent-ring, rgba(15, 118, 110, 0.12)); position: relative; z-index: 1; }
+.cs-step > em { margin-left: 8px; color: var(--cs-muted); font-size: 12.5px; font-style: normal; font-weight: 600; }
+.cs-ex-doserow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cs-ex-times { color: var(--cs-muted); font-size: 15px; font-weight: 700; }
+.cs-ex-moregrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.cs-ex-sheet .cs-addmed-body { gap: 16px; }
+
+/* A prescribed exercise's name opens its sheet. */
+.cs-ex-label.is-edit {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-ex-label.is-edit:hover { color: var(--cs-teal); text-decoration: underline; }
+
 /* The exact line that will print, live, above the buttons. */
 .cs-dx-preview {
     display: flex;
@@ -9019,7 +9073,10 @@ body.cs-locked-shell {
 }
 
 .cs-ex-grouphead {
-    margin: 0 0 4px;
+    /* Lined up with the rows' own 8px inset — it sat 8px left of the
+       exercise names, which is what read as cramped and crooked. */
+    margin: 2px 0 4px;
+    padding: 0 8px;
     color: var(--cs-muted);
     font-size: 10.5px;
     font-weight: 700;
@@ -9040,8 +9097,9 @@ body.cs-locked-shell {
     gap: var(--cs-s2);
     border: 1px solid transparent;
     border-radius: 10px;
-    padding: 6px 8px;
+    padding: 8px 8px;
 }
+.cs-ex-row.cs-ex-offer { align-items: center; }
 
 .cs-ex-row.is-on {
     border-color: color-mix(in srgb, var(--cs-teal) 22%, var(--cs-line));

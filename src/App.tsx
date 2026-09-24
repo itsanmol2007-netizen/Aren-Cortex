@@ -11,6 +11,8 @@ import { interventionFamilyFor, removableFamilies } from "./features/consult/int
 import { followOnsFor, type FollowOn } from "./features/consult/followOns";
 import { fetchInterventionPrices, interventionCharges, type InterventionPrice } from "./lib/db/interventionPricing";
 import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
+import { ExerciseSheet } from "./components/ExerciseSheet";
+import { fetchExerciseLibrary, setExerciseLibraryEntry, type ExerciseLibraryEntry } from "./lib/db/exerciseLibrary";
 import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
@@ -684,7 +686,8 @@ function App() {
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
-    removeIntervention, addAnotherInterventionSite, performPlanned, openIntervention, openImagingAt, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
+    removeIntervention, addAnotherInterventionSite, performPlanned, openIntervention, openImagingAt,
+    pendingExercise, confirmPendingExercise, cancelPendingExercise, editExercise, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -935,7 +938,7 @@ function App() {
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
-      !!pendingIntervention || !!pendingAssessment ||
+      !!pendingIntervention || !!pendingAssessment || !!pendingExercise ||
       !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
       !!activeVisit || !!trendDetail || !!trendVisit || carePlanSheetOpen || addMedicineQuery != null,
   });
@@ -1767,6 +1770,18 @@ function App() {
     }
   }, [synapse.data?.ruleset, openIntervention, openImagingAt, addFreeTest, addFreeAdvice, addFreeReferral, setFollowUpDays]);
 
+  /** This clinic's usual dose per exercise (Practice → Exercise Library) —
+   *  where the exercise sheet starts. */
+  const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryEntry[]>([]);
+  useEffect(() => {
+    if (!identity.hospitalId) return;
+    let cancelled = false;
+    fetchExerciseLibrary(identity.hospitalId)
+      .then((rows) => { if (!cancelled) setExerciseLibrary(rows); })
+      .catch(() => { /* offline or none: the sheet starts from doseFor */ });
+    return () => { cancelled = true; };
+  }, [identity.hospitalId]);
+
   /** What this clinic charges for interventions (Phase 7) — empty = off. */
   const [interventionPrices, setInterventionPrices] = useState<InterventionPrice[]>([]);
   useEffect(() => {
@@ -2569,6 +2584,7 @@ function App() {
                     disabled={!patient}
                     onAccept={handleAcceptIntent}
                     onUpdate={updateExercise}
+                    onEdit={editExercise}
                     onRemove={removeExercise}
                     onDuplicateForSide={duplicateExerciseForSide}
                     searchRef={synapseSearchRef}
@@ -2816,6 +2832,38 @@ function App() {
               onConfirm={confirmPendingAssessment}
             />
           )}
+
+          {/* The exercise dose sheet — side, sets × reps or hold, how often. */}
+          {pendingExercise && (() => {
+            const lib = exerciseLibrary.find((e) => e.intentId === pendingExercise.payload.intentId);
+            return (
+              <ExerciseSheet
+                key={pendingExercise.editId ?? `new-${pendingExercise.payload.intentId}`}
+                label={pendingExercise.payload.label}
+                editing={pendingExercise.editId !== null}
+                initial={pendingExercise.initial}
+                clinicDefault={lib ? {
+                  sets: lib.defaultSets, reps: lib.defaultReps, holdSeconds: lib.defaultHoldSeconds,
+                  perDay: lib.defaultPerDay, notes: lib.notes,
+                } : null}
+                canSaveDefault={!!identity.hospitalId && pendingExercise.payload.intentId > 0}
+                onCancel={cancelPendingExercise}
+                onConfirm={(draft, saveAsDefault) => {
+                  const intentId = pendingExercise.payload.intentId;
+                  confirmPendingExercise(draft);
+                  if (saveAsDefault && identity.hospitalId && intentId > 0) {
+                    setExerciseLibraryEntry({
+                      hospitalId: identity.hospitalId, intentId,
+                      defaultSets: draft.sets, defaultReps: draft.reps, defaultHoldSeconds: draft.holdSeconds,
+                      defaultPerDay: draft.perDay, notes: draft.notes, setBy: identity.userId,
+                    })
+                      .then((entry) => setExerciseLibrary((cur) => [entry, ...cur.filter((e) => e.intentId !== entry.intentId)]))
+                      .catch((err) => showToast(`Added, but the clinic default did not save: ${err?.message ?? err}`));
+                  }
+                }}
+              />
+            );
+          })()}
 
           {pendingIntervention && (
             <InterventionInspector
