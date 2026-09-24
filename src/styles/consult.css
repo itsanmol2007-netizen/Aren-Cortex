@@ -6519,12 +6519,15 @@ body.cs-locked-shell {
     text-transform: none;
     letter-spacing: normal;
 }
+/* Field labels: small, uppercase, letter-spaced — and INK, not grey:
+   nothing a doctor must read should look disabled. The chosen value below
+   stays the dominant thing. */
 .cs-dx-fieldlabel {
-    color: var(--cs-muted);
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: normal;
-    text-transform: none;
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
 }
 .cs-dx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .cs-dx-chip {
@@ -6785,6 +6788,205 @@ body.cs-locked-shell {
     letter-spacing: normal;
 }
 .cs-intv-for svg { color: var(--anat-accent); }
+
+/* "DETAILS" over "Optional" — both readable, the heading stronger. */
+.cs-dx-sechead {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    color: #1e293b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.cs-dx-sechead em {
+    color: #475569;
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 550;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+/* ── Joined segmented control — [ Closed | Open ]. One object with
+   segments, not loose buttons; the chosen segment is filled. */
+.cs-seg {
+    display: inline-flex;
+    align-self: flex-start;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #c3cad6;
+    border-radius: 10px;
+    background: #fff;
+}
+.cs-seg > button {
+    min-width: 0;
+    height: 34px;
+    border: 0;
+    border-left: 1px solid #dde2ea;
+    background: none;
+    padding: 0 14px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.cs-seg > button:first-child { border-left: 0; }
+.cs-seg > button:hover:not(:disabled):not(.is-on) { background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-seg > button.is-on {
+    background: var(--anat-accent, var(--cs-teal));
+    color: #fff;
+    font-weight: 700;
+}
+.cs-seg > button.is-on + button { border-left-color: transparent; }
+.cs-seg > button:disabled { cursor: not-allowed; opacity: 0.45; }
+.cs-seg > button:focus-visible { outline: 2px solid var(--anat-accent, var(--cs-teal)); outline-offset: -2px; }
+
+/* ── Dropdown — [ Select pattern ▾ ] and a clean list. */
+.cs-dsel { position: relative; align-self: stretch; }
+.cs-dsel-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    max-width: 320px;
+    height: 36px;
+    border: 1px solid #c3cad6;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 10px 0 12px;
+    color: var(--cs-faint);
+    font-size: 13px;
+    font-weight: 550;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-dsel-btn.has-value { color: var(--cs-ink); font-weight: 650; }
+.cs-dsel-btn svg { flex: none; color: var(--cs-muted); transition: transform 0.15s; }
+.cs-dsel-btn.is-open { border-color: var(--anat-accent, var(--cs-teal)); box-shadow: 0 0 0 3px var(--anat-accent-ring, rgba(15, 118, 110, 0.12)); }
+.cs-dsel-btn.is-open svg { transform: rotate(180deg); }
+.cs-dsel-list {
+    position: absolute;
+    z-index: 6;
+    top: calc(100% + 4px);
+    left: 0;
+    width: min(320px, 100%);
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 11px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 10px 28px rgba(16, 28, 46, 0.14);
+}
+.cs-dsel-opt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-dsel-opt.is-active { background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-dsel-opt.is-on { color: var(--anat-accent, var(--cs-teal)); font-weight: 700; }
+.cs-dsel-opt.is-clear { color: var(--cs-muted); font-size: 12px; }
+
+/* ── Yes/no and "several at once" — a checkbox, not a chip. */
+.cs-dx-check {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 8px;
+    min-height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 2px 4px 2px 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cs-dx-check.is-chip {
+    border: 1px solid #c3cad6;
+    border-radius: 999px;
+    padding: 0 12px 0 8px;
+}
+.cs-dx-check.is-chip.is-on { border-color: var(--anat-accent, var(--cs-teal)); background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-dx-checkbox {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border: 1.5px solid #94a3b8;
+    border-radius: 4px;
+    background: #fff;
+    color: #fff;
+}
+.cs-dx-check.is-on .cs-dx-checkbox { border-color: var(--anat-accent, var(--cs-teal)); background: var(--anat-accent, var(--cs-teal)); }
+
+/* Section labels in the site modals read as ink, like the field labels —
+   greyed-out headings looked disabled. */
+.cs-addmed-anat .cs-addmed-label { color: #334155; font-weight: 750; }
+
+/* ── Site, sized to what is known (AnatomyPicker.tsx's SiteLayout). */
+.cs-anat-single { display: flex; flex-direction: column; gap: 16px; }
+.cs-addmed-anat.is-compact { width: min(520px, 100%); }
+.cs-anat-showmap {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 5px;
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    color: var(--cs-blue);
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cs-anat-showmap:hover { text-decoration: underline; }
+.cs-body-svg.is-zoomed { max-width: 170px; max-height: 360px; }
+
+/* The joint is known: "Knee" over [ Left | Right | Both ], beside a small
+   line-art joint that only decorates. */
+.cs-joint {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border: 1px solid var(--cs-line);
+    border-radius: 14px;
+    background:
+        radial-gradient(120% 90% at 0% 0%, var(--anat-accent-soft, var(--cs-teal-soft)), transparent 60%),
+        #fff;
+    padding: 12px 14px;
+}
+.cs-joint-art {
+    width: 52px;
+    height: 52px;
+    flex: none;
+    stroke: var(--anat-accent, var(--cs-teal));
+    opacity: 0.85;
+}
+.cs-joint-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cs-joint-name {
+    color: var(--cs-ink);
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+}
 
 /* The exact line that will print, live, above the buttons. */
 .cs-dx-preview {

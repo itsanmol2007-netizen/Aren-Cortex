@@ -19,9 +19,14 @@
 
 import type { BodyAspect, BodyRegion, BodySide } from "./anatomy";
 
+/** "both" — bilateral, for the conditions that allow it (knee OA, carpal
+ *  tunnel…); never offered on the body map itself, only on a joint's own
+ *  Left | Right | Both control. */
+export type SiteSide = BodySide | "both";
+
 export interface SiteRef {
     region: BodyRegion;
-    side: BodySide | null;
+    side: SiteSide | null;
     aspect: BodyAspect;
 }
 
@@ -69,7 +74,13 @@ export function clinicalSiteLabel(site: SiteRef): string {
     const s = normalizeSite(site);
     const base = NAMES[s.region][s.aspect];
     if (!s.side) return base;
+    if (s.side === "both") return `Bilateral ${base.toLowerCase()}`;
     return `${s.side === "left" ? "Left" : "Right"} ${base.toLowerCase()}`;
+}
+
+/** The region's clinical name without a side — "Knee", "Lumbar spine". */
+export function regionName(region: BodyRegion, aspect: BodyAspect = "front"): string {
+    return NAMES[region][aspect];
 }
 
 /** Stable identity for "the same place", independent of which view picked it

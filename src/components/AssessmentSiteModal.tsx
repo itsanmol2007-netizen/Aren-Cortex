@@ -14,7 +14,7 @@
 
 import { Check, FlaskConical, Plus, Stethoscope, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnatomyFigure, SiteField } from "../features/consult/AnatomyPicker";
+import { SiteLayout, siteModeFor } from "../features/consult/AnatomyPicker";
 import {
     composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, visibleFields,
     type AssessmentDetails,
@@ -58,7 +58,13 @@ export function AssessmentSiteModal({
         return fits.length === 1 ? fits[0] : null;
     });
     const [details, setDetails] = useState<AssessmentDetails>(initialDetails);
-    const [showDetails, setShowDetails] = useState(Object.keys(initialDetails).length > 0);
+    const mainKeys = new Set(family?.main ?? family?.fields.map((f) => f.key) ?? []);
+    // Rare details stay folded unless an edit already carries one.
+    const [showMore, setShowMore] = useState(Object.keys(initialDetails).some((k) => !mainKeys.has(k)));
+    const mode = siteModeFor(family?.regions, family?.spineOnly);
+    // The map is only for finding a place; a place already known (pre-filled
+    // or being edited) starts folded behind "Change".
+    const [showMap, setShowMap] = useState(() => site === null);
 
     const allowed = useMemo(
         () => (family ? (s: SiteRef) => siteAllowed(family, s) : undefined),
@@ -82,9 +88,10 @@ export function AssessmentSiteModal({
                 onCancel();
                 return;
             }
+            if ((e.target as HTMLElement).closest?.("[data-popover-open]")) return;
             if (e.key === "Enter") {
                 const tag = (e.target as HTMLElement).tagName;
-                if (tag === "TEXTAREA" || tag === "INPUT") return;
+                if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
                 e.preventDefault();
                 confirm();
             }
@@ -95,6 +102,9 @@ export function AssessmentSiteModal({
 
     if (!family) return null;
     const fields = visibleFields(family, clean, site);
+    const mainFields = fields.filter((f) => mainKeys.has(f.key));
+    const moreFields = fields.filter((f) => !mainKeys.has(f.key));
+    const wide = (mode === "full" || mode === "zoom") && showMap;
     const set = (key: string, v: string | boolean | undefined) =>
         setDetails((d) => {
             const next = { ...d };
@@ -107,7 +117,7 @@ export function AssessmentSiteModal({
         <div className="cs-addmed" role="dialog" aria-modal="true" aria-label={`${label} — site and details`}>
             {/* Not a button: a click outside does nothing, on purpose. */}
             <div className="cs-addmed-scrim" aria-hidden="true" />
-            <div className={`cs-addmed-panel cs-addmed-anat cs-site-modal${imaging ? "" : " cs-dx-modal"}`} ref={panelRef} tabIndex={-1}>
+            <div className={`cs-addmed-panel cs-addmed-anat cs-site-modal${wide ? "" : " is-compact"}${imaging ? "" : " cs-dx-modal"}`} ref={panelRef} tabIndex={-1}>
                 <div className={`cs-addmed-topstripe${imaging ? "" : " cs-dx-modal-stripe"}`} />
 
                 <div className="cs-addmed-head">
@@ -126,40 +136,43 @@ export function AssessmentSiteModal({
                 </div>
 
                 <div className="cs-addmed-body">
-                    <div className="cs-anat-layout">
-                        <AnatomyFigure value={site} onChange={setSite} known={knownSites} allowed={allowed} />
-                        <div className="cs-anat-side">
-                            <section className="cs-addmed-sec">
-                                <span className="cs-addmed-label">Site</span>
-                                <SiteField value={site} onChange={setSite} known={knownSites} allowed={allowed} />
+                    <SiteLayout
+                        mode={mode}
+                        regions={family.regions}
+                        bilateral={family.bilateral}
+                        value={site}
+                        onChange={setSite}
+                        known={knownSites}
+                        allowed={allowed}
+                        showMap={showMap}
+                        onShowMap={() => setShowMap(true)}
+                    >
+                        {mainFields.length > 0 && (
+                            <section className="cs-addmed-sec cs-dx-details">
+                                <span className="cs-dx-sechead">
+                                    Details <em>Optional</em>
+                                </span>
+                                {mainFields.map((f) => (
+                                    <DetailInput key={f.key} field={f} site={site} value={clean[f.key]} onChange={(v) => set(f.key, v)} />
+                                ))}
                             </section>
-
-                            {family.fields.length > 0 && (
-                                showDetails ? (
-                                    <section className="cs-addmed-sec cs-dx-details">
-                                        <span className="cs-addmed-label">Details <em>optional</em></span>
-                                        {fields.map((f) => (
-                                            <DetailInput
-                                                key={f.key}
-                                                field={f}
-                                                site={site}
-                                                value={clean[f.key]}
-                                                onChange={(v) => set(f.key, v)}
-                                            />
-                                        ))}
-                                    </section>
-                                ) : (
-                                    <button type="button" className="cs-dx-adddetails" onClick={() => setShowDetails(true)}>
-                                        <Plus size={14} /> Add details
-                                    </button>
-                                )
-                            )}
-                        </div>
-                    </div>
+                        )}
+                        {moreFields.length > 0 && (showMore ? (
+                            <section className="cs-addmed-sec cs-dx-details">
+                                {moreFields.map((f) => (
+                                    <DetailInput key={f.key} field={f} site={site} value={clean[f.key]} onChange={(v) => set(f.key, v)} />
+                                ))}
+                            </section>
+                        ) : (
+                            <button type="button" className="cs-dx-adddetails" onClick={() => setShowMore(true)}>
+                                <Plus size={14} /> More details
+                            </button>
+                        ))}
+                    </SiteLayout>
                 </div>
 
                 <div className="cs-dx-preview" aria-live="polite">
-                    <span>Will read</span>
+                    <span>Will record</span>
                     <b>{preview}</b>
                 </div>
 

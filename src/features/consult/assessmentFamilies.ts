@@ -75,6 +75,8 @@ export interface AssessmentFamily {
     /** fields always on show; the rest wait behind "+ Add details".
      *  Absent: every field is a detail (assessments). */
     main?: string[];
+    /** Left | Right | Both — for conditions that are often bilateral */
+    bilateral?: boolean;
     fields: DetailField[];
 }
 
@@ -142,6 +144,7 @@ const MUSCLES = byRegion({
 const FAMILIES: Record<string, AssessmentFamily> = {
     fracture: {
         key: "fracture",
+        main: ["open", "gustilo", "displaced", "pattern", "articular"],
         fields: [
             { kind: "choice", key: "open", label: "Skin", options: ["Closed", "Open"], render: lower },
             {
@@ -166,6 +169,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     dislocation: {
         key: "dislocation",
+        main: ["direction", "episode"],
         fields: [
             { kind: "choice", key: "direction", label: "Direction", options: DISLOCATION_DIRECTIONS, render: lower },
             { kind: "choice", key: "episode", label: "Episode", options: ["First episode", "Recurrent"], render: lower },
@@ -174,6 +178,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     subluxation: {
         key: "subluxation",
+        main: ["direction", "episode"],
         fields: [
             { kind: "choice", key: "direction", label: "Direction", options: DISLOCATION_DIRECTIONS, render: lower },
             { kind: "choice", key: "episode", label: "Episode", options: ["First episode", "Recurrent"], render: lower },
@@ -181,6 +186,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     ligament: {
         key: "ligament",
+        main: ["ligament", "grade"],
         fields: [
             { kind: "choice", key: "ligament", label: "Ligament", options: LIGAMENTS },
             {
@@ -192,6 +198,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     tendon: {
         key: "tendon",
+        main: ["tendon", "type"],
         fields: [
             { kind: "choice", key: "tendon", label: "Tendon", options: TENDONS },
             { kind: "choice", key: "type", label: "Type", options: ["Tendinopathy", "Partial tear", "Complete rupture"], render: lower },
@@ -199,6 +206,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     muscle: {
         key: "muscle",
+        main: ["muscle", "grade"],
         fields: [
             { kind: "choice", key: "muscle", label: "Muscle", options: MUSCLES },
             { kind: "choice", key: "grade", label: "Grade", options: GRADES, render: (v) => `grade ${v}` },
@@ -206,6 +214,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     meniscus: {
         key: "meniscus",
+        main: ["side"],
         regions: ["knee"],
         fields: [
             { kind: "choice", key: "side", label: "Meniscus", options: ["Medial", "Lateral"], render: (v) => `${lower(v)} meniscus` },
@@ -219,12 +228,14 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     cartilage: {
         key: "cartilage",
+        main: ["grade"],
         fields: [
             { kind: "choice", key: "grade", label: "ICRS grade", options: ["1", "2", "3", "4"], render: (v) => `ICRS grade ${v}` },
         ],
     },
     osteoarthritis: {
         key: "osteoarthritis",
+        main: ["kl"],
         fields: [
             { kind: "choice", key: "kl", label: "Kellgren-Lawrence grade", options: ["0", "1", "2", "3", "4"], render: (v) => `KL grade ${v}` },
             { kind: "choice", key: "kind", label: "Type", options: ["Primary", "Secondary"], render: lower },
@@ -232,6 +243,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     spine: {
         key: "spine",
+        main: ["type", "level", "radiculopathy"],
         spineOnly: true,
         titleFrom: "type",
         fields: [
@@ -249,6 +261,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     wound: {
         key: "wound",
+        main: ["type", "length", "contamination"],
         fields: [
             { kind: "choice", key: "type", label: "Type", options: ["Laceration", "Abrasion", "Puncture", "Avulsion", "Crush"], render: lower },
             { kind: "number", key: "length", label: "Length", unit: "cm", render: (v) => `${v} cm` },
@@ -257,6 +270,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     infection: {
         key: "infection",
+        main: ["type"],
         titleFrom: "type",
         fields: [
             { kind: "choice", key: "type", label: "Type", options: ["Cellulitis", "Abscess", "Septic arthritis", "Osteomyelitis", "Infected wound"] },
@@ -264,6 +278,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     union: {
         key: "union",
+        main: ["type", "nonunion"],
         titleFrom: "type",
         fields: [
             { kind: "choice", key: "type", label: "Type", options: ["Delayed union", "Non-union", "Malunion"] },
@@ -277,6 +292,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
     },
     postop: {
         key: "postop",
+        main: ["procedure", "days"],
         fields: [
             { kind: "text", key: "procedure", label: "Procedure done", placeholder: "e.g. ORIF distal radius" },
             { kind: "number", key: "days", label: "Days since surgery", unit: "days", render: (v) => `day ${v} post-op` },
@@ -290,7 +306,7 @@ const FAMILIES: Record<string, AssessmentFamily> = {
  * ("Knee osteoarthritis" is only ever a knee). Matched on the exact
  * catalogue label, lower-cased.
  */
-const BY_LABEL: Record<string, { family: string; regions?: BodyRegion[] }> = {
+const BY_LABEL: Record<string, { family: string; regions?: BodyRegion[]; bilateral?: boolean }> = {
     "fracture": { family: "fracture" },
     "previous fracture": { family: "siteOnly" },
     "dislocation": { family: "dislocation" },
@@ -298,29 +314,29 @@ const BY_LABEL: Record<string, { family: string; regions?: BodyRegion[] }> = {
     "ligament sprain": { family: "ligament" },
     "ankle sprain": { family: "ligament", regions: ["ankle", "foot"] },
     "tendon injury": { family: "tendon" },
-    "achilles tendinopathy": { family: "siteOnly", regions: ["ankle", "lower_leg", "foot"] },
+    "achilles tendinopathy": { family: "siteOnly", regions: ["ankle", "lower_leg", "foot"], bilateral: true },
     "rotator cuff tendinopathy": { family: "siteOnly", regions: ["shoulder"] },
     "subacromial impingement": { family: "siteOnly", regions: ["shoulder"] },
-    "adhesive capsulitis (frozen shoulder)": { family: "siteOnly", regions: ["shoulder"] },
-    "lateral epicondylitis (tennis elbow)": { family: "siteOnly", regions: ["elbow"] },
-    "medial epicondylitis": { family: "siteOnly", regions: ["elbow"] },
-    "carpal tunnel syndrome": { family: "siteOnly", regions: ["wrist", "hand"] },
-    "de quervain tenosynovitis": { family: "siteOnly", regions: ["wrist", "hand"] },
-    "trochanteric bursitis": { family: "siteOnly", regions: ["hip"] },
-    "plantar fasciitis": { family: "siteOnly", regions: ["foot"] },
+    "adhesive capsulitis (frozen shoulder)": { family: "siteOnly", regions: ["shoulder"], bilateral: true },
+    "lateral epicondylitis (tennis elbow)": { family: "siteOnly", regions: ["elbow"], bilateral: true },
+    "medial epicondylitis": { family: "siteOnly", regions: ["elbow"], bilateral: true },
+    "carpal tunnel syndrome": { family: "siteOnly", regions: ["wrist", "hand"], bilateral: true },
+    "de quervain tenosynovitis": { family: "siteOnly", regions: ["wrist", "hand"], bilateral: true },
+    "trochanteric bursitis": { family: "siteOnly", regions: ["hip"], bilateral: true },
+    "plantar fasciitis": { family: "siteOnly", regions: ["foot"], bilateral: true },
     "muscle strain": { family: "muscle" },
     "meniscal injury": { family: "meniscus" },
     "cartilage / osteochondral injury": { family: "cartilage" },
-    "osteoarthritis": { family: "osteoarthritis" },
-    "knee osteoarthritis": { family: "osteoarthritis", regions: ["knee"] },
-    "hip osteoarthritis": { family: "osteoarthritis", regions: ["hip"] },
+    "osteoarthritis": { family: "osteoarthritis", bilateral: true },
+    "knee osteoarthritis": { family: "osteoarthritis", regions: ["knee"], bilateral: true },
+    "hip osteoarthritis": { family: "osteoarthritis", regions: ["hip"], bilateral: true },
     "spine disorder": { family: "spine" },
     "soft-tissue injury / contusion": { family: "siteOnly" },
     "wound": { family: "wound" },
     "local infection": { family: "infection" },
     "cellulitis": { family: "siteOnly" },
     "delayed union / non-union / malunion": { family: "union" },
-    "osteonecrosis (avn)": { family: "siteOnly" },
+    "osteonecrosis (avn)": { family: "siteOnly", bilateral: true },
     "gout": { family: "siteOnly" },
     "post-operative rehabilitation": { family: "postop" },
 };
@@ -337,7 +353,7 @@ export function familyFor(label: string): ResolvedFamily | null {
     if (!hit) return null;
     const base = FAMILIES[hit.family];
     const regions = hit.regions ?? base.regions;
-    return { ...base, regions, namesItsJoint: !!hit.regions };
+    return { ...base, regions, namesItsJoint: !!hit.regions, bilateral: hit.bilateral ?? base.bilateral };
 }
 
 export function isAnatomicalAssessment(label: string): boolean {
@@ -397,7 +413,7 @@ export function composeAssessmentText(
 
     if (site) {
         if (family.namesItsJoint) {
-            if (site.side) parts.push(site.side === "left" ? "Left" : "Right");
+            if (site.side) parts.push(site.side === "both" ? "Bilateral" : site.side === "left" ? "Left" : "Right");
         } else {
             parts.push(clinicalSiteLabel(site));
         }
@@ -427,6 +443,7 @@ export function composeAssessmentText(
 const IMAGING_FAMILIES: Record<string, AssessmentFamily> = {
     xray: {
         key: "xray",
+        main: ["views"],
         fields: [
             { kind: "choice", key: "views", label: "Views", options: ["AP + Lateral", "AP", "Lateral", "Oblique", "Stress view", "Weight-bearing"] },
             { kind: "flag", key: "compare", label: "Comparison view of the other side", render: "with comparison view" },
@@ -434,6 +451,7 @@ const IMAGING_FAMILIES: Record<string, AssessmentFamily> = {
     },
     mri: {
         key: "mri",
+        main: ["contrast"],
         fields: [
             { kind: "choice", key: "contrast", label: "Contrast", options: ["Plain", "With contrast"], render: lower },
         ],
@@ -443,7 +461,7 @@ const IMAGING_FAMILIES: Record<string, AssessmentFamily> = {
 
 const LOWER_LIMB: BodyRegion[] = ["hip", "thigh", "knee", "lower_leg", "ankle", "foot"];
 
-const IMAGING_BY_LABEL: Record<string, { family: string; regions?: BodyRegion[] }> = {
+const IMAGING_BY_LABEL: Record<string, { family: string; regions?: BodyRegion[]; bilateral?: boolean }> = {
     "x-ray knee": { family: "xray", regions: ["knee"] },
     "x-ray shoulder": { family: "xray", regions: ["shoulder"] },
     "x-ray hand / wrist": { family: "xray", regions: ["hand", "wrist"] },
@@ -471,6 +489,9 @@ export function imagingFamilyFor(label: string): ResolvedFamily | null {
     // "X-Ray (Other Site)" names no joint, so its line carries the full site.
     return {
         ...base, regions: hit.regions, namesItsJoint: !!hit.regions,
+        // Paired limb imaging can be of both sides at once ("X-Ray Knee —
+        // Bilateral"); the catch-all X-ray names its own site.
+        bilateral: !!hit.regions,
         titleWithSite: hit.regions ? undefined : label.replace(/\s*\(.*\)\s*$/, ""),
     };
 }

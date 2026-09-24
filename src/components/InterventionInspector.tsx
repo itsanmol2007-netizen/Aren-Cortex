@@ -1,8 +1,8 @@
 import { Check, FlaskConical, Link2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { dueInDays, formatDue, type InterventionSide } from "../features/consult/interventionPlan";
-import { AnatomyFigure, SiteField } from "../features/consult/AnatomyPicker";
-import { DetailInput } from "../features/consult/DetailInput";
+import { SiteLayout } from "../features/consult/AnatomyPicker";
+import { DetailInput, Segmented } from "../features/consult/DetailInput";
 import {
     composeAssessmentText, pruneDetails, visibleFields, type AssessmentDetails,
 } from "../features/consult/assessmentFamilies";
@@ -69,7 +69,7 @@ type Props = {
  *
  * Synapse ranked a FAMILY ("Cast"); the configuration happens here, and
  * the fields depend on the family (interventionFamilies.ts): site first,
- * the family's two-to-four main fields, "+ Add details" for the rest, and
+ * the family's two-to-four main fields, "+ More details" for the rest, and
  * a live preview of the exact line that prints. A modality with no family
  * (the physiotherapy ones) keeps the plain site + notes form.
  */
@@ -102,6 +102,9 @@ export function InterventionInspector({
     const dueDate = status === "planned" && Number(dueN) > 0
         ? dueInDays(Number(dueN) * (dueUnit === "weeks" ? 7 : 1)) : null;
     const [showDetails, setShowDetails] = useState(false);
+    // The map is for finding a place; one already known from the visit (or
+    // an earlier plan) starts folded behind "Change".
+    const [showMap, setShowMap] = useState(() => site === null);
     const [notes, setNotes] = useState("");
     const [removesId, setRemovesId] = useState<string | null>(null);
 
@@ -175,9 +178,10 @@ export function InterventionInspector({
                 onCancel();
                 return;
             }
+            if ((e.target as HTMLElement).closest?.("[data-popover-open]")) return;
             if (e.key === "Enter") {
                 const tag = (e.target as HTMLElement).tagName;
-                if (tag === "TEXTAREA" || tag === "INPUT") return;
+                if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
                 e.preventDefault();
                 onConfirm(draft());
             }
@@ -218,21 +222,15 @@ export function InterventionInspector({
         <section className="cs-addmed-sec">
             <span className="cs-addmed-label">When</span>
             <div className="cs-intv-when">
-                <div className="cs-intv-seg" role="radiogroup" aria-label="When">
-                    {(["performed", "planned"] as const).map((st) => (
-                        <button
-                            key={st}
-                            type="button"
-                            role="radio"
-                            aria-checked={status === st}
-                            className={status === st ? "is-on" : undefined}
-                            disabled={!!fromPlanned && st === "planned"}
-                            onClick={() => setStatus(st)}
-                        >
-                            {st === "performed" ? "Performed today" : "Planned"}
-                        </button>
-                    ))}
-                </div>
+                <Segmented
+                    label="When"
+                    options={[
+                        { value: "performed", label: "Performed today" },
+                        ...(fromPlanned ? [] : [{ value: "planned", label: "Planned" }]),
+                    ]}
+                    value={status}
+                    onChange={(v) => setStatus((v as "performed" | "planned") ?? "performed")}
+                />
                 {status === "planned" && (
                     <span className="cs-intv-due">
                         due in
@@ -244,20 +242,12 @@ export function InterventionInspector({
                             aria-label="Due in"
                             onChange={(e) => setDueN(e.target.value.replace(/[^0-9]/g, ""))}
                         />
-                        <span className="cs-intv-seg is-small" role="radiogroup" aria-label="Unit">
-                            {(["days", "weeks"] as const).map((u) => (
-                                <button
-                                    key={u}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={dueUnit === u}
-                                    className={dueUnit === u ? "is-on" : undefined}
-                                    onClick={() => setDueUnit(u)}
-                                >
-                                    {u}
-                                </button>
-                            ))}
-                        </span>
+                        <Segmented
+                            label="Unit"
+                            options={[{ value: "days" }, { value: "weeks" }]}
+                            value={dueUnit}
+                            onChange={(u) => setDueUnit((u as "days" | "weeks") ?? dueUnit)}
+                        />
                     </span>
                 )}
             </div>
@@ -269,7 +259,7 @@ export function InterventionInspector({
             {/* Not a button: a half-configured cast lost to a stray click
                 outside is worse than one press of Cancel. */}
             <div className="cs-addmed-scrim" aria-hidden="true" />
-            <div className="cs-addmed-panel cs-addmed-inspector cs-addmed-anat" ref={panelRef} tabIndex={-1}>
+            <div className={`cs-addmed-panel cs-addmed-inspector cs-addmed-anat${showMap ? "" : " is-compact"}`} ref={panelRef} tabIndex={-1}>
                 <div className="cs-addmed-topstripe" />
 
                 <div className="cs-addmed-head">
@@ -284,97 +274,97 @@ export function InterventionInspector({
                 </div>
 
                 <div className="cs-addmed-body">
-                    <div className="cs-anat-layout">
-                        <AnatomyFigure value={site} onChange={setSite} known={knownSites} />
-                        <div className="cs-anat-side">
-                            {removable.length > 0 && (
-                                <section className="cs-addmed-sec">
-                                    <span className="cs-addmed-label">
-                                        {family?.key === "dressingChange" ? "Changing" : "Removing"} <em>pick to link</em>
-                                    </span>
-                                    <div className="cs-intv-earlier">
-                                        {removable.map((e) => (
-                                            <button
-                                                key={e.id}
-                                                type="button"
-                                                aria-pressed={removesId === e.id}
-                                                className={`cs-intv-earlier-row${removesId === e.id ? " is-on" : ""}`}
-                                                onClick={() => pickEarlier(e)}
-                                            >
-                                                <span className="cs-intv-earlier-mark" aria-hidden="true">
-                                                    {removesId === e.id && <Check size={11} />}
-                                                </span>
-                                                <span className="cs-intv-earlier-text">{e.text}</span>
-                                                <em>{e.when}</em>
-                                            </button>
+                    {removable.length > 0 && (
+                        <section className="cs-addmed-sec">
+                            <span className="cs-addmed-label">
+                                {family?.key === "dressingChange" ? "Changing" : "Removing"} <em>pick to link</em>
+                            </span>
+                            <div className="cs-intv-earlier">
+                                {removable.map((e) => (
+                                    <button
+                                        key={e.id}
+                                        type="button"
+                                        aria-pressed={removesId === e.id}
+                                        className={`cs-intv-earlier-row${removesId === e.id ? " is-on" : ""}`}
+                                        onClick={() => pickEarlier(e)}
+                                    >
+                                        <span className="cs-intv-earlier-mark" aria-hidden="true">
+                                            {removesId === e.id && <Check size={11} />}
+                                        </span>
+                                        <span className="cs-intv-earlier-text">{e.text}</span>
+                                        <em>{e.when}</em>
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    <SiteLayout
+                        mode="full"
+                        value={site}
+                        onChange={setSite}
+                        known={knownSites}
+                        showMap={showMap}
+                        onShowMap={() => setShowMap(true)}
+                    >
+                        {treats && (
+                            <span className="cs-intv-for">
+                                <Link2 size={11} aria-hidden="true" /> For {treats.text}
+                            </span>
+                        )}
+
+                        {family ? (
+                            <>
+                                {mainFields.length > 0 && (
+                                    <section className="cs-addmed-sec cs-dx-details">
+                                        {mainFields.map((f) => (
+                                            <DetailInput
+                                                key={f.key}
+                                                field={f}
+                                                site={site}
+                                                value={clean[f.key]}
+                                                onChange={(v) => setField(f.key, v)}
+                                            />
                                         ))}
-                                    </div>
-                                </section>
-                            )}
-
-                            <section className="cs-addmed-sec">
-                                <span className="cs-addmed-label">Site</span>
-                                <SiteField value={site} onChange={setSite} known={knownSites} />
-                                {treats && (
-                                    <span className="cs-intv-for">
-                                        <Link2 size={11} aria-hidden="true" /> For {treats.text}
-                                    </span>
+                                    </section>
                                 )}
-                            </section>
-
-                            {family ? (
-                                <>
-                                    {mainFields.length > 0 && (
-                                        <section className="cs-addmed-sec cs-dx-details">
-                                            {mainFields.map((f) => (
-                                                <DetailInput
-                                                    key={f.key}
-                                                    field={f}
-                                                    site={site}
-                                                    value={clean[f.key]}
-                                                    onChange={(v) => setField(f.key, v)}
-                                                />
-                                            ))}
-                                        </section>
-                                    )}
-                                    {whenInput}
-                                    {showDetails ? (
-                                        <>
-                                            {extraFields.length > 0 && (
-                                                <section className="cs-addmed-sec cs-dx-details">
-                                                    <span className="cs-addmed-label">Details <em>optional</em></span>
-                                                    {extraFields.map((f) => (
-                                                        <DetailInput
-                                                            key={f.key}
-                                                            field={f}
-                                                            site={site}
-                                                            value={clean[f.key]}
-                                                            onChange={(v) => setField(f.key, v)}
-                                                        />
-                                                    ))}
-                                                </section>
-                                            )}
-                                            {notesInput}
-                                        </>
-                                    ) : (
-                                        <button type="button" className="cs-dx-adddetails" onClick={() => setShowDetails(true)}>
-                                            <Plus size={14} /> {extraFields.length > 0 ? "Add details" : "Add notes"}
-                                        </button>
-                                    )}
-                                </>
-                            ) : (
-                                <>
-                                    {whenInput}
-                                    {notesInput}
-                                </>
-                            )}
-                        </div>
-                    </div>
+                                {whenInput}
+                                {showDetails ? (
+                                    <>
+                                        {extraFields.length > 0 && (
+                                            <section className="cs-addmed-sec cs-dx-details">
+                                                <span className="cs-addmed-label">Details <em>optional</em></span>
+                                                {extraFields.map((f) => (
+                                                    <DetailInput
+                                                        key={f.key}
+                                                        field={f}
+                                                        site={site}
+                                                        value={clean[f.key]}
+                                                        onChange={(v) => setField(f.key, v)}
+                                                    />
+                                                ))}
+                                            </section>
+                                        )}
+                                        {notesInput}
+                                    </>
+                                ) : (
+                                    <button type="button" className="cs-dx-adddetails" onClick={() => setShowDetails(true)}>
+                                        <Plus size={14} /> {extraFields.length > 0 ? "More details" : "Add notes"}
+                                    </button>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                {whenInput}
+                                {notesInput}
+                            </>
+                        )}
+                    </SiteLayout>
                 </div>
 
                 {family && (
                     <div className="cs-dx-preview" aria-live="polite">
-                        <span>Will read</span>
+                        <span>Will record</span>
                         <b>{text}{statusNote && <em>{statusNote}</em>}</b>
                     </div>
                 )}
