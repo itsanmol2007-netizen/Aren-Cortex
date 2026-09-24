@@ -4857,6 +4857,13 @@ body.cs-locked-shell {
     width: 100%;
 }
 
+/* Above the glass's specular band (`.cs-body::before`, absolutely placed),
+   which otherwise washed the Front/Back toggle and the head of the figure
+   to near-white. */
+.cs-body > * {
+    position: relative;
+}
+
 .cs-body.is-disabled {
     opacity: 0.45;
     pointer-events: none;
@@ -6292,6 +6299,159 @@ body.cs-locked-shell {
     cursor: pointer;
 }
 .cs-addmed-siteresult:hover { background: var(--cs-teal-soft); color: var(--cs-teal); }
+
+/* ── ANATOMY PICKER — AnatomyPicker.tsx. The shared "where on the patient"
+   control inside the assessment and intervention modals. The figure reuses
+   the body map's own `.cs-body*` drawing; only the chosen zone differs:
+   solid teal (the doctor's own statement, colour.md) instead of the joint
+   map's blue, so a site chosen here reads as the same colour as the modal
+   it sits in. Known sites stay the joint map's teal-soft. */
+.cs-anat-figure { margin-bottom: 0; }
+.cs-anat-figure .cs-body-svg { max-width: 180px; }
+.cs-anat-figure .cs-body-orient { text-align: center; font-size: 11px; line-height: 1.35; }
+.cs-anat-figure .cs-body-zone.is-sel {
+    fill: var(--cs-teal);
+    stroke: var(--cs-teal);
+}
+.cs-body-zone.is-off {
+    fill: #f8f9fb;
+    stroke: #e3e7ee;
+    cursor: not-allowed;
+}
+.cs-body-zone.is-off:hover { fill: #f8f9fb; stroke: #e3e7ee; }
+
+.cs-anat-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+.cs-anat-search { position: relative; }
+/* A class of its own, never a bare input: base.css styles `input` unlayered
+   (transparent border, 31px) and wins over any utility. */
+.cs-anat-input {
+    width: 100%;
+    height: 40px;
+    box-sizing: border-box;
+    border: 1px solid #c3cad6;
+    border-radius: 11px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cs-anat-input::placeholder { color: var(--cs-faint); font-weight: 500; }
+.cs-anat-input:focus {
+    outline: none;
+    border-color: var(--cs-teal);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+.cs-anat-results {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 230px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 11px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(16, 28, 46, 0.12);
+}
+.cs-anat-result {
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-anat-result.is-active { background: var(--cs-teal-soft); color: var(--cs-teal); }
+
+/* The chosen site: same 40px as the input it replaces, so choosing one
+   never moves anything below it. */
+.cs-anat-selected {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    box-sizing: border-box;
+    border: 1px solid rgba(15, 118, 110, 0.35);
+    border-radius: 11px;
+    background: var(--cs-teal-soft);
+    padding: 0 6px 0 12px;
+    color: var(--cs-teal);
+    font-size: 13.5px;
+    font-weight: 700;
+}
+.cs-anat-selected > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-anat-selected > button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--cs-teal);
+    cursor: pointer;
+}
+.cs-anat-selected > button:hover { background: rgba(15, 118, 110, 0.12); }
+
+.cs-anat-known {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.cs-anat-known > span {
+    margin-right: 2px;
+    color: var(--cs-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+.cs-anat-knownchip {
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cs-anat-knownchip:hover:not(:disabled) { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-anat-knownchip.is-on {
+    border-color: var(--cs-teal);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+
+/* Figure beside the fields inside a modal; stacked on narrow screens. */
+.cs-addmed-anat { width: min(640px, 100%); max-height: min(92vh, 760px); }
+.cs-anat-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cs-anat-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+@media (max-width: 640px) {
+    .cs-anat-layout { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* The overflow row on a capped Attachments card. Deliberately quiet: it is a
    way to the rest of the files, not a file itself. */
