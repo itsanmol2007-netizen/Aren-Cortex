@@ -41,6 +41,11 @@ import type { Medicine as SynapseBrand } from "../lib/synapse/brands";
 import type { CompanionSuggestion } from "../lib/synapse/companions";
 import { doseFor, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
 import { formatLine as formatIntervention, type InterventionLine, type InterventionSide } from "../features/consult/interventionPlan";
+import type { AssessmentLine } from "../features/consult/assessmentPlan";
+import {
+  composeAssessmentText, familyFor, pruneDetails, type AssessmentDetails,
+} from "../features/consult/assessmentFamilies";
+import type { SiteRef } from "../lib/body/clinicalSite";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
 import { guardIntent } from "../lib/synapse/engine";
 import { resolveProductByName } from "../lib/db/medicines";
@@ -226,6 +231,19 @@ export interface ConsultPlan {
   confirmPendingIntervention: (draft: { site: string; side: InterventionSide | null; notes: string }) => void;
   cancelPendingIntervention: () => void;
 
+  // ── Assessments at a site ────────────────────────────────────────────
+  /** the structure behind every anatomical entry in `diagnoses` — see
+   *  features/consult/assessmentPlan.ts */
+  assessmentLines: AssessmentLine[];
+  /** an anatomical assessment waiting on its site — see AssessmentSiteModal */
+  pendingAssessment: PendingAssessment | null;
+  confirmPendingAssessment: (draft: { site: SiteRef | null; details: AssessmentDetails }) => void;
+  cancelPendingAssessment: () => void;
+  /** reopen a line's modal to change its site or details */
+  editAssessmentLine: (id: string) => void;
+  /** the same assessment at another site — a second fracture */
+  addAnotherAssessmentSite: (intentId: number | null, label: string) => void;
+
   // ── Taking things, and taking them back ───────────────────────────────
   handleAcceptIntent: (payload: AcceptPayload) => void;
   handleAcknowledge: (intentId: number, ack: boolean) => void;
@@ -282,6 +300,14 @@ export interface PendingIntervention {
   /** pre-filled when opened from "add another site" on an existing line;
    *  empty for a fresh accept from the ranked list. */
   initialSite: string;
+}
+
+export interface PendingAssessment {
+  payload: AcceptPayload;
+  /** the line being edited; null for a new one */
+  editId: string | null;
+  initialSite: SiteRef | null;
+  initialDetails: AssessmentDetails;
 }
 
 export function useConsultPlan({
@@ -423,6 +449,15 @@ export function useConsultPlan({
    * two code paths for one clinical object.
    */
   const [exercisePlan, setExercisePlan] = useState<ExerciseLine[]>([]);
+
+  /**
+   * Assessments that happen somewhere on the body ("Fracture — Left knee").
+   * Staged like an intervention: the site is asked for on every accept,
+   * because an unplaced fracture is not something anyone can treat. Each
+   * line's `text` also lives in `diagnoses`; see assessmentPlan.ts.
+   */
+  const [assessmentLines, setAssessmentLines] = useState<AssessmentLine[]>([]);
+  const [pendingAssessment, setPendingAssessment] = useState<PendingAssessment | null>(null);
 
   const appendAdvice = useCallback((line: string) => {
     setAdviceNotes((curr) => {
@@ -593,8 +628,9 @@ export function useConsultPlan({
         // It lands on the Plan and prints on the Rx — and, the part that was
         // missing until now, it is finally RECORDED as an accept, so the
         // decision log sees which impression the doctor actually agreed with.
+        const dxText = payload.diagnosisText ?? payload.label;
         setDiagnoses((curr) =>
-          curr.includes(payload.label) ? curr : [...curr, payload.label]
+          curr.includes(dxText) ? curr : [...curr, dxText]
         );
         // ★ And, since 2026-08-15, it also becomes an INPUT. A mapped condition
         // joins the chart as context and the engine re-ranks in the same frame;
@@ -676,6 +712,14 @@ export function useConsultPlan({
     // to remember to go back and add it. See PendingIntervention.
     if (payload.type === "modality") {
       setPendingIntervention({ payload, initialSite: lastMarkedSiteRef.current ?? "" });
+      return;
+    }
+
+    // An assessment with a place on the body asks where, first — the same
+    // staging as an intervention. Everything else (malaria, hypertension)
+    // still lands in one tap.
+    if (payload.type === "finding" && familyFor(payload.label)) {
+      setPendingAssessment({ payload, editId: null, initialSite: null, initialDetails: {} });
       return;
     }
 
@@ -895,6 +939,87 @@ export function useConsultPlan({
     setPendingIntervention(null);
   }, []);
 
+  /**
+   * The site (and any details) are chosen — now it becomes a diagnosis.
+   * A new line registers the accept through `commitAccept` with its
+   * composed text, so the ledger, the decision log and the standing-fact
+   * path all run exactly as for a one-tap assessment. An edit only swaps
+   * the text in place, keeping its position (the first is PRIMARY).
+   */
+  const confirmPendingAssessment = useCallback((draft: { site: SiteRef | null; details: AssessmentDetails }) => {
+    if (!pendingAssessment) return;
+    const { payload, editId } = pendingAssessment;
+    const family = familyFor(payload.label);
+    if (!family) return;
+    setPendingAssessment(null);
+    const details = pruneDetails(family, draft.site, draft.details);
+    const text = composeAssessmentText(payload.label, family, draft.site, details);
+
+    if (editId) {
+      const old = assessmentLines.find((l) => l.id === editId);
+      if (!old) return;
+      setAssessmentLines((curr) => curr.map((l) => (l.id === editId ? { ...l, site: draft.site, details, text } : l)));
+      setDiagnoses((curr) => {
+        if (old.text === text) return curr;
+        // Two identical lines collapse to one rather than printing twice.
+        if (curr.includes(text)) return curr.filter((d) => d !== old.text);
+        return curr.map((d) => (d === old.text ? text : d));
+      });
+      return;
+    }
+
+    if (diagnoses.includes(text)) {
+      showToast(`${text} is already in the assessment`);
+      return;
+    }
+    if (payload.intentId && acceptedIntents.has(payload.intentId)) {
+      // A second site of something already confirmed: the decision was
+      // recorded once, only the line is new.
+      setDiagnoses((curr) => [...curr, text]);
+    } else {
+      commitAccept({ ...payload, diagnosisText: text });
+    }
+    setAssessmentLines((curr) => [...curr, {
+      id: `dx-${payload.intentId}-${Date.now()}`,
+      intentId: payload.intentId || null,
+      label: payload.label,
+      family: family.key,
+      site: draft.site,
+      details,
+      text,
+    }]);
+  }, [pendingAssessment, assessmentLines, diagnoses, acceptedIntents, commitAccept, showToast]);
+
+  const cancelPendingAssessment = useCallback(() => {
+    setPendingAssessment(null);
+  }, []);
+
+  const editAssessmentLine = useCallback((id: string) => {
+    const line = assessmentLines.find((l) => l.id === id);
+    if (!line) return;
+    setPendingAssessment({
+      payload: {
+        intentId: line.intentId ?? 0, type: "finding", label: line.label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      editId: id,
+      initialSite: line.site,
+      initialDetails: line.details,
+    });
+  }, [assessmentLines]);
+
+  const addAnotherAssessmentSite = useCallback((intentId: number | null, label: string) => {
+    setPendingAssessment({
+      payload: {
+        intentId: intentId ?? 0, type: "finding", label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      editId: null,
+      initialSite: null,
+      initialDetails: {},
+    });
+  }, []);
+
   const removeIntervention = useCallback((id: string) => {
     let intentId: number | null = null;
     setInterventionPlan((curr) => {
@@ -965,25 +1090,43 @@ export function useConsultPlan({
 
   const removeDiagnosis = useCallback((label: string) => {
     const target = label.trim().toLowerCase();
-    setDiagnoses((curr) => curr.filter((d) => d.trim().toLowerCase() !== target));
+    // A target is either one line's text ("Fracture — Left knee": that site
+    // only) or the catalogue name ("Fracture", from the ranked row's undo:
+    // every site of it).
+    const hitLines = assessmentLines.filter(
+      (l) => l.text.trim().toLowerCase() === target || l.label.trim().toLowerCase() === target
+    );
+    const keptLines = assessmentLines.filter((l) => !hitLines.includes(l));
+    const removedTexts = new Set([target, ...hitLines.map((l) => l.text.trim().toLowerCase())]);
+    if (hitLines.length) setAssessmentLines(keptLines);
+    setDiagnoses((curr) => curr.filter((d) => !removedTexts.has(d.trim().toLowerCase())));
+
     // Found first, released after: `unconfirmCondition` needs to know which
     // OTHER finding intents are still confirmed so a chip shared by two
     // confirmed diagnoses is not pulled out from under the one that stays.
-    let removedIntentId: number | null = null;
-    const stillConfirmed: number[] = [];
+    // An intent with sites is released only when its LAST site goes — one
+    // fracture healed is not the doctor withdrawing the other.
+    const releasedIds = new Set<number>();
     for (const [intentId, p] of acceptedIntents) {
       if (p.type !== "finding") continue;
-      if (p.label.trim().toLowerCase() === target) removedIntentId = intentId;
-      else stillConfirmed.push(intentId);
+      const byLabel = p.label.trim().toLowerCase() === target
+        || (p.diagnosisText ?? "").trim().toLowerCase() === target;
+      const lostLastSite = hitLines.some((l) => l.intentId === intentId)
+        && !keptLines.some((l) => l.intentId === intentId);
+      if (byLabel || lostLastSite) releasedIds.add(intentId);
     }
-    if (removedIntentId != null) {
-      releaseIntent(removedIntentId);
+    const stillConfirmed: number[] = [];
+    for (const [intentId, p] of acceptedIntents) {
+      if (p.type === "finding" && !releasedIds.has(intentId)) stillConfirmed.push(intentId);
+    }
+    for (const id of releasedIds) {
+      releaseIntent(id);
       // The other half of the fix: taking the diagnosis chip off must also
       // take back whatever it silently put on the Case Sheet — see
       // useLongitudinalRecord.ts's doc comment on this function.
-      unconfirmCondition(removedIntentId, stillConfirmed);
+      unconfirmCondition(id, stillConfirmed);
     }
-  }, [acceptedIntents, releaseIntent, unconfirmCondition]);
+  }, [assessmentLines, acceptedIntents, releaseIntent, unconfirmCondition]);
 
   /**
    * The free-text fallback, chart-local half — §4, 2026-08-24, widened same
@@ -1306,6 +1449,8 @@ export function useConsultPlan({
     setSelectedMedicineId(null);
     setSelectedTests([]);
     setDiagnoses([]);
+    setAssessmentLines([]);
+    setPendingAssessment(null);
     setFollowUpDays(null);
     setAdviceNotes("");
     setInterventionPlan([]);
@@ -1320,6 +1465,8 @@ export function useConsultPlan({
     setSelectedTests(draft.selectedTests);
     setSelectedLabName(draft.selectedLabName);
     setDiagnoses(draft.diagnoses);
+    // Drafts saved before assessment lines existed have none.
+    setAssessmentLines((draft.assessmentLines ?? []).filter((l) => draft.diagnoses.includes(l.text)));
     setFollowUpDays(draft.followUpDays);
     setAdviceNotes(draft.adviceNotes);
     setInterventionPlan(draft.interventionPlan);
@@ -1334,6 +1481,9 @@ export function useConsultPlan({
     }
     if (diagnoses && diagnoses.length > 0) {
       setDiagnoses(diagnoses);
+      // A repeated diagnosis comes back as plain text; its old site lines
+      // do not describe this visit.
+      setAssessmentLines([]);
     }
     setSelectedMedicineId(null);
     setStagedMedicine(null);
@@ -1381,6 +1531,13 @@ export function useConsultPlan({
     pendingIntervention,
     confirmPendingIntervention,
     cancelPendingIntervention,
+
+    assessmentLines,
+    pendingAssessment,
+    confirmPendingAssessment,
+    cancelPendingAssessment,
+    editAssessmentLine,
+    addAnotherAssessmentSite,
 
     handleAcceptIntent,
     handleAcknowledge,

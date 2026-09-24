@@ -6309,16 +6309,24 @@ body.cs-locked-shell {
 .cs-anat-figure { margin-bottom: 0; }
 .cs-anat-figure .cs-body-svg { max-width: 180px; }
 .cs-anat-figure .cs-body-orient { text-align: center; font-size: 11px; line-height: 1.35; }
-.cs-anat-figure .cs-body-zone.is-sel {
-    fill: var(--cs-teal);
-    stroke: var(--cs-teal);
+/* The accent follows the modal it sits in: teal by default (interventions),
+   violet inside the assessment modal. Two variables, set on the modal. */
+.cs-addmed {
+    --anat-accent: var(--cs-teal);
+    --anat-accent-soft: var(--cs-teal-soft);
+    --anat-accent-ring: rgba(15, 118, 110, 0.12);
 }
+.cs-anat-figure .cs-body-zone.is-sel {
+    fill: var(--anat-accent, var(--cs-teal));
+    stroke: var(--anat-accent, var(--cs-teal));
+}
+/* A zone this assessment cannot sit on ("Knee osteoarthritis" off the
+   knee) fades back, so the few that can are the ones that read as body. */
 .cs-body-zone.is-off {
-    fill: #f8f9fb;
-    stroke: #e3e7ee;
+    opacity: 0.3;
     cursor: not-allowed;
 }
-.cs-body-zone.is-off:hover { fill: #f8f9fb; stroke: #e3e7ee; }
+.cs-body-zone.is-off:hover { fill: #f4f7fc; stroke: #cbd5e6; }
 
 .cs-anat-field {
     display: flex;
@@ -6345,8 +6353,8 @@ body.cs-locked-shell {
 .cs-anat-input::placeholder { color: var(--cs-faint); font-weight: 500; }
 .cs-anat-input:focus {
     outline: none;
-    border-color: var(--cs-teal);
-    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    border-color: var(--anat-accent, var(--cs-teal));
+    box-shadow: 0 0 0 3px var(--anat-accent-ring, rgba(15, 118, 110, 0.12));
 }
 .cs-anat-results {
     position: absolute;
@@ -6375,7 +6383,7 @@ body.cs-locked-shell {
     text-align: left;
     cursor: pointer;
 }
-.cs-anat-result.is-active { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-anat-result.is-active { background: var(--anat-accent-soft, var(--cs-teal-soft)); color: var(--anat-accent, var(--cs-teal)); }
 
 /* The chosen site: same 40px as the input it replaces, so choosing one
    never moves anything below it. */
@@ -6385,11 +6393,11 @@ body.cs-locked-shell {
     gap: 8px;
     height: 40px;
     box-sizing: border-box;
-    border: 1px solid rgba(15, 118, 110, 0.35);
+    border: 1px solid color-mix(in srgb, var(--anat-accent, var(--cs-teal)) 35%, transparent);
     border-radius: 11px;
-    background: var(--cs-teal-soft);
+    background: var(--anat-accent-soft, var(--cs-teal-soft));
     padding: 0 6px 0 12px;
-    color: var(--cs-teal);
+    color: var(--anat-accent, var(--cs-teal));
     font-size: 13.5px;
     font-weight: 700;
 }
@@ -6402,10 +6410,10 @@ body.cs-locked-shell {
     border: 0;
     border-radius: 8px;
     background: none;
-    color: var(--cs-teal);
+    color: inherit;
     cursor: pointer;
 }
-.cs-anat-selected > button:hover { background: rgba(15, 118, 110, 0.12); }
+.cs-anat-selected > button:hover { background: var(--anat-accent-ring, rgba(15, 118, 110, 0.12)); }
 
 .cs-anat-known {
     display: flex;
@@ -6451,6 +6459,207 @@ body.cs-locked-shell {
 }
 @media (max-width: 640px) {
     .cs-anat-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── ASSESSMENT SITE MODAL — AssessmentSiteModal.tsx. The shared shell in
+   the Assessment card's violet, the same way `.cs-goal-modal` re-accents
+   it rose. */
+.cs-dx-modal {
+    --anat-accent: var(--cs-violet);
+    --anat-accent-soft: var(--cs-violet-soft);
+    --anat-accent-ring: rgba(124, 58, 237, 0.14);
+}
+.cs-dx-modal-stripe { background: linear-gradient(90deg, #a78bfa 0%, #7c3aed 50%, #5b21b6 100%); }
+.cs-dx-modal-eyebrow { color: var(--cs-violet); }
+.cs-dx-modal-confirm {
+    background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%) !important;
+    box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3) !important;
+}
+.cs-dx-modal .cs-addmed-head .cs-glyph { background: linear-gradient(135deg, #ede9fe 0%, #f5f0ff 100%); }
+.cs-dx-modal .cs-addmed-x:hover { background: rgba(124, 58, 237, 0.12) !important; border-color: rgba(124, 58, 237, 0.3) !important; color: var(--cs-violet) !important; }
+
+.cs-addmed-label em {
+    margin-left: 4px;
+    color: var(--cs-faint);
+    font-style: normal;
+    font-weight: 550;
+    letter-spacing: 0.02em;
+    text-transform: none;
+}
+
+.cs-dx-adddetails {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    height: 34px;
+    border: 1px dashed color-mix(in srgb, var(--cs-violet) 45%, transparent);
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-violet);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.cs-dx-adddetails:hover { background: var(--cs-violet-soft); }
+
+.cs-dx-details { gap: 12px; }
+.cs-dx-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.cs-dx-fieldlabel {
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: normal;
+    text-transform: none;
+}
+.cs-dx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-dx-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cs-dx-chip:hover { border-color: var(--cs-violet); color: var(--cs-violet); }
+.cs-dx-chip.is-on {
+    border-color: var(--cs-violet);
+    background: var(--cs-violet);
+    color: #fff;
+}
+.cs-dx-chip.is-flag { align-self: flex-start; }
+.cs-dx-chip.is-flag.is-on { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.cs-dx-inputrow { display: flex; align-items: center; gap: 8px; text-transform: none; }
+.cs-dx-inputrow .cs-anat-input.is-num { width: 96px; font-variant-numeric: tabular-nums; }
+.cs-dx-inputrow em { color: var(--cs-muted); font-size: 12.5px; font-style: normal; font-weight: 600; }
+
+/* ── On the Assessment card (ConditionsCard.tsx) ───────────────────────
+   The marker on an assessment that will ask where on the body. Quiet: a
+   hint about what the next click does, not a status. */
+.cs-dx-sitemark {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    border-radius: 5px;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+
+/* A confirmed assessment's sites, one pill each, under its name. Click a
+   pill to change it; × takes that site alone off. */
+.cs-dx-sites {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-top: 5px;
+}
+.cs-dx-site {
+    display: inline-flex;
+    align-items: stretch;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #b6e6cd;
+    border-radius: 7px;
+    background: #fff;
+}
+.cs-dx-site > button {
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+.cs-dx-site > button:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 3px 4px 3px 7px;
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+}
+.cs-dx-site > button:first-child svg { flex: none; color: #15803d; }
+.cs-dx-site > button:first-child:hover { color: var(--cs-violet); }
+.cs-dx-site-x {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    color: var(--cs-faint);
+}
+.cs-dx-site-x:hover { background: #fee2e2; color: #dc2626; }
+
+.cs-dx-addsite {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 0 6px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-dx-addsite:hover { background: var(--cs-blue-soft); }
+
+.cs-dx-editname {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: #4c1d95;
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-dx-editname:hover { text-decoration: underline; }
+
+/* The exact line that will print, live, above the buttons. */
+.cs-dx-preview {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    background: var(--cs-violet-soft);
+    padding: 10px 20px;
+}
+.cs-dx-preview span {
+    flex: none;
+    color: var(--cs-violet);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-dx-preview b {
+    min-width: 0;
+    color: #4c1d95;
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
 }
 
 /* The overflow row on a capped Attachments card. Deliberately quiet: it is a

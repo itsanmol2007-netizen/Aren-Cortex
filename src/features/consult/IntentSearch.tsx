@@ -223,7 +223,7 @@ const MATCH_TEXT: Record<IntentSearchHit["matchKind"], (via: string | null) => s
  */
 export function IntentSearchResults({
     state, verbOf, ruleset, activeSignals, rankedIntentIds, acceptedIntentIds,
-    acknowledged, onAcknowledge, onAccept, onRemove, isPinned, onTogglePin,
+    acknowledged, onAcknowledge, onAccept, onRemove, isPinned, onTogglePin, nameBadge,
 }: {
     state: IntentSearchState;
     /**
@@ -258,6 +258,9 @@ export function IntentSearchResults({
      */
     isPinned?: (intentId: number) => boolean;
     onTogglePin?: (intentId: number) => void;
+    /** a small marker after a hit's name — the Assessment card's body icon
+     *  on assessments that will ask for a site */
+    nameBadge?: (label: string, type: IntentType) => React.ReactNode;
 }) {
     const products = useHitProducts(state.hits);
 
@@ -387,6 +390,7 @@ export function IntentSearchResults({
                         <div className="cs-sug-main">
                             <div className="cs-sug-name">
                                 <span>{hit.matchKind === "brand" && hit.viaLabel ? hit.viaLabel : hit.label}</span>
+                                {nameBadge?.(hit.label, hit.type)}
                                 {isWarn && <span className="cs-flag is-warn">Caution</span>}
                                 {isHard && (
                                     <span className="cs-flag is-hard"><ShieldAlert size={10} /> Check</span>

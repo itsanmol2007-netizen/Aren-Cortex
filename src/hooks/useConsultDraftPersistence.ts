@@ -127,6 +127,7 @@ export function useConsultDraftPersistence({
                     followUpDays: plan.followUpDays,
                     adviceNotes: plan.adviceNotes,
                     interventionPlan: plan.interventionPlan,
+                    assessmentLines: plan.assessmentLines,
                     exercisePlan: plan.exercisePlan,
                     visitNotes: plan.visitNotes,
                 },
@@ -143,7 +144,7 @@ export function useConsultDraftPersistence({
         chart.vitals, chart.selectedSymptoms, chart.selectedSymptomsWithIntensity,
         chart.selectedFindings, chart.chipOrigins, chart.symptomDurations,
         plan.prescription, plan.selectedTests, plan.selectedLabName, plan.diagnoses,
-        plan.followUpDays, plan.adviceNotes, plan.interventionPlan, plan.exercisePlan, plan.visitNotes,
+        plan.followUpDays, plan.adviceNotes, plan.interventionPlan, plan.assessmentLines, plan.exercisePlan, plan.visitNotes,
         visitStory.story, visitStory.todayScores,
     ]);
 }

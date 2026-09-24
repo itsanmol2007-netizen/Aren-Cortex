@@ -40,4 +40,10 @@ export interface AcceptPayload {
      * molecule it contains. See lib/db/medicines.ts.
      */
     brandHint?: string | null;
+    /**
+     * For an assessment placed on the body: the composed line that goes
+     * into the diagnosis list ("Fracture — Left knee, open"), while `label`
+     * stays the catalogue name the decision log records.
+     */
+    diagnosisText?: string;
 }

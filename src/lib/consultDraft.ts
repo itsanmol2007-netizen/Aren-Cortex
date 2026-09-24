@@ -43,6 +43,7 @@ import type { Patient, PrescriptionMedicine, SelectedSymptom, Vitals } from "../
 import type { ChipOrigin } from "../hooks/useConsultChart";
 import type { ExerciseLine } from "../features/consult/exercisePlan";
 import type { InterventionLine } from "../features/consult/interventionPlan";
+import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import type { Story } from "../features/consult/story";
 
 const PREFIX = "aren-cortex:consult-draft:";
@@ -86,6 +87,8 @@ export interface PlanDraft {
     followUpDays: number | null;
     adviceNotes: string;
     interventionPlan: InterventionLine[];
+    /** optional: drafts saved before assessment lines existed have none */
+    assessmentLines?: AssessmentLine[];
     exercisePlan: ExerciseLine[];
     visitNotes: string;
 }

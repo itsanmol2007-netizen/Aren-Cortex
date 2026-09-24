@@ -4,6 +4,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
 import { InterventionInspector } from "./components/InterventionInspector";
+import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
+import { siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -682,6 +684,8 @@ function App() {
     pendingMedicine, setPendingMedicine, inspectorMedicine,
     confirmPendingMedicine, confirmStagedMedicine, medicineBilling,
     pendingIntervention, confirmPendingIntervention, cancelPendingIntervention,
+    assessmentLines, pendingAssessment, confirmPendingAssessment, cancelPendingAssessment,
+    editAssessmentLine, addAnotherAssessmentSite,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
@@ -936,7 +940,7 @@ function App() {
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
-      !!pendingIntervention ||
+      !!pendingIntervention || !!pendingAssessment ||
       !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
       !!activeVisit || !!trendDetail || !!trendVisit || carePlanSheetOpen || addMedicineQuery != null,
   });
@@ -1692,6 +1696,15 @@ function App() {
       : null;
   }, [markedExam]);
 
+  /** The joints the body map marked this visit, as sites — offered as
+   *  one-click chips wherever a site is asked for. */
+  const knownSites = useMemo<SiteRef[]>(
+    () => markedExam.regions
+      .map((r) => siteFromRegionKey(r, markedExam.sides.get(r) ?? null))
+      .filter((x): x is SiteRef => x !== null),
+    [markedExam],
+  );
+
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
 
@@ -2329,6 +2342,9 @@ function App() {
                 hasChart={intelligence.hasInput}
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
+                assessmentLines={assessmentLines}
+                onEditAssessmentLine={editAssessmentLine}
+                onAddAssessmentSite={addAnotherAssessmentSite}
                 onRemove={removeAcceptedIntent}
                 /* §4, 2026-08-24 — the Assessment free-text fallback. */
                 onAddFreeText={(label) => handleAddFreeTerm(label, "finding")}
@@ -2709,6 +2725,21 @@ function App() {
 
           {/* Site + side confirmation, between "ranked" and "on the plan" —
               the same slot MedicineAddSheet occupies one line up. */}
+          {/* Site and details for an assessment placed on the body. Keyed
+              so a second site opens fresh, never on the last one's state. */}
+          {pendingAssessment && (
+            <AssessmentSiteModal
+              key={pendingAssessment.editId ?? `new-${pendingAssessment.payload.label}`}
+              label={pendingAssessment.payload.label}
+              editing={pendingAssessment.editId !== null}
+              initialSite={pendingAssessment.initialSite}
+              initialDetails={pendingAssessment.initialDetails}
+              knownSites={knownSites}
+              onCancel={cancelPendingAssessment}
+              onConfirm={confirmPendingAssessment}
+            />
+          )}
+
           {pendingIntervention && (
             <InterventionInspector
               label={pendingIntervention.payload.label}

@@ -115,3 +115,15 @@ export function siteFromLabel(label: string | null | undefined): SiteRef | null 
     if (!q) return null;
     return CLINICAL_SITE_OPTIONS.find((o) => o.label.toLowerCase() === q)?.site ?? null;
 }
+
+/**
+ * A body-map / examination region key ("knee", "torso_lower") and its side,
+ * as a site. The examination names the spine by its torso zone, so those
+ * are read from the back, where the figure draws the spine.
+ */
+export function siteFromRegionKey(key: string, side: BodySide | null): SiteRef | null {
+    if (!(key in NAMES)) return null;
+    const region = key as BodyRegion;
+    const aspect: BodyAspect = region === "neck" || region === "torso_upper" || region === "torso_lower" ? "back" : "front";
+    return normalizeSite({ region, side, aspect });
+}

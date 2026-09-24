@@ -37,6 +37,7 @@ import {
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
 import { saveInterventionPlan } from "../lib/db/interventions";
+import { saveAssessmentPlan } from "../lib/db/assessments";
 import type { ReviewBillingResult } from "../lib/db/additionalCharges";
 import {
   recordVisitPayment,
@@ -1016,6 +1017,17 @@ export function useConsultLifecycle({
       // as part of `saved`) already carries the formatted text either way,
       // so a doctor's printed Rx is correct even if this one write fails.
       // What would be lost is only the structured site/side record.
+      // Same rule for the structure behind site-placed assessments: the
+      // composed lines are already in the saved diagnosis text.
+      const assessmentLines = plan.assessmentLines.filter((l) => plan.diagnoses.includes(l.text));
+      if (assessmentLines.length > 0) {
+        try {
+          await saveAssessmentPlan(saved.prescriptionId, assessmentLines);
+        } catch (e: any) {
+          console.error("saveAssessmentPlan:", e);
+          showToast(`Prescription saved, but the assessment sites did not: ${e?.message ?? e}`);
+        }
+      }
       if (plan.interventionPlan.length > 0) {
         try {
           await saveInterventionPlan(saved.prescriptionId, plan.interventionPlan);

@@ -30,9 +30,11 @@
 // panel is ever presented as the cause.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { Check, ChevronDown, ShieldAlert, Stethoscope, X } from "lucide-react";
+import { Check, ChevronDown, MapPin, PersonStanding, Plus, ShieldAlert, Stethoscope, X } from "lucide-react";
+import type { AssessmentLine } from "./assessmentPlan";
+import { isAnatomicalAssessment } from "./assessmentFamilies";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { DoctorFreeTerm } from "../../lib/db/synapse";
 import { matchingFreeTerms, topFreeTermMatches } from "./freeTerms";
@@ -130,6 +132,30 @@ interface Props {
      * OPD and every profile with no chart is untouched.
      */
     sideSlot?: React.ReactNode;
+    /**
+     * The structure behind site-placed assessments ("Fracture — Left knee").
+     * Each line's text is also in `diagnoses`; these let the ranked row show
+     * its sites as pills, reopen one to edit, and add another. Absent means
+     * no assessment ever asks for a site (older callers).
+     */
+    assessmentLines?: AssessmentLine[];
+    onEditAssessmentLine?: (id: string) => void;
+    onAddAssessmentSite?: (intentId: number | null, label: string) => void;
+}
+
+/** The small marker on an assessment that will ask where on the body. */
+function SiteMarker() {
+    return (
+        <span className="cs-dx-sitemark" title="Asks where on the body">
+            <PersonStanding size={12} aria-hidden="true" />
+        </span>
+    );
+}
+
+/** "Left knee, open, displaced" — a line's text without its own headline. */
+function siteText(line: AssessmentLine): string {
+    const prefix = `${line.label} — `;
+    return line.text.startsWith(prefix) ? line.text.slice(prefix.length) : line.text;
 }
 
 export function ConditionsCard({
@@ -137,7 +163,14 @@ export function ConditionsCard({
     onExplain, ruleset, activeSignals, hasChart,
     diagnoses, onRemoveDiagnosis, onRemove, freeTerms = [], onAddFreeText,
     disabled = false, searchRef, sideSlot,
+    assessmentLines = [], onEditAssessmentLine, onAddAssessmentSite,
 }: Props) {
+    const siteAware = !!onEditAssessmentLine;
+    const lineByText = useMemo(() => new Map(assessmentLines.map((l) => [l.text, l])), [assessmentLines]);
+    const linesOf = (intent: PersonalizedIntent) =>
+        assessmentLines.filter((l) =>
+            (l.intentId != null && l.intentId === intent.intentId)
+            || l.label.trim().toLowerCase() === intent.label.trim().toLowerCase());
     const [expanded, setExpanded] = useState(false);
     const reduce = useReducedMotion();
     const search = useIntentSearch(["finding"]);
@@ -265,15 +298,32 @@ export function ConditionsCard({
     const unrankedConfirmed = useMemo(() => {
         return diagnoses.filter((d) => {
             const target = d.trim().toLowerCase();
-            return !shown.some((i) => i.label.trim().toLowerCase() === target);
+            if (shown.some((i) => i.label.trim().toLowerCase() === target)) return false;
+            // A site line of a ranked assessment shows as a pill on that row.
+            const line = lineByText.get(d);
+            if (line && shown.some((i) =>
+                (line.intentId != null && line.intentId === i.intentId)
+                || line.label.trim().toLowerCase() === i.label.trim().toLowerCase())) return false;
+            return true;
         });
-    }, [diagnoses, shown]);
+    }, [diagnoses, shown, lineByText]);
 
     // Stage 0 of the cascade — the head, so it starts at 0ms. Assessment is
     // what the doctor's signals resolve into first; everything downstream
     // leads off this panel. Keyed on what is actually RENDERED (`shown`), so
     // unlocking "Show more" cascades the newly revealed rows in too.
     const cascade = useRankCascade(CASCADE_STAGE.assessment, rankOrderKey(shown), listRef);
+
+    // Collapsed, the list already holds only CAP rows (plus confirmed ones),
+    // so its box is sized to what those rows actually measure. A fixed
+    // CAP × ROW_H clipped the last row once a confirmed assessment grew a
+    // second line of site pills.
+    const [collapsedH, setCollapsedH] = useState(CAP * ROW_H);
+    useLayoutEffect(() => {
+        if (expanded || search.isSearching || !listRef.current) return;
+        const h = listRef.current.scrollHeight;
+        if (h > 0 && h !== collapsedH) setCollapsedH(h);
+    });
 
     const rankedIds = useMemo(
         () => new Set(intents.map((i) => i.intentId)),
@@ -287,6 +337,9 @@ export function ConditionsCard({
                     <IntentSearchResults
                         state={search}
                         verbOf={() => "Confirm"}
+                        nameBadge={siteAware
+                            ? (label, type) => (type === "finding" && isAnatomicalAssessment(label) ? <SiteMarker /> : null)
+                            : undefined}
                         ruleset={ruleset}
                         activeSignals={activeSignals}
                         rankedIntentIds={rankedIds}
@@ -330,14 +383,19 @@ export function ConditionsCard({
         }
 
         return [
-            ...unrankedConfirmed.map((label, i) => (
-                <FreeConditionRow
-                    key={`unranked-${label}`}
-                    label={label}
-                    cascadeDelay={cascade.delayOf(i)}
-                    onRemove={() => onRemoveDiagnosis(label)}
-                />
-            )),
+            ...unrankedConfirmed.map((label, i) => {
+                const line = lineByText.get(label);
+                return (
+                    <FreeConditionRow
+                        key={`unranked-${label}`}
+                        label={label}
+                        cascadeDelay={cascade.delayOf(i)}
+                        onRemove={() => onRemoveDiagnosis(label)}
+                        onEdit={line && onEditAssessmentLine ? () => onEditAssessmentLine(line.id) : undefined}
+                        onAddSite={line && onAddAssessmentSite ? () => onAddAssessmentSite(line.intentId, line.label) : undefined}
+                    />
+                );
+            }),
             ...shown.map((intent, i) => (
             <ConditionRow
                 key={intent.intentId}
@@ -355,6 +413,11 @@ export function ConditionsCard({
                         : null
                 }
                 confirmed={isConditionConfirmed(intent)}
+                anatomical={siteAware && isAnatomicalAssessment(intent.label)}
+                sites={siteAware ? linesOf(intent) : []}
+                onEditSite={(id) => onEditAssessmentLine?.(id)}
+                onRemoveSite={(text) => onRemoveDiagnosis(text)}
+                onAddSite={() => onAddAssessmentSite?.(intent.intentId, intent.label)}
                 acknowledged={acknowledged.has(intent.intentId)}
                 onAcknowledge={(v) => onAcknowledge(intent.intentId, v)}
                 onExplain={(rect) => onExplain(intent, rect)}
@@ -569,7 +632,7 @@ export function ConditionsCard({
                                 // Expanded stops on a HALF row on purpose: this one
                                 // is a scroll box, and a clean edge there would say
                                 // the list ends where it does not.
-                                animate={{ maxHeight: expanded ? 4.5 * ROW_H : CAP * ROW_H }}
+                                animate={{ maxHeight: expanded ? 4.5 * ROW_H + (collapsedH - CAP * ROW_H) : collapsedH }}
                                 transition={
                                     reduce
                                         ? { duration: 0 }
@@ -659,6 +722,8 @@ export function ConditionsCard({
                                         label={primaryDx}
                                         tone="primary"
                                         onRemove={() => onRemoveDiagnosis(primaryDx)}
+                                        onEdit={lineByText.has(primaryDx) && onEditAssessmentLine
+                                            ? () => onEditAssessmentLine(lineByText.get(primaryDx)!.id) : undefined}
                                     />
                                 )}
                                 {secondaryDx.map((dx) => (
@@ -667,6 +732,8 @@ export function ConditionsCard({
                                         label={dx}
                                         tone="secondary"
                                         onRemove={() => onRemoveDiagnosis(dx)}
+                                        onEdit={lineByText.has(dx) && onEditAssessmentLine
+                                            ? () => onEditAssessmentLine(lineByText.get(dx)!.id) : undefined}
                                     />
                                 ))}
                             </div>
@@ -778,8 +845,11 @@ function FreeMatchRow({
  * bolted above it — but violet instead of green/slate, the one honest tell
  * that this came from the doctor's own notes, not the engine.
  */
-function FreeConditionRow({ label, onRemove, cascadeDelay }: {
+function FreeConditionRow({ label, onRemove, cascadeDelay, onEdit, onAddSite }: {
     label: string; onRemove: () => void; cascadeDelay: number;
+    /** a site-placed assessment: click the name to change site or details */
+    onEdit?: () => void;
+    onAddSite?: () => void;
 }) {
     const reduce = useReducedMotion();
     return (
@@ -794,9 +864,20 @@ function FreeConditionRow({ label, onRemove, cascadeDelay }: {
                 <Check size={12} />
             </span>
             <div className="min-w-0 flex-1">
-                <span className="text-[13.5px] font-bold leading-tight text-[#4c1d95]">{label}</span>
-                <span className="mt-[1px] block text-[11px] font-semibold text-[#6d28d9]">
+                {onEdit ? (
+                    <button type="button" className="cs-dx-editname" onClick={onEdit} title="Change site or details">
+                        {label}
+                    </button>
+                ) : (
+                    <span className="text-[13.5px] font-bold leading-tight text-[#4c1d95]">{label}</span>
+                )}
+                <span className="mt-[1px] flex items-center gap-2 text-[11px] font-semibold text-[#6d28d9]">
                     Confirmed diagnosis
+                    {onAddSite && (
+                        <button type="button" className="cs-dx-addsite" onClick={onAddSite}>
+                            <Plus size={11} /> Another site
+                        </button>
+                    )}
                 </span>
             </div>
             <button
@@ -814,8 +895,15 @@ function FreeConditionRow({ label, onRemove, cascadeDelay }: {
 
 function ConditionRow({
     intent, rank, relevance, confirmed, acknowledged, onAcknowledge, onExplain, onAccept, onRemove,
-    cascadeDelay,
+    cascadeDelay, anatomical, sites, onEditSite, onRemoveSite, onAddSite,
 }: {
+    /** asks for a site when taken — shows the body marker */
+    anatomical: boolean;
+    /** the sites this assessment is confirmed at, as pills */
+    sites: AssessmentLine[];
+    onEditSite: (id: string) => void;
+    onRemoveSite: (text: string) => void;
+    onAddSite: () => void;
     /** ms this row waits before arriving — see `delayOf` in cascade.ts */
     cascadeDelay: number;
     intent: PersonalizedIntent;
@@ -879,6 +967,7 @@ function ConditionRow({
                     <span className="text-[13.5px] font-semibold leading-tight text-[var(--cs-ink)]">
                         {intent.label}
                     </span>
+                    {anatomical && sites.length === 0 && <SiteMarker />}
                     {intent.isSafetyCritical && (
                         <span className="cs-flag is-safety"><ShieldAlert size={10} /> Safety</span>
                     )}
@@ -886,7 +975,29 @@ function ConditionRow({
                     {isHard && <span className="cs-flag is-hard">Check</span>}
                     <WhyButton label={intent.label} onOpen={onExplain} />
                 </div>
-                {relevance && (
+                {confirmed && sites.length > 0 ? (
+                    <div className="cs-dx-sites">
+                        {sites.map((l) => (
+                            <span key={l.id} className="cs-dx-site">
+                                <button type="button" onClick={() => onEditSite(l.id)} title="Change site or details">
+                                    <MapPin size={11} aria-hidden="true" />
+                                    {siteText(l)}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="cs-dx-site-x"
+                                    aria-label={`Remove ${l.text}`}
+                                    onClick={() => onRemoveSite(l.text)}
+                                >
+                                    <X size={11} />
+                                </button>
+                            </span>
+                        ))}
+                        <button type="button" className="cs-dx-addsite" onClick={onAddSite}>
+                            <Plus size={11} /> Another site
+                        </button>
+                    </div>
+                ) : relevance && (
                     <span className="mt-[1px] block text-[11.5px] font-semibold text-[var(--cs-label)]">
                         {relevance}
                     </span>
@@ -939,11 +1050,13 @@ function ConditionRow({
  * alike is precisely how a ranked possibility gets read as a diagnosis.
  */
 function DxChip({
-    label, tone, onRemove,
+    label, tone, onRemove, onEdit,
 }: {
     label: string;
     tone: "primary" | "secondary";
     onRemove: () => void;
+    /** a site-placed assessment: click to change site or details */
+    onEdit?: () => void;
 }) {
     return (
         <span
@@ -954,14 +1067,28 @@ function DxChip({
                     : "border-[#e6ddfb] bg-[#faf8ff]")
             }
         >
-            <span
-                className={
-                    "min-w-0 flex-1 truncate text-[13.5px] leading-tight text-[#5b21b6] " +
-                    (tone === "primary" ? "font-bold" : "font-semibold")
-                }
-            >
-                {label}
-            </span>
+            {onEdit ? (
+                <button
+                    type="button"
+                    onClick={onEdit}
+                    title="Change site or details"
+                    className={
+                        "min-w-0 flex-1 truncate border-0 bg-transparent p-0 text-left text-[13.5px] leading-tight text-[#5b21b6] hover:underline " +
+                        (tone === "primary" ? "font-bold" : "font-semibold")
+                    }
+                >
+                    {label}
+                </button>
+            ) : (
+                <span
+                    className={
+                        "min-w-0 flex-1 truncate text-[13.5px] leading-tight text-[#5b21b6] " +
+                        (tone === "primary" ? "font-bold" : "font-semibold")
+                    }
+                >
+                    {label}
+                </span>
+            )}
             <button
                 type="button"
                 onClick={onRemove}
