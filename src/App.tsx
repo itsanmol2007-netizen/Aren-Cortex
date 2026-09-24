@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
 import { InterventionInspector } from "./components/InterventionInspector";
 import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
-import { siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
+import { sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -42,7 +42,6 @@ import { useVisitStory } from "./hooks/useVisitStory";
 import { useConsultDraftPersistence } from "./hooks/useConsultDraftPersistence";
 import { useExamination } from "./hooks/useExamination";
 import { REGION_BY_KEY } from "./features/consult/examination";
-import { siteName } from "./features/consult/ExamSummaryStrip";
 import { listBodySites } from "./lib/db/bodySites";
 import {
   DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
@@ -648,15 +647,6 @@ function App() {
     hospitalId: identity.hospitalId,
   });
 
-  // The body map's most recently marked site, for an intervention accept to
-  // pre-fill from — see useConsultPlan.ts's `lastMarkedSiteRef` doc comment.
-  // A ref because `markedExam` (below, `useState`) is declared after `plan`
-  // is created, and a ref's `.current` can be written from an effect no
-  // matter which order the two hooks were declared in, where a plain value
-  // captured at `useConsultPlan(...)` call time would be stuck on `null`
-  // forever.
-  const lastMarkedSiteRef = useRef<string | null>(null);
-
   // ★ The plan — everything the doctor has TAKEN, and the accept-to-plan
   // pipeline that gets it there. Sits after the intelligence hook because the
   // accept path reads the brand index and the engine's active signals; see
@@ -671,7 +661,6 @@ function App() {
     showToast,
     confirmCondition,
     unconfirmCondition,
-    lastMarkedSiteRef,
   });
   const {
     prescription, selectedTests, selectedLabName, setSelectedLabName,
@@ -1685,25 +1674,22 @@ function App() {
     return () => { cancelled = true; };
   }, [visitId, openChart, specialty.charts]);
 
-  // Feeds `lastMarkedSiteRef` above — the most recently marked region,
-  // formatted the same way `ExamSummaryStrip` prints it ("Right knee"), so
-  // an intervention accepted right after marking a joint opens its confirm
-  // step already pointed at that joint.
-  useEffect(() => {
-    const last = markedExam.regions[markedExam.regions.length - 1];
-    lastMarkedSiteRef.current = last
-      ? siteName(last, markedExam.sides.get(last) ?? null)
-      : null;
-  }, [markedExam]);
-
-  /** The joints the body map marked this visit, as sites — offered as
-   *  one-click chips wherever a site is asked for. */
-  const knownSites = useMemo<SiteRef[]>(
-    () => markedExam.regions
-      .map((r) => siteFromRegionKey(r, markedExam.sides.get(r) ?? null))
-      .filter((x): x is SiteRef => x !== null),
-    [markedExam],
-  );
+  /**
+   * SITE CONTEXT (Phase 3) — every place established in this visit, in the
+   * order it became known: an assessment's site first ("Fracture — Left
+   * knee"), then an intervention's, then the joints marked on the body map.
+   * Every site-asking modal reads it: one place is pre-filled, two or more
+   * become "Which site?", none leaves the body map. An intervention adds its
+   * own site here but never invents a diagnosis for it.
+   */
+  const knownSites = useMemo<SiteRef[]>(() => {
+    const out: SiteRef[] = [];
+    const add = (x: SiteRef | null) => { if (x && !out.some((k) => sameSite(k, x))) out.push(x); };
+    assessmentLines.forEach((l) => add(l.site));
+    interventionPlan.forEach((l) => add(siteFromLabel(l.site)));
+    markedExam.regions.forEach((r) => add(siteFromRegionKey(r, markedExam.sides.get(r) ?? null)));
+    return out;
+  }, [assessmentLines, interventionPlan, markedExam]);
 
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
@@ -2731,6 +2717,8 @@ function App() {
             <AssessmentSiteModal
               key={pendingAssessment.editId ?? `new-${pendingAssessment.payload.label}`}
               label={pendingAssessment.payload.label}
+              kind={pendingAssessment.kind}
+              autoPrefill={!pendingAssessment.another}
               editing={pendingAssessment.editId !== null}
               initialSite={pendingAssessment.initialSite}
               initialDetails={pendingAssessment.initialDetails}
@@ -2744,6 +2732,8 @@ function App() {
             <InterventionInspector
               label={pendingIntervention.payload.label}
               initialSite={pendingIntervention.initialSite}
+              knownSites={knownSites}
+              autoPrefill={!pendingIntervention.another}
               onCancel={cancelPendingIntervention}
               onConfirm={confirmPendingIntervention}
             />

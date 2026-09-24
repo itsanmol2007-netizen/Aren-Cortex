@@ -295,7 +295,11 @@ export function SuggestionsCard({
             if (testSection) {
                 const rankedLabels = new Set((byType.test ?? []).map((i) => i.label.trim().toLowerCase()));
                 for (const t of selectedTests) {
-                    if (!rankedLabels.has(t.trim().toLowerCase())) {
+                    const x = t.trim().toLowerCase();
+                    // "X-Ray Knee — Left, AP + Lateral" is the ranked "X-Ray
+                    // Knee" at a site; its tick is on that row already.
+                    const sitedRanked = [...rankedLabels].some((r) => x.startsWith(`${r} — `));
+                    if (!rankedLabels.has(x) && !sitedRanked) {
                         list.push({ type: "test", label: t, icon: testSection.icon, verb: testSection.verb });
                     }
                 }

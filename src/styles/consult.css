@@ -6429,6 +6429,10 @@ body.cs-locked-shell {
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+/* Two or more known places and none chosen: the question leads. */
+.cs-anat-known.is-ask > span { color: var(--anat-accent, var(--cs-teal)); }
+.cs-anat-known.is-ask { margin-bottom: 2px; }
+
 .cs-anat-knownchip {
     height: 28px;
     border: 1px solid var(--cs-line-strong);
@@ -6467,6 +6471,7 @@ body.cs-locked-shell {
 .cs-dx-modal {
     --anat-accent: var(--cs-violet);
     --anat-accent-soft: var(--cs-violet-soft);
+    --anat-accent-ink: #4c1d95;
     --anat-accent-ring: rgba(124, 58, 237, 0.14);
 }
 .cs-dx-modal-stripe { background: linear-gradient(90deg, #a78bfa 0%, #7c3aed 50%, #5b21b6 100%); }
@@ -6493,17 +6498,17 @@ body.cs-locked-shell {
     align-self: flex-start;
     gap: 6px;
     height: 34px;
-    border: 1px dashed color-mix(in srgb, var(--cs-violet) 45%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--anat-accent) 45%, transparent);
     border-radius: 10px;
     background: #fff;
     padding: 0 12px;
-    color: var(--cs-violet);
+    color: var(--anat-accent);
     font-size: 12.5px;
     font-weight: 700;
     cursor: pointer;
     transition: background 0.12s;
 }
-.cs-dx-adddetails:hover { background: var(--cs-violet-soft); }
+.cs-dx-adddetails:hover { background: var(--anat-accent-soft); }
 
 .cs-dx-details { gap: 12px; }
 .cs-dx-field {
@@ -6537,14 +6542,14 @@ body.cs-locked-shell {
     cursor: pointer;
     transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
-.cs-dx-chip:hover { border-color: var(--cs-violet); color: var(--cs-violet); }
+.cs-dx-chip:hover { border-color: var(--anat-accent); color: var(--anat-accent); }
 .cs-dx-chip.is-on {
-    border-color: var(--cs-violet);
-    background: var(--cs-violet);
+    border-color: var(--anat-accent);
+    background: var(--anat-accent);
     color: #fff;
 }
 .cs-dx-chip.is-flag { align-self: flex-start; }
-.cs-dx-chip.is-flag.is-on { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.cs-dx-chip.is-flag.is-on { background: var(--anat-accent-soft); color: var(--anat-accent); }
 .cs-dx-inputrow { display: flex; align-items: center; gap: 8px; text-transform: none; }
 .cs-dx-inputrow .cs-anat-input.is-num { width: 96px; font-variant-numeric: tabular-nums; }
 .cs-dx-inputrow em { color: var(--cs-muted); font-size: 12.5px; font-style: normal; font-weight: 600; }
@@ -6643,12 +6648,12 @@ body.cs-locked-shell {
     gap: 10px;
     flex: none;
     border-top: 1px solid rgba(0, 0, 0, 0.06);
-    background: var(--cs-violet-soft);
+    background: var(--anat-accent-soft);
     padding: 10px 20px;
 }
 .cs-dx-preview span {
     flex: none;
-    color: var(--cs-violet);
+    color: var(--anat-accent);
     font-size: 10px;
     font-weight: 750;
     letter-spacing: 0.08em;
@@ -6656,7 +6661,7 @@ body.cs-locked-shell {
 }
 .cs-dx-preview b {
     min-width: 0;
-    color: #4c1d95;
+    color: var(--anat-accent-ink, #134e4a);
     font-size: 13.5px;
     font-weight: 700;
     line-height: 1.35;

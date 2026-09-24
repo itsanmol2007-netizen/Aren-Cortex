@@ -7,10 +7,13 @@ import { useOverlayFocus } from "../hooks/useOverlayFocus";
 
 type Props = {
     label: string;
-    /** pre-filled from the visit's own marked body sites when one exists —
-     *  see App.tsx's `handleAcceptIntent`. Still a normal editable field:
-     *  Synapse's guess is a starting point, never the only way in. */
+    /** an explicit site to open on ("Right knee"), when the caller has one */
     initialSite?: string;
+    /** every place already established in this visit — assessments, other
+     *  interventions, joints marked on the body map (Phase 3) */
+    knownSites?: SiteRef[];
+    /** take the one known site without asking; off for "+ Another site" */
+    autoPrefill?: boolean;
     onConfirm: (draft: { site: string; side: InterventionSide | null; notes: string }) => void;
     onCancel: () => void;
 };
@@ -28,8 +31,14 @@ type Props = {
  * ("Left forearm", "Lumbar spine"), never free text. Notes is the catch-all
  * until the per-family fields (cast material, drug injected…) land.
  */
-export function InterventionInspector({ label, initialSite = "", onConfirm, onCancel }: Props) {
-    const [site, setSite] = useState<SiteRef | null>(() => siteFromLabel(initialSite));
+export function InterventionInspector({
+    label, initialSite = "", knownSites = [], autoPrefill = false, onConfirm, onCancel,
+}: Props) {
+    // Site context: an explicit site wins; else the visit's single known
+    // place; two or more become "Which site?" in the field; none leaves the
+    // body map. Never invents one.
+    const [site, setSite] = useState<SiteRef | null>(() =>
+        siteFromLabel(initialSite) ?? (autoPrefill && knownSites.length === 1 ? knownSites[0] : null));
     // No separate Left/Right question: the site already carries its side
     // ("Right knee") wherever a side exists, and the spine has none.
     const side: InterventionSide | null = null;
@@ -76,11 +85,11 @@ export function InterventionInspector({ label, initialSite = "", onConfirm, onCa
 
                 <div className="cs-addmed-body">
                     <div className="cs-anat-layout">
-                        <AnatomyFigure value={site} onChange={setSite} />
+                        <AnatomyFigure value={site} onChange={setSite} known={knownSites} />
                         <div className="cs-anat-side">
                             <section className="cs-addmed-sec">
                                 <span className="cs-addmed-label">Site</span>
-                                <SiteField value={site} onChange={setSite} />
+                                <SiteField value={site} onChange={setSite} known={knownSites} />
                             </section>
 
                             <section className="cs-addmed-sec">

@@ -55,6 +55,9 @@ export interface AssessmentFamily {
      *  headline — "Septic arthritis — Right knee", not "Local infection —
      *  Right knee, septic arthritis" */
     titleFrom?: string;
+    /** the headline once a site is chosen — "X-Ray (Other Site)" reads
+     *  "X-Ray — Right clavicle" */
+    titleWithSite?: string;
     fields: DetailField[];
 }
 
@@ -366,7 +369,7 @@ export function composeAssessmentText(
     site: SiteRef | null,
     details: AssessmentDetails,
 ): string {
-    let title = label;
+    let title = site && family.titleWithSite ? family.titleWithSite : label;
     const parts: string[] = [];
 
     if (site) {
@@ -387,4 +390,60 @@ export function composeAssessmentText(
     }
 
     return parts.length ? `${title} — ${parts.join(", ")}` : title;
+}
+
+// ── Imaging placed on the body ─────────────────────────────────────────────
+// A limb X-ray or MRI names its joint but not its side, and "X-Ray Knee"
+// on a two-knee patient is an order the radiographer has to phone back
+// about. Same engine as assessments: the site is asked, views are optional.
+
+const IMAGING_FAMILIES: Record<string, AssessmentFamily> = {
+    xray: {
+        key: "xray",
+        fields: [
+            { kind: "choice", key: "views", label: "Views", options: ["AP + Lateral", "AP", "Lateral", "Oblique", "Stress view", "Weight-bearing"] },
+            { kind: "flag", key: "compare", label: "Comparison view of the other side", render: "with comparison view" },
+        ],
+    },
+    mri: {
+        key: "mri",
+        fields: [
+            { kind: "choice", key: "contrast", label: "Contrast", options: ["Plain", "With contrast"], render: lower },
+        ],
+    },
+    siteOnly: { key: "siteOnly", fields: [] },
+};
+
+const LOWER_LIMB: BodyRegion[] = ["hip", "thigh", "knee", "lower_leg", "ankle", "foot"];
+
+const IMAGING_BY_LABEL: Record<string, { family: string; regions?: BodyRegion[] }> = {
+    "x-ray knee": { family: "xray", regions: ["knee"] },
+    "x-ray shoulder": { family: "xray", regions: ["shoulder"] },
+    "x-ray hand / wrist": { family: "xray", regions: ["hand", "wrist"] },
+    "x-ray foot / ankle": { family: "xray", regions: ["foot", "ankle"] },
+    "x-ray elbow": { family: "xray", regions: ["elbow"] },
+    "x-ray forearm": { family: "xray", regions: ["forearm"] },
+    "x-ray humerus": { family: "xray", regions: ["upper_arm"] },
+    "x-ray hip": { family: "xray", regions: ["hip"] },
+    "x-ray femur": { family: "xray", regions: ["thigh"] },
+    "x-ray leg (tibia / fibula)": { family: "xray", regions: ["lower_leg"] },
+    "x-ray (other site)": { family: "xray" },
+    "mri knee": { family: "mri", regions: ["knee"] },
+    "mri shoulder": { family: "mri", regions: ["shoulder"] },
+    "mri hip": { family: "mri", regions: ["hip"] },
+    "mri ankle": { family: "mri", regions: ["ankle", "foot"] },
+    "mri wrist": { family: "mri", regions: ["wrist", "hand"] },
+    "usg doppler (lower limb)": { family: "siteOnly", regions: LOWER_LIMB },
+};
+
+/** The imaging family behind a catalogue test, or null for one with no side. */
+export function imagingFamilyFor(label: string): ResolvedFamily | null {
+    const hit = IMAGING_BY_LABEL[label.trim().toLowerCase()];
+    if (!hit) return null;
+    const base = IMAGING_FAMILIES[hit.family];
+    // "X-Ray (Other Site)" names no joint, so its line carries the full site.
+    return {
+        ...base, regions: hit.regions, namesItsJoint: !!hit.regions,
+        titleWithSite: hit.regions ? undefined : label.replace(/\s*\(.*\)\s*$/, ""),
+    };
 }

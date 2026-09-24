@@ -46,4 +46,8 @@ export interface AcceptPayload {
      * stays the catalogue name the decision log records.
      */
     diagnosisText?: string;
+    /** For a limb imaging order: the composed line that goes into the test
+     *  list ("X-Ray Knee — Left, AP + Lateral"); `label` stays the catalogue
+     *  name. */
+    orderText?: string;
 }

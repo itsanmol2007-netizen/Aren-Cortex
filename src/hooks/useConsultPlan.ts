@@ -43,7 +43,7 @@ import { doseFor, type ExerciseLine, type ExerciseSide } from "../features/consu
 import { formatLine as formatIntervention, type InterventionLine, type InterventionSide } from "../features/consult/interventionPlan";
 import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import {
-  composeAssessmentText, familyFor, pruneDetails, type AssessmentDetails,
+  composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, type AssessmentDetails,
 } from "../features/consult/assessmentFamilies";
 import type { SiteRef } from "../lib/body/clinicalSite";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
@@ -149,16 +149,6 @@ export interface ConsultPlanArgs {
    * about a patient is not a line on a prescription. See useLongitudinalRecord.
    */
   confirmCondition: (intentId: number) => string | null;
-  /**
-   * The body map's most recently marked site, formatted ("Right knee"), or
-   * null when nothing has been marked this visit. A ref, not a value — read
-   * only at the moment of an intervention accept, so it never has to be a
-   * dependency the way a plain prop would. Anmol: "we should pre-fill the
-   * things there with the help of synapse... site and then type of that
-   * thing." This is the site half of that; the type/site is already implied
-   * by which ranked row the doctor clicked.
-   */
-  lastMarkedSiteRef: React.RefObject<string | null>;
   /** The inverse — see useLongitudinalRecord.ts's doc comment. */
   unconfirmCondition: (intentId: number, stillConfirmedIntentIds: Iterable<number>) => void;
 }
@@ -297,12 +287,17 @@ export interface PendingMedicine {
 
 export interface PendingIntervention {
   payload: AcceptPayload;
-  /** pre-filled when opened from "add another site" on an existing line;
-   *  empty for a fresh accept from the ranked list. */
+  /** an explicit site to open on; empty lets site context decide */
   initialSite: string;
+  /** opened from "+ Another site": the known site is not the answer */
+  another: boolean;
 }
 
 export interface PendingAssessment {
+  /** an assessment ("Fracture") or a limb imaging order ("X-Ray Knee") */
+  kind: "assessment" | "imaging";
+  /** opened from "+ Another site" or an edit: the known site is not the answer */
+  another: boolean;
   payload: AcceptPayload;
   /** the line being edited; null for a new one */
   editId: string | null;
@@ -320,7 +315,6 @@ export function useConsultPlan({
   showToast,
   confirmCondition,
   unconfirmCondition,
-  lastMarkedSiteRef,
 }: ConsultPlanArgs): ConsultPlan {
   const {
     acceptedIntents, setAcceptedIntents,
@@ -585,8 +579,9 @@ export function useConsultPlan({
             return [...merged];
           });
         } else {
+          const orderText = payload.orderText ?? payload.label;
           setSelectedTests((curr) =>
-            curr.includes(payload.label) ? curr : [...curr, payload.label]
+            curr.includes(orderText) ? curr : [...curr, orderText]
           );
         }
         break;
@@ -711,7 +706,9 @@ export function useConsultPlan({
     // it happens to matter, and asking after the fact means the doctor has
     // to remember to go back and add it. See PendingIntervention.
     if (payload.type === "modality") {
-      setPendingIntervention({ payload, initialSite: lastMarkedSiteRef.current ?? "" });
+      // The site comes from the visit's own site context (Phase 3), which the
+      // inspector reads from its `knownSites` — never guessed here.
+      setPendingIntervention({ payload, initialSite: "", another: false });
       return;
     }
 
@@ -719,7 +716,12 @@ export function useConsultPlan({
     // staging as an intervention. Everything else (malaria, hypertension)
     // still lands in one tap.
     if (payload.type === "finding" && familyFor(payload.label)) {
-      setPendingAssessment({ payload, editId: null, initialSite: null, initialDetails: {} });
+      setPendingAssessment({ kind: "assessment", another: false, payload, editId: null, initialSite: null, initialDetails: {} });
+      return;
+    }
+    // A limb X-ray or MRI asks which side, the same way.
+    if (payload.type === "test" && imagingFamilyFor(payload.label)) {
+      setPendingAssessment({ kind: "imaging", another: false, payload, editId: null, initialSite: null, initialDetails: {} });
       return;
     }
 
@@ -948,12 +950,25 @@ export function useConsultPlan({
    */
   const confirmPendingAssessment = useCallback((draft: { site: SiteRef | null; details: AssessmentDetails }) => {
     if (!pendingAssessment) return;
-    const { payload, editId } = pendingAssessment;
-    const family = familyFor(payload.label);
+    const { payload, editId, kind } = pendingAssessment;
+    const family = kind === "imaging" ? imagingFamilyFor(payload.label) : familyFor(payload.label);
     if (!family) return;
     setPendingAssessment(null);
     const details = pruneDetails(family, draft.site, draft.details);
     const text = composeAssessmentText(payload.label, family, draft.site, details);
+
+    if (kind === "imaging") {
+      if (selectedTests.includes(text)) {
+        showToast(`${text} is already ordered`);
+        return;
+      }
+      if (payload.intentId && acceptedIntents.has(payload.intentId)) {
+        setSelectedTests((curr) => [...curr, text]);
+      } else {
+        commitAccept({ ...payload, orderText: text });
+      }
+      return;
+    }
 
     if (editId) {
       const old = assessmentLines.find((l) => l.id === editId);
@@ -988,7 +1003,7 @@ export function useConsultPlan({
       details,
       text,
     }]);
-  }, [pendingAssessment, assessmentLines, diagnoses, acceptedIntents, commitAccept, showToast]);
+  }, [pendingAssessment, assessmentLines, diagnoses, selectedTests, acceptedIntents, commitAccept, showToast]);
 
   const cancelPendingAssessment = useCallback(() => {
     setPendingAssessment(null);
@@ -1002,6 +1017,8 @@ export function useConsultPlan({
         intentId: line.intentId ?? 0, type: "finding", label: line.label,
         refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
       },
+      kind: "assessment",
+      another: true,
       editId: id,
       initialSite: line.site,
       initialDetails: line.details,
@@ -1014,6 +1031,8 @@ export function useConsultPlan({
         intentId: intentId ?? 0, type: "finding", label,
         refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
       },
+      kind: "assessment",
+      another: true,
       editId: null,
       initialSite: null,
       initialDetails: {},
@@ -1059,6 +1078,7 @@ export function useConsultPlan({
         overridden: false,
       },
       initialSite: "",
+      another: true,
     });
   }, [interventionPlan]);
 
@@ -1080,13 +1100,27 @@ export function useConsultPlan({
 
   const removeTest = useCallback((label: string) => {
     const target = label.trim().toLowerCase();
-    setSelectedTests((curr) => curr.filter((t) => t.trim().toLowerCase() !== target));
+    // A catalogue name ("X-Ray Knee", from the ranked row's undo) also takes
+    // every site it was ordered at ("X-Ray Knee — Left, AP + Lateral").
+    const goes = (t: string) => {
+      const x = t.trim().toLowerCase();
+      return x === target || x.startsWith(`${target} — `);
+    };
+    const kept = selectedTests.filter((t) => !goes(t));
+    setSelectedTests(kept);
     for (const [intentId, p] of acceptedIntents) {
-      if (p.type === "test" && (p.label.trim().toLowerCase() === target || target.includes(p.label.trim().toLowerCase()))) {
-        releaseIntent(intentId);
-      }
+      if (p.type !== "test") continue;
+      const name = p.label.trim().toLowerCase();
+      if (!(name === target || target.includes(name))) continue;
+      // Released only when no order of it is left — one knee's X-ray
+      // withdrawn is not the other knee's.
+      const stillOrdered = kept.some((t) => {
+        const x = t.trim().toLowerCase();
+        return x === name || x.startsWith(`${name} — `);
+      });
+      if (!stillOrdered) releaseIntent(intentId);
     }
-  }, [acceptedIntents, releaseIntent]);
+  }, [selectedTests, acceptedIntents, releaseIntent]);
 
   const removeDiagnosis = useCallback((label: string) => {
     const target = label.trim().toLowerCase();

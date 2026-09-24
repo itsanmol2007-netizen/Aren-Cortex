@@ -140,9 +140,30 @@ export function SiteField({ value, onChange, known = [], allowed, disabled = fal
     };
 
     const knownChoices = known.filter((k) => !allowed || allowed(k));
+    // Two or more places already in this visit and none chosen: the question
+    // is "which of these?", so they lead, above the search.
+    const askWhich = !value && knownChoices.length >= 2;
+
+    const knownBlock = knownChoices.length > 0 && (
+        <div className={`cs-anat-known${askWhich ? " is-ask" : ""}`}>
+            <span>{askWhich ? "Which site?" : "In this visit"}</span>
+            {knownChoices.map((k) => (
+                <button
+                    key={clinicalSiteLabel(k)}
+                    type="button"
+                    className={`cs-anat-knownchip${sameSite(k, value) ? " is-on" : ""}`}
+                    disabled={disabled}
+                    onClick={() => onChange(k)}
+                >
+                    {clinicalSiteLabel(k)}
+                </button>
+            ))}
+        </div>
+    );
 
     return (
         <div className="cs-anat-field" ref={wrapRef}>
+            {askWhich && knownBlock}
             {value ? (
                 <div className="cs-anat-selected">
                     <MapPin size={14} aria-hidden="true" />
@@ -159,7 +180,7 @@ export function SiteField({ value, onChange, known = [], allowed, disabled = fal
                         className="cs-anat-input"
                         value={query}
                         disabled={disabled}
-                        placeholder="Click the body, or type a site…"
+                        placeholder={askWhich ? "Or another site — click the body, or type…" : "Click the body, or type a site…"}
                         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
                         onFocus={() => setOpen(true)}
                         onKeyDown={(e) => {
@@ -188,23 +209,7 @@ export function SiteField({ value, onChange, known = [], allowed, disabled = fal
                     )}
                 </div>
             )}
-
-            {knownChoices.length > 0 && (
-                <div className="cs-anat-known">
-                    <span>In this visit</span>
-                    {knownChoices.map((k) => (
-                        <button
-                            key={clinicalSiteLabel(k)}
-                            type="button"
-                            className={`cs-anat-knownchip${sameSite(k, value) ? " is-on" : ""}`}
-                            disabled={disabled}
-                            onClick={() => onChange(k)}
-                        >
-                            {clinicalSiteLabel(k)}
-                        </button>
-                    ))}
-                </div>
-            )}
+            {!askWhich && knownBlock}
         </div>
     );
 }

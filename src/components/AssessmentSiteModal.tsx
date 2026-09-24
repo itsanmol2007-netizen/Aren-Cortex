@@ -12,11 +12,11 @@
 // fracture lost to a stray click is worse than one extra press of Cancel.
 // ---------------------------------------------------------------------------
 
-import { Check, Plus, Stethoscope, X } from "lucide-react";
+import { Check, FlaskConical, Plus, Stethoscope, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnatomyFigure, SiteField } from "../features/consult/AnatomyPicker";
 import {
-    composeAssessmentText, familyFor, optionsOf, pruneDetails, siteAllowed, visibleFields,
+    composeAssessmentText, familyFor, imagingFamilyFor, optionsOf, pruneDetails, siteAllowed, visibleFields,
     type AssessmentDetails, type DetailField,
 } from "../features/consult/assessmentFamilies";
 import type { SiteRef } from "../lib/body/clinicalSite";
@@ -24,7 +24,15 @@ import { useOverlayFocus } from "../hooks/useOverlayFocus";
 
 type Props = {
     label: string;
+    /** an assessment (violet, "Fracture") or an imaging order (teal, "X-Ray Knee") */
+    kind?: "assessment" | "imaging";
     editing: boolean;
+    /**
+     * Take the visit's one known site without asking (Phase 3 site context).
+     * Off for an edit and for "+ Another site", where the known site is by
+     * definition not the one being asked about.
+     */
+    autoPrefill?: boolean;
     initialSite: SiteRef | null;
     initialDetails: AssessmentDetails;
     /** sites already established in this visit — offered as one-click chips */
@@ -34,10 +42,20 @@ type Props = {
 };
 
 export function AssessmentSiteModal({
-    label, editing, initialSite, initialDetails, knownSites = [], onConfirm, onCancel,
+    label, kind = "assessment", editing, autoPrefill = false, initialSite, initialDetails, knownSites = [],
+    onConfirm, onCancel,
 }: Props) {
-    const family = useMemo(() => familyFor(label), [label]);
-    const [site, setSite] = useState<SiteRef | null>(initialSite);
+    const imaging = kind === "imaging";
+    const family = useMemo(() => (imaging ? imagingFamilyFor(label) : familyFor(label)), [label, imaging]);
+    // Site context: one known place that this item can sit on is taken as
+    // the answer; two or more become a "Which site?" choice (SiteField);
+    // none leaves the body map. Always changeable — never locked.
+    const [site, setSite] = useState<SiteRef | null>(() => {
+        if (initialSite) return initialSite;
+        if (!autoPrefill || !family) return null;
+        const fits = knownSites.filter((k) => siteAllowed(family, k));
+        return fits.length === 1 ? fits[0] : null;
+    });
     const [details, setDetails] = useState<AssessmentDetails>(initialDetails);
     const [showDetails, setShowDetails] = useState(Object.keys(initialDetails).length > 0);
 
@@ -88,14 +106,16 @@ export function AssessmentSiteModal({
         <div className="cs-addmed" role="dialog" aria-modal="true" aria-label={`${label} — site and details`}>
             {/* Not a button: a click outside does nothing, on purpose. */}
             <div className="cs-addmed-scrim" aria-hidden="true" />
-            <div className="cs-addmed-panel cs-addmed-anat cs-dx-modal" ref={panelRef} tabIndex={-1}>
-                <div className="cs-addmed-topstripe cs-dx-modal-stripe" />
+            <div className={`cs-addmed-panel cs-addmed-anat cs-site-modal${imaging ? "" : " cs-dx-modal"}`} ref={panelRef} tabIndex={-1}>
+                <div className={`cs-addmed-topstripe${imaging ? "" : " cs-dx-modal-stripe"}`} />
 
                 <div className="cs-addmed-head">
-                    <span className="cs-glyph is-violet"><Stethoscope size={16} /></span>
+                    {imaging
+                        ? <span className="cs-glyph is-teal"><FlaskConical size={16} /></span>
+                        : <span className="cs-glyph is-violet"><Stethoscope size={16} /></span>}
                     <div className="cs-addmed-title">
-                        <span className="cs-addmed-eyebrow cs-dx-modal-eyebrow">
-                            {editing ? "Edit assessment" : "Confirm assessment"}
+                        <span className={`cs-addmed-eyebrow${imaging ? "" : " cs-dx-modal-eyebrow"}`}>
+                            {imaging ? "Order investigation" : editing ? "Edit assessment" : "Confirm assessment"}
                         </span>
                         <strong>{label}</strong>
                     </div>
@@ -146,9 +166,9 @@ export function AssessmentSiteModal({
                     <button className="cs-addmed-cancel" type="button" onClick={onCancel}>
                         Cancel
                     </button>
-                    <button className="cs-addmed-confirm cs-dx-modal-confirm" type="button" onClick={confirm}>
+                    <button className={`cs-addmed-confirm${imaging ? "" : " cs-dx-modal-confirm"}`} type="button" onClick={confirm}>
                         <Check size={15} />
-                        {editing ? "Save" : "Done"}
+                        {imaging ? "Order" : editing ? "Save" : "Done"}
                         <span className="cs-kbd">Enter</span>
                     </button>
                 </div>
