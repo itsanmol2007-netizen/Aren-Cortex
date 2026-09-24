@@ -6737,6 +6737,41 @@ body.cs-locked-shell {
 .cs-intv-due .cs-anat-input.is-num { width: 58px; height: 32px; text-align: center; font-variant-numeric: tabular-nums; }
 .cs-dx-preview b em { color: var(--cs-muted); font-style: normal; font-weight: 600; }
 
+/* "Next" follow-ons under an intervention on the plan rail (followOns.ts).
+   Blue — the action colour — and quiet: a suggestion to take or ignore,
+   never a task. */
+.cs-followons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+}
+.cs-followons > span {
+    margin-right: 2px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.cs-followon {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 22px;
+    border: 1px dashed color-mix(in srgb, var(--cs-blue) 40%, transparent);
+    border-radius: 6px;
+    background: #fff;
+    padding: 0 7px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+.cs-followon:hover { border-style: solid; background: var(--cs-blue-soft); }
+
 /* "For Fracture — Left forearm": the assessment at this site, which the
    intervention is linked to. */
 .cs-intv-for {

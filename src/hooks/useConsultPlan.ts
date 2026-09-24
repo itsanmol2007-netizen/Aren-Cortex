@@ -46,7 +46,7 @@ import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import {
   composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, type AssessmentDetails,
 } from "../features/consult/assessmentFamilies";
-import type { SiteRef } from "../lib/body/clinicalSite";
+import { clinicalSiteLabel, type SiteRef } from "../lib/body/clinicalSite";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
 import { guardIntent } from "../lib/synapse/engine";
 import { resolveProductByName } from "../lib/db/medicines";
@@ -256,6 +256,10 @@ export interface ConsultPlan {
    *  inspector again rather than cloning silently, because a second site
    *  is as much a clinical decision as the first. */
   addAnotherInterventionSite: (id: string) => void;
+  openIntervention: (payload: AcceptPayload, opts: {
+    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails;
+  }) => void;
+  openImagingAt: (payload: AcceptPayload, site: SiteRef | null) => void;
   /** perform, this visit, a planned item from an earlier one */
   performPlanned: (p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => void;
   /** Undo any accept, from the row it was accepted on — see the doc comment. */
@@ -1101,6 +1105,29 @@ export function useConsultPlan({
     });
   }, [interventionPlan]);
 
+  /**
+   * Open the Perform modal for a follow-on (followOns.ts): already at the
+   * line's site, and — for a planned removal — already Planned with its due
+   * day and what it removes. The doctor still confirms; nothing lands alone.
+   */
+  const openIntervention = useCallback((payload: AcceptPayload, opts: {
+    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails;
+  }) => {
+    setPendingIntervention({
+      payload,
+      initialSite: opts.site ? clinicalSiteLabel(opts.site) : "",
+      another: false,
+      initialStatus: opts.status,
+      initialDueDays: opts.dueDays ?? null,
+      initialDetails: opts.details,
+    });
+  }, []);
+
+  /** Open the imaging modal already at a site — the X-ray after a reduction. */
+  const openImagingAt = useCallback((payload: AcceptPayload, site: SiteRef | null) => {
+    setPendingAssessment({ kind: "imaging", another: false, payload, editId: null, initialSite: site, initialDetails: {} });
+  }, []);
+
   /** Perform, this visit, something an earlier visit planned. */
   const performPlanned = useCallback((p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => {
     setPendingIntervention({
@@ -1621,6 +1648,8 @@ export function useConsultPlan({
     removeIntervention,
     addAnotherInterventionSite,
     performPlanned,
+    openIntervention,
+    openImagingAt,
     removeAcceptedIntent,
     updateExercise,
     removeExercise,

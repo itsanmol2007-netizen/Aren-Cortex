@@ -8,8 +8,9 @@ import {
   fetchEarlierInterventions, fetchPlannedInterventions, type EarlierIntervention, type PlannedIntervention,
 } from "./lib/db/interventions";
 import { interventionFamilyFor, removableFamilies } from "./features/consult/interventionFamilies";
+import { followOnsFor, type FollowOn } from "./features/consult/followOns";
 import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
-import { sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
+import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -682,7 +683,7 @@ function App() {
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
-    removeIntervention, addAnotherInterventionSite, performPlanned, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
+    removeIntervention, addAnotherInterventionSite, performPlanned, openIntervention, openImagingAt, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -1727,6 +1728,44 @@ function App() {
     return () => { cancelled = true; };
   }, [patient?.id, visitId]);
 
+  /**
+   * A follow-on chip was clicked (followOns.ts). Catalogue items open their
+   * own modal at the line's site; plain text lands the way a free-text term
+   * does. Never auto-added — this runs only on the doctor's click.
+   */
+  const handleFollowOn = useCallback((f: FollowOn) => {
+    const a = f.action;
+    const payloadFor = (type: "modality" | "test", label: string): AcceptPayload | null => {
+      const ruleset = synapse.data?.ruleset;
+      if (!ruleset) return null;
+      for (const [, i] of ruleset.intents) {
+        if (i.type === type && i.label.toLowerCase() === label.toLowerCase()) {
+          return { intentId: i.id, type, label: i.label, refTable: i.refTable, refId: i.refId, medicine: null, viaSearch: false, overridden: false };
+        }
+      }
+      return null;
+    };
+    switch (a.kind) {
+      case "intervention": {
+        const payload = payloadFor("modality", a.label)
+          ?? { intentId: 0, type: "modality", label: a.label, refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false };
+        openIntervention(payload, { site: a.site, status: a.status, dueDays: a.dueDays, details: a.details });
+        break;
+      }
+      case "imaging": {
+        const payload = payloadFor("test", a.label);
+        if (payload) openImagingAt(payload, a.site);
+        else addFreeTest(a.site ? `${a.label} — ${clinicalSiteLabel(a.site)}` : a.label);
+        break;
+      }
+      case "test": addFreeTest(a.text); break;
+      case "advice": addFreeAdvice(a.text); break;
+      case "referral": addFreeReferral(a.text); break;
+      case "followUp": setFollowUpDays(a.days); break;
+      case "medicine": setAddMedicineQuery(a.query); break;
+    }
+  }, [synapse.data?.ruleset, openIntervention, openImagingAt, addFreeTest, addFreeAdvice, addFreeReferral, setFollowUpDays]);
+
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
 
@@ -2632,6 +2671,8 @@ function App() {
                 onAddAnotherInterventionSite={addAnotherInterventionSite}
                 plannedEarlier={plannedEarlier}
                 onPerformPlanned={performPlanned}
+                followOnsFor={followOnsFor}
+                onFollowOn={handleFollowOn}
                 followUpDays={followUpDays}
                 onFollowUpChange={setFollowUpDays}
                 notes={visitNotes}

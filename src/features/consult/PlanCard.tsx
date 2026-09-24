@@ -16,7 +16,7 @@
 import { useRef, useState } from "react";
 import {
     Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, Keyboard,
-    MapPin, NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves, X,
+    MapPin, NotebookPen, Pill, Plus, Printer, Stethoscope, Utensils, Waves, X,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
@@ -24,6 +24,7 @@ import type { PreferredLab } from "../../lib/db/synapse";
 import type { InterventionLine } from "./interventionPlan";
 import { formatDue, formatSide as formatInterventionSide } from "./interventionPlan";
 import type { PlannedIntervention } from "../../lib/db/interventions";
+import type { FollowOn } from "./followOns";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
 import { BlankPlanArt } from "./BlankArt";
 import { CompanionLine, MedicineIdentity } from "./parts";
@@ -177,6 +178,10 @@ interface Props {
     /** planned at an earlier visit and not yet done — each with Perform */
     plannedEarlier?: PlannedIntervention[];
     onPerformPlanned?: (p: PlannedIntervention) => void;
+    /** "what usually comes next" after an intervention — chips on its line,
+     *  one click to add, never added on their own (followOns.ts) */
+    followOnsFor?: (line: InterventionLine) => FollowOn[];
+    onFollowOn?: (f: FollowOn) => void;
     followUpDays: number | null;
     onFollowUpChange: (days: number | null) => void;
     notes: string;
@@ -214,7 +219,7 @@ export function PlanCard({
     preferredLabs, selectedLabName, onSelectLabName, onManageLabs,
     adviceLines, onRemoveAdviceLine,
     interventions, onRemoveIntervention, onAddAnotherInterventionSite,
-    plannedEarlier = [], onPerformPlanned,
+    plannedEarlier = [], onPerformPlanned, followOnsFor, onFollowOn,
     exerciseLines, onRemoveExercise,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
@@ -297,6 +302,9 @@ export function PlanCard({
     const fulfilledIds = new Set(interventions.map((l) => l.fulfilsId).filter(Boolean));
     const dueEarlier = plannedEarlier.filter((p) => !fulfilledIds.has(p.id));
     const doneToday = interventions.filter((l) => l.status !== "planned");
+    // Follow-ons already taken (or waved away) on a line, so each chip is
+    // offered once: "lineId:key".
+    const [followOnsUsed, setFollowOnsUsed] = useState<Set<string>>(new Set());
     const plannedNow = interventions.filter((l) => l.status === "planned");
 
     const isEmpty = itemCount === 0;
@@ -696,6 +704,30 @@ export function PlanCard({
                                                         )}
                                                     </div>
                                                 )}
+                                                {(() => {
+                                                    const next = (followOnsFor?.(line) ?? [])
+                                                        .filter((f) => !followOnsUsed.has(`${line.id}:${f.key}`));
+                                                    if (!next.length || !onFollowOn) return null;
+                                                    return (
+                                                        <div className="cs-followons">
+                                                            <span>Next</span>
+                                                            {next.map((f) => (
+                                                                <button
+                                                                    key={f.key}
+                                                                    type="button"
+                                                                    className="cs-followon"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setFollowOnsUsed((u) => new Set(u).add(`${line.id}:${f.key}`));
+                                                                        onFollowOn(f);
+                                                                    }}
+                                                                >
+                                                                    <Plus size={10} aria-hidden="true" /> {f.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                             <button
                                                 type="button"
