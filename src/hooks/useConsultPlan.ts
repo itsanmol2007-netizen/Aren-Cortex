@@ -41,6 +41,7 @@ import type { Medicine as SynapseBrand } from "../lib/synapse/brands";
 import type { CompanionSuggestion } from "../lib/synapse/companions";
 import { doseFor, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
 import { formatLine as formatIntervention, type InterventionLine, type InterventionSide } from "../features/consult/interventionPlan";
+import type { InterventionDraft } from "../components/InterventionInspector";
 import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import {
   composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, type AssessmentDetails,
@@ -218,7 +219,7 @@ export interface ConsultPlan {
   /** the intervention waiting on site/side/notes confirmation — see
    *  InterventionInspector.tsx */
   pendingIntervention: PendingIntervention | null;
-  confirmPendingIntervention: (draft: { site: string; side: InterventionSide | null; notes: string }) => void;
+  confirmPendingIntervention: (draft: InterventionDraft) => void;
   cancelPendingIntervention: () => void;
 
   // ── Assessments at a site ────────────────────────────────────────────
@@ -921,7 +922,7 @@ export function useConsultPlan({
    * No race to patch afterwards, unlike medicine's `setTimeout(0)`: nothing
    * else writes an intervention line, so there is nothing to patch.
    */
-  const confirmPendingIntervention = useCallback((draft: { site: string; side: InterventionSide | null; notes: string }) => {
+  const confirmPendingIntervention = useCallback((draft: InterventionDraft) => {
     if (!pendingIntervention) return;
     const { payload } = pendingIntervention;
     setPendingIntervention(null);
@@ -934,6 +935,14 @@ export function useConsultPlan({
       side: draft.side,
       notes: draft.notes,
       sortOrder: curr.length,
+      family: draft.family,
+      siteRef: draft.siteRef,
+      details: draft.details,
+      text: draft.text || undefined,
+      removesId: draft.removesId,
+      assessmentText: draft.assessmentText,
+      status: "performed",
+      dueDate: null,
     }]);
   }, [pendingIntervention, commitAccept]);
 

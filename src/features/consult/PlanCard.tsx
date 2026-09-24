@@ -623,10 +623,13 @@ export function PlanCard({
                                     return (
                                         <div key={line.id} className={`cs-line${justAdded.has(line.id) ? " is-new" : ""}`}>
                                             <div className="cs-line-main">
-                                                <div className="cs-line-name"><span>{line.label}</span></div>
-                                                {(line.site || sideTag || line.notes) && (
+                                                {/* A configured intervention carries its whole line
+                                                    ("Cast — Left forearm, below-elbow, backslab, POP");
+                                                    its site is inside that line, not a second tag. */}
+                                                <div className="cs-line-name"><span>{line.text || line.label}</span></div>
+                                                {((!line.text && line.site) || sideTag || line.notes) && (
                                                     <div className="cs-line-tags">
-                                                        {line.site && (
+                                                        {!line.text && line.site && (
                                                             <span className="cs-line-tag is-dose">
                                                                 <MapPin size={10} aria-hidden="true" /> {line.site}
                                                             </span>

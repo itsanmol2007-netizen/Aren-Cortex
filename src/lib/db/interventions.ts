@@ -3,9 +3,8 @@
 //
 // `prescription_interventions` is the sibling of `prescription_exercises`:
 // one row per intervention performed, with site/side as columns rather than
-// prose. No `fetchLast*` counterpart — unlike an exercise dose, an
-// intervention is never compared against last visit's, so nothing reads this
-// table back yet. It exists so the record of what was actually DONE to the
+// prose. Read back only by `fetchEarlierInterventions`, so a removal can point
+// at the cast or sutures it removes. It exists so the record of what was actually DONE to the
 // patient (which fracture, which side, cast or splint) survives as
 // structured data rather than living only in `therapy_notes` prose — see
 // features/consult/interventionPlan.ts for why that string was never enough.
@@ -13,6 +12,8 @@
 
 import { supabase } from "../supabase";
 import type { InterventionLine, InterventionSide } from "../../features/consult/interventionPlan";
+import type { AssessmentDetails } from "../../features/consult/assessmentFamilies";
+import { normalizeSite, type SiteRef } from "../body/clinicalSite";
 
 export type DBInterventionRow = {
     intent_id: number | null;
@@ -38,10 +39,62 @@ export async function saveInterventionPlan(
         intent_id: l.intentId,
         label: l.label,
         site: l.site.trim() || null,
-        side: l.side,
+        side: l.side ?? (l.siteRef?.side ?? null),
         notes: l.notes.trim() || null,
         sort_order: i,
+        family: l.family ?? null,
+        region: l.siteRef?.region ?? null,
+        aspect: l.siteRef?.aspect ?? null,
+        details: l.details ?? {},
+        text: l.text ?? null,
+        status: l.status ?? "performed",
+        due_date: l.dueDate ?? null,
+        assessment_text: l.assessmentText ?? null,
+        removes_id: l.removesId ?? null,
     }));
     const { error } = await supabase.from("prescription_interventions").insert(rows);
     if (error) throw new Error(`saveInterventionPlan: ${error.message}`);
+}
+
+/** One earlier intervention a removal or change can point back at. */
+export interface EarlierIntervention {
+    id: string;
+    family: string;
+    text: string;
+    siteRef: SiteRef | null;
+    details: AssessmentDetails;
+    /** when it was done — "12 Aug" */
+    when: string;
+    createdAt: string;
+}
+
+/**
+ * This patient's earlier configured interventions that nothing has removed
+ * yet — what "Cast removal" or "Dressing change" offers to pick. A failed
+ * read returns [] (offline, say): the removal still works, just unlinked.
+ */
+export async function fetchEarlierInterventions(patientId: string): Promise<EarlierIntervention[]> {
+    const { data, error } = await supabase
+        .from("prescription_interventions")
+        .select("id, family, label, text, site, region, side, aspect, details, created_at, removes_id, prescriptions!inner(visits!inner(patient_id))")
+        .eq("prescriptions.visits.patient_id", patientId)
+        .not("family", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(60);
+    if (error || !data) {
+        if (error) console.warn("fetchEarlierInterventions:", error.message);
+        return [];
+    }
+    const removed = new Set(data.map((r: any) => r.removes_id).filter(Boolean));
+    return data
+        .filter((r: any) => !removed.has(r.id))
+        .map((r: any) => ({
+            id: r.id,
+            family: r.family,
+            text: r.text ?? r.label,
+            siteRef: r.region ? normalizeSite({ region: r.region, side: r.side === "left" || r.side === "right" ? r.side : null, aspect: r.aspect ?? "front" }) : null,
+            details: r.details ?? {},
+            when: new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+            createdAt: r.created_at,
+        }));
 }

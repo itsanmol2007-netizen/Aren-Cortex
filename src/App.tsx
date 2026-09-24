@@ -3,7 +3,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
-import { InterventionInspector } from "./components/InterventionInspector";
+import { InterventionInspector, type SiteAssessment } from "./components/InterventionInspector";
+import { fetchEarlierInterventions, type EarlierIntervention } from "./lib/db/interventions";
+import { interventionFamilyFor, removableFamilies } from "./features/consult/interventionFamilies";
 import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
 import { sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { PatientHeader } from "./components/PatientHeader";
@@ -1691,6 +1693,26 @@ function App() {
     return out;
   }, [assessmentLines, interventionPlan, markedExam]);
 
+  /** This visit's placed assessments — what an intervention at the same
+   *  site treats (a reduction there defaults to "Fracture"). */
+  const siteAssessments = useMemo<SiteAssessment[]>(
+    () => assessmentLines.flatMap((l) => (l.site ? [{ site: l.site, family: l.family, text: l.text }] : [])),
+    [assessmentLines],
+  );
+
+  /** This patient's earlier casts, sutures, dressings… — read only when a
+   *  removal or dressing change opens, so it can point back at one. */
+  const [earlierInterventions, setEarlierInterventions] = useState<EarlierIntervention[]>([]);
+  useEffect(() => {
+    const fam = pendingIntervention ? interventionFamilyFor(pendingIntervention.payload.label) : null;
+    const pid = patient?.id;
+    if (!fam || removableFamilies(fam.key).length === 0 || !pid) return;
+    setEarlierInterventions([]);
+    let cancelled = false;
+    fetchEarlierInterventions(pid).then((rows) => { if (!cancelled) setEarlierInterventions(rows); });
+    return () => { cancelled = true; };
+  }, [pendingIntervention, patient?.id]);
+
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
 
@@ -2730,10 +2752,13 @@ function App() {
 
           {pendingIntervention && (
             <InterventionInspector
+              key={`${pendingIntervention.payload.intentId}-${pendingIntervention.payload.label}`}
               label={pendingIntervention.payload.label}
               initialSite={pendingIntervention.initialSite}
               knownSites={knownSites}
               autoPrefill={!pendingIntervention.another}
+              siteAssessments={siteAssessments}
+              earlier={earlierInterventions}
               onCancel={cancelPendingIntervention}
               onConfirm={confirmPendingIntervention}
             />

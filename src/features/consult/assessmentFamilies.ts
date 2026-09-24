@@ -30,20 +30,31 @@ export type AssessmentDetails = Record<string, DetailValue>;
 
 type Options = string[] | ((site: SiteRef | null) => string[]);
 
+/** only offered when this returns true for what is chosen so far */
+type ShowIf = (d: AssessmentDetails, site: SiteRef | null) => boolean;
+
 export type DetailField =
     | {
         kind: "choice";
         key: string;
         label: string;
         options: Options;
-        /** only offered when this returns true for what is chosen so far */
-        showIf?: (d: AssessmentDetails) => boolean;
-        /** how the chosen value reads in the diagnosis line */
+        showIf?: ShowIf;
+        /** how the chosen value reads in the line */
         render?: (v: string) => string;
     }
-    | { kind: "flag"; key: string; label: string; render: string }
-    | { kind: "text"; key: string; label: string; placeholder: string; render?: (v: string) => string }
-    | { kind: "number"; key: string; label: string; unit: string; render: (v: string) => string };
+    | {
+        /** several at once — stored "a|b", printed "a, b" */
+        kind: "multi";
+        key: string;
+        label: string;
+        options: Options;
+        showIf?: ShowIf;
+        render?: (v: string) => string;
+    }
+    | { kind: "flag"; key: string; label: string; render: string; showIf?: ShowIf }
+    | { kind: "text"; key: string; label: string; placeholder: string; render?: (v: string) => string; showIf?: ShowIf }
+    | { kind: "number"; key: string; label: string; unit: string; render: (v: string) => string; showIf?: ShowIf };
 
 export interface AssessmentFamily {
     key: string;
@@ -58,6 +69,12 @@ export interface AssessmentFamily {
     /** the headline once a site is chosen — "X-Ray (Other Site)" reads
      *  "X-Ray — Right clavicle" */
     titleWithSite?: string;
+    /** a fixed headline in place of the catalogue name ("Cast" for
+     *  "Plaster of Paris (POP) cast", whose material is now a field) */
+    title?: string;
+    /** fields always on show; the rest wait behind "+ Add details".
+     *  Absent: every field is a detail (assessments). */
+    main?: string[];
     fields: DetailField[];
 }
 
@@ -334,13 +351,13 @@ export function siteAllowed(family: AssessmentFamily, site: SiteRef): boolean {
     return true;
 }
 
-export function optionsOf(field: Extract<DetailField, { kind: "choice" }>, site: SiteRef | null): string[] {
+export function optionsOf(field: Extract<DetailField, { kind: "choice" | "multi" }>, site: SiteRef | null): string[] {
     return typeof field.options === "function" ? field.options(site) : field.options;
 }
 
-/** The fields actually on offer for what is chosen so far. */
-export function visibleFields(family: AssessmentFamily, details: AssessmentDetails): DetailField[] {
-    return family.fields.filter((f) => f.kind !== "choice" || !f.showIf || f.showIf(details));
+/** The fields actually on offer for what is chosen so far, at this site. */
+export function visibleFields(family: AssessmentFamily, details: AssessmentDetails, site: SiteRef | null = null): DetailField[] {
+    return family.fields.filter((f) => !f.showIf || f.showIf(details, site));
 }
 
 /**
@@ -349,10 +366,16 @@ export function visibleFields(family: AssessmentFamily, details: AssessmentDetai
  */
 export function pruneDetails(family: AssessmentFamily, site: SiteRef | null, details: AssessmentDetails): AssessmentDetails {
     const out: AssessmentDetails = {};
-    for (const f of visibleFields(family, details)) {
+    for (const f of visibleFields(family, details, site)) {
         const v = details[f.key];
         if (v === undefined || v === "" || v === false) continue;
         if (f.kind === "choice" && !optionsOf(f, site).includes(String(v))) continue;
+        if (f.kind === "multi") {
+            const opts = optionsOf(f, site);
+            const kept = String(v).split("|").filter((x) => opts.includes(x));
+            if (kept.length) out[f.key] = kept.join("|");
+            continue;
+        }
         out[f.key] = v;
     }
     return out;
@@ -369,7 +392,7 @@ export function composeAssessmentText(
     site: SiteRef | null,
     details: AssessmentDetails,
 ): string {
-    let title = site && family.titleWithSite ? family.titleWithSite : label;
+    let title = site && family.titleWithSite ? family.titleWithSite : (family.title ?? label);
     const parts: string[] = [];
 
     if (site) {
@@ -380,11 +403,15 @@ export function composeAssessmentText(
         }
     }
 
-    for (const f of visibleFields(family, details)) {
+    for (const f of visibleFields(family, details, site)) {
         const v = details[f.key];
         if (v === undefined || v === "" || v === false) continue;
         if (family.titleFrom === f.key) { title = String(v); continue; }
         if (f.kind === "flag") parts.push(f.render);
+        else if (f.kind === "multi") {
+            const list = String(v).split("|").join(", ");
+            parts.push(f.render ? f.render(list) : list);
+        }
         else if (f.render) parts.push(f.render(String(v).trim()));
         else parts.push(String(v).trim());
     }

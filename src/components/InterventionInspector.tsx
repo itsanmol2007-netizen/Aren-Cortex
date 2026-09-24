@@ -1,9 +1,37 @@
-import { Check, FlaskConical, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Check, FlaskConical, Link2, Plus, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { InterventionSide } from "../features/consult/interventionPlan";
 import { AnatomyFigure, SiteField } from "../features/consult/AnatomyPicker";
-import { clinicalSiteLabel, siteFromLabel, type SiteRef } from "../lib/body/clinicalSite";
+import { DetailInput } from "../features/consult/DetailInput";
+import {
+    composeAssessmentText, pruneDetails, visibleFields, type AssessmentDetails,
+} from "../features/consult/assessmentFamilies";
+import {
+    interventionFamilyFor, reductionOfFor, removableFamilies, removalWhatFor, suggestedSutureDays,
+} from "../features/consult/interventionFamilies";
+import type { EarlierIntervention } from "../lib/db/interventions";
+import { clinicalSiteLabel, sameSite, siteFromLabel, type SiteRef } from "../lib/body/clinicalSite";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
+
+export interface InterventionDraft {
+    site: string;
+    side: InterventionSide | null;
+    notes: string;
+    siteRef: SiteRef | null;
+    family: string | null;
+    details: AssessmentDetails;
+    /** the composed line, or "" for an unconfigured modality */
+    text: string;
+    removesId: string | null;
+    assessmentText: string | null;
+}
+
+/** An assessment already placed on the body this visit. */
+export interface SiteAssessment {
+    site: SiteRef;
+    family: string;
+    text: string;
+}
 
 type Props = {
     label: string;
@@ -14,36 +42,100 @@ type Props = {
     knownSites?: SiteRef[];
     /** take the one known site without asking; off for "+ Another site" */
     autoPrefill?: boolean;
-    onConfirm: (draft: { site: string; side: InterventionSide | null; notes: string }) => void;
+    /** this visit's placed assessments — a reduction at the fractured site
+     *  is pre-set to "Fracture", and every line links to what it treats */
+    siteAssessments?: SiteAssessment[];
+    /** this patient's earlier interventions, for a removal to point at */
+    earlier?: EarlierIntervention[];
+    onConfirm: (draft: InterventionDraft) => void;
     onCancel: () => void;
 };
 
 /**
- * The confirm step between "this intervention is ranked" and "this is on the
- * plan" — same slot in the flow as MedicineAddSheet, same shell
- * (`.cs-addmed-*`) and the same teal accent, not a colour of its own:
- * colour.md is explicit that there is no eighth colour, and teal's actual
- * meaning — "examined (by the doctor)" — fits a procedure the doctor
- * performs at least as well as it fits a prescription.
+ * The Perform step between "this intervention is ranked" and "this is on
+ * the plan" — same slot in the flow as MedicineAddSheet, same `.cs-addmed`
+ * shell and the same teal accent (colour.md: teal is "examined by the
+ * doctor", which a procedure they perform is too; there is no eighth colour).
  *
- * Site is chosen on the shared anatomy picker (AnatomyPicker.tsx) — click
- * the figure or type — so it is always a real, clinically named place
- * ("Left forearm", "Lumbar spine"), never free text. Notes is the catch-all
- * until the per-family fields (cast material, drug injected…) land.
+ * Synapse ranked a FAMILY ("Cast"); the configuration happens here, and
+ * the fields depend on the family (interventionFamilies.ts): site first,
+ * the family's two-to-four main fields, "+ Add details" for the rest, and
+ * a live preview of the exact line that prints. A modality with no family
+ * (the physiotherapy ones) keeps the plain site + notes form.
  */
 export function InterventionInspector({
-    label, initialSite = "", knownSites = [], autoPrefill = false, onConfirm, onCancel,
+    label, initialSite = "", knownSites = [], autoPrefill = false,
+    siteAssessments = [], earlier = [], onConfirm, onCancel,
 }: Props) {
+    const family = useMemo(() => interventionFamilyFor(label), [label]);
+
     // Site context: an explicit site wins; else the visit's single known
     // place; two or more become "Which site?" in the field; none leaves the
     // body map. Never invents one.
     const [site, setSite] = useState<SiteRef | null>(() =>
         siteFromLabel(initialSite) ?? (autoPrefill && knownSites.length === 1 ? knownSites[0] : null));
-    // No separate Left/Right question: the site already carries its side
-    // ("Right knee") wherever a side exists, and the spine has none.
-    const side: InterventionSide | null = null;
+    const [details, setDetails] = useState<AssessmentDetails>(() => ({ ...(family?.preset ?? {}) }));
+    /** fields the doctor set by hand — a site change never overwrites them */
+    const touched = useRef(new Set<string>(Object.keys(family?.preset ?? {})));
+    const [showDetails, setShowDetails] = useState(false);
     const [notes, setNotes] = useState("");
-    const siteText = site ? clinicalSiteLabel(site) : "";
+    const [removesId, setRemovesId] = useState<string | null>(null);
+
+    // What this can remove: this patient's earlier casts, sutures, splints…
+    const removable = useMemo(() => {
+        const fams = family ? removableFamilies(family.key) : [];
+        return earlier.filter((e) => fams.includes(e.family));
+    }, [earlier, family]);
+    const linked = removable.find((e) => e.id === removesId) ?? null;
+
+    // The assessment at this site, if any — what this intervention treats.
+    const treats = site ? siteAssessments.find((a) => sameSite(a.site, site)) ?? null : null;
+
+    // Values that follow the site until the doctor sets them: suture
+    // removal days by region, and a reduction's "Of" from the assessment.
+    useEffect(() => {
+        if (!family) return;
+        setDetails((d) => {
+            const next = { ...d };
+            if (family.key === "closure" && !touched.current.has("removalDays")) {
+                const days = suggestedSutureDays(site);
+                if (days) next.removalDays = String(days); else delete next.removalDays;
+            }
+            if (family.key === "reduction" && !touched.current.has("what")) {
+                const of = treats ? reductionOfFor(treats.family) : null;
+                if (of) next.what = of; else delete next.what;
+            }
+            return next;
+        });
+    }, [site, family, treats]);
+
+    const pickEarlier = (e: EarlierIntervention) => {
+        if (removesId === e.id) { setRemovesId(null); return; }
+        setRemovesId(e.id);
+        if (e.siteRef) setSite(e.siteRef);
+        if (family?.key === "removal") {
+            const what = removalWhatFor(e.family, e.details);
+            if (what) { touched.current.add("what"); setDetails((d) => ({ ...d, what })); }
+        }
+    };
+
+    const clean = family ? pruneDetails(family, site, details) : {};
+    const baseText = family ? composeAssessmentText(label, family, site, clean) : "";
+    const text = baseText && linked ? `${baseText}, from ${linked.when}` : baseText;
+
+    const draft = (): InterventionDraft => ({
+        site: site ? clinicalSiteLabel(site) : "",
+        // No separate Left/Right question: the site already carries its side
+        // ("Right knee") wherever a side exists, and the spine has none.
+        side: null,
+        notes: notes.trim(),
+        siteRef: site,
+        family: family?.key ?? null,
+        details: clean,
+        text,
+        removesId: linked?.id ?? null,
+        assessmentText: treats?.text ?? null,
+    });
 
     const panelRef = useRef<HTMLDivElement>(null);
     useOverlayFocus(panelRef, true);
@@ -59,16 +151,46 @@ export function InterventionInspector({
                 const tag = (e.target as HTMLElement).tagName;
                 if (tag === "TEXTAREA" || tag === "INPUT") return;
                 e.preventDefault();
-                onConfirm({ site: siteText, side, notes: notes.trim() });
+                onConfirm(draft());
             }
         };
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
-    }, [onCancel, onConfirm, siteText, side, notes]);
+    });
+
+    const setField = (key: string, v: string | boolean | undefined) => {
+        touched.current.add(key);
+        setDetails((d) => {
+            const next = { ...d };
+            if (v === undefined || v === "" || v === false) delete next[key];
+            else next[key] = v;
+            return next;
+        });
+    };
+
+    const fields = family ? visibleFields(family, clean, site) : [];
+    const mainKeys = new Set(family?.main ?? []);
+    const mainFields = fields.filter((f) => mainKeys.has(f.key));
+    const extraFields = fields.filter((f) => !mainKeys.has(f.key));
+
+    const notesInput = (
+        <section className="cs-addmed-sec">
+            <span className="cs-addmed-label">Notes</span>
+            <textarea
+                className="cs-addmed-input cs-addmed-textarea"
+                value={notes}
+                placeholder={family ? "Anything else worth recording…" : "Parameters, duration, anything else…"}
+                rows={2}
+                onChange={(e) => setNotes(e.target.value)}
+            />
+        </section>
+    );
 
     return (
         <div className="cs-addmed" role="dialog" aria-modal="true" aria-label={`Record ${label}`}>
-            <button className="cs-addmed-scrim" type="button" onClick={onCancel} aria-label="Close" />
+            {/* Not a button: a half-configured cast lost to a stray click
+                outside is worse than one press of Cancel. */}
+            <div className="cs-addmed-scrim" aria-hidden="true" />
             <div className="cs-addmed-panel cs-addmed-inspector cs-addmed-anat" ref={panelRef} tabIndex={-1}>
                 <div className="cs-addmed-topstripe" />
 
@@ -76,7 +198,7 @@ export function InterventionInspector({
                     <span className="cs-glyph is-teal"><FlaskConical size={16} /></span>
                     <div className="cs-addmed-title">
                         <span className="cs-addmed-eyebrow">Record intervention</span>
-                        <strong>{label}</strong>
+                        <strong>{family?.title ?? label}</strong>
                     </div>
                     <button className="cs-addmed-x" type="button" onClick={onCancel} aria-label="Cancel">
                         <X size={16} />
@@ -87,34 +209,99 @@ export function InterventionInspector({
                     <div className="cs-anat-layout">
                         <AnatomyFigure value={site} onChange={setSite} known={knownSites} />
                         <div className="cs-anat-side">
+                            {removable.length > 0 && (
+                                <section className="cs-addmed-sec">
+                                    <span className="cs-addmed-label">
+                                        {family?.key === "dressingChange" ? "Changing" : "Removing"} <em>pick to link</em>
+                                    </span>
+                                    <div className="cs-intv-earlier">
+                                        {removable.map((e) => (
+                                            <button
+                                                key={e.id}
+                                                type="button"
+                                                aria-pressed={removesId === e.id}
+                                                className={`cs-intv-earlier-row${removesId === e.id ? " is-on" : ""}`}
+                                                onClick={() => pickEarlier(e)}
+                                            >
+                                                <span className="cs-intv-earlier-mark" aria-hidden="true">
+                                                    {removesId === e.id && <Check size={11} />}
+                                                </span>
+                                                <span className="cs-intv-earlier-text">{e.text}</span>
+                                                <em>{e.when}</em>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+
                             <section className="cs-addmed-sec">
                                 <span className="cs-addmed-label">Site</span>
                                 <SiteField value={site} onChange={setSite} known={knownSites} />
+                                {treats && (
+                                    <span className="cs-intv-for">
+                                        <Link2 size={11} aria-hidden="true" /> For {treats.text}
+                                    </span>
+                                )}
                             </section>
 
-                            <section className="cs-addmed-sec">
-                                <span className="cs-addmed-label">Notes</span>
-                                <textarea
-                                    className="cs-addmed-input cs-addmed-textarea"
-                                    value={notes}
-                                    placeholder="Plaster type, drug injected, anything else…"
-                                    rows={3}
-                                    onChange={(e) => setNotes(e.target.value)}
-                                />
-                            </section>
+                            {family ? (
+                                <>
+                                    {mainFields.length > 0 && (
+                                        <section className="cs-addmed-sec cs-dx-details">
+                                            {mainFields.map((f) => (
+                                                <DetailInput
+                                                    key={f.key}
+                                                    field={f}
+                                                    site={site}
+                                                    value={clean[f.key]}
+                                                    onChange={(v) => setField(f.key, v)}
+                                                />
+                                            ))}
+                                        </section>
+                                    )}
+                                    {showDetails ? (
+                                        <>
+                                            {extraFields.length > 0 && (
+                                                <section className="cs-addmed-sec cs-dx-details">
+                                                    <span className="cs-addmed-label">Details <em>optional</em></span>
+                                                    {extraFields.map((f) => (
+                                                        <DetailInput
+                                                            key={f.key}
+                                                            field={f}
+                                                            site={site}
+                                                            value={clean[f.key]}
+                                                            onChange={(v) => setField(f.key, v)}
+                                                        />
+                                                    ))}
+                                                </section>
+                                            )}
+                                            {notesInput}
+                                        </>
+                                    ) : (
+                                        <button type="button" className="cs-dx-adddetails" onClick={() => setShowDetails(true)}>
+                                            <Plus size={14} /> {extraFields.length > 0 ? "Add details" : "Add notes"}
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                notesInput
+                            )}
                         </div>
                     </div>
                 </div>
+
+                {family && (
+                    <div className="cs-dx-preview" aria-live="polite">
+                        <span>Will read</span>
+                        <b>{text}</b>
+                    </div>
+                )}
 
                 <div className="cs-addmed-foot">
                     <button className="cs-addmed-cancel" type="button" onClick={onCancel}>
                         Cancel
                     </button>
-                    <button
-                        className="cs-addmed-confirm"
-                        type="button"
-                        onClick={() => onConfirm({ site: siteText, side, notes: notes.trim() })}
-                    >
+                    <button className="cs-addmed-confirm" type="button" onClick={() => onConfirm(draft())}>
                         <Check size={15} />
                         Add to Plan
                         <span className="cs-kbd">Enter</span>

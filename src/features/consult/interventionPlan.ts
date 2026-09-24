@@ -39,6 +39,9 @@
 //     plan rail's other groups.
 // ---------------------------------------------------------------------------
 
+import type { SiteRef } from "../../lib/body/clinicalSite";
+import type { AssessmentDetails } from "./assessmentFamilies";
+
 export type InterventionSide = "left" | "right" | "both";
 
 export interface InterventionLine {
@@ -52,6 +55,23 @@ export interface InterventionLine {
     side: InterventionSide | null;
     notes: string;
     sortOrder: number;
+
+    // ── Families (interventionFamilies.ts). All optional: physio modalities
+    // and drafts saved before families existed have none of these.
+    /** "cast", "injection", "removal"… — null for an unconfigured modality */
+    family?: string | null;
+    siteRef?: SiteRef | null;
+    details?: AssessmentDetails;
+    /** the composed line — "Cast — Left forearm, below-elbow, backslab, POP" */
+    text?: string;
+    /** the earlier intervention (database id) this removes or changes */
+    removesId?: string | null;
+    /** the assessment at this site it treats — "Fracture — Left forearm" */
+    assessmentText?: string | null;
+    /** done today, or planned for later (Phase 5) */
+    status?: "performed" | "planned";
+    /** when a planned one is due, yyyy-mm-dd (Phase 5) */
+    dueDate?: string | null;
 }
 
 /**
@@ -78,6 +98,11 @@ export function formatSide(side: InterventionSide | null): string {
 
 /** One line, printed — for the prescription and the plan rail. */
 export function formatLine(line: InterventionLine): string {
+    if (line.text) {
+        const planned = line.status === "planned"
+            ? ` [planned${line.dueDate ? ` — due ${line.dueDate}` : ""}]` : "";
+        return line.notes.trim() ? `${line.text}${planned} (${line.notes.trim()})` : `${line.text}${planned}`;
+    }
     const sideTag = formatSide(line.side);
     const where = [line.site.trim(), sideTag].filter(Boolean).join(" · ");
     const head = where ? `${line.label} — ${where}` : line.label;

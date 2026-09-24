@@ -6641,6 +6641,75 @@ body.cs-locked-shell {
 }
 .cs-dx-editname:hover { text-decoration: underline; }
 
+.cs-dx-fieldlabel em {
+    margin-left: 3px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 550;
+}
+.cs-dx-chip.is-multi.is-on { background: var(--anat-accent-soft); color: var(--anat-accent); }
+
+/* ── INTERVENTION MODAL extras — InterventionInspector.tsx ─────────────
+   What a removal points back at: this patient's earlier casts, sutures,
+   dressings, one row each, picked like a radio. */
+.cs-intv-earlier { display: flex; flex-direction: column; gap: 5px; }
+.cs-intv-earlier-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 6px 10px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+}
+.cs-intv-earlier-row:hover { border-color: var(--anat-accent); }
+.cs-intv-earlier-row.is-on {
+    border-color: var(--anat-accent);
+    background: var(--anat-accent-soft);
+}
+.cs-intv-earlier-mark {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border: 1.5px solid var(--cs-line-strong);
+    border-radius: 50%;
+    color: #fff;
+}
+.cs-intv-earlier-row.is-on .cs-intv-earlier-mark { border-color: var(--anat-accent); background: var(--anat-accent); }
+.cs-intv-earlier-text { flex: 1; min-width: 0; line-height: 1.3; }
+.cs-intv-earlier-row em {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 600;
+}
+
+/* "For Fracture — Left forearm": the assessment at this site, which the
+   intervention is linked to. */
+.cs-intv-for {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.cs-intv-for svg { color: var(--anat-accent); }
+
 /* The exact line that will print, live, above the buttons. */
 .cs-dx-preview {
     display: flex;

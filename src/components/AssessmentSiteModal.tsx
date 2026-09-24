@@ -16,9 +16,10 @@ import { Check, FlaskConical, Plus, Stethoscope, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnatomyFigure, SiteField } from "../features/consult/AnatomyPicker";
 import {
-    composeAssessmentText, familyFor, imagingFamilyFor, optionsOf, pruneDetails, siteAllowed, visibleFields,
-    type AssessmentDetails, type DetailField,
+    composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, visibleFields,
+    type AssessmentDetails,
 } from "../features/consult/assessmentFamilies";
+import { DetailInput } from "../features/consult/DetailInput";
 import type { SiteRef } from "../lib/body/clinicalSite";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 
@@ -93,7 +94,7 @@ export function AssessmentSiteModal({
     });
 
     if (!family) return null;
-    const fields = visibleFields(family, clean);
+    const fields = visibleFields(family, clean, site);
     const set = (key: string, v: string | boolean | undefined) =>
         setDetails((d) => {
             const next = { ...d };
@@ -174,74 +175,5 @@ export function AssessmentSiteModal({
                 </div>
             </div>
         </div>
-    );
-}
-
-function DetailInput({
-    field, site, value, onChange,
-}: {
-    field: DetailField;
-    site: SiteRef | null;
-    value: string | boolean | undefined;
-    onChange: (v: string | boolean | undefined) => void;
-}) {
-    if (field.kind === "flag") {
-        return (
-            <div className="cs-dx-field">
-                <button
-                    type="button"
-                    className={`cs-dx-chip is-flag${value ? " is-on" : ""}`}
-                    aria-pressed={!!value}
-                    onClick={() => onChange(!value)}
-                >
-                    {value && <Check size={12} />}
-                    {field.label}
-                </button>
-            </div>
-        );
-    }
-
-    if (field.kind === "choice") {
-        const opts = optionsOf(field, site);
-        return (
-            <div className="cs-dx-field">
-                <span className="cs-dx-fieldlabel">{field.label}</span>
-                <div className="cs-dx-chips" role="radiogroup" aria-label={field.label}>
-                    {opts.map((o) => (
-                        <button
-                            key={o}
-                            type="button"
-                            role="radio"
-                            aria-checked={value === o}
-                            className={`cs-dx-chip${value === o ? " is-on" : ""}`}
-                            // Picking the chosen one again clears it — every
-                            // detail stays optional.
-                            onClick={() => onChange(value === o ? undefined : o)}
-                        >
-                            {o}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <label className="cs-dx-field">
-            <span className="cs-dx-fieldlabel">{field.label}</span>
-            <span className="cs-dx-inputrow">
-                <input
-                    className={`cs-anat-input${field.kind === "number" ? " is-num" : ""}`}
-                    value={typeof value === "string" ? value : ""}
-                    inputMode={field.kind === "number" ? "decimal" : undefined}
-                    placeholder={field.kind === "text" ? field.placeholder : "—"}
-                    onChange={(e) => {
-                        const v = field.kind === "number" ? e.target.value.replace(/[^0-9.]/g, "") : e.target.value;
-                        onChange(v);
-                    }}
-                />
-                {field.kind === "number" && <em>{field.unit}</em>}
-            </span>
-        </label>
     );
 }
