@@ -9,6 +9,7 @@ import {
 } from "./lib/db/interventions";
 import { interventionFamilyFor, removableFamilies } from "./features/consult/interventionFamilies";
 import { followOnsFor, type FollowOn } from "./features/consult/followOns";
+import { fetchInterventionPrices, interventionCharges, type InterventionPrice } from "./lib/db/interventionPricing";
 import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
 import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { PatientHeader } from "./components/PatientHeader";
@@ -1766,6 +1767,15 @@ function App() {
     }
   }, [synapse.data?.ruleset, openIntervention, openImagingAt, addFreeTest, addFreeAdvice, addFreeReferral, setFollowUpDays]);
 
+  /** What this clinic charges for interventions (Phase 7) — empty = off. */
+  const [interventionPrices, setInterventionPrices] = useState<InterventionPrice[]>([]);
+  useEffect(() => {
+    if (!identity.hospitalId) return;
+    let cancelled = false;
+    fetchInterventionPrices(identity.hospitalId).then((rows) => { if (!cancelled) setInterventionPrices(rows); });
+    return () => { cancelled = true; };
+  }, [identity.hospitalId, isReviewOpen]);
+
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
 
@@ -3093,6 +3103,7 @@ function App() {
         !isFeaturePage && isReviewOpen && patient && (
           <ReviewModal
             patient={patient}
+            seedCharges={interventionCharges(interventionPrices, interventionPlan)}
             doctor={{
               name: doctorProfile?.name ?? DOCTOR_NAME,
               name_hi: doctorProfile?.name_hi ?? null,

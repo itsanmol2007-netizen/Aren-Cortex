@@ -124,6 +124,13 @@ interface ReviewModalProps {
   /** Doctor-readable failure line, shown above the action bar when the push
    *  errored. */
   whatsappError?: string;
+  /**
+   * Charges this consult already brings to the bill — today's performed
+   * interventions that the clinic has priced (lib/db/interventionPricing.ts).
+   * Pre-filled into the additional-charges lines when Review opens, where
+   * they can be changed or removed like any other charge.
+   */
+  seedCharges?: AdditionalChargeLine[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -219,7 +226,7 @@ export default function ReviewModal({
   followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
   storySummary = [], goalSummary = [],
   doctor, hospital, vitals, isSaving, saveLabel, sent = false,
-  whatsappPhase = "idle", whatsappError,
+  whatsappPhase = "idle", whatsappError, seedCharges,
   mode = "review", date, autoPrint, onPrinted,
 }: ReviewModalProps) {
 
@@ -323,7 +330,9 @@ export default function ReviewModal({
       ? Math.round((medicineTotal * medicineBillingPolicy.gstPercent) / 100)
       : 0;
 
-  const [charges, setCharges] = useState<AdditionalChargeLine[]>([]);
+  // Review opens already carrying today's priced interventions; a reprint
+  // starts empty and is seeded from what was actually saved, below.
+  const [charges, setCharges] = useState<AdditionalChargeLine[]>(() => (isPrintMode ? [] : seedCharges ?? []));
   // A reprint has no interactive "+ Add charge" — seed straight from what
   // was actually billed and saved, the same source `medicineTotal` above
   // reads for the same reason.

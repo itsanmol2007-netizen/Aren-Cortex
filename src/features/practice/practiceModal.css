@@ -632,3 +632,20 @@
     width: 15px;
     height: 15px;
 }
+
+/* Intervention Pricing's per-configuration prices — one line each, the
+   option on the left and its amount on the right, instead of a stack of
+   full-height fields (a cast has seven extents). */
+.prac-cfg-list { display: flex; flex-direction: column; gap: 6px; }
+.prac-modal-field.prac-cfg-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px;
+    align-items: center;
+    gap: 12px;
+}
+.prac-modal-field.prac-cfg-row label {
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.prac-modal-field.prac-cfg-row input { height: 34px; text-align: right; font-variant-numeric: tabular-nums; }

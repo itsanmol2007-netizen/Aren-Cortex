@@ -84,6 +84,10 @@ import {
     deleteAdditionalCharge, type AdditionalChargeCatalogEntry,
 } from "../../lib/db/additionalCharges";
 import {
+    fetchInterventionPrices, setInterventionPrice, deleteInterventionPrice, type InterventionPrice,
+} from "../../lib/db/interventionPricing";
+import { PRICEABLE_FAMILIES, type PriceableFamily } from "../consult/interventionFamilies";
+import {
     fetchExerciseLibrary, setExerciseLibraryEntry, deleteExerciseLibraryEntry,
     type ExerciseLibraryEntry,
 } from "../../lib/db/exerciseLibrary";
@@ -2662,6 +2666,141 @@ function AdditionalChargesModal({
     );
 }
 
+/**
+ * INTERVENTION PRICING — what this clinic charges per procedure family
+ * ("Cast"), with an optional price per configuration ("Above-elbow (long
+ * arm)" costing more than "Below-elbow"). Same list → edit shape as
+ * Additional Charges just above. Performed interventions with a price are
+ * pre-filled into Review's charges; planned ones never bill.
+ */
+export function InterventionPricingModal({
+    rows, hospitalId, actorUserId, onSaved, onClose,
+}: {
+    rows: InterventionPrice[];
+    hospitalId: string;
+    actorUserId: string | null;
+    onSaved: (next: InterventionPrice[]) => void;
+    onClose: () => void;
+}) {
+    const [editing, setEditing] = useState<PriceableFamily | null>(null);
+    /** config key ("" = base) → typed amount */
+    const [draft, setDraft] = useState<Record<string, string>>({});
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const pricesOf = (family: string) => rows.filter((r) => r.family === family);
+
+    const startEdit = (f: PriceableFamily) => {
+        const d: Record<string, string> = {};
+        for (const r of pricesOf(f.key)) d[r.configKey] = String(r.price);
+        setDraft(d);
+        setEditing(f);
+        setError(null);
+    };
+
+    const submit = async () => {
+        if (!editing) return;
+        const keys = ["", ...editing.configOptions];
+        for (const k of keys) {
+            const v = (draft[k] ?? "").trim();
+            if (v && !(Number.isFinite(Number(v)) && Number(v) >= 0)) {
+                setError(`Enter a valid amount${k ? ` for ${k}` : ""}.`);
+                return;
+            }
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const existing = pricesOf(editing.key);
+            for (const k of keys) {
+                const v = (draft[k] ?? "").trim();
+                const row = existing.find((r) => r.configKey === k);
+                if (v) {
+                    if (!row || row.price !== Number(v)) {
+                        await setInterventionPrice({ hospitalId, family: editing.key, configKey: k, price: Number(v), setBy: actorUserId });
+                    }
+                } else if (row) {
+                    await deleteInterventionPrice(row.id);
+                }
+            }
+            onSaved(await fetchInterventionPrices(hospitalId));
+            setEditing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save those prices.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="teal" icon={<IndianRupee size={15} />} eyebrow="Intervention Pricing"
+            title="What this clinic charges per procedure" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {editing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setEditing(null)}>
+                        ← Back to the list
+                    </button>
+                    <div className="prac-modal-field">
+                        <label>{editing.title} — price (₹)</label>
+                        <input type="text" inputMode="decimal" value={draft[""] ?? ""} placeholder="e.g. 800" autoFocus
+                            onChange={(e) => setDraft((d) => ({ ...d, "": e.target.value }))} />
+                    </div>
+                    {editing.configField && (
+                        <>
+                            <div className="prac-modal-section-title" style={{ padding: "8px 2px 2px" }}>
+                                <span>By {editing.configLabel?.toLowerCase()}</span>
+                                <span>optional — overrides the price above</span>
+                            </div>
+                            <div className="prac-cfg-list">
+                                {editing.configOptions.map((o) => (
+                                    <div key={o} className="prac-modal-field prac-cfg-row">
+                                        <label>{o}</label>
+                                        <input type="text" inputMode="decimal" value={draft[o] ?? ""}
+                                            placeholder={draft[""] ? `₹${draft[""]}` : "—"}
+                                            onChange={(e) => setDraft((d) => ({ ...d, [o]: e.target.value }))} />
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button type="button" className="prac-modal-btn is-primary is-compact" disabled={saving} onClick={submit}>
+                        {saving ? "Saving…" : "Save"}
+                    </button>
+                </>
+            ) : (
+                <div className="prac-modal-rows">
+                    {PRICEABLE_FAMILIES.map((f) => {
+                        const own = pricesOf(f.key);
+                        const base = own.find((r) => r.configKey === "");
+                        const configs = own.filter((r) => r.configKey !== "").length;
+                        return (
+                            <button key={f.key} type="button" className="prac-hit-row" onClick={() => startEdit(f)}>
+                                <div className="prac-med-info">
+                                    <span className="prac-row-label">{f.title}</span>
+                                    {f.configLabel && (
+                                        <span className="prac-med-brands">
+                                            {configs > 0
+                                                ? `${configs} ${f.configLabel.toLowerCase()} price${configs === 1 ? "" : "s"}`
+                                                : `Can be priced by ${f.configLabel.toLowerCase()}`}
+                                        </span>
+                                    )}
+                                </div>
+                                <span className={`prac-quiet-pill${base || configs ? " is-alt" : ""}`}>
+                                    {base ? `₹${base.price.toFixed(0)}` : configs ? "By type" : "Not priced"}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
 // ===========================================================================
 // THE PAGE
 // ===========================================================================
@@ -2714,6 +2853,13 @@ export function PracticePage({
     const [chargeCatalogLoading, setChargeCatalogLoading] = useState(true);
     const [chargesModalOpen, setChargesModalOpen] = useState(false);
 
+    // Intervention pricing (Phase 7) — only for the specialties whose
+    // interventions are configured families (casts, dressings, sutures…).
+    const pricesInterventions = specialty.id === "orthopedics" || specialty.id === "general_opd";
+    const [interventionPrices, setInterventionPrices] = useState<InterventionPrice[]>([]);
+    const [interventionPricesLoading, setInterventionPricesLoading] = useState(true);
+    const [interventionPricingOpen, setInterventionPricingOpen] = useState(false);
+
     // ── Exercise library (opt-in, see lib/db/exerciseLibrary.ts) ───────────
     // Physiotherapy's Practice-page analog of Preferred Medicines — which
     // exercises this clinic actually prescribes, and the default dose a
@@ -2764,6 +2910,12 @@ export function PracticePage({
             .then(setPriceRows)
             .catch(console.error)
             .finally(() => setPriceRowsLoading(false));
+
+        setInterventionPricesLoading(true);
+        fetchInterventionPrices(identity.hospitalId)
+            .then(setInterventionPrices)
+            .catch(console.error)
+            .finally(() => setInterventionPricesLoading(false));
 
         setChargeCatalogLoading(true);
         fetchAdditionalChargesCatalog(identity.hospitalId)
@@ -3197,7 +3349,7 @@ export function PracticePage({
                         saved charge is exactly that, neither the medicine
                         group's own teal nor the doctor-authored violet the
                         tools row's Templates/Companions carry. */}
-                    <div className="prac-grid is-2col" style={{ order: rowOrder.extras }}>
+                    <div className={`prac-grid${pricesInterventions ? "" : " is-2col"}`} style={{ order: rowOrder.extras }}>
                         <PracticeCard
                             id="exercises"
                             icon={<Dumbbell size={14} />} tone="blue" title="Exercise Library" count={exerciseLibrary.length} fixed
@@ -3306,6 +3458,73 @@ export function PracticePage({
                                 </div>
                             )}
                         </PracticeCard>
+
+                        {pricesInterventions && (() => {
+                            const pricedFamilies = PRICEABLE_FAMILIES
+                                .map((f) => ({ f, own: interventionPrices.filter((r) => r.family === f.key) }))
+                                .filter((x) => x.own.length > 0);
+                            return (
+                                <PracticeCard
+                                    id="intervention-pricing"
+                                    icon={<IndianRupee size={13} />} tone="teal" title="Intervention Pricing"
+                                    count={pricedFamilies.length} countTone="green" fixed
+                                    subtitle="What this clinic charges for casts, dressings, sutures and other procedures."
+                                    action={
+                                        <button type="button" className="prac-card-add" onClick={() => setInterventionPricingOpen(true)}>
+                                            <Plus size={12} /> Set price
+                                        </button>
+                                    }
+                                    foot={pricedFamilies.length > 0 ? (
+                                        <FootLink label="Manage pricing" onClick={() => setInterventionPricingOpen(true)} />
+                                    ) : undefined}
+                                >
+                                    {interventionPricesLoading ? (
+                                        <SkelRows count={3} />
+                                    ) : pricedFamilies.length === 0 ? (
+                                        <EmptyBlock
+                                            art={<BlankPricingArt />}
+                                            fact="No procedures priced yet"
+                                            next="Set a price per procedure — what was performed is added to the bill at review, and you can still change it there."
+                                            action={
+                                                <button type="button" className="prac-empty-action" onClick={() => setInterventionPricingOpen(true)}>
+                                                    <IndianRupee size={14} /> Set prices
+                                                </button>
+                                            }
+                                        />
+                                    ) : (
+                                        <div className="prac-fill">
+                                            {fillArtScale(pricedFamilies.length, 4) != null && (
+                                                <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(pricedFamilies.length, 4)})` }}>
+                                                    <BlankPricingArt />
+                                                </div>
+                                            )}
+                                            <CappedRows
+                                                items={pricedFamilies} cap={4} rowH={ROW_H}
+                                                showAllLabel="View all prices" keyOf={(x) => x.f.key}
+                                                renderRow={({ f, own }) => {
+                                                    const base = own.find((r) => r.configKey === "");
+                                                    const configs = own.length - (base ? 1 : 0);
+                                                    return (
+                                                        <button
+                                                            type="button" className="prac-template-row"
+                                                            onClick={() => setInterventionPricingOpen(true)}
+                                                        >
+                                                            <div className="prac-med-info">
+                                                                <span className="prac-row-label">{f.title}</span>
+                                                            </div>
+                                                            <span className="prac-quiet-pill is-alt">
+                                                                {base ? `₹${base.price.toFixed(0)}` : "By type"}
+                                                                {configs > 0 && base ? ` · +${configs}` : ""}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                </PracticeCard>
+                            );
+                        })()}
                     </div>
                 </div>
 
@@ -3516,6 +3735,15 @@ export function PracticePage({
                     rows={exerciseLibrary} loading={exerciseLibraryLoading}
                     onSaved={setExerciseLibrary}
                     onClose={() => setExerciseModalOpen(false)}
+                />
+            )}
+
+            {interventionPricingOpen && (
+                <InterventionPricingModal
+                    hospitalId={identity.hospitalId} actorUserId={identity.userId}
+                    rows={interventionPrices}
+                    onSaved={setInterventionPrices}
+                    onClose={() => setInterventionPricingOpen(false)}
                 />
             )}
 

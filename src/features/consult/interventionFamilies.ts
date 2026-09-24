@@ -301,3 +301,43 @@ export function reductionOfFor(assessmentFamily: string): string | null {
     if (assessmentFamily === "subluxation") return "Subluxation";
     return null;
 }
+
+// ── Pricing (Phase 7) ──────────────────────────────────────────────────────
+// A clinic prices a family ("Cast"), and optionally one configuration of it
+// ("Above-elbow (long arm)" costs more than "Below-elbow"). Which field is
+// the configuration is fixed per family, so the Practice screen can offer
+// exactly those options and a bill can find the right price.
+
+export interface PriceableFamily {
+    key: string;
+    title: string;
+    /** the detail whose value can carry its own price, if any */
+    configField: string | null;
+    configLabel: string | null;
+    configOptions: string[];
+}
+
+const allDevices = [...new Set(Object.values(DEVICES_BY_REGION).flat()), "Other"];
+
+export const PRICEABLE_FAMILIES: PriceableFamily[] = [
+    { key: "cast", title: "Cast", configField: "extent", configLabel: "Extent", configOptions: CAST_EXTENT(null) },
+    { key: "splint", title: "Splint / brace", configField: "device", configLabel: "Device", configOptions: allDevices },
+    { key: "strapping", title: "Strapping", configField: "type", configLabel: "Type", configOptions: ["Rigid", "Kinesio", "Buddy"] },
+    { key: "reduction", title: "Closed reduction", configField: "what", configLabel: "Type", configOptions: ["Fracture", "Dislocation", "Subluxation"] },
+    { key: "aspiration", title: "Aspiration", configField: "target", configLabel: "Target", configOptions: ["Joint", "Bursa"] },
+    { key: "injection", title: "Injection", configField: "agent", configLabel: "Agent", configOptions: ["Triamcinolone", "Methylprednisolone", "Lignocaine", "Bupivacaine", "Hyaluronic acid", "PRP", "Other"] },
+    { key: "cleaning", title: "Wound cleaning", configField: null, configLabel: null, configOptions: [] },
+    { key: "debridement", title: "Debridement", configField: "extent", configLabel: "Extent", configOptions: ["Superficial", "To fascia", "To bone"] },
+    { key: "dressing", title: "Dressing", configField: "type", configLabel: "Type", configOptions: ["Dry gauze", "Paraffin gauze", "Antiseptic", "Foam / moist"] },
+    { key: "closure", title: "Wound closure", configField: "method", configLabel: "Method", configOptions: ["Sutures", "Staples", "Adhesive strips", "Tissue glue"] },
+    { key: "removal", title: "Removal", configField: "what", configLabel: "Type", configOptions: ["Cast removal", "Splint / brace removal", "Suture removal", "Staple removal", "Strapping removal"] },
+    { key: "dressingChange", title: "Dressing change", configField: null, configLabel: null, configOptions: [] },
+];
+
+/** The configuration value a line is priced by — "" when none applies. */
+export function priceConfigOf(familyKey: string, details: AssessmentDetails | undefined): string {
+    const f = PRICEABLE_FAMILIES.find((p) => p.key === familyKey);
+    if (!f?.configField) return "";
+    const v = details?.[f.configField];
+    return typeof v === "string" ? v : "";
+}
