@@ -2318,7 +2318,7 @@ body.cs-locked-shell {
 .cs-sug-controls {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 10px;
     padding: 8px 16px 0;
 }
@@ -2336,6 +2336,21 @@ body.cs-locked-shell {
     flex-wrap: wrap;
     gap: 6px;
 }
+/* One line, always: the tabs scroll sideways rather than wrapping into a
+   second row of chrome above the list. */
+.cs-sug-filter.is-oneline {
+    flex: 1;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    padding-right: 20px;
+}
+.cs-sug-filter.is-oneline::-webkit-scrollbar { display: none; }
+.cs-sug-filter.is-oneline .cs-sug-filter-btn { flex: none; padding: 5px 10px; white-space: nowrap; }
+.cs-sug-controls .cs-ranked-count { flex: none; margin-left: auto; }
 
 .cs-sug-filter-btn {
     display: flex;
@@ -3390,7 +3405,7 @@ body.cs-locked-shell {
     align-items: center;
     gap: 2px 12px;
     border-radius: 10px;
-    padding: 11px 8px;
+    padding: 9px 8px;
 }
 
 .cs-sug + .cs-sug::before {
@@ -3438,6 +3453,13 @@ body.cs-locked-shell {
 .cs-sug-icon.is-referral { background: #8b5cf6; }
 .cs-sug-icon.is-advice { background: #10b981; }
 .cs-sug-icon.is-exercise { background: #0ea5e9; }
+/* These three had no colour at all — a white glyph on nothing, so the
+   icon column read as blank space. Teal for what the doctor does or gives
+   (interventions, medicine), rose for what the patient reports (an
+   impairment) — colour.md's own meanings. */
+.cs-sug-icon.is-modality { background: var(--cs-teal); }
+.cs-sug-icon.is-medicine { background: #0d9488; }
+.cs-sug-icon.is-impairment { background: var(--cs-rose); }
 
 .cs-sug-main { min-width: 0; }
 
@@ -3455,6 +3477,15 @@ body.cs-locked-shell {
 .cs-sug-kind.is-referral { color: #6d28d9; }
 .cs-sug-kind.is-advice { color: #047857; }
 .cs-sug-kind.is-exercise { color: #0369a1; }
+.cs-sug-kind.is-modality { color: var(--cs-teal); }
+.cs-sug-kind.is-medicine { color: #0f766e; }
+.cs-sug-kind.is-impairment { color: var(--cs-rose); }
+/* The kind on the relevance line, not a line of its own. */
+.cs-sug-kind.is-inline {
+    display: inline;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+}
 
 .cs-sug-name {
     display: flex;

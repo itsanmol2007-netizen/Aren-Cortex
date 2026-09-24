@@ -66,11 +66,11 @@ const isFreeTextType = (t: IntentType | null): t is DoctorFreeTermType =>
  *    ConditionsCard's numbered rows, which is what makes THOSE two panels'
  *    capped/expanded boxes land on the same pixel (Anmol, 2026-08-25: "the
  *    final height of both panels are different").
- *  - Kind label showing: 79px, measured live before the label was removed
- *    from the single-type case — the real height of a three-line `.cs-sug`
- *    row, not a fresh guess.
+ *  - Kind label showing: 60px, measured live (2026-09-24) after the kind
+ *    moved onto the relevance line — a two-line `.cs-sug` row, so about
+ *    six fit where three did.
  */
-const MULTI_TYPE_ROW_H = 79;
+const MULTI_TYPE_ROW_H = 60;
 
 /**
  * Section order, labels, glyphs and the verb each type is accepted with.
@@ -215,7 +215,7 @@ export function SuggestionsCard({
     selectedTests = [], adviceLines = [],
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
-    types, title = "Clinical Suggestions", capped,
+    types, title = "Clinical Actions", capped,
 }: Props) {
     const [showAllCapped, setShowAllCapped] = useState(false);
     const reduce = useReducedMotion();
@@ -678,8 +678,12 @@ export function SuggestionsCard({
         return [...unrankedNodes, freeTermsStrip, ...rowNodes];
     };
 
+    // The category tabs, one line; the "N of M" count rides the same row so
+    // the list starts a row higher.
+    const showsFilterRow = SECTIONS.length > 1 && !search.isSearching && anyContent && nonEmptySections.length > 1;
+
     return (
-        <section className={`cs-card ${className}`} aria-label="Clinical suggestions">
+        <section className={`cs-card ${className}`} aria-label="Clinical actions">
             {/* The title takes a glyph tile so this panel and MEDICINE
                 RECOMMENDATIONS beside it read as the two halves of one row.
                 Before this it was a violet underlined tab — the language of a
@@ -760,7 +764,7 @@ export function SuggestionsCard({
                 category, which is the only thing this row still holds, so a
                 panel with nothing to filter spends no vertical space on an
                 empty controls strip. */}
-            {SECTIONS.length > 1 && !search.isSearching && anyContent && nonEmptySections.length > 1 && (
+            {showsFilterRow && (
                 <div className="cs-sug-controls">
                     {/* §3, 2026-08-24. One button per category — "Tests",
                         "Advice"… — to get straight to that section,
@@ -779,7 +783,7 @@ export function SuggestionsCard({
                         the identical filter, so a two-tab row that always
                         says the same thing twice was reading as a stray
                         global search bar rather than a scoped one. */}
-                    <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
+                    <div className="cs-sug-filter is-oneline" role="tablist" aria-label="Filter by category">
                             <button
                                 type="button"
                                 role="tab"
@@ -805,6 +809,11 @@ export function SuggestionsCard({
                                 </button>
                             ))}
                     </div>
+                    {capped != null && rows.length > 0 && (
+                        <span className="cs-ranked-count" title="Ranked — what confirms or rules out what you've ranked above.">
+                            {visibleRows.length} of {rows.length}
+                        </span>
+                    )}
                 </div>
             )}
 
@@ -841,7 +850,7 @@ export function SuggestionsCard({
                         matching it, which is exactly what was pushing their
                         "Show more"/"Show less" controls out of alignment
                         (item 4 of the same message). */}
-                    {capped != null && rows.length > 0 && (
+                    {capped != null && rows.length > 0 && !showsFilterRow && (
                         <div className="cs-ranked-head">
                             <span
                                 className="cs-ranked-label"
@@ -858,7 +867,7 @@ export function SuggestionsCard({
                         initial={false}
                         animate={
                             capped != null
-                                ? { maxHeight: showAllCapped ? 4.5 * ROW_H : capped * ROW_H }
+                                ? { maxHeight: showAllCapped ? Math.max(4.5, capped + 1.5) * ROW_H : capped * ROW_H }
                                 : { maxHeight: "none" }
                         }
                         transition={
@@ -931,7 +940,6 @@ function SuggestionRow({
             <span className={`cs-sug-icon is-${tone}`} aria-hidden="true">{icon}</span>
 
             <div className="cs-sug-main">
-                {kindLabel && <span className={`cs-sug-kind is-${tone}`}>{kindLabel}</span>}
                 <div className="cs-sug-name">
                     <span>{intent.label}</span>
                     {intent.isSafetyCritical && (
@@ -941,7 +949,16 @@ function SuggestionRow({
                     {isHard && <span className="cs-flag is-hard">Check</span>}
                     <WhyButton label={intent.label} onOpen={onExplain} />
                 </div>
-                {relevance && <span className="cs-sug-rel">{relevance}</span>}
+                {/* Two lines, not three: the kind rides the relevance line
+                    ("INTERVENTIONS · High relevance"), and the coloured icon
+                    carries it at a glance — so ~six rows fit where three did. */}
+                {(kindLabel || relevance) && (
+                    <span className="cs-sug-rel">
+                        {kindLabel && <b className={`cs-sug-kind is-inline is-${tone}`}>{kindLabel}</b>}
+                        {kindLabel && relevance && " · "}
+                        {relevance}
+                    </span>
+                )}
             </div>
 
             {added ? (
