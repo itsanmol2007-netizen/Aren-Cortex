@@ -1693,7 +1693,15 @@ function App() {
    */
   const knownSites = useMemo<SiteRef[]>(() => {
     const out: SiteRef[] = [];
-    const add = (x: SiteRef | null) => { if (x && !out.some((k) => sameSite(k, x))) out.push(x); };
+    const push = (x: SiteRef) => { if (!out.some((k) => sameSite(k, x))) out.push(x); };
+    // "Bilateral knee" is two places for anything done to ONE of them (an
+    // injection, a cast): offered as Left knee and Right knee, so it becomes
+    // a "Which site?" choice instead of pre-filling "Bilateral".
+    const add = (x: SiteRef | null) => {
+      if (!x) return;
+      if (x.side === "both") { push({ ...x, side: "left" }); push({ ...x, side: "right" }); }
+      else push(x);
+    };
     assessmentLines.forEach((l) => add(l.site));
     interventionPlan.forEach((l) => add(siteFromLabel(l.site)));
     markedExam.regions.forEach((r) => add(siteFromRegionKey(r, markedExam.sides.get(r) ?? null)));
