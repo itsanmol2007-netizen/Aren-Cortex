@@ -11469,3 +11469,145 @@ body.cs-locked-shell {
     .cs-chartmodal.is-leaving .cs-chartmodal-scrim,
     .cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: none; }
 }
+
+/* ── ASSESSMENTS ON THE BODY MAP (2026-09-26) — JointFindingField +
+   SiteAssessmentDetails. The Assessment card's violet: a fracture made on
+   the map is the same record as one made on the card, and looks it. */
+.cs-jf-token.is-assessment {
+    gap: 2px;
+    border-color: #d8c8fb;
+    background: linear-gradient(180deg, #fbf8ff 0%, #efe7ff 100%);
+    padding: 0 4px 0 0;
+    color: #5b21b6;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(91, 33, 182, 0.12);
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.cs-jf-token.is-assessment.is-open {
+    border-color: #a78bfa;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+.cs-jf-token > button.cs-jf-token-open {
+    display: inline-flex;
+    width: auto;
+    height: auto;
+    align-items: center;
+    gap: 5px;
+    border-radius: 7px 0 0 7px;
+    padding: 3px 4px 3px 8px;
+    color: inherit;
+    font: inherit;
+    opacity: 1;
+}
+.cs-jf-token > button.cs-jf-token-open:hover { background: rgba(124, 58, 237, 0.07); }
+.cs-jf-token-sub {
+    max-width: 220px;
+    overflow: hidden;
+    color: #7c5bc4;
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-jf-token-chev { opacity: 0.55; transition: transform 0.18s ease; }
+.cs-jf-token.is-open .cs-jf-token-chev { transform: rotate(180deg); }
+
+.cs-jf-dx {
+    --anat-accent: var(--cs-violet);
+    --anat-accent-soft: var(--cs-violet-soft);
+    --anat-accent-ring: rgba(124, 58, 237, 0.12);
+    position: relative;
+    margin-top: 10px;
+    border: 1px solid #e3d7fd;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fcfaff 0%, #ffffff 60%);
+    padding: 10px 12px 12px;
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.06);
+    animation: cs-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* A notch pointing back at the token it belongs to. */
+.cs-jf-dx::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 22px;
+    width: 10px;
+    height: 10px;
+    border-top: 1px solid #e3d7fd;
+    border-left: 1px solid #e3d7fd;
+    background: #fcfaff;
+    transform: rotate(45deg);
+}
+.cs-jf-dx-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cs-jf-dx-glyph {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border-radius: 7px;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+.cs-jf-dx-title { color: var(--cs-ink); font-size: 13.5px; font-weight: 750; }
+.cs-jf-dx-eyebrow {
+    color: #6d28d9;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-jf-dx-done {
+    margin-left: auto;
+    height: 26px;
+    border: 1px solid #d8c8fb;
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 12px;
+    color: #5b21b6;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-jf-dx-done:hover { background: var(--cs-violet-soft); }
+.cs-jf-dx-fields { display: flex; flex-direction: column; gap: 12px; }
+.cs-jf-dx-none { margin: 0; color: var(--cs-faint); font-size: 12.5px; }
+.cs-jf-dx-preview {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 12px 0 0;
+    border-top: 1px dashed #e3d7fd;
+    padding-top: 9px;
+    font-size: 12.5px;
+}
+.cs-jf-dx-preview span {
+    flex: none;
+    color: #6d28d9;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-jf-dx-preview b { color: var(--cs-ink); font-weight: 650; }
+
+.cs-jf-row.is-assessment .cs-jf-check {
+    border-color: #d8c8fb;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+.cs-jf-row.is-assessment.is-here .cs-jf-check { border-color: var(--cs-violet); background: var(--cs-violet); color: #fff; }
+.cs-jf-row.is-assessment.is-active { background: #f5f0ff; }
+.cs-jf-listfoot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 0;
+    border-top: 1px solid var(--cs-line);
+    padding: 8px 10px 4px;
+    color: #6d28d9;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+    .cs-jf-dx { animation: none; }
+}

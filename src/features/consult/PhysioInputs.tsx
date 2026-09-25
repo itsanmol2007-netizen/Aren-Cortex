@@ -111,6 +111,8 @@ interface Props {
     examination: ExaminationHook;
     /** every marked body-map site, each side its own */
     markedSites: { region: string; side: MeasureSide | null }[];
+    /** assessments made at a site, for the body map summary */
+    siteAssessments?: { label: string; site: SiteRef | null }[];
     onOpenBodyMap: () => void;
 }
 
@@ -123,7 +125,7 @@ export function PhysioInputs({
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
     story, onStoryChange, goals, lastGoalScores, todayGoalScores,
     onGoalScoreChange, onAddGoal, onRetireGoal,
-    examination, markedSites, onOpenBodyMap,
+    examination, markedSites, siteAssessments, onOpenBodyMap,
 }: Props) {
     // Identical to GeneralOpdInputs — see that file's own comment for why
     // this lives here rather than inside CaseSheet or ClinicalCommandBar.
@@ -222,6 +224,7 @@ export function PhysioInputs({
                     exam={examination}
                     markedSites={markedSites}
                     entries={caseSheetEntries}
+                    assessments={siteAssessments}
                     onOpen={onOpenBodyMap}
                     disabled={disabled}
                 />

@@ -16,29 +16,63 @@
 // A local finding is recorded AT this place (`onToggleAt`); a complaint
 // like "Knee pain" is a plain chart toggle. The list is portalled and fixed,
 // so the panel's own scroll never crops it.
+//
+// ── Assessments, from the same field (2026-09-26)
+//
+// The body map is the GUI twin of the command bar, so what the bar can do
+// this field can do: typing "fracture" also finds the catalogue's
+// assessments that can sit at this place, under their own heading. Picking
+// one makes the assessment AT this site at once (no modal: the site is the
+// one question already answered) and opens its details right under its
+// token, SiteAssessmentDetails. Clicking the token later opens them again.
 // ---------------------------------------------------------------------------
 
-import { Check, MapPin, Plus, X } from "lucide-react";
+import { Check, ChevronDown, MapPin, Plus, Stethoscope, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Observable } from "../../lib/db/synapse";
+import type { IntentSearchHit, Observable } from "../../lib/db/synapse";
+import type { AssessmentLine } from "./assessmentPlan";
+import type { AssessmentDetails } from "./assessmentFamilies";
+import { SiteAssessmentDetails } from "./SiteAssessmentDetails";
+
+type RowKind = Observable["kind"] | "assessment";
 
 interface Row {
-    o: Observable;
+    key: string;
+    kind: RowKind;
+    label: string;
+    /** a finding or complaint */
+    o?: Observable;
+    /** a catalogue assessment */
+    hit?: IntentSearchHit;
     /** recorded at THIS place (or, for a complaint, on the chart) */
     here: boolean;
     /** recorded somewhere else — "at Right knee", "no place yet" */
     away: string | null;
 }
 
-const KIND_LABEL: Record<Observable["kind"], string> = {
+const KIND_LABEL: Record<RowKind, string> = {
     symptom: "Reported",
     finding: "On examination",
     history: "History",
+    assessment: "Assessment",
 };
+const KIND_RANK: Record<RowKind, number> = { symptom: 0, history: 0, finding: 1, assessment: 2 };
+
+/** What the field needs to make assessments at this place. */
+export interface SiteAssessmentApi {
+    /** the assessments already made at this place */
+    recorded: AssessmentLine[];
+    /** the catalogue's assessments matching a query that can sit here */
+    find: (query: string) => Promise<IntentSearchHit[]>;
+    /** make one here; the new (or existing) line's id */
+    onAdd: (hit: IntentSearchHit) => string | null;
+    onDetails: (id: string, details: AssessmentDetails) => void;
+    onRemove: (line: AssessmentLine) => void;
+}
 
 export function JointFindingField({
-    placeLabel, suggested, catalogue, isHere, awayNote, onToggle, disabled = false,
+    placeLabel, suggested, catalogue, isHere, awayNote, onToggle, assessment, disabled = false,
 }: {
     /** "Left knee" — names the field and the empty state */
     placeLabel: string;
@@ -49,6 +83,7 @@ export function JointFindingField({
     isHere: (o: Observable) => boolean;
     awayNote: (o: Observable) => string | null;
     onToggle: (o: Observable) => void;
+    assessment?: SiteAssessmentApi;
     disabled?: boolean;
 }) {
     const [query, setQuery] = useState("");
@@ -58,6 +93,24 @@ export function JointFindingField({
     const fieldRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    /** the assessment whose details are open under its token */
+    const [openDx, setOpenDx] = useState<string | null>(null);
+    const [dxHits, setDxHits] = useState<IntentSearchHit[]>([]);
+
+    // The catalogue's assessments for what is typed — debounced, and only
+    // once there is a word to search for.
+    const find = assessment?.find;
+    useEffect(() => {
+        const q = query.trim();
+        if (!find || q.length < 2) { setDxHits([]); return; }
+        let live = true;
+        const t = window.setTimeout(() => {
+            find(q).then((h) => { if (live) setDxHits(h); }).catch(() => { if (live) setDxHits([]); });
+        }, 160);
+        return () => { live = false; window.clearTimeout(t); };
+    }, [query, find]);
+    const recordedDx = assessment?.recorded ?? [];
+    const shownDx = recordedDx.find((l) => l.id === openDx) ?? null;
 
     const recorded = useMemo(
         () => [...suggested, ...catalogue]
@@ -79,21 +132,29 @@ export function JointFindingField({
         const push = (o: Observable) => {
             if (seen.has(o.id)) return;
             seen.add(o.id);
-            out.push({ o, here: isHere(o), away: awayNote(o) });
+            out.push({ key: `o${o.id}`, kind: o.kind, label: o.label, o, here: isHere(o), away: awayNote(o) });
         };
         // This place's own list first, in its clinical order; typing then
         // reaches every other local finding.
         for (const o of suggested) if (!q || hit(o)) push(o);
         if (q) for (const o of catalogue) if (hit(o)) push(o);
-        // What the patient reports, then what is found — the case sheet's
-        // order, so each group heading appears once.
-        const rank = (r: Row) => (r.o.kind === "finding" ? 1 : 0);
-        return out
+        // What the patient reports, then what is found, then what the doctor
+        // makes of it — the case sheet's order, so each heading appears once.
+        const obs = out
             .map((r, i) => ({ r, i }))
-            .sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i)
+            .sort((a, b) => KIND_RANK[a.r.kind] - KIND_RANK[b.r.kind] || a.i - b.i)
             .map((x) => x.r)
-            .slice(0, q ? 10 : 20);
-    }, [query, suggested, catalogue, isHere, awayNote]);
+            .slice(0, q ? 8 : 20);
+        const dx: Row[] = q ? dxHits.slice(0, 5).map((h) => ({
+            key: `a${h.intentId}`,
+            kind: "assessment",
+            label: h.label,
+            hit: h,
+            here: recordedDx.some((l) => l.label.toLowerCase() === h.label.toLowerCase()),
+            away: null,
+        })) : [];
+        return [...obs, ...dx];
+    }, [query, suggested, catalogue, isHere, awayNote, dxHits, recordedDx]);
 
     useEffect(() => { setActive(0); }, [query, open]);
 
@@ -133,18 +194,53 @@ export function JointFindingField({
     }, [active]);
 
     const pick = (r: Row) => {
-        onToggle(r.o);
         setQuery("");
+        if (r.hit && assessment) {
+            // Made here, or already here: either way its details open under
+            // it, and the list steps aside so they can be seen.
+            const existing = recordedDx.find((l) => l.label.toLowerCase() === r.label.toLowerCase());
+            const id = existing?.id ?? assessment.onAdd(r.hit);
+            if (id) { setOpenDx(id); setOpen(false); inputRef.current?.blur(); }
+            return;
+        }
+        if (r.o) onToggle(r.o);
         inputRef.current?.focus();
     };
 
     // Rows grouped under the kind the case sheet uses, in list order.
-    let lastKind: Observable["kind"] | null = null;
+    let lastKind: RowKind | null = null;
 
     return (
         <div className="cs-jf">
-            {recorded.length > 0 && (
+            {(recorded.length > 0 || recordedDx.length > 0) && (
                 <div className="cs-jf-tokens" aria-label={`Recorded at ${placeLabel.toLowerCase()}`}>
+                    {recordedDx.map((l) => (
+                        <span key={l.id} className={`cs-jf-token is-assessment${openDx === l.id ? " is-open" : ""}`}>
+                            <button
+                                type="button"
+                                className="cs-jf-token-open"
+                                aria-expanded={openDx === l.id}
+                                title={l.text}
+                                onClick={() => setOpenDx((c) => (c === l.id ? null : l.id))}
+                            >
+                                <Stethoscope size={12} aria-hidden="true" />
+                                {l.label}
+                                {/* The details, when folded: "displaced, closed". */}
+                                {openDx !== l.id && l.text.includes(", ") && (
+                                    <em className="cs-jf-token-sub">{l.text.split(", ").slice(1).join(", ")}</em>
+                                )}
+                                <ChevronDown size={12} className="cs-jf-token-chev" aria-hidden="true" />
+                            </button>
+                            <button
+                                type="button"
+                                aria-label={`Remove ${l.label} at ${placeLabel.toLowerCase()}`}
+                                disabled={disabled}
+                                onClick={() => { if (openDx === l.id) setOpenDx(null); assessment?.onRemove(l); }}
+                            >
+                                <X size={12} />
+                            </button>
+                        </span>
+                    ))}
                     {recorded.map((o) => (
                         <span key={o.id} className={`cs-jf-token is-${o.kind}`}>
                             {o.label}
@@ -161,6 +257,16 @@ export function JointFindingField({
                 </div>
             )}
 
+            {shownDx && assessment && (
+                <SiteAssessmentDetails
+                    key={shownDx.id}
+                    line={shownDx}
+                    disabled={disabled}
+                    onChange={(d) => assessment.onDetails(shownDx.id, d)}
+                    onDone={() => setOpenDx(null)}
+                />
+            )}
+
             <div
                 ref={fieldRef}
                 className={`cs-jf-field${open ? " is-open" : ""}`}
@@ -172,7 +278,9 @@ export function JointFindingField({
                     className="cs-jf-input"
                     value={query}
                     disabled={disabled}
-                    placeholder={`Add at ${placeLabel.toLowerCase()}: swelling, tenderness…`}
+                    placeholder={assessment
+                        ? `Add at ${placeLabel.toLowerCase()}: swelling, tenderness, fracture…`
+                        : `Add at ${placeLabel.toLowerCase()}: swelling, tenderness…`}
                     role="combobox"
                     aria-expanded={open}
                     aria-controls="cs-jf-list"
@@ -209,27 +317,37 @@ export function JointFindingField({
                     {rows.length === 0 ? (
                         <p className="cs-jf-none">Nothing matches “{query.trim()}”</p>
                     ) : rows.map((r, i) => {
-                        const head = r.o.kind !== lastKind ? KIND_LABEL[r.o.kind] : null;
-                        lastKind = r.o.kind;
+                        const head = r.kind !== lastKind ? KIND_LABEL[r.kind] : null;
+                        lastKind = r.kind;
                         return (
-                            <div key={r.o.id}>
+                            <div key={r.key}>
                                 {head && <p className="cs-jf-group">{head}</p>}
                                 <button
                                     type="button"
                                     role="option"
                                     data-row={i}
                                     aria-selected={i === active}
-                                    className={`cs-jf-row is-${r.o.kind}${i === active ? " is-active" : ""}${r.here ? " is-here" : ""}`}
+                                    className={`cs-jf-row is-${r.kind}${i === active ? " is-active" : ""}${r.here ? " is-here" : ""}`}
                                     onMouseEnter={() => setActive(i)}
                                     onMouseDown={(e) => { e.preventDefault(); pick(r); }}
                                 >
-                                    <span className="cs-jf-check" aria-hidden="true">{r.here && <Check size={12} strokeWidth={2.6} />}</span>
-                                    <span className="cs-jf-rowlabel">{r.o.label}</span>
+                                    <span className="cs-jf-check" aria-hidden="true">
+                                        {r.kind === "assessment"
+                                            ? (r.here ? <Check size={12} strokeWidth={2.6} /> : <Stethoscope size={11} />)
+                                            : r.here && <Check size={12} strokeWidth={2.6} />}
+                                    </span>
+                                    <span className="cs-jf-rowlabel">{r.label}</span>
+                                    {r.kind === "assessment" && <em>{r.here ? "open details" : `at ${placeLabel.toLowerCase()}`}</em>}
                                     {r.away && <em>{r.away}</em>}
                                 </button>
                             </div>
                         );
                     })}
+                    {assessment && !query.trim() && (
+                        <p className="cs-jf-listfoot">
+                            <Stethoscope size={11} aria-hidden="true" /> Type an assessment too, e.g. fracture, sprain
+                        </p>
+                    )}
                 </div>,
                 document.body,
             )}

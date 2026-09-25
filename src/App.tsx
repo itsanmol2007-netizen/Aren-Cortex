@@ -691,7 +691,7 @@ function App() {
     confirmPendingMedicine, confirmStagedMedicine, medicineBilling,
     pendingIntervention, confirmPendingIntervention, cancelPendingIntervention,
     assessmentLines, pendingAssessment, confirmPendingAssessment, cancelPendingAssessment,
-    editAssessmentLine, addAnotherAssessmentSite,
+    editAssessmentLine, addAnotherAssessmentSite, addAssessmentAt, updateAssessmentDetails,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
@@ -2540,6 +2540,7 @@ function App() {
                   onRetireGoal={visitStory.retireGoal}
                   examination={examination}
                   markedSites={markedExam.sites}
+                  siteAssessments={assessmentLines}
                   onOpenBodyMap={() => setOpenChart("joints")}
                 />
               ) : usesCaseSheet ? (
@@ -3002,6 +3003,10 @@ function App() {
               onObservableToggle={handleObservableToggle}
               onObservableToggleAt={chart.toggleObservableAt}
               examination={examination}
+              assessmentLines={assessmentLines}
+              onAddAssessmentAt={addAssessmentAt}
+              onAssessmentDetails={updateAssessmentDetails}
+              onRemoveAssessment={removeDiagnosis}
               disabled={!patient}
             />
           )}

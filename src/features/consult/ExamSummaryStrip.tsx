@@ -46,6 +46,8 @@ interface Props {
     markedSites: { region: string; side: MeasureSide | null }[];
     /** the chart, for what was recorded AT each site */
     entries: CaseSheetEntry[];
+    /** assessments made at a site, "Fracture" at the right wrist */
+    assessments?: { label: string; site: SiteRef | null }[];
     onOpen: () => void;
     disabled?: boolean;
 }
@@ -70,7 +72,7 @@ export function siteName(regionKey: string, side: MeasureSide | null): string {
 }
 
 export function ExamSummaryStrip({
-    exam, markedSites, entries, onOpen, disabled = false,
+    exam, markedSites, entries, assessments = [], onOpen, disabled = false,
 }: Props) {
     // Every site, once: what the map marked, then any place a finding was
     // recorded at from the command bar without the map ever being opened.
@@ -80,6 +82,9 @@ export function ExamSummaryStrip({
         refs.push({ ref, region, side });
     };
     for (const m of markedSites) add(siteFromRegionKey(m.region, m.side), m.region, m.side);
+    for (const a of assessments) if (a.site) {
+        add(a.site, a.site.region, a.site.side === "left" || a.site.side === "right" ? a.site.side : null);
+    }
     for (const e of entries) for (const s of e.sites ?? []) {
         const side = s.side === "left" || s.side === "right" ? s.side : null;
         add(s, s.region, side);
@@ -98,7 +103,10 @@ export function ExamSummaryStrip({
             key: siteKey(ref),
             name: REGION_BY_KEY.has(region) ? siteName(region, side) : clinicalSiteLabel(ref),
             pain: c.pain ?? exam.getNumber(regionPainKey(region), side, null),
-            recorded: entries.filter((e) => e.sites?.some((s) => sameSite(s, ref))).map((e) => e.label),
+            recorded: [
+                ...assessments.filter((a) => sameSite(a.site, ref)).map((a) => a.label),
+                ...entries.filter((e) => e.sites?.some((s) => sameSite(s, ref))).map((e) => e.label),
+            ],
             counts,
             nv,
         };

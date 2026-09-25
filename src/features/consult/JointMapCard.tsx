@@ -53,16 +53,21 @@
 // with no chips at all would read as broken.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
 import { listBodySites, addBodySite, deleteBodySite, updateBodySiteNote } from "../../lib/db/bodySites";
 import type { BodySiteFinding } from "../../lib/db/bodySites";
+import { searchIntents, type IntentSearchHit } from "../../lib/db/synapse";
+import type { AssessmentLine } from "./assessmentPlan";
+import { familyFor, siteAllowed, type AssessmentDetails } from "./assessmentFamilies";
+import type { AcceptPayload } from "./types";
+import type { SiteAssessmentApi } from "./JointFindingField";
 import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/body/anatomy";
 import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 import type { Observable } from "../../lib/db/synapse";
 import type { CaseSheetEntry } from "./CaseSheet";
-import { clinicalSiteLabel, isMidline, normalizeSite, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
+import { clinicalSiteLabel, isMidline, normalizeSite, sameSite, siteKey, type SiteRef } from "../../lib/body/clinicalSite";
 import { regionChips } from "./regionFindings";
 import { JointFindingField } from "./JointFindingField";
 import { NeurovascularCheck, NV_CHECKS, NV_REGIONS, nvKey } from "./NeurovascularCheck";
@@ -134,8 +139,23 @@ interface Props {
      * of 95 degrees can never again be recorded without saying which knee.
      */
     examination?: ExaminationHook;
+    /**
+     * Assessments made at a site from its panel (2026-09-26): the body map
+     * can do what the command bar and the Assessment card do. Optional; a
+     * caller without them gets findings and examination only.
+     */
+    assessmentLines?: AssessmentLine[];
+    onAddAssessmentAt?: (payload: AcceptPayload, site: SiteRef) => string | null;
+    onAssessmentDetails?: (id: string, details: AssessmentDetails) => void;
+    /** takes the line's text, as the Assessment card's own remove does */
+    onRemoveAssessment?: (text: string) => void;
+    /** the catalogue search; injectable for tests, `searchIntents` otherwise */
+    searchAssessments?: (query: string) => Promise<IntentSearchHit[]>;
     disabled?: boolean;
 }
+
+const searchFindingIntents = (query: string) =>
+    searchIntents({ query, types: ["finding"], limit: 24 }).then((r) => r.hits);
 
 interface Selection {
     region: BodyRegion;
@@ -145,6 +165,8 @@ interface Selection {
 export function JointMapCard({
     visitId, doctorId, observables, caseSheetEntries, onObservableToggle, onObservableToggleAt,
     presentation = "card", open = false, onClose, examination, disabled = false,
+    assessmentLines, onAddAssessmentAt, onAssessmentDetails, onRemoveAssessment,
+    searchAssessments = searchFindingIntents,
 }: Props) {
     const [items, setItems] = useState<BodySiteFinding[]>([]);
     const [aspect, setAspect] = useState<BodyAspect>("front");
@@ -217,8 +239,41 @@ export function JointMapCard({
     /** Every other local finding, reached by typing in the panel's field. */
     const localCatalogue = useMemo(() => observables.filter((o) => o.localizable), [observables]);
 
-    const hereCount = !panelChips ? 0
-        : [...panelChips, ...localCatalogue].filter((o, i, all) => all.findIndex((x) => x.id === o.id) === i && litHere(o)).length;
+    // Stable per site, so the field's search does not re-run on every render.
+    const selKey = selSite ? siteKey(selSite) : null;
+    /** The assessments made at the selected site. */
+    const dxHere = useMemo(
+        () => (selSite && assessmentLines ? assessmentLines.filter((l) => l.site && sameSite(l.site, selSite)) : []),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [assessmentLines, selKey],
+    );
+    const findDx = useCallback(async (q: string) => {
+        if (!selSite) return [];
+        const hits = await searchAssessments(q);
+        // Only what can sit HERE: a meniscal tear is offered at a knee, not
+        // at a wrist; "Knee osteoarthritis" not at a hip.
+        return hits.filter((h) => {
+            const f = familyFor(h.label);
+            return !!f && siteAllowed(f, selSite);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selKey, searchAssessments]);
+
+    const assessmentApi: SiteAssessmentApi | undefined = selSite && onAddAssessmentAt && onAssessmentDetails && onRemoveAssessment
+        ? {
+            recorded: dxHere,
+            find: findDx,
+            onAdd: (h) => onAddAssessmentAt({
+                intentId: h.intentId, type: h.type, label: h.label, refTable: h.refTable, refId: h.refId,
+                medicine: null, viaSearch: true, overridden: false,
+            }, selSite),
+            onDetails: onAssessmentDetails,
+            onRemove: (l) => onRemoveAssessment(l.text),
+        }
+        : undefined;
+
+    const hereCount = dxHere.length + (!panelChips ? 0
+        : [...panelChips, ...localCatalogue].filter((o, i, all) => all.findIndex((x) => x.id === o.id) === i && litHere(o)).length);
 
     const marked = useMemo(() => {
         const s = new Set<string>();
@@ -310,7 +365,8 @@ export function JointMapCard({
      * strength, close) left `visit_body_sites` empty, so the summary strip
      * reported nothing examined while readings sat against an undeclared site.
      */
-    const foundHere = !!selSite && caseSheetEntries.some((e) => (e.sites ?? []).some((st) => sameSite(st, selSite)));
+    const foundHere = !!selSite && (dxHere.length > 0
+        || caseSheetEntries.some((e) => (e.sites ?? []).some((st) => sameSite(st, selSite))));
     useEffect(() => {
         if (!sel || !visitId || disabled || siteRow) return;
         const c = examination && REGION_BY_KEY.has(sel.region) ? examCounts(examination, sel.region, sel.side) : null;
@@ -442,6 +498,7 @@ export function JointMapCard({
                                         onToggle={(o) => (o.localizable && onObservableToggleAt
                                             ? onObservableToggleAt(o, selSite)
                                             : onObservableToggle(o))}
+                                        assessment={assessmentApi}
                                     />
                                 )}
 

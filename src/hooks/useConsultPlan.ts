@@ -44,7 +44,7 @@ import { formatLine as formatIntervention, type InterventionLine, type Intervent
 import type { InterventionDraft } from "../components/InterventionInspector";
 import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import {
-  composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, type AssessmentDetails,
+  composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, type AssessmentDetails,
 } from "../features/consult/assessmentFamilies";
 import { clinicalSiteLabel, type SiteRef } from "../lib/body/clinicalSite";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
@@ -235,6 +235,12 @@ export interface ConsultPlan {
   editAssessmentLine: (id: string) => void;
   /** the same assessment at another site — a second fracture */
   addAnotherAssessmentSite: (intentId: number | null, label: string) => void;
+  /** An assessment placed where the site is already known — the body map's
+   *  panel. No modal: the line exists at once and its details are edited
+   *  in place. Returns the new line's id, or null when it was not added. */
+  addAssessmentAt: (payload: AcceptPayload, site: SiteRef) => string | null;
+  /** change a line's details in place, its site unchanged */
+  updateAssessmentDetails: (id: string, details: AssessmentDetails) => void;
 
   // ── Taking things, and taking them back ───────────────────────────────
   handleAcceptIntent: (payload: AcceptPayload) => void;
@@ -1062,6 +1068,39 @@ export function useConsultPlan({
     setPendingAssessment(null);
   }, []);
 
+  const addAssessmentAt = useCallback((payload: AcceptPayload, site: SiteRef): string | null => {
+    const family = familyFor(payload.label);
+    if (!family || !siteAllowed(family, site)) return null;
+    const text = composeAssessmentText(payload.label, family, site, {});
+    const existing = assessmentLines.find((l) => l.text === text);
+    if (existing) return existing.id;
+    if (diagnoses.includes(text)) return null;
+    if (payload.intentId && acceptedIntents.has(payload.intentId)) {
+      setDiagnoses((curr) => [...curr, text]);
+    } else {
+      commitAccept({ ...payload, diagnosisText: text });
+    }
+    const id = `dx-${payload.intentId}-${Date.now()}`;
+    setAssessmentLines((curr) => [...curr, {
+      id, intentId: payload.intentId || null, label: payload.label, family: family.key, site, details: {}, text,
+    }]);
+    return id;
+  }, [assessmentLines, diagnoses, acceptedIntents, commitAccept]);
+
+  const updateAssessmentDetails = useCallback((id: string, raw: AssessmentDetails) => {
+    const old = assessmentLines.find((l) => l.id === id);
+    const family = old ? familyFor(old.label) : null;
+    if (!old || !family) return;
+    const details = pruneDetails(family, old.site, raw);
+    const text = composeAssessmentText(old.label, family, old.site, details);
+    setAssessmentLines((curr) => curr.map((l) => (l.id === id ? { ...l, details, text } : l)));
+    setDiagnoses((curr) => {
+      if (old.text === text) return curr;
+      if (curr.includes(text)) return curr.filter((d) => d !== old.text);
+      return curr.map((d) => (d === old.text ? text : d));
+    });
+  }, [assessmentLines]);
+
   const editAssessmentLine = useCallback((id: string) => {
     const line = assessmentLines.find((l) => l.id === id);
     if (!line) return;
@@ -1693,6 +1732,8 @@ export function useConsultPlan({
     confirmPendingAssessment,
     cancelPendingAssessment,
     editAssessmentLine,
+    addAssessmentAt,
+    updateAssessmentDetails,
     addAnotherAssessmentSite,
 
     handleAcceptIntent,
