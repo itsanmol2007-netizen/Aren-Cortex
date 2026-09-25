@@ -61,6 +61,9 @@ import type { MeasureSide } from "../../lib/db/examination";
 
 interface Props {
     observables: Observable[];
+    /** see SpecialtyProfile.preferSystems */
+    preferSystems?: string[];
+    preferDomain?: string;
     onChartSet: Set<string>;
     onObservableToggle: (o: Observable) => void;
     caseSheetEntries: CaseSheetEntry[];
@@ -104,7 +107,7 @@ interface Props {
 }
 
 export function PhysioInputs({
-    observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
+    observables, preferSystems, preferDomain, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     anatomicalMeasureKeys, pastVisits,
@@ -140,6 +143,8 @@ export function PhysioInputs({
                 before typing — see the file header. */}
             <ClinicalCommandBar
                 observables={observables}
+                preferSystems={preferSystems}
+                preferDomain={preferDomain}
                 onSheet={onChartSet}
                 onToggle={onObservableToggle}
                 story={story}

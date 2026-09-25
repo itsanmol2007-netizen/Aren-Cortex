@@ -207,6 +207,15 @@ export interface SpecialtyProfile {
      * Findings). Every profile that has not had its turn is still on it.
      */
     inputLayout: "case-sheet" | "physio" | "soap";
+    /**
+     * Body systems this practice works in. The case-sheet search ranks
+     * matches from these first and lowers (never hides) the rest —
+     * "swelling" in an ortho clinic means the knee, not leg oedema.
+     */
+    preferSystems?: string[];
+    /** the observables' own domain tag for this practice ("physio") — a
+     *  general finding without it ranks as off-specialty too */
+    preferDomain?: string;
 }
 
 /**
@@ -368,6 +377,8 @@ export const PHYSIOTHERAPY: SpecialtyProfile = {
     // `"physio"` since 2026-08-17 — its own copy of the input surface,
     // Story and Goals ahead of the command bar. See `inputLayout`.
     inputLayout: "physio",
+    preferSystems: ["musculoskeletal", "orthopedics"],
+    preferDomain: "physio",
 };
 
 /**
@@ -440,6 +451,8 @@ export const ORTHOPEDICS: SpecialtyProfile = {
         { key: "romPct" },
     ],
     inputLayout: "physio",
+    preferSystems: ["musculoskeletal", "orthopedics"],
+    preferDomain: "physio",
 };
 
 /** Investigation-led practice — diagnostics, pre-op workup. */

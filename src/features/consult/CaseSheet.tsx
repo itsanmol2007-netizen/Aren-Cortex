@@ -265,21 +265,57 @@ const TONE_RECEPTION: Record<Observable["kind"], string> = {
  *  rank-and-filter over the observable catalogue, so a doctor can add a
  *  symptom/finding/history item to a template through the identical search
  *  the case sheet itself uses, rather than a second implementation of it. */
-export function useCatalogueSearch(observables: Observable[], query: string) {
-    return useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return [];
-        return observables
-            .map((o) => ({ o, r: rankOf(o, q) }))
-            .filter((x) => x.r < 99)
-            .sort((a, b) =>
-                a.r - b.r ||
-                KIND_ORDER[a.o.kind] - KIND_ORDER[b.o.kind] ||
-                a.o.label.localeCompare(b.o.label)
-            )
-            .slice(0, MAX_RESULTS)
-            .map((x) => x.o);
-    }, [observables, query]);
+/** Systems that are never "someone else's" — general findings, history,
+ *  infection signs belong to every specialty. */
+const NEUTRAL_SYSTEMS = new Set(["general", "history", "infection"]);
+
+/**
+ * Whether a specialty that prefers some systems would rank this one lower:
+ * in Orthopedics, "Swelling in legs" is cardiovascular oedema, not the
+ * swollen knee the doctor is typing about. Lowered, never hidden — ranking
+ * decides what is offered first, never what is reachable.
+ */
+export function isOffSpecialty(o: Observable, preferSystems?: string[], preferDomain?: string): boolean {
+    if (!preferSystems?.length || preferSystems.includes(o.system)) return false;
+    // A general finding is everyone's only if it is tagged for this
+    // practice's own domain — "Localised swelling" is, "Swelling all over
+    // body" (generalised oedema, OPD only) is not.
+    if (NEUTRAL_SYSTEMS.has(o.system)) return !!preferDomain && !o.domains.includes(preferDomain);
+    return true;
+}
+
+/** The catalogue search itself, pure — see `useCatalogueSearch`. */
+export function searchCatalogue(observables: Observable[], query: string, preferSystems?: string[], preferDomain?: string): Observable[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const prefer = preferSystems ?? [];
+    // A text-match rank, shifted by specialty: a preferred system's entry
+    // gains a little; another system's (cardiovascular swelling in an ortho
+    // clinic) drops below every good match that fits.
+    const score = (o: Observable, r: number) =>
+        r + (isOffSpecialty(o, prefer, preferDomain) ? 2.5 : 0) - (prefer.includes(o.system) ? 0.3 : 0);
+    return observables
+        .map((o) => {
+            const r = rankOf(o, q);
+            return { o, r, s: r < 99 ? score(o, r) : 99 };
+        })
+        .filter((x) => x.r < 99)
+        .sort((a, b) =>
+            a.s - b.s ||
+            KIND_ORDER[a.o.kind] - KIND_ORDER[b.o.kind] ||
+            a.o.label.localeCompare(b.o.label)
+        )
+        .slice(0, MAX_RESULTS)
+        .map((x) => x.o);
+}
+
+export function useCatalogueSearch(observables: Observable[], query: string, preferSystems?: string[], preferDomain?: string) {
+    const key = `${(preferSystems ?? []).join(",")}|${preferDomain ?? ""}`;
+    return useMemo(
+        () => searchCatalogue(observables, query, preferSystems, preferDomain),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [observables, query, key],
+    );
 }
 
 // ── the command bar ────────────────────────────────────────────────────────
@@ -378,6 +414,15 @@ interface BarProps {
      * exists to remove.
      */
     durationCandidates?: string[];
+    /**
+     * Body systems this specialty works in ("musculoskeletal" for
+     * Orthopedics and Physiotherapy). Matches from other systems rank below
+     * the ones that fit and name their system on the row — see
+     * `isOffSpecialty`. Absent: plain text ranking, as before.
+     */
+    preferSystems?: string[];
+    /** the catalogue domain tag this practice's findings carry ("physio") */
+    preferDomain?: string;
     /** label -> days, for the chips already answered — read to decide whether
      *  a threshold escalation is worth offering. */
     durationsByLabel?: Map<string, number>;
@@ -393,7 +438,7 @@ export function ClinicalCommandBar({
     observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove, leadComplaint,
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
     templates, onApplyTemplate,
-    durationCandidates, durationsByLabel, onDurationAnswer,
+    durationCandidates, durationsByLabel, onDurationAnswer, preferSystems, preferDomain,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -406,7 +451,7 @@ export function ClinicalCommandBar({
     const boxRef = useRef<HTMLDivElement>(null);
     const stripRef = useRef<HTMLDivElement>(null);
 
-    const obsResults = useCatalogueSearch(observables, query);
+    const obsResults = useCatalogueSearch(observables, query, preferSystems, preferDomain);
     const storyOn = !!(story && onStoryAdd);
 
     /**
@@ -966,6 +1011,15 @@ export function ClinicalCommandBar({
                                     {r.t === "template" && (
                                         <span className="ml-1.5 text-[11px] font-normal text-[var(--cs-faint)]">
                                             {r.tpl.itemCount} item{r.tpl.itemCount === 1 ? "" : "s"}
+                                        </span>
+                                    )}
+                                    {/* Says why a lowered match is lowered —
+                                        "Swelling in legs · cardiovascular" —
+                                        so it is never mistaken for the local
+                                        swelling above it. */}
+                                    {r.t === "obs" && isOffSpecialty(r.o, preferSystems, preferDomain) && (
+                                        <span className="ml-1.5 text-[11px] font-medium text-[var(--cs-faint)]">
+                                            · {r.o.system}
                                         </span>
                                     )}
                                 </span>

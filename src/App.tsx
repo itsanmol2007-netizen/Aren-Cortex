@@ -2302,6 +2302,8 @@ function App() {
               {usesPhysioInputs ? (
                 <PhysioInputs
                   observables={observables}
+                  preferSystems={specialty.preferSystems}
+                  preferDomain={specialty.preferDomain}
                   onChartSet={onChartSet}
                   onObservableToggle={handleObservableToggle}
                   caseSheetEntries={caseSheetEntries}
