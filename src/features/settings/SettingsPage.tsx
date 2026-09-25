@@ -62,7 +62,7 @@ import {
     isCatalogueSyncEnabled, setCatalogueSyncEnabled,
     isPatientPrefetchEnabled, setPatientPrefetchEnabled,
 } from "../../lib/offline/syncPreference";
-import { PROFILES, type ChartKind } from "../synapse/specialtyProfile";
+import { PROFILES, SELECTABLE_PROFILE_IDS, type ChartKind } from "../synapse/specialtyProfile";
 import { updateHospitalSpecialtyProfile, invalidateHospital } from "../../lib/db";
 import { BINDINGS } from "../../lib/keyboard/keymap";
 import { ShortcutsSheet } from "../../components/ShortcutsSheet";
@@ -85,7 +85,8 @@ import "./settings.css";
  *  given. */
 const PRIVACY_URL = "https://www.arenode.com/privacy";
 
-const PROFILE_LIST = Object.values(PROFILES);
+/** What the picker offers — the MVP four (see SELECTABLE_PROFILE_IDS). */
+const PROFILE_LIST = SELECTABLE_PROFILE_IDS.map((id) => PROFILES[id]).filter(Boolean);
 
 /**
  * The doctor photo's backdrop, ON SCREEN.

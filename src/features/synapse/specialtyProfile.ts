@@ -717,6 +717,19 @@ export const PROFILES: Record<string, SpecialtyProfile> = {
 };
 
 /**
+ * The specialties a clinic can CHOOSE (MVP, 2026-09-25): the four that are
+ * built end to end. The others stay registered above, so a facility already
+ * on one keeps working and dentistry's chart is kept for when it has its own
+ * workflow; they are only not offered. Narrowing the offer, not the code.
+ */
+export const SELECTABLE_PROFILE_IDS: readonly string[] = [
+    GENERAL_OPD.id,
+    CARDIOLOGY.id,
+    PHYSIOTHERAPY.id,
+    ORTHOPEDICS.id,
+];
+
+/**
  * The one read point. Takes the facility's `hospitals.specialty_profile`
  * value. A facility with no assignment (null, or an id this build doesn't
  * recognise) gets General OPD — a missing configuration must never leave the
