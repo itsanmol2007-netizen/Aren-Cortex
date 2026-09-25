@@ -11423,3 +11423,49 @@ body.cs-locked-shell {
 .cs-nv-row.is-abnormal .cs-nv-label { color: #be123c; }
 /* The control is as wide as its options, never stretched to the column. */
 .cs-nv .cs-seg { justify-self: start; }
+
+/* ── MOTION (2026-09-26) ──────────────────────────────────────────────────
+   Things arrive from where they were asked for and leave faster than they
+   came. `translate` / `scale` (the individual properties), not `transform`,
+   so a popover positioned with a transform keeps its position. */
+@keyframes cs-pop-in {
+    from { opacity: 0; translate: 0 -4px; scale: 0.98; }
+    to { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes cs-panel-in {
+    from { opacity: 0; translate: 0 6px; }
+    to { opacity: 1; translate: 0 0; }
+}
+@keyframes cs-token-in {
+    from { opacity: 0; scale: 0.88; }
+    to { opacity: 1; scale: 1; }
+}
+@keyframes cs-chartmodal-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+@keyframes cs-chartmodal-sink {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(6px) scale(0.985); }
+}
+.cs-jf-list,
+.cx-site-pop,
+.cs-lt-menu,
+.cs-lt-result,
+.cs-dsel-list {
+    transform-origin: top left;
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* A different site is a different panel: it settles in rather than its
+   contents swapping under the doctor's eye. */
+.cs-jmap-panel { animation: cs-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+.cs-jf-token { animation: cs-token-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1); }
+.cs-chartmodal.is-leaving { pointer-events: none; }
+.cs-chartmodal.is-leaving .cs-chartmodal-scrim { animation: cs-chartmodal-fade-out 150ms ease forwards; }
+.cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: cs-chartmodal-sink 150ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+@media (prefers-reduced-motion: reduce) {
+    .cs-jf-list, .cx-site-pop, .cs-lt-menu, .cs-lt-result, .cs-dsel-list,
+    .cs-jmap-panel, .cs-jf-token,
+    .cs-chartmodal.is-leaving .cs-chartmodal-scrim,
+    .cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: none; }
+}

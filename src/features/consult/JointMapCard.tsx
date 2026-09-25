@@ -406,7 +406,7 @@ export function JointMapCard({
 
                     <div className="cs-jmap-detail-col">
                         {sel ? (
-                            <div className="cs-dchart-panel cs-jmap-panel">
+                            <div className="cs-dchart-panel cs-jmap-panel" key={`${sel.region}|${sel.side ?? "-"}`}>
                                 <div className="cs-jmap-panel-head">
                                     <span className="cs-jmap-panel-pin" aria-hidden="true"><MapPin size={14} /></span>
                                     <span className="cs-jmap-panel-titles">
