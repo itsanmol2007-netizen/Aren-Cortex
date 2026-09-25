@@ -10719,3 +10719,111 @@ body.cs-locked-shell {
     color: var(--cs-amber);
     font-weight: 700;
 }
+
+/* ── ONGOING CARE (2026-09-25) — LongitudinalBand.tsx / ongoing.ts ────────
+   Three kinds, three hues the consult already uses for them: teal for what
+   is on the patient (in place), amber for what is due (rose once overdue),
+   violet for the assessment it is all for. */
+.cs-lt-ongoing {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 460px;
+    border: 1px solid rgba(15, 118, 110, 0.22);
+    border-radius: 999px;
+    background: var(--cs-teal-soft);
+    padding: 2px 10px 2px 9px;
+    color: #0b6a62;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.cs-lt-ongoing:hover { border-color: currentColor; box-shadow: 0 1px 3px rgba(16, 28, 46, 0.08); }
+.cs-lt-ongoing > svg { flex: none; }
+.cs-lt-ongoing-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-lt-ongoing-status { flex: none; font-weight: 600; opacity: 0.8; white-space: nowrap; }
+.cs-lt-ongoing-status::before { content: "·"; margin-right: 6px; }
+.cs-lt-ongoing-more {
+    flex: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.75);
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 800;
+}
+.cs-lt-ongoing.is-due { border-color: rgba(180, 83, 9, 0.22); background: var(--cs-amber-soft); color: var(--cs-amber); }
+.cs-lt-ongoing.is-urgent { border-color: rgba(190, 18, 60, 0.25); background: #fff1f2; color: #be123c; }
+.cs-lt-ongoing.is-condition { border-color: rgba(109, 40, 217, 0.2); background: #f5f3ff; color: #6d28d9; }
+
+.cs-lt-card.is-ongoing {
+    flex: 1 1 320px;
+    min-width: 270px;
+    max-width: 400px;
+}
+.cs-lt-last-icon-box.cs-lt-ongoing-icon { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-lt-og-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.cs-lt-og-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 6px 7px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+.cs-lt-og-item:hover { background: #f5f8fc; }
+.cs-lt-og-item:focus-visible { outline: 2px solid var(--cs-blue); outline-offset: 1px; }
+.cs-lt-og-mark {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: 6px;
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+.cs-lt-og-item.is-due .cs-lt-og-mark { background: var(--cs-amber-soft); color: var(--cs-amber); }
+.cs-lt-og-item.is-urgent .cs-lt-og-mark { background: #fff1f2; color: #be123c; }
+.cs-lt-og-item.is-condition .cs-lt-og-mark { background: #f5f3ff; color: #6d28d9; }
+.cs-lt-og-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cs-lt-og-title {
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-og-site { color: var(--cs-muted); font-weight: 600; }
+.cs-lt-og-status { color: var(--cs-teal); font-size: 11px; font-weight: 650; }
+.cs-lt-og-item.is-due .cs-lt-og-status { color: var(--cs-amber); }
+.cs-lt-og-item.is-urgent .cs-lt-og-status { color: #be123c; }
+.cs-lt-og-item.is-condition .cs-lt-og-status { color: var(--cs-faint); font-weight: 600; }
+.cs-lt-og-more { margin: 6px 7px 0; color: var(--cs-faint); font-size: 11px; font-weight: 600; }
+
+.cs-lt-chip-dx {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid rgba(109, 40, 217, 0.16);
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

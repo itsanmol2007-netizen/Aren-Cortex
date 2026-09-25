@@ -4,6 +4,9 @@ import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../b
 import { visitStatusKind } from "../../features/patients/visitStatus";
 import type { ConfirmedPayment } from "./payments";
 import { readThroughValue, resolveMirrorIdentity } from "../offline/localMirror";
+import { clinicalSiteLabel, normalizeSite, type SiteRef } from "../body/clinicalSite";
+import { dashText } from "../clinicalText";
+import { formatLine } from "../../features/consult/exercisePlan";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -818,7 +821,94 @@ export type RealVisit = {
     story_mechanism: string | null;
     advice_notes?: string | null;
     isStub?: boolean;
+    // ── The orthopaedic record (2026-09-25) ────────────────────────────────
+    // Optional because the durable cache can hand back a visit stored by an
+    // older build; every reader treats absent as empty.
+    /** "Fracture - Right knee, displaced" — the structured assessments */
+    assessments?: VisitAssessment[];
+    /** casts, splints, sutures, reductions… done at or planned by this visit */
+    procedures?: VisitProcedure[];
+    /** local findings WITH where they were found ("Joint swelling / effusion - Right knee") */
+    sitedFindings?: string[];
+    /** exercises with their dose, as printed ("Straight leg raise (Right) - 3 × 10") */
+    exercises?: string[];
 };
+
+export interface VisitAssessment {
+    /** the printed line, dash-normalised */
+    text: string;
+    /** "Fracture - Right knee" — label and site only, for a headline */
+    short: string;
+    family: string | null;
+    site: SiteRef | null;
+}
+
+export interface VisitProcedure {
+    id: string;
+    /** the printed line, dash-normalised ("Cast - Right knee, below-knee, backslab, POP") */
+    text: string;
+    label: string;
+    family: string | null;
+    status: "performed" | "planned";
+    /** planned only — the date it is due, yyyy-mm-dd */
+    dueDate: string | null;
+    site: SiteRef | null;
+    /** a removal / change points at what it took off */
+    removesId: string | null;
+    /** a performed item points at the planned one it carried out */
+    fulfilsId: string | null;
+    createdAt: string;
+}
+
+function siteOf(region: string | null, side: string | null, aspect: string | null): SiteRef | null {
+    if (!region) return null;
+    const s = side === "left" || side === "right" || side === "both" ? side : null;
+    return normalizeSite({ region: region as BodyRegion, side: s, aspect: aspect === "back" ? "back" : "front" });
+}
+
+/**
+ * Per visit: what the patient reported and what was found, from the v2
+ * observations, with each local finding's place written onto it
+ * ("Joint swelling / effusion - Right knee"). Reported = symptoms and
+ * history; found = findings.
+ */
+async function sitedObservationsByVisit(
+    visitIds: string[],
+): Promise<Map<string, { reported: string[]; found: string[] }>> {
+    const out = new Map<string, { reported: string[]; found: string[] }>();
+    if (!visitIds.length) return out;
+    const [{ data: rows }, { data: siteRows }] = await Promise.all([
+        supabase.from("visit_observations").select("visit_id, observable_id").in("visit_id", visitIds),
+        supabase.from("visit_observation_sites").select("visit_id, observable_id, region, side, aspect").in("visit_id", visitIds),
+    ]);
+    if (!rows?.length) return out;
+    const ids = [...new Set(rows.map((r: any) => Number(r.observable_id)))];
+    const { data: obs } = await supabase.from("observables").select("id, label, kind").in("id", ids);
+    const byId = new Map<number, { label: string; kind: string }>();
+    for (const o of obs ?? []) byId.set(o.id, { label: o.label, kind: o.kind });
+
+    const sites = new Map<string, string[]>();
+    for (const r of (siteRows ?? []) as any[]) {
+        const site = siteOf(r.region, r.side, r.aspect);
+        if (!site) continue;
+        const k = `${r.visit_id}|${r.observable_id}`;
+        const list = sites.get(k) ?? [];
+        const label = clinicalSiteLabel(site);
+        if (!list.includes(label)) list.push(label);
+        sites.set(k, list);
+    }
+
+    for (const r of rows as any[]) {
+        const o = byId.get(Number(r.observable_id));
+        if (!o) continue;
+        const at = sites.get(`${r.visit_id}|${r.observable_id}`);
+        const text = at?.length ? `${o.label} - ${at.join(", ")}` : o.label;
+        const entry = out.get(r.visit_id) ?? { reported: [], found: [] };
+        (o.kind === "finding" ? entry.found : entry.reported).push(text);
+        out.set(r.visit_id, entry);
+    }
+    return out;
+}
 
 /**
  * Cached wrapper around `fetchPatientVisitsFromNetwork` — see that function
@@ -898,6 +988,10 @@ export async function fetchPatientVisitStubs(
         story_mechanism: null,
         advice_notes: null,
         isStub: true,
+        assessments: [],
+        procedures: [],
+        sitedFindings: [],
+        exercises: [],
     }));
 }
 
@@ -921,7 +1015,7 @@ export async function hydratePatientVisits(
     const [
         docsRes,
         vsRes,
-        obsNamesByVisit,
+        obsByVisit,
         vfRes,
         rxRes,
         doRes,
@@ -933,7 +1027,7 @@ export async function hydratePatientVisits(
             ? safe(supabase.from("doctors").select("id, name").in("id", doctorIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         safe(supabase.from("visit_symptoms").select("visit_id, symptom_id").in("visit_id", visitIds), { data: [] } as any),
-        safe(observationNamesByVisit(visitIds), new Map<string, string[]>()),
+        safe(sitedObservationsByVisit(visitIds), new Map<string, { reported: string[]; found: string[] }>()),
         safe(supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("prescriptions").select("id, visit_id, findings_text, advice_notes").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("diagnostic_orders").select("visit_id, test_name").in("visit_id", visitIds), { data: [] } as any),
@@ -985,7 +1079,7 @@ export async function hydratePatientVisits(
     }
 
     // Wave 2: Name resolution & prescription item details
-    const [sympsRes, findsRes, pmRes, peRes] = await Promise.all([
+    const [sympsRes, findsRes, pmRes, peRes, paRes, piRes] = await Promise.all([
         allSymptomIds.length
             ? safe(supabase.from("symptoms").select("id, name").in("id", allSymptomIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
@@ -996,7 +1090,13 @@ export async function hydratePatientVisits(
             ? safe(supabase.from("prescription_medicines").select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route").in("prescription_id", rxIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         rxIds.length
-            ? safe(supabase.from("prescription_exercises").select("prescription_id, label, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            ? safe(supabase.from("prescription_exercises").select("prescription_id, label, sort_order, sets, reps, hold_seconds, per_day, side, notes, load_kg, days_per_week, weeks").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        rxIds.length
+            ? safe(supabase.from("prescription_assessments").select("prescription_id, label, family, region, side, aspect, site_label, text, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        rxIds.length
+            ? safe(supabase.from("prescription_interventions").select("id, prescription_id, label, family, region, side, aspect, text, status, due_date, removes_id, fulfils_id, created_at, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
     ]);
 
@@ -1031,13 +1131,61 @@ export async function hydratePatientVisits(
         medsByRx.set(pm.prescription_id, list);
     }
 
+    const visitByRx = new Map<string, string>();
+    for (const [visitId, rxData] of rxByVisit) visitByRx.set(rxData.id, visitId);
+
     const exByVisitId = new Map<string, string[]>();
+    const exLinesByVisit = new Map<string, string[]>();
     for (const pe of (peRes.data ?? [])) {
-        const visitId = [...rxByVisit.entries()].find(([, rxData]) => rxData.id === pe.prescription_id)?.[0];
+        const visitId = visitByRx.get(pe.prescription_id);
         if (!visitId) continue;
         const list = exByVisitId.get(visitId) ?? [];
         list.push(pe.label);
         exByVisitId.set(visitId, list);
+        const lines = exLinesByVisit.get(visitId) ?? [];
+        lines.push(dashText(formatLine({
+            id: "", intentId: null, label: pe.label, sortOrder: pe.sort_order ?? 0,
+            side: pe.side ?? null, notes: pe.notes ?? "",
+            sets: pe.sets ?? null, reps: pe.reps ?? null, holdSeconds: pe.hold_seconds ?? null, perDay: pe.per_day ?? null,
+            loadKg: pe.load_kg ?? null, daysPerWeek: pe.days_per_week ?? null, weeks: pe.weeks ?? null,
+        })));
+        exLinesByVisit.set(visitId, lines);
+    }
+
+    const assessByVisit = new Map<string, VisitAssessment[]>();
+    for (const r of (paRes.data ?? []) as any[]) {
+        const visitId = visitByRx.get(r.prescription_id);
+        if (!visitId) continue;
+        const site = siteOf(r.region, r.side, r.aspect);
+        const siteName = site ? clinicalSiteLabel(site) : r.site_label;
+        const list = assessByVisit.get(visitId) ?? [];
+        list.push({
+            text: dashText(r.text ?? (siteName ? `${r.label} - ${siteName}` : r.label)),
+            short: siteName ? `${r.label} - ${siteName}` : r.label,
+            family: r.family ?? null,
+            site,
+        });
+        assessByVisit.set(visitId, list);
+    }
+
+    const procByVisit = new Map<string, VisitProcedure[]>();
+    for (const r of (piRes.data ?? []) as any[]) {
+        const visitId = visitByRx.get(r.prescription_id);
+        if (!visitId) continue;
+        const list = procByVisit.get(visitId) ?? [];
+        list.push({
+            id: r.id,
+            text: dashText(r.text ?? r.label),
+            label: r.label,
+            family: r.family ?? null,
+            status: r.status === "planned" ? "planned" : "performed",
+            dueDate: r.due_date ?? null,
+            site: siteOf(r.region, r.side, r.aspect),
+            removesId: r.removes_id ?? null,
+            fulfilsId: r.fulfils_id ?? null,
+            createdAt: r.created_at,
+        });
+        procByVisit.set(visitId, list);
     }
 
     return liveVisits.map((v) => {
@@ -1045,9 +1193,16 @@ export async function hydratePatientVisits(
         const rxId = rx?.id;
         const story = storyByVisit.get(v.id);
         const rawFindingsText = rx?.findings_text ?? null;
-        const diagnoses = rawFindingsText
-            ? rawFindingsText.split(",").map((s: string) => s.trim()).filter(Boolean)
-            : [];
+        const assessments = assessByVisit.get(v.id) ?? [];
+        const obsV = obsByVisit.get(v.id);
+        // With structured assessments, THEY are the diagnoses: splitting the
+        // joined findings text on commas cut "Fracture - Right knee,
+        // displaced" in two and mixed the examination findings in.
+        const diagnoses = assessments.length
+            ? assessments.map((a) => a.short)
+            : rawFindingsText
+                ? rawFindingsText.split(",").map((s: string) => dashText(s.trim())).filter(Boolean)
+                : [];
         const tests = testsByVisit.get(v.id) ?? [];
 
         return {
@@ -1055,8 +1210,8 @@ export async function hydratePatientVisits(
             created_at: v.created_at,
             status: v.status,
             doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
-            symptoms: obsNamesByVisit.get(v.id)?.length
-                ? obsNamesByVisit.get(v.id)!
+            symptoms: obsV?.reported.length
+                ? obsV.reported
                 : ((vsRows ?? [])
                     .filter((r: any) => r.visit_id === v.id)
                     .map((r: any) => symptomById.get(Number(r.symptom_id)))
@@ -1077,6 +1232,10 @@ export async function hydratePatientVisits(
             story_mechanism: story?.mechanism ?? null,
             advice_notes: rx?.advice_notes ?? null,
             isStub: false,
+            assessments,
+            procedures: procByVisit.get(v.id) ?? [],
+            sitedFindings: obsV?.found ?? [],
+            exercises: exLinesByVisit.get(v.id) ?? [],
         };
     });
 }

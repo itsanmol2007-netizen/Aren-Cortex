@@ -58,6 +58,7 @@ import { useMemo, useState } from "react";
 import {
     Activity,
     ArrowDown,
+    Bandage,
     ArrowRight,
     ArrowUp,
     ArrowUpRight,
@@ -74,10 +75,65 @@ import {
     Target,
     TrendingUp,
     User,
+    Wrench,
 } from "lucide-react";
 import type { RealVisit, CarePlan } from "../../lib/db";
 import { formatVisitDate } from "../../components/PastVisitCard";
 import { formatDelta, formatValue, type TrendSeries, type TrendSummary, type TrendVerdict } from "./trend";
+import { ongoingFrom, type OngoingItem } from "./ongoing";
+import { dashText } from "../../lib/clinicalText";
+
+const ONGOING_ICON = { "in-place": Bandage, due: CalendarClock, condition: Stethoscope } as const;
+
+/**
+ * ONGOING CARE (2026-09-25) — what is still true from earlier visits: the
+ * cast still on, the removal that is due, the fracture it is for. First in
+ * the row, because for a patient in the middle of a course of care this is
+ * what the consult is about. See `ongoing.ts` for what counts and why.
+ */
+function OngoingCard({ items, onOpen }: { items: OngoingItem[]; onOpen: (item: OngoingItem, x: number) => void }) {
+    return (
+        <div className="cs-lt-card is-ongoing">
+            <div className="cs-lt-last-head">
+                <div className="cs-lt-last-title-group">
+                    <span className="cs-lt-last-icon-box cs-lt-ongoing-icon">
+                        <Bandage size={14} aria-hidden="true" />
+                    </span>
+                    <span className="cs-lt-card-label cs-lt-last-title">Ongoing Care</span>
+                </div>
+                <span className="cs-lt-date-badge">{items.length}</span>
+            </div>
+            <ul className="cs-lt-og-list">
+                {items.slice(0, 4).map((it) => {
+                    const Icon = ONGOING_ICON[it.kind];
+                    return (
+                        <li key={it.key}>
+                            <button
+                                type="button"
+                                className={`cs-lt-og-item is-${it.kind}${it.urgent ? " is-urgent" : ""}`}
+                                title={it.text}
+                                onClick={(e) => {
+                                    const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                    onOpen(it, r.left + r.width / 2);
+                                }}
+                            >
+                                <span className="cs-lt-og-mark"><Icon size={12} aria-hidden="true" /></span>
+                                <span className="cs-lt-og-text">
+                                    <span className="cs-lt-og-title">
+                                        {it.title}
+                                        {it.site && <span className="cs-lt-og-site"> · {it.site}</span>}
+                                    </span>
+                                    <span className="cs-lt-og-status">{it.status}</span>
+                                </span>
+                            </button>
+                        </li>
+                    );
+                })}
+            </ul>
+            {items.length > 4 && <p className="cs-lt-og-more">+{items.length - 4} more in the visit timeline</p>}
+        </div>
+    );
+}
 
 /**
  * The sparkline.
@@ -366,6 +422,12 @@ function CarePlanCard({
  */
 function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number) => void }) {
     const meds = visit.medicines.length;
+    const assessed = visit.assessments ?? [];
+    const done = (visit.procedures ?? []).filter((p) => p.status === "performed");
+    const exercises = visit.exercise_names.length;
+    // A visit that was about a fracture and a cast is not summarised as
+    // "No medicines": the Prescribed row is for visits where it is news.
+    const showRx = meds > 0 || exercises > 0 || (assessed.length === 0 && done.length === 0);
     return (
         <div className="cs-lt-card is-last">
             <div className="cs-lt-last-head">
@@ -381,7 +443,45 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
             </div>
 
             <div className="cs-lt-last-body">
-                {visit.symptoms.length > 0 && (
+                {assessed.length > 0 && (
+                    <div className="cs-lt-last-row">
+                        <div className="cs-lt-last-field-label">
+                            <Stethoscope size={11} aria-hidden="true" />
+                            <span>Assessed</span>
+                        </div>
+                        <div className="cs-lt-chips-wrap">
+                            <span className="cs-lt-chip cs-lt-chip-dx" title={assessed.map((a) => a.text).join("; ")}>
+                                {assessed[0].short}
+                            </span>
+                            {assessed.length > 1 && (
+                                <span className="cs-lt-chip cs-lt-chip-more" title={assessed.slice(1).map((a) => a.text).join("; ")}>
+                                    +{assessed.length - 1}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {done.length > 0 && (
+                    <div className="cs-lt-last-row">
+                        <div className="cs-lt-last-field-label">
+                            <Wrench size={11} aria-hidden="true" />
+                            <span>Done</span>
+                        </div>
+                        <div className="cs-lt-chips-wrap">
+                            <span className="cs-lt-chip cs-lt-chip-rx" title={done.map((p) => p.text).join("; ")}>
+                                {dashText(done[0].text).split(",")[0]}
+                            </span>
+                            {done.length > 1 && (
+                                <span className="cs-lt-chip cs-lt-chip-more" title={done.slice(1).map((p) => p.text).join("; ")}>
+                                    +{done.length - 1}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {visit.symptoms.length > 0 && assessed.length === 0 && (
                     <div className="cs-lt-last-row">
                         <div className="cs-lt-last-field-label">
                             <Stethoscope size={11} aria-hidden="true" />
@@ -402,13 +502,18 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
                     </div>
                 )}
 
+                {showRx && (
                 <div className="cs-lt-last-row">
                     <div className="cs-lt-last-field-label">
                         <Pill size={11} aria-hidden="true" />
                         <span>Prescribed</span>
                     </div>
                     <div className="cs-lt-chips-wrap">
-                        {meds === 0 ? (
+                        {meds === 0 && exercises > 0 ? (
+                            <span className="cs-lt-chip cs-lt-chip-rx">
+                                {exercises} exercise{exercises === 1 ? "" : "s"}
+                            </span>
+                        ) : meds === 0 ? (
                             <span className="cs-lt-chip cs-lt-chip-empty">No medicines</span>
                         ) : meds === 1 ? (
                             <span className="cs-lt-chip cs-lt-chip-rx" title={visit.medicines[0].name}>
@@ -421,6 +526,7 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
                         )}
                     </div>
                 </div>
+                )}
 
                 {visit.doctor_name && (
                     <div className="cs-lt-last-row">
@@ -499,6 +605,7 @@ export function LongitudinalBand({
     // no longer claims the top of the screen on every consult before the
     // doctor has asked for it.
     const [collapsed, setCollapsed] = useState(true);
+    const ongoing = useMemo(() => ongoingFrom(pastVisits), [pastVisits]);
 
     // Nothing while unknown — a skeleton that then collapses to nothing for a
     // first-visit patient is a DOM resize with no payoff.
@@ -563,6 +670,28 @@ export function LongitudinalBand({
                     </span>
                 )}
 
+                {/* The one thing a returning patient most needs said before
+                    anything is opened: what is still on them or due. The top
+                    item, on the header line itself, so it shows collapsed;
+                    it opens the band to the full Ongoing Care card. */}
+                {ongoing.length > 0 && (() => {
+                    const top = ongoing[0];
+                    const Icon = ONGOING_ICON[top.kind];
+                    return (
+                        <button
+                            type="button"
+                            className={`cs-lt-ongoing is-${top.kind}${top.urgent ? " is-urgent" : ""}`}
+                            onClick={() => setCollapsed(false)}
+                            title={ongoing.map((o) => `${o.text}: ${o.status}`).join("\n")}
+                        >
+                            <Icon size={12} aria-hidden="true" />
+                            <span className="cs-lt-ongoing-title">{top.title}{top.site ? ` · ${top.site}` : ""}</span>
+                            <span className="cs-lt-ongoing-status">{top.status}</span>
+                            {ongoing.length > 1 && <span className="cs-lt-ongoing-more">+{ongoing.length - 1}</span>}
+                        </button>
+                    );
+                })()}
+
                 <div className="cs-lt-head-spacer" />
 
                 {!carePlan && (
@@ -588,6 +717,16 @@ export function LongitudinalBand({
             <div className="cs-lt-fold" aria-hidden={collapsed}>
                 <div>
                     <div className="cs-lt-row">
+                        {ongoing.length > 0 && (
+                            <OngoingCard
+                                items={ongoing}
+                                onOpen={(it, x) => {
+                                    const v = pastVisits.find((pv) => pv.id === it.visitId);
+                                    if (v) onOpenVisit(v, x);
+                                }}
+                            />
+                        )}
+
                         {summary.series.map((s) => (
                             <TrendCard
                                 key={s.key}
@@ -660,9 +799,11 @@ export function LongitudinalBand({
                                             </span>
                                             {n !== undefined && <span className="cs-lt-tl-session">Session {n}</span>}
                                             <span className="cs-lt-tl-what">
-                                                {v.medicines.length > 0
-                                                    ? v.medicines.map((m) => m.name).slice(0, 2).join(", ")
-                                                    : v.symptoms.slice(0, 2).join(", ") || "No detail recorded"}
+                                                {v.assessments?.length
+                                                    ? [v.assessments[0].short, ...(v.procedures ?? []).filter((p) => p.status === "performed").slice(0, 1).map((p) => dashText(p.text).split(",")[0])].join(" · ")
+                                                    : v.medicines.length > 0
+                                                        ? v.medicines.map((m) => m.name).slice(0, 2).join(", ")
+                                                        : v.symptoms.slice(0, 2).join(", ") || "No detail recorded"}
                                             </span>
                                             {v.doctor_name && (
                                                 <span className="cs-lt-tl-doc">
