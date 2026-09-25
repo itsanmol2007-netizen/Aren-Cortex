@@ -3452,7 +3452,9 @@ body.cs-locked-shell {
 .cs-sug-icon.is-test { background: #2563eb; }
 .cs-sug-icon.is-referral { background: #8b5cf6; }
 .cs-sug-icon.is-advice { background: #10b981; }
-.cs-sug-icon.is-exercise { background: #0ea5e9; }
+/* Exercise: the dumbbell glyph carries its identity; teal, the colour of
+   what the clinician prescribes (colour.md) — sky blue was off-palette. */
+.cs-sug-icon.is-exercise { background: #0f766e; }
 /* These three had no colour at all — a white glyph on nothing, so the
    icon column read as blank space. Teal for what the doctor does or gives
    (interventions, medicine), rose for what the patient reports (an
@@ -3476,7 +3478,7 @@ body.cs-locked-shell {
 .cs-sug-kind.is-test { color: #1d4ed8; }
 .cs-sug-kind.is-referral { color: #6d28d9; }
 .cs-sug-kind.is-advice { color: #047857; }
-.cs-sug-kind.is-exercise { color: #0369a1; }
+.cs-sug-kind.is-exercise { color: #0f766e; }
 .cs-sug-kind.is-modality { color: var(--cs-teal); }
 .cs-sug-kind.is-medicine { color: #0f766e; }
 .cs-sug-kind.is-impairment { color: var(--cs-rose); }

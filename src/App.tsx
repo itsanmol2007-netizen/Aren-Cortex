@@ -2796,6 +2796,9 @@ function App() {
 
                 <SuggestionsCard
                   types={planSlots.restTypes}
+                  // Orthopedics: procedures are the core output, so Clinical
+                  // Actions opens on Interventions once any are ranked.
+                  initialScope={specialty.id === "orthopedics" ? "modality" : null}
                   // Same fix, same reason — see the sibling instance above.
                   capped={5}
                   byType={filteredByType}

@@ -24,10 +24,10 @@
 // "High relevance" no matter how weakly the engine scored it.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
+    ArrowUpRight, Check, ChevronDown, Dumbbell, FlaskConical, Lightbulb, Pill,
     ShieldAlert, Sparkles, Waves, ActivitySquare, X } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
@@ -105,7 +105,9 @@ const CATALOGUE: Section[] = [
     { type: "test", label: "Investigation", verb: "Order", icon: <FlaskConical size={14} /> },
     { type: "referral", label: "Referral", verb: "Refer", icon: <ArrowUpRight size={14} /> },
     { type: "advice", label: "Advice", verb: "Advise", icon: <Lightbulb size={14} /> },
-    { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
+    // Its own glyph (a dumbbell, not the pulse line an impairment's square
+    // resembles) so an exercise reads as a programme at a glance.
+    { type: "exercise", label: "Exercise", verb: "Add", icon: <Dumbbell size={14} /> },
     // Delivered in the clinic, during this session — see IntentType in
     // engine.ts for why this is not filed under Exercise. "Perform" rather
     // than "Add" because that is what the doctor is agreeing to do.
@@ -136,6 +138,12 @@ interface Props {
      * everything except medicines, which is the historical behaviour.
      */
     types?: IntentType[];
+    /**
+     * The tab this card opens on once that type has something ranked —
+     * Orthopedics opens Clinical Actions on Interventions, its core output.
+     * Only until the doctor picks a tab themselves.
+     */
+    initialScope?: IntentType | null;
     /** the heading — "Medicines", "Exercise Plans", "Clinical Suggestions"… */
     title?: string;
     byType: Record<IntentType, PersonalizedIntent[]>;
@@ -216,7 +224,7 @@ export function SuggestionsCard({
     selectedTests = [], adviceLines = [],
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
-    types, title = "Clinical Actions", capped,
+    types, title = "Clinical Actions", capped, initialScope = null,
 }: Props) {
     const [showAllCapped, setShowAllCapped] = useState(false);
     const reduce = useReducedMotion();
@@ -279,7 +287,15 @@ export function SuggestionsCard({
      * request: "add buttons like tabs for Tests and Advices... to quickly
      * get to it."
      */
-    const [scope, setScope] = useState<IntentType | null>(null);
+    const [scope, setScopeState] = useState<IntentType | null>(null);
+    const scopeTouched = useRef(false);
+    const setScope = (t: IntentType | null) => { scopeTouched.current = true; setScopeState(t); };
+    // Open on the specialty's own tab the first time it has anything in it;
+    // an empty tab on a chart nobody has filled yet would read as broken.
+    const initialHasRows = !!initialScope && (byType[initialScope]?.length ?? 0) > 0;
+    useEffect(() => {
+        if (initialHasRows && !scopeTouched.current) setScopeState(initialScope);
+    }, [initialHasRows, initialScope]);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
 
     /**
@@ -803,7 +819,7 @@ export function SuggestionsCard({
                                     className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
                                     // A second click on the active tab clears it — the
                                     // fastest way back to "All" without a second control.
-                                    onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
+                                    onClick={() => setScope(scope === s.type ? null : s.type)}
                                 >
                                     {s.icon}
                                     {s.label}
