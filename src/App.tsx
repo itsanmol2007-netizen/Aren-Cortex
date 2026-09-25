@@ -14,6 +14,7 @@ import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
 import { ExerciseSheet } from "./components/ExerciseSheet";
 import { fetchExerciseLibrary, setExerciseLibraryEntry, type ExerciseLibraryEntry } from "./lib/db/exerciseLibrary";
 import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
+import { siteSignalsOf } from "./lib/body/siteSignals";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -641,12 +642,18 @@ function App() {
   // The engine is a pure function over data already in memory, so ranking is
   // synchronous — the list re-ranks in the same frame the chip lands. The old
   // path posted every change to an edge function and waited 300 ms.
+  // Region signals for the engine, from SITE CONTEXT below. Held as state
+  // and set by an effect there, because the sites come from the plan, which
+  // is built from this hook's own result — a memo here would be a cycle.
+  const [engineSites, setEngineSites] = useState<string[]>([]);
   const intelligence = useConsultIntelligence({
     data: synapse.data,
     visitId,
     observableIds: chartObservableIds,
     observableSources: chart.observableSources,
     observableDurations: chart.observableDurations,
+    observableSites: chart.observableSites,
+    siteSignals: engineSites,
     vitals,
     ageYears,
     ageMonths,
@@ -1704,9 +1711,38 @@ function App() {
     };
     assessmentLines.forEach((l) => add(l.site));
     interventionPlan.forEach((l) => add(siteFromLabel(l.site)));
+    chart.findingSites.forEach((sites) => sites.forEach(add));
     markedExam.regions.forEach((r) => add(siteFromRegionKey(r, markedExam.sides.get(r) ?? null)));
     return out;
-  }, [assessmentLines, interventionPlan, markedExam]);
+  }, [assessmentLines, interventionPlan, chart.findingSites, markedExam]);
+
+  // The same places, told to the engine (see `engineSites` above).
+  useEffect(() => {
+    const next = siteSignalsOf(knownSites);
+    setEngineSites((prev) => (prev.join(",") === next.join(",") ? prev : next));
+  }, [knownSites]);
+
+  /**
+   * A local finding charted from the case sheet or command bar. One place
+   * known in this visit → it is found there ("Joint swelling / effusion ·
+   * Right knee"), changeable on the chip; two or more → the chip asks
+   * "Where?" at once; none → the chip offers "+ where?". Everything else
+   * toggles exactly as before.
+   */
+  const [askSiteLabel, setAskSiteLabel] = useState<string | null>(null);
+  const handleObservableToggleSited = useCallback((o: Observable) => {
+    const adding = !onChartSet.has(o.label);
+    if (!adding || !o.localizable || knownSites.length === 0) {
+      handleObservableToggle(o);
+      return;
+    }
+    if (knownSites.length === 1) {
+      chart.toggleObservableAt(o, knownSites[0]);
+      return;
+    }
+    handleObservableToggle(o);
+    setAskSiteLabel(o.label);
+  }, [onChartSet, knownSites, handleObservableToggle, chart]);
 
   /** This visit's placed assessments — what an intervention at the same
    *  site treats (a reduction there defaults to "Fracture"). */
@@ -2305,10 +2341,14 @@ function App() {
                   preferSystems={specialty.preferSystems}
                   preferDomain={specialty.preferDomain}
                   onChartSet={onChartSet}
-                  onObservableToggle={handleObservableToggle}
+                  onObservableToggle={handleObservableToggleSited}
                   caseSheetEntries={caseSheetEntries}
                   onCaseSheetRemove={handleCaseSheetRemove}
                   onRetireCarried={handleRetireCarried}
+                  knownSites={knownSites}
+                  onSetFindingSites={chart.setFindingSites}
+                  askSiteLabel={askSiteLabel}
+                  onAskSiteHandled={() => setAskSiteLabel(null)}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}
                   relatedFindings={relatedFindings}
@@ -2343,9 +2383,13 @@ function App() {
                 <GeneralOpdInputs
                   observables={observables}
                   onChartSet={onChartSet}
-                  onObservableToggle={handleObservableToggle}
+                  onObservableToggle={handleObservableToggleSited}
                   caseSheetEntries={caseSheetEntries}
                   onCaseSheetRemove={handleCaseSheetRemove}
+                  knownSites={knownSites}
+                  onSetFindingSites={chart.setFindingSites}
+                  askSiteLabel={askSiteLabel}
+                  onAskSiteHandled={() => setAskSiteLabel(null)}
                   /* "How long?" — asked here and NOT in PhysioInputs above,
                      because physiotherapy's Story composer already owns that
                      question (`story.ts`'s Duration dimension) and two boxes
@@ -2789,6 +2833,7 @@ function App() {
               observables={observables}
               caseSheetEntries={caseSheetEntries}
               onObservableToggle={handleObservableToggle}
+              onObservableToggleAt={chart.toggleObservableAt}
               examination={examination}
               disabled={!patient}
             />
@@ -3173,8 +3218,8 @@ function App() {
             }}
             hospital={hospitalProfile}
             vitals={vitals}
-            symptoms={selectedSymptoms}
-            findings={selectedFindings}
+            symptoms={chart.symptomsForRecord}
+            findings={chart.findingsForRecord}
             allFindings={findingsAsDb}
             prescription={prescription}
             tests={selectedTests}

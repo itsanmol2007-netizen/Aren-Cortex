@@ -39,6 +39,7 @@ import {
 import type { CompanionEdge } from "../synapse/companions";
 import type { MeasurementRow } from "../synapse/consultInput";
 import type { FindingSuggestionRule } from "../synapse/examSuggestions";
+import type { SiteRef } from "../body/clinicalSite";
 import { offlineCompositionBrands } from "../offline/offlineBrands";
 import { getCatalogueSyncState } from "../offline/catalogueSync";
 import { requireOnlineFor } from "../offline/onlineOnly";
@@ -114,12 +115,14 @@ export interface Observable {
     searchText: string;
     /** body-system grouping for the picker. UI only. */
     system: string;
+    /** happens at a place on the body ("Joint swelling" → which joint) */
+    localizable: boolean;
 }
 
 export async function fetchObservables(): Promise<Observable[]> {
     const { data, error } = await supabase
         .from("observables")
-        .select("id, slug, label, kind, domains, search_text, system")
+        .select("id, slug, label, kind, domains, search_text, system, localizable")
         .eq("is_active", true)
         // 373 today and expected to grow; Supabase silently caps an unbounded
         // select at 1000, so the ceiling is stated rather than discovered.
@@ -134,6 +137,7 @@ export async function fetchObservables(): Promise<Observable[]> {
         searchText: o.search_text ?? "",
         // a null here must not become an unlabelled group
         system: o.system ?? "general",
+        localizable: !!o.localizable,
     }));
 }
 
@@ -1810,6 +1814,12 @@ export interface PersistVisitInputOpts {
      * zero days would mean "started today" and is not the same thing.
      */
     durations?: Map<number, number>;
+    /**
+     * Where each local finding was found ("Joint swelling" at the right
+     * knee). Replaced wholesale like the observations themselves; left
+     * undefined, the visit's stored sites are not touched at all.
+     */
+    sites?: Map<number, SiteRef[]>;
 }
 
 /**
@@ -1839,6 +1849,24 @@ async function persistVisitInputNow(opts: PersistVisitInputOpts): Promise<void> 
             }))
         );
         if (error) throw new Error(`visit_observations: ${error.message}`);
+    }
+
+    if (opts.sites) {
+        await supabase.from("visit_observation_sites").delete().eq("visit_id", opts.visitId);
+        const kept = new Set(opts.observableIds);
+        const rows = [...opts.sites.entries()]
+            .filter(([id]) => kept.has(id))
+            .flatMap(([observable_id, sites]) => sites.map((s) => ({
+                visit_id: opts.visitId,
+                observable_id,
+                region: s.region,
+                side: s.side,
+                aspect: s.aspect,
+            })));
+        if (rows.length) {
+            const { error } = await supabase.from("visit_observation_sites").insert(rows);
+            if (error) throw new Error(`visit_observation_sites: ${error.message}`);
+        }
     }
 
     if (opts.measurements.length) {

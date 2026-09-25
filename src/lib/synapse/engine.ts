@@ -120,6 +120,12 @@ export interface Ruleset {
 export interface EngineInput {
     observations: { observableId: number; isNegated: boolean }[];
     measurements: { measureKey: string; value: number }[];
+    /**
+     * Where on the body the problem is — region signal ids (SITE_KNEE…)
+     * from sited findings, body-map marks and assessment sites. Optional:
+     * a caller that knows no place sends nothing and nothing changes.
+     */
+    sites?: string[];
 }
 
 export interface ActiveSignal {
@@ -190,6 +196,9 @@ export function resolveSignals(rs: Ruleset, input: EngineInput): ActiveSignal[] 
             bump(r.signalId, r.weight);
         }
     }
+
+    // sites — a place is a fact, not a degree: full weight
+    for (const siteSignal of input.sites ?? []) bump(siteSignal, 1);
 
     return [...best.entries()].map(([signalId, weight]) => ({
         signalId,

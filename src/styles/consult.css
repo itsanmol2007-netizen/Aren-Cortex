@@ -6483,6 +6483,97 @@ body.cs-locked-shell {
     color: var(--cs-teal);
 }
 
+/* ── "Where?" on a local finding's chip — CaseSheet.tsx FindingSitePrompt.
+   The OnsetPrompt popover's shape, the anatomy picker's controls. Portalled
+   to <body> and placed from the chip's rect, so no card crops it. */
+.cx-site-pop {
+    position: fixed;
+    z-index: 1200;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px;
+    box-shadow: 0 12px 28px rgba(16, 28, 46, 0.16);
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+    text-align: left;
+    cursor: default;
+}
+.cx-site-pop-head {
+    margin: 0 0 8px;
+    padding: 0 2px;
+    color: var(--cs-teal);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cx-site-pop-head > span {
+    color: var(--cs-faint);
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.cx-site-pop-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.cx-site-pop-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cx-site-pop-chip:hover { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cx-site-pop-chip.is-on {
+    border-color: var(--cs-teal);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+.cx-site-pop-chip:focus-visible,
+.cx-site-pop-done:focus-visible,
+.cx-site-pop-clear:focus-visible {
+    outline: 2px solid var(--cs-teal);
+    outline-offset: 2px;
+}
+.cs-anat-input.cx-site-pop-input { height: 34px; border-radius: 9px; font-size: 12.5px; }
+.cx-site-pop .cs-anat-result { padding: 7px 10px; font-size: 12.5px; }
+.cx-site-pop-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+}
+.cx-site-pop-clear,
+.cx-site-pop-done {
+    height: 28px;
+    border: 0;
+    border-radius: 7px;
+    padding: 0 11px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cx-site-pop-clear { background: none; color: var(--cs-faint); }
+.cx-site-pop-clear:hover { background: rgba(0, 0, 0, 0.05); color: var(--cs-ink); }
+.cx-site-pop-done { background: var(--cs-teal); color: #fff; }
+.cx-site-pop-done:hover { filter: brightness(1.06); }
+
 /* Figure beside the fields inside a modal; stacked on narrow screens. */
 .cs-addmed-anat { width: min(640px, 100%); max-height: min(92vh, 760px); }
 .cs-anat-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }

@@ -19,6 +19,7 @@ import { personalize, type PersonalizedIntent } from "../lib/synapse/personalize
 import { resolveCompanions, applyHospitalCompanionPrefs, type CompanionResult } from "../lib/synapse/companions";
 import { rankExamSuggestions, type RankedExamSuggestion } from "../lib/synapse/examSuggestions";
 import { buildEngineInput, isPediatricConsult, type MeasurementRow } from "../lib/synapse/consultInput";
+import type { SiteRef } from "../lib/body/clinicalSite";
 import {
     fetchCompositionBrands,
     compositionIdsOf,
@@ -53,6 +54,18 @@ export interface ConsultIntelligenceArgs {
      * change destroys it. See that function's own note.
      */
     observableDurations?: Map<number, number>;
+    /**
+     * Where each local finding was found, keyed by observable id — persisted
+     * to `visit_observation_sites` alongside the observations, for the same
+     * delete-and-reinsert reason as the durations above.
+     */
+    observableSites?: Map<number, SiteRef[]>;
+    /**
+     * Region signals (SITE_KNEE…) for every place established in this visit
+     * — sited findings, body-map marks, assessment and intervention sites.
+     * Tilts the ranking toward that region's imaging and conditions.
+     */
+    siteSignals?: string[];
     vitals: Vitals;
     ageYears: number | null;
     /** exact age in months from the date of birth — growth standards only */
@@ -115,7 +128,11 @@ const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
 });
 
 export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIntelligence {
-    const { data, visitId, observableIds, observableSources, observableDurations, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
+    const { data, visitId, observableIds, observableSources, observableDurations, observableSites, siteSignals, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
+    // Identity-stable keys: both arrive rebuilt from memos upstream, and the
+    // engine run and the write should follow what they SAY, not their identity.
+    const siteSignalsKey = (siteSignals ?? []).join(",");
+    const sitesKey = JSON.stringify([...(observableSites ?? new Map()).entries()]);
 
     // ---- 1. inputs -> signals -> ranked intents. Synchronous. ----
     // `vitals` is rebuilt on every keystroke, so its identity is useless as a
@@ -162,11 +179,12 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
     const result = useMemo(() => {
         if (synapseLocked) return null;
         if (!data || !built) return null;
+        const sites = siteSignalsKey ? siteSignalsKey.split(",") : [];
         const hasAnything =
-            built.input.observations.length > 0 || built.input.measurements.length > 0;
+            built.input.observations.length > 0 || built.input.measurements.length > 0 || sites.length > 0;
         if (!hasAnything) return null;
-        return runEngine(data.ruleset, built.input);
-    }, [data, built, synapseLocked]);
+        return runEngine(data.ruleset, { ...built.input, sites });
+    }, [data, built, synapseLocked, siteSignalsKey]);
 
     // "Synapse is thinking" — see ThinkingRing in features/consult/parts.tsx.
     // A value that changes identity exactly when the engine's OUTPUT changes
@@ -420,6 +438,8 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
     sourcesRef.current = observableSources;
     const durationsRef = useRef(observableDurations);
     durationsRef.current = observableDurations;
+    const sitesRef = useRef(observableSites);
+    sitesRef.current = observableSites;
     useEffect(() => {
         if (!visitId || !built) return;
         if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -430,12 +450,16 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
                 measurements: built.measurements,
                 sources: sourcesRef.current,
                 durations: durationsRef.current,
+                sites: sitesRef.current,
             }).catch((e) => console.warn("visit input persist (non-fatal):", e));
         }, 600);
         return () => {
             if (persistTimer.current) clearTimeout(persistTimer.current);
         };
-    }, [visitId, built]);
+        // A place changing is a write on its own (the chips did not change,
+        // where one was found did).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visitId, built, sitesKey]);
 
     return {
         result,

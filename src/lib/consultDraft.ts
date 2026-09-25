@@ -45,6 +45,7 @@ import type { ExerciseLine } from "../features/consult/exercisePlan";
 import type { InterventionLine } from "../features/consult/interventionPlan";
 import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import type { Story } from "../features/consult/story";
+import type { SiteRef } from "./body/clinicalSite";
 
 const PREFIX = "aren-cortex:consult-draft:";
 /** A draft older than this is more likely stale than useful — a doctor who
@@ -71,6 +72,8 @@ export interface ChartDraft {
      * refusing to restore the rest of a perfectly good chart.
      */
     symptomDurations?: [string, number][];
+    /** label -> where each local finding was found (entries, same reason). */
+    findingSites?: [string, SiteRef[]][];
 }
 
 /** `useConsultPlan`'s own in-progress-only fields — the ones its `reset()`

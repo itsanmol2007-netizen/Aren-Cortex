@@ -50,6 +50,7 @@ import { GoalsCard } from "./GoalsCard";
 import { ExamSummaryStrip } from "./ExamSummaryStrip";
 import { useRovingList } from "../../hooks/useRovingList";
 import { addToStory, removeFromStory, selectedStoryItems } from "./story";
+import type { SiteRef } from "../../lib/body/clinicalSite";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
 import type { TrendVisit } from "./trend";
@@ -69,6 +70,11 @@ interface Props {
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
+    /** sited findings — see CaseSheet's FindingSitePrompt */
+    knownSites?: SiteRef[];
+    onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
+    askSiteLabel?: string | null;
+    onAskSiteHandled?: () => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     relatedFindings: Observable[];
@@ -109,6 +115,7 @@ interface Props {
 export function PhysioInputs({
     observables, preferSystems, preferDomain, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
+    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     anatomicalMeasureKeys, pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
@@ -164,6 +171,10 @@ export function PhysioInputs({
                     onToggle={onObservableToggle}
                     onRemove={onCaseSheetRemove}
                     onRetireCarried={onRetireCarried}
+                    knownSites={knownSites}
+                    onSetFindingSites={onSetFindingSites}
+                    autoOpenSiteLabel={askSiteLabel}
+                    onAutoOpenSiteHandled={onAskSiteHandled}
                     intensities={intensities}
                     onIntensityChange={onIntensityChange}
                     related={relatedFindings}

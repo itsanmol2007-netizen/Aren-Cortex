@@ -30,6 +30,7 @@ import { durationCandidates } from "./duration";
 import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
 import { useRovingList } from "../../hooks/useRovingList";
+import type { SiteRef } from "../../lib/body/clinicalSite";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
 import type { TrendVisit } from "./trend";
@@ -57,6 +58,11 @@ interface Props {
     /** Cardiac History enrichment — see CaseSheet's OnsetPrompt / conditionDetail.ts */
     detailWorthyLabels?: Set<string>;
     onSetOnsetNote?: (label: string, note: string) => void;
+    /** sited findings — see CaseSheet's FindingSitePrompt */
+    knownSites?: SiteRef[];
+    onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
+    askSiteLabel?: string | null;
+    onAskSiteHandled?: () => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     /** findings that co-occur with what is already charted — see examSuggestions.ts */
@@ -88,6 +94,7 @@ export function GeneralOpdInputs({
     symptomDurations, onSetSymptomDuration,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     detailWorthyLabels, onSetOnsetNote,
+    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
@@ -184,6 +191,10 @@ export function GeneralOpdInputs({
                     onToggle={onObservableToggle}
                     onRemove={onCaseSheetRemove}
                     onRetireCarried={onRetireCarried}
+                    knownSites={knownSites}
+                    onSetFindingSites={onSetFindingSites}
+                    autoOpenSiteLabel={askSiteLabel}
+                    onAutoOpenSiteHandled={onAskSiteHandled}
                     detailWorthyLabels={detailWorthyLabels}
                     onSetOnsetNote={onSetOnsetNote}
                     autoOpenOnsetLabel={autoOnsetLabel}

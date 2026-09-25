@@ -919,7 +919,7 @@ export function useConsultLifecycle({
         tests: plan.selectedTests,
         vitals: chart.vitals,
         // The working diagnosis leads, then what was seen on examination.
-        findingsText: [...plan.diagnoses, ...chart.selectedFindings].join(", "),
+        findingsText: [...plan.diagnoses, ...chart.findingsForRecord].join(", "),
         followUpDays: plan.followUpDays,
         adviceNotes: plan.reviewAdvice,
         therapyNotes: plan.therapyNotes || null,

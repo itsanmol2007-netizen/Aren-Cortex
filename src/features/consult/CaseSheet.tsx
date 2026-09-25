@@ -44,10 +44,10 @@
 // under `prefers-reduced-motion`.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ClipboardList, Plus, Search, X } from "lucide-react";
+import { Check, ClipboardList, Plus, Search, X } from "lucide-react";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
@@ -55,6 +55,7 @@ import {
     storyHas, DIMENSION_PROMPT,
 } from "./story";
 import type { Story, StorySearchItem, StoryDimension } from "./story";
+import { CLINICAL_SITE_OPTIONS, clinicalSiteLabel, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
 import {
     ASKS_DURATION, DURATION_QUICK, durationChoicesFor, escalationFor,
     formatDuration, shortDuration, type DurationChoice,
@@ -217,6 +218,10 @@ export interface CaseSheetEntry {
      * this one in the chip render.
      */
     onsetNote?: string | null;
+    /** A local finding — swelling, tenderness, a bruise — that happens at a place. */
+    localizable?: boolean;
+    /** Where it was found ("Right knee"); absent until someone says. */
+    sites?: SiteRef[];
 }
 
 /**
@@ -1524,6 +1529,181 @@ function OnsetPrompt({ label, onSave, onDismiss }: {
     );
 }
 
+/**
+ * "Where?" for a local finding — swelling, tenderness, a bruise — asked on
+ * the chip itself, the same small popover shape as `OnsetPrompt`.
+ *
+ * The places already established in this visit come first as one-click
+ * chips (tick one, or several: swelling of both knees); anything else is
+ * typed ("left wr…"), from the same site list the anatomy picker uses, so a
+ * finding's "Right knee" and a fracture's "Right knee" are one string.
+ * Every tick applies at once; Done only closes. Optional, like every
+ * qualifier on a chip: dismissing it leaves the finding bare, as before.
+ */
+const SITE_POP_W = 264;
+
+function FindingSitePrompt({ label, anchor, sites, known, onChange, onDismiss }: {
+    label: string;
+    /** the chip's own "where" control — the popover hangs under it */
+    anchor: HTMLElement | null;
+    sites: SiteRef[];
+    known: SiteRef[];
+    onChange: (sites: SiteRef[]) => void;
+    onDismiss: () => void;
+}) {
+    const [query, setQuery] = useState("");
+    const [active, setActive] = useState(0);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Portalled and fixed, so no card's overflow can crop it or scroll
+    // sideways to make room: under its chip, kept inside the window, and
+    // above the chip instead when there is no room below.
+    useLayoutEffect(() => {
+        if (!anchor) return;
+        const place = () => {
+            const r = anchor.getBoundingClientRect();
+            const h = ref.current?.offsetHeight ?? 220;
+            const left = Math.max(8, Math.min(r.left, window.innerWidth - SITE_POP_W - 8));
+            const below = r.bottom + 6;
+            const top = below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below;
+            setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }));
+        };
+        place();
+        window.addEventListener("resize", place);
+        window.addEventListener("scroll", place, true);
+        return () => {
+            window.removeEventListener("resize", place);
+            window.removeEventListener("scroll", place, true);
+        };
+    });
+
+    useEffect(() => {
+        // With places to tick, the chips are the answer and the input waits;
+        // with none, typing is the only way, so it takes focus.
+        if (!known.length) inputRef.current?.focus();
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onDismiss(); };
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node;
+            // The chip's own control toggles it; closing here too would
+            // reopen it on the same click.
+            if (ref.current?.contains(t) || anchor?.contains(t)) return;
+            onDismiss();
+        };
+        window.addEventListener("keydown", onKey);
+        const t = window.setTimeout(() => window.addEventListener("mousedown", onDown), 0);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            window.removeEventListener("mousedown", onDown);
+            window.clearTimeout(t);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onDismiss, anchor]);
+
+    // This visit's places, then any place this finding already has that is
+    // not one of them — so every current place is visible and un-tickable.
+    const choices = useMemo(() => {
+        const out: SiteRef[] = [];
+        for (const s of [...known, ...sites]) if (!out.some((k) => sameSite(k, s))) out.push(s);
+        return out;
+    }, [known, sites]);
+
+    const options = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return [];
+        const starts = CLINICAL_SITE_OPTIONS.filter((o) => o.label.toLowerCase().split(" ").some((w) => w.startsWith(q)));
+        const rest = CLINICAL_SITE_OPTIONS.filter((o) => !starts.includes(o) && o.label.toLowerCase().includes(q));
+        return [...starts, ...rest].slice(0, 6);
+    }, [query]);
+    useEffect(() => { setActive(0); }, [query]);
+
+    const isOn = (x: SiteRef) => sites.some((s) => sameSite(s, x));
+    const toggle = (x: SiteRef) => onChange(isOn(x) ? sites.filter((s) => !sameSite(s, x)) : [...sites, x]);
+    const add = (x: SiteRef) => {
+        if (!isOn(x)) onChange([...sites, x]);
+        setQuery("");
+    };
+
+    return createPortal(
+        <div
+            ref={ref}
+            className="cx-site-pop"
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: SITE_POP_W }}
+            role="dialog"
+            aria-label={`Where: ${label}`}
+        >
+            <p className="cx-site-pop-head">
+                Where? <span>(optional)</span>
+            </p>
+            {choices.length > 0 && (
+                <div className="cx-site-pop-chips" role="group" aria-label="Places in this visit">
+                    {choices.map((k) => (
+                        <button
+                            key={clinicalSiteLabel(k)}
+                            type="button"
+                            aria-pressed={isOn(k)}
+                            className={`cx-site-pop-chip${isOn(k) ? " is-on" : ""}`}
+                            onClick={() => toggle(k)}
+                        >
+                            {isOn(k) && <Check size={12} aria-hidden="true" />}
+                            {clinicalSiteLabel(k)}
+                        </button>
+                    ))}
+                </div>
+            )}
+            <div className="cs-anat-search">
+                <input
+                    ref={inputRef}
+                    className="cs-anat-input cx-site-pop-input"
+                    value={query}
+                    placeholder={choices.length ? "Another place, e.g. left wrist" : "Type a place, e.g. right knee"}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                            if (options.length) add(options[active].site);
+                            else if (!query.trim()) onDismiss();
+                            return;
+                        }
+                        if (!options.length) return;
+                        if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, options.length - 1)); }
+                        else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+                    }}
+                />
+                {options.length > 0 && (
+                    <div className="cs-anat-results" role="listbox">
+                        {options.map((o, i) => (
+                            <button
+                                key={o.label}
+                                type="button"
+                                role="option"
+                                aria-selected={i === active}
+                                className={`cs-anat-result${i === active ? " is-active" : ""}`}
+                                onMouseEnter={() => setActive(i)}
+                                onClick={() => add(o.site)}
+                            >
+                                {o.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <div className="cx-site-pop-foot">
+                {sites.length > 0 && (
+                    <button type="button" className="cx-site-pop-clear" onClick={() => onChange([])}>
+                        Clear
+                    </button>
+                )}
+                <button type="button" className="cx-site-pop-done" onClick={onDismiss}>
+                    Done
+                </button>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
 interface SheetProps {
     entries: CaseSheetEntry[];
     onRemove: (label: string) => void;
@@ -1559,6 +1739,17 @@ interface SheetProps {
      */
     autoOpenOnsetLabel?: string | null;
     onAutoOpenOnsetHandled?: () => void;
+    /**
+     * Sited findings (2026-09-25). The places established in this visit,
+     * offered first in a local finding's "Where?" popover, and the way to
+     * record its answer. Absent, a local finding renders exactly as before.
+     */
+    knownSites?: SiteRef[];
+    onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
+    /** Open "Where?" on this chip as it lands — set when the visit already
+     *  has two or more places and the doctor has to say which. */
+    autoOpenSiteLabel?: string | null;
+    onAutoOpenSiteHandled?: () => void;
     onToggle: (o: Observable) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
@@ -1605,11 +1796,27 @@ export function CaseSheet({
     related, onBrowse, disabled = false, relatedRef,
     storyChips = [], story: storyOf, onStoryRemove, onFocusSearch,
     detailWorthyLabels, onSetOnsetNote, autoOpenOnsetLabel, onAutoOpenOnsetHandled,
+    knownSites = [], onSetFindingSites, autoOpenSiteLabel, onAutoOpenSiteHandled,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
     /** which chip's "since when" popover is open */
     const [editingOnset, setEditingOnset] = useState<string | null>(null);
+    /** which local finding's "Where?" popover is open */
+    const [editingSite, setEditingSite] = useState<string | null>(null);
+    const closeSite = useCallback(() => setEditingSite(null), []);
+    /** each local finding's "where" control, for its popover to hang under */
+    const siteAnchors = useRef(new Map<string, HTMLElement>());
+    const siteAnchorRef = (label: string) => (el: HTMLElement | null) => {
+        if (el) siteAnchors.current.set(label, el);
+        else siteAnchors.current.delete(label);
+    };
+
+    useEffect(() => {
+        if (!autoOpenSiteLabel) return;
+        setEditingSite(autoOpenSiteLabel);
+        onAutoOpenSiteHandled?.();
+    }, [autoOpenSiteLabel, onAutoOpenSiteHandled]);
 
     // See `autoOpenOnsetLabel`'s own doc comment — a fresh search pick opens
     // this without waiting for the doctor to find and click "+ since" on the
@@ -1930,6 +2137,45 @@ export function CaseSheet({
                                                 >
                                                     + since
                                                 </button>
+                                            )}
+                                            {entry.localizable && onSetFindingSites && (entry.sites?.length ? (
+                                                /* Where it was found, on the chip that owns it — a
+                                                   qualifier like the duration, and like it, changed
+                                                   by clicking it. */
+                                                <button
+                                                    ref={siteAnchorRef(entry.label)}
+                                                    type="button"
+                                                    onClick={() => setEditingSite((c) => (c === entry.label ? null : entry.label))}
+                                                    title={`Found at: ${entry.sites.map(clinicalSiteLabel).join(", ")}. Click to change.`}
+                                                    aria-haspopup="dialog"
+                                                    aria-expanded={editingSite === entry.label}
+                                                    className="rounded-[5px] border-0 bg-black/[0.07] px-[5px] py-[2px] text-[11px] font-bold leading-none text-current opacity-85 hover:bg-black/[0.12] hover:opacity-100"
+                                                >
+                                                    {clinicalSiteLabel(entry.sites[0])}
+                                                    {entry.sites.length > 1 && ` +${entry.sites.length - 1}`}
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    ref={siteAnchorRef(entry.label)}
+                                                    type="button"
+                                                    onClick={() => setEditingSite((c) => (c === entry.label ? null : entry.label))}
+                                                    title="Add where this was found"
+                                                    aria-haspopup="dialog"
+                                                    aria-expanded={editingSite === entry.label}
+                                                    className="rounded-[5px] border border-dashed border-current bg-transparent px-[4px] py-[1px] text-[10.5px] font-bold leading-none text-current opacity-55 hover:opacity-90"
+                                                >
+                                                    + where
+                                                </button>
+                                            ))}
+                                            {editingSite === entry.label && onSetFindingSites && (
+                                                <FindingSitePrompt
+                                                    label={entry.label}
+                                                    anchor={siteAnchors.current.get(entry.label) ?? null}
+                                                    sites={entry.sites ?? []}
+                                                    known={knownSites}
+                                                    onChange={(next) => onSetFindingSites(entry.label, next)}
+                                                    onDismiss={closeSite}
+                                                />
                                             )}
                                             {editingOnset === entry.label && onSetOnsetNote && (
                                                 <OnsetPrompt

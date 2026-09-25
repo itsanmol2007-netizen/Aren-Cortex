@@ -32,6 +32,7 @@ import type { DBFinding } from "../lib/db";
 import type { SelectedSymptom, Vitals } from "../types";
 import type { CaseSheetEntry } from "../features/consult/CaseSheet";
 import type { ChartDraft } from "../lib/consultDraft";
+import { clinicalSiteLabel, sameSite, type SiteRef } from "../lib/body/clinicalSite";
 
 export const emptyVitals: Vitals = { bp: "", pulse: "", temp: "", spo2: "", weight: "" };
 
@@ -98,6 +99,31 @@ export interface ConsultChart {
   onsetNotes: Map<string, string>;
   /** Record — or, with `""`/`null`, clear — a history chip's "since when". */
   setOnsetNote: (label: string, note: string | null) => void;
+
+  // ── Sited findings (2026-09-25) ──────────────────────────────────────────
+  /**
+   * label -> where it was found, for the local findings (`localizable`):
+   * "Joint swelling / effusion" at the right knee. Sparse: a finding with
+   * no place yet has no entry, and prints bare exactly as before.
+   */
+  findingSites: Map<string, SiteRef[]>;
+  /** The same keyed the way `visit_observation_sites` needs it. */
+  observableSites: Map<number, SiteRef[]>;
+  /** Replace where one finding was found; an empty list clears it. */
+  setFindingSites: (label: string, sites: SiteRef[]) => void;
+  /**
+   * The body map's chip: a finding AT a place. Not on the chart → added
+   * there; on the chart elsewhere → this place joins; already here → this
+   * place goes, and the chip with it once it has no place left.
+   */
+  toggleObservableAt: (o: Observable, site: SiteRef) => void;
+  /**
+   * The chart as it is WRITTEN — on the review, the printed prescription
+   * and the visit's findings text: "Joint swelling / effusion - Right knee".
+   * A finding with no place reads exactly as its label.
+   */
+  symptomsForRecord: string[];
+  findingsForRecord: string[];
 
   // ── The longitudinal record ───────────────────────────────────────────
   /**
@@ -174,6 +200,11 @@ export interface ConsultChart {
   restoreChart: (draft: ChartDraft) => void;
 }
 
+/** "Joint swelling / effusion - Right knee, Left knee"; the bare label with no place. */
+function sitedText(label: string, sites: SiteRef[] | undefined): string {
+  return sites?.length ? `${label} - ${sites.map(clinicalSiteLabel).join(", ")}` : label;
+}
+
 /**
  * @param observables the v2 catalogue — symptoms, examination findings and
  *   patient history are one table split by `kind`, not three.
@@ -187,6 +218,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
   const [chipOrigins, setChipOrigins] = useState<Map<string, ChipOrigin>>(new Map());
   const [symptomDurations, setSymptomDurations] = useState<Map<string, number>>(new Map());
   const [onsetNotes, setOnsetNotes] = useState<Map<string, string>>(new Map());
+  const [findingSites, setFindingSitesMap] = useState<Map<string, SiteRef[]>>(new Map());
 
   /** Patient context — pregnancy, comorbidities, exposures. */
   const historyLabels = useMemo(
@@ -215,6 +247,12 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     for (const o of observables) m.set(o.label, o.id);
     return m;
   }, [observables]);
+
+  /** The findings that happen at a place, so a chip can ask "where?". */
+  const localizableLabels = useMemo(
+    () => new Set(observables.filter((o) => o.localizable).map((o) => o.label)),
+    [observables]
+  );
 
   /**
    * ReviewModal and the past-visit rail are typed against `DBFinding`, so the
@@ -271,11 +309,15 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
         kind: "symptom" as const,
         origin: chipOrigins.get(label),
         durationDays: symptomDurations.get(label),
+        localizable: localizableLabels.has(label),
+        sites: findingSites.get(label),
       })),
       ...selectedFindings.map((label) => ({
         label,
         kind: "finding" as const,
         origin: chipOrigins.get(label),
+        localizable: localizableLabels.has(label),
+        sites: findingSites.get(label),
       })),
       // Only the history group can carry provenance today — a confirmed
       // condition always maps to a `kind='history'` observable — but the origin
@@ -288,7 +330,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
         onsetNote: onsetNotes.get(label),
       })),
     ],
-    [symptomChips, selectedFindings, contextChips, chipOrigins, symptomDurations, onsetNotes]
+    [symptomChips, selectedFindings, contextChips, chipOrigins, symptomDurations, onsetNotes, localizableLabels, findingSites]
   );
 
   // The chart, as observable ids. Both panels hold display LABELS; this is the
@@ -349,6 +391,14 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     if (o.kind === "finding") handleFindingToggle(o.label);
     else if (o.kind === "history") handleContextToggle(o.label);
     else handleSymptomToggle(o.label);
+    // A toggle that takes the chip off takes its place with it; one that
+    // puts it on finds no entry to clear. Either way nothing stale survives.
+    setFindingSitesMap((curr) => {
+      if (!curr.has(o.label)) return curr;
+      const next = new Map(curr);
+      next.delete(o.label);
+      return next;
+    });
   }, [handleFindingToggle, handleContextToggle, handleSymptomToggle]);
 
   /**
@@ -376,6 +426,14 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     // on the chart, and leaving it behind would silently re-attach "18 days"
     // to a complaint typed back in later that may be nothing of the sort.
     setSymptomDurations((curr) => {
+      if (!curr.has(label)) return curr;
+      const next = new Map(curr);
+      next.delete(label);
+      return next;
+    });
+    // And its place: "Right knee" belonged to that chip, not to whatever
+    // chip of the same name is typed back in later.
+    setFindingSitesMap((curr) => {
       if (!curr.has(label)) return curr;
       const next = new Map(curr);
       next.delete(label);
@@ -410,6 +468,57 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
       return new Map(curr).set(label, note);
     });
   }, []);
+
+  // ── Sited findings ──────────────────────────────────────────────────────
+
+  const setFindingSites = useCallback((label: string, sites: SiteRef[]) => {
+    setFindingSitesMap((curr) => {
+      const next = new Map(curr);
+      if (sites.length) next.set(label, sites);
+      else next.delete(label);
+      return next;
+    });
+  }, []);
+
+  const toggleObservableAt = useCallback((o: Observable, site: SiteRef) => {
+    const onChart = selectedSymptoms.includes(o.label) || selectedFindings.includes(o.label);
+    const here = findingSites.get(o.label) ?? [];
+    if (!onChart) {
+      handleObservableToggle(o);
+      setFindingSitesMap((curr) => new Map(curr).set(o.label, [site]));
+      return;
+    }
+    if (here.some((s) => sameSite(s, site))) {
+      const rest = here.filter((s) => !sameSite(s, site));
+      // The last place going takes the chip with it: a body-map chip that
+      // un-ticks and leaves "Swelling" behind somewhere else would be a
+      // finding nobody can see where it came from.
+      if (rest.length) setFindingSitesMap((curr) => new Map(curr).set(o.label, rest));
+      else handleObservableToggle(o);
+      return;
+    }
+    // On the chart with no place yet (typed in the case sheet) — this is
+    // its place now; with a place, this one joins it.
+    setFindingSitesMap((curr) => new Map(curr).set(o.label, [...here, site]));
+  }, [selectedSymptoms, selectedFindings, findingSites, handleObservableToggle]);
+
+  const symptomsForRecord = useMemo(
+    () => selectedSymptoms.map((l) => sitedText(l, findingSites.get(l))),
+    [selectedSymptoms, findingSites]
+  );
+  const findingsForRecord = useMemo(
+    () => selectedFindings.map((l) => sitedText(l, findingSites.get(l))),
+    [selectedFindings, findingSites]
+  );
+
+  const observableSites = useMemo(() => {
+    const m = new Map<number, SiteRef[]>();
+    for (const [label, sites] of findingSites) {
+      const id = observableByLabel.get(label);
+      if (id !== undefined && sites.length) m.set(id, sites);
+    }
+    return m;
+  }, [findingSites, observableByLabel]);
 
   // ── The longitudinal record ─────────────────────────────────────────────
 
@@ -522,6 +631,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setChipOrigins(new Map());
     setSymptomDurations(new Map());
     setOnsetNotes(new Map());
+    setFindingSitesMap(new Map());
   }, []);
 
   const replaceChart = useCallback((symptoms: string[], findings: string[]) => {
@@ -536,6 +646,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     // long they had been going on THEN.
     setSymptomDurations(new Map());
     setOnsetNotes(new Map());
+    setFindingSitesMap(new Map());
   }, []);
 
   const restoreChart = useCallback((draft: ChartDraft) => {
@@ -545,6 +656,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setSelectedFindings(draft.selectedFindings);
     setChipOrigins(new Map(draft.chipOrigins));
     setSymptomDurations(new Map(draft.symptomDurations ?? []));
+    setFindingSitesMap(new Map(draft.findingSites ?? []));
   }, []);
 
   return {
@@ -569,6 +681,13 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setSymptomDuration,
     onsetNotes,
     setOnsetNote,
+
+    findingSites,
+    observableSites,
+    setFindingSites,
+    toggleObservableAt,
+    symptomsForRecord,
+    findingsForRecord,
 
     chipOrigins,
     observableSources,

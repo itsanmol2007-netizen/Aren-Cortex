@@ -118,6 +118,7 @@ export function useConsultDraftPersistence({
                     selectedFindings: chart.selectedFindings,
                     chipOrigins: [...chart.chipOrigins],
                     symptomDurations: [...chart.symptomDurations],
+                    findingSites: [...chart.findingSites],
                 },
                 plan: {
                     prescription: plan.prescription,
@@ -142,7 +143,7 @@ export function useConsultDraftPersistence({
     }, [
         doctorId, session.patient, session.visitId,
         chart.vitals, chart.selectedSymptoms, chart.selectedSymptomsWithIntensity,
-        chart.selectedFindings, chart.chipOrigins, chart.symptomDurations,
+        chart.selectedFindings, chart.chipOrigins, chart.symptomDurations, chart.findingSites,
         plan.prescription, plan.selectedTests, plan.selectedLabName, plan.diagnoses,
         plan.followUpDays, plan.adviceNotes, plan.interventionPlan, plan.assessmentLines, plan.exercisePlan, plan.visitNotes,
         visitStory.story, visitStory.todayScores,

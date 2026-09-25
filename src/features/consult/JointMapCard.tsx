@@ -60,6 +60,7 @@ import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/bo
 import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 import type { Observable } from "../../lib/db/synapse";
 import type { CaseSheetEntry } from "./CaseSheet";
+import { normalizeSite, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
 import { RegionExam, examCounts } from "./ExaminationCard";
 import { REGION_BY_KEY } from "./examination";
 import type { ExaminationHook } from "../../hooks/useExamination";
@@ -115,6 +116,12 @@ interface Props {
     observables: Observable[];
     caseSheetEntries: CaseSheetEntry[];
     onObservableToggle: (o: Observable) => void;
+    /**
+     * A local finding clicked here is found HERE: "Joint swelling / effusion"
+     * on the right knee's panel is the right knee's swelling (sited findings,
+     * 2026-09-25). Optional; without it every chip toggles bare, as before.
+     */
+    onObservableToggleAt?: (o: Observable, site: SiteRef) => void;
     presentation?: "card" | "modal";
     open?: boolean;
     onClose?: () => void;
@@ -138,7 +145,7 @@ interface Selection {
 }
 
 export function JointMapCard({
-    visitId, doctorId, observables, caseSheetEntries, onObservableToggle,
+    visitId, doctorId, observables, caseSheetEntries, onObservableToggle, onObservableToggleAt,
     presentation = "card", open = false, onClose, examination, disabled = false,
 }: Props) {
     const [items, setItems] = useState<BodySiteFinding[]>([]);
@@ -173,6 +180,16 @@ export function JointMapCard({
         () => new Set(caseSheetEntries.map((e) => e.label)),
         [caseSheetEntries]
     );
+    const sitesByLabel = useMemo(
+        () => new Map(caseSheetEntries.map((e) => [e.label, e.sites ?? []] as const)),
+        [caseSheetEntries]
+    );
+    const selSite: SiteRef | null = sel ? normalizeSite({ region: sel.region, side: sel.side, aspect }) : null;
+    /** A local finding is lit on the zone it was found at, not on every zone. */
+    const litHere = (o: Observable) =>
+        o.localizable && onObservableToggleAt && selSite
+            ? (sitesByLabel.get(o.label) ?? []).some((s) => sameSite(s, selSite))
+            : onChart.has(o.label);
 
     /** The chips for the currently selected zone — specific first, generic after. */
     const chipsFor = (region: BodyRegion): Observable[] => {
@@ -358,8 +375,11 @@ export function JointMapCard({
                                         <button
                                             key={o.id}
                                             type="button"
-                                            className={`cs-attach-chip${onChart.has(o.label) ? " is-on" : ""}`}
-                                            onClick={() => onObservableToggle(o)}
+                                            className={`cs-attach-chip${litHere(o) ? " is-on" : ""}`}
+                                            aria-pressed={litHere(o)}
+                                            onClick={() => (o.localizable && onObservableToggleAt && selSite
+                                                ? onObservableToggleAt(o, selSite)
+                                                : onObservableToggle(o))}
                                         >
                                             {o.label}
                                         </button>
