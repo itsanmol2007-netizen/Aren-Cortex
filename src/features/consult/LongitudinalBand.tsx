@@ -55,7 +55,26 @@
 // ---------------------------------------------------------------------------
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, CalendarClock, ChevronDown, Pencil, Plus } from "lucide-react";
+import {
+    Activity,
+    ArrowDown,
+    ArrowRight,
+    ArrowUp,
+    ArrowUpRight,
+    Calendar,
+    CalendarClock,
+    CalendarDays,
+    ChevronDown,
+    Clock,
+    History,
+    Pencil,
+    Pill,
+    Plus,
+    Stethoscope,
+    Target,
+    TrendingUp,
+    User,
+} from "lucide-react";
 import type { RealVisit, CarePlan } from "../../lib/db";
 import { formatVisitDate } from "../../components/PastVisitCard";
 import { formatDelta, formatValue, type TrendSeries, type TrendSummary, type TrendVerdict } from "./trend";
@@ -213,22 +232,27 @@ function TrendCard({
 
     const body = (
         <>
-            <p className="cs-lt-card-label">
-                {series.label}
-                {series.unit && <span className="cs-lt-card-unit"> {series.unit}</span>}
-            </p>
+            <div className="cs-lt-card-top">
+                <span className="cs-lt-card-label">
+                    {series.label}
+                    {series.unit && <span className="cs-lt-card-unit"> ({series.unit})</span>}
+                </span>
+                <span className={`cs-lt-verdict-badge is-${series.verdict}`}>
+                    <VerdictArrow verdict={series.verdict} rising={rising} />
+                    <span>{label[series.verdict]}</span>
+                </span>
+            </div>
 
-            <p className="cs-lt-card-values">
-                <span className="cs-lt-from">{formatValue(series.first)}</span>
-                <ArrowRight size={13} className="cs-lt-to-arrow" aria-hidden="true" />
-                <span className="cs-lt-now">{formatValue(series.last)}</span>
-            </p>
-
-            <p className="cs-lt-card-delta">
-                <VerdictArrow verdict={series.verdict} rising={rising} />
-                <span>{formatDelta(series.delta)}</span>
-                <span className="cs-lt-verdict">{label[series.verdict]}</span>
-            </p>
+            <div className="cs-lt-card-metric-row">
+                <div className="cs-lt-card-values">
+                    <span className="cs-lt-from" title="Baseline reading">{formatValue(series.first)}</span>
+                    <ArrowRight size={11} className="cs-lt-to-arrow" aria-hidden="true" />
+                    <span className="cs-lt-now" title="Latest reading">{formatValue(series.last)}</span>
+                </div>
+                <span className="cs-lt-card-delta-badge">
+                    {formatDelta(series.delta)}
+                </span>
+            </div>
 
             <Sparkline series={series} />
 
@@ -243,21 +267,23 @@ function TrendCard({
                 readings means something different across three weeks and
                 across two years, and only one of those is on the card
                 otherwise. */}
-            <p className="cs-lt-card-foot">
-                {series.sessions} readings · {formatSpan(series.spanDays)}
-            </p>
+            <div className="cs-lt-card-foot">
+                <Clock size={10} aria-hidden="true" />
+                <span>{series.sessions} readings · {formatSpan(series.spanDays)}</span>
+            </div>
         </>
     );
 
     if (!visit) {
-        return <div className={`cs-lt-card is-${series.verdict}`}>{body}</div>;
+        return <div className={`cs-lt-card is-trend is-${series.verdict}`}>{body}</div>;
     }
 
     return (
         <button
             type="button"
-            className={`cs-lt-card is-${series.verdict} cs-lt-card-open`}
+            className={`cs-lt-card is-trend is-${series.verdict} cs-lt-card-open`}
             onClick={() => onOpen(series)}
+            title="Click to view detailed trajectory"
         >
             {body}
         </button>
@@ -286,7 +312,10 @@ function CarePlanCard({
     return (
         <div className="cs-lt-card is-plan">
             <div className="cs-lt-plan-head">
-                <p className="cs-lt-card-label">Care plan</p>
+                <div className="cs-lt-plan-badge">
+                    <Target size={12} className="cs-lt-plan-icon" aria-hidden="true" />
+                    <span>Care Plan</span>
+                </div>
                 <button type="button" className="cs-lt-plan-edit" onClick={onEdit} title="Edit or close this plan">
                     <Pencil size={11} aria-hidden="true" />
                     <span>Edit</span>
@@ -294,82 +323,126 @@ function CarePlanCard({
             </div>
 
             <p className="cs-lt-plan-goal">{plan.goal}</p>
-            {plan.diagnosis && <p className="cs-lt-plan-dx">{plan.diagnosis}</p>}
-
-            {target ? (
-                <>
-                    <p className="cs-lt-plan-pos">
-                        Session <strong>{sessionNumber}</strong> of {target}
-                    </p>
-                    <div className="cs-lt-plan-bar" role="presentation">
-                        <span style={{ width: `${pct}%` }} />
-                    </div>
-                </>
-            ) : (
-                <p className="cs-lt-plan-pos">
-                    Session <strong>{sessionNumber}</strong>
-                    <span className="cs-lt-plan-open"> · open-ended</span>
-                </p>
+            {plan.diagnosis && (
+                <div className="cs-lt-plan-dx-wrap">
+                    <span className="cs-lt-plan-dx">{plan.diagnosis}</span>
+                </div>
             )}
 
+            <div className="cs-lt-plan-progress-section">
+                {target ? (
+                    <>
+                        <div className="cs-lt-plan-pos-row">
+                            <span className="cs-lt-plan-pos">
+                                Session <strong>{sessionNumber}</strong> of {target}
+                            </span>
+                            <span className="cs-lt-plan-pct">{pct}%</span>
+                        </div>
+                        <div className="cs-lt-plan-bar" role="presentation">
+                            <span style={{ width: `${pct}%` }} />
+                        </div>
+                    </>
+                ) : (
+                    <p className="cs-lt-plan-pos">
+                        Session <strong>{sessionNumber}</strong>
+                        <span className="cs-lt-plan-open"> · Open-ended</span>
+                    </p>
+                )}
+            </div>
+
             {plan.target_date && (
-                <p className="cs-lt-card-foot">
-                    Target {formatVisitDate(plan.target_date)}
-                </p>
+                <div className="cs-lt-card-foot cs-lt-plan-foot">
+                    <Calendar size={10} aria-hidden="true" />
+                    <span>Target {formatVisitDate(plan.target_date)}</span>
+                </div>
             )}
         </div>
     );
 }
 
 /**
- * The last visit, in the plainest possible terms.
- *
- * ⚠ WHAT THIS DELIBERATELY DOES NOT SHOW. Anmol's mockup has this card
- * carrying "Exercise progressed: Yes", "Focus: Strength + ROM" and "Next step:
- * Increase load". None of those is recorded anywhere in the product today —
- * an exercise is prescribed per visit and nothing stores whether it was
- * progressed, held or added relative to last time. Inventing a placeholder for
- * them is exactly what the doctrine forbids, so this card shows what genuinely
- * exists (when, what was prescribed, what was recorded) and gets the rest when
- * the physiotherapy screen lands.
+ * The last visit, rendered with clear clinical hierarchy, dedicated SVG icons,
+ * and distinct symptom/prescription tags.
  */
 function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number) => void }) {
     const meds = visit.medicines.length;
     return (
         <div className="cs-lt-card is-last">
-            <p className="cs-lt-card-label">
-                Last visit
-                <span className="cs-lt-card-unit"> {formatVisitDate(visit.created_at)}</span>
-            </p>
-
-            <dl className="cs-lt-last-list">
-                {visit.symptoms.length > 0 && (
-                    <div>
-                        <dt>Recorded</dt>
-                        <dd>{visit.symptoms.slice(0, 2).join(", ")}{visit.symptoms.length > 2 ? ` +${visit.symptoms.length - 2}` : ""}</dd>
-                    </div>
-                )}
-                <div>
-                    <dt>Prescribed</dt>
-                    <dd>{meds === 0 ? "Nothing" : meds === 1 ? visit.medicines[0].name : `${meds} medicines`}</dd>
+            <div className="cs-lt-last-head">
+                <div className="cs-lt-last-title-group">
+                    <span className="cs-lt-last-icon-box">
+                        <CalendarDays size={14} aria-hidden="true" />
+                    </span>
+                    <span className="cs-lt-card-label cs-lt-last-title">Last Visit</span>
                 </div>
-                {visit.doctor_name && (
-                    <div>
-                        <dt>Seen by</dt>
-                        <dd>{visit.doctor_name}</dd>
+                <span className="cs-lt-date-badge">
+                    {formatVisitDate(visit.created_at)}
+                </span>
+            </div>
+
+            <div className="cs-lt-last-body">
+                {visit.symptoms.length > 0 && (
+                    <div className="cs-lt-last-row">
+                        <div className="cs-lt-last-field-label">
+                            <Stethoscope size={11} aria-hidden="true" />
+                            <span>Recorded</span>
+                        </div>
+                        <div className="cs-lt-chips-wrap">
+                            {visit.symptoms.slice(0, 2).map((s, idx) => (
+                                <span key={idx} className="cs-lt-chip cs-lt-chip-symptom" title={s}>
+                                    {s}
+                                </span>
+                            ))}
+                            {visit.symptoms.length > 2 && (
+                                <span className="cs-lt-chip cs-lt-chip-more" title={visit.symptoms.slice(2).join(", ")}>
+                                    +{visit.symptoms.length - 2}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 )}
-            </dl>
+
+                <div className="cs-lt-last-row">
+                    <div className="cs-lt-last-field-label">
+                        <Pill size={11} aria-hidden="true" />
+                        <span>Prescribed</span>
+                    </div>
+                    <div className="cs-lt-chips-wrap">
+                        {meds === 0 ? (
+                            <span className="cs-lt-chip cs-lt-chip-empty">No medicines</span>
+                        ) : meds === 1 ? (
+                            <span className="cs-lt-chip cs-lt-chip-rx" title={visit.medicines[0].name}>
+                                {visit.medicines[0].name}
+                            </span>
+                        ) : (
+                            <span className="cs-lt-chip cs-lt-chip-rx" title={visit.medicines.map((m) => m.name).join(", ")}>
+                                {meds} medicines
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {visit.doctor_name && (
+                    <div className="cs-lt-last-row">
+                        <div className="cs-lt-last-field-label">
+                            <User size={11} aria-hidden="true" />
+                            <span>Seen by</span>
+                        </div>
+                        <span className="cs-lt-doc-name">{visit.doctor_name}</span>
+                    </div>
+                )}
+            </div>
 
             <button
                 type="button"
-                className="cs-lt-last-open"
+                className="cs-lt-last-open-btn"
                 onClick={(e) => {
                     const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
                     onOpen(r.left + r.width / 2);
                 }}
             >
-                Open that visit
+                <span>Open visit summary</span>
+                <ArrowUpRight size={12} aria-hidden="true" />
             </button>
         </div>
     );
@@ -463,14 +536,20 @@ export function LongitudinalBand({
                     className="cs-lt-collapse"
                     onClick={() => setCollapsed((v) => !v)}
                     aria-expanded={!collapsed}
-                    title={collapsed ? "Show the longitudinal summary" : "Hide the longitudinal summary"}
+                    title={collapsed ? "Show longitudinal summary" : "Hide longitudinal summary"}
                 >
-                    <ChevronDown size={13} className={collapsed ? "" : "is-open"} aria-hidden="true" />
-                    <h2 className="cs-lt-title">Longitudinal summary</h2>
+                    <span className="cs-lt-collapse-chevron-wrap">
+                        <ChevronDown size={13} className={collapsed ? "" : "is-open"} aria-hidden="true" />
+                    </span>
+                    <span className="cs-lt-title-wrap">
+                        <Activity size={14} className="cs-lt-title-icon" aria-hidden="true" />
+                        <h2 className="cs-lt-title">Longitudinal Summary</h2>
+                    </span>
                 </button>
 
-                <span className="cs-lt-sub">
-                    {summary.visitCount} previous visit{summary.visitCount === 1 ? "" : "s"}
+                <span className="cs-lt-badge cs-lt-badge-visits">
+                    <Clock size={11} aria-hidden="true" />
+                    <span>{summary.visitCount} previous visit{summary.visitCount === 1 ? "" : "s"}</span>
                 </span>
 
                 {/* The spec's "long absence" case, said out loud rather than
@@ -480,7 +559,7 @@ export function LongitudinalBand({
                 {summary.isLongAbsence && gapText && (
                     <span className="cs-lt-gap">
                         <CalendarClock size={12} aria-hidden="true" />
-                        {gapText}
+                        <span>{gapText}</span>
                     </span>
                 )}
 
@@ -489,7 +568,7 @@ export function LongitudinalBand({
                 {!carePlan && (
                     <button type="button" className="cs-lt-plan-start" onClick={onStartCarePlan}>
                         <Plus size={12} aria-hidden="true" />
-                        Care plan
+                        <span>Care plan</span>
                     </button>
                 )}
             </header>
@@ -524,15 +603,21 @@ export function LongitudinalBand({
 
                         <LastVisitCard visit={lastVisit} onOpen={(x) => onOpenVisit(lastVisit, x)} />
 
-                        {/* A returning patient with nothing trendable yet. Says so
-                            rather than leaving a row of cards that does not explain
-                            its own emptiness — and says the useful half of why, which
-                            is that one reading is not a trend. */}
+                        {/* A returning patient with nothing trendable yet. Rendered as a
+                            deliberate, clean clinical placeholder card rather than an
+                            unformatted floating line of text. */}
                         {summary.series.length === 0 && (
-                            <p className="cs-lt-none">
-                                No measurement has been recorded twice yet — a trend needs two visits with
-                                the same reading.
-                            </p>
+                            <div className="cs-lt-card is-empty-trend">
+                                <div className="cs-lt-empty-trend-icon">
+                                    <TrendingUp size={16} aria-hidden="true" />
+                                </div>
+                                <div className="cs-lt-empty-trend-content">
+                                    <h4 className="cs-lt-empty-trend-title">Longitudinal Trends</h4>
+                                    <p className="cs-lt-empty-trend-desc">
+                                        Record vitals or clinical measurements across 2 visits to generate trend trajectories.
+                                    </p>
+                                </div>
+                            </div>
                         )}
                     </div>
 
@@ -547,8 +632,9 @@ export function LongitudinalBand({
                         // the user cannot see.
                         tabIndex={collapsed ? -1 : undefined}
                     >
-                        {timelineOpen ? "Hide" : "View full"} visit timeline
-                        <ChevronDown size={13} className={timelineOpen ? "is-open" : ""} aria-hidden="true" />
+                        <History size={12} aria-hidden="true" />
+                        <span>{timelineOpen ? "Hide" : "View full"} visit timeline</span>
+                        <ChevronDown size={12} className={timelineOpen ? "is-open" : ""} aria-hidden="true" />
                     </button>
 
                     {/* The expand. Every visit, newest first, each one opening the
@@ -568,14 +654,23 @@ export function LongitudinalBand({
                                                 onOpenVisit(v, r.left + r.width / 2);
                                             }}
                                         >
-                                            <span className="cs-lt-tl-date">{formatVisitDate(v.created_at)}</span>
+                                            <span className="cs-lt-tl-date">
+                                                <Calendar size={11} aria-hidden="true" />
+                                                <span>{formatVisitDate(v.created_at)}</span>
+                                            </span>
                                             {n !== undefined && <span className="cs-lt-tl-session">Session {n}</span>}
                                             <span className="cs-lt-tl-what">
                                                 {v.medicines.length > 0
                                                     ? v.medicines.map((m) => m.name).slice(0, 2).join(", ")
                                                     : v.symptoms.slice(0, 2).join(", ") || "No detail recorded"}
                                             </span>
-                                            {v.doctor_name && <span className="cs-lt-tl-doc">{v.doctor_name}</span>}
+                                            {v.doctor_name && (
+                                                <span className="cs-lt-tl-doc">
+                                                    <User size={10} aria-hidden="true" />
+                                                    <span>{v.doctor_name}</span>
+                                                </span>
+                                            )}
+                                            <ArrowUpRight size={11} className="cs-lt-tl-arrow" aria-hidden="true" />
                                         </button>
                                     </li>
                                 );

@@ -76,6 +76,9 @@ export function useConsultDraftPersistence({
         chart.restoreChart(draft.chart);
         plan.restorePlan(draft.plan);
         pendingStoryRef.current = { story: draft.story };
+        if (draft.patient?.id) {
+            session.loadPastVisits(draft.patient.id, draft.visitId);
+        }
         // Deliberately doctorId-only — see the ref guard above for why this
         // must run exactly once per doctor rather than react to session/
         // chart/plan identity (which changes every render).

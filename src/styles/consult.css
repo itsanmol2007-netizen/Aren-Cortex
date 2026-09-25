@@ -250,14 +250,14 @@
        slightly too SHORT only adds a little scroll to `.cs-work`, while one
        slightly too tall pushes its bottom edge past the viewport, and only
        one of those two errors is invisible. */
-    height: calc(100vh - var(--app-header-h, 84px) - 12px);
+    height: calc(100vh - var(--app-header-h, 84px) - 20px);
     /* The 1720px cap that used to sit on `.app-shell` — see layout.css for why
        it had to move off the shell when the nav rail arrived. */
     max-width: 1720px;
     width: calc(100% - 24px);
-    margin: 8px auto 0;
+    margin: 14px auto 0;
     border: 1px solid var(--cs-line);
-    border-radius: 13px;
+    border-radius: 14px;
     background: var(--cs-page);
     /* `clip`, NOT `hidden`. Both clip to the radius, but `hidden` creates a
        scroll container, and nothing below should ever look to `.cs-shell`
@@ -344,7 +344,7 @@ body.cs-locked-shell {
    Case sheet Search bar"). `.cs-lt` renders nothing at all for a first
    visit, so this never fires there and the normal padding stays correct. */
 .cs-lt + .cs-page {
-    padding-top: 24px;
+    padding-top: 10px;
 }
 
 .cs-page {
@@ -8487,14 +8487,14 @@ body.cs-locked-shell {
     flex-direction: column;
     border-bottom: 1px solid var(--cs-line);
     background: var(--cs-card);
-    padding: var(--cs-s2) var(--cs-s5) 0;
+    padding: 10px 20px 12px;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.02);
 }
 
-/* Collapsed: the header line and nothing else. The component stops rendering
-   the row beneath it, so there is no second layout here to keep in sync —
-   only the bottom padding closes up. */
+/* Collapsed: the header line and nothing else. */
 .cs-lt.is-collapsed {
-    padding-bottom: 0;
+    padding: 8px 20px;
 }
 
 /* The collapse, animated. Grid-rows 0fr -> 1fr is the one technique that
@@ -8524,59 +8524,101 @@ body.cs-locked-shell {
 .cs-lt-head {
     display: flex;
     align-items: center;
-    gap: var(--cs-s3);
-    padding-bottom: var(--cs-s2);
+    gap: 12px;
+    padding-bottom: 4px;
+}
+
+.cs-lt.is-collapsed .cs-lt-head {
+    padding-bottom: 0;
 }
 
 .cs-lt-head-spacer { flex: 1; }
 
-/* The collapse control. Looks like the plain title it replaces — no border,
-   no fill — so collapsing this band reads as a light toggle, not a button
-   competing with "Care plan" for attention on the same row. */
+/* The collapse control */
 .cs-lt-collapse {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
     border: none;
     background: none;
-    padding: 0;
+    padding: 2px 6px;
+    margin-left: -6px;
+    border-radius: 7px;
     cursor: pointer;
     color: inherit;
+    transition: background-color 140ms ease;
+}
+
+.cs-lt-collapse:hover {
+    background: rgba(18, 104, 232, 0.05);
+}
+
+.cs-lt-collapse-chevron-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: rgba(18, 104, 232, 0.06);
+    color: var(--cs-blue);
+    transition: background-color 140ms ease;
+}
+
+.cs-lt-collapse:hover .cs-lt-collapse-chevron-wrap {
+    background: rgba(18, 104, 232, 0.14);
 }
 
 .cs-lt-collapse svg {
-    color: var(--cs-faint);
-    transition: transform 140ms ease;
+    transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cs-lt-collapse svg.is-open { transform: rotate(180deg); }
 
-.cs-lt-collapse:hover .cs-lt-title { color: var(--cs-blue); }
+.cs-lt-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cs-lt-title-icon {
+    color: var(--cs-blue);
+    opacity: 0.9;
+}
 
 .cs-lt-title {
     margin: 0;
     color: var(--cs-ink);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 800;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
-.cs-lt-sub {
+.cs-lt-collapse:hover .cs-lt-title { color: var(--cs-blue); }
+
+.cs-lt-badge-visits {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    background: rgba(65, 80, 107, 0.06);
+    border: 1px solid rgba(65, 80, 107, 0.12);
+    padding: 2px 9px;
     color: var(--cs-faint);
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
 }
 
-/* The long-absence flag. Amber because it is a caution about how to READ the
-   numbers beside it, not a finding of its own. */
+/* The long-absence flag */
 .cs-lt-gap {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     border-radius: 999px;
     background: var(--cs-amber-soft);
-    padding: 3px 9px;
+    border: 1px solid rgba(180, 83, 9, 0.2);
+    padding: 2px 9px;
     color: var(--cs-amber);
     font-size: 11px;
     font-weight: 700;
@@ -8586,13 +8628,16 @@ body.cs-locked-shell {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    border: 1px solid var(--cs-line-strong);
+    border: 1px solid rgba(18, 104, 232, 0.25);
     border-radius: 999px;
     background: #fff;
-    padding: 4px 11px;
+    padding: 3px 12px;
     color: var(--cs-blue);
     font-size: 11px;
     font-weight: 700;
+    box-shadow: 0 1px 2px rgba(18, 104, 232, 0.08);
+    transition: all 0.14s ease;
+    cursor: pointer;
 }
 
 .cs-lt-plan-start:hover {
@@ -8608,12 +8653,13 @@ body.cs-locked-shell {
    strip sideways, not silently grow it into the second row this whole pass
    exists to remove. The tiles stay evenly sized because they all share one
    flex basis. */
+/* ── Cards Row ────────────────────────────────────────────────────────── */
 .cs-lt-row {
     display: flex;
     flex-wrap: nowrap;
     align-items: stretch;
-    gap: var(--cs-s2);
-    padding-bottom: var(--cs-s2);
+    gap: 12px;
+    padding: 10px 0 6px;
     overflow-x: auto;
     scrollbar-width: thin;
 }
@@ -8622,19 +8668,17 @@ body.cs-locked-shell {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
-    gap: 1px;
-    min-width: 132px;
-    max-width: 220px;
-    border: 1px solid var(--cs-line);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-page);
-    padding: 6px 9px 5px;
+    min-width: 175px;
+    max-width: 280px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: var(--cs-radius);
+    background: #ffffff;
+    padding: 12px 14px 11px;
+    box-shadow: 0 1px 3px rgba(16, 28, 46, 0.04), 0 1px 2px rgba(16, 28, 46, 0.02);
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
 }
 
-/* The loading skeleton — LongitudinalSkeleton, message-3 follow-up,
-   2026-08-25. Same shell (`.cs-lt`, `.cs-lt-head`, `.cs-lt-row`,
-   `.cs-lt-card`) as the real band, so its footprint is what actually
-   reserves the space; only the content inside becomes shimmer bars. */
+/* Loading skeleton */
 .cs-lt-card.is-skel { gap: 7px; justify-content: center; }
 .cs-lt-skel-bar {
     display: block;
@@ -8663,23 +8707,18 @@ body.cs-locked-shell {
     .cs-lt-skel-bar, .cs-lt-skel-block { animation: none; }
 }
 
-/* Clickable, 2026-08-17 — this is a <button> now, not a <div>, when a saved
-   visit exists behind it (`TrendCard`'s `visit` prop). Reset the button
-   defaults back to matching its non-clickable sibling exactly, then add just
-   enough affordance that "this opens something" reads without shouting over
-   the numbers, which are still the point of the card. */
 .cs-lt-card-open {
     align-items: stretch;
     text-align: left;
     font: inherit;
     color: inherit;
     cursor: pointer;
-    transition: border-color 0.13s ease, box-shadow 0.13s ease;
 }
 
 .cs-lt-card-open:hover {
     border-color: var(--cs-blue);
-    box-shadow: 0 0 0 1px var(--cs-blue-soft);
+    box-shadow: 0 3px 10px rgba(18, 104, 232, 0.10);
+    transform: translateY(-1px);
 }
 
 .cs-lt-card-open:focus-visible {
@@ -8688,36 +8727,86 @@ body.cs-locked-shell {
     box-shadow: 0 0 0 3px var(--cs-blue-soft);
 }
 
+/* ── Trend Cards ──────────────────────────────────────────────────────── */
+.cs-lt-card.is-trend {
+    min-width: 165px;
+    max-width: 230px;
+}
+
+.cs-lt-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
 .cs-lt-card-label {
     margin: 0;
-    color: var(--cs-muted);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
 }
 
 .cs-lt-card-unit {
     color: var(--cs-faint);
     font-weight: 600;
+    font-size: 10.5px;
 }
 
-/* The two numbers ARE the answer, so they carry the weight on this card and
-   everything else on it is annotation. */
+.cs-lt-verdict-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border-radius: 999px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.cs-lt-card.is-improving .cs-lt-verdict-badge {
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+    border: 1px solid rgba(15, 118, 110, 0.2);
+}
+
+.cs-lt-card.is-worsening .cs-lt-verdict-badge {
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+    border: 1px solid rgba(180, 83, 9, 0.2);
+}
+
+.cs-lt-card.is-steady .cs-lt-verdict-badge,
+.cs-lt-card.is-neutral .cs-lt-verdict-badge {
+    background: rgba(65, 80, 107, 0.07);
+    color: var(--cs-muted);
+    border: 1px solid rgba(65, 80, 107, 0.15);
+}
+
+.cs-lt-card-metric-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
 .cs-lt-card-values {
     display: flex;
     align-items: baseline;
     gap: 5px;
     margin: 0;
     color: var(--cs-ink);
-    font-size: 15.5px;
-    font-weight: 750;
+    font-size: 16px;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
 }
 
 .cs-lt-from {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 650;
 }
 
@@ -8727,62 +8816,56 @@ body.cs-locked-shell {
     color: var(--cs-faint);
 }
 
-.cs-lt-card-delta {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin: 0;
-    font-size: 11px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
+.cs-lt-now {
+    color: var(--cs-ink);
 }
 
-.cs-lt-verdict {
-    color: var(--cs-faint);
-    font-weight: 600;
+.cs-lt-card-delta-badge {
+    font-size: 11px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
 }
 
 .cs-lt-spark {
     display: block;
-    margin: 2px 0 0;
+    margin: 4px 0 2px;
     width: 100%;
-    height: 18px;
+    height: 22px;
     overflow: visible;
 }
 
 .cs-lt-card-foot {
-    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0 0;
     color: var(--cs-faint);
-    font-size: 10.5px;
-    font-weight: 550;
+    font-size: 10px;
+    font-weight: 600;
 }
 
-/* ── The verdict colours ──────────────────────────────────────────────── */
-.cs-lt-card.is-improving .cs-lt-card-delta { color: var(--cs-teal); }
+/* Trend verdict colors */
+.cs-lt-card.is-improving .cs-lt-card-delta-badge { color: var(--cs-teal); }
 .cs-lt-card.is-improving .cs-lt-spark path { stroke: var(--cs-teal); }
 .cs-lt-card.is-improving .cs-lt-spark circle { fill: var(--cs-teal); }
 
-.cs-lt-card.is-worsening .cs-lt-card-delta { color: var(--cs-amber); }
+.cs-lt-card.is-worsening .cs-lt-card-delta-badge { color: var(--cs-amber); }
 .cs-lt-card.is-worsening .cs-lt-spark path { stroke: var(--cs-amber); }
 .cs-lt-card.is-worsening .cs-lt-spark circle { fill: var(--cs-amber); }
 
-/* Steady and neutral share a treatment on purpose: neither is a verdict, and
-   giving "no opinion" its own colour would make it look like one. */
-.cs-lt-card.is-steady .cs-lt-card-delta,
-.cs-lt-card.is-neutral .cs-lt-card-delta { color: var(--cs-muted); }
+.cs-lt-card.is-steady .cs-lt-card-delta-badge,
+.cs-lt-card.is-neutral .cs-lt-card-delta-badge { color: var(--cs-muted); }
 .cs-lt-card.is-steady .cs-lt-spark path,
 .cs-lt-card.is-neutral .cs-lt-spark path { stroke: var(--cs-muted); }
 .cs-lt-card.is-steady .cs-lt-spark circle,
 .cs-lt-card.is-neutral .cs-lt-spark circle { fill: var(--cs-muted); }
 
-/* ── Care plan ────────────────────────────────────────────────────────── */
-/* Violet, the plan colour everywhere else on this screen — a care plan is the
-   consultation plan's long form, and reading as the same family is the point. */
+/* ── Care Plan Card ───────────────────────────────────────────────────── */
 .cs-lt-card.is-plan {
-    flex: 1 1 210px;
-    max-width: 280px;
-    border-color: color-mix(in srgb, var(--cs-violet) 22%, var(--cs-line));
-    background: var(--cs-violet-soft);
+    flex: 1 1 230px;
+    max-width: 290px;
+    border-color: rgba(124, 58, 237, 0.22);
+    background: linear-gradient(180deg, #ffffff 0%, var(--cs-violet-soft) 100%);
 }
 
 .cs-lt-plan-head {
@@ -8790,6 +8873,21 @@ body.cs-locked-shell {
     align-items: center;
     justify-content: space-between;
     gap: var(--cs-s2);
+}
+
+.cs-lt-plan-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--cs-violet);
+}
+
+.cs-lt-plan-icon {
+    color: var(--cs-violet);
 }
 
 .cs-lt-plan-edit {
@@ -8800,29 +8898,44 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-violet);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
+    cursor: pointer;
 }
 
 .cs-lt-plan-edit:hover { text-decoration: underline; }
 
 .cs-lt-plan-goal {
-    margin: 1px 0 0;
+    margin: 4px 0 0;
     color: var(--cs-ink);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 750;
     line-height: 1.25;
 }
 
+.cs-lt-plan-dx-wrap {
+    margin: 2px 0 0;
+}
+
 .cs-lt-plan-dx {
-    margin: 0;
+    display: inline-block;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 550;
 }
 
+.cs-lt-plan-progress-section {
+    margin-top: 6px;
+}
+
+.cs-lt-plan-pos-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
 .cs-lt-plan-pos {
-    margin: 4px 0 0;
+    margin: 0;
     color: var(--cs-muted);
     font-size: 11px;
     font-weight: 600;
@@ -8831,6 +8944,12 @@ body.cs-locked-shell {
 .cs-lt-plan-pos strong {
     color: var(--cs-violet);
     font-weight: 800;
+}
+
+.cs-lt-plan-pct {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--cs-violet);
 }
 
 .cs-lt-plan-open { color: var(--cs-faint); font-weight: 550; }
@@ -8850,92 +8969,258 @@ body.cs-locked-shell {
     height: 100%;
 }
 
-/* ── Last visit ───────────────────────────────────────────────────────── */
-.cs-lt-card.is-last {
-    flex: 1 1 200px;
-    max-width: 260px;
+.cs-lt-plan-foot {
+    color: var(--cs-violet);
+    opacity: 0.85;
 }
 
-.cs-lt-last-list {
+/* ── Last Visit Card ──────────────────────────────────────────────────── */
+.cs-lt-card.is-last {
+    flex: 1 1 340px;
+    min-width: 290px;
+    max-width: 440px;
+    background: #ffffff;
+    border-color: rgba(226, 232, 240, 0.95);
+}
+
+.cs-lt-last-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 9px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid rgba(241, 245, 249, 1);
+}
+
+.cs-lt-last-title-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.cs-lt-last-icon-box {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(18, 104, 232, 0.08);
+    color: var(--cs-blue);
+}
+
+.cs-lt-last-title {
+    font-size: 13.5px;
+    font-weight: 750;
+    color: var(--cs-ink);
+}
+
+.cs-lt-date-badge {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--cs-ink);
+    background: rgba(241, 245, 249, 0.95);
+    padding: 2.5px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(226, 232, 240, 0.85);
+}
+
+.cs-lt-last-body {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin: 3px 0 0;
+    gap: 7px;
+    margin-bottom: 10px;
 }
 
-.cs-lt-last-list > div {
+.cs-lt-last-row {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
 }
 
-.cs-lt-last-list dt {
-    flex: 0 0 62px;
+.cs-lt-last-field-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
     color: var(--cs-faint);
-    font-size: 10.5px;
-    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
-.cs-lt-last-list dd {
-    margin: 0;
-    overflow: hidden;
-    color: var(--cs-ink);
+.cs-lt-chips-wrap {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 5px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+.cs-lt-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 5px;
     font-size: 11px;
     font-weight: 600;
-    text-overflow: ellipsis;
+    line-height: 1.25;
     white-space: nowrap;
 }
 
-.cs-lt-last-open {
+.cs-lt-chip-symptom {
+    background: rgba(225, 29, 72, 0.06);
+    color: #be123c;
+    border: 1px solid rgba(225, 29, 72, 0.14);
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-lt-chip-rx {
+    background: rgba(15, 118, 110, 0.07);
+    color: #0f766e;
+    border: 1px solid rgba(15, 118, 110, 0.16);
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-lt-chip-more {
+    background: rgba(65, 80, 107, 0.08);
+    color: var(--cs-faint);
+    font-weight: 700;
+    font-size: 10px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.cs-lt-chip-empty {
+    background: rgba(241, 245, 249, 0.8);
+    color: var(--cs-faint);
+    font-style: italic;
+    border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.cs-lt-doc-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cs-ink);
+}
+
+.cs-lt-last-open-btn {
     margin-top: auto;
-    border: 0;
-    background: none;
-    padding: 4px 0 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgba(18, 104, 232, 0.18);
+    border-radius: 6px;
+    background: rgba(18, 104, 232, 0.04);
+    padding: 5px 9px;
     color: var(--cs-blue);
     font-size: 11px;
     font-weight: 700;
-    text-align: left;
+    cursor: pointer;
+    transition: all 0.14s ease;
 }
 
-.cs-lt-last-open:hover { text-decoration: underline; }
+.cs-lt-last-open-btn:hover {
+    background: var(--cs-blue);
+    color: #ffffff;
+    border-color: var(--cs-blue);
+    box-shadow: 0 2px 6px rgba(18, 104, 232, 0.25);
+}
 
-.cs-lt-none {
-    align-self: center;
-    margin: 0;
+/* ── Empty Trend Placeholder Card ─────────────────────────────────────── */
+.cs-lt-card.is-empty-trend {
+    flex: 1 1 230px;
+    max-width: 300px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    border: 1px dashed var(--cs-line-strong);
+    background: rgba(248, 250, 252, 0.7);
+    padding: 14px 16px;
+}
+
+.cs-lt-empty-trend-icon {
+    flex: 0 0 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(65, 80, 107, 0.08);
     color: var(--cs-faint);
-    font-size: 11px;
-    font-weight: 550;
 }
 
-/* ── The expand ───────────────────────────────────────────────────────── */
+.cs-lt-empty-trend-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-lt-empty-trend-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 750;
+    color: var(--cs-ink);
+}
+
+.cs-lt-empty-trend-desc {
+    margin: 3px 0 0;
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: var(--cs-faint);
+}
+
+/* ── The timeline expand button & timeline list ───────────────────────── */
 .cs-lt-expand {
     align-self: center;
+    margin: 6px auto 0;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    border: 0;
-    background: none;
-    padding: 2px 8px;
+    gap: 6px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 999px;
+    background: #ffffff;
+    padding: 4px 14px;
     color: var(--cs-faint);
     font-size: 11px;
     font-weight: 650;
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.04);
+    cursor: pointer;
+    transition: all 0.14s ease;
 }
 
-.cs-lt-expand:hover { color: var(--cs-blue); }
-.cs-lt-expand svg { transition: transform 140ms ease; }
-.cs-lt-expand svg.is-open { transform: rotate(180deg); }
+.cs-lt-expand:hover {
+    color: var(--cs-blue);
+    border-color: rgba(18, 104, 232, 0.3);
+    background: var(--cs-blue-soft);
+}
 
-/* The timeline caps its own height and scrolls INSIDE the band. Letting it
-   grow would push the workspace down by however many visits a patient
-   happens to have had, which for the physiotherapy courses this is built for
-   is exactly the patients where it would be worst. */
+.cs-lt-expand svg {
+    transition: transform 140ms ease;
+}
+
+.cs-lt-expand svg.is-open {
+    transform: rotate(180deg);
+}
+
 .cs-lt-timeline {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    margin: 0;
-    border-top: 1px solid var(--cs-line);
-    padding: var(--cs-s2) 0 0;
+    gap: 3px;
+    margin: 8px 0 0;
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    padding: 8px 0 0;
     max-height: 168px;
     overflow-y: auto;
     list-style: none;
@@ -8943,20 +9228,28 @@ body.cs-locked-shell {
 
 .cs-lt-timeline button {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--cs-s3);
-    border: 0;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
     background: none;
-    padding: 5px 8px;
+    padding: 6px 10px;
     width: 100%;
     text-align: left;
+    transition: all 0.12s ease;
+    cursor: pointer;
 }
 
-.cs-lt-timeline button:hover { background: var(--cs-blue-soft); }
+.cs-lt-timeline button:hover {
+    background: var(--cs-blue-soft);
+    border-color: rgba(18, 104, 232, 0.12);
+}
 
 .cs-lt-tl-date {
-    flex: 0 0 78px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 85px;
     color: var(--cs-ink);
     font-size: 11px;
     font-weight: 700;
@@ -8966,6 +9259,7 @@ body.cs-locked-shell {
     flex: 0 0 auto;
     border-radius: 999px;
     background: color-mix(in srgb, var(--cs-violet) 12%, #fff);
+    border: 1px solid color-mix(in srgb, var(--cs-violet) 20%, transparent);
     padding: 1px 7px;
     color: var(--cs-violet);
     font-size: 10.5px;
@@ -8983,10 +9277,24 @@ body.cs-locked-shell {
 }
 
 .cs-lt-tl-doc {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex: 0 0 auto;
     color: var(--cs-faint);
     font-size: 10.5px;
     font-weight: 550;
+}
+
+.cs-lt-tl-arrow {
+    color: var(--cs-faint);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.cs-lt-timeline button:hover .cs-lt-tl-arrow {
+    opacity: 1;
+    color: var(--cs-blue);
 }
 
 /* ── Care plan sheet ──────────────────────────────────────────────────────
