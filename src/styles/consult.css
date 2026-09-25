@@ -5017,11 +5017,9 @@ body.cs-locked-shell {
 }
 
 /* ── THE JOINT PANEL (Step 3, 2026-09-25) — JointMapCard.tsx ─────────────
-   What is found at the joint just clicked. Chips wear the Case Sheet's own
-   colours (rose for what the patient reports, teal for what is found) so a
-   chip lit here reads as the same fact as the chip on the sheet. Off chips
-   are quiet white with a "+"; on chips carry the tone's gradient and a
-   check. They wrap — the old single row squeezed each label onto two lines. */
+   What is found at the joint just clicked: what is recorded there, in the
+   Case Sheet's own rose and teal, and one field to add more
+   (JointFindingField.tsx). */
 .cs-jmap-panel {
     padding: 12px 12px 12px;
     border-radius: 12px;
@@ -5071,94 +5069,180 @@ body.cs-locked-shell {
 }
 .cs-jmap-panel .cs-dchart-panel-close:hover { background: rgba(16, 28, 46, 0.06); }
 
-.cs-jmap-group + .cs-jmap-group { margin-top: 10px; }
-.cs-jmap-grouplabel {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--cs-label);
+/* Recorded here → tokens; one field → a list. Never a wall of option
+   chips: past a handful of choices the rule everywhere in the consult is a
+   list you open, not every option drawn at once. */
+.cs-jf { display: flex; flex-direction: column; gap: 7px; }
+.cs-jf-tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-jf-token {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #a4e3d1;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #f4fdfa 0%, #dbf4eb 100%);
+    padding: 3px 4px 3px 9px;
+    color: #0b6a62;
+    font-size: 12.5px;
+    font-weight: 650;
+    line-height: 1.3;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(15, 118, 110, 0.1);
+}
+.cs-jf-token.is-symptom,
+.cs-jf-token.is-history {
+    border-color: #f6c3cd;
+    background: linear-gradient(180deg, #fff8f9 0%, #ffe6ea 100%);
+    color: #b3103b;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(190, 18, 60, 0.1);
+}
+.cs-jf-token > button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: inherit;
+    opacity: 0.5;
+    cursor: pointer;
+}
+.cs-jf-token > button:hover { background: rgba(0, 0, 0, 0.07); opacity: 1; }
+
+.cs-jf-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    margin-top: 3px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-faint);
+    cursor: text;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cs-jf-field:hover { border-color: #aeb9c9; }
+.cs-jf-field.is-open,
+.cs-jf-field:focus-within {
+    border-color: rgba(15, 118, 110, 0.55);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    color: var(--cs-teal);
+}
+/* Its own class: base.css styles every bare input (fill, border, ring). */
+.cs-jf-input,
+.cs-jf-input:hover,
+.cs-jf-input:focus {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 550;
+}
+.cs-jf-input::placeholder { color: var(--cs-faint); font-weight: 500; }
+
+.cs-jf-list {
+    position: fixed;
+    z-index: 1300;
+    max-height: 300px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 14px 34px rgba(16, 28, 46, 0.18);
+}
+.cs-jf-listhead {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    padding: 7px 9px 5px;
+    color: var(--cs-teal);
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
 }
-.cs-jmap-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+.cs-jf-group {
+    margin: 0;
+    padding: 8px 9px 3px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
 }
-.cs-jmap-chip {
-    display: inline-flex;
+.cs-jf-row {
+    display: flex;
     align-items: center;
-    gap: 5px;
-    min-height: 30px;
-    max-width: 100%;
-    border: 1px solid #d6dde8;
+    gap: 8px;
+    width: 100%;
+    border: 0;
     border-radius: 8px;
-    background: #fff;
-    padding: 4px 10px 4px 8px;
+    background: none;
+    padding: 7px 9px;
     color: var(--cs-ink);
-    font-size: 12.5px;
-    font-weight: 600;
-    line-height: 1.2;
+    font-size: 13px;
+    font-weight: 560;
     text-align: left;
     cursor: pointer;
-    box-shadow: 0 1px 1px rgba(16, 28, 46, 0.03);
-    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.1s ease;
 }
-.cs-jmap-chip > svg { flex: none; opacity: 0.45; transition: opacity 0.14s ease; }
-.cs-jmap-chip > span { min-width: 0; }
-.cs-jmap-chip > em {
+.cs-jf-row.is-active { background: var(--cs-blue-soft); }
+.cs-jf-check {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #c9d1dd;
+    border-radius: 5px;
+    background: #fff;
+}
+.cs-jf-row.is-here .cs-jf-check { border-color: var(--cs-teal); background: var(--cs-teal); color: #fff; }
+.cs-jf-row.is-here.is-symptom .cs-jf-check,
+.cs-jf-row.is-here.is-history .cs-jf-check { border-color: #be123c; background: #be123c; }
+.cs-jf-rowlabel { flex: 1; min-width: 0; }
+.cs-jf-row > em {
     flex: none;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 11.5px;
     font-style: normal;
     font-weight: 550;
 }
-.cs-jmap-chip:active { transform: scale(0.98); }
-.cs-jmap-chip:focus-visible { outline: 2px solid var(--cs-blue); outline-offset: 2px; }
-.cs-jmap-chip:disabled { cursor: not-allowed; opacity: 0.5; }
+.cs-jf-none { margin: 0; padding: 9px 10px; color: var(--cs-faint); font-size: 12.5px; }
 
-.cs-jmap-chip.is-finding:hover:not(.is-on) { border-color: #7fd3bb; background: #f6fdfa; color: #0b6a62; }
-.cs-jmap-chip.is-symptom:hover:not(.is-on),
-.cs-jmap-chip.is-history:hover:not(.is-on) { border-color: #f0a9b8; background: #fff8f9; color: #b3103b; }
-.cs-jmap-chip:hover > svg { opacity: 0.85; }
-
-.cs-jmap-chip.is-on > svg { opacity: 1; }
-.cs-jmap-chip.is-finding.is-on {
-    border-color: #7fd3bb;
-    background: linear-gradient(180deg, #f4fdfa 0%, #dbf4eb 100%);
-    color: #0b6a62;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(15, 118, 110, 0.12);
+.cs-jmap-panel .cs-attach-tagrow:last-child { margin-top: 10px; gap: 8px; }
+/* The site note, drawn like the add field above it rather than as a
+   second, differently-styled input. */
+.cs-jmap-panel .cs-attach-region-input,
+.cs-jmap-panel .cs-attach-region-input:hover,
+.cs-jmap-panel .cs-attach-region-input:focus {
+    height: 36px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: none;
 }
-.cs-jmap-chip.is-symptom.is-on,
-.cs-jmap-chip.is-history.is-on {
-    border-color: #f0a9b8;
-    background: linear-gradient(180deg, #fff8f9 0%, #ffe6ea 100%);
-    color: #b3103b;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(190, 18, 60, 0.12);
+.cs-jmap-panel .cs-attach-region-input:focus {
+    border-color: rgba(15, 118, 110, 0.55);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
-/* On the chart, but found somewhere else: a dashed edge in its tone, and
-   the place named on the chip, so "record it here too" is a known choice. */
-.cs-jmap-chip.is-away { border-style: dashed; }
-.cs-jmap-chip.is-finding.is-away { border-color: #7fd3bb; }
-.cs-jmap-chip.is-symptom.is-away { border-color: #f0a9b8; }
-
-.cs-jmap-more {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 10px;
-    border: 0;
-    border-radius: 7px;
-    background: none;
-    padding: 4px 6px;
-    color: var(--cs-blue);
-    font-size: 12px;
-    font-weight: 650;
-    cursor: pointer;
-}
-.cs-jmap-more:hover { background: var(--cs-blue-soft); }
-.cs-jmap-panel .cs-attach-tagrow:last-child { margin-top: 12px; }
+.cs-jmap-panel .cs-attach-tagsave { height: 36px; border-radius: 10px; }
 
 /* The marked-sites list, below the figure/detail row. Same recentering bug
    as the two rules above, same fix: Anmol, live, on this list specifically:

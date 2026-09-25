@@ -13,8 +13,9 @@
 //   the spine       range, soft-tissue and trigger-point tenderness, bony
 //   anywhere else   swelling, tenderness, bruise, a cut
 //
-// `primary` is shown at once; `more` sits behind "+ More", so the panel
-// opens on the few chips a doctor reaches for and never on a wall of them.
+// Not drawn as chips: the panel shows only what IS recorded at the place,
+// and this is the ORDER of its add-list (JointFindingField.tsx) — `primary`
+// first, the few a doctor reaches for, then `more`.
 // Labels are the catalogue's own; one missing from the catalogue is skipped
 // by the caller, never thrown.
 // ---------------------------------------------------------------------------
