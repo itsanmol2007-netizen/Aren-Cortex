@@ -41,6 +41,7 @@
 
 import type { SiteRef } from "../../lib/body/clinicalSite";
 import type { AssessmentDetails } from "./assessmentFamilies";
+import { JOIN } from "../../lib/clinicalText";
 
 export type InterventionSide = "left" | "right" | "both";
 
@@ -121,6 +122,6 @@ export function formatLine(line: InterventionLine): string {
     }
     const sideTag = formatSide(line.side);
     const where = [line.site.trim(), sideTag].filter(Boolean).join(" · ");
-    const head = where ? `${line.label} — ${where}` : line.label;
+    const head = where ? `${line.label}${JOIN}${where}` : line.label;
     return line.notes.trim() ? `${head} (${line.notes.trim()})` : head;
 }

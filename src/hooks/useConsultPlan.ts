@@ -63,6 +63,7 @@ import type { SynapseData } from "./useSynapse";
 import type { ConsultIntelligence } from "./useConsultIntelligence";
 import type { AcceptLedger } from "./useAcceptLedger";
 import type { PlanDraft } from "../lib/consultDraft";
+import { isHeadOf } from "../lib/clinicalText";
 
 /**
  * A ranked molecule plus the brand chosen for it, as a prescription line.
@@ -1224,7 +1225,7 @@ export function useConsultPlan({
     // every site it was ordered at ("X-Ray Knee — Left, AP + Lateral").
     const goes = (t: string) => {
       const x = t.trim().toLowerCase();
-      return x === target || x.startsWith(`${target} — `);
+      return x === target || isHeadOf(x, target);
     };
     const kept = selectedTests.filter((t) => !goes(t));
     setSelectedTests(kept);
@@ -1236,7 +1237,7 @@ export function useConsultPlan({
       // withdrawn is not the other knee's.
       const stillOrdered = kept.some((t) => {
         const x = t.trim().toLowerCase();
-        return x === name || x.startsWith(`${name} — `);
+        return x === name || isHeadOf(x, name);
       });
       if (!stillOrdered) releaseIntent(intentId);
     }

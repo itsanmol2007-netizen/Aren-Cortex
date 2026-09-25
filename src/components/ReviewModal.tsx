@@ -482,7 +482,7 @@ export default function ReviewModal({
           findings.length ? `Findings: ${findings.join(", ")}` : "",
           "---",
           "Rx:",
-          ...prescription.map((m, i) => `${i + 1}. ${m.name} — ${resolveLabel(m.frequency)} — ${m.duration}`),
+          ...prescription.map((m, i) => `${i + 1}. ${m.name} - ${resolveLabel(m.frequency)} - ${m.duration}`),
           tests.length ? `Investigations: ${tests.join(", ")}` : "",
           followUpDays ? `Follow up: ${followUpDays} days` : "",
         ].filter(Boolean).join("\n");

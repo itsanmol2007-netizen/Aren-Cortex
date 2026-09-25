@@ -24,6 +24,7 @@
 
 import type { BodyRegion } from "../../lib/body/anatomy";
 import { clinicalSiteLabel, isSpine, type SiteRef } from "../../lib/body/clinicalSite";
+import { JOIN } from "../../lib/clinicalText";
 
 export type DetailValue = string | boolean;
 export type AssessmentDetails = Record<string, DetailValue>;
@@ -432,7 +433,7 @@ export function composeAssessmentText(
         else parts.push(String(v).trim());
     }
 
-    return parts.length ? `${title} — ${parts.join(", ")}` : title;
+    return parts.length ? `${title}${JOIN}${parts.join(", ")}` : title;
 }
 
 // ── Imaging placed on the body ─────────────────────────────────────────────

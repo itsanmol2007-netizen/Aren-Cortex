@@ -43,6 +43,7 @@ import type { AcceptPayload } from "./types";
 import { BlankTestArt } from "./BlankArt";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
+import { isHeadOf } from "../../lib/clinicalText";
 
 /** The free-text fallback (§4) only covers these three of this card's types
  *  — `finding` lives in ConditionsCard, `medicine` has its own composition-
@@ -298,7 +299,7 @@ export function SuggestionsCard({
                     const x = t.trim().toLowerCase();
                     // "X-Ray Knee — Left, AP + Lateral" is the ranked "X-Ray
                     // Knee" at a site; its tick is on that row already.
-                    const sitedRanked = [...rankedLabels].some((r) => x.startsWith(`${r} — `));
+                    const sitedRanked = [...rankedLabels].some((r) => isHeadOf(x, r));
                     if (!rankedLabels.has(x) && !sitedRanked) {
                         list.push({ type: "test", label: t, icon: testSection.icon, verb: testSection.verb });
                     }

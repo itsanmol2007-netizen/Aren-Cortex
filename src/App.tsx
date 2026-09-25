@@ -1815,7 +1815,7 @@ function App() {
       case "imaging": {
         const payload = payloadFor("test", a.label);
         if (payload) openImagingAt(payload, a.site);
-        else addFreeTest(a.site ? `${a.label} — ${clinicalSiteLabel(a.site)}` : a.label);
+        else addFreeTest(a.site ? `${a.label} - ${clinicalSiteLabel(a.site)}` : a.label);
         break;
       }
       case "test": addFreeTest(a.text); break;

@@ -12,3 +12,18 @@
 export function dashText(s: string): string {
     return s.replace(/\s*—\s*|\s+–\s+/g, " - ");
 }
+
+/** The joiner every generated clinical line uses: "Fracture - Right knee". */
+export const JOIN = " - ";
+
+/** `text` is `head` followed by a joiner — either the house " - " or the
+ *  " — " older saved lines carry ("X-Ray Knee - Left, AP"). */
+export function isHeadOf(text: string, head: string): boolean {
+    return text.startsWith(`${head} - `) || text.startsWith(`${head} — `);
+}
+
+/** `text` with its headline and joiner taken off, whichever joiner it has. */
+export function afterHead(text: string, head: string): string {
+    for (const j of [" - ", " — "]) if (text.startsWith(head + j)) return text.slice(head.length + j.length);
+    return text;
+}

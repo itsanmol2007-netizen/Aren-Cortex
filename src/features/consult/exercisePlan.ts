@@ -43,6 +43,8 @@
 // id and falls back to its label.
 // ---------------------------------------------------------------------------
 
+import { JOIN } from "../../lib/clinicalText";
+
 export type ExerciseSide = "left" | "right" | "both";
 
 export interface ExerciseDose {
@@ -236,7 +238,7 @@ export function formatLine(line: ExerciseLine): string {
     const name = dose ? exerciseName(line.label) : line.label;
     const head = side ? `${name} (${side})` : name;
     const tail = [dose, formatSchedule(line), line.notes.trim()].filter(Boolean).join(" · ");
-    return tail ? `${head} — ${tail}` : head;
+    return tail ? `${head}${JOIN}${tail}` : head;
 }
 
 /**

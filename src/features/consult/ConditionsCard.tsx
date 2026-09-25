@@ -49,6 +49,7 @@ import type { AcceptPayload } from "./types";
 import { BlankConditionArt, BlankSelectedArt } from "./BlankArt";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
+import { afterHead } from "../../lib/clinicalText";
 
 /** Rows shown before the panel asks. */
 const CAP = 4;
@@ -154,8 +155,7 @@ function SiteMarker() {
 
 /** "Left knee, open, displaced" — a line's text without its own headline. */
 function siteText(line: AssessmentLine): string {
-    const prefix = `${line.label} — `;
-    return line.text.startsWith(prefix) ? line.text.slice(prefix.length) : line.text;
+    return afterHead(line.text, line.label);
 }
 
 export function ConditionsCard({

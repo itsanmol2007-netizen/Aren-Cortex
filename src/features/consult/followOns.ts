@@ -53,9 +53,9 @@ const XRAY_BY_REGION: Partial<Record<BodyRegion, string>> = {
 };
 
 const FLUID_TESTS: Record<string, string> = {
-    "Cell count": "Synovial fluid — cell count",
-    "Gram stain & culture": "Synovial fluid — Gram stain & culture",
-    "Crystals": "Synovial fluid — crystal examination",
+    "Cell count": "Synovial fluid - cell count",
+    "Gram stain & culture": "Synovial fluid - Gram stain & culture",
+    "Crystals": "Synovial fluid - crystal examination",
 };
 
 export function followOnsFor(line: InterventionLine): FollowOn[] {
@@ -75,7 +75,7 @@ export function followOnsFor(line: InterventionLine): FollowOn[] {
             break;
         case "aspiration":
             for (const t of String(d.sentFor ?? "").split("|").filter(Boolean)) {
-                if (FLUID_TESTS[t]) out.push({ key: `fluid-${t}`, label: FLUID_TESTS[t].replace("Synovial fluid — ", "Fluid "), action: { kind: "test", text: FLUID_TESTS[t] } });
+                if (FLUID_TESTS[t]) out.push({ key: `fluid-${t}`, label: FLUID_TESTS[t].replace("Synovial fluid - ", "Fluid "), action: { kind: "test", text: FLUID_TESTS[t] } });
             }
             break;
         case "closure": {
