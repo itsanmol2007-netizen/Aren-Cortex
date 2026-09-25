@@ -11298,52 +11298,6 @@ body.cs-locked-shell {
     .cs-lt-fu-carried { animation: none; }
 }
 
-/* "What did it show?" */
-.cs-lt-result {
-    position: fixed;
-    z-index: 1300;
-    box-sizing: border-box;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: 12px;
-    background: #fff;
-    padding: 6px 10px 10px;
-    box-shadow: 0 14px 34px rgba(16, 28, 46, 0.18);
-}
-.cs-lt-result .cs-lt-menu-head { padding-left: 0; padding-right: 0; }
-.cs-lt-result-input,
-.cs-lt-result-input:hover,
-.cs-lt-result-input:focus {
-    width: 100%;
-    min-height: 70px;
-    box-sizing: border-box;
-    border: 1px solid #c9d1dd;
-    border-radius: 9px;
-    background: #fff;
-    padding: 8px 10px;
-    color: var(--cs-ink);
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1.45;
-    resize: vertical;
-    box-shadow: none;
-}
-.cs-lt-result-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); outline: none; }
-.cs-lt-result-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
-.cs-lt-result-cancel,
-.cs-lt-result-save {
-    height: 30px;
-    border: 0;
-    border-radius: 8px;
-    padding: 0 12px;
-    font-size: 12.5px;
-    font-weight: 700;
-    cursor: pointer;
-}
-.cs-lt-result-cancel { background: none; color: var(--cs-faint); }
-.cs-lt-result-cancel:hover { background: rgba(0, 0, 0, 0.05); color: var(--cs-ink); }
-.cs-lt-result-save { background: #2563eb; color: #fff; }
-.cs-lt-result-save:disabled { opacity: 0.45; cursor: default; }
-
 /* Header priorities: the title and the episode never wrap or clip; the
    ongoing pill is what gives way, truncating its status first. */
 .cs-lt-collapse,
@@ -11451,7 +11405,6 @@ body.cs-locked-shell {
 .cs-jf-list,
 .cx-site-pop,
 .cs-lt-menu,
-.cs-lt-result,
 .cs-dsel-list {
     transform-origin: top left;
     animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -11464,7 +11417,7 @@ body.cs-locked-shell {
 .cs-chartmodal.is-leaving .cs-chartmodal-scrim { animation: cs-chartmodal-fade-out 150ms ease forwards; }
 .cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: cs-chartmodal-sink 150ms cubic-bezier(0.4, 0, 1, 1) forwards; }
 @media (prefers-reduced-motion: reduce) {
-    .cs-jf-list, .cx-site-pop, .cs-lt-menu, .cs-lt-result, .cs-dsel-list,
+    .cs-jf-list, .cx-site-pop, .cs-lt-menu, .cs-dsel-list,
     .cs-jmap-panel, .cs-jf-token,
     .cs-chartmodal.is-leaving .cs-chartmodal-scrim,
     .cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: none; }
@@ -11611,3 +11564,166 @@ body.cs-locked-shell {
 @media (prefers-reduced-motion: reduce) {
     .cs-jf-dx { animation: none; }
 }
+
+/* ── RESULT SHEET (2026-09-26) — ResultSheet.tsx. Sits on ChartSurface; the
+   assessment pieces reuse the body map's violet tokens and detail editor. */
+.cs-rs { display: flex; flex-direction: column; gap: 16px; padding: 2px 4px 4px; }
+.cs-rs-ordered { margin: -6px 0 0; color: var(--cs-faint); font-size: 12.5px; font-weight: 550; }
+.cs-rs-ordered b { color: var(--cs-ink); font-weight: 700; }
+.cs-rs-sec { display: flex; flex-direction: column; gap: 10px; }
+.cs-rs-sechead { display: flex; align-items: center; gap: 8px; }
+.cs-rs-sechead > span {
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-rs-sechead > em { color: var(--cs-faint); font-size: 11.5px; font-style: normal; font-weight: 550; }
+.cs-rs-normal {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-label);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.cs-rs-normal:hover { border-color: #9ccfc6; }
+.cs-rs-normal.is-on { border-color: var(--cs-teal); background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-rs-tokens .cs-jf-dx { margin-top: 0; }
+.cs-rs-plain { display: inline-flex; align-items: center; gap: 5px; padding: 3px 4px 3px 8px; }
+.cs-rs-search { display: flex; flex-direction: column; gap: 6px; }
+.cs-rs-hits {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 8px 22px rgba(16, 28, 46, 0.08);
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-rs-none { margin: 0; color: var(--cs-faint); font-size: 12px; }
+.cs-rs-nearby { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cs-rs-nearby > span { color: var(--cs-faint); font-size: 11.5px; font-weight: 600; }
+.cs-rs-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    border: 1px dashed #c4b0f5;
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 10px;
+    color: #5b21b6;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cs-rs-link:hover { background: var(--cs-violet-soft); }
+.cs-rs-files { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cs-rs-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    height: 32px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 9px;
+    background: #fff;
+    padding: 0 10px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    animation: cs-token-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.cs-rs-file.is-done > svg:first-child { color: var(--cs-teal); }
+.cs-rs-file.is-failed { border-color: #f5c2c0; color: var(--cs-red); }
+.cs-rs-file em { color: var(--cs-red); font-size: 11.5px; font-style: normal; }
+.cs-rs-file-name { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-rs-attach {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    border: 1px dashed #b9c3d3;
+    border-radius: 10px;
+    background: #fbfcfe;
+    padding: 0 14px;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease;
+}
+.cs-rs-attach:hover { border-color: var(--cs-blue); background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-rs-attach:disabled { opacity: 0.5; cursor: default; }
+.cs-rs-note,
+.cs-rs-note:hover,
+.cs-rs-note:focus {
+    width: 100%;
+    height: 38px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: none;
+}
+.cs-rs-note:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); outline: none; }
+/* Stays in reach while the details above it are long. */
+.cs-rs-foot {
+    position: sticky;
+    bottom: -18px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 2px -4px -22px;
+    border-top: 1px solid var(--cs-line);
+    background: linear-gradient(180deg, rgba(246, 248, 252, 0.94) 0%, #f6f8fc 100%);
+    padding: 12px 4px 18px;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+.cs-rs-preview { display: flex; flex: 1; min-width: 0; align-items: baseline; gap: 8px; margin: 0; font-size: 12.5px; }
+.cs-rs-preview span {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-rs-preview b { min-width: 0; overflow: hidden; color: var(--cs-ink); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cs-rs-preview b.is-empty { color: var(--cs-faint); font-weight: 500; }
+.cs-rs-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.cs-rs-actions .cs-addmed-cancel { height: 36px; }
+.cs-rs-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #2f76f0 0%, #1a62de 100%);
+    padding: 0 16px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(18, 104, 232, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.cs-rs-save:disabled { opacity: 0.45; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .cs-rs-hits, .cs-rs-file { animation: none; } }

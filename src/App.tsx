@@ -17,6 +17,9 @@ import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type Sit
 import { siteSignalsOf } from "./lib/body/siteSignals";
 import type { OngoingAction, OngoingItem, OngoingLocal } from "./features/consult/ongoing";
 import { recordInvestigationResult, recordStateEvent } from "./lib/db/clinicalState";
+import { ResultSheet } from "./features/consult/ResultSheet";
+import { uploadAttachment } from "./lib/db/attachments";
+import { searchIntents } from "./lib/db/synapse";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -1845,6 +1848,12 @@ function App() {
   );
   /** investigation results recorded during this visit (order id → text) */
   const [resultsToday, setResultsToday] = useState<Map<string, string>>(() => new Map());
+  /** the awaited investigation whose result sheet is open */
+  const [resultSheetFor, setResultSheetFor] = useState<OngoingItem | null>(null);
+  const findResultAssessments = useCallback(
+    (q: string) => searchIntents({ query: q, types: ["finding"], limit: 24 }).then((r) => r.hits),
+    [],
+  );
   /** whether the last visit has been carried forward onto today's sheet */
   const [continued, setContinued] = useState(false);
   useEffect(() => {
@@ -1881,6 +1890,10 @@ function App() {
     }
     if (action.type === "do" && p) {
       performPlanned({ id: p.id, intentId: p.intentId ?? null, label: p.label, siteRef: p.site, details: p.details ?? {} });
+      return;
+    }
+    if (action.type === "open-result") {
+      setResultSheetFor(item);
       return;
     }
     if (action.type === "result" && item.order) {
@@ -3057,6 +3070,35 @@ function App() {
               knownSites={knownSites}
               onCancel={cancelPendingAssessment}
               onConfirm={confirmPendingAssessment}
+            />
+          )}
+
+          {/* "The X-ray is back": what it showed (today's assessment, made at
+              the order's site), the image (this visit's attachments) and a
+              note, written onto the order. See ResultSheet.tsx. */}
+          {resultSheetFor?.order && (
+            <ResultSheet
+              key={resultSheetFor.order.id}
+              order={resultSheetFor.order}
+              orderedAt={resultSheetFor.order.orderedAt}
+              assessmentLines={assessmentLines}
+              find={findResultAssessments}
+              onAddAt={addAssessmentAt}
+              onAccept={handleAcceptIntent}
+              onDetails={updateAssessmentDetails}
+              onRemove={removeDiagnosis}
+              onUpload={visitId ? async (file, meta) => {
+                await uploadAttachment({
+                  visitId, file, attachmentType: meta.type, label: meta.label,
+                  laterality: meta.site?.side === "both" ? "bilateral" : meta.site?.side ?? undefined,
+                  bodyRegion: meta.site?.region,
+                });
+              } : undefined}
+              onSave={(text) => {
+                handleOngoingAction(resultSheetFor, { type: "result", text });
+                setResultSheetFor(null);
+              }}
+              onClose={() => setResultSheetFor(null)}
             />
           )}
 

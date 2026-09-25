@@ -85,6 +85,7 @@ export type OngoingAction =
     | { type: "cancel" }
     | { type: "restore" }
     | { type: "status"; status: ConditionStatus }
+    | { type: "open-result" }
     | { type: "result"; text: string };
 
 export const EMPTY_LOCAL: OngoingLocal = {

@@ -167,78 +167,6 @@ function OngoingMenu({ anchor, title, options, onPick, onClose }: {
 }
 
 /**
- * "What did it show?" — the result of an investigation ordered at an earlier
- * visit, recorded on that order from this one. A short line, the way a report
- * is summarised on a chart ("displaced distal radius fracture, dorsal
- * angulation, ulnar styloid fracture"); the image itself goes through
- * Attachments as before.
- */
-function ResultPrompt({ anchor, name, onSave, onClose }: {
-    anchor: HTMLElement;
-    name: string;
-    onSave: (text: string) => void;
-    onClose: () => void;
-}) {
-    const ref = useRef<HTMLDivElement>(null);
-    const areaRef = useRef<HTMLTextAreaElement>(null);
-    const [text, setText] = useState("");
-    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-    const W = 320;
-
-    useLayoutEffect(() => {
-        const r = anchor.getBoundingClientRect();
-        const h = ref.current?.offsetHeight ?? 180;
-        const below = r.bottom + 6;
-        setPos({
-            top: below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below,
-            left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)),
-        });
-    }, [anchor]);
-
-    useEffect(() => {
-        areaRef.current?.focus();
-        const away = (e: MouseEvent) => {
-            const t = e.target as Node;
-            if (ref.current?.contains(t) || anchor.contains(t)) return;
-            onClose();
-        };
-        document.addEventListener("mousedown", away);
-        return () => document.removeEventListener("mousedown", away);
-    }, [anchor, onClose]);
-
-    const save = () => { const t = text.trim(); if (t) onSave(t); };
-
-    return createPortal(
-        <div
-            ref={ref}
-            className="cs-lt-result"
-            role="dialog"
-            aria-label={`Result of ${name}`}
-            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: W }}
-            onKeyDown={(e) => {
-                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
-            }}
-        >
-            <p className="cs-lt-menu-head">Result · {name}</p>
-            <textarea
-                ref={areaRef}
-                className="cs-lt-result-input"
-                rows={3}
-                value={text}
-                placeholder="What did it show? e.g. displaced distal radius fracture, dorsal angulation"
-                onChange={(e) => setText(e.target.value)}
-            />
-            <div className="cs-lt-result-foot">
-                <button type="button" className="cs-lt-result-cancel" onClick={onClose}>Cancel</button>
-                <button type="button" className="cs-lt-result-save" disabled={!text.trim()} onClick={save}>Save result</button>
-            </div>
-        </div>,
-        document.body,
-    );
-}
-
-/**
  * ONGOING CARE — what is still true from earlier visits: the cast still on,
  * the X-ray whose result is awaited, the removal that is due, the fracture it
  * is all for. It is the "now" of the band, so it LOOKS like now: a tinted
@@ -256,7 +184,6 @@ function OngoingCard({ items, onOpen, onAction }: {
     onAction?: (item: OngoingItem, action: OngoingAction) => void;
 }) {
     const [menu, setMenu] = useState<{ item: OngoingItem; anchor: HTMLElement } | null>(null);
-    const [resultFor, setResultFor] = useState<{ item: OngoingItem; anchor: HTMLElement } | null>(null);
 
     const menuFor = (it: OngoingItem) => {
         if (it.kind === "condition") {
@@ -310,11 +237,7 @@ function OngoingCard({ items, onOpen, onAction }: {
                     type="button"
                     className="cs-lt-og-act is-primary"
                     aria-haspopup="dialog"
-                    aria-expanded={resultFor?.item.key === it.key}
-                    onClick={(e) => {
-                        const el = e.currentTarget;
-                        setResultFor((m) => (m?.item.key === it.key ? null : { item: it, anchor: el }));
-                    }}
+                    onClick={() => onAction(it, { type: "open-result" })}
                 >
                     Add result
                 </button>
@@ -388,14 +311,6 @@ function OngoingCard({ items, onOpen, onAction }: {
                     />
                 );
             })()}
-            {resultFor && onAction && (
-                <ResultPrompt
-                    anchor={resultFor.anchor}
-                    name={resultFor.item.title}
-                    onClose={() => setResultFor(null)}
-                    onSave={(text) => { onAction(resultFor.item, { type: "result", text }); setResultFor(null); }}
-                />
-            )}
         </div>
     );
 }
