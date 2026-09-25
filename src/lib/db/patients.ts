@@ -4,7 +4,7 @@ import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../b
 import { visitStatusKind } from "../../features/patients/visitStatus";
 import type { ConfirmedPayment } from "./payments";
 import { readThroughValue, resolveMirrorIdentity } from "../offline/localMirror";
-import { clinicalSiteLabel, normalizeSite, type SiteRef } from "../body/clinicalSite";
+import { clinicalSiteLabel, normalizeSite, siteFromRegionKey, type SiteRef } from "../body/clinicalSite";
 import { dashText } from "../clinicalText";
 import { formatLine } from "../../features/consult/exercisePlan";
 import { latestStates, type StateEvent } from "./clinicalState";
@@ -833,7 +833,20 @@ export type RealVisit = {
     sitedFindings?: string[];
     /** exercises with their dose, as printed ("Straight leg raise (Right) - 3 × 10") */
     exercises?: string[];
+    /** investigations ordered, each with its result once one is recorded */
+    orders?: VisitOrder[];
+    /** pain scored at a joint ("Right wrist", 7) — the ortho / physio exam */
+    sitePain?: { site: string; value: number }[];
 };
+
+export interface VisitOrder {
+    id: string;
+    name: string;
+    orderedAt: string;
+    /** what it showed — null while the result is still awaited */
+    resultText: string | null;
+    resultAt: string | null;
+}
 
 export interface VisitAssessment {
     /** prescription_assessments.id — what a state event points at */
@@ -1003,6 +1016,8 @@ export async function fetchPatientVisitStubs(
         procedures: [],
         sitedFindings: [],
         exercises: [],
+        orders: [],
+        sitePain: [],
     }));
 }
 
@@ -1033,6 +1048,7 @@ export async function hydratePatientVisits(
         bsRes,
         impRes,
         storyRes,
+        painRes,
     ] = await Promise.all([
         doctorIds.length
             ? safe(supabase.from("doctors").select("id, name").in("id", doctorIds), { data: [] } as any)
@@ -1041,10 +1057,11 @@ export async function hydratePatientVisits(
         safe(sitedObservationsByVisit(visitIds), new Map<string, { reported: string[]; found: string[] }>()),
         safe(supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("prescriptions").select("id, visit_id, findings_text, advice_notes").in("visit_id", visitIds), { data: [] } as any),
-        safe(supabase.from("diagnostic_orders").select("visit_id, test_name").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("diagnostic_orders").select("id, visit_id, test_name, created_at, result_text, result_at").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_body_sites").select("visit_id, region, aspect, side").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_impairments").select("visit_id, label").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_story").select("visit_id, duration_text, mechanism").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("visit_measurements").select("visit_id, measure_key, side, value_num, context").in("visit_id", visitIds).like("measure_key", "PAIN_%"), { data: [] } as any),
     ]);
 
     const doctorMap = new Map<string, string>();
@@ -1062,11 +1079,23 @@ export async function hydratePatientVisits(
     const rxIds = (rxRows ?? []).map((r: any) => r.id);
 
     const testsByVisit = new Map<string, string[]>();
+    const ordersByVisit = new Map<string, VisitOrder[]>();
     (doRes.data ?? []).forEach((r: any) => {
         if (!r.test_name) return;
         const list = testsByVisit.get(r.visit_id) ?? [];
         if (!list.includes(r.test_name)) list.push(r.test_name);
         testsByVisit.set(r.visit_id, list);
+        const orders = ordersByVisit.get(r.visit_id) ?? [];
+        if (r.id && !orders.some((o) => o.name === r.test_name)) {
+            orders.push({
+                id: String(r.id),
+                name: dashText(r.test_name),
+                orderedAt: r.created_at,
+                resultText: r.result_text ?? null,
+                resultAt: r.result_at ?? null,
+            });
+        }
+        ordersByVisit.set(r.visit_id, orders);
     });
 
     const bodySitesByVisit = new Map<string, string[]>();
@@ -1082,6 +1111,18 @@ export async function hydratePatientVisits(
         const list = impairmentsByVisit.get(r.visit_id) ?? [];
         list.push(r.label);
         impairmentsByVisit.set(r.visit_id, list);
+    }
+
+    // Pain at a joint, the baseline reading ("Right wrist", 7).
+    const painByVisit = new Map<string, { site: string; value: number }[]>();
+    for (const r of (painRes.data ?? []) as any[]) {
+        if (r.value_num == null || (r.context && r.context !== "baseline")) continue;
+        const region = String(r.measure_key).split("|")[0].replace(/^PAIN_/, "").toLowerCase();
+        const site = siteFromRegionKey(region, r.side === "left" || r.side === "right" ? r.side : null);
+        const label = site ? clinicalSiteLabel(site) : region.replace(/_/g, " ");
+        const list = painByVisit.get(r.visit_id) ?? [];
+        if (!list.some((p) => p.site === label)) list.push({ site: label, value: Number(r.value_num) });
+        painByVisit.set(r.visit_id, list);
     }
 
     const storyByVisit = new Map<string, { duration: string | null; mechanism: string | null }>();
@@ -1261,6 +1302,8 @@ export async function hydratePatientVisits(
             procedures: procByVisit.get(v.id) ?? [],
             sitedFindings: obsV?.found ?? [],
             exercises: exLinesByVisit.get(v.id) ?? [],
+            orders: ordersByVisit.get(v.id) ?? [],
+            sitePain: painByVisit.get(v.id) ?? [],
         };
     });
 }

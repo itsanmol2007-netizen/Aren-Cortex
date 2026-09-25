@@ -16,7 +16,7 @@ import { fetchExerciseLibrary, setExerciseLibraryEntry, type ExerciseLibraryEntr
 import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { siteSignalsOf } from "./lib/body/siteSignals";
 import type { OngoingAction, OngoingItem, OngoingLocal } from "./features/consult/ongoing";
-import { recordStateEvent } from "./lib/db/clinicalState";
+import { recordInvestigationResult, recordStateEvent } from "./lib/db/clinicalState";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -1835,12 +1835,21 @@ function App() {
   const [ongoingStates, setOngoingStates] = useState<Pick<OngoingLocal, "conditions" | "plans">>(
     () => ({ conditions: new Map(), plans: new Map() }),
   );
-  useEffect(() => { setOngoingStates({ conditions: new Map(), plans: new Map() }); }, [patient?.id]);
+  /** investigation results recorded during this visit (order id → text) */
+  const [resultsToday, setResultsToday] = useState<Map<string, string>>(() => new Map());
+  /** whether the last visit has been carried forward onto today's sheet */
+  const [continued, setContinued] = useState(false);
+  useEffect(() => {
+    setOngoingStates({ conditions: new Map(), plans: new Map() });
+    setResultsToday(new Map());
+    setContinued(false);
+  }, [patient?.id]);
   const ongoingLocal = useMemo<OngoingLocal>(() => ({
     ...ongoingStates,
+    results: resultsToday,
     removedToday: new Set(interventionPlan.map((l) => l.removesId).filter(Boolean) as string[]),
     fulfilledToday: new Set(interventionPlan.map((l) => l.fulfilsId).filter(Boolean) as string[]),
-  }), [ongoingStates, interventionPlan]);
+  }), [ongoingStates, interventionPlan, resultsToday]);
 
   const handleOngoingAction = useCallback((item: OngoingItem, action: OngoingAction) => {
     const p = item.procedure;
@@ -1864,6 +1873,15 @@ function App() {
     }
     if (action.type === "do" && p) {
       performPlanned({ id: p.id, intentId: p.intentId ?? null, label: p.label, siteRef: p.site, details: p.details ?? {} });
+      return;
+    }
+    if (action.type === "result" && item.order) {
+      const order = item.order;
+      setResultsToday((cur) => new Map(cur).set(order.id, action.text));
+      recordInvestigationResult(order.id, action.text, visitId).catch((e) => {
+        setResultsToday((cur) => { const n = new Map(cur); n.delete(order.id); return n; });
+        showToast(`Could not save the result: ${e?.message ?? e}`);
+      });
       return;
     }
     if (!pid) return;
@@ -1914,6 +1932,38 @@ function App() {
       );
     }
   }, [patient?.id, visitId, synapse.data?.ruleset, openIntervention, performPlanned, showToast]);
+
+  /**
+   * Follow-up → Continue: the last visit's complaints and examination
+   * findings come onto today's sheet as CARRIED chips (the dashed "from last
+   * time" look — confirm or remove each), each local finding at the place it
+   * was found. Rebuilt from the saved record, not copied from a screen.
+   */
+  const handleContinue = useCallback(() => {
+    const last = meaningfulPastVisits[0];
+    if (!last) return;
+    const byLower = new Map(observables.map((o) => [o.label.toLowerCase(), o]));
+    const resolve = (text: string): { o: typeof observables[number]; site: SiteRef | null } | null => {
+      const whole = byLower.get(text.toLowerCase());
+      if (whole) return { o: whole, site: null };
+      const i = text.lastIndexOf(" - ");
+      if (i < 0) return null;
+      const o = byLower.get(text.slice(0, i).toLowerCase());
+      if (!o) return null;
+      // "Right wrist, Left wrist" — the first place; the others are rare and
+      // can be ticked on the chip.
+      const site = siteFromLabel(text.slice(i + 3).split(",")[0].trim());
+      return { o, site };
+    };
+    const picked = [...last.symptoms, ...(last.sitedFindings?.length ? last.sitedFindings : last.findings.map((f) => f.name))]
+      .map(resolve)
+      .filter((x): x is NonNullable<ReturnType<typeof resolve>> => !!x);
+    if (!picked.length) { setContinued(true); return; }
+    chart.seedIntake(picked.map(({ o }) => ({ label: o.label, kind: o.kind, durationDays: null, origin: "carried" as const })));
+    for (const { o, site } of picked) if (site) chart.setFindingSites(o.label, [site]);
+    setContinued(true);
+    showToast(`Carried forward from ${new Date(last.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}: ${picked.length} item${picked.length === 1 ? "" : "s"}`);
+  }, [meaningfulPastVisits, observables, chart, showToast]);
 
   /** This clinic's usual dose per exercise (Practice → Exercise Library) —
    *  where the exercise sheet starts. */
@@ -2411,6 +2461,8 @@ function App() {
             onStartCarePlan={() => setCarePlanSheetOpen(true)}
             ongoingLocal={ongoingLocal}
             onOngoingAction={handleOngoingAction}
+            onContinue={handleContinue}
+            continued={continued}
           />
           <main className="cs-page">
             {/* Context first, but not at the same visual weight as the three

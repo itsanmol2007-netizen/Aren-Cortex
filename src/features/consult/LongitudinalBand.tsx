@@ -66,7 +66,9 @@ import {
     Calendar,
     CalendarClock,
     Check,
-    CalendarDays,
+    CornerDownRight,
+    Dumbbell,
+    FlaskConical,
     ChevronDown,
     Clock,
     History,
@@ -87,8 +89,9 @@ import {
 } from "./ongoing";
 import { STATUS_LABEL } from "../../lib/db/clinicalState";
 import { dashText } from "../../lib/clinicalText";
+import { agoText, visitGist } from "./visitGist";
 
-const ONGOING_ICON = { "in-place": Bandage, due: CalendarClock, condition: Stethoscope } as const;
+const ONGOING_ICON = { "in-place": Bandage, due: CalendarClock, awaiting: FlaskConical, condition: Stethoscope } as const;
 
 /**
  * A short list opened from one small button — the Ongoing Care card's
@@ -164,15 +167,88 @@ function OngoingMenu({ anchor, title, options, onPick, onClose }: {
 }
 
 /**
- * ONGOING CARE (2026-09-25) — what is still true from earlier visits: the
- * cast still on, the removal that is due, the fracture it is for. First in
- * the row, because for a patient in the middle of a course of care this is
- * what the consult is about. See `ongoing.ts` for what counts and why.
+ * "What did it show?" — the result of an investigation ordered at an earlier
+ * visit, recorded on that order from this one. A short line, the way a report
+ * is summarised on a chart ("displaced distal radius fracture, dorsal
+ * angulation, ulnar styloid fracture"); the image itself goes through
+ * Attachments as before.
+ */
+function ResultPrompt({ anchor, name, onSave, onClose }: {
+    anchor: HTMLElement;
+    name: string;
+    onSave: (text: string) => void;
+    onClose: () => void;
+}) {
+    const ref = useRef<HTMLDivElement>(null);
+    const areaRef = useRef<HTMLTextAreaElement>(null);
+    const [text, setText] = useState("");
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+    const W = 320;
+
+    useLayoutEffect(() => {
+        const r = anchor.getBoundingClientRect();
+        const h = ref.current?.offsetHeight ?? 180;
+        const below = r.bottom + 6;
+        setPos({
+            top: below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below,
+            left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)),
+        });
+    }, [anchor]);
+
+    useEffect(() => {
+        areaRef.current?.focus();
+        const away = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (ref.current?.contains(t) || anchor.contains(t)) return;
+            onClose();
+        };
+        document.addEventListener("mousedown", away);
+        return () => document.removeEventListener("mousedown", away);
+    }, [anchor, onClose]);
+
+    const save = () => { const t = text.trim(); if (t) onSave(t); };
+
+    return createPortal(
+        <div
+            ref={ref}
+            className="cs-lt-result"
+            role="dialog"
+            aria-label={`Result of ${name}`}
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: W }}
+            onKeyDown={(e) => {
+                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
+            }}
+        >
+            <p className="cs-lt-menu-head">Result · {name}</p>
+            <textarea
+                ref={areaRef}
+                className="cs-lt-result-input"
+                rows={3}
+                value={text}
+                placeholder="What did it show? e.g. displaced distal radius fracture, dorsal angulation"
+                onChange={(e) => setText(e.target.value)}
+            />
+            <div className="cs-lt-result-foot">
+                <button type="button" className="cs-lt-result-cancel" onClick={onClose}>Cancel</button>
+                <button type="button" className="cs-lt-result-save" disabled={!text.trim()} onClick={save}>Save result</button>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+/**
+ * ONGOING CARE — what is still true from earlier visits: the cast still on,
+ * the X-ray whose result is awaited, the removal that is due, the fracture it
+ * is all for. It is the "now" of the band, so it LOOKS like now: a tinted
+ * surface, a live accent edge and an "Active now" eyebrow, where the Last
+ * Visit card beside it is a plain white record of the past. The two must
+ * never be mistaken for each other at a glance. See `ongoing.ts`.
  *
  * Each item carries the one control its lifecycle needs, never a row of
- * option chips: a cast has "Remove" (a removal in today's plan, linked to
- * it); a condition has "Status" (a short list, current state ticked); a
- * planned item has "Plan" (do it today, defer it, cancel it).
+ * option chips: a cast has "Remove"; a result awaited has "Add result"; a
+ * condition has "Status"; a planned item has "Plan".
  */
 function OngoingCard({ items, onOpen, onAction }: {
     items: OngoingItem[];
@@ -180,6 +256,7 @@ function OngoingCard({ items, onOpen, onAction }: {
     onAction?: (item: OngoingItem, action: OngoingAction) => void;
 }) {
     const [menu, setMenu] = useState<{ item: OngoingItem; anchor: HTMLElement } | null>(null);
+    const [resultFor, setResultFor] = useState<{ item: OngoingItem; anchor: HTMLElement } | null>(null);
 
     const menuFor = (it: OngoingItem) => {
         if (it.kind === "condition") {
@@ -213,21 +290,66 @@ function OngoingCard({ items, onOpen, onAction }: {
         else if (key === "restore") onAction(it, { type: "restore" });
     };
 
+    const action = (it: OngoingItem) => {
+        if (!onAction) return null;
+        if (it.kind === "in-place") {
+            return it.today ? null : (
+                <button
+                    type="button"
+                    className="cs-lt-og-act"
+                    onClick={() => onAction(it, { type: "remove" })}
+                    title={`Add the removal of this ${it.title.toLowerCase()} to today's plan`}
+                >
+                    Remove
+                </button>
+            );
+        }
+        if (it.kind === "awaiting") {
+            return it.today ? null : (
+                <button
+                    type="button"
+                    className="cs-lt-og-act is-primary"
+                    aria-haspopup="dialog"
+                    aria-expanded={resultFor?.item.key === it.key}
+                    onClick={(e) => {
+                        const el = e.currentTarget;
+                        setResultFor((m) => (m?.item.key === it.key ? null : { item: it, anchor: el }));
+                    }}
+                >
+                    Add result
+                </button>
+            );
+        }
+        return (
+            <button
+                type="button"
+                className="cs-lt-og-act has-menu"
+                aria-haspopup="menu"
+                aria-expanded={menu?.item.key === it.key}
+                onClick={(e) => {
+                    const el = e.currentTarget;
+                    setMenu((m) => (m?.item.key === it.key ? null : { item: it, anchor: el }));
+                }}
+            >
+                {it.kind === "condition" ? "Status" : "Plan"}
+                <ChevronDown size={11} aria-hidden="true" />
+            </button>
+        );
+    };
+
     return (
         <div className="cs-lt-card is-ongoing">
-            <div className="cs-lt-last-head">
-                <div className="cs-lt-last-title-group">
-                    <span className="cs-lt-last-icon-box cs-lt-ongoing-icon">
-                        <Bandage size={14} aria-hidden="true" />
-                    </span>
-                    <span className="cs-lt-card-label cs-lt-last-title">Ongoing Care</span>
-                </div>
-                <span className="cs-lt-date-badge">{items.length}</span>
+            <div className="cs-lt-og-head">
+                <span className="cs-lt-og-eyebrow">
+                    <span className="cs-lt-og-live" aria-hidden="true" />
+                    Active now
+                </span>
+                <span className="cs-lt-og-heading">Ongoing care</span>
+                <span className="cs-lt-og-count">{items.length}</span>
             </div>
             <ul className="cs-lt-og-list">
                 {items.slice(0, 4).map((it) => {
                     const Icon = ONGOING_ICON[it.kind];
-                    const removing = it.kind === "in-place" && it.today;
                     return (
                         <li key={it.key} className={`cs-lt-og-row${it.today ? " is-today" : ""}`}>
                             <button
@@ -248,32 +370,7 @@ function OngoingCard({ items, onOpen, onAction }: {
                                     <span className="cs-lt-og-status">{it.status}</span>
                                 </span>
                             </button>
-                            {onAction && (it.kind === "in-place" ? (
-                                !removing && (
-                                    <button
-                                        type="button"
-                                        className="cs-lt-og-act"
-                                        onClick={() => onAction(it, { type: "remove" })}
-                                        title={`Add the removal of this ${it.title.toLowerCase()} to today's plan`}
-                                    >
-                                        Remove
-                                    </button>
-                                )
-                            ) : (
-                                <button
-                                    type="button"
-                                    className="cs-lt-og-act has-menu"
-                                    aria-haspopup="menu"
-                                    aria-expanded={menu?.item.key === it.key}
-                                    onClick={(e) => {
-                                        const el = e.currentTarget;
-                                        setMenu((m) => (m?.item.key === it.key ? null : { item: it, anchor: el }));
-                                    }}
-                                >
-                                    {it.kind === "condition" ? "Status" : "Plan"}
-                                    <ChevronDown size={11} aria-hidden="true" />
-                                </button>
-                            ))}
+                            {action(it)}
                         </li>
                     );
                 })}
@@ -291,6 +388,14 @@ function OngoingCard({ items, onOpen, onAction }: {
                     />
                 );
             })()}
+            {resultFor && onAction && (
+                <ResultPrompt
+                    anchor={resultFor.anchor}
+                    name={resultFor.item.title}
+                    onClose={() => setResultFor(null)}
+                    onSave={(text) => { onAction(resultFor.item, { type: "result", text }); setResultFor(null); }}
+                />
+            )}
         </div>
     );
 }
@@ -576,140 +681,79 @@ function CarePlanCard({
     );
 }
 
+const OUTCOME_ICON = {
+    awaited: FlaskConical, result: FlaskConical, done: Wrench, planned: CalendarClock, rx: Pill, exercise: Dumbbell,
+} as const;
+
 /**
- * The last visit, rendered with clear clinical hierarchy, dedicated SVG icons,
- * and distinct symptom/prescription tags.
+ * THE LAST VISIT — a record of the past, read at a glance (2026-09-26).
+ *
+ * Built from `visitGist`: a headline that says what the visit was ABOUT
+ * ("Wrist / hand pain - Right wrist"), one line of context (1 day · pain 7/10
+ * · fell on hand), what was found, and what came of it, with the state of
+ * each outcome on its right: "X-ray Right wrist · Result awaited" is the line
+ * a returning patient's visit turns on. A single complaint reads as a whole
+ * statement; nothing is padded with "No medicines".
+ *
+ * Plain white, a history glyph and the date: the past, where Ongoing Care
+ * beside it is the tinted "now".
  */
 function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number) => void }) {
-    const meds = visit.medicines.length;
-    const assessed = visit.assessments ?? [];
-    const done = (visit.procedures ?? []).filter((p) => p.status === "performed");
-    const exercises = visit.exercise_names.length;
-    // A visit that was about a fracture and a cast is not summarised as
-    // "No medicines": the Prescribed row is for visits where it is news.
-    const showRx = meds > 0 || exercises > 0 || (assessed.length === 0 && done.length === 0);
+    const g = visitGist(visit);
     return (
         <div className="cs-lt-card is-last">
-            <div className="cs-lt-last-head">
-                <div className="cs-lt-last-title-group">
-                    <span className="cs-lt-last-icon-box">
-                        <CalendarDays size={14} aria-hidden="true" />
-                    </span>
-                    <span className="cs-lt-card-label cs-lt-last-title">Last Visit</span>
-                </div>
-                <span className="cs-lt-date-badge">
-                    {formatVisitDate(visit.created_at)}
+            <div className="cs-lt-lv-head">
+                <span className="cs-lt-lv-eyebrow">
+                    <History size={11} aria-hidden="true" />
+                    Last visit
+                </span>
+                <span className="cs-lt-lv-when">
+                    {formatVisitDate(visit.created_at)} · {agoText(visit.created_at)}
                 </span>
             </div>
 
-            <div className="cs-lt-last-body">
-                {assessed.length > 0 && (
-                    <div className="cs-lt-last-row">
-                        <div className="cs-lt-last-field-label">
-                            <Stethoscope size={11} aria-hidden="true" />
-                            <span>Assessed</span>
-                        </div>
-                        <div className="cs-lt-chips-wrap">
-                            <span className="cs-lt-chip cs-lt-chip-dx" title={assessed.map((a) => a.text).join("; ")}>
-                                {assessed[0].short}
-                            </span>
-                            {assessed.length > 1 && (
-                                <span className="cs-lt-chip cs-lt-chip-more" title={assessed.slice(1).map((a) => a.text).join("; ")}>
-                                    +{assessed.length - 1}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                )}
+            <p className="cs-lt-lv-headline" title={g.headline}>{g.headline}</p>
+            {g.context.length > 0 && <p className="cs-lt-lv-context">{g.context.join(" · ")}</p>}
+            {g.found.length > 0 && (
+                <p className="cs-lt-lv-found">
+                    <span>Found</span> {g.found.slice(0, 3).join(" · ")}{g.found.length > 3 ? ` +${g.found.length - 3}` : ""}
+                </p>
+            )}
 
-                {done.length > 0 && (
-                    <div className="cs-lt-last-row">
-                        <div className="cs-lt-last-field-label">
-                            <Wrench size={11} aria-hidden="true" />
-                            <span>Done</span>
-                        </div>
-                        <div className="cs-lt-chips-wrap">
-                            <span className="cs-lt-chip cs-lt-chip-rx" title={done.map((p) => p.text).join("; ")}>
-                                {dashText(done[0].text).split(",")[0]}
-                            </span>
-                            {done.length > 1 && (
-                                <span className="cs-lt-chip cs-lt-chip-more" title={done.slice(1).map((p) => p.text).join("; ")}>
-                                    +{done.length - 1}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                )}
+            {g.outcomes.length > 0 && (
+                <ul className="cs-lt-lv-outcomes">
+                    {g.outcomes.slice(0, 4).map((o, i) => {
+                        const Icon = OUTCOME_ICON[o.kind];
+                        return (
+                            <li key={i} className={`is-${o.kind}`} title={o.title ?? o.text}>
+                                <Icon size={12} aria-hidden="true" />
+                                <span className="cs-lt-lv-otext">{o.text}</span>
+                                {o.status && <em>{o.status}</em>}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
 
-                {visit.symptoms.length > 0 && assessed.length === 0 && (
-                    <div className="cs-lt-last-row">
-                        <div className="cs-lt-last-field-label">
-                            <Stethoscope size={11} aria-hidden="true" />
-                            <span>Recorded</span>
-                        </div>
-                        <div className="cs-lt-chips-wrap">
-                            {visit.symptoms.slice(0, 2).map((s, idx) => (
-                                <span key={idx} className="cs-lt-chip cs-lt-chip-symptom" title={s}>
-                                    {s}
-                                </span>
-                            ))}
-                            {visit.symptoms.length > 2 && (
-                                <span className="cs-lt-chip cs-lt-chip-more" title={visit.symptoms.slice(2).join(", ")}>
-                                    +{visit.symptoms.length - 2}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {showRx && (
-                <div className="cs-lt-last-row">
-                    <div className="cs-lt-last-field-label">
-                        <Pill size={11} aria-hidden="true" />
-                        <span>Prescribed</span>
-                    </div>
-                    <div className="cs-lt-chips-wrap">
-                        {meds === 0 && exercises > 0 ? (
-                            <span className="cs-lt-chip cs-lt-chip-rx">
-                                {exercises} exercise{exercises === 1 ? "" : "s"}
-                            </span>
-                        ) : meds === 0 ? (
-                            <span className="cs-lt-chip cs-lt-chip-empty">No medicines</span>
-                        ) : meds === 1 ? (
-                            <span className="cs-lt-chip cs-lt-chip-rx" title={visit.medicines[0].name}>
-                                {visit.medicines[0].name}
-                            </span>
-                        ) : (
-                            <span className="cs-lt-chip cs-lt-chip-rx" title={visit.medicines.map((m) => m.name).join(", ")}>
-                                {meds} medicines
-                            </span>
-                        )}
-                    </div>
-                </div>
-                )}
-
+            <div className="cs-lt-lv-foot">
                 {visit.doctor_name && (
-                    <div className="cs-lt-last-row">
-                        <div className="cs-lt-last-field-label">
-                            <User size={11} aria-hidden="true" />
-                            <span>Seen by</span>
-                        </div>
-                        <span className="cs-lt-doc-name">{visit.doctor_name}</span>
-                    </div>
+                    <span className="cs-lt-lv-doc">
+                        <User size={11} aria-hidden="true" />
+                        {visit.doctor_name}
+                    </span>
                 )}
+                <button
+                    type="button"
+                    className="cs-lt-lv-open"
+                    onClick={(e) => {
+                        const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                        onOpen(r.left + r.width / 2);
+                    }}
+                >
+                    Open visit
+                    <ArrowUpRight size={12} aria-hidden="true" />
+                </button>
             </div>
-
-            <button
-                type="button"
-                className="cs-lt-last-open-btn"
-                onClick={(e) => {
-                    const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                    onOpen(r.left + r.width / 2);
-                }}
-            >
-                <span>Open visit summary</span>
-                <ArrowUpRight size={12} aria-hidden="true" />
-            </button>
         </div>
     );
 }
@@ -737,6 +781,7 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
 export function LongitudinalBand({
     summary, pastVisits, loading, carePlan, sessionNumbers,
     onOpenVisit, onOpenTrend, onEditCarePlan, onStartCarePlan, ongoingLocal = EMPTY_LOCAL, onOngoingAction,
+    onContinue, continued = false,
 }: {
     summary: TrendSummary;
     /** newest first, as `fetchPatientVisits` returns them */
@@ -761,6 +806,11 @@ export function LongitudinalBand({
     ongoingLocal?: OngoingLocal;
     /** remove a cast, update a fracture's status, do / defer / cancel a plan */
     onOngoingAction?: (item: OngoingItem, action: OngoingAction) => void;
+    /** follow-up: bring the last visit's complaints and findings (with their
+     *  places) onto today's sheet, marked as carried */
+    onContinue?: () => void;
+    /** whether that has been done this visit — the button then says so */
+    continued?: boolean;
 }) {
     const [timelineOpen, setTimelineOpen] = useState(false);
     // Was open by default — the spec's "before typing anything" promise meant
@@ -778,7 +828,17 @@ export function LongitudinalBand({
     // The whole component, gone, for a patient with no history. See the header.
     if (pastVisits.length === 0) return null;
 
-    const lastVisit = pastVisits[0];
+    // A result recorded during this consult is part of the last visit's
+    // story at once — its order no longer reads "Result awaited".
+    const lastVisit: RealVisit = ongoingLocal.results.size && pastVisits[0].orders?.length
+        ? {
+            ...pastVisits[0],
+            orders: pastVisits[0].orders.map((o) => {
+                const r = ongoingLocal.results.get(o.id);
+                return r ? { ...o, resultText: r, resultAt: new Date().toISOString() } : o;
+            }),
+        }
+        : pastVisits[0];
     // The consult in progress is the next session of the course.
     const currentSession = sessionNumbers.size + 1;
 
@@ -796,8 +856,18 @@ export function LongitudinalBand({
         gapText = `First visit in ${months} ${months === 1 ? "month" : "months"}`;
     }
 
+    // ── A follow-up, not a new visit ─────────────────────────────────────
+    // Back within a month with something still open — a result awaited, a
+    // cast on, a plan due, an assessment in progress: in a doctor's mind this
+    // is the SAME story continuing, whatever the database calls it. The band
+    // says so in its title and takes on its own accent, so the doctor knows
+    // before reading a word that they are picking up a thread.
+    const followUp = gap !== null && gap <= 30 && ongoing.length > 0;
+    const thread = ongoing.find((o) => o.kind === "condition");
+    const episode = thread ? `${thread.title}${thread.site ? ` - ${thread.site}` : ""}` : visitGist(lastVisit).headline;
+
     return (
-        <section className={`cs-lt${collapsed ? " is-collapsed" : ""}`} aria-label="Longitudinal summary">
+        <section className={`cs-lt${collapsed ? " is-collapsed" : ""}${followUp ? " is-followup" : ""}`} aria-label="Longitudinal summary">
             <header className="cs-lt-head">
                 {/* The whole collapse control. A button wrapping the title
                     rather than a separate icon: the title IS what you click,
@@ -813,15 +883,24 @@ export function LongitudinalBand({
                         <ChevronDown size={13} className={collapsed ? "" : "is-open"} aria-hidden="true" />
                     </span>
                     <span className="cs-lt-title-wrap">
-                        <Activity size={14} className="cs-lt-title-icon" aria-hidden="true" />
-                        <h2 className="cs-lt-title">Longitudinal Summary</h2>
+                        {followUp
+                            ? <CornerDownRight size={14} className="cs-lt-title-icon" aria-hidden="true" />
+                            : <Activity size={14} className="cs-lt-title-icon" aria-hidden="true" />}
+                        <h2 className="cs-lt-title">{followUp ? "Follow-up" : "Longitudinal Summary"}</h2>
                     </span>
                 </button>
 
-                <span className="cs-lt-badge cs-lt-badge-visits">
+                {followUp && (
+                    <span className="cs-lt-fu-episode" title={episode}>
+                        <span className="cs-lt-fu-name">{episode}</span>
+                        <span className="cs-lt-fu-from">from {formatVisitDate(lastVisit.created_at)} · {agoText(lastVisit.created_at)}</span>
+                    </span>
+                )}
+
+                {!followUp && <span className="cs-lt-badge cs-lt-badge-visits">
                     <Clock size={11} aria-hidden="true" />
                     <span>{summary.visitCount} previous visit{summary.visitCount === 1 ? "" : "s"}</span>
-                </span>
+                </span>}
 
                 {/* The spec's "long absence" case, said out loud rather than
                     left for the doctor to work out from the dates. Old numbers
@@ -857,6 +936,19 @@ export function LongitudinalBand({
                 })()}
 
                 <div className="cs-lt-head-spacer" />
+
+                {followUp && onContinue && (
+                    <button
+                        type="button"
+                        className={`cs-lt-fu-continue${continued ? " is-done" : ""}`}
+                        onClick={onContinue}
+                        disabled={continued}
+                        title="Bring the last visit's complaints and findings, with their places, onto today's case sheet"
+                    >
+                        {continued ? <Check size={12} aria-hidden="true" /> : <CornerDownRight size={12} aria-hidden="true" />}
+                        <span>{continued ? "Carried forward" : "Continue"}</span>
+                    </button>
+                )}
 
                 {!carePlan && (
                     <button type="button" className="cs-lt-plan-start" onClick={onStartCarePlan}>
@@ -910,7 +1002,7 @@ export function LongitudinalBand({
                         {/* A returning patient with nothing trendable yet. Rendered as a
                             deliberate, clean clinical placeholder card rather than an
                             unformatted floating line of text. */}
-                        {summary.series.length === 0 && (
+                        {summary.series.length === 0 && ongoing.length === 0 && (
                             <div className="cs-lt-card is-empty-trend">
                                 <div className="cs-lt-empty-trend-icon">
                                     <TrendingUp size={16} aria-hidden="true" />

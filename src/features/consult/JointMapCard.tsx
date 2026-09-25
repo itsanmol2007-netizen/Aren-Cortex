@@ -27,8 +27,10 @@
 // and inventing that distinction for physiotherapy alone, while every other
 // specialty's chips stay side-agnostic, would be a new axis this one screen
 // invented rather than a rule the product already has. So a chip toggle
-// carries no side. The "Mark site" action below the chips still records
-// which side was clicked — into the same `visit_body_sites` row the
+// carries no side. The site itself is still recorded, once, with its side
+// (2026-09-26: automatically, the moment anything is recorded there; the
+// old "Mark site" button inserted a duplicate row) — into the same
+// `visit_body_sites` row the
 // dermatology card writes, now with physio's joints added to the region
 // list (2026-08-17 migration) — because a physio's OWN note, and a future
 // reader of the chart, still needs to know it was the right knee. That is
@@ -54,7 +56,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
-import { listBodySites, addBodySite, deleteBodySite } from "../../lib/db/bodySites";
+import { listBodySites, addBodySite, deleteBodySite, updateBodySiteNote } from "../../lib/db/bodySites";
 import type { BodySiteFinding } from "../../lib/db/bodySites";
 import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/body/anatomy";
 import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
@@ -163,7 +165,6 @@ export function JointMapCard({
     }, [visitId]);
 
     useEffect(() => { setSel(null); }, [aspect]);
-    useEffect(() => { setNote(""); }, [sel?.region, sel?.side]);
 
     const byLabel = useMemo(() => {
         const m = new Map<string, Observable>();
@@ -244,64 +245,81 @@ export function JointMapCard({
         [items, aspect]
     );
 
-    const onAdd = async () => {
-        if (!visitId || !sel) return;
-        setSaving(true);
-        setError(null);
+    /** This zone's one row in `visit_body_sites`, if it is marked yet. */
+    const siteRow = sel
+        ? items.find((f) => f.region === sel.region && f.side === sel.side && f.aspect === aspect) ?? null
+        : null;
+
+    /**
+     * Mark the selected site — once. Every path that records something AT a
+     * place comes through here (an examination reading, a finding, a note),
+     * so a site is never marked twice: the old "Mark site" button inserted a
+     * second row for a joint that recording the pain score had already
+     * marked. The ref is checked and set synchronously because `items` only
+     * updates once an insert resolves, and two quick readings would otherwise
+     * both see an unmarked site.
+     */
+    const ensureSite = async (note?: string | null): Promise<BodySiteFinding | null> => {
+        if (!visitId || !sel || disabled) return null;
+        if (siteRow) {
+            if (note === undefined || (note || null) === (siteRow.note || null)) return siteRow;
+            const updated = await updateBodySiteNote(siteRow.id, note || null);
+            setItems((curr) => curr.map((i) => (i.id === updated.id ? updated : i)));
+            return updated;
+        }
+        const slot = `${sel.region}|${sel.side ?? "-"}|${aspect}`;
+        if (autoMarking.current.has(slot)) return null;
+        autoMarking.current.add(slot);
         try {
             const site = await addBodySite({
                 visitId, region: sel.region, aspect, side: sel.side,
-                note: note.trim() || undefined, doctorId,
+                note: note || undefined, doctorId,
             });
             setItems((curr) => [site, ...curr]);
-            setNote("");
+            return site;
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not save site");
+            // Cleared on failure, so a transient network error does not stop
+            // this joint from ever being marked.
+            autoMarking.current.delete(slot);
+            throw err;
+        }
+    };
+
+    // The note belongs to the site row: shown when the zone opens, saved on
+    // Enter or when the field is left. No button — there is nothing else to do.
+    useEffect(() => { setNote(siteRow?.note ?? ""); }, [siteRow?.id, siteRow?.note, sel?.region, sel?.side]);
+    const commitNote = async () => {
+        const next = note.trim();
+        if (next === (siteRow?.note ?? "") || (!siteRow && !next)) return;
+        setSaving(true);
+        setError(null);
+        try {
+            await ensureSite(next);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not save the note");
         } finally {
             setSaving(false);
         }
     };
 
     /**
-     * Recording an examination at a joint IS marking that joint.
-     *
-     * Without this, the flow the brief describes — open the map, click the
-     * right knee, enter flexion and strength, close — leaves `visit_body_sites`
-     * empty, so the consultation's summary strip reports nothing examined
-     * while three readings sit in the database against a site nobody declared.
-     * "Mark site" stays for the case it was built for (a site worth naming
-     * with a note and no measurements), but it is no longer the only way in,
-     * because making the doctor press it after they have already typed the
-     * numbers is asking them to tell the software something it just watched
-     * them do.
+     * Recording something at a joint IS marking that joint — an examination
+     * reading, or a finding recorded here. Without this, the flow the brief
+     * describes (open the map, click the right knee, enter flexion and
+     * strength, close) left `visit_body_sites` empty, so the summary strip
+     * reported nothing examined while readings sat against an undeclared site.
      */
+    const foundHere = !!selSite && caseSheetEntries.some((e) => (e.sites ?? []).some((st) => sameSite(st, selSite)));
     useEffect(() => {
-        if (!examination || !sel || !visitId || disabled) return;
-        if (!REGION_BY_KEY.has(sel.region)) return;
-        const already = items.some(
-            (f) => f.region === sel.region && f.side === sel.side && f.aspect === aspect
-        );
-        if (already) return;
-        const c = examCounts(examination, sel.region, sel.side);
-        if (c.rom === 0 && c.strength === 0 && c.tests === 0 && c.pain === null) return;
-
-        // `items` only updates once the insert RESOLVES, so two readings typed
-        // in quick succession would both see an unmarked site and both insert
-        // one. The ref is checked and set synchronously, which the state cannot
-        // be — this is the same reason `saving` above is not enough here.
-        const slot = `${sel.region}|${sel.side ?? "-"}|${aspect}`;
-        if (autoMarking.current.has(slot)) return;
-        autoMarking.current.add(slot);
-
-        addBodySite({ visitId, region: sel.region, aspect, side: sel.side, doctorId })
-            .then((site) => setItems((curr) => [site, ...curr]))
-            // Left in the set on success (the site is marked, nothing more to
-            // do) and cleared on failure, so a transient network error does not
-            // permanently stop this joint from ever being marked.
-            .catch(() => { autoMarking.current.delete(slot); });
+        if (!sel || !visitId || disabled || siteRow) return;
+        const c = examination && REGION_BY_KEY.has(sel.region) ? examCounts(examination, sel.region, sel.side) : null;
+        const examined = !!c && (c.rom > 0 || c.strength > 0 || c.tests > 0 || c.pain !== null);
+        if (!examined && !foundHere) return;
+        ensureSite().catch(() => {});
         // `examination.numbers` / `.texts` are the identities that change when a
         // reading lands — the hook itself is stable across those writes.
-    }, [examination?.numbers, examination?.texts, sel, visitId, aspect, items, disabled, doctorId, examination]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [examination?.numbers, examination?.texts, sel, visitId, aspect, siteRow, disabled, foundHere]);
 
     const onDelete = async (f: BodySiteFinding) => {
         setItems((curr) => curr.filter((i) => i.id !== f.id));
@@ -453,11 +471,10 @@ export function JointMapCard({
                                         placeholder={`Note for the ${(selSite ? clinicalSiteLabel(selSite) : "site").toLowerCase()} (optional)`}
                                         value={note}
                                         onChange={(e) => setNote(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
+                                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+                                        onBlur={commitNote}
                                     />
-                                    <button type="button" className="cs-attach-tagsave" disabled={saving} onClick={onAdd}>
-                                        {saving ? <Loader2 size={13} className="cs-spin" /> : "Mark site"}
-                                    </button>
+                                    {saving && <Loader2 size={13} className="cs-spin cs-jmap-note-busy" aria-label="Saving" />}
                                 </div>
                             </div>
                         ) : (

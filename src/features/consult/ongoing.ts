@@ -27,13 +27,13 @@
 // never as "active" or "healing": the software does not know which.
 // ---------------------------------------------------------------------------
 
-import type { RealVisit, VisitProcedure } from "../../lib/db";
+import type { RealVisit, VisitOrder, VisitProcedure } from "../../lib/db";
 import { clinicalSiteLabel, siteKey, type SiteRef } from "../../lib/body/clinicalSite";
 import {
     CLOSED_STATUSES, STATUS_LABEL, type ConditionStatus, type PlanStatus,
 } from "../../lib/db/clinicalState";
 
-export type OngoingKind = "in-place" | "due" | "condition";
+export type OngoingKind = "in-place" | "due" | "awaiting" | "condition";
 
 export interface OngoingItem {
     key: string;
@@ -59,6 +59,8 @@ export interface OngoingItem {
     state?: ConditionStatus | null;
     /** in place / due: the procedure row */
     procedure?: VisitProcedure;
+    /** awaiting: the investigation order */
+    order?: VisitOrder;
 }
 
 /** What has been done about these during the consult in progress. */
@@ -71,6 +73,8 @@ export interface OngoingLocal {
     removedToday: Set<string>;
     /** planned ids something in today's plan carries out */
     fulfilledToday: Set<string>;
+    /** order id → result recorded this visit */
+    results: Map<string, string>;
 }
 
 /** What can be done to an item from the Ongoing Care card. */
@@ -80,10 +84,11 @@ export type OngoingAction =
     | { type: "defer"; days: number }
     | { type: "cancel" }
     | { type: "restore" }
-    | { type: "status"; status: ConditionStatus };
+    | { type: "status"; status: ConditionStatus }
+    | { type: "result"; text: string };
 
 export const EMPTY_LOCAL: OngoingLocal = {
-    conditions: new Map(), plans: new Map(), removedToday: new Set(), fulfilledToday: new Set(),
+    conditions: new Map(), plans: new Map(), removedToday: new Set(), fulfilledToday: new Set(), results: new Map(),
 };
 
 /** Things that stay on the patient until someone takes them off. */
@@ -91,6 +96,9 @@ const IN_PLACE_FAMILIES = new Set(["cast", "splint", "strapping", "closure"]);
 
 /** Past this, an unremoved cast is a record nobody closed, not a cast. */
 const IN_PLACE_MAX_DAYS = 120;
+/** An investigation still without a result, this long after it was ordered, is
+ *  a result nobody will enter, not one still coming. */
+const AWAITING_MAX_DAYS = 30;
 /** How long an assessment is shown as current without a newer visit restating it. */
 const CONDITION_MAX_DAYS = 120;
 
@@ -202,6 +210,31 @@ export function ongoingFrom(
 
     // Newest visit first (as loaded): the first assessment seen at a place
     // is the current one for that place.
+    // Investigations ordered at an earlier visit whose result is not in yet —
+    // the thread a patient comes back with ("here is my X-ray").
+    const awaiting: OngoingItem[] = [];
+    for (const v of pastVisits) {
+        const days = daysBetween(v.created_at, now);
+        if (days > AWAITING_MAX_DAYS) continue;
+        for (const o of v.orders ?? []) {
+            const mine = local.results.get(o.id);
+            if (o.resultText && !mine) continue;
+            awaiting.push({
+                key: `rx:${o.id}`,
+                kind: "awaiting",
+                title: o.name,
+                site: null,
+                siteRef: null,
+                text: mine ? `${o.name}: ${mine}` : o.name,
+                status: mine ? `Result: ${mine}` : `Ordered ${shortDate(v.created_at)} · result awaited`,
+                urgent: false,
+                today: !!mine,
+                visitId: v.id,
+                order: o,
+            });
+        }
+    }
+
     const conditions: OngoingItem[] = [];
     const seen = new Set<string>();
     for (const v of pastVisits) {
@@ -244,6 +277,7 @@ export function ongoingFrom(
     // then the assessment it is all for.
     return [
         ...due.filter((d) => d.urgent),
+        ...awaiting,
         ...inPlace,
         ...due.filter((d) => !d.urgent),
         ...conditions,

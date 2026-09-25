@@ -712,3 +712,13 @@
 .pv-card.is-light .pv-line.is-dx { border-left-color: #7c3aed; }
 .pv-card.is-light .pv-status.is-done { background: #ecfdf5; color: #0f766e; }
 .pv-card.is-light .pv-status.is-planned { background: #fffbeb; color: #b45309; }
+
+/* An order and its result, on one line. */
+.pv-order > span { display: flex; flex-direction: column; gap: 3px; }
+.pv-result {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+.pv-card.is-light .pv-result { color: #475569; }

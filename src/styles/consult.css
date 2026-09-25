@@ -10906,3 +10906,346 @@ body.cs-locked-shell {
 .cs-lt-menu-item.is-on { color: var(--cs-blue); font-weight: 650; }
 .cs-lt-menu-item.is-danger { color: #be123c; }
 .cs-lt-menu-check { display: grid; flex: none; place-items: center; width: 14px; color: var(--cs-blue); }
+
+/* ── THE BAND, NOW vs THEN (2026-09-26) ───────────────────────────────────
+   Two kinds of card, told apart before a word is read:
+     Ongoing care  the NOW — teal-tinted surface, a live accent edge, an
+                   "Active now" eyebrow with a pulse
+     Last visit    the THEN — plain white, a grey history eyebrow and the
+                   date, a record rather than a state
+   And the band itself turns into a Follow-up when the patient is back with
+   a thread still open. */
+
+.cs-lt-card.is-ongoing {
+    position: relative;
+    flex: 1 1 340px;
+    max-width: 480px;
+    overflow: hidden;
+    border-color: rgba(15, 118, 110, 0.28);
+    background: linear-gradient(180deg, #effaf6 0%, #f7fcfa 42%, #ffffff 100%);
+    padding-left: 17px;
+    box-shadow: 0 1px 3px rgba(15, 118, 110, 0.08), 0 1px 2px rgba(16, 28, 46, 0.03);
+}
+.cs-lt-card.is-ongoing::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: linear-gradient(180deg, #14b8a6 0%, var(--cs-teal) 100%);
+}
+.cs-lt-og-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    row-gap: 1px;
+    margin-bottom: 8px;
+}
+.cs-lt-og-eyebrow {
+    display: inline-flex;
+    grid-column: 1;
+    align-items: center;
+    gap: 6px;
+    color: var(--cs-teal);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-lt-og-live {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #14b8a6;
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45);
+    animation: cs-lt-live 2.2s ease-out infinite;
+}
+@keyframes cs-lt-live {
+    0% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45); }
+    70% { box-shadow: 0 0 0 6px rgba(20, 184, 166, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .cs-lt-og-live { animation: none; } }
+.cs-lt-og-heading {
+    grid-column: 1;
+    color: var(--cs-ink);
+    font-size: 14px;
+    font-weight: 750;
+}
+.cs-lt-og-count {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: grid;
+    place-items: center;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--cs-teal);
+    padding: 0 7px;
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 800;
+}
+.cs-lt-card.is-ongoing .cs-lt-og-item:hover { background: rgba(15, 118, 110, 0.06); }
+.cs-lt-og-item.is-awaiting .cs-lt-og-mark { background: #eff6ff; color: #2563eb; }
+.cs-lt-og-item.is-awaiting .cs-lt-og-status { color: #1d4ed8; }
+.cs-lt-og-act.is-primary {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+.cs-lt-og-act.is-primary:hover { background: #1d4ed8; color: #fff; }
+
+/* Last visit — the record. */
+.cs-lt-card.is-last {
+    flex: 1 1 340px;
+    max-width: 520px;
+    gap: 0;
+}
+.cs-lt-lv-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.cs-lt-lv-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-lt-lv-when {
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+.cs-lt-lv-headline {
+    margin: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 15.5px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-lv-context {
+    margin: 2px 0 0;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.4;
+}
+.cs-lt-lv-found {
+    margin: 5px 0 0;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.4;
+}
+.cs-lt-lv-found > span {
+    margin-right: 4px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-lt-lv-outcomes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 9px 0 0;
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    padding: 7px 0 0;
+    list-style: none;
+}
+.cs-lt-lv-outcomes > li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 3px 0;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.cs-lt-lv-outcomes > li > svg { flex: none; color: var(--cs-faint); }
+.cs-lt-lv-otext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-lt-lv-outcomes em {
+    flex: none;
+    border-radius: 999px;
+    padding: 1px 8px;
+    background: rgba(65, 80, 107, 0.07);
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 750;
+}
+.cs-lt-lv-outcomes > li.is-awaited > svg { color: #2563eb; }
+.cs-lt-lv-outcomes > li.is-awaited em { background: #fffbeb; color: #b45309; }
+.cs-lt-lv-outcomes > li.is-result > svg { color: #2563eb; }
+.cs-lt-lv-outcomes > li.is-result em,
+.cs-lt-lv-outcomes > li.is-done em { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-lt-lv-outcomes > li.is-done > svg { color: var(--cs-teal); }
+.cs-lt-lv-outcomes > li.is-planned > svg,
+.cs-lt-lv-outcomes > li.is-planned em { color: #b45309; }
+.cs-lt-lv-outcomes > li.is-planned em { background: #fffbeb; }
+.cs-lt-lv-outcomes > li.is-rx > svg,
+.cs-lt-lv-outcomes > li.is-exercise > svg { color: #0f766e; }
+.cs-lt-lv-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 9px;
+}
+.cs-lt-lv-doc {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+.cs-lt-lv-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    padding: 4px 7px;
+    color: var(--cs-blue);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-lt-lv-open:hover { background: var(--cs-blue-soft); }
+
+/* Follow-up: the band says "this is the same story continuing". */
+.cs-lt.is-followup {
+    border-color: rgba(15, 118, 110, 0.3);
+    background: linear-gradient(90deg, rgba(236, 253, 245, 0.85) 0%, #ffffff 38%);
+    box-shadow: inset 4px 0 0 var(--cs-teal);
+}
+.cs-lt.is-followup .cs-lt-title,
+.cs-lt.is-followup .cs-lt-title-icon { color: var(--cs-teal); }
+.cs-lt.is-followup .cs-lt-collapse-chevron-wrap { background: rgba(15, 118, 110, 0.1); color: var(--cs-teal); }
+.cs-lt-fu-episode {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+.cs-lt-fu-name {
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-fu-from {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cs-lt-fu-continue {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--cs-teal);
+    border-radius: 999px;
+    background: var(--cs-teal);
+    padding: 3px 12px;
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.14s ease;
+}
+.cs-lt-fu-continue:hover { background: #0b5f58; }
+.cs-lt-fu-continue.is-done {
+    border-color: rgba(15, 118, 110, 0.3);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+    cursor: default;
+}
+
+/* "What did it show?" */
+.cs-lt-result {
+    position: fixed;
+    z-index: 1300;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 6px 10px 10px;
+    box-shadow: 0 14px 34px rgba(16, 28, 46, 0.18);
+}
+.cs-lt-result .cs-lt-menu-head { padding-left: 0; padding-right: 0; }
+.cs-lt-result-input,
+.cs-lt-result-input:hover,
+.cs-lt-result-input:focus {
+    width: 100%;
+    min-height: 70px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 9px;
+    background: #fff;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    resize: vertical;
+    box-shadow: none;
+}
+.cs-lt-result-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); outline: none; }
+.cs-lt-result-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.cs-lt-result-cancel,
+.cs-lt-result-save {
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-lt-result-cancel { background: none; color: var(--cs-faint); }
+.cs-lt-result-cancel:hover { background: rgba(0, 0, 0, 0.05); color: var(--cs-ink); }
+.cs-lt-result-save { background: #2563eb; color: #fff; }
+.cs-lt-result-save:disabled { opacity: 0.45; cursor: default; }
+
+/* Header priorities: the title and the episode never wrap or clip; the
+   ongoing pill is what gives way, truncating its status first. */
+.cs-lt-collapse,
+.cs-lt-plan-start,
+.cs-lt-fu-continue,
+.cs-lt-badge-visits { flex: none; white-space: nowrap; }
+.cs-lt-title { white-space: nowrap; }
+.cs-lt-fu-episode { flex: 0 1 auto; min-width: 0; }
+.cs-lt-fu-name { min-width: 0; }
+.cs-lt-ongoing { flex: 0 1 auto; min-width: 140px; }
+.cs-lt-ongoing-title { flex: 0 1 auto; }
+.cs-lt-ongoing-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cs-lt-ongoing-more { flex: none; }
+
+/* Each card its own height: a single ongoing item is a short card, not a
+   tall one padded with white. */
+.cs-lt-row { align-items: flex-start; }
+/* The episode is what the follow-up is ABOUT: it keeps its width. */
+.cs-lt-fu-episode { flex: 0 0 auto; max-width: 42%; }
+.cs-lt-ongoing { min-width: 110px; }

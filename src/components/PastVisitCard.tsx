@@ -324,11 +324,29 @@ export function PastVisitCard({
                             <p className="pv-section-label pv-label-icon">
                                 <FlaskConical size={10} /> Investigations ordered
                             </p>
-                            <div className="pv-chips">
-                                {visit.tests.map((t) => (
-                                    <span key={t} className="pv-chip">{t}</span>
-                                ))}
-                            </div>
+                            {visit.orders?.length ? (
+                                // Each order with its outcome: the result once
+                                // one is recorded, "Result awaited" until then.
+                                <div className="pv-rows">
+                                    {visit.orders.map((o) => (
+                                        <div key={o.id} className="pv-line pv-order">
+                                            <span>
+                                                {o.name}
+                                                {o.resultText && <small className="pv-result">{o.resultText}</small>}
+                                            </span>
+                                            <em className={`pv-status ${o.resultText ? "is-done" : "is-planned"}`}>
+                                                {o.resultText ? "Result in" : "Result awaited"}
+                                            </em>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="pv-chips">
+                                    {visit.tests.map((t) => (
+                                        <span key={t} className="pv-chip">{t}</span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 

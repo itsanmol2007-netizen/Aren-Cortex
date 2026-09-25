@@ -77,3 +77,17 @@ export async function latestStates(assessmentIds: string[], interventionIds: str
     for (const r of (i.data ?? []) as any[]) byIntervention.set(r.intervention_id, { status: r.status, dueDate: r.due_date, at: r.created_at });
     return { byAssessment, byIntervention };
 }
+
+/**
+ * An investigation's result, recorded ON its order ("X-ray right wrist:
+ * displaced distal radius fracture…") from the visit that read it. The order
+ * belongs to an earlier visit; the result and the reading visit go on the
+ * same row, so the order and its outcome are never two records.
+ */
+export async function recordInvestigationResult(orderId: string, text: string, visitId: string | null): Promise<void> {
+    const { error } = await supabase
+        .from("diagnostic_orders")
+        .update({ result_text: text, result_at: new Date().toISOString(), result_visit_id: visitId, status: "completed" })
+        .eq("id", orderId);
+    if (error) throw new Error(`diagnostic_orders result: ${error.message}`);
+}
