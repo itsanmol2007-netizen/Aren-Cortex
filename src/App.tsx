@@ -1665,12 +1665,15 @@ function App() {
    * purpose (`knee`, `shoulder`, `neck`, `torso_lower`…) so this is a filter
    * rather than a second mapping table to keep in step.
    */
-  const [markedExam, setMarkedExam] = useState<{ regions: string[]; sides: Map<string, "left" | "right" | null> }>(
-    { regions: [], sides: new Map() }
-  );
+  const [markedExam, setMarkedExam] = useState<{
+    regions: string[];
+    sides: Map<string, "left" | "right" | null>;
+    /** every marked site, each side its own (a left and a right wrist are two) */
+    sites: { region: string; side: "left" | "right" | null }[];
+  }>({ regions: [], sides: new Map(), sites: [] });
   useEffect(() => {
     if (!visitId || !specialty.charts.includes("joints")) {
-      setMarkedExam({ regions: [], sides: new Map() });
+      setMarkedExam({ regions: [], sides: new Map(), sites: [] });
       return;
     }
     let cancelled = false;
@@ -1679,6 +1682,11 @@ function App() {
         if (cancelled) return;
         const regions: string[] = [];
         const sides = new Map<string, "left" | "right" | null>();
+        const all: { region: string; side: "left" | "right" | null }[] = [];
+        // Oldest first, so the summary reads in the order sites were marked.
+        for (const s of [...sites].reverse()) {
+          if (!all.some((x) => x.region === s.region && x.side === s.side)) all.push({ region: s.region, side: s.side });
+        }
         for (const s of sites) {
           if (!REGION_BY_KEY.has(s.region)) continue;
           if (!regions.includes(s.region)) regions.push(s.region);
@@ -1686,9 +1694,9 @@ function App() {
           // a second site, and the card's own switcher is how you reach it.
           if (!sides.has(s.region)) sides.set(s.region, s.side);
         }
-        setMarkedExam({ regions, sides });
+        setMarkedExam({ regions, sides, sites: all });
       })
-      .catch(() => { if (!cancelled) setMarkedExam({ regions: [], sides: new Map() }); });
+      .catch(() => { if (!cancelled) setMarkedExam({ regions: [], sides: new Map(), sites: [] }); });
     return () => { cancelled = true; };
   }, [visitId, openChart, specialty.charts]);
 
@@ -2531,8 +2539,7 @@ function App() {
                   onAddGoal={visitStory.addGoal}
                   onRetireGoal={visitStory.retireGoal}
                   examination={examination}
-                  markedRegions={markedExam.regions}
-                  markedSides={markedExam.sides}
+                  markedSites={markedExam.sites}
                   onOpenBodyMap={() => setOpenChart("joints")}
                 />
               ) : usesCaseSheet ? (

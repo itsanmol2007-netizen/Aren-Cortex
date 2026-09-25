@@ -109,8 +109,8 @@ interface Props {
 
     /** What was examined, and where. Opened from the summary strip. */
     examination: ExaminationHook;
-    markedRegions: string[];
-    markedSides: Map<string, MeasureSide | null>;
+    /** every marked body-map site, each side its own */
+    markedSites: { region: string; side: MeasureSide | null }[];
     onOpenBodyMap: () => void;
 }
 
@@ -123,7 +123,7 @@ export function PhysioInputs({
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
     story, onStoryChange, goals, lastGoalScores, todayGoalScores,
     onGoalScoreChange, onAddGoal, onRetireGoal,
-    examination, markedRegions, markedSides, onOpenBodyMap,
+    examination, markedSites, onOpenBodyMap,
 }: Props) {
     // Identical to GeneralOpdInputs — see that file's own comment for why
     // this lives here rather than inside CaseSheet or ClinicalCommandBar.
@@ -220,8 +220,8 @@ export function PhysioInputs({
                     the joint it was measured on. */}
                 <ExamSummaryStrip
                     exam={examination}
-                    markedRegions={markedRegions}
-                    markedSides={markedSides}
+                    markedSites={markedSites}
+                    entries={caseSheetEntries}
                     onOpen={onOpenBodyMap}
                     disabled={disabled}
                 />

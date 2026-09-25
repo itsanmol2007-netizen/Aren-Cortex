@@ -14,7 +14,7 @@
 // suppresses `SpecialtyExamCard` for this profile so one modal does not get
 // two buttons on one screen.
 //
-// ── Why it renders per SITE and not per reading
+// ── Why it renders per SITE and not per reading (one line each)
 //
 // Brief §6: a patient can have a right knee and a left shoulder at once, and
 // those are two examinations, not one. Every reading underneath carries its
@@ -31,26 +31,37 @@
 // ---------------------------------------------------------------------------
 
 import { ChevronRight, PersonStanding } from "lucide-react";
-import { REGION_BY_KEY } from "./examination";
+import { REGION_BY_KEY, regionPainKey } from "./examination";
 import { examCounts } from "./ExaminationCard";
+import { NV_CHECKS, NV_REGIONS, nvKey } from "./NeurovascularCheck";
+import type { CaseSheetEntry } from "./CaseSheet";
 import type { ExaminationHook } from "../../hooks/useExamination";
 import type { MeasureSide } from "../../lib/db/examination";
+import { clinicalSiteLabel, sameSite, siteFromRegionKey, siteKey, type SiteRef } from "../../lib/body/clinicalSite";
 
 interface Props {
     exam: ExaminationHook;
-    /** regions the body map has marked, in the order they were marked */
-    markedRegions: string[];
-    /** which side each marked region was on, when it was paired */
-    markedSides: Map<string, MeasureSide | null>;
+    /** every site the body map has marked, oldest first; a left and a right
+     *  wrist are two sites, and a thigh is a site even with no range grid */
+    markedSites: { region: string; side: MeasureSide | null }[];
+    /** the chart, for what was recorded AT each site */
+    entries: CaseSheetEntry[];
     onOpen: () => void;
     disabled?: boolean;
 }
 
-/** "Right knee" / "Lumbar spine" — the side is part of the name, never beside
- *  it. Exported for App.tsx's intervention-accept pre-fill (the body map's
- *  most recently marked site becomes an intervention's starting `site`
- *  value) — same catalogue, same format, so a site named here and a site
- *  named there are never two different strings for one place. */
+interface SiteLine {
+    key: string;
+    name: string;
+    pain: number | null;
+    /** "Swelling", "Tenderness" — the chart's findings and complaints here */
+    recorded: string[];
+    /** "2 ROM · 1 test" */
+    counts: string[];
+    /** neurovascular: null (not checked), "intact", "compromised" */
+    nv: "intact" | "compromised" | null;
+}
+
 export function siteName(regionKey: string, side: MeasureSide | null): string {
     const region = REGION_BY_KEY.get(regionKey);
     if (!region) return regionKey;
@@ -59,9 +70,39 @@ export function siteName(regionKey: string, side: MeasureSide | null): string {
 }
 
 export function ExamSummaryStrip({
-    exam, markedRegions, markedSides, onOpen, disabled = false,
+    exam, markedSites, entries, onOpen, disabled = false,
 }: Props) {
-    const sites = markedRegions.filter((r) => REGION_BY_KEY.has(r));
+    // Every site, once: what the map marked, then any place a finding was
+    // recorded at from the command bar without the map ever being opened.
+    const refs: { ref: SiteRef; region: string; side: MeasureSide | null }[] = [];
+    const add = (ref: SiteRef | null, region: string, side: MeasureSide | null) => {
+        if (!ref || refs.some((r) => sameSite(r.ref, ref))) return;
+        refs.push({ ref, region, side });
+    };
+    for (const m of markedSites) add(siteFromRegionKey(m.region, m.side), m.region, m.side);
+    for (const e of entries) for (const s of e.sites ?? []) {
+        const side = s.side === "left" || s.side === "right" ? s.side : null;
+        add(s, s.region, side);
+    }
+
+    const sites: SiteLine[] = refs.map(({ ref, region, side }) => {
+        const c = examCounts(exam, region, side);
+        const counts: string[] = [];
+        if (c.rom > 0) counts.push(`${c.rom} ROM`);
+        if (c.strength > 0) counts.push(`${c.strength} strength`);
+        if (c.tests > 0) counts.push(`${c.tests} test${c.tests === 1 ? "" : "s"}`);
+        const nvValues = NV_REGIONS.has(region) ? NV_CHECKS.map((k) => exam.getText(nvKey(k.key, region), side)) : [];
+        const nv = nvValues.some((v, i) => v && v !== NV_CHECKS[i].normal) ? "compromised"
+            : nvValues.length && nvValues.every((v, i) => v === NV_CHECKS[i].normal) ? "intact" : null;
+        return {
+            key: siteKey(ref),
+            name: REGION_BY_KEY.has(region) ? siteName(region, side) : clinicalSiteLabel(ref),
+            pain: c.pain ?? exam.getNumber(regionPainKey(region), side, null),
+            recorded: entries.filter((e) => e.sites?.some((s) => sameSite(s, ref))).map((e) => e.label),
+            counts,
+            nv,
+        };
+    });
 
     return (
         <section
@@ -89,38 +130,38 @@ export function ExamSummaryStrip({
                             Open to mark a joint and record what you examined
                         </span>
                     ) : (
-                        <span className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
-                            {sites.map((r) => {
-                                const side = markedSides.get(r) ?? null;
-                                const c = examCounts(exam, r, side);
+                        <span className="flex flex-col gap-[3px]">
+                            {sites.map((site) => {
                                 // A site with nothing recorded yet still shows,
                                 // because the map marking it IS a clinical
                                 // statement — this is the joint being treated.
-                                const parts: string[] = [];
-                                if (c.rom > 0) parts.push(`${c.rom} ROM`);
-                                if (c.strength > 0) parts.push(`${c.strength} strength`);
-                                if (c.tests > 0) parts.push(`${c.tests} test${c.tests === 1 ? "" : "s"}`);
+                                const rest = [...site.recorded, ...site.counts];
                                 return (
-                                    <span key={r} className="inline-flex items-center gap-2">
+                                    <span key={site.key} className="inline-flex min-w-0 items-center gap-2">
                                         <b className="text-[13px] font-bold text-[var(--cs-ink)]">
-                                            {siteName(r, side)}
+                                            {site.name}
                                         </b>
-                                        {c.pain !== null && (
+                                        {site.pain !== null && (
                                             <i
                                                 className={
                                                     "rounded-[5px] px-[7px] py-[1px] text-[11px] font-bold not-italic tabular-nums " +
                                                     // Amber at 7+, the same threshold `painVas` warned on,
                                                     // so the two surfaces cannot disagree about "severe".
-                                                    (c.pain >= 7
+                                                    (site.pain >= 7
                                                         ? "bg-[var(--cs-amber-soft)] text-[var(--cs-amber)]"
                                                         : "bg-[var(--cs-teal-soft)] text-[var(--cs-teal)]")
                                                 }
                                             >
-                                                Pain {c.pain}/10
+                                                Pain {site.pain}/10
                                             </i>
                                         )}
-                                        <em className="text-[11.5px] font-medium not-italic text-[var(--cs-faint)]">
-                                            {parts.length > 0 ? parts.join(" · ") : "nothing recorded yet"}
+                                        {site.nv === "compromised" && (
+                                            <i className="rounded-[5px] bg-[var(--cs-red-soft)] px-[7px] py-[1px] text-[11px] font-bold not-italic text-[var(--cs-red)]">
+                                                NV compromised
+                                            </i>
+                                        )}
+                                        <em className="truncate text-[11.5px] font-medium not-italic text-[var(--cs-faint)]">
+                                            {rest.length > 0 ? rest.join(" · ") : site.nv === "intact" ? "NV intact" : "nothing recorded yet"}
                                         </em>
                                     </span>
                                 );
