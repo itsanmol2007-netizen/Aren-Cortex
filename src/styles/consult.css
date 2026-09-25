@@ -10827,3 +10827,80 @@ body.cs-locked-shell {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Ongoing Care rows carry one control each — Remove / Status / Plan. */
+.cs-lt-og-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cs-lt-og-row > .cs-lt-og-item { flex: 1; min-width: 0; }
+.cs-lt-og-act {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    height: 26px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 0 9px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.cs-lt-og-act:hover,
+.cs-lt-og-act[aria-expanded="true"] {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+.cs-lt-og-act:focus-visible { outline: 2px solid var(--cs-blue); outline-offset: 1px; }
+/* Changed this visit: settled, still changeable. */
+.cs-lt-og-row.is-today .cs-lt-og-status { color: var(--cs-blue); font-weight: 650; }
+
+.cs-lt-menu {
+    position: fixed;
+    z-index: 1300;
+    width: 220px;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 14px 34px rgba(16, 28, 46, 0.18);
+    outline: none;
+}
+.cs-lt-menu-head {
+    margin: 0;
+    overflow: hidden;
+    padding: 7px 9px 5px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.cs-lt-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 7px 9px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-lt-menu-item.is-active { background: var(--cs-blue-soft); }
+.cs-lt-menu-item.is-on { color: var(--cs-blue); font-weight: 650; }
+.cs-lt-menu-item.is-danger { color: #be123c; }
+.cs-lt-menu-check { display: grid; flex: none; place-items: center; width: 14px; color: var(--cs-blue); }

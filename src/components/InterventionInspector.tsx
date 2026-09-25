@@ -57,6 +57,8 @@ type Props = {
     initialStatus?: "performed" | "planned";
     initialDueDays?: number | null;
     initialDetails?: AssessmentDetails;
+    /** open already linked to the earlier cast / sutures it removes (Ongoing Care → Remove) */
+    initialRemovesId?: string | null;
     onConfirm: (draft: InterventionDraft) => void;
     onCancel: () => void;
 };
@@ -75,7 +77,7 @@ type Props = {
  */
 export function InterventionInspector({
     label, initialSite = "", knownSites = [], autoPrefill = false,
-    siteAssessments = [], earlier = [], fromPlanned = null,
+    siteAssessments = [], earlier = [], fromPlanned = null, initialRemovesId = null,
     initialStatus = "performed", initialDueDays = null, initialDetails,
     onConfirm, onCancel,
 }: Props) {
@@ -145,6 +147,19 @@ export function InterventionInspector({
             if (what) { touched.current.add("what"); setDetails((d) => ({ ...d, what })); }
         }
     };
+
+    // Opened from Ongoing Care's "Remove": link the cast it removes as soon
+    // as the patient's earlier interventions have loaded — once, so the
+    // doctor can still unlink it.
+    const autoLinked = useRef(false);
+    useEffect(() => {
+        if (autoLinked.current || !initialRemovesId) return;
+        const e = removable.find((x) => x.id === initialRemovesId);
+        if (!e) return;
+        autoLinked.current = true;
+        pickEarlier(e);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [removable, initialRemovesId]);
 
     const clean = family ? pruneDetails(family, site, details) : {};
     const baseText = family ? composeAssessmentText(label, family, site, clean) : "";

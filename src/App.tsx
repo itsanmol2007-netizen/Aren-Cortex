@@ -15,6 +15,8 @@ import { ExerciseSheet } from "./components/ExerciseSheet";
 import { fetchExerciseLibrary, setExerciseLibraryEntry, type ExerciseLibraryEntry } from "./lib/db/exerciseLibrary";
 import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { siteSignalsOf } from "./lib/body/siteSignals";
+import type { OngoingAction, OngoingItem, OngoingLocal } from "./features/consult/ongoing";
+import { recordStateEvent } from "./lib/db/clinicalState";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -1824,6 +1826,95 @@ function App() {
     }
   }, [synapse.data?.ruleset, openIntervention, openImagingAt, addFreeTest, addFreeAdvice, addFreeReferral, setFollowUpDays]);
 
+  // ── ONGOING CARE LIFECYCLE (2026-09-25) ────────────────────────────────
+  // What this visit has done about earlier visits' casts, plans and
+  // conditions. States (healed, deferred…) are written at once as events
+  // (clinical_state_events) and mirrored here so the card updates in the
+  // same frame; a removal or a planned item carried out is part of today's
+  // plan, read straight from it.
+  const [ongoingStates, setOngoingStates] = useState<Pick<OngoingLocal, "conditions" | "plans">>(
+    () => ({ conditions: new Map(), plans: new Map() }),
+  );
+  useEffect(() => { setOngoingStates({ conditions: new Map(), plans: new Map() }); }, [patient?.id]);
+  const ongoingLocal = useMemo<OngoingLocal>(() => ({
+    ...ongoingStates,
+    removedToday: new Set(interventionPlan.map((l) => l.removesId).filter(Boolean) as string[]),
+    fulfilledToday: new Set(interventionPlan.map((l) => l.fulfilsId).filter(Boolean) as string[]),
+  }), [ongoingStates, interventionPlan]);
+
+  const handleOngoingAction = useCallback((item: OngoingItem, action: OngoingAction) => {
+    const p = item.procedure;
+    const pid = patient?.id;
+    if (action.type === "remove" && p) {
+      const ruleset = synapse.data?.ruleset;
+      let payload: AcceptPayload | null = null;
+      if (ruleset) {
+        for (const [, i] of ruleset.intents) {
+          if (i.type === "modality" && i.label.toLowerCase() === "cast / splint / suture removal") {
+            payload = { intentId: i.id, type: "modality", label: i.label, refTable: i.refTable, refId: i.refId, medicine: null, viaSearch: false, overridden: false };
+            break;
+          }
+        }
+      }
+      openIntervention(
+        payload ?? { intentId: 0, type: "modality", label: "Cast / splint / suture removal", refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false },
+        { site: item.siteRef, removesId: p.id },
+      );
+      return;
+    }
+    if (action.type === "do" && p) {
+      performPlanned({ id: p.id, intentId: p.intentId ?? null, label: p.label, siteRef: p.site, details: p.details ?? {} });
+      return;
+    }
+    if (!pid) return;
+    // A state: shown at once, written behind; a failed write is undone and said.
+    const write = (
+      apply: (s: Pick<OngoingLocal, "conditions" | "plans">) => Pick<OngoingLocal, "conditions" | "plans">,
+      event: Parameters<typeof recordStateEvent>[0],
+      what: string,
+    ) => {
+      let before: Pick<OngoingLocal, "conditions" | "plans"> | null = null;
+      setOngoingStates((cur) => { before = cur; return apply(cur); });
+      recordStateEvent(event).catch((e) => {
+        if (before) setOngoingStates(before);
+        showToast(`Could not save ${what}: ${e?.message ?? e}`);
+      });
+    };
+    if (action.type === "status" && item.assessmentId) {
+      const id = item.assessmentId;
+      write(
+        (cur) => ({ ...cur, conditions: new Map(cur.conditions).set(id, action.status) }),
+        { patientId: pid, visitId, assessmentId: id, status: action.status },
+        "the status",
+      );
+      return;
+    }
+    if (!p) return;
+    if (action.type === "defer") {
+      const base = p.planState?.status === "deferred" && p.planState.dueDate ? p.planState.dueDate : p.dueDate;
+      const from = base && new Date(base) > new Date() ? new Date(base) : new Date();
+      from.setDate(from.getDate() + action.days);
+      const due = from.toISOString().slice(0, 10);
+      write(
+        (cur) => ({ ...cur, plans: new Map(cur.plans).set(p.id, { status: "deferred", dueDate: due }) }),
+        { patientId: pid, visitId, interventionId: p.id, status: "deferred", dueDate: due },
+        "the new date",
+      );
+    } else if (action.type === "cancel") {
+      write(
+        (cur) => ({ ...cur, plans: new Map(cur.plans).set(p.id, { status: "cancelled", dueDate: null }) }),
+        { patientId: pid, visitId, interventionId: p.id, status: "cancelled" },
+        "the cancellation",
+      );
+    } else if (action.type === "restore") {
+      write(
+        (cur) => ({ ...cur, plans: new Map(cur.plans).set(p.id, { status: "active", dueDate: null }) }),
+        { patientId: pid, visitId, interventionId: p.id, status: "active" },
+        "the change",
+      );
+    }
+  }, [patient?.id, visitId, synapse.data?.ruleset, openIntervention, performPlanned, showToast]);
+
   /** This clinic's usual dose per exercise (Practice → Exercise Library) —
    *  where the exercise sheet starts. */
   const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryEntry[]>([]);
@@ -2318,6 +2409,8 @@ function App() {
             onOpenTrend={setTrendDetail}
             onEditCarePlan={() => setCarePlanSheetOpen(true)}
             onStartCarePlan={() => setCarePlanSheetOpen(true)}
+            ongoingLocal={ongoingLocal}
+            onOngoingAction={handleOngoingAction}
           />
           <main className="cs-page">
             {/* Context first, but not at the same visual weight as the three
@@ -2945,6 +3038,7 @@ function App() {
               initialStatus={pendingIntervention.initialStatus}
               initialDueDays={pendingIntervention.initialDueDays ?? null}
               initialDetails={pendingIntervention.initialDetails}
+              initialRemovesId={pendingIntervention.initialRemovesId ?? null}
               onCancel={cancelPendingIntervention}
               onConfirm={confirmPendingIntervention}
             />

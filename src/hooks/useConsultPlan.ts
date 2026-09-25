@@ -257,7 +257,7 @@ export interface ConsultPlan {
    *  is as much a clinical decision as the first. */
   addAnotherInterventionSite: (id: string) => void;
   openIntervention: (payload: AcceptPayload, opts: {
-    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails;
+    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails; removesId?: string | null;
   }) => void;
   openImagingAt: (payload: AcceptPayload, site: SiteRef | null) => void;
   /** the exercise waiting on its dose sheet */
@@ -310,6 +310,8 @@ export interface PendingIntervention {
   initialDueDays?: number | null;
   initialDetails?: AssessmentDetails;
   initialSiteRef?: SiteRef | null;
+  /** the earlier cast / sutures this removes (Ongoing Care → Remove) */
+  initialRemovesId?: string | null;
 }
 
 /** An exercise waiting on its dose — see ExerciseSheet.tsx. */
@@ -1169,7 +1171,7 @@ export function useConsultPlan({
    * day and what it removes. The doctor still confirms; nothing lands alone.
    */
   const openIntervention = useCallback((payload: AcceptPayload, opts: {
-    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails;
+    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails; removesId?: string | null;
   }) => {
     setPendingIntervention({
       payload,
@@ -1178,6 +1180,7 @@ export function useConsultPlan({
       initialStatus: opts.status,
       initialDueDays: opts.dueDays ?? null,
       initialDetails: opts.details,
+      initialRemovesId: opts.removesId ?? null,
     });
   }, []);
 

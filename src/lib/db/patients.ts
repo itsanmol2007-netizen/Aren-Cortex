@@ -7,6 +7,7 @@ import { readThroughValue, resolveMirrorIdentity } from "../offline/localMirror"
 import { clinicalSiteLabel, normalizeSite, type SiteRef } from "../body/clinicalSite";
 import { dashText } from "../clinicalText";
 import { formatLine } from "../../features/consult/exercisePlan";
+import { latestStates, type StateEvent } from "./clinicalState";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -835,6 +836,10 @@ export type RealVisit = {
 };
 
 export interface VisitAssessment {
+    /** prescription_assessments.id — what a state event points at */
+    id?: string;
+    /** its latest recorded state (healing, united, resolved…), if any */
+    state?: StateEvent | null;
     /** the printed line, dash-normalised */
     text: string;
     /** "Fracture - Right knee" — label and site only, for a headline */
@@ -858,6 +863,12 @@ export interface VisitProcedure {
     /** a performed item points at the planned one it carried out */
     fulfilsId: string | null;
     createdAt: string;
+    /** the engine intent it came from, if any */
+    intentId?: number | null;
+    /** its configured details (cast type, material…) */
+    details?: Record<string, string | boolean>;
+    /** planned only — deferred (with its new date) or cancelled, if either */
+    planState?: StateEvent | null;
 }
 
 function siteOf(region: string | null, side: string | null, aspect: string | null): SiteRef | null {
@@ -1093,10 +1104,10 @@ export async function hydratePatientVisits(
             ? safe(supabase.from("prescription_exercises").select("prescription_id, label, sort_order, sets, reps, hold_seconds, per_day, side, notes, load_kg, days_per_week, weeks").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         rxIds.length
-            ? safe(supabase.from("prescription_assessments").select("prescription_id, label, family, region, side, aspect, site_label, text, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            ? safe(supabase.from("prescription_assessments").select("id, prescription_id, label, family, region, side, aspect, site_label, text, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         rxIds.length
-            ? safe(supabase.from("prescription_interventions").select("id, prescription_id, label, family, region, side, aspect, text, status, due_date, removes_id, fulfils_id, created_at, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            ? safe(supabase.from("prescription_interventions").select("id, prescription_id, intent_id, details, label, family, region, side, aspect, text, status, due_date, removes_id, fulfils_id, created_at, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
     ]);
 
@@ -1160,6 +1171,7 @@ export async function hydratePatientVisits(
         const siteName = site ? clinicalSiteLabel(site) : r.site_label;
         const list = assessByVisit.get(visitId) ?? [];
         list.push({
+            id: r.id,
             text: dashText(r.text ?? (siteName ? `${r.label} - ${siteName}` : r.label)),
             short: siteName ? `${r.label} - ${siteName}` : r.label,
             family: r.family ?? null,
@@ -1175,6 +1187,8 @@ export async function hydratePatientVisits(
         const list = procByVisit.get(visitId) ?? [];
         list.push({
             id: r.id,
+            intentId: r.intent_id ?? null,
+            details: r.details ?? {},
             text: dashText(r.text ?? r.label),
             label: r.label,
             family: r.family ?? null,
@@ -1187,6 +1201,17 @@ export async function hydratePatientVisits(
         });
         procByVisit.set(visitId, list);
     }
+
+    // Wave 4: what each assessment and plan is doing now (clinical_state_events).
+    const states = await safe(
+        latestStates(
+            [...assessByVisit.values()].flat().map((a) => a.id!).filter(Boolean),
+            [...procByVisit.values()].flat().filter((p) => p.status === "planned").map((p) => p.id),
+        ),
+        { byAssessment: new Map(), byIntervention: new Map() },
+    );
+    for (const list of assessByVisit.values()) for (const a of list) a.state = a.id ? states.byAssessment.get(a.id) ?? null : null;
+    for (const list of procByVisit.values()) for (const p of list) p.planState = states.byIntervention.get(p.id) ?? null;
 
     return liveVisits.map((v) => {
         const rx = rxByVisit.get(v.id);

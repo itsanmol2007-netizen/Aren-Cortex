@@ -54,7 +54,8 @@
 // doctrine's standing test ("does an empty consultation get shorter?").
 // ---------------------------------------------------------------------------
 
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
     Activity,
     ArrowDown,
@@ -64,6 +65,7 @@ import {
     ArrowUpRight,
     Calendar,
     CalendarClock,
+    Check,
     CalendarDays,
     ChevronDown,
     Clock,
@@ -80,18 +82,137 @@ import {
 import type { RealVisit, CarePlan } from "../../lib/db";
 import { formatVisitDate } from "../../components/PastVisitCard";
 import { formatDelta, formatValue, type TrendSeries, type TrendSummary, type TrendVerdict } from "./trend";
-import { ongoingFrom, type OngoingItem } from "./ongoing";
+import {
+    conditionOptions, ongoingFrom, EMPTY_LOCAL, type OngoingAction, type OngoingItem, type OngoingLocal,
+} from "./ongoing";
+import { STATUS_LABEL } from "../../lib/db/clinicalState";
 import { dashText } from "../../lib/clinicalText";
 
 const ONGOING_ICON = { "in-place": Bandage, due: CalendarClock, condition: Stethoscope } as const;
+
+/**
+ * A short list opened from one small button — the Ongoing Care card's
+ * actions. Portalled and fixed: the band folds with `overflow: hidden`, which
+ * would crop anything drawn inside it.
+ */
+function OngoingMenu({ anchor, title, options, onPick, onClose }: {
+    anchor: HTMLElement;
+    title: string;
+    options: { key: string; label: string; on?: boolean; danger?: boolean }[];
+    onPick: (key: string) => void;
+    onClose: () => void;
+}) {
+    const ref = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+    const [active, setActive] = useState(0);
+
+    useLayoutEffect(() => {
+        const r = anchor.getBoundingClientRect();
+        const w = 220;
+        const h = ref.current?.offsetHeight ?? 200;
+        const below = r.bottom + 6;
+        setPos({
+            top: below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below,
+            left: Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)),
+        });
+    }, [anchor]);
+
+    useEffect(() => {
+        ref.current?.focus();
+        const away = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (ref.current?.contains(t) || anchor.contains(t)) return;
+            onClose();
+        };
+        document.addEventListener("mousedown", away);
+        return () => document.removeEventListener("mousedown", away);
+    }, [anchor, onClose]);
+
+    return createPortal(
+        <div
+            ref={ref}
+            className="cs-lt-menu"
+            role="menu"
+            tabIndex={-1}
+            aria-label={title}
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+            onKeyDown={(e) => {
+                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
+                else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, options.length - 1)); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+                else if (e.key === "Enter") { e.preventDefault(); onPick(options[active].key); }
+            }}
+        >
+            <p className="cs-lt-menu-head">{title}</p>
+            {options.map((o, i) => (
+                <button
+                    key={o.key}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={!!o.on}
+                    className={`cs-lt-menu-item${i === active ? " is-active" : ""}${o.on ? " is-on" : ""}${o.danger ? " is-danger" : ""}`}
+                    onMouseEnter={() => setActive(i)}
+                    onClick={() => onPick(o.key)}
+                >
+                    <span className="cs-lt-menu-check" aria-hidden="true">{o.on && <Check size={12} strokeWidth={2.6} />}</span>
+                    {o.label}
+                </button>
+            ))}
+        </div>,
+        document.body,
+    );
+}
 
 /**
  * ONGOING CARE (2026-09-25) — what is still true from earlier visits: the
  * cast still on, the removal that is due, the fracture it is for. First in
  * the row, because for a patient in the middle of a course of care this is
  * what the consult is about. See `ongoing.ts` for what counts and why.
+ *
+ * Each item carries the one control its lifecycle needs, never a row of
+ * option chips: a cast has "Remove" (a removal in today's plan, linked to
+ * it); a condition has "Status" (a short list, current state ticked); a
+ * planned item has "Plan" (do it today, defer it, cancel it).
  */
-function OngoingCard({ items, onOpen }: { items: OngoingItem[]; onOpen: (item: OngoingItem, x: number) => void }) {
+function OngoingCard({ items, onOpen, onAction }: {
+    items: OngoingItem[];
+    onOpen: (item: OngoingItem, x: number) => void;
+    onAction?: (item: OngoingItem, action: OngoingAction) => void;
+}) {
+    const [menu, setMenu] = useState<{ item: OngoingItem; anchor: HTMLElement } | null>(null);
+
+    const menuFor = (it: OngoingItem) => {
+        if (it.kind === "condition") {
+            return {
+                title: `${it.title}${it.site ? ` · ${it.site}` : ""}`,
+                options: conditionOptions(it.family).map((st) => ({
+                    key: st, label: STATUS_LABEL[st], on: it.state === st,
+                })),
+            };
+        }
+        const changed = it.today && !it.status.startsWith("In today");
+        return {
+            title: `${it.title}${it.site ? ` · ${it.site}` : ""}`,
+            options: [
+                { key: "do", label: "Do it today" },
+                { key: "defer7", label: "Defer 1 week" },
+                { key: "defer14", label: "Defer 2 weeks" },
+                ...(changed ? [{ key: "restore", label: "Undo change" }] : [{ key: "cancel", label: "Cancel this plan", danger: true }]),
+            ],
+        };
+    };
+
+    const pick = (it: OngoingItem, key: string) => {
+        setMenu(null);
+        if (!onAction) return;
+        if (it.kind === "condition") { onAction(it, { type: "status", status: key as never }); return; }
+        if (key === "do") onAction(it, { type: "do" });
+        else if (key === "defer7") onAction(it, { type: "defer", days: 7 });
+        else if (key === "defer14") onAction(it, { type: "defer", days: 14 });
+        else if (key === "cancel") onAction(it, { type: "cancel" });
+        else if (key === "restore") onAction(it, { type: "restore" });
+    };
+
     return (
         <div className="cs-lt-card is-ongoing">
             <div className="cs-lt-last-head">
@@ -106,12 +227,13 @@ function OngoingCard({ items, onOpen }: { items: OngoingItem[]; onOpen: (item: O
             <ul className="cs-lt-og-list">
                 {items.slice(0, 4).map((it) => {
                     const Icon = ONGOING_ICON[it.kind];
+                    const removing = it.kind === "in-place" && it.today;
                     return (
-                        <li key={it.key}>
+                        <li key={it.key} className={`cs-lt-og-row${it.today ? " is-today" : ""}`}>
                             <button
                                 type="button"
                                 className={`cs-lt-og-item is-${it.kind}${it.urgent ? " is-urgent" : ""}`}
-                                title={it.text}
+                                title={`${it.text} (open the visit)`}
                                 onClick={(e) => {
                                     const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
                                     onOpen(it, r.left + r.width / 2);
@@ -126,11 +248,49 @@ function OngoingCard({ items, onOpen }: { items: OngoingItem[]; onOpen: (item: O
                                     <span className="cs-lt-og-status">{it.status}</span>
                                 </span>
                             </button>
+                            {onAction && (it.kind === "in-place" ? (
+                                !removing && (
+                                    <button
+                                        type="button"
+                                        className="cs-lt-og-act"
+                                        onClick={() => onAction(it, { type: "remove" })}
+                                        title={`Add the removal of this ${it.title.toLowerCase()} to today's plan`}
+                                    >
+                                        Remove
+                                    </button>
+                                )
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="cs-lt-og-act has-menu"
+                                    aria-haspopup="menu"
+                                    aria-expanded={menu?.item.key === it.key}
+                                    onClick={(e) => {
+                                        const el = e.currentTarget;
+                                        setMenu((m) => (m?.item.key === it.key ? null : { item: it, anchor: el }));
+                                    }}
+                                >
+                                    {it.kind === "condition" ? "Status" : "Plan"}
+                                    <ChevronDown size={11} aria-hidden="true" />
+                                </button>
+                            ))}
                         </li>
                     );
                 })}
             </ul>
             {items.length > 4 && <p className="cs-lt-og-more">+{items.length - 4} more in the visit timeline</p>}
+            {menu && (() => {
+                const m = menuFor(menu.item);
+                return (
+                    <OngoingMenu
+                        anchor={menu.anchor}
+                        title={m.title}
+                        options={m.options}
+                        onPick={(k) => pick(menu.item, k)}
+                        onClose={() => setMenu(null)}
+                    />
+                );
+            })()}
         </div>
     );
 }
@@ -576,7 +736,7 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
  */
 export function LongitudinalBand({
     summary, pastVisits, loading, carePlan, sessionNumbers,
-    onOpenVisit, onOpenTrend, onEditCarePlan, onStartCarePlan,
+    onOpenVisit, onOpenTrend, onEditCarePlan, onStartCarePlan, ongoingLocal = EMPTY_LOCAL, onOngoingAction,
 }: {
     summary: TrendSummary;
     /** newest first, as `fetchPatientVisits` returns them */
@@ -597,6 +757,10 @@ export function LongitudinalBand({
     onOpenTrend: (series: TrendSeries) => void;
     onEditCarePlan: () => void;
     onStartCarePlan: () => void;
+    /** what this visit has already done about ongoing items — see ongoing.ts */
+    ongoingLocal?: OngoingLocal;
+    /** remove a cast, update a fracture's status, do / defer / cancel a plan */
+    onOngoingAction?: (item: OngoingItem, action: OngoingAction) => void;
 }) {
     const [timelineOpen, setTimelineOpen] = useState(false);
     // Was open by default — the spec's "before typing anything" promise meant
@@ -605,7 +769,7 @@ export function LongitudinalBand({
     // no longer claims the top of the screen on every consult before the
     // doctor has asked for it.
     const [collapsed, setCollapsed] = useState(true);
-    const ongoing = useMemo(() => ongoingFrom(pastVisits), [pastVisits]);
+    const ongoing = useMemo(() => ongoingFrom(pastVisits, ongoingLocal), [pastVisits, ongoingLocal]);
 
     // Nothing while unknown — a skeleton that then collapses to nothing for a
     // first-visit patient is a DOM resize with no payoff.
@@ -720,6 +884,7 @@ export function LongitudinalBand({
                         {ongoing.length > 0 && (
                             <OngoingCard
                                 items={ongoing}
+                                onAction={onOngoingAction}
                                 onOpen={(it, x) => {
                                     const v = pastVisits.find((pv) => pv.id === it.visitId);
                                     if (v) onOpenVisit(v, x);
