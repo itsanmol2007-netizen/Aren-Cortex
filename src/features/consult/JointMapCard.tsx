@@ -52,7 +52,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
+import { Check, ChevronDown, MapPin, PersonStanding, Plus, Loader2, Trash2, X, Maximize2 } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
 import { listBodySites, addBodySite, deleteBodySite } from "../../lib/db/bodySites";
 import type { BodySiteFinding } from "../../lib/db/bodySites";
@@ -60,7 +60,8 @@ import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/bo
 import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 import type { Observable } from "../../lib/db/synapse";
 import type { CaseSheetEntry } from "./CaseSheet";
-import { normalizeSite, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
+import { clinicalSiteLabel, isMidline, normalizeSite, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
+import { regionChips } from "./regionFindings";
 import { RegionExam, examCounts } from "./ExaminationCard";
 import { REGION_BY_KEY } from "./examination";
 import type { ExaminationHook } from "../../hooks/useExamination";
@@ -102,13 +103,6 @@ function jointPainChip(region: BodyRegion, aspect: BodyAspect): string | null {
     }
 }
 
-/** Not joint-specific — offered for every zone. */
-const GENERIC_FINDING_LABELS = [
-    "Restricted range of motion",
-    "Joint swelling / effusion",
-    "Joint stiffness",
-    "Joint gives way",
-];
 
 interface Props {
     visitId: string | null;
@@ -191,27 +185,65 @@ export function JointMapCard({
             ? (sitesByLabel.get(o.label) ?? []).some((s) => sameSite(s, selSite))
             : onChart.has(o.label);
 
-    /** The chips for the currently selected zone — specific first, generic after. */
-    const chipsFor = (region: BodyRegion): Observable[] => {
-        const specific = jointPainChip(region, aspect);
-        const labels = [
-            ...(specific ? [specific] : []),
-            ...GENERIC_FINDING_LABELS,
-        ];
-        // `byLabel.get` returns undefined for a label not in the catalogue —
-        // skipped rather than thrown, same defensive posture as every other
-        // chip lookup in this app (content can lag code; it must never crash
-        // the consult).
-        return labels.map((l) => byLabel.get(l)).filter((o): o is Observable => !!o);
+    /** Where else a local finding already is — "at Right knee", "no place yet". */
+    const awayNote = (o: Observable): string | null => {
+        if (!o.localizable || !onObservableToggleAt || !onChart.has(o.label)) return null;
+        const at = sitesByLabel.get(o.label) ?? [];
+        if (!at.length) return "no place yet";
+        return `at ${clinicalSiteLabel(at[0])}${at.length > 1 ? ` +${at.length - 1}` : ""}`;
     };
+
+
+    /**
+     * The chips for the selected zone (Step 3, 2026-09-25): its own pain
+     * chip, then what is examined at that KIND of place (`regionFindings.ts`)
+     * — split by the observable's own kind into what the patient reports and
+     * what is found, the Case Sheet's two groups. `byLabel.get` misses a
+     * label not in the catalogue and it is skipped, never thrown: content
+     * can lag code and must never crash the consult.
+     */
+    const [showMore, setShowMore] = useState(false);
+    useEffect(() => { setShowMore(false); }, [sel?.region, sel?.side, aspect]);
+    const panelChips = useMemo(() => {
+        if (!sel) return null;
+        const specific = jointPainChip(sel.region, aspect);
+        const { primary, more } = regionChips(sel.region, aspect);
+        const pick = (labels: string[]) =>
+            labels.map((l) => byLabel.get(l)).filter((o): o is Observable => !!o);
+        return { first: pick([...(specific ? [specific] : []), ...primary]), more: pick(more) };
+    }, [sel, aspect, byLabel]);
+
+    /** Shown chips — `more` folds away, except any already lit here. */
+    const visibleChips = !panelChips ? [] : showMore
+        ? [...panelChips.first, ...panelChips.more]
+        : [...panelChips.first, ...panelChips.more.filter((o) => litHere(o))];
+    const moreCount = !panelChips || showMore ? 0 : panelChips.more.length - panelChips.more.filter((o) => litHere(o)).length;
+    const hereCount = !panelChips ? 0 : [...panelChips.first, ...panelChips.more].filter((o) => o.localizable && litHere(o)).length;
+    const chipGroups = [
+        { key: "rep", title: "Reported", items: visibleChips.filter((o) => o.kind !== "finding") },
+        { key: "exam", title: "On examination", items: visibleChips.filter((o) => o.kind === "finding") },
+    ].filter((g) => g.items.length > 0);
 
     const marked = useMemo(() => {
         const s = new Set<string>();
         for (const f of items) {
             if (f.aspect === aspect) s.add(`${f.region}-${f.side ?? "mid"}`);
         }
+        // A finding recorded AT a place marks that place too: the figure
+        // shows everywhere something was found, not only the joints that
+        // were marked by hand. A limb reads the same from either side; the
+        // spine only from behind, the chest only from the front.
+        for (const e of caseSheetEntries) {
+            for (const st of e.sites ?? []) {
+                const limb = st.region !== "neck" && st.region !== "torso_upper" && st.region !== "torso_lower"
+                    && st.region !== "head_top" && st.region !== "head_bottom" && st.region !== "pelvis";
+                if (!limb && st.aspect !== aspect) continue;
+                const sides = st.side === "both" || st.side === null ? ["left", "right", "mid"] : [st.side];
+                for (const sd of sides) s.add(`${st.region}-${sd}`);
+            }
+        }
         return s;
-    }, [items, aspect]);
+    }, [items, aspect, caseSheetEntries]);
 
     const shown = useMemo(
         () => items.filter((f) => f.aspect === aspect),
@@ -321,7 +353,10 @@ export function JointMapCard({
                             aria-label="Joint map — click a joint to record what it is doing">
                             {BODY_ZONES.map((z) => {
                                 const isMarked = marked.has(`${z.region}-${z.side ?? "mid"}`);
-                                const isSel = sel?.region === z.region && sel?.side === z.side;
+                                // The spine has no side: a click on either half of
+                                // the back selects the whole level, both halves lit.
+                                const isSel = sel?.region === z.region
+                                    && (sel?.side === z.side || isMidline(z.region, aspect));
                                 return (
                                     <path
                                         key={z.key}
@@ -336,7 +371,7 @@ export function JointMapCard({
                                         onClick={() => {
                                             if (disabled || !visitId) return;
                                             setSel((c) =>
-                                                c && c.region === z.region && c.side === z.side
+                                                c && c.region === z.region && (c.side === z.side || isMidline(z.region, aspect))
                                                     ? null
                                                     : { region: z.region, side: z.side }
                                             );
@@ -356,35 +391,67 @@ export function JointMapCard({
 
                     <div className="cs-jmap-detail-col">
                         {sel ? (
-                            <div className="cs-dchart-panel">
-                                <div className="cs-dchart-panel-head">
-                                    <span className="cs-dchart-panel-title">
-                                        {siteLabel(sel.region, aspect, sel.side)}
+                            <div className="cs-dchart-panel cs-jmap-panel">
+                                <div className="cs-jmap-panel-head">
+                                    <span className="cs-jmap-panel-pin" aria-hidden="true"><MapPin size={14} /></span>
+                                    <span className="cs-jmap-panel-titles">
+                                        <span className="cs-jmap-panel-title">
+                                            {selSite ? clinicalSiteLabel(selSite) : siteLabel(sel.region, aspect, sel.side)}
+                                        </span>
+                                        <span className="cs-jmap-panel-sub">
+                                            {hereCount > 0
+                                                ? `${hereCount} recorded here`
+                                                : "Tap what you find here"}
+                                        </span>
                                     </span>
                                     <button type="button" className="cs-dchart-panel-close"
                                         onClick={() => setSel(null)} aria-label="Close">
-                                        <X size={13} />
+                                        <X size={14} />
                                     </button>
                                 </div>
 
                                 {/* Chips first — see file header. Each one IS
                                     the Case Sheet's own toggle, so a chip lit
-                                    here is lit there too, and vice versa. */}
-                                <div className="cs-attach-tagrow">
-                                    {chipsFor(sel.region).map((o) => (
-                                        <button
-                                            key={o.id}
-                                            type="button"
-                                            className={`cs-attach-chip${litHere(o) ? " is-on" : ""}`}
-                                            aria-pressed={litHere(o)}
-                                            onClick={() => (o.localizable && onObservableToggleAt && selSite
-                                                ? onObservableToggleAt(o, selSite)
-                                                : onObservableToggle(o))}
-                                        >
-                                            {o.label}
-                                        </button>
-                                    ))}
-                                </div>
+                                    here is lit there too, and vice versa. A
+                                    local finding is recorded AT this place. */}
+                                {chipGroups.map((g) => (
+                                    <div key={g.key} className="cs-jmap-group">
+                                        <span className="cs-jmap-grouplabel">{g.title}</span>
+                                        <div className="cs-jmap-chips">
+                                            {g.items.map((o) => {
+                                                const on = litHere(o);
+                                                const away = !on ? awayNote(o) : null;
+                                                return (
+                                                    <button
+                                                        key={o.id}
+                                                        type="button"
+                                                        className={`cs-jmap-chip is-${o.kind}${on ? " is-on" : ""}${away ? " is-away" : ""}`}
+                                                        aria-pressed={on}
+                                                        title={away
+                                                            ? `${o.label}: ${away}. Click to record it here too.`
+                                                            : undefined}
+                                                        disabled={disabled}
+                                                        onClick={() => (o.localizable && onObservableToggleAt && selSite
+                                                            ? onObservableToggleAt(o, selSite)
+                                                            : onObservableToggle(o))}
+                                                    >
+                                                        {on
+                                                            ? <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+                                                            : <Plus size={12} strokeWidth={2.4} aria-hidden="true" />}
+                                                        <span>{o.label}</span>
+                                                        {away && <em>{away}</em>}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                                {moreCount > 0 && (
+                                    <button type="button" className="cs-jmap-more" onClick={() => setShowMore(true)}>
+                                        <ChevronDown size={13} aria-hidden="true" />
+                                        {moreCount} more finding{moreCount === 1 ? "" : "s"}
+                                    </button>
+                                )}
 
                                 {/* ── The examination for THIS joint ────────
                                     Pain, range, strength and special tests,

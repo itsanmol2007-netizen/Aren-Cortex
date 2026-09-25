@@ -47,7 +47,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, ClipboardList, Plus, Search, X } from "lucide-react";
+import { Check, ClipboardList, MapPin, Plus, Search, X } from "lucide-react";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
@@ -55,7 +55,8 @@ import {
     storyHas, DIMENSION_PROMPT,
 } from "./story";
 import type { Story, StorySearchItem, StoryDimension } from "./story";
-import { CLINICAL_SITE_OPTIONS, clinicalSiteLabel, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
+import { clinicalSiteLabel, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
+import { impliedSites, searchSites, suggestSites, type SiteHit } from "../../lib/body/siteSearch";
 import {
     ASKS_DURATION, DURATION_QUICK, durationChoicesFor, escalationFor,
     formatDuration, shortDuration, type DurationChoice,
@@ -355,13 +356,15 @@ type BarResult =
     /** How long the complaint in the current duration slot has been going on.
      *  A fourth vocabulary the same box routes, on exactly the terms the
      *  other three already established — see `durationCandidates`. */
-    | { t: "duration"; key: string; complaint: string; choice: DurationChoice };
+    | { t: "duration"; key: string; complaint: string; choice: DurationChoice }
+    /** Where the local finding just added was found — the where-slot. */
+    | { t: "site"; key: string; finding: string; hit: SiteHit };
 
 interface BarProps {
     observables: Observable[];
     /** labels already on the sheet, so a result shows a tick */
     onSheet: Set<string>;
-    onToggle: (o: Observable) => void;
+    onToggle: (o: Observable, opts?: { deferSite?: boolean }) => void;
     /**
      * The story half of the same box. Both optional: General OPD passes
      * neither and gets exactly the catalogue-only bar it always had, so this
@@ -433,6 +436,21 @@ interface BarProps {
     durationsByLabel?: Map<string, number>;
     /** `null` clears a duration already recorded — what Backspace undoes. */
     onDurationAnswer?: (label: string, days: number | null) => void;
+    /**
+     * ── THE WHERE-SLOT (2026-09-25) ───────────────────────────────────────
+     *
+     * A local finding picked here ("Joint swelling / effusion") is asked
+     * "where?" in the same box, the way a complaint is asked "how long?":
+     * type "kn" and the knee is on top, Enter, done. Places already in the
+     * visit and places the complaints name ("Knee pain") lead. Typing
+     * something that is not a place ("worse on standing") simply searches
+     * as always; the question steps aside rather than blocking. Space skips.
+     *
+     * `onSiteChange` records (or, with `false`, takes back) one place for a
+     * finding. Absent, local findings are added bare, exactly as before.
+     */
+    siteKnown?: SiteRef[];
+    onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
 }
 
 /**
@@ -444,6 +462,7 @@ export function ClinicalCommandBar({
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
     templates, onApplyTemplate,
     durationCandidates, durationsByLabel, onDurationAnswer, preferSystems, preferDomain,
+    siteKnown, onSiteChange,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -507,7 +526,10 @@ export function ClinicalCommandBar({
          *  They ride the SAME history so Backspace walks one timeline, not
          *  two interleaved ones the clinician has to hold in their head. */
         | { kind: "durskip"; label: string }
-        | { kind: "duration"; label: string };
+        | { kind: "duration"; label: string }
+        /** the where-slot's own two steps, on the same one timeline */
+        | { kind: "siteskip"; label: string }
+        | { kind: "site"; label: string; site: SiteRef };
     const [history, setHistory] = useState<Step[]>([]);
 
     const openDims = useMemo(
@@ -530,7 +552,27 @@ export function ClinicalCommandBar({
      * duration first can still type "3 weeks" and pick it. The sequence is a
      * default, and defaults are exactly where clinical order belongs.
      */
-    const slot: StoryDimension | null = leadComplaint ? (openDims[0] ?? null) : null;
+    /**
+     * ── THE WHERE-SLOT ─────────────────────────────────────────────────────
+     * The local finding just added, while its place is being asked. Takes
+     * precedence over the story and duration questions — it was asked by the
+     * very keystroke that added the finding, and it is one word to answer.
+     * Gone the moment the chip is (removed from the sheet) or the doctor
+     * moves on to anything else.
+     */
+    const [siteAsk, setSiteAsk] = useState<string | null>(null);
+    const siteOn = !!onSiteChange;
+    const siteSlot = siteOn && siteAsk && onSheet.has(siteAsk) ? siteAsk : null;
+    const skipSite = useCallback(() => {
+        if (!siteSlot) return;
+        setSiteAsk(null);
+        setHistory((h) => [...h, { kind: "siteskip", label: siteSlot }]);
+        setActive(0);
+        inputRef.current?.focus();
+    }, [siteSlot]);
+
+    const storySlot: StoryDimension | null = leadComplaint ? (openDims[0] ?? null) : null;
+    const slot: StoryDimension | null = siteSlot ? null : storySlot;
 
     /** Step past the current question without answering it. */
     const skipSlot = useCallback(() => {
@@ -550,8 +592,8 @@ export function ClinicalCommandBar({
     const [durationSkipped, setDurationSkipped] = useState<Set<string>>(new Set());
     const durationOn = !storyOn && !!durationCandidates?.length && !!onDurationAnswer;
     const durationSlot = useMemo(
-        () => (durationOn ? (durationCandidates!.find((l) => !durationSkipped.has(l)) ?? null) : null),
-        [durationOn, durationCandidates, durationSkipped]
+        () => (durationOn && !siteSlot ? (durationCandidates!.find((l) => !durationSkipped.has(l)) ?? null) : null),
+        [durationOn, siteSlot, durationCandidates, durationSkipped]
     );
 
     const skipDuration = useCallback(() => {
@@ -638,6 +680,25 @@ export function ClinicalCommandBar({
                 inputRef.current?.focus();
                 return;
             }
+            if (step.kind === "siteskip") {
+                // Ask again, as long as the finding is still on the sheet.
+                if (!onSheet.has(step.label)) continue;
+                setSiteAsk(step.label);
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
+            if (step.kind === "site") {
+                // Take the place back and ask again — "wrong knee".
+                if (!onSheet.has(step.label)) continue;
+                onSiteChange?.(step.label, step.site, false);
+                setSiteAsk(step.label);
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
             if (step.kind === "duration") {
                 // Clearing the answer puts the complaint back in the rotation
                 // on its own — `durationCandidates` is recomputed from what is
@@ -661,7 +722,7 @@ export function ClinicalCommandBar({
         if (clauses.length > 0) onStoryRemove?.(clauses[clauses.length - 1].item);
         setActive(0);
         inputRef.current?.focus();
-    }, [history, story, onStoryRemove, clauses]);
+    }, [history, story, onStoryRemove, clauses, onSheet, onSiteChange]);
 
     /**
      * Put every skipped question back in the rotation at once.
@@ -725,9 +786,22 @@ export function ClinicalCommandBar({
         }));
     }, [durationSlot, query]);
 
+    /** The sheet's region-named complaints, for the where-slot's second tier. */
+    const implied = useMemo(() => (siteSlot ? impliedSites(onSheet) : []), [siteSlot, onSheet]);
+
+    /** What the typed query means as a PLACE, while a place is being asked.
+     *  Leads the list for the same reason a duration does; a query that is
+     *  no place at all yields nothing here and searches as it always has. */
+    const siteMatches = useMemo<BarResult[]>(() => {
+        if (!siteSlot || !query.trim()) return [];
+        return searchSites(query, siteKnown ?? [], implied, 5).map((hit) => ({
+            t: "site" as const, key: `w:${siteSlot}:${hit.label}`, finding: siteSlot, hit,
+        }));
+    }, [siteSlot, query, siteKnown, implied]);
+
     const results = useMemo<BarResult[]>(() => {
         const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
-        if (!storyOn) return [...durationMatches, ...templateMatches, ...obs];
+        if (!storyOn) return [...siteMatches, ...durationMatches, ...templateMatches, ...obs];
         const st = searchStory(query, story!, 6);
 
         /**
@@ -752,12 +826,17 @@ export function ClinicalCommandBar({
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
         const rest: BarResult[] = st.filter((it) => !inSlot(it))
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
-        return [...templateMatches, ...lead, ...obs, ...rest];
-    }, [obsResults, storyOn, query, story, slot, templateMatches, durationMatches]);
+        return [...siteMatches, ...templateMatches, ...lead, ...obs, ...rest];
+    }, [obsResults, storyOn, query, story, slot, templateMatches, durationMatches, siteMatches]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
         if (query.trim()) return [];
+        if (siteSlot) {
+            return suggestSites(siteKnown ?? [], implied, 6).map((hit) => ({
+                t: "site" as const, key: `wp:${siteSlot}:${hit.label}`, finding: siteSlot, hit,
+            }));
+        }
         if (durationSlot) {
             // The everyday answers, offered — and the box still takes any
             // number typed over the top of them. A ladder is a shortcut here,
@@ -773,7 +852,7 @@ export function ClinicalCommandBar({
         if (!storyOn || !slot) return [];
         return itemsForDimension(story!, slot, 6)
             .map((it) => ({ t: "story", key: `p:${it.id}`, it }));
-    }, [storyOn, query, story, slot, durationSlot]);
+    }, [storyOn, query, story, slot, durationSlot, siteSlot, siteKnown, implied]);
 
     const showPrompts = focused && !query.trim() && prompts.length > 0;
     const shown = query.trim() ? results : prompts;
@@ -832,7 +911,20 @@ export function ClinicalCommandBar({
      *  to `onApplyTemplate`, which runs each of its items through the same
      *  guarded accept path as everything else (see App.tsx's applyTemplate). */
     const take = (r: BarResult) => {
-        if (r.t === "obs") onToggle(r.o);
+        // Anything taken other than a place moves on from the where-slot; a
+        // new local finding opens it again for itself, below.
+        if (r.t !== "site") setSiteAsk(null);
+        if (r.t === "site") {
+            onSiteChange?.(r.finding, r.hit.site, true);
+            setHistory((h) => [...h, { kind: "site", label: r.finding, site: r.hit.site }]);
+            setSiteAsk(null);
+        }
+        else if (r.t === "obs") {
+            const adding = !onSheet.has(r.o.label);
+            const ask = siteOn && adding && r.o.localizable;
+            onToggle(r.o, ask ? { deferSite: true } : undefined);
+            if (ask) setSiteAsk(r.o.label);
+        }
         else if (r.t === "template") onApplyTemplate?.(r.tpl.id);
         else if (r.t === "duration") {
             onDurationAnswer?.(r.complaint, r.choice.days);
@@ -860,6 +952,12 @@ export function ClinicalCommandBar({
         // does the same thing for anyone who expects it to; both stop at the
         // last open question rather than wrapping, so a clinician cannot skip
         // in a circle.
+        if (empty && siteSlot && (e.key === " " || e.key === "Tab")) {
+            e.preventDefault();
+            skipSite();
+            return;
+        }
+
         if (empty && storyOn && slot && (e.key === " " || e.key === "Tab")) {
             e.preventDefault();
             skipSlot();
@@ -911,7 +1009,9 @@ export function ClinicalCommandBar({
             if (pick) take(pick);
         } else if (e.key === "Escape") {
             e.preventDefault();
-            if (query.trim()) setQuery(""); else inputRef.current?.blur();
+            if (query.trim()) setQuery("");
+            else if (siteSlot) skipSite();
+            else inputRef.current?.blur();
         }
     };
 
@@ -928,10 +1028,12 @@ export function ClinicalCommandBar({
                 {/* The prompt list says WHY it is offering these, because
                     otherwise a list that appears on focus reads as a search
                     result for a query nobody typed. */}
-                {showPrompts && (slot || durationSlot) && (
+                {showPrompts && (slot || durationSlot || siteSlot) && (
                     <p className="flex items-center justify-between gap-2 border-b border-[var(--cs-line)] px-3 pb-1.5 pt-2">
                         <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--cs-label)]">
-                            {slot ? DIMENSION_PROMPT[slot] : `${durationSlot} — how long?`}
+                            {siteSlot ? (
+                                <span className="text-[var(--cs-teal)]">{siteSlot} — where?</span>
+                            ) : slot ? DIMENSION_PROMPT[slot] : `${durationSlot} — how long?`}
                         </span>
                         {/* The skip is stated where the clinician is looking —
                             a key that is only discoverable by being told is a
@@ -956,7 +1058,8 @@ export function ClinicalCommandBar({
                         const label = r.t === "obs" ? r.o.label
                             : r.t === "template" ? r.tpl.name
                                 : r.t === "duration" ? r.choice.label
-                                    : r.it.label;
+                                    : r.t === "site" ? r.hit.label
+                                        : r.it.label;
                         return (
                             <button
                                 key={r.key}
@@ -1007,10 +1110,14 @@ export function ClinicalCommandBar({
                                         ? "bg-[var(--cs-blue-soft)] "
                                         : r.t === "template" ? "bg-[#faf8ff] " : "") +
                                     (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] " : "") +
-                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "")
+                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "") +
+                                    (r.t === "site" ? "border-l-2 border-l-[var(--cs-teal)] " : "")
                                 }
                             >
-                                <span className="min-w-0 flex-1 truncate">
+                                {r.t === "site" && (
+                                    <MapPin size={13} aria-hidden="true" className="flex-none text-[var(--cs-teal)]" />
+                                )}
+                                <span className={"min-w-0 flex-1 truncate" + (r.t === "site" ? " font-semibold" : "")}>
                                     {on && <span aria-hidden="true">✓ </span>}
                                     {label}
                                     {r.t === "template" && (
@@ -1022,6 +1129,13 @@ export function ClinicalCommandBar({
                                         "Swelling in legs · cardiovascular" —
                                         so it is never mistaken for the local
                                         swelling above it. */}
+                                    {/* Why this place leads — the visit already
+                                        has it, or the complaint names it. */}
+                                    {r.t === "site" && r.hit.why && (
+                                        <span className="ml-1.5 text-[11px] font-medium text-[var(--cs-faint)]">
+                                            {r.hit.why === "visit" ? "· in this visit" : "· from the complaint"}
+                                        </span>
+                                    )}
                                     {r.t === "obs" && isOffSpecialty(r.o, preferSystems, preferDomain) && (
                                         <span className="ml-1.5 text-[11px] font-medium text-[var(--cs-faint)]">
                                             · {r.o.system}
@@ -1040,13 +1154,15 @@ export function ClinicalCommandBar({
                                         "flex-none rounded-[5px] px-[7px] py-[2px] text-[11px] font-semibold " +
                                         (r.t === "obs" ? TONE[r.o.kind].badge
                                             : r.t === "template" ? "bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
-                                                : "bg-[#eaf0fb] text-[#2c4a7c]")
+                                                : r.t === "site" ? "bg-[#dbf4eb] text-[#0b6a62]"
+                                                    : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
                                     {r.t === "obs" ? KIND_BADGE[r.o.kind]
                                         : r.t === "template" ? "Template"
                                             : r.t === "duration" ? "duration"
-                                                : r.it.dimension.toLowerCase()}
+                                                : r.t === "site" ? "where"
+                                                    : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );
@@ -1076,7 +1192,14 @@ export function ClinicalCommandBar({
             <div
                 ref={boxRef}
                 onClick={() => inputRef.current?.focus()}
-                className="flex min-h-[38px] cursor-text items-center gap-2 overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]"
+                className={
+                    "flex min-h-[38px] cursor-text items-center gap-2 overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 " +
+                    // Teal while a place is being asked — the finding's own
+                    // colour, so the box visibly belongs to that question.
+                    (siteSlot
+                        ? "focus-within:border-[rgba(15,118,110,0.55)] focus-within:shadow-[0_0_0_3px_rgba(15,118,110,0.12)]"
+                        : "focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]")
+                }
             >
                 <Search size={15} className="flex-none text-[var(--cs-faint)]" />
 
@@ -1130,7 +1253,8 @@ export function ClinicalCommandBar({
                         onFocus={() => setFocused(true)}
                         onBlur={() => setFocused(false)}
                         placeholder={
-                            durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
+                            siteSlot ? `Where is it? Type a place, e.g. kn or lower back. Space to skip`
+                            : durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
                                 : !storyOn ? "Add clinical information (symptoms, findings, history…)"
                                 : !leadComplaint ? "What happened? Start with the complaint…"
                                     // A slot names the question in the pill beside the
@@ -1142,7 +1266,7 @@ export function ClinicalCommandBar({
                                         : "Add a symptom, finding or measurement…"
                         }
                         aria-label="Add clinical information"
-                        className="min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
+                        className="cx-bar-input min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
                     />
 
                     {Boolean(query) && !disabled && (
@@ -1181,6 +1305,31 @@ export function ClinicalCommandBar({
                     alike. Rendered only when a duration is actually open;
                     General OPD with nothing to ask is exactly the bar it has
                     always been. */}
+                {/* The where-slot's controls — the same pill and Skip as
+                    "how long", in the finding's teal, naming WHAT is being
+                    placed so the question is never ambiguous. */}
+                {siteSlot && (
+                    <span className="flex flex-none items-center gap-1.5 pl-1">
+                        <span
+                            title={`Where is the ${siteSlot.toLowerCase()}?`}
+                            className="hidden max-w-[15rem] items-center gap-1 rounded-md border border-[#a4e3d1] bg-[linear-gradient(180deg,#f4fdfa_0%,#dbf4eb_100%)] px-2 py-[3px] text-[11px] font-semibold text-[#0b6a62] sm:inline-flex"
+                        >
+                            <MapPin size={11} aria-hidden="true" className="flex-none" />
+                            <span className="truncate">{siteSlot}</span>
+                            <span className="flex-none font-bold">· where?</span>
+                        </span>
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onMouseDown={(e) => { e.preventDefault(); skipSite(); }}
+                            title="Skip — leave it without a place (Space)"
+                            className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-teal)] hover:text-[var(--cs-teal)]"
+                        >
+                            Skip
+                        </button>
+                    </span>
+                )}
+
                 {durationSlot && (
                     <span className="flex flex-none items-center gap-1.5 pl-1">
                         <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
@@ -1209,7 +1358,7 @@ export function ClinicalCommandBar({
                     </span>
                 )}
 
-                {storyOn && leadComplaint && (
+                {storyOn && leadComplaint && !siteSlot && (
                     <span className="flex flex-none items-center gap-1.5 pl-1">
                         {slot && (
                             <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
@@ -1609,13 +1758,8 @@ function FindingSitePrompt({ label, anchor, sites, known, onChange, onDismiss }:
         return out;
     }, [known, sites]);
 
-    const options = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return [];
-        const starts = CLINICAL_SITE_OPTIONS.filter((o) => o.label.toLowerCase().split(" ").some((w) => w.startsWith(q)));
-        const rest = CLINICAL_SITE_OPTIONS.filter((o) => !starts.includes(o) && o.label.toLowerCase().includes(q));
-        return [...starts, ...rest].slice(0, 6);
-    }, [query]);
+    // Same forgiving search as the command bar's where-slot ("rt kn").
+    const options = useMemo(() => searchSites(query, known, [], 6), [query, known]);
     useEffect(() => { setActive(0); }, [query]);
 
     const isOn = (x: SiteRef) => sites.some((s) => sameSite(s, x));

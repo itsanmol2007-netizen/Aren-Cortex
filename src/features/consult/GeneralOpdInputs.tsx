@@ -40,7 +40,7 @@ interface Props {
     observables: Observable[];
     /** every label currently on the chart, for the ✓ in a search result */
     onChartSet: Set<string>;
-    onObservableToggle: (o: Observable) => void;
+    onObservableToggle: (o: Observable, opts?: { deferSite?: boolean }) => void;
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
     /**
@@ -63,6 +63,8 @@ interface Props {
     onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
     askSiteLabel?: string | null;
     onAskSiteHandled?: () => void;
+    /** the command bar's where-slot — see ClinicalCommandBar */
+    onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     /** findings that co-occur with what is already charted — see examSuggestions.ts */
@@ -94,7 +96,7 @@ export function GeneralOpdInputs({
     symptomDurations, onSetSymptomDuration,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
     detailWorthyLabels, onSetOnsetNote,
-    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled,
+    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled, onSiteChange,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
@@ -152,9 +154,9 @@ export function GeneralOpdInputs({
      * checked BEFORE the toggle runs is what tells add and remove apart.
      */
     const [autoOnsetLabel, setAutoOnsetLabel] = useState<string | null>(null);
-    const handleCommandBarToggle = useCallback((o: Observable) => {
+    const handleCommandBarToggle = useCallback((o: Observable, opts?: { deferSite?: boolean }) => {
         const isAdding = !onChartSet.has(o.label);
-        onObservableToggle(o);
+        onObservableToggle(o, opts);
         if (isAdding && o.kind === "history" && detailWorthyLabels?.has(o.label) && onSetOnsetNote) {
             setAutoOnsetLabel(o.label);
         }
@@ -175,6 +177,8 @@ export function GeneralOpdInputs({
                 onEmptyEnter={() => relatedRoving.activate()}
                 templates={templates}
                 onApplyTemplate={onApplyTemplate}
+                siteKnown={knownSites}
+                onSiteChange={onSiteChange}
                 durationCandidates={pendingDurations}
                 durationsByLabel={symptomDurations}
                 onDurationAnswer={onSetSymptomDuration}

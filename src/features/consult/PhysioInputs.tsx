@@ -66,7 +66,7 @@ interface Props {
     preferSystems?: string[];
     preferDomain?: string;
     onChartSet: Set<string>;
-    onObservableToggle: (o: Observable) => void;
+    onObservableToggle: (o: Observable, opts?: { deferSite?: boolean }) => void;
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
@@ -75,6 +75,8 @@ interface Props {
     onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
     askSiteLabel?: string | null;
     onAskSiteHandled?: () => void;
+    /** the command bar's where-slot — see ClinicalCommandBar */
+    onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     relatedFindings: Observable[];
@@ -115,7 +117,7 @@ interface Props {
 export function PhysioInputs({
     observables, preferSystems, preferDomain, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
-    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled,
+    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled, onSiteChange,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     anatomicalMeasureKeys, pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
@@ -158,6 +160,8 @@ export function PhysioInputs({
                 onStoryAdd={(it) => onStoryChange(addToStory(story, it))}
                 onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
                 leadComplaint={leadComplaint}
+                siteKnown={knownSites}
+                onSiteChange={onSiteChange}
                 disabled={disabled}
                 searchRef={searchRef}
                 onEmptyDown={() => relatedRoving.move(1)}

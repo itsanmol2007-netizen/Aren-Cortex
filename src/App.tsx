@@ -1730,9 +1730,10 @@ function App() {
    * toggles exactly as before.
    */
   const [askSiteLabel, setAskSiteLabel] = useState<string | null>(null);
-  const handleObservableToggleSited = useCallback((o: Observable) => {
+  const handleObservableToggleSited = useCallback((o: Observable, opts?: { deferSite?: boolean }) => {
     const adding = !onChartSet.has(o.label);
-    if (!adding || !o.localizable || knownSites.length === 0) {
+    // The command bar asks "where?" itself, in the box (its where-slot).
+    if (opts?.deferSite || !adding || !o.localizable || knownSites.length === 0) {
       handleObservableToggle(o);
       return;
     }
@@ -1743,6 +1744,15 @@ function App() {
     handleObservableToggle(o);
     setAskSiteLabel(o.label);
   }, [onChartSet, knownSites, handleObservableToggle, chart]);
+
+  /** The command bar's where-slot: one place added to (or taken back from) a finding. */
+  const handleSiteChange = useCallback((finding: string, site: SiteRef, on: boolean) => {
+    const cur = chart.findingSites.get(finding) ?? [];
+    const next = on
+      ? (cur.some((s) => sameSite(s, site)) ? cur : [...cur, site])
+      : cur.filter((s) => !sameSite(s, site));
+    chart.setFindingSites(finding, next);
+  }, [chart]);
 
   /** This visit's placed assessments — what an intervention at the same
    *  site treats (a reduction there defaults to "Fracture"). */
@@ -2349,6 +2359,7 @@ function App() {
                   onSetFindingSites={chart.setFindingSites}
                   askSiteLabel={askSiteLabel}
                   onAskSiteHandled={() => setAskSiteLabel(null)}
+                  onSiteChange={handleSiteChange}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}
                   relatedFindings={relatedFindings}
@@ -2390,6 +2401,7 @@ function App() {
                   onSetFindingSites={chart.setFindingSites}
                   askSiteLabel={askSiteLabel}
                   onAskSiteHandled={() => setAskSiteLabel(null)}
+                  onSiteChange={handleSiteChange}
                   /* "How long?" — asked here and NOT in PhysioInputs above,
                      because physiotherapy's Story composer already owns that
                      question (`story.ts`'s Duration dimension) and two boxes
