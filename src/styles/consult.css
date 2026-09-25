@@ -11249,3 +11249,62 @@ body.cs-locked-shell {
 /* The episode is what the follow-up is ABOUT: it keeps its width. */
 .cs-lt-fu-episode { flex: 0 0 auto; max-width: 42%; }
 .cs-lt-ongoing { min-width: 110px; }
+
+/* ── NEUROVASCULAR CHECK (2026-09-26) — NeurovascularCheck.tsx ──────────── */
+.cs-nv {
+    margin-top: 12px;
+    border-top: 1px solid var(--cs-line);
+    padding-top: 10px;
+}
+.cs-nv-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.cs-nv-title {
+    color: var(--cs-label);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-nv-flag {
+    border-radius: 999px;
+    background: #fff1f2;
+    padding: 1px 8px;
+    color: #be123c;
+    font-size: 10.5px;
+    font-weight: 750;
+}
+.cs-nv-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    margin-left: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-nv-all:hover { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-nv-all.is-on { border-color: var(--cs-teal); background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-nv-rows { display: flex; flex-direction: column; gap: 6px; }
+.cs-nv-row {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+.cs-nv-label { color: var(--cs-ink); font-size: 12.5px; font-weight: 600; }
+.cs-nv .cs-seg > button { height: 30px; padding: 0 12px; font-size: 12.5px; }
+/* An abnormal answer is said in rose, not the teal of a normal one. */
+.cs-nv-row.is-abnormal .cs-seg > button.is-on { background: #be123c; }
+.cs-nv-row.is-abnormal .cs-nv-label { color: #be123c; }
+/* The control is as wide as its options, never stretched to the column. */
+.cs-nv .cs-seg { justify-self: start; }

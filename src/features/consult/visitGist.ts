@@ -53,7 +53,10 @@ function lead(text: string): string {
 
 export function visitGist(v: RealVisit): VisitGist {
     const assessments = v.assessments ?? [];
-    const found = v.sitedFindings?.length ? v.sitedFindings : v.findings.map((f) => f.name);
+    const found = [
+        ...(v.sitedFindings?.length ? v.sitedFindings : v.findings.map((f) => f.name)),
+        ...(v.neuro ?? []),
+    ];
 
     // ── Headline ─────────────────────────────────────────────────────────
     // The place, when the visit knows one: a sited finding's, else the body

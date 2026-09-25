@@ -140,13 +140,51 @@ const MUSCLES = byRegion({
     forearm: ["Forearm flexors", "Forearm extensors"],
 }, ["Other"]);
 
+/** Which bone, at the site that was picked — "distal radius" is the
+ *  fracture, "right wrist" only where it is. Spine and chest by view. */
+const BONES: Partial<Record<BodyRegion, string[]>> = {
+    wrist: ["Distal radius", "Ulnar styloid", "Distal ulna", "Scaphoid", "Other carpal"],
+    hand: ["Metacarpal", "Proximal phalanx", "Middle phalanx", "Distal phalanx"],
+    forearm: ["Radius shaft", "Ulna shaft", "Both bones"],
+    elbow: ["Radial head", "Olecranon", "Supracondylar humerus", "Lateral condyle", "Medial epicondyle"],
+    upper_arm: ["Humeral shaft", "Proximal humerus", "Distal humerus"],
+    shoulder: ["Proximal humerus", "Greater tuberosity", "Clavicle", "Scapula"],
+    hip: ["Femoral neck", "Intertrochanteric", "Subtrochanteric", "Acetabulum"],
+    pelvis: ["Pubic rami", "Acetabulum", "Iliac wing", "Sacrum"],
+    thigh: ["Femoral shaft", "Distal femur"],
+    knee: ["Patella", "Tibial plateau", "Distal femur", "Fibular head"],
+    lower_leg: ["Tibial shaft", "Fibula", "Both bones"],
+    ankle: ["Lateral malleolus", "Medial malleolus", "Bimalleolar", "Trimalleolar", "Distal tibia (pilon)"],
+    foot: ["Metatarsal", "5th metatarsal base", "Calcaneum", "Talus", "Phalanx"],
+};
+const bonesAt = (site: SiteRef | null): string[] | null => {
+    if (!site) return null;
+    if (isSpine(site)) return ["Vertebral body", "Transverse process", "Spinous process"];
+    if (site.region === "torso_upper" && site.aspect === "front") return ["Rib", "Sternum"];
+    return BONES[site.region] ?? null;
+};
+/** Angulation in the words used for that bone: a wrist tips dorsal or volar. */
+const ANGULATION = byRegion({
+    wrist: ["Dorsal", "Volar"],
+    forearm: ["Dorsal", "Volar"],
+    hand: ["Dorsal", "Volar"],
+}, ["Anterior", "Posterior", "Varus", "Valgus"]);
+
 // ── The families ───────────────────────────────────────────────────────────
 
 const FAMILIES: Record<string, AssessmentFamily> = {
     fracture: {
         key: "fracture",
-        main: ["open", "gustilo", "displaced", "pattern", "articular"],
+        // The bone and whether it moved first; pattern and joint involvement
+        // (from the X-ray, often later) behind "More details".
+        main: ["bone", "open", "gustilo", "displaced", "angulation"],
         fields: [
+            {
+                kind: "choice", key: "bone", label: "Bone",
+                options: (site) => bonesAt(site) ?? [],
+                showIf: (_d, site) => !!bonesAt(site),
+                render: lower,
+            },
             { kind: "choice", key: "open", label: "Skin", options: ["Closed", "Open"], render: lower },
             {
                 kind: "choice", key: "gustilo", label: "Gustilo grade",
@@ -155,6 +193,12 @@ const FAMILIES: Record<string, AssessmentFamily> = {
                 render: (v) => `Gustilo ${v}`,
             },
             { kind: "choice", key: "displaced", label: "Displacement", options: ["Non-displaced", "Displaced"], render: lower },
+            {
+                kind: "choice", key: "angulation", label: "Angulation",
+                options: ANGULATION,
+                showIf: (d) => d.displaced === "Displaced",
+                render: (v) => `${lower(v)} angulation`,
+            },
             {
                 kind: "choice", key: "pattern", label: "Pattern",
                 options: ["Transverse", "Oblique", "Spiral", "Comminuted", "Segmental", "Avulsion", "Impacted", "Compression", "Greenstick", "Buckle"],

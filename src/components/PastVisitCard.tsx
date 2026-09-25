@@ -176,7 +176,10 @@ export function PastVisitCard({
     const planned = procedures.filter((p) => p.status === "planned");
     // Found on examination, WITH where ("Joint swelling / effusion - Right
     // knee") when the visit recorded it; the legacy names otherwise.
-    const found = visit.sitedFindings?.length ? visit.sitedFindings : visit.findings.map((f) => f.name);
+    const found = [
+        ...(visit.sitedFindings?.length ? visit.sitedFindings : visit.findings.map((f) => f.name)),
+        ...(visit.neuro ?? []),
+    ];
     // A visit without structured assessments keeps its written diagnosis —
     // minus anything that is already one of its own findings or complaints,
     // which the saved text also carries.
@@ -368,7 +371,8 @@ export function PastVisitCard({
                                     <p className="pv-section-label">On examination</p>
                                     <div className="pv-chips">
                                         {found.map((f) => (
-                                            <span key={f} className="pv-chip abnormal">{f}</span>
+                                            // An intact neurovascular check is a normal finding.
+                                            <span key={f} className={`pv-chip ${f.startsWith("Neurovascular intact") ? "normal" : "abnormal"}`}>{f}</span>
                                         ))}
                                     </div>
                                 </div>

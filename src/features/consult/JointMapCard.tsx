@@ -65,6 +65,7 @@ import type { CaseSheetEntry } from "./CaseSheet";
 import { clinicalSiteLabel, isMidline, normalizeSite, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
 import { regionChips } from "./regionFindings";
 import { JointFindingField } from "./JointFindingField";
+import { NeurovascularCheck, NV_CHECKS, NV_REGIONS, nvKey } from "./NeurovascularCheck";
 import { RegionExam, examCounts } from "./ExaminationCard";
 import { REGION_BY_KEY } from "./examination";
 import type { ExaminationHook } from "../../hooks/useExamination";
@@ -313,7 +314,9 @@ export function JointMapCard({
     useEffect(() => {
         if (!sel || !visitId || disabled || siteRow) return;
         const c = examination && REGION_BY_KEY.has(sel.region) ? examCounts(examination, sel.region, sel.side) : null;
-        const examined = !!c && (c.rom > 0 || c.strength > 0 || c.tests > 0 || c.pain !== null);
+        const nv = !!examination && NV_REGIONS.has(sel.region)
+            && NV_CHECKS.some((k) => examination.getText(nvKey(k.key, sel.region), sel.side) !== null);
+        const examined = nv || (!!c && (c.rom > 0 || c.strength > 0 || c.tests > 0 || c.pain !== null));
         if (!examined && !foundHere) return;
         ensureSite().catch(() => {});
         // `examination.numbers` / `.texts` are the identities that change when a
@@ -439,6 +442,17 @@ export function JointMapCard({
                                         onToggle={(o) => (o.localizable && onObservableToggleAt
                                             ? onObservableToggleAt(o, selSite)
                                             : onObservableToggle(o))}
+                                    />
+                                )}
+
+                                {/* Distal to an injured limb: pulse, refill,
+                                    motor, sensation — see NeurovascularCheck. */}
+                                {examination && NV_REGIONS.has(sel.region) && (
+                                    <NeurovascularCheck
+                                        exam={examination}
+                                        region={sel.region}
+                                        side={sel.side}
+                                        disabled={disabled}
                                     />
                                 )}
 

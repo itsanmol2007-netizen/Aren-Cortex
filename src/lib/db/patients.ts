@@ -837,6 +837,9 @@ export type RealVisit = {
     orders?: VisitOrder[];
     /** pain scored at a joint ("Right wrist", 7) — the ortho / physio exam */
     sitePain?: { site: string; value: number }[];
+    /** the neurovascular check, per site ("Neurovascular intact - Right wrist",
+     *  "Sensation altered - Right wrist") */
+    neuro?: string[];
 };
 
 export interface VisitOrder {
@@ -1018,6 +1021,7 @@ export async function fetchPatientVisitStubs(
         exercises: [],
         orders: [],
         sitePain: [],
+        neuro: [],
     }));
 }
 
@@ -1061,7 +1065,7 @@ export async function hydratePatientVisits(
         safe(supabase.from("visit_body_sites").select("visit_id, region, aspect, side").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_impairments").select("visit_id, label").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_story").select("visit_id, duration_text, mechanism").in("visit_id", visitIds), { data: [] } as any),
-        safe(supabase.from("visit_measurements").select("visit_id, measure_key, side, value_num, context").in("visit_id", visitIds).like("measure_key", "PAIN_%"), { data: [] } as any),
+        safe(supabase.from("visit_measurements").select("visit_id, measure_key, side, value_num, value_text, context").in("visit_id", visitIds).or("measure_key.like.PAIN_%,measure_key.like.NV_%"), { data: [] } as any),
     ]);
 
     const doctorMap = new Map<string, string>();
@@ -1115,7 +1119,33 @@ export async function hydratePatientVisits(
 
     // Pain at a joint, the baseline reading ("Right wrist", 7).
     const painByVisit = new Map<string, { site: string; value: number }[]>();
+    // Neurovascular checks per site: visit -> site -> check -> value.
+    const nvByVisit = new Map<string, Map<string, Map<string, string>>>();
     for (const r of (painRes.data ?? []) as any[]) {
+        const key = String(r.measure_key).split("|")[0];
+        if (!key.startsWith("NV_") || !r.value_text) continue;
+        const m = key.match(/^NV_(PULSE|CRT|MOTOR|SENSATION)_(.+)$/);
+        if (!m) continue;
+        const site = siteFromRegionKey(m[2].toLowerCase(), r.side === "left" || r.side === "right" ? r.side : null);
+        const label = site ? clinicalSiteLabel(site) : m[2].toLowerCase();
+        const bySite = nvByVisit.get(r.visit_id) ?? new Map<string, Map<string, string>>();
+        const checks = bySite.get(label) ?? new Map<string, string>();
+        checks.set(m[1], String(r.value_text));
+        bySite.set(label, checks);
+        nvByVisit.set(r.visit_id, bySite);
+    }
+    const NV_NORMAL: Record<string, string> = { PULSE: "Present", CRT: "Normal", MOTOR: "Intact", SENSATION: "Intact" };
+    const NV_NAME: Record<string, string> = { PULSE: "distal pulse", CRT: "capillary refill", MOTOR: "motor", SENSATION: "sensation" };
+    const neuroText = (bySite: Map<string, Map<string, string>> | undefined): string[] =>
+        [...(bySite ?? new Map<string, Map<string, string>>()).entries()].map(([site, checks]) => {
+            const off = [...checks.entries()].filter(([k, v]) => v !== NV_NORMAL[k]);
+            return off.length
+                ? `${off.map(([k, v]) => `${NV_NAME[k]} ${v.toLowerCase()}`).join(", ").replace(/^./, (c) => c.toUpperCase())} - ${site}`
+                : `Neurovascular intact - ${site}`;
+        });
+
+    for (const r of (painRes.data ?? []) as any[]) {
+        if (!String(r.measure_key).startsWith("PAIN_")) continue;
         if (r.value_num == null || (r.context && r.context !== "baseline")) continue;
         const region = String(r.measure_key).split("|")[0].replace(/^PAIN_/, "").toLowerCase();
         const site = siteFromRegionKey(region, r.side === "left" || r.side === "right" ? r.side : null);
@@ -1304,6 +1334,7 @@ export async function hydratePatientVisits(
             exercises: exLinesByVisit.get(v.id) ?? [],
             orders: ordersByVisit.get(v.id) ?? [],
             sitePain: painByVisit.get(v.id) ?? [],
+            neuro: neuroText(nvByVisit.get(v.id)),
         };
     });
 }
