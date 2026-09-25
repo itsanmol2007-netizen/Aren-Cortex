@@ -11131,15 +11131,93 @@ body.cs-locked-shell {
 }
 .cs-lt-lv-open:hover { background: var(--cs-blue-soft); }
 
-/* Follow-up: the band says "this is the same story continuing". */
+/* Follow-up: the band says "this is the same story continuing".
+   Violet, the palette's colour for history (the carried-forward chips wear
+   it), so "a thread from before" reads the same everywhere. Two states:
+   an open thread (dashed, waiting for Continue) and a joined one, where the
+   tint deepens a step and the accent runs the full height, so the doctor
+   can see at a glance that today is already carrying it. */
 .cs-lt.is-followup {
-    border-color: rgba(15, 118, 110, 0.3);
-    background: linear-gradient(90deg, rgba(236, 253, 245, 0.85) 0%, #ffffff 38%);
-    box-shadow: inset 4px 0 0 var(--cs-teal);
+    --fu-ink: #5b21b6;
+    --fu-accent: #7c3aed;
+    border-color: rgba(124, 58, 237, 0.2);
+    background:
+        linear-gradient(90deg, rgba(245, 240, 255, 0.95) 0%, rgba(250, 247, 255, 0.7) 26%, #ffffff 52%);
+    box-shadow: inset 3px 0 0 rgba(124, 58, 237, 0.55);
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
-.cs-lt.is-followup .cs-lt-title,
-.cs-lt.is-followup .cs-lt-title-icon { color: var(--cs-teal); }
-.cs-lt.is-followup .cs-lt-collapse-chevron-wrap { background: rgba(15, 118, 110, 0.1); color: var(--cs-teal); }
+.cs-lt.is-followup.is-continued {
+    background:
+        linear-gradient(90deg, rgba(237, 229, 255, 0.95) 0%, rgba(245, 240, 255, 0.75) 30%, #ffffff 58%);
+    box-shadow: inset 4px 0 0 var(--fu-accent);
+}
+.cs-lt.is-followup .cs-lt-head { cursor: pointer; }
+.cs-lt.is-followup .cs-lt-title { color: var(--fu-ink); }
+.cs-lt.is-followup .cs-lt-collapse:hover { background: rgba(124, 58, 237, 0.06); }
+.cs-lt.is-followup .cs-lt-collapse:hover .cs-lt-title { color: var(--fu-accent); }
+.cs-lt.is-followup .cs-lt-collapse-chevron-wrap { background: rgba(124, 58, 237, 0.09); color: var(--fu-accent); }
+.cs-lt.is-followup .cs-lt-collapse:hover .cs-lt-collapse-chevron-wrap { background: rgba(124, 58, 237, 0.16); }
+
+/* Inside a follow-up, what is still open wears the thread's colour too, so
+   the band reads as one story rather than a violet header over a teal card. */
+.cs-lt.is-followup .cs-lt-card.is-ongoing {
+    border-color: rgba(124, 58, 237, 0.24);
+    background: linear-gradient(180deg, #f6f1ff 0%, #fbf9ff 42%, #ffffff 100%);
+    box-shadow: 0 1px 3px rgba(91, 33, 182, 0.08), 0 1px 2px rgba(16, 28, 46, 0.03);
+}
+.cs-lt.is-followup .cs-lt-card.is-ongoing::before { background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%); }
+.cs-lt.is-followup .cs-lt-og-eyebrow { color: #6d28d9; }
+.cs-lt.is-followup .cs-lt-og-live { background: #8b5cf6; animation-name: cs-lt-live-violet; }
+@keyframes cs-lt-live-violet {
+    0% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.45); }
+    70% { box-shadow: 0 0 0 6px rgba(139, 92, 246, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+}
+.cs-lt.is-followup .cs-lt-og-count { background: #7c3aed; }
+.cs-lt.is-followup .cs-lt-card.is-ongoing .cs-lt-og-item:hover { background: rgba(124, 58, 237, 0.06); }
+.cs-lt.is-followup .cs-lt-ongoing:not(.is-due):not(.is-urgent) {
+    border-color: rgba(124, 58, 237, 0.22);
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+
+/* The thread emblem (ThreadEmblem in LongitudinalBand.tsx). */
+.cs-lt-fu-emblem {
+    display: inline-grid;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    place-items: center;
+    border: 1px solid rgba(124, 58, 237, 0.18);
+    border-radius: 8px;
+    background: linear-gradient(160deg, #ffffff 0%, #f3edff 100%);
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.08), inset 0 1px 0 #fff;
+}
+.cs-lt-fu-emblem svg { overflow: visible; }
+.cs-lt-fu-emblem-dash {
+    stroke: rgba(124, 58, 237, 0.4);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-dasharray: 2 3;
+}
+.cs-lt-fu-emblem-line {
+    stroke: var(--fu-accent, #7c3aed);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 0.55s cubic-bezier(0.65, 0, 0.35, 1);
+}
+.cs-lt-fu-emblem-from { fill: var(--fu-accent, #7c3aed); }
+.cs-lt-fu-emblem-to {
+    fill: #fff;
+    stroke: var(--fu-accent, #7c3aed);
+    stroke-width: 1.8;
+    transition: fill 0.25s ease 0.4s;
+}
+.cs-lt-fu-emblem.is-joined .cs-lt-fu-emblem-line { stroke-dashoffset: 0; }
+.cs-lt-fu-emblem.is-joined .cs-lt-fu-emblem-to { fill: var(--fu-accent, #7c3aed); }
+
 .cs-lt-fu-episode {
     display: inline-flex;
     align-items: baseline;
@@ -11161,26 +11239,63 @@ body.cs-locked-shell {
     font-weight: 600;
     white-space: nowrap;
 }
+.cs-lt-fu-carried {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    align-self: center;
+    border-radius: 999px;
+    background: rgba(124, 58, 237, 0.1);
+    padding: 2px 8px 2px 6px;
+    color: var(--fu-ink, #5b21b6);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    animation: cs-lt-fu-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both 0.12s;
+}
+@keyframes cs-lt-fu-in {
+    from { opacity: 0; transform: translateX(-4px) scale(0.96); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Continue folds away once pressed: its width goes back to the header
+   (a 1fr/0fr grid column, the band's own fold technique) as it fades. */
+.cs-lt-fu-cwrap {
+    display: inline-grid;
+    flex: none;
+    grid-template-columns: 1fr;
+    transition: grid-template-columns 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease, margin 0.26s ease;
+}
+.cs-lt-fu-cwrap > .cs-lt-fu-continue { min-width: 0; overflow: hidden; }
+.cs-lt-fu-cwrap.is-gone {
+    grid-template-columns: 0fr;
+    margin-left: -12px;
+    opacity: 0;
+    pointer-events: none;
+}
 .cs-lt-fu-continue {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    border: 1px solid var(--cs-teal);
+    border: 1px solid #6d28d9;
     border-radius: 999px;
-    background: var(--cs-teal);
+    background: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%);
     padding: 3px 12px;
     color: #fff;
     font-size: 11.5px;
     font-weight: 700;
+    white-space: nowrap;
     cursor: pointer;
-    transition: background 0.14s ease;
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    transition: background 0.14s ease, transform 0.12s ease;
 }
-.cs-lt-fu-continue:hover { background: #0b5f58; }
-.cs-lt-fu-continue.is-done {
-    border-color: rgba(15, 118, 110, 0.3);
-    background: var(--cs-teal-soft);
-    color: var(--cs-teal);
-    cursor: default;
+.cs-lt-fu-continue:hover { background: linear-gradient(180deg, #6d28d9 0%, #5b21b6 100%); }
+.cs-lt-fu-continue:active { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-lt-fu-emblem-line, .cs-lt-fu-emblem-to, .cs-lt-fu-cwrap { transition: none; }
+    .cs-lt-fu-carried { animation: none; }
 }
 
 /* "What did it show?" */

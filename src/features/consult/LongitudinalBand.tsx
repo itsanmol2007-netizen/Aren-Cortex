@@ -778,6 +778,28 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
  * automatic open." Header-only now, exactly what the loaded band shows
  * collapsed, so there is nothing left to snap shut.
  */
+/**
+ * The follow-up's emblem: a thread from the last visit to today. Until the
+ * doctor continues it, today's end is an open ring on a dashed line; once
+ * they do, the line draws itself solid and the ring fills. The picture says
+ * the same thing as the title, a thread picked up, without a word.
+ */
+function ThreadEmblem({ joined }: { joined: boolean }) {
+    return (
+        <span className={`cs-lt-fu-emblem${joined ? " is-joined" : ""}`} aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <path className="cs-lt-fu-emblem-dash" d="M5.5 16.5C10 16.5 11.5 7.5 18.5 7.5" />
+                <path className="cs-lt-fu-emblem-line" d="M5.5 16.5C10 16.5 11.5 7.5 18.5 7.5" pathLength={1} />
+                <circle className="cs-lt-fu-emblem-from" cx="5.5" cy="16.5" r="2.6" />
+                <circle className="cs-lt-fu-emblem-to" cx="18.5" cy="7.5" r="2.9" />
+            </svg>
+        </span>
+    );
+}
+
+/** A downward scroll this far in the workspace below folds the band away. */
+const FOLD_ON_SCROLL_PX = 36;
+
 export function LongitudinalBand({
     summary, pastVisits, loading, carePlan, sessionNumbers,
     onOpenVisit, onOpenTrend, onEditCarePlan, onStartCarePlan, ongoingLocal = EMPTY_LOCAL, onOngoingAction,
@@ -820,6 +842,48 @@ export function LongitudinalBand({
     // doctor has asked for it.
     const [collapsed, setCollapsed] = useState(true);
     const ongoing = useMemo(() => ongoingFrom(pastVisits, ongoingLocal), [pastVisits, ongoingLocal]);
+    const bandRef = useRef<HTMLElement>(null);
+
+    // Open, the band takes the top of the screen from the workspace. The
+    // moment the doctor scrolls the workspace down they have gone back to
+    // work, so the band folds itself away rather than waiting to be closed.
+    // Only a scroll (or a wheel) in the consult shell beneath it counts, not
+    // one inside the band's own cards or in a popover portalled elsewhere.
+    useEffect(() => {
+        if (collapsed) return;
+        const band = bandRef.current;
+        const shell = band?.parentElement;
+        if (!band || !shell) return;
+        const start = new WeakMap<Element, number>();
+        let wheel = 0;
+        const outside = (t: EventTarget | null) =>
+            t instanceof Element && shell.contains(t) && !band.contains(t);
+        const onScroll = (e: Event) => {
+            const el = e.target;
+            if (!outside(el)) return;
+            const top = (el as Element).scrollTop;
+            if (!start.has(el as Element)) { start.set(el as Element, top); return; }
+            if (top - start.get(el as Element)! > FOLD_ON_SCROLL_PX) setCollapsed(true);
+        };
+        // A workspace too short to scroll still gets a wheel: turning it
+        // down is the same "back to work" as a scroll would have been.
+        const onWheel = (e: WheelEvent) => {
+            if (!outside(e.target)) return;
+            wheel = e.deltaY > 0 ? wheel + e.deltaY : 0;
+            if (wheel > FOLD_ON_SCROLL_PX * 2) setCollapsed(true);
+        };
+        // Where each scroller stood when the band opened, so a scroll that
+        // was already down does not count as a new one.
+        for (const el of shell.querySelectorAll("*")) {
+            if (!band.contains(el) && el.scrollTop > 0) start.set(el, el.scrollTop);
+        }
+        document.addEventListener("scroll", onScroll, true);
+        document.addEventListener("wheel", onWheel, { capture: true, passive: true });
+        return () => {
+            document.removeEventListener("scroll", onScroll, true);
+            document.removeEventListener("wheel", onWheel, true);
+        };
+    }, [collapsed]);
 
     // Nothing while unknown — a skeleton that then collapses to nothing for a
     // first-visit patient is a DOM resize with no payoff.
@@ -867,8 +931,23 @@ export function LongitudinalBand({
     const episode = thread ? `${thread.title}${thread.site ? ` - ${thread.site}` : ""}` : visitGist(lastVisit).headline;
 
     return (
-        <section className={`cs-lt${collapsed ? " is-collapsed" : ""}${followUp ? " is-followup" : ""}`} aria-label="Longitudinal summary">
-            <header className="cs-lt-head">
+        <section
+            ref={bandRef}
+            className={`cs-lt${collapsed ? " is-collapsed" : ""}${followUp ? " is-followup" : ""}${followUp && continued ? " is-continued" : ""}`}
+            aria-label="Longitudinal summary"
+        >
+            {/* The whole header line opens and closes the band, not only its
+                title: a click on the episode, the date or the empty space
+                between is the same intent. Controls inside keep their own
+                click (the check below), and the title button stays the
+                keyboard route. */}
+            <header
+                className="cs-lt-head"
+                onClick={(e) => {
+                    if ((e.target as HTMLElement).closest("button, a, input, textarea, select")) return;
+                    setCollapsed((v) => !v);
+                }}
+            >
                 {/* The whole collapse control. A button wrapping the title
                     rather than a separate icon: the title IS what you click,
                     same convention as `.cs-lt-expand` below it. */}
@@ -884,7 +963,7 @@ export function LongitudinalBand({
                     </span>
                     <span className="cs-lt-title-wrap">
                         {followUp
-                            ? <CornerDownRight size={14} className="cs-lt-title-icon" aria-hidden="true" />
+                            ? <ThreadEmblem joined={continued} />
                             : <Activity size={14} className="cs-lt-title-icon" aria-hidden="true" />}
                         <h2 className="cs-lt-title">{followUp ? "Follow-up" : "Longitudinal Summary"}</h2>
                     </span>
@@ -894,6 +973,12 @@ export function LongitudinalBand({
                     <span className="cs-lt-fu-episode" title={episode}>
                         <span className="cs-lt-fu-name">{episode}</span>
                         <span className="cs-lt-fu-from">from {formatVisitDate(lastVisit.created_at)} · {agoText(lastVisit.created_at)}</span>
+                    </span>
+                )}
+                {followUp && continued && (
+                    <span className="cs-lt-fu-carried">
+                        <Check size={11} strokeWidth={2.6} aria-hidden="true" />
+                        Carried to today
                     </span>
                 )}
 
@@ -937,17 +1022,24 @@ export function LongitudinalBand({
 
                 <div className="cs-lt-head-spacer" />
 
+                {/* Continue is a one-time act: once done it leaves (folding
+                    its width back to the header) rather than staying as a
+                    greyed button, and the band itself says it is done. */}
                 {followUp && onContinue && (
-                    <button
-                        type="button"
-                        className={`cs-lt-fu-continue${continued ? " is-done" : ""}`}
-                        onClick={onContinue}
-                        disabled={continued}
-                        title="Bring the last visit's complaints and findings, with their places, onto today's case sheet"
-                    >
-                        {continued ? <Check size={12} aria-hidden="true" /> : <CornerDownRight size={12} aria-hidden="true" />}
-                        <span>{continued ? "Carried forward" : "Continue"}</span>
-                    </button>
+                    <span className={`cs-lt-fu-cwrap${continued ? " is-gone" : ""}`}>
+                        <button
+                            type="button"
+                            className="cs-lt-fu-continue"
+                            onClick={onContinue}
+                            disabled={continued}
+                            tabIndex={continued ? -1 : undefined}
+                            aria-hidden={continued || undefined}
+                            title="Bring the last visit's complaints and findings, with their places, onto today's case sheet"
+                        >
+                            <CornerDownRight size={12} aria-hidden="true" />
+                            <span>Continue</span>
+                        </button>
+                    </span>
                 )}
 
                 {!carePlan && (
