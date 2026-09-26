@@ -151,6 +151,15 @@ interface Props {
     onRemoveAssessment?: (text: string) => void;
     /** the catalogue search; injectable for tests, `searchIntents` otherwise */
     searchAssessments?: (query: string) => Promise<IntentSearchHit[]>;
+    /**
+     * "Not in the list" (2026-09-27): typed words recorded at the site as a
+     * new finding / complaint (the clinic's own catalogue term) or as the
+     * doctor's own assessment, remembered for next time. Absent: no rows.
+     */
+    onAddCustomFindingAt?: (label: string, kind: "symptom" | "finding", site: SiteRef) => Promise<string | null>;
+    onAddCustomAssessmentAt?: (label: string, site: SiteRef) => string | null;
+    /** the doctor's remembered assessments, searched in the field */
+    ownAssessmentTerms?: string[];
     disabled?: boolean;
 }
 
@@ -167,6 +176,7 @@ export function JointMapCard({
     presentation = "card", open = false, onClose, examination, disabled = false,
     assessmentLines, onAddAssessmentAt, onAssessmentDetails, onRemoveAssessment,
     searchAssessments = searchFindingIntents,
+    onAddCustomFindingAt, onAddCustomAssessmentAt, ownAssessmentTerms,
 }: Props) {
     const [items, setItems] = useState<BodySiteFinding[]>([]);
     const [aspect, setAspect] = useState<BodyAspect>("front");
@@ -267,6 +277,8 @@ export function JointMapCard({
                 intentId: h.intentId, type: h.type, label: h.label, refTable: h.refTable, refId: h.refId,
                 medicine: null, viaSearch: true, overridden: false,
             }, selSite),
+            onAddCustom: onAddCustomAssessmentAt ? (label) => onAddCustomAssessmentAt(label, selSite) : undefined,
+            ownTerms: ownAssessmentTerms,
             onDetails: onAssessmentDetails,
             onRemove: (l) => onRemoveAssessment(l.text),
         }
@@ -499,6 +511,9 @@ export function JointMapCard({
                                             ? onObservableToggleAt(o, selSite)
                                             : onObservableToggle(o))}
                                         assessment={assessmentApi}
+                                        onAddCustomFinding={onAddCustomFindingAt
+                                            ? (label, kind) => onAddCustomFindingAt(label, kind, selSite)
+                                            : undefined}
                                     />
                                 )}
 

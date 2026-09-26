@@ -108,6 +108,9 @@ export interface UseSynapse {
     error: string | null;
     reloading: boolean;
     reload: () => void;
+    /** Puts one observable into the loaded catalogue at once — a clinic's
+     *  own term, just added — without refetching everything. */
+    addObservable: (o: Observable) => void;
 }
 
 export function useSynapse(): UseSynapse {
@@ -371,5 +374,11 @@ export function useSynapse(): UseSynapse {
 
     const reload = useCallback(() => void load(true), [load]);
 
-    return { status, data, error, reloading, reload };
+    const addObservable = useCallback((o: Observable) => {
+        setData((d) => (d && !d.observables.some((x) => x.id === o.id)
+            ? { ...d, observables: [...d.observables, o] }
+            : d));
+    }, []);
+
+    return { status, data, error, reloading, reload, addObservable };
 }

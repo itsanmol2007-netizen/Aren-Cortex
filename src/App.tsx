@@ -65,6 +65,7 @@ import {
   DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
   AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS, storyNotes,
 } from "./features/consult/story";
+import { registerCustomAssessment } from "./features/consult/assessmentFamilies";
 import { type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MedicineAddSheet } from "./features/consult/MedicineAddSheet";
@@ -121,7 +122,7 @@ import { profileFor, type ChartKind } from "./features/synapse/specialtyProfile"
 import { useOnline } from "./features/frontdesk/operational/useOnline";
 import type { PersonalizedIntent } from "./lib/synapse/personalize";
 import {
-  type Observable, saveDoctorFreeTerm, requestNewComposition,
+  type Observable, saveDoctorFreeTerm, requestNewComposition, addClinicObservable,
   type DoctorFreeTermType,
   type PreferredLab, loadPreferredLabs, loadDefaultPreferredLab,
   fetchDoctorMeasurePrefs,
@@ -720,7 +721,7 @@ function App() {
     confirmPendingMedicine, confirmStagedMedicine, medicineBilling,
     pendingIntervention, confirmPendingIntervention, cancelPendingIntervention,
     assessmentLines, pendingAssessment, confirmPendingAssessment, cancelPendingAssessment,
-    editAssessmentLine, addAnotherAssessmentSite, addAssessmentAt, updateAssessmentDetails,
+    editAssessmentLine, addAnotherAssessmentSite, addAssessmentAt, addCustomAssessmentAt, updateAssessmentDetails,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
@@ -2200,6 +2201,67 @@ function App() {
   ]);
 
   /**
+   * The body map's "not in the list" (2026-09-27). A finding or complaint
+   * becomes the clinic's own catalogue term (so it saves, prints and shows
+   * up in search like any other) and is recorded at the site; an assessment
+   * is recorded at the site and remembered as this doctor's own term, the
+   * same memory the Assessment card's free text uses. A new term needs the
+   * server, so offline says so rather than pretending.
+   */
+  const handleAddCustomFindingAt = useCallback(
+    async (label: string, kind: "symptom" | "finding", site: SiteRef): Promise<string | null> => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return "You are offline. A new term needs a connection; add it to the story for now.";
+      }
+      try {
+        const o = await addClinicObservable({
+          label, kind, domain: specialty.preferDomain ?? null, system: specialty.preferSystems?.[0] ?? null,
+        });
+        synapse.addObservable(o);
+        const already = caseSheetEntries.find((e) => e.label === o.label)?.sites?.some((st) => sameSite(st, site));
+        if (!already) {
+          if (o.localizable) chart.toggleObservableAt(o, site);
+          else handleObservableToggle(o);
+        }
+        return null;
+      } catch (e) {
+        console.warn("add_clinic_observable:", e);
+        return "Could not add that term. Check the connection and try again.";
+      }
+    },
+    [specialty.preferDomain, specialty.preferSystems, synapse, caseSheetEntries, chart, handleObservableToggle],
+  );
+
+  const handleAddCustomAssessmentAt = useCallback((label: string, site: SiteRef): string | null => {
+    const id = addCustomAssessmentAt(label, site);
+    if (id && identity.isReal) {
+      saveDoctorFreeTerm({
+        doctorId: identity.doctorId,
+        hospitalId: identity.hospitalId,
+        label: label.trim(),
+        type: "finding",
+        signalIds: (intelligence.result?.activeSignals ?? []).map((s) => s.signalId),
+        acceptedIntentIds: [...acceptedIntentIdSet],
+      })
+        .then(() => synapse.reload())
+        .catch((e) => console.warn("doctor_free_terms save (non-fatal):", e));
+    }
+    return id;
+  }, [addCustomAssessmentAt, identity, intelligence.result, acceptedIntentIdSet, synapse]);
+
+  /** This doctor's own assessments, offered by the body map's search. */
+  const ownAssessmentTerms = useMemo(
+    () => (synapse.data?.freeTerms ?? []).filter((t) => t.type === "finding").map((t) => t.label),
+    [synapse.data?.freeTerms],
+  );
+  // A remembered or restored assessment of the doctor's own resolves to a
+  // site-only family, so its line keeps working after a reload.
+  useEffect(() => {
+    for (const t of ownAssessmentTerms) registerCustomAssessment(t);
+    for (const l of assessmentLines) if (l.intentId === null) registerCustomAssessment(l.label);
+  }, [ownAssessmentTerms, assessmentLines]);
+
+  /**
    * Which measurements the chart has just made worth taking.
    *
    * Derived from the engine's own active signals rather than from the chip
@@ -3151,6 +3213,9 @@ function App() {
               onAddAssessmentAt={addAssessmentAt}
               onAssessmentDetails={updateAssessmentDetails}
               onRemoveAssessment={removeDiagnosis}
+              onAddCustomFindingAt={identity.isReal ? handleAddCustomFindingAt : undefined}
+              onAddCustomAssessmentAt={handleAddCustomAssessmentAt}
+              ownAssessmentTerms={ownAssessmentTerms}
               disabled={!patient}
             />
           )}

@@ -392,6 +392,19 @@ export interface ResolvedFamily extends AssessmentFamily {
     namesItsJoint: boolean;
 }
 
+/**
+ * A doctor's own assessment, typed where the catalogue had nothing
+ * ("Patellofemoral pain syndrome"): recorded at its site with no details to
+ * ask, the way "Gout" or "Previous fracture" are. Registered on first use
+ * and again for every remembered term (doctor_free_terms) on load, so a
+ * restored or reopened line still resolves.
+ */
+export function registerCustomAssessment(label: string): void {
+    const key = label.trim().toLowerCase();
+    if (!key || BY_LABEL[key]) return;
+    BY_LABEL[key] = { family: "siteOnly", bilateral: true };
+}
+
 /** The family behind a catalogue assessment, or null for one with no site. */
 export function familyFor(label: string): ResolvedFamily | null {
     const hit = BY_LABEL[label.trim().toLowerCase()];

@@ -12024,3 +12024,25 @@ body.cs-locked-shell {
 .cs-stl-done-actions { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
 .cs-stl-link { display: inline-flex; align-items: center; gap: 5px; color: var(--cs-blue); font-size: 12.5px; font-weight: 700; text-decoration: none; }
 .cs-stl-link:hover { text-decoration: underline; }
+
+/* ── Body map field: "Not in the list? Add it as" (2026-09-27) ───────────── */
+.cs-jf-row.is-custom .cs-jf-check {
+    border: 1px dashed #b8c2d3;
+    background: #fff;
+    color: var(--cs-faint);
+}
+.cs-jf-row.is-custom.is-active { background: #f6f8fc; }
+.cs-jf-row.is-custom.is-active .cs-jf-check { border-style: solid; border-color: var(--cs-blue); color: var(--cs-blue); }
+.cs-jf-customkind {
+    display: inline-block;
+    margin-right: 7px;
+    border-radius: 6px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    vertical-align: 1px;
+}
+.cs-jf-customkind.is-finding { background: #dcf3ee; color: #0b6a62; }
+.cs-jf-customkind.is-symptom { background: #fde7ec; color: #be123c; }
+.cs-jf-customkind.is-assessment { background: #efe8ff; color: #6d28d9; }
+.cs-jf-none.is-error { color: var(--cs-red); font-weight: 600; }

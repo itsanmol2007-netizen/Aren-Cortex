@@ -25,6 +25,17 @@
 // one makes the assessment AT this site at once (no modal: the site is the
 // one question already answered) and opens its details right under its
 // token, SiteAssessmentDetails. Clicking the token later opens them again.
+//
+// ── Not in the list (2026-09-27)
+//
+// Whatever is typed that matches nothing exactly can still be recorded, in
+// the doctor's own words, as what they mean it to be: what the patient
+// reports, what was found, or the assessment. The likeliest reading leads
+// (`guessCustomKind`: "osteoarthritis" reads as an assessment, "clicking"
+// as reported, "tenderness" as found) and the other two sit under it. A
+// finding becomes the clinic's own catalogue term (add_clinic_observable)
+// and an assessment the doctor's remembered term, so either is offered by
+// search the next time.
 // ---------------------------------------------------------------------------
 
 import { Check, ChevronDown, MapPin, Plus, Stethoscope, X } from "lucide-react";
@@ -35,7 +46,8 @@ import type { AssessmentLine } from "./assessmentPlan";
 import type { AssessmentDetails } from "./assessmentFamilies";
 import { SiteAssessmentDetails } from "./SiteAssessmentDetails";
 
-type RowKind = Observable["kind"] | "assessment";
+type RowKind = Observable["kind"] | "assessment" | "custom";
+type CustomKind = "symptom" | "finding" | "assessment";
 
 interface Row {
     key: string;
@@ -49,6 +61,10 @@ interface Row {
     here: boolean;
     /** recorded somewhere else — "at Right knee", "no place yet" */
     away: string | null;
+    /** "not in the list": record the typed words as this */
+    custom?: CustomKind;
+    /** a remembered term of the doctor's own (an assessment) */
+    ownTerm?: boolean;
 }
 
 const KIND_LABEL: Record<RowKind, string> = {
@@ -56,8 +72,30 @@ const KIND_LABEL: Record<RowKind, string> = {
     finding: "On examination",
     history: "History",
     assessment: "Assessment",
+    custom: "Not in the list? Add it as",
 };
-const KIND_RANK: Record<RowKind, number> = { symptom: 0, history: 0, finding: 1, assessment: 2 };
+const KIND_RANK: Record<RowKind, number> = { symptom: 0, history: 0, finding: 1, assessment: 2, custom: 3 };
+
+const CUSTOM_LABEL: Record<CustomKind, string> = {
+    symptom: "Reported",
+    finding: "On examination",
+    assessment: "Assessment",
+};
+
+/**
+ * What a doctor most likely means by words the catalogue lacks. A reading,
+ * not a verdict: it only decides which of the three rows leads.
+ */
+export function guessCustomKind(text: string): CustomKind {
+    const t = text.toLowerCase();
+    if (/(itis|osis|pathy|oma\b|syndrome|tear|rupture|fracture|sprain|strain|lesion|injury|disease|disorder|arthritis|\boa\b|impingement|instability|dislocation|deformity|bursitis|tendin)/.test(t)) {
+        return "assessment";
+    }
+    if (/(pain|ache|aching|stiff|clicking|catching|locking|giving way|weak|numb|tingling|burning|cramp|difficulty|unable|can't|cannot|feels)/.test(t)) {
+        return "symptom";
+    }
+    return "finding";
+}
 
 /** What the field needs to make assessments at this place. */
 export interface SiteAssessmentApi {
@@ -67,12 +105,16 @@ export interface SiteAssessmentApi {
     find: (query: string) => Promise<IntentSearchHit[]>;
     /** make one here; the new (or existing) line's id */
     onAdd: (hit: IntentSearchHit) => string | null;
+    /** a doctor's own assessment here (not in the catalogue); the line's id */
+    onAddCustom?: (label: string) => string | null;
+    /** the doctor's remembered assessments, searched alongside the catalogue */
+    ownTerms?: string[];
     onDetails: (id: string, details: AssessmentDetails) => void;
     onRemove: (line: AssessmentLine) => void;
 }
 
 export function JointFindingField({
-    placeLabel, suggested, catalogue, isHere, awayNote, onToggle, assessment, disabled = false,
+    placeLabel, suggested, catalogue, isHere, awayNote, onToggle, assessment, onAddCustomFinding, disabled = false,
 }: {
     /** "Left knee" — names the field and the empty state */
     placeLabel: string;
@@ -84,8 +126,13 @@ export function JointFindingField({
     awayNote: (o: Observable) => string | null;
     onToggle: (o: Observable) => void;
     assessment?: SiteAssessmentApi;
+    /** records typed words as a new finding or complaint at this place;
+     *  resolves to an error message, or null when it was recorded */
+    onAddCustomFinding?: (label: string, kind: "symptom" | "finding") => Promise<string | null>;
     disabled?: boolean;
 }) {
+    const [customBusy, setCustomBusy] = useState(false);
+    const [customError, setCustomError] = useState<string | null>(null);
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(0);
@@ -153,8 +200,38 @@ export function JointFindingField({
             here: recordedDx.some((l) => l.label.toLowerCase() === h.label.toLowerCase()),
             away: null,
         })) : [];
-        return [...obs, ...dx];
-    }, [query, suggested, catalogue, isHere, awayNote, dxHits, recordedDx]);
+        // The doctor's own assessments from earlier consults, by the same
+        // word-start match, under the catalogue's.
+        const own: Row[] = q && assessment?.onAddCustom
+            ? (assessment.ownTerms ?? [])
+                .filter((t) => {
+                    const l = t.toLowerCase();
+                    return words.every((w) => l.split(/[\s/()-]+/).some((p) => p.startsWith(w)) || l.includes(w))
+                        && !dx.some((d) => d.label.toLowerCase() === l);
+                })
+                .slice(0, 3)
+                .map((t) => ({
+                    key: `own:${t}`, kind: "assessment" as const, label: t, ownTerm: true, away: null,
+                    here: recordedDx.some((l) => l.label.toLowerCase() === t.toLowerCase()),
+                }))
+            : [];
+        const listed = [...obs, ...dx, ...own];
+        // Not in the list: anything typed that no row names exactly.
+        const typed = query.trim().replace(/\s+/g, " ");
+        const exact = listed.some((r) => r.label.toLowerCase() === typed.toLowerCase());
+        const kinds: CustomKind[] = [];
+        if (typed.length >= 3 && !exact) {
+            const can = (k: CustomKind) => (k === "assessment" ? !!assessment?.onAddCustom : !!onAddCustomFinding);
+            const lead = guessCustomKind(typed);
+            for (const k of [lead, ...(["finding", "symptom", "assessment"] as CustomKind[]).filter((k) => k !== lead)]) {
+                if (can(k)) kinds.push(k);
+            }
+        }
+        const custom: Row[] = kinds.map((k) => ({
+            key: `c:${k}`, kind: "custom", label: typed, custom: k, here: false, away: null,
+        }));
+        return [...listed, ...custom];
+    }, [query, suggested, catalogue, isHere, awayNote, dxHits, recordedDx, assessment, onAddCustomFinding]);
 
     useEffect(() => { setActive(0); }, [query, open]);
 
@@ -194,6 +271,27 @@ export function JointFindingField({
     }, [active]);
 
     const pick = (r: Row) => {
+        setCustomError(null);
+        // Typed words are kept as typed, only sentence-cased: "medial joint
+        // line tenderness" is recorded as "Medial joint line tenderness".
+        const words = r.custom ? r.label.charAt(0).toUpperCase() + r.label.slice(1) : r.label;
+        if (r.custom === "assessment" || (r.ownTerm && assessment?.onAddCustom)) {
+            setQuery("");
+            const existing = recordedDx.find((l) => l.label.toLowerCase() === words.toLowerCase());
+            const id = existing?.id ?? assessment?.onAddCustom?.(words) ?? null;
+            if (id) { setOpenDx(id); setOpen(false); inputRef.current?.blur(); }
+            return;
+        }
+        if (r.custom && onAddCustomFinding) {
+            if (customBusy) return;
+            setCustomBusy(true);
+            onAddCustomFinding(words, r.custom).then((err) => {
+                if (err) { setCustomError(err); return; }
+                setQuery("");
+                inputRef.current?.focus();
+            }).finally(() => setCustomBusy(false));
+            return;
+        }
         setQuery("");
         if (r.hit && assessment) {
             // Made here, or already here: either way its details open under
@@ -314,6 +412,7 @@ export function JointFindingField({
                             <MapPin size={12} aria-hidden="true" /> Found at the {placeLabel.toLowerCase()}
                         </p>
                     )}
+                    {customError && <p className="cs-jf-none is-error">{customError}</p>}
                     {rows.length === 0 ? (
                         <p className="cs-jf-none">Nothing matches “{query.trim()}”</p>
                     ) : rows.map((r, i) => {
@@ -332,12 +431,26 @@ export function JointFindingField({
                                     onMouseDown={(e) => { e.preventDefault(); pick(r); }}
                                 >
                                     <span className="cs-jf-check" aria-hidden="true">
-                                        {r.kind === "assessment"
-                                            ? (r.here ? <Check size={12} strokeWidth={2.6} /> : <Stethoscope size={11} />)
-                                            : r.here && <Check size={12} strokeWidth={2.6} />}
+                                        {r.custom
+                                            ? <Plus size={12} strokeWidth={2.4} />
+                                            : r.kind === "assessment"
+                                                ? (r.here ? <Check size={12} strokeWidth={2.6} /> : <Stethoscope size={11} />)
+                                                : r.here && <Check size={12} strokeWidth={2.6} />}
                                     </span>
-                                    <span className="cs-jf-rowlabel">{r.label}</span>
-                                    {r.kind === "assessment" && <em>{r.here ? "open details" : `at ${placeLabel.toLowerCase()}`}</em>}
+                                    {r.custom ? (
+                                        <span className="cs-jf-rowlabel">
+                                            <b className={`cs-jf-customkind is-${r.custom}`}>{CUSTOM_LABEL[r.custom]}</b>
+                                            “{r.label}”
+                                        </span>
+                                    ) : (
+                                        <span className="cs-jf-rowlabel">{r.label}</span>
+                                    )}
+                                    {r.custom && i === rows.findIndex((x) => x.custom) && (
+                                        <em>{customBusy ? "adding…" : `at ${placeLabel.toLowerCase()}`}</em>
+                                    )}
+                                    {r.ownTerm && !r.here && <em>yours · at {placeLabel.toLowerCase()}</em>}
+                                    {r.kind === "assessment" && !r.ownTerm && <em>{r.here ? "open details" : `at ${placeLabel.toLowerCase()}`}</em>}
+                                    {r.ownTerm && r.here && <em>open details</em>}
                                     {r.away && <em>{r.away}</em>}
                                 </button>
                             </div>

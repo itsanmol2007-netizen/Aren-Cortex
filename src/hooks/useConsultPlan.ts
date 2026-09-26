@@ -44,7 +44,7 @@ import { formatLine as formatIntervention, type InterventionLine, type Intervent
 import type { InterventionDraft } from "../components/InterventionInspector";
 import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import {
-  composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, type AssessmentDetails,
+  composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, type AssessmentDetails, registerCustomAssessment,
 } from "../features/consult/assessmentFamilies";
 import { clinicalSiteLabel, type SiteRef } from "../lib/body/clinicalSite";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
@@ -239,6 +239,8 @@ export interface ConsultPlan {
    *  panel. No modal: the line exists at once and its details are edited
    *  in place. Returns the new line's id, or null when it was not added. */
   addAssessmentAt: (payload: AcceptPayload, site: SiteRef) => string | null;
+  /** a doctor's own assessment at a site, when the catalogue has none */
+  addCustomAssessmentAt: (label: string, site: SiteRef) => string | null;
   /** change a line's details in place, its site unchanged */
   updateAssessmentDetails: (id: string, details: AssessmentDetails) => void;
 
@@ -1087,6 +1089,23 @@ export function useConsultPlan({
     return id;
   }, [assessmentLines, diagnoses, acceptedIntents, commitAccept]);
 
+  const addCustomAssessmentAt = useCallback((label: string, site: SiteRef): string | null => {
+    const clean = label.trim().replace(/\s+/g, " ");
+    if (!clean) return null;
+    registerCustomAssessment(clean);
+    const family = familyFor(clean);
+    if (!family) return null;
+    const text = composeAssessmentText(clean, family, site, {});
+    const existing = assessmentLines.find((l) => l.text === text);
+    if (existing) return existing.id;
+    setDiagnoses((curr) => (curr.includes(text) ? curr : [...curr, text]));
+    const id = `dx-custom-${Date.now()}`;
+    setAssessmentLines((curr) => [...curr, {
+      id, intentId: null, label: clean, family: family.key, site, details: {}, text,
+    }]);
+    return id;
+  }, [assessmentLines]);
+
   const updateAssessmentDetails = useCallback((id: string, raw: AssessmentDetails) => {
     const old = assessmentLines.find((l) => l.id === id);
     const family = old ? familyFor(old.label) : null;
@@ -1733,6 +1752,7 @@ export function useConsultPlan({
     cancelPendingAssessment,
     editAssessmentLine,
     addAssessmentAt,
+    addCustomAssessmentAt,
     updateAssessmentDetails,
     addAnotherAssessmentSite,
 

@@ -141,6 +141,41 @@ export async function fetchObservables(): Promise<Observable[]> {
     }));
 }
 
+/**
+ * A clinic's own word for something the catalogue does not have
+ * ("Medial joint line tenderness"), added from the body map's "not in the
+ * list" row. `add_clinic_observable` returns the existing row when the
+ * catalogue or the clinic already has that label, so typing it twice never
+ * makes two. Owned by the clinic (seen by it alone) and saved, printed and
+ * searched like any other observable; nothing ranks on it.
+ */
+export async function addClinicObservable(opts: {
+    label: string;
+    kind: "symptom" | "finding";
+    domain?: string | null;
+    system?: string | null;
+}): Promise<Observable> {
+    const { data, error } = await supabase.rpc("add_clinic_observable", {
+        p_label: opts.label,
+        p_kind: opts.kind,
+        p_domain: opts.domain ?? null,
+        p_system: opts.system ?? null,
+    });
+    if (error) throw new Error(`add_clinic_observable: ${error.message}`);
+    const o = (Array.isArray(data) ? data[0] : data) as any;
+    if (!o) throw new Error("add_clinic_observable: no row returned");
+    return {
+        id: Number(o.id),
+        slug: o.slug,
+        label: o.label,
+        kind: o.kind,
+        domains: (o.domains ?? []) as string[],
+        searchText: o.search_text ?? "",
+        system: o.system ?? "general",
+        localizable: !!o.localizable,
+    };
+}
+
 // ============================================================
 // INTAKE — the same catalogue, in the language it is spoken
 // ============================================================
