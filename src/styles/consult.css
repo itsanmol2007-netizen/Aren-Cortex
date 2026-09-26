@@ -11197,65 +11197,24 @@ body.cs-locked-shell {
 .cs-lt-fu-mark.is-joined { background: linear-gradient(160deg, #7c3aed 0%, #5b21b6 100%); }
 .cs-lt-fu-mark svg { animation: cs-token-in 0.28s cubic-bezier(0.34, 1.4, 0.64, 1); }
 
-/* The follow-up, drawn (FollowUpArt): in the band's empty space, right of
-   the cards; it shrinks first and disappears when the cards need the room. */
-.cs-lt-fu-art {
-    flex: 0 1 250px;
-    align-self: stretch;
-    min-width: 0;
-    min-height: 150px;
-    margin-left: auto;
-    container-type: inline-size;
-    pointer-events: none;
-}
-.cs-lt-fu-art svg { display: block; width: 100%; height: 100%; max-height: 190px; overflow: visible; }
-@container (max-width: 170px) { .cs-lt-fu-art svg { display: none; } }
-.cs-lt-fu-art-dash { fill: none; stroke: #c4b5fd; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 3 5; }
-.cs-lt-fu-art-line {
-    fill: none;
-    stroke-width: 3;
+/* The episode trail (EpisodeTrail): a line of dots in the header. */
+.cs-lt-fu-trail { display: inline-flex; flex: none; align-self: center; }
+.cs-lt-fu-trail svg { display: block; overflow: visible; }
+.cs-lt-fu-trail-dash { stroke: #c4b5fd; stroke-width: 1.5; stroke-dasharray: 2 3; stroke-linecap: round; }
+.cs-lt-fu-trail-line {
+    stroke: #8b5cf6;
+    stroke-width: 1.8;
     stroke-linecap: round;
     stroke-dasharray: 1;
     stroke-dashoffset: 1;
-    transition: stroke-dashoffset 0.9s cubic-bezier(0.65, 0, 0.35, 1);
+    transition: stroke-dashoffset 0.6s cubic-bezier(0.65, 0, 0.35, 1);
 }
-.cs-lt-fu-art.is-joined .cs-lt-fu-art-line { stroke-dashoffset: 0; }
-.cs-lt-fu-art-node { fill: #fff; stroke: #a78bfa; stroke-width: 2; }
-.cs-lt-fu-art.is-joined .cs-lt-fu-art-node { fill: #ede9fe; stroke: #7c3aed; transition: fill 0.3s ease 0.4s, stroke 0.3s ease 0.4s; }
-.cs-lt-fu-art-ring {
-    fill: none;
-    stroke: #a78bfa;
-    stroke-width: 1.5;
-    transform-box: fill-box;
-    transform-origin: center;
-    animation: cs-fu-ring 2.4s ease-out infinite;
-}
-.cs-lt-fu-art.is-joined .cs-lt-fu-art-ring { animation: none; opacity: 0; }
-@keyframes cs-fu-ring {
-    0% { opacity: 0.9; scale: 0.7; }
-    80% { opacity: 0; scale: 1.5; }
-    100% { opacity: 0; scale: 1.5; }
-}
-.cs-lt-fu-art-today { fill: #fff; stroke: #7c3aed; stroke-width: 2.4; transition: fill 0.3s ease 0.7s; }
-.cs-lt-fu-art.is-joined .cs-lt-fu-art-today { fill: #7c3aed; }
-.cs-lt-fu-art-check {
-    fill: none;
-    stroke: #fff;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    transition: stroke-dashoffset 0.3s ease 0.9s;
-}
-.cs-lt-fu-art.is-joined .cs-lt-fu-art-check { stroke-dashoffset: 0; }
-.cs-lt-fu-art-day { fill: #5b21b6; font-size: 12px; font-weight: 800; }
-.cs-lt-fu-art-cap { fill: #6b5a93; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-.cs-lt-fu-art-cap.is-today { fill: #6d28d9; }
-.cs-lt-fu-art-title { fill: #5b21b6; font-size: 11px; font-weight: 750; }
+.cs-lt-fu-trail.is-joined .cs-lt-fu-trail-line { stroke-dashoffset: 0; }
+.cs-lt-fu-trail-dot { fill: #a78bfa; }
+.cs-lt-fu-trail-today { fill: #fff; stroke: #7c3aed; stroke-width: 1.8; transition: fill 0.25s ease 0.45s; }
+.cs-lt-fu-trail.is-joined .cs-lt-fu-trail-today { fill: #7c3aed; }
 @media (prefers-reduced-motion: reduce) {
-    .cs-lt-fu-art-line, .cs-lt-fu-art-check, .cs-lt-fu-art-today { transition: none; }
-    .cs-lt-fu-art-ring, .cs-lt-fu-mark svg { animation: none; }
+    .cs-lt-fu-trail-line, .cs-lt-fu-trail-today { transition: none; }
 }
 
 .cs-lt-fu-episode {

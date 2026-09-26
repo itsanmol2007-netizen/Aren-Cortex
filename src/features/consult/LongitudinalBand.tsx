@@ -727,93 +727,25 @@ function FollowUpMark({ joined }: { joined: boolean }) {
 }
 
 /**
- * The follow-up, drawn: the patient's way back from the last visit to
- * today. The last visit is a calendar page with its date; each thing still
- * open sits on the path as a small node; today is the bright end, ringed
- * while the thread is waiting to be picked up and checked once it is. The
- * path is dashed until Continue, then draws itself solid.
- *
- * It lives in the band's own empty space, to the right of the cards, and
- * gives way (hides) when the cards need the width.
+ * The episode, in one line of dots: each visit of this episode, then today.
+ * Small enough to sit in the header beside the episode's name (it grows by
+ * a few pixels a visit, never by a panel); dashed until the doctor
+ * continues the thread, then drawn through with today's dot filled.
  */
-function FollowUpArt({ fromDate, days, open, joined }: {
-    fromDate: string;
-    days: number;
-    /** how many things are still open — one node each on the path, up to 3 */
-    open: number;
-    joined: boolean;
-}) {
-    const PATH = "M34 112 C 84 112, 96 58, 146 62 S 196 40, 214 36";
-    const nodes = [0.36, 0.56, 0.74].slice(0, Math.max(0, Math.min(open, 3)));
-    // Points along the curve for the open items — sampled once off-screen.
-    const at = (t: number) => {
-        // cubic segments of PATH, by hand: first half then the smooth second
-        const seg = (p0: number[], p1: number[], p2: number[], p3: number[], u: number) => [0, 1].map((k) =>
-            (1 - u) ** 3 * p0[k] + 3 * (1 - u) ** 2 * u * p1[k] + 3 * (1 - u) * u ** 2 * p2[k] + u ** 3 * p3[k]);
-        return t < 0.5
-            ? seg([34, 112], [84, 112], [96, 58], [146, 62], t * 2)
-            : seg([146, 62], [196, 66], [196, 40], [214, 36], (t - 0.5) * 2);
-    };
+function EpisodeTrail({ visits, joined }: { visits: string[]; joined: boolean }) {
+    const shown = visits.slice(-5);
+    const GAP = 13;
+    const w = (shown.length) * GAP + 12;
+    const title = [...shown.map((d) => formatVisitDate(d)), "today"].join(" → ");
     return (
-        <div className={`cs-lt-fu-art${joined ? " is-joined" : ""}`} aria-hidden="true">
-            <svg viewBox="0 0 250 150" preserveAspectRatio="xMaxYMid meet">
-                <defs>
-                    <radialGradient id="cs-fu-glow" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.32" />
-                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
-                    </radialGradient>
-                    <linearGradient id="cs-fu-ground" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#f3eeff" stopOpacity="0" />
-                        <stop offset="35%" stopColor="#f3eeff" stopOpacity="1" />
-                    </linearGradient>
-                    <linearGradient id="cs-fu-ground2" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#e9e0ff" stopOpacity="0" />
-                        <stop offset="45%" stopColor="#e9e0ff" stopOpacity="0.8" />
-                    </linearGradient>
-                    <linearGradient id="cs-fu-line" x1="0" y1="1" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#c4b5fd" />
-                        <stop offset="100%" stopColor="#7c3aed" />
-                    </linearGradient>
-                </defs>
-
-                {/* faint ground: two soft hills the path travels over */}
-                <path d="M0 140 C 60 118, 110 132, 160 118 S 230 104, 250 110 L 250 150 L 0 150 Z" fill="url(#cs-fu-ground)" />
-                <path d="M0 146 C 70 134, 130 144, 190 132 S 240 126, 250 128 L 250 150 L 0 150 Z" fill="url(#cs-fu-ground2)" />
-
-                <circle cx="214" cy="36" r="30" fill="url(#cs-fu-glow)" />
-
-                <path d={PATH} className="cs-lt-fu-art-dash" />
-                <path d={PATH} className="cs-lt-fu-art-line" pathLength={1} stroke="url(#cs-fu-line)" />
-
-                {/* the last visit: a calendar page */}
-                <g transform="translate(20 92)">
-                    <rect x="0" y="0" width="28" height="28" rx="6" fill="#fff" stroke="#c4b5fd" strokeWidth="1.4" />
-                    <rect x="0" y="0" width="28" height="8" rx="4" fill="#ede9fe" />
-                    <rect x="0" y="5" width="28" height="3" fill="#ede9fe" />
-                    <line x1="8" y1="-2" x2="8" y2="3" stroke="#a78bfa" strokeWidth="1.6" strokeLinecap="round" />
-                    <line x1="20" y1="-2" x2="20" y2="3" stroke="#a78bfa" strokeWidth="1.6" strokeLinecap="round" />
-                    <text x="14" y="22" textAnchor="middle" className="cs-lt-fu-art-day">{new Date(fromDate).getDate()}</text>
-                </g>
-                <text x="34" y="136" textAnchor="middle" className="cs-lt-fu-art-cap">
-                    {new Date(fromDate).toLocaleDateString("en-IN", { month: "short" })}
-                </text>
-
-                {nodes.map((t) => {
-                    const [x, y] = at(t);
-                    return <circle key={t} cx={x} cy={y} r="4.2" className="cs-lt-fu-art-node" />;
-                })}
-
-                {/* today */}
-                <circle cx="214" cy="36" r="12" className="cs-lt-fu-art-ring" />
-                <circle cx="214" cy="36" r="8" className="cs-lt-fu-art-today" />
-                <path d="M210.4 36.2 L213 38.8 L217.8 33.4" className="cs-lt-fu-art-check" pathLength={1} />
-                <text x="214" y="64" textAnchor="middle" className="cs-lt-fu-art-cap is-today">Today</text>
-
-                <text x="128" y="20" textAnchor="middle" className="cs-lt-fu-art-title">
-                    {days <= 0 ? "Back the same day" : `Back after ${days} day${days === 1 ? "" : "s"}`}
-                </text>
+        <span className={`cs-lt-fu-trail${joined ? " is-joined" : ""}`} title={`This episode: ${title}`} aria-hidden="true">
+            <svg width={w} height="14" viewBox={`0 0 ${w} 14`}>
+                <line x1="4" y1="7" x2={w - 6} y2="7" className="cs-lt-fu-trail-dash" />
+                <line x1="4" y1="7" x2={w - 6} y2="7" className="cs-lt-fu-trail-line" pathLength={1} />
+                {shown.map((d, i) => <circle key={d} cx={4 + i * GAP} cy="7" r="2.6" className="cs-lt-fu-trail-dot" />)}
+                <circle cx={w - 6} cy="7" r="4.2" className="cs-lt-fu-trail-today" />
             </svg>
-        </div>
+        </span>
     );
 }
 
@@ -954,6 +886,18 @@ export function LongitudinalBand({
     const lastHadSubstance = !!(lastVisit.assessments?.length || lastVisit.symptoms.length
         || lastVisit.findings.length || lastVisit.diagnoses?.length || lastVisit.sitedFindings?.length);
     const followUp = gap !== null && gap <= 30 && (ongoing.length > 0 || lastHadSubstance);
+    // The visits of this episode: back from the last one while each is
+    // within a month of the one after it. Oldest first.
+    const episodeVisits: string[] = [];
+    {
+        let next = Date.now();
+        for (const v of pastVisits) {
+            const t = new Date(v.created_at).getTime();
+            if (next - t > 30 * 86_400_000) break;
+            episodeVisits.unshift(v.created_at);
+            next = t;
+        }
+    }
     const thread = ongoing.find((o) => o.kind === "condition");
     const episode = thread ? `${thread.title}${thread.site ? ` - ${thread.site}` : ""}` : visitGist(lastVisit).headline;
 
@@ -999,6 +943,7 @@ export function LongitudinalBand({
                 {followUp && (
                     <span className="cs-lt-fu-episode" title={episode}>
                         <span className="cs-lt-fu-name">{episode}</span>
+                        <EpisodeTrail visits={episodeVisits} joined={continued} />
                         <span className="cs-lt-fu-from">from {formatVisitDate(lastVisit.created_at)} · {agoText(lastVisit.created_at)}</span>
                     </span>
                 )}
@@ -1126,14 +1071,7 @@ export function LongitudinalBand({
                             onOpen={(x) => onOpenVisit(lastVisit, x)}
                         />
 
-                        {followUp && (
-                            <FollowUpArt
-                                fromDate={lastVisit.created_at}
-                                days={gap ?? 0}
-                                open={ongoing.filter((o) => o.kind !== "condition" && !o.settled).length}
-                                joined={continued}
-                            />
-                        )}
+
 
                         {/* A returning patient with nothing trendable yet. Rendered as a
                             deliberate, clean clinical placeholder card rather than an
