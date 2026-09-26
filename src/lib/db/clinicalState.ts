@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from "../supabase";
+import { enqueueWrite, registerWriteHandler } from "../offline/writeQueue";
 
 export type ConditionStatus =
     | "active" | "healing" | "improving" | "clinically_united" | "radiologically_united"
@@ -90,4 +91,30 @@ export async function recordInvestigationResult(orderId: string, text: string, v
         .update({ result_text: text, result_at: new Date().toISOString(), result_visit_id: visitId, status: "completed" })
         .eq("id", orderId);
     if (error) throw new Error(`diagnostic_orders result: ${error.message}`);
+}
+
+// ── Offline (2026-09-27) ──────────────────────────────────────────────────
+// Both writes above, through the durable write queue: marked or read with
+// no connection, they are sent when it returns, even across a reload. The
+// card shows the change at once either way; only a failure to queue at all
+// is reported back.
+
+type QueuedStateEvent = Parameters<typeof recordStateEvent>[0];
+registerWriteHandler("clinical.stateEvent", (p) => recordStateEvent(p as QueuedStateEvent));
+registerWriteHandler("clinical.result", (p) => {
+    const r = p as { orderId: string; text: string; visitId: string | null };
+    return recordInvestigationResult(r.orderId, r.text, r.visitId);
+});
+
+export async function queueStateEvent(
+    e: QueuedStateEvent, who: { hospitalId: string; doctorId: string | null },
+): Promise<void> {
+    await enqueueWrite("clinical.stateEvent", e, who);
+}
+
+export async function queueInvestigationResult(
+    orderId: string, text: string, visitId: string | null,
+    who: { hospitalId: string; doctorId: string | null },
+): Promise<void> {
+    await enqueueWrite("clinical.result", { orderId, text, visitId }, who);
 }

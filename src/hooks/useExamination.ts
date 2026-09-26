@@ -19,11 +19,44 @@
 // So it is surfaced here (`error`) rather than swallowed, and the value
 // stays on screen either way — the doctor's number is never lost to a
 // network failure.
+//
+// ── Offline (2026-09-27)
+//
+// Each write goes through the durable write queue (`exam.saveReading`) when
+// the caller names the clinic, so a reading typed with no connection is
+// sent when it returns, even across a reload. And every value is mirrored
+// per visit in localStorage, laid over what the server returns, so a
+// reload with no connection (or before the queue has drained) still shows
+// what was typed.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchExamReadings, saveExamReading } from "../lib/db/examination";
 import type { ExamReading, MeasureContext, MeasureSide } from "../lib/db/examination";
+import { enqueueWrite, registerWriteHandler } from "../lib/offline/writeQueue";
+
+type ReadingArgs = Parameters<typeof saveExamReading>[0];
+registerWriteHandler("exam.saveReading", (payload) => saveExamReading(payload as ReadingArgs));
+
+// ── The per-visit mirror ────────────────────────────────────────────────
+const MIRROR = "aren-cortex:exam:";
+const MIRROR_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+interface Mirror { at: number; n: [string, number][]; t: [string, string][] }
+
+function readMirror(visitId: string): Mirror | null {
+    try {
+        const raw = localStorage.getItem(MIRROR + visitId);
+        if (!raw) return null;
+        const m = JSON.parse(raw) as Mirror;
+        if (Date.now() - m.at > MIRROR_MAX_AGE_MS) { localStorage.removeItem(MIRROR + visitId); return null; }
+        return m;
+    } catch { return null; }
+}
+function writeMirror(visitId: string, n: Map<string, number>, t: Map<string, string>) {
+    try {
+        localStorage.setItem(MIRROR + visitId, JSON.stringify({ at: Date.now(), n: [...n], t: [...t] }));
+    } catch { /* storage full or blocked: the queue still carries the write */ }
+}
 
 /** (key | side | method | context) — one reading. */
 function slot(key: string, side: MeasureSide | null, method: string | null, context: MeasureContext): string {
@@ -47,7 +80,12 @@ export interface ExaminationHook {
     reset: () => void;
 }
 
-export function useExamination(visitId: string | null): ExaminationHook {
+export function useExamination(
+    visitId: string | null,
+    /** the clinic and doctor, for the offline write queue; without them a
+     *  reading is written directly, as before */
+    queue?: { hospitalId: string; doctorId: string | null } | null,
+): ExaminationHook {
     const [numbers, setNumbers] = useState<Map<string, number>>(new Map());
     const [texts, setTexts] = useState<Map<string, string>>(new Map());
     const [loading, setLoading] = useState(false);
@@ -67,13 +105,41 @@ export function useExamination(visitId: string | null): ExaminationHook {
                     if (r.valueNum !== null) n.set(s, r.valueNum);
                     else if (r.valueText) t.set(s, r.valueText);
                 }
+                // What was typed on this device wins over what the server
+                // has not caught up with yet.
+                const m = readMirror(visitId);
+                if (m) {
+                    for (const [k, v] of m.n) n.set(k, v);
+                    for (const [k, v] of m.t) t.set(k, v);
+                }
                 setNumbers(n);
                 setTexts(t);
             })
-            .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
+            .catch((e) => {
+                if (cancelled) return;
+                // No connection: show what was typed here.
+                const m = readMirror(visitId);
+                if (m) { setNumbers(new Map(m.n)); setTexts(new Map(m.t)); return; }
+                setError(e instanceof Error ? e.message : String(e));
+            })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
     }, [visitId]);
+
+    // Mirror every change (a cleared value leaves the mirror too).
+    const loadedFor = useRef<string | null>(null);
+    useEffect(() => {
+        if (!visitId || loading) return;
+        if (loadedFor.current !== visitId) { loadedFor.current = visitId; return; }
+        writeMirror(visitId, numbers, texts);
+    }, [visitId, numbers, texts, loading]);
+
+    const hospitalId = queue?.hospitalId ?? null;
+    const doctorId = queue?.doctorId ?? null;
+    /** One reading, through the durable queue when the clinic is known. */
+    const persist = useCallback((args: ReadingArgs) => (hospitalId
+        ? enqueueWrite("exam.saveReading", args, { hospitalId, doctorId }).then(() => undefined)
+        : saveExamReading(args)), [hospitalId, doctorId]);
 
     const getNumber = useCallback((key, side, method, context: MeasureContext = "baseline") =>
         numbers.get(slot(key, side, method, context)) ?? null,
@@ -148,10 +214,10 @@ export function useExamination(visitId: string | null): ExaminationHook {
             return next;
         });
         if (!visitId) return;
-        queueSave(s, () => saveExamReading({
+        queueSave(s, () => persist({
             visitId, measureKey: key, side, method, context, valueNum: value, unit,
         }));
-    }, [visitId, queueSave]);
+    }, [visitId, queueSave, persist]);
 
     const setText = useCallback((
         key: string, side: MeasureSide | null, value: string | null, context: MeasureContext = "baseline"
@@ -163,10 +229,10 @@ export function useExamination(visitId: string | null): ExaminationHook {
             return next;
         });
         if (!visitId) return;
-        queueSave(s, () => saveExamReading({
+        queueSave(s, () => persist({
             visitId, measureKey: key, side, method: null, context, valueText: value,
         }));
-    }, [visitId, queueSave]);
+    }, [visitId, queueSave, persist]);
 
     const reset = useCallback(() => {
         setNumbers(new Map());

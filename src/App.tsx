@@ -19,7 +19,7 @@ import { ongoingFrom, type OngoingAction, type OngoingItem, type OngoingLocal } 
 import { formatDue, formatLine as formatInterventionLine } from "./features/consult/interventionPlan";
 import { NV_CHECKS, NV_REGIONS, nvKey } from "./features/consult/NeurovascularCheck";
 import { dashText } from "./lib/clinicalText";
-import { recordInvestigationResult, recordStateEvent, STATUS_LABEL } from "./lib/db/clinicalState";
+import { queueInvestigationResult, queueStateEvent, recordInvestigationResult, recordStateEvent, STATUS_LABEL, type ConditionStatus, type PlanStatus } from "./lib/db/clinicalState";
 import { ResultSheet, type ResultDraft } from "./features/consult/ResultSheet";
 import { SendToLabSheet } from "./features/consult/SendToLabSheet";
 import type { AssessmentLine } from "./features/consult/assessmentPlan";
@@ -1897,6 +1897,38 @@ function App() {
     setLabSentTo(null);
     setContinued(false);
   }, [patient?.id]);
+  // This visit's marks on the band (states, results) kept per visit on this
+  // device, so a reload before the write queue has drained (no connection,
+  // or a crash) still shows them. Restored once per visit, then mirrored.
+  const ongoingRestoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visitId || ongoingRestoredFor.current === visitId) return;
+    ongoingRestoredFor.current = visitId;
+    try {
+      const raw = localStorage.getItem(`aren-cortex:ongoing:${visitId}`);
+      if (!raw) return;
+      const m = JSON.parse(raw) as {
+        at: number;
+        conditions: [string, ConditionStatus][];
+        plans: [string, { status: PlanStatus | "active"; dueDate: string | null }][];
+        results: [string, string][];
+      };
+      if (Date.now() - m.at > 3 * 24 * 60 * 60 * 1000) return;
+      setOngoingStates({ conditions: new Map(m.conditions), plans: new Map(m.plans) });
+      setResultsToday((cur) => new Map([...m.results, ...cur]));
+    } catch { /* a bad entry is just not restored */ }
+  }, [visitId]);
+  useEffect(() => {
+    if (!visitId || ongoingRestoredFor.current !== visitId) return;
+    try {
+      localStorage.setItem(`aren-cortex:ongoing:${visitId}`, JSON.stringify({
+        at: Date.now(),
+        conditions: [...ongoingStates.conditions],
+        plans: [...ongoingStates.plans],
+        results: [...resultsToday],
+      }));
+    } catch { /* storage full or blocked: the queue still carries the writes */ }
+  }, [visitId, ongoingStates, resultsToday]);
   // A result read at THIS visit and saved already (the consult was reopened,
   // or the page reloaded) is still this visit's: it stays on the Ongoing
   // card as recorded today, with Edit result, rather than vanishing because
@@ -1982,7 +2014,10 @@ function App() {
     if (action.type === "result" && item.order) {
       const order = item.order;
       setResultsToday((cur) => new Map(cur).set(order.id, action.text));
-      recordInvestigationResult(order.id, action.text, visitId).catch((e) => {
+      (identity.isReal
+        ? queueInvestigationResult(order.id, action.text, visitId, { hospitalId: identity.hospitalId, doctorId: identity.doctorId })
+        : recordInvestigationResult(order.id, action.text, visitId)
+      ).catch((e) => {
         setResultsToday((cur) => { const n = new Map(cur); n.delete(order.id); return n; });
         showToast(`Could not save the result: ${e?.message ?? e}`);
       });
@@ -1997,7 +2032,10 @@ function App() {
     ) => {
       let before: Pick<OngoingLocal, "conditions" | "plans"> | null = null;
       setOngoingStates((cur) => { before = cur; return apply(cur); });
-      recordStateEvent(event).catch((e) => {
+      (identity.isReal
+        ? queueStateEvent(event, { hospitalId: identity.hospitalId, doctorId: identity.doctorId })
+        : recordStateEvent(event)
+      ).catch((e) => {
         if (before) setOngoingStates(before);
         showToast(`Could not save ${what}: ${e?.message ?? e}`);
       });
@@ -2091,7 +2129,10 @@ function App() {
   }, [identity.hospitalId, isReviewOpen]);
 
   /** Phase 3 examination state — layer 1, beside the story. */
-  const examination = useExamination(visitId);
+  const examination = useExamination(
+    visitId,
+    identity.isReal ? { hospitalId: identity.hospitalId, doctorId: identity.doctorId } : null,
+  );
 
   // The lab order's "why" and "what happened", from today's consult only:
   // how it happened (with when), the working assessment; then the

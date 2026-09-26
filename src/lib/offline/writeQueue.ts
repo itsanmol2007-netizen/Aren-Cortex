@@ -107,6 +107,9 @@ export async function enqueueWrite(
 }
 
 let flushing = false;
+/** Asked for while a flush was running: run once more when it ends, so a
+ *  write queued mid-flush goes out now rather than at the next timer tick. */
+let again = false;
 
 /** Replays every pending row, in the order it was queued. Safe to call as
  *  often as you like (app boot, the `online` event, a periodic safety-net
@@ -116,7 +119,7 @@ let flushing = false;
  *  like `createNewVisit`'s own bundled patient+visit+observations attempt
  *  was already independent of any other visit being registered. */
 export async function flushQueue(): Promise<void> {
-    if (flushing) return;
+    if (flushing) { again = true; return; }
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
     flushing = true;
     try {
@@ -171,6 +174,10 @@ export async function flushQueue(): Promise<void> {
         }
     } finally {
         flushing = false;
+        if (again) {
+            again = false;
+            void flushQueue();
+        }
     }
 }
 
