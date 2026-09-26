@@ -234,15 +234,18 @@ function OngoingCard({ items, onOpen, onAction }: {
             );
         }
         if (it.kind === "awaiting") {
-            // Recorded this visit: still open to change, never a dead end.
+            // Recorded this visit, or at an earlier one: still open to
+            // change, never a dead end.
+            const label = it.today ? "Edit result" : it.settled ? "Update" : null;
             return (
                 <button
                     type="button"
-                    className={`cs-lt-og-act${it.today ? " has-menu" : " is-primary"}`}
+                    className={`cs-lt-og-act${label ? "" : " is-primary"}`}
                     aria-haspopup="dialog"
+                    title={it.settled ? "Update this result with what it shows now" : undefined}
                     onClick={() => onAction(it, { type: "open-result" })}
                 >
-                    {it.today ? <><Pencil size={11} aria-hidden="true" /> Edit result</> : "Add result"}
+                    {label ? <><Pencil size={11} aria-hidden="true" /> {label}</> : "Add result"}
                 </button>
             );
         }
@@ -271,13 +274,15 @@ function OngoingCard({ items, onOpen, onAction }: {
                     Active now
                 </span>
                 <span className="cs-lt-og-heading">Ongoing care</span>
-                <span className="cs-lt-og-count">{items.length}</span>
+                <span className="cs-lt-og-count" title="Still open">{items.filter((i) => !i.settled).length}</span>
             </div>
-            <ul className="cs-lt-og-list">
-                {items.slice(0, 4).map((it) => {
+            <ul className={`cs-lt-og-list${items.length > 3 ? " is-scrolling" : ""}`}>
+                {items.map((it, i) => {
                     const Icon = ONGOING_ICON[it.kind];
+                    // One quiet rule between what is open and what has settled.
+                    const firstSettled = it.settled && !items[i - 1]?.settled && i > 0;
                     return (
-                        <li key={it.key} className={`cs-lt-og-row${it.today ? " is-today" : ""}`}>
+                        <li key={it.key} className={`cs-lt-og-row${it.today ? " is-today" : ""}${it.settled ? " is-settled" : ""}${firstSettled ? " is-first-settled" : ""}`}>
                             <button
                                 type="button"
                                 className={`cs-lt-og-item is-${it.kind}${it.urgent ? " is-urgent" : ""}`}
@@ -301,7 +306,6 @@ function OngoingCard({ items, onOpen, onAction }: {
                     );
                 })}
             </ul>
-            {items.length > 4 && <p className="cs-lt-og-more">+{items.length - 4} more in the visit timeline</p>}
             {menu && (() => {
                 const m = menuFor(menu.item);
                 return (
@@ -616,10 +620,50 @@ const OUTCOME_ICON = {
  * Plain white, a history glyph and the date: the past, where Ongoing Care
  * beside it is the tinted "now".
  */
-function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number) => void }) {
+function LastVisitCard({ visit, episode, omitKinds, onOpen }: {
+    visit: RealVisit;
+    /** the follow-up's own title — the card does not say it a second time */
+    episode?: string | null;
+    /** outcomes the Ongoing card beside it already carries */
+    omitKinds?: Set<string>;
+    onOpen: (x: number) => void;
+}) {
     const g = visitGist(visit);
+    // A glance, not a report: what it was, how bad, what was found, what was
+    // given, one line each. How it happened, and everything else, is one
+    // click away in the visit itself (the whole card opens it).
+    const meta = [
+        ...g.context.filter((c) => c === visit.story_duration || c.startsWith("pain ")),
+        ...(visit.doctor_name ? [visit.doctor_name] : []),
+    ];
+    const outcomes = g.outcomes.filter((o) => !omitKinds?.has(o.kind));
+    const given = outcomes.filter((o) => o.kind === "rx" || o.kind === "exercise");
+    const also = outcomes.filter((o) => o.kind !== "rx" && o.kind !== "exercise");
+    const rows: { label: string; text: string; title: string }[] = [];
+    if (g.found.length) rows.push({ label: "Found", text: g.found.join(" · "), title: g.found.join(", ") });
+    if (given.length) {
+        const t = given.map((o) => (o.status ? `${o.text} ${o.status}` : o.text)).join(" · ");
+        rows.push({ label: "Given", text: t, title: given.map((o) => o.title ?? o.text).join(", ") });
+    }
+    if (also.length) {
+        const t = also.map((o) => (o.status ? `${o.text} (${o.status.toLowerCase()})` : o.text)).join(" · ");
+        rows.push({ label: "Also", text: t, title: t });
+    }
+    const showHeadline = !episode || episode !== g.headline;
+    const open = (el: HTMLElement) => {
+        const r = el.getBoundingClientRect();
+        onOpen(r.left + r.width / 2);
+    };
+
     return (
-        <div className="cs-lt-card is-last">
+        <div
+            className="cs-lt-card is-last is-glance"
+            role="button"
+            tabIndex={0}
+            title={visit.story_mechanism ? `How it happened: ${visit.story_mechanism}` : "Open the visit"}
+            onClick={(e) => open(e.currentTarget)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(e.currentTarget); } }}
+        >
             <div className="cs-lt-lv-head">
                 <span className="cs-lt-lv-eyebrow">
                     <History size={11} aria-hidden="true" />
@@ -627,51 +671,23 @@ function LastVisitCard({ visit, onOpen }: { visit: RealVisit; onOpen: (x: number
                 </span>
                 <span className="cs-lt-lv-when">
                     {formatVisitDate(visit.created_at)} · {agoText(visit.created_at)}
+                    <ArrowUpRight size={12} className="cs-lt-lv-go" aria-hidden="true" />
                 </span>
             </div>
 
-            <p className="cs-lt-lv-headline" title={g.headline}>{g.headline}</p>
-            {g.context.length > 0 && <p className="cs-lt-lv-context">{g.context.join(" · ")}</p>}
-            {g.found.length > 0 && (
-                <p className="cs-lt-lv-found">
-                    <span>Found</span> {g.found.slice(0, 3).join(" · ")}{g.found.length > 3 ? ` +${g.found.length - 3}` : ""}
-                </p>
-            )}
+            {showHeadline && <p className="cs-lt-lv-headline" title={g.headline}>{g.headline}</p>}
+            {meta.length > 0 && <p className="cs-lt-lv-meta">{meta.join(" · ")}</p>}
 
-            {g.outcomes.length > 0 && (
-                <ul className="cs-lt-lv-outcomes">
-                    {g.outcomes.slice(0, 4).map((o, i) => {
-                        const Icon = OUTCOME_ICON[o.kind];
-                        return (
-                            <li key={i} className={`is-${o.kind}`} title={o.title ?? o.text}>
-                                <Icon size={12} aria-hidden="true" />
-                                <span className="cs-lt-lv-otext">{o.text}</span>
-                                {o.status && <em>{o.status}</em>}
-                            </li>
-                        );
-                    })}
-                </ul>
+            {rows.length > 0 && (
+                <dl className="cs-lt-lv-rows">
+                    {rows.map((r) => (
+                        <div key={r.label} className="cs-lt-lv-row" title={r.title}>
+                            <dt>{r.label}</dt>
+                            <dd>{r.text}</dd>
+                        </div>
+                    ))}
+                </dl>
             )}
-
-            <div className="cs-lt-lv-foot">
-                {visit.doctor_name && (
-                    <span className="cs-lt-lv-doc">
-                        <User size={11} aria-hidden="true" />
-                        {visit.doctor_name}
-                    </span>
-                )}
-                <button
-                    type="button"
-                    className="cs-lt-lv-open"
-                    onClick={(e) => {
-                        const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                        onOpen(r.left + r.width / 2);
-                    }}
-                >
-                    Open visit
-                    <ArrowUpRight size={12} aria-hidden="true" />
-                </button>
-            </div>
         </div>
     );
 }
@@ -1013,7 +1029,9 @@ export function LongitudinalBand({
                     anything is opened: what is still on them or due. The top
                     item, on the header line itself, so it shows collapsed;
                     it opens the band to the full Ongoing Care card. */}
-                {ongoing.length > 0 && (() => {
+                {/* A summary for the closed band only: open, the Ongoing card
+                    below says the same thing in full. */}
+                {collapsed && ongoing.length > 0 && (() => {
                     const top = ongoing[0];
                     const Icon = ONGOING_ICON[top.kind];
                     return (
@@ -1100,13 +1118,19 @@ export function LongitudinalBand({
                             <CarePlanCard plan={carePlan} sessionNumber={currentSession} onEdit={onEditCarePlan} />
                         )}
 
-                        <LastVisitCard visit={lastVisit} onOpen={(x) => onOpenVisit(lastVisit, x)} />
+                        <LastVisitCard
+                            visit={lastVisit}
+                            episode={followUp ? episode : null}
+                            // What the Ongoing card already shows is not said twice.
+                            omitKinds={ongoing.length ? new Set(["awaited", "result", "planned", "done"]) : undefined}
+                            onOpen={(x) => onOpenVisit(lastVisit, x)}
+                        />
 
                         {followUp && (
                             <FollowUpArt
                                 fromDate={lastVisit.created_at}
                                 days={gap ?? 0}
-                                open={ongoing.filter((o) => o.kind !== "condition").length}
+                                open={ongoing.filter((o) => o.kind !== "condition" && !o.settled).length}
                                 joined={continued}
                             />
                         )}

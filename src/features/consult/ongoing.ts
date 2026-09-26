@@ -61,6 +61,14 @@ export interface OngoingItem {
     procedure?: VisitProcedure;
     /** awaiting: the investigation order */
     order?: VisitOrder;
+    /**
+     * Settled at an earlier visit but still part of the episode: a result
+     * that came in, a condition recently marked resolved. Shown after what
+     * is open, quieter, and still changeable: an episode does not end in two
+     * visits, and the third visit must be able to update what the second
+     * recorded.
+     */
+    settled?: boolean;
 }
 
 /** What has been done about these during the consult in progress. */
@@ -102,6 +110,10 @@ const IN_PLACE_MAX_DAYS = 120;
 const AWAITING_MAX_DAYS = 30;
 /** How long an assessment is shown as current without a newer visit restating it. */
 const CONDITION_MAX_DAYS = 120;
+/** A result that came in stays on the card this long, updatable. */
+const RESULT_KEEP_DAYS = 45;
+/** A condition closed at an earlier visit stays on the card this long, reopenable. */
+const CLOSED_KEEP_DAYS = 21;
 
 const DAY = 86_400_000;
 
@@ -214,12 +226,32 @@ export function ongoingFrom(
     // Investigations ordered at an earlier visit whose result is not in yet —
     // the thread a patient comes back with ("here is my X-ray").
     const awaiting: OngoingItem[] = [];
+    const resultsIn: OngoingItem[] = [];
     for (const v of pastVisits) {
         const days = daysBetween(v.created_at, now);
-        if (days > AWAITING_MAX_DAYS) continue;
         for (const o of v.orders ?? []) {
             const mine = local.results.get(o.id);
-            if (o.resultText && !mine) continue;
+            if (o.resultText && !mine) {
+                // Came in at an earlier visit: settled, not gone. The next
+                // visit can still read it and update it.
+                if (daysBetween(o.resultAt ?? v.created_at, now) > RESULT_KEEP_DAYS) continue;
+                resultsIn.push({
+                    key: `rx:${o.id}`,
+                    kind: "awaiting",
+                    title: o.name,
+                    site: null,
+                    siteRef: null,
+                    text: `${o.name}: ${o.resultText}`,
+                    status: `Result in ${o.resultAt ? shortDate(o.resultAt) : ""}: ${o.resultText}`.replace(" :", ":"),
+                    urgent: false,
+                    today: false,
+                    visitId: v.id,
+                    order: o,
+                    settled: true,
+                });
+                continue;
+            }
+            if (days > AWAITING_MAX_DAYS) continue;
             awaiting.push({
                 key: `rx:${o.id}`,
                 kind: "awaiting",
@@ -248,8 +280,10 @@ export function ongoingFrom(
             const mine = a.id ? local.conditions.get(a.id) : undefined;
             const saved = a.state && !["deferred", "cancelled"].includes(a.state.status)
                 ? { status: a.state.status as ConditionStatus, at: a.state.at } : null;
-            // Closed at an earlier visit: no longer ongoing.
-            if (!mine && saved && CLOSED_STATUSES.has(saved.status)) continue;
+            // Closed at an earlier visit: kept a while, quietly, so a
+            // resolution recorded too early can be reopened; then gone.
+            const closed = !mine && !!saved && CLOSED_STATUSES.has(saved.status);
+            if (closed && daysBetween(saved!.at, now) > CLOSED_KEEP_DAYS) continue;
             const current = mine ?? saved?.status ?? null;
             conditions.push({
                 key: `cx:${v.id}:${k}`,
@@ -269,6 +303,7 @@ export function ongoingFrom(
                 assessmentId: a.id,
                 family: a.family,
                 state: current,
+                settled: closed,
             });
         }
     }
@@ -281,6 +316,9 @@ export function ongoingFrom(
         ...awaiting,
         ...inPlace,
         ...due.filter((d) => !d.urgent),
-        ...conditions,
+        ...conditions.filter((c) => !c.settled),
+        // Settled last: part of the episode, not what needs doing.
+        ...resultsIn,
+        ...conditions.filter((c) => c.settled),
     ];
 }
