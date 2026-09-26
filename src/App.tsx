@@ -17,8 +17,7 @@ import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type Sit
 import { siteSignalsOf } from "./lib/body/siteSignals";
 import type { OngoingAction, OngoingItem, OngoingLocal } from "./features/consult/ongoing";
 import { recordInvestigationResult, recordStateEvent } from "./lib/db/clinicalState";
-import { ResultSheet } from "./features/consult/ResultSheet";
-import { uploadAttachment } from "./lib/db/attachments";
+import { ResultSheet, type ResultDraft } from "./features/consult/ResultSheet";
 import { searchIntents } from "./lib/db/synapse";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
@@ -1850,6 +1849,8 @@ function App() {
   const [resultsToday, setResultsToday] = useState<Map<string, string>>(() => new Map());
   /** the awaited investigation whose result sheet is open */
   const [resultSheetFor, setResultSheetFor] = useState<OngoingItem | null>(null);
+  /** what each result recorded this visit was made of, so it reopens for editing */
+  const [resultDrafts, setResultDrafts] = useState<Map<string, ResultDraft>>(() => new Map());
   const findResultAssessments = useCallback(
     (q: string) => searchIntents({ query: q, types: ["finding"], limit: 24 }).then((r) => r.hits),
     [],
@@ -3087,14 +3088,14 @@ function App() {
               onAccept={handleAcceptIntent}
               onDetails={updateAssessmentDetails}
               onRemove={removeDiagnosis}
-              onUpload={visitId ? async (file, meta) => {
-                await uploadAttachment({
-                  visitId, file, attachmentType: meta.type, label: meta.label,
-                  laterality: meta.site?.side === "both" ? "bilateral" : meta.site?.side ?? undefined,
-                  bodyRegion: meta.site?.region,
-                });
-              } : undefined}
-              onSave={(text) => {
+              visitId={visitId}
+              hospitalId={identity.isReal ? identity.hospitalId : null}
+              patientId={patient?.id ?? null}
+              initial={resultDrafts.get(resultSheetFor.order.id)}
+              editing={resultsToday.has(resultSheetFor.order.id)}
+              onSave={(text, draft) => {
+                const orderId = resultSheetFor.order!.id;
+                setResultDrafts((cur) => new Map(cur).set(orderId, draft));
                 handleOngoingAction(resultSheetFor, { type: "result", text });
                 setResultSheetFor(null);
               }}

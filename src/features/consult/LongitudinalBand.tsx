@@ -232,14 +232,15 @@ function OngoingCard({ items, onOpen, onAction }: {
             );
         }
         if (it.kind === "awaiting") {
-            return it.today ? null : (
+            // Recorded this visit: still open to change, never a dead end.
+            return (
                 <button
                     type="button"
-                    className="cs-lt-og-act is-primary"
+                    className={`cs-lt-og-act${it.today ? " has-menu" : " is-primary"}`}
                     aria-haspopup="dialog"
                     onClick={() => onAction(it, { type: "open-result" })}
                 >
-                    Add result
+                    {it.today ? <><Pencil size={11} aria-hidden="true" /> Edit result</> : "Add result"}
                 </button>
             );
         }

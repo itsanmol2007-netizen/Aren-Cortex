@@ -116,7 +116,15 @@ export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children
     // surface opted out (see `preventDismiss` above).
     useEffect(() => {
         if (!expanded || preventDismiss) return;
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") requestClose(); };
+        // Only the topmost surface answers: a phone-upload QR over the
+        // result sheet closes alone, not the sheet with it.
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            const all = document.querySelectorAll(".cs-chartmodal");
+            const mine = panelRef.current?.closest(".cs-chartmodal");
+            if (mine && all[all.length - 1] !== mine) return;
+            requestClose();
+        };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [expanded, requestClose, preventDismiss]);

@@ -14,6 +14,7 @@
 
 import { Check, FlaskConical, Plus, Stethoscope, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SiteLayout, siteModeFor } from "../features/consult/AnatomyPicker";
 import {
     composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, visibleFields,
@@ -85,6 +86,8 @@ export function AssessmentSiteModal({
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 e.preventDefault();
+                // Only this modal: not the result sheet or body map under it.
+                e.stopImmediatePropagation();
                 onCancel();
                 return;
             }
@@ -113,7 +116,11 @@ export function AssessmentSiteModal({
             return next;
         });
 
-    return (
+    // Portalled, so it always sits over whatever opened it: the result
+    // sheet and the body map are themselves portalled overlays, and a modal
+    // left inside the consult's own stacking context rendered BEHIND them,
+    // unseen and never confirmed.
+    return createPortal(
         <div className="cs-addmed" role="dialog" aria-modal="true" aria-label={`${label} — site and details`}>
             {/* Not a button: a click outside does nothing, on purpose. */}
             <div className="cs-addmed-scrim" aria-hidden="true" />
@@ -187,6 +194,7 @@ export function AssessmentSiteModal({
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }

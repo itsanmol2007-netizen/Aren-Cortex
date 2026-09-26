@@ -11727,3 +11727,73 @@ body.cs-locked-shell {
 }
 .cs-rs-save:disabled { opacity: 0.45; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .cs-rs-hits, .cs-rs-file { animation: none; } }
+
+/* Result sheet: attachment chips and the computer / phone choice. */
+.cs-rs-file.is-done { padding: 0 4px 0 0; }
+.cs-rs-file-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    border-radius: 8px 0 0 8px;
+    background: none;
+    padding: 0 6px 0 10px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.cs-rs-file-view:hover .cs-rs-file-name { color: var(--cs-blue); text-decoration: underline; }
+.cs-rs-file-view > svg:first-child { color: var(--cs-teal); }
+.cs-rs-file-x {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-rs-file-x:hover { background: rgba(0, 0, 0, 0.06); color: var(--cs-ink); }
+.cs-rs-chooser {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 34px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 2px;
+    box-shadow: 0 4px 14px rgba(16, 28, 46, 0.08);
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-rs-chooser > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 0 12px;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-rs-chooser > button:hover:not(:disabled) { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-rs-chooser > button:disabled { opacity: 0.45; cursor: default; }
+.cs-rs-chooser > .cs-rs-chooser-x { padding: 0 8px; color: var(--cs-faint); }
+.cs-rs-phone-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--cs-teal);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) { .cs-rs-chooser { animation: none; } }

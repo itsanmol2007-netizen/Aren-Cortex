@@ -23,22 +23,65 @@
 // on today's sheet, where they belong.
 // ---------------------------------------------------------------------------
 
-import { Check, FileImage, FlaskConical, Loader2, Paperclip, Plus, Search, Stethoscope, X } from "lucide-react";
+import { Check, FileImage, FlaskConical, Loader2, Monitor, Plus, QrCode, Search, Stethoscope, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChartSurface } from "./ChartSurface";
 import { SiteAssessmentDetails } from "./SiteAssessmentDetails";
 import { familyFor, siteAllowed, type AssessmentDetails } from "./assessmentFamilies";
 import type { AssessmentLine } from "./assessmentPlan";
 import type { AcceptPayload } from "./types";
-import { clinicalSiteLabel, sameSite, siteFromLabel, type SiteRef } from "../../lib/body/clinicalSite";
+import { clinicalSiteLabel, normalizeSite, sameSite, siteFromLabel, type SiteRef } from "../../lib/body/clinicalSite";
+import type { BodyRegion } from "../../lib/body/anatomy";
 import type { IntentSearchHit } from "../../lib/db/synapse";
 import type { VisitOrder } from "../../lib/db";
-import type { AttachmentType } from "../../lib/attachments/types";
+import type { Attachment, AttachmentType, Laterality } from "../../lib/attachments/types";
+import { listAttachments, subscribeAttachments, updateAttachmentTags, uploadAttachment } from "../../lib/db/attachments";
+import { UploadFromPhoneModal } from "./UploadFromPhoneModal";
+import { AttachmentPreviewModal } from "./AttachmentPreviewModal";
 
-/** The order's site, from its composed name: "X-Ray Hand / Wrist - Right wrist". */
+/** Where on the body an order's name points, most specific first. */
+const REGION_WORDS: [RegExp, BodyRegion][] = [
+    [/wrist/, "wrist"],
+    [/hand|finger|thumb|metacarp|phalan|scaphoid/, "hand"],
+    [/forearm|radius|ulna/, "forearm"],
+    [/elbow/, "elbow"],
+    [/humerus|upper arm/, "upper_arm"],
+    [/shoulder|clavic|scapul|acromio/, "shoulder"],
+    [/cervical|neck/, "neck"],
+    [/lumbar|lumbo|sacr|coccy|low back/, "torso_lower"],
+    [/thoracic|dorsal spine/, "torso_upper"],
+    [/pelvi/, "pelvis"],
+    [/hip/, "hip"],
+    [/femur|thigh/, "thigh"],
+    [/knee|patell/, "knee"],
+    [/tibia|fibula|\bleg\b|shin/, "lower_leg"],
+    [/ankle/, "ankle"],
+    [/foot|heel|calcan|\btoe|metatars/, "foot"],
+];
+
+/**
+ * The order's site, from its name. Orders are named more than one way:
+ * "X-Ray Hand / Wrist - Right wrist" (composed with its site),
+ * "X-Ray Hand / Wrist — Left" (an older composition: the side alone),
+ * "X-ray Right Knee (AP/Lateral, weight-bearing)". The composed site is
+ * read first; otherwise the side and the part are picked out of the words.
+ * Null for an order with no part of a limb or spine in it (a chest X-ray,
+ * a blood count).
+ */
 export function orderSite(name: string): SiteRef | null {
-    const i = name.lastIndexOf(" - ");
-    return i > 0 ? siteFromLabel(name.slice(i + 3)) : null;
+    const tail = name.split(/\s[-—–]\s/);
+    if (tail.length > 1) {
+        const exact = siteFromLabel(tail[tail.length - 1]);
+        if (exact) return exact;
+    }
+    const n = name.toLowerCase();
+    const region = REGION_WORDS.find(([re]) => re.test(n))?.[1];
+    if (!region) return null;
+    const side: SiteRef["side"] = /\b(bilateral|both)\b/.test(n) ? "both"
+        : /\b(left|lt)\b/.test(n) ? "left"
+            : /\b(right|rt)\b/.test(n) ? "right" : null;
+    const aspect = region === "neck" || region === "torso_upper" || region === "torso_lower" ? "back" : "front";
+    return normalizeSite({ region, side, aspect });
 }
 
 function attachmentTypeFor(name: string): AttachmentType {
@@ -48,10 +91,30 @@ function attachmentTypeFor(name: string): AttachmentType {
     return "lab_report";
 }
 
-interface Upload { key: string; name: string; state: "uploading" | "done" | "failed" }
+/**
+ * Everything a result was made of, kept by the caller per order so the
+ * sheet reopens as it was saved ("Edit result"), not blank.
+ */
+export interface ResultDraft {
+    /** today's assessment lines this result points at */
+    linked: string[];
+    /** of those, the ones this result itself created (its x takes them off today's assessment) */
+    owned: string[];
+    /** assessments with no place ("Anaemia"), by name */
+    plain: string[];
+    normal: boolean;
+    note: string;
+    /** this visit's attachments that belong to the result */
+    attachmentIds: number[];
+}
+
+export const EMPTY_RESULT_DRAFT: ResultDraft = { linked: [], owned: [], plain: [], normal: false, note: "", attachmentIds: [] };
+
+interface Upload { key: string; name: string; state: "uploading" | "failed" }
 
 export function ResultSheet({
-    order, orderedAt, assessmentLines, find, onAddAt, onAccept, onDetails, onRemove, onUpload, onSave, onClose,
+    order, orderedAt, assessmentLines, find, onAddAt, onAccept, onDetails, onRemove,
+    visitId, hospitalId, patientId, initial = EMPTY_RESULT_DRAFT, editing = false, onSave, onClose,
 }: {
     order: VisitOrder;
     orderedAt: string;
@@ -63,9 +126,15 @@ export function ResultSheet({
     onAccept: (payload: AcceptPayload) => void;
     onDetails: (id: string, details: AssessmentDetails) => void;
     onRemove: (text: string) => void;
-    /** the visit's own attachment upload; absent when there is no visit yet */
-    onUpload?: (file: File, meta: { type: AttachmentType; label: string; site: SiteRef | null }) => Promise<void>;
-    onSave: (text: string) => void;
+    /** the visit the image lands on; without one there is nothing to attach to */
+    visitId: string | null;
+    /** for "Upload from phone" (the visit gateway QR), as on the Attachments card */
+    hospitalId?: string | null;
+    patientId?: string | null;
+    /** what the result was made of when it was last saved */
+    initial?: ResultDraft;
+    editing?: boolean;
+    onSave: (text: string, draft: ResultDraft) => void;
     onClose: () => void;
 }) {
     const site = useMemo(() => orderSite(order.name), [order.name]);
@@ -74,16 +143,48 @@ export function ResultSheet({
     const [searching, setSearching] = useState(false);
     const [active, setActive] = useState(0);
     /** lines made or linked from this sheet, by id; plain labels for unsited ones */
-    const [linked, setLinked] = useState<string[]>([]);
-    const [plain, setPlain] = useState<string[]>([]);
-    /** what this sheet itself put on today's assessment (a cancel takes it back) */
+    const [linked, setLinked] = useState<string[]>(initial.linked);
+    const [plain, setPlain] = useState<string[]>(initial.plain);
+    /** made by this result, at any sitting */
+    const [owned, setOwned] = useState<string[]>(initial.owned);
+    /** made at THIS sitting — what a cancel takes back */
     const [made, setMade] = useState<string[]>([]);
+    const [madePlain, setMadePlain] = useState<string[]>([]);
     const [openId, setOpenId] = useState<string | null>(null);
-    const [normal, setNormal] = useState(false);
-    const [note, setNote] = useState("");
+    const [normal, setNormal] = useState(initial.normal);
+    const [note, setNote] = useState(initial.note);
     const [uploads, setUploads] = useState<Upload[]>([]);
     const fileRef = useRef<HTMLInputElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // ── The image: this visit's attachments, the Attachments card's own ──
+    // Two ways in, the same two the Attachments card offers: this computer,
+    // or the patient's phone (the visit-gateway QR). A computer upload is
+    // labelled with the order and its side; a phone upload arrives over
+    // realtime with neither, so anything that lands while the sheet is open
+    // is taken as this result's and tagged with the side when it is saved.
+    const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const [mine, setMine] = useState<number[]>(initial.attachmentIds);
+    const [dropped, setDropped] = useState<number[]>([]);
+    const [chooser, setChooser] = useState(false);
+    const [phone, setPhone] = useState(false);
+    const [preview, setPreview] = useState<Attachment | null>(null);
+    const openedAt = useRef(Date.now());
+    useEffect(() => {
+        if (!visitId) return;
+        let live = true;
+        const load = () => listAttachments(visitId).then((a) => { if (live) setAttachments(a); }).catch(() => {});
+        load();
+        const off = subscribeAttachments(visitId, load);
+        return () => { live = false; off(); };
+    }, [visitId]);
+    const arrived = attachments
+        .filter((a) => new Date(a.createdAt).getTime() >= openedAt.current - 2000)
+        .map((a) => a.id);
+    const resultAttachments = attachments.filter(
+        (a) => (mine.includes(a.id) || arrived.includes(a.id)) && !dropped.includes(a.id),
+    );
+    const canPhone = !!visitId && !!hospitalId && !!patientId;
 
     // After ChartSurface has taken focus onto its panel (useOverlayFocus),
     // hand it to the search: the first thing a result needs is what it showed.
@@ -131,15 +232,36 @@ export function ResultSheet({
             const existed = new Set(assessmentLines.map((l) => l.id));
             const id = onAddAt(payload, site);
             if (id) {
-                if (!existed.has(id)) setMade((c) => [...c, id]);
+                if (!existed.has(id)) { setMade((c) => [...c, id]); setOwned((c) => [...c, id]); }
                 setLinked((c) => (c.includes(id) ? c : [...c, id]));
                 setOpenId(id);
             }
             return;
         }
         onAccept(payload);
+        if (familyFor(h.label)) {
+            // No site on the order (a chest X-ray showing a rib fracture):
+            // the ordinary accept asks where, in its own modal. The line it
+            // makes is linked here when it lands (the effect below).
+            waiting.current = { label: h.label.toLowerCase(), before: new Set(assessmentLines.map((l) => l.id)) };
+            return;
+        }
         setPlain((c) => (c.includes(h.label) ? c : [...c, h.label]));
+        setMadePlain((c) => [...c, h.label]);
     };
+
+    const waiting = useRef<{ label: string; before: Set<string> } | null>(null);
+    useEffect(() => {
+        const w = waiting.current;
+        if (!w) return;
+        const landed = assessmentLines.find((l) => !w.before.has(l.id) && l.label.toLowerCase() === w.label);
+        if (!landed) return;
+        waiting.current = null;
+        setMade((c) => [...c, landed.id]);
+        setOwned((c) => [...c, landed.id]);
+        setLinked((c) => (c.includes(landed.id) ? c : [...c, landed.id]));
+        setOpenId(landed.id);
+    }, [assessmentLines]);
 
     // Leaving without saving takes back what the sheet added; a line that
     // was already on today's assessment stays as it was.
@@ -148,22 +270,41 @@ export function ResultSheet({
             const l = assessmentLines.find((x) => x.id === id);
             if (l) onRemove(l.text);
         }
-        for (const p of plain) onRemove(p);
+        for (const p of madePlain) onRemove(p);
         onClose();
     };
 
+    const laterality: Laterality | undefined = site?.side === "both" ? "bilateral" : site?.side ?? undefined;
     const upload = async (files: FileList | null) => {
-        if (!files || !onUpload) return;
+        if (!files || !visitId) return;
         for (const file of Array.from(files)) {
             const key = `${file.name}-${file.size}-${Date.now()}`;
             setUploads((c) => [...c, { key, name: file.name, state: "uploading" }]);
             try {
-                await onUpload(file, { type: attachmentTypeFor(order.name), label: order.name, site });
-                setUploads((c) => c.map((u) => (u.key === key ? { ...u, state: "done" } : u)));
+                const att = await uploadAttachment({
+                    visitId, file, attachmentType: attachmentTypeFor(order.name), label: order.name,
+                    laterality, bodyRegion: site?.region,
+                });
+                setAttachments((c) => (c.some((x) => x.id === att.id) ? c : [att, ...c]));
+                setMine((c) => [...c, att.id]);
+                setUploads((c) => c.filter((u) => u.key !== key));
             } catch {
                 setUploads((c) => c.map((u) => (u.key === key ? { ...u, state: "failed" } : u)));
             }
         }
+    };
+
+    const save = (text: string) => {
+        // A phone upload carries no side or place; the order knows both.
+        for (const a of resultAttachments) {
+            if (!a.laterality && !a.bodyRegion && (laterality || site)) {
+                updateAttachmentTags(a.id, { laterality: laterality ?? null, bodyRegion: site?.region ?? null }).catch(() => {});
+            }
+        }
+        onSave(text, {
+            linked, owned: owned.filter((id) => linked.includes(id)), plain, normal, note: note.trim(),
+            attachmentIds: resultAttachments.map((a) => a.id),
+        });
     };
 
     const parts = [
@@ -172,14 +313,14 @@ export function ResultSheet({
         ...plain,
         ...(note.trim() ? [note.trim()] : []),
     ];
-    const attached = uploads.filter((u) => u.state === "done").length;
+    const attached = resultAttachments.length;
     const text = parts.length ? parts.join("; ") : attached ? "Report attached" : "";
     const busy = uploads.some((u) => u.state === "uploading");
 
     return (
         <ChartSurface
             title={order.name}
-            eyebrow="Add result"
+            eyebrow={editing ? "Edit result" : "Add result"}
             icon={<FlaskConical size={15} />}
             expanded
             onClose={cancel}
@@ -225,11 +366,15 @@ export function ResultSheet({
                                     </button>
                                     <button
                                         type="button"
-                                        aria-label={made.includes(l.id) ? `Take ${l.label} off this result and today's assessment` : `Unlink ${l.label} from this result`}
+                                        aria-label={owned.includes(l.id) ? `Take ${l.label} off this result and today's assessment` : `Unlink ${l.label} from this result`}
                                         onClick={() => {
                                             setLinked((c) => c.filter((x) => x !== l.id));
                                             if (openId === l.id) setOpenId(null);
-                                            if (made.includes(l.id)) { setMade((c) => c.filter((x) => x !== l.id)); onRemove(l.text); }
+                                            if (owned.includes(l.id)) {
+                                                setOwned((c) => c.filter((x) => x !== l.id));
+                                                setMade((c) => c.filter((x) => x !== l.id));
+                                                onRemove(l.text);
+                                            }
                                         }}
                                     >
                                         <X size={12} />
@@ -334,27 +479,68 @@ export function ResultSheet({
                         onChange={(e) => { upload(e.target.files); e.target.value = ""; }}
                     />
                     <div className="cs-rs-files">
+                        {resultAttachments.map((a) => (
+                            <span key={a.id} className="cs-rs-file is-done">
+                                <button type="button" className="cs-rs-file-view" onClick={() => setPreview(a)} title="View">
+                                    <Check size={13} strokeWidth={2.6} aria-hidden="true" />
+                                    <FileImage size={13} aria-hidden="true" />
+                                    <span className="cs-rs-file-name">{a.label || (a.mimeType?.includes("pdf") ? "Report (PDF)" : "Image")}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="cs-rs-file-x"
+                                    aria-label="Not part of this result"
+                                    title="Not part of this result (stays in the visit's attachments)"
+                                    onClick={() => { setMine((c) => c.filter((x) => x !== a.id)); setDropped((c) => [...c, a.id]); }}
+                                >
+                                    <X size={12} />
+                                </button>
+                            </span>
+                        ))}
                         {uploads.map((u) => (
                             <span key={u.key} className={`cs-rs-file is-${u.state}`}>
-                                {u.state === "uploading" ? <Loader2 size={13} className="cs-spin" aria-hidden="true" />
-                                    : u.state === "done" ? <Check size={13} strokeWidth={2.6} aria-hidden="true" />
-                                        : <X size={13} aria-hidden="true" />}
+                                {u.state === "uploading" ? <Loader2 size={13} className="cs-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
                                 <FileImage size={13} aria-hidden="true" />
                                 <span className="cs-rs-file-name">{u.name}</span>
                                 {u.state === "failed" && <em>Upload failed</em>}
                             </span>
                         ))}
-                        <button
-                            type="button"
-                            className="cs-rs-attach"
-                            disabled={!onUpload}
-                            title={onUpload ? undefined : "Start the consult to attach files"}
-                            onClick={() => fileRef.current?.click()}
-                        >
-                            <Paperclip size={14} aria-hidden="true" />
-                            {uploads.length ? "Attach another" : "Attach the image or report"}
-                        </button>
+                        {/* The Attachments card's own two ways in. */}
+                        {chooser ? (
+                            <span className="cs-rs-chooser" role="group" aria-label="Upload from">
+                                <button type="button" onClick={() => { setChooser(false); fileRef.current?.click(); }}>
+                                    <Monitor size={14} aria-hidden="true" /> This computer
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={!canPhone}
+                                    title={canPhone ? "Show a QR code the patient scans to upload" : "Phone upload needs a saved patient"}
+                                    onClick={() => { setChooser(false); setPhone(true); }}
+                                >
+                                    <QrCode size={14} aria-hidden="true" /> Phone
+                                </button>
+                                <button type="button" className="cs-rs-chooser-x" aria-label="Cancel" onClick={() => setChooser(false)}>
+                                    <X size={13} />
+                                </button>
+                            </span>
+                        ) : (
+                            <button
+                                type="button"
+                                className="cs-rs-attach"
+                                disabled={!visitId}
+                                title={visitId ? undefined : "Start the consult to attach files"}
+                                onClick={() => (canPhone ? setChooser(true) : fileRef.current?.click())}
+                            >
+                                <Plus size={14} aria-hidden="true" />
+                                {resultAttachments.length || uploads.length ? "Attach another" : "Attach the image or report"}
+                            </button>
+                        )}
                     </div>
+                    {phone && (
+                        <p className="cs-rs-phone-note">
+                            <QrCode size={12} aria-hidden="true" /> Anything the patient uploads now joins this result.
+                        </p>
+                    )}
                 </section>
 
                 {/* ── Note ──────────────────────────────────────── */}
@@ -365,7 +551,7 @@ export function ResultSheet({
                         value={note}
                         placeholder="Anything else the report says, e.g. ulnar styloid also fractured"
                         onChange={(e) => setNote(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && text && !busy) { e.preventDefault(); onSave(text); } }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && text && !busy) { e.preventDefault(); save(text); } }}
                     />
                 </section>
 
@@ -380,14 +566,23 @@ export function ResultSheet({
                             type="button"
                             className="cs-rs-save"
                             disabled={!text || busy}
-                            onClick={() => onSave(text)}
+                            onClick={() => save(text)}
                         >
                             <Check size={15} aria-hidden="true" />
-                            Save result
+                            {editing ? "Update result" : "Save result"}
                         </button>
                     </div>
                 </footer>
             </div>
+            {phone && visitId && hospitalId && patientId && (
+                <UploadFromPhoneModal
+                    visitId={visitId}
+                    hospitalId={hospitalId}
+                    patientId={patientId}
+                    onClose={() => setPhone(false)}
+                />
+            )}
+            {preview && <AttachmentPreviewModal attachment={preview} onClose={() => setPreview(null)} />}
         </ChartSurface>
     );
 }
