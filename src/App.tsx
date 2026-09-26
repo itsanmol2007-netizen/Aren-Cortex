@@ -685,6 +685,7 @@ function App() {
     observableSources: chart.observableSources,
     observableDurations: chart.observableDurations,
     observableSites: chart.observableSites,
+    negatedObservableIds: chart.negatedObservableIds,
     siteSignals: engineSites,
     vitals,
     ageYears,
@@ -2176,8 +2177,12 @@ function App() {
       ...chart.findingsForRecord,
       ...(Number.isFinite(pain) && pain > 0 ? [`Pain ${pain}/10`] : []),
       ...printNeuro.filter((n) => n.abnormal).map((n) => n.text),
+      // What was asked about and is absent narrows the picture for the lab too.
+      ...(chart.negatedLabels.length
+        ? [`No ${chart.negatedLabels.map((l) => (/^[A-Z][a-z]/.test(l) ? l.charAt(0).toLowerCase() + l.slice(1) : l)).join(", ")}`]
+        : []),
     ].join("; ");
-  }, [visitStory.story, chart.symptomsForRecord, chart.findingsForRecord, vitals, printNeuro]);
+  }, [visitStory.story, chart.symptomsForRecord, chart.findingsForRecord, vitals, printNeuro, chart.negatedLabels]);
 
 
 
@@ -2745,6 +2750,12 @@ function App() {
                   the plan row below, which stay shared and unchanged. */}
               {usesPhysioInputs ? (
                 <PhysioInputs
+                  negated={chart.negatedLabels}
+                  onNegate={(o) => chart.setNegated(o, true)}
+                  onNegatedRemove={(label) => {
+                    const o = observables.find((x) => x.label === label);
+                    if (o) chart.setNegated(o, false);
+                  }}
                   observables={observables}
                   preferSystems={specialty.preferSystems}
                   preferDomain={specialty.preferDomain}
@@ -2790,6 +2801,12 @@ function App() {
                 />
               ) : usesCaseSheet ? (
                 <GeneralOpdInputs
+                  negated={chart.negatedLabels}
+                  onNegate={(o) => chart.setNegated(o, true)}
+                  onNegatedRemove={(label) => {
+                    const o = observables.find((x) => x.label === label);
+                    if (o) chart.setNegated(o, false);
+                  }}
                   observables={observables}
                   onChartSet={onChartSet}
                   onObservableToggle={handleObservableToggleSited}
@@ -3676,6 +3693,7 @@ function App() {
             symptoms={chart.symptomsForRecord}
             findings={[...chart.findingsForRecord, ...printNeuro.filter((n) => n.abnormal).map((n) => n.text)]}
             examNotes={printNeuro.filter((n) => !n.abnormal).map((n) => n.text)}
+            negatives={chart.negatedLabels}
             allFindings={findingsAsDb}
             prescription={prescription}
             tests={selectedTests}

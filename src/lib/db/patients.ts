@@ -532,7 +532,8 @@ export async function observationNamesByVisit(
     const { data: rows, error } = await supabase
         .from("visit_observations")
         .select("visit_id, observable_id")
-        .in("visit_id", visitIds);
+        .in("visit_id", visitIds)
+        .eq("is_negated", false);
     if (error || !rows?.length) return out;
 
     const ids = [...new Set(rows.map((r: any) => Number(r.observable_id)))];
@@ -840,6 +841,8 @@ export type RealVisit = {
     /** the neurovascular check, per site ("Neurovascular intact - Right wrist",
      *  "Sensation altered - Right wrist") */
     neuro?: string[];
+    /** asked about and absent ("Fever", "Recent injury / trauma") */
+    negatives?: string[];
 };
 
 export interface VisitOrder {
@@ -903,11 +906,11 @@ function siteOf(region: string | null, side: string | null, aspect: string | nul
  */
 async function sitedObservationsByVisit(
     visitIds: string[],
-): Promise<Map<string, { reported: string[]; found: string[] }>> {
-    const out = new Map<string, { reported: string[]; found: string[] }>();
+): Promise<Map<string, { reported: string[]; found: string[]; negated: string[] }>> {
+    const out = new Map<string, { reported: string[]; found: string[]; negated: string[] }>();
     if (!visitIds.length) return out;
     const [{ data: rows }, { data: siteRows }] = await Promise.all([
-        supabase.from("visit_observations").select("visit_id, observable_id").in("visit_id", visitIds),
+        supabase.from("visit_observations").select("visit_id, observable_id, is_negated").in("visit_id", visitIds),
         supabase.from("visit_observation_sites").select("visit_id, observable_id, region, side, aspect").in("visit_id", visitIds),
     ]);
     if (!rows?.length) return out;
@@ -930,9 +933,14 @@ async function sitedObservationsByVisit(
     for (const r of rows as any[]) {
         const o = byId.get(Number(r.observable_id));
         if (!o) continue;
+        const entry = out.get(r.visit_id) ?? { reported: [], found: [], negated: [] };
+        if (r.is_negated) {
+            entry.negated.push(o.label);
+            out.set(r.visit_id, entry);
+            continue;
+        }
         const at = sites.get(`${r.visit_id}|${r.observable_id}`);
         const text = at?.length ? `${o.label} - ${at.join(", ")}` : o.label;
-        const entry = out.get(r.visit_id) ?? { reported: [], found: [] };
         (o.kind === "finding" ? entry.found : entry.reported).push(text);
         out.set(r.visit_id, entry);
     }
@@ -1060,7 +1068,7 @@ export async function hydratePatientVisits(
             ? safe(supabase.from("doctors").select("id, name").in("id", doctorIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         safe(supabase.from("visit_symptoms").select("visit_id, symptom_id").in("visit_id", visitIds), { data: [] } as any),
-        safe(sitedObservationsByVisit(visitIds), new Map<string, { reported: string[]; found: string[] }>()),
+        safe(sitedObservationsByVisit(visitIds), new Map<string, { reported: string[]; found: string[]; negated: string[] }>()),
         safe(supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("prescriptions").select("id, visit_id, findings_text, advice_notes").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("diagnostic_orders").select("id, visit_id, test_name, created_at, result_text, result_at, result_visit_id").in("visit_id", visitIds), { data: [] } as any),
@@ -1338,6 +1346,7 @@ export async function hydratePatientVisits(
             orders: ordersByVisit.get(v.id) ?? [],
             sitePain: painByVisit.get(v.id) ?? [],
             neuro: neuroText(nvByVisit.get(v.id)),
+            negatives: obsV?.negated ?? [],
         };
     });
 }

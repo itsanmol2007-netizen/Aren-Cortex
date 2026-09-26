@@ -353,7 +353,7 @@ export function PastVisitCard({
                         </div>
                     )}
 
-                    {(visit.symptoms.length > 0 || found.length > 0) && (
+                    {(visit.symptoms.length > 0 || found.length > 0 || (visit.negatives?.length ?? 0) > 0) && (
                         <div>
                             {rule()}
                             {visit.symptoms.length > 0 && (
@@ -373,6 +373,16 @@ export function PastVisitCard({
                                         {found.map((f) => (
                                             // An intact neurovascular check is a normal finding.
                                             <span key={f} className={`pv-chip ${f.startsWith("Neurovascular intact") ? "normal" : "abnormal"}`}>{f}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {(visit.negatives?.length ?? 0) > 0 && (
+                                <div style={{ marginTop: 10 }}>
+                                    <p className="pv-section-label">Absent</p>
+                                    <div className="pv-chips">
+                                        {visit.negatives!.map((n) => (
+                                            <span key={n} className="pv-chip normal">No {n.charAt(0).toLowerCase() + n.slice(1)}</span>
                                         ))}
                                     </div>
                                 </div>

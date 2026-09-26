@@ -89,6 +89,8 @@ export interface RxLabels {
     plannedNext: string;
     /** what continues from earlier visits: a cast still on, a fracture healing */
     continuingCare: string;
+    /** leads the line of what was asked about and is absent: "No: fever, redness" */
+    absent: string;
     /** "3 Oct" -> "due 3 Oct" / the localised equivalent */
     dueOn: (date: string) => string;
     /** The printed billing section's own heading — see PrescriptionDocument's
@@ -173,6 +175,7 @@ const en: RxLabels = {
     doneToday: "Done Today",
     plannedNext: "Planned Next",
     continuingCare: "Continuing Care",
+    absent: "No",
     dueOn: (d) => `due ${d}`,
     billing: "Billing",
     consultationFee: "Consultation Fee",
@@ -214,6 +217,7 @@ const hi: RxLabels = {
     doneToday: "आज किया गया",
     plannedNext: "आगे की योजना",
     continuingCare: "जारी देखभाल",
+    absent: "नहीं",
     dueOn: (d) => `${d} तक`,
     billing: "बिल",
     consultationFee: "परामर्श शुल्क",
@@ -260,6 +264,7 @@ const hiLatn: RxLabels = {
     doneToday: "Aaj kiya gaya",
     plannedNext: "Aage ki Yojana",
     continuingCare: "Jaari Dekhbhaal",
+    absent: "Nahi",
     dueOn: (d) => `${d} tak`,
     billing: "Bill",
     consultationFee: "Consultation Fee",

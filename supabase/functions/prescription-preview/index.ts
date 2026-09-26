@@ -148,7 +148,7 @@ serve(async (req) => {
         // The two tables above are the older chart's and are empty for a
         // visit charted since; without these the page showed no complaints,
         // no findings and none of the orthopaedic record at all.
-        db.from("visit_observations").select("observable_id").eq("visit_id", rx.visit_id),
+        db.from("visit_observations").select("observable_id, is_negated").eq("visit_id", rx.visit_id),
         db.from("visit_observation_sites").select("observable_id, region, side, aspect").eq("visit_id", rx.visit_id),
         db.from("prescription_assessments").select("text, sort_order").eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
         db.from("prescription_interventions").select("text, label, status, due_date, sort_order").eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
@@ -199,7 +199,12 @@ serve(async (req) => {
     // Complaints and findings from the observables chart, each with its
     // place ("Joint swelling / effusion - Left wrist"), in the words the
     // consult itself printed. The older chart's lists are the fallback.
-    const obsRows = (obsLabelRes.data ?? []) as { id: number; label: string; kind: string }[];
+    // Asked about and absent ("no fever") is its own line, never a complaint.
+    const negatedIds = new Set(((obsRes.data ?? []) as { observable_id: number; is_negated: boolean | null }[])
+      .filter((r) => r.is_negated).map((r) => Number(r.observable_id)));
+    const allObsRows = (obsLabelRes.data ?? []) as { id: number; label: string; kind: string }[];
+    const obsRows = allObsRows.filter((o) => !negatedIds.has(Number(o.id)));
+    const negatives = allObsRows.filter((o) => negatedIds.has(Number(o.id))).map((o) => o.label);
     const sitesOf = new Map<number, string[]>();
     for (const r of (obsSiteRes.data ?? []) as { observable_id: number; region: string; side: string | null; aspect: string }[]) {
       const list = sitesOf.get(Number(r.observable_id)) ?? [];
@@ -316,6 +321,7 @@ serve(async (req) => {
       },
       symptoms,
       findings,
+      negatives,
       diagnosisText: rx.findings_text ?? null,
       // Structured, with place and details: the page prefers these to
       // `diagnosisText` when there are any.

@@ -57,7 +57,7 @@ export interface IntakePrefillResult {
 }
 
 export function useIntakePrefill(chart: ConsultChart) {
-    const { seedIntake, setVitals } = chart;
+    const { seedIntake, seedNegated, setVitals } = chart;
 
     return useCallback(async (visitId: string): Promise<IntakePrefillResult> => {
         const intake = await fetchVisitIntake(visitId);
@@ -70,6 +70,7 @@ export function useIntakePrefill(chart: ConsultChart) {
                 origin: ORIGIN_OF[o.source],
             })));
         }
+        if (intake.negated.length) seedNegated(intake.negated);
 
         // `customMeasurements` is the one array-valued field in Vitals — see
         // measures.ts's `MeasureFieldKey` — so it is merged separately below
@@ -107,5 +108,5 @@ export function useIntakePrefill(chart: ConsultChart) {
             hasMeasurements: entries.length > 0,
             attachmentCount: intake.attachmentCount,
         };
-    }, [seedIntake, setVitals]);
+    }, [seedIntake, seedNegated, setVitals]);
 }

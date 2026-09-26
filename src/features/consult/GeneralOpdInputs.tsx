@@ -95,6 +95,10 @@ interface Props {
     /** this doctor's prescription templates — see ClinicalCommandBar's own doc comment */
     templates?: PrescriptionTemplateSummary[];
     onApplyTemplate?: (templateId: number) => void;
+    /** asked about and absent ("no fever") — see ClinicalCommandBar's onNegate */
+    negated?: string[];
+    onNegate?: (o: Observable) => void;
+    onNegatedRemove?: (label: string) => void;
 }
 
 export function GeneralOpdInputs({
@@ -106,7 +110,7 @@ export function GeneralOpdInputs({
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
-    templates, onApplyTemplate, story, onStoryChange,
+    templates, onApplyTemplate, story, onStoryChange, negated, onNegate, onNegatedRemove,
 }: Props) {
     /**
      * ── Reaching "Related" without a mouse ───────────────────────────────
@@ -189,6 +193,8 @@ export function GeneralOpdInputs({
                 durationsByLabel={symptomDurations}
                 onDurationAnswer={onSetSymptomDuration}
                 onStoryNote={story && onStoryChange ? (text) => onStoryChange(addStoryNote(story, text)) : undefined}
+                onNegate={onNegate}
+                negated={negated ? new Set(negated) : undefined}
             />
 
             {/* One box in place of three (History, Symptoms, Findings): the Case
@@ -217,6 +223,8 @@ export function GeneralOpdInputs({
                     disabled={disabled}
                     relatedRef={relatedRef}
                     storyNotes={story ? storyNotes(story) : []}
+                    negated={negated}
+                    onNegatedRemove={onNegatedRemove}
                     onStoryNoteRemove={story && onStoryChange ? (i) => onStoryChange(removeStoryNote(story, i)) : undefined}
                     onFocusSearch={() => searchRef?.current?.focus()}
                 />

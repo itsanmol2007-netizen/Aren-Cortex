@@ -39,6 +39,8 @@ export interface IntakeObservation {
 export interface VisitIntake {
     visitId: string;
     observations: IntakeObservation[];
+    /** asked about and absent at this visit ("no fever") — labels */
+    negated: string[];
     /** the same numbers, in the shape MeasurementsCard edits */
     vitals: Partial<Vitals>;
     attachmentCount: number;
@@ -54,14 +56,14 @@ export interface VisitIntake {
  * what Cortex has always done.
  */
 export async function fetchVisitIntake(visitId: string): Promise<VisitIntake> {
-    const empty: VisitIntake = { visitId, observations: [], vitals: {}, attachmentCount: 0 };
+    const empty: VisitIntake = { visitId, observations: [], negated: [], vitals: {}, attachmentCount: 0 };
     if (!visitId) return empty;
 
     try {
         const [obsRes, measureRes, attachRes] = await Promise.all([
             supabase
                 .from("visit_observations")
-                .select("observable_id, source, duration_days")
+                .select("observable_id, source, duration_days, is_negated")
                 .eq("visit_id", visitId),
             supabase
                 .from("visit_measurements")
@@ -76,8 +78,15 @@ export async function fetchVisitIntake(visitId: string): Promise<VisitIntake> {
                 .eq("visit_id", visitId),
         ]);
 
-        const rows = obsRes.data ?? [];
+        const allRows = obsRes.data ?? [];
+        const rows = allRows.filter((r: any) => !r.is_negated);
+        const negRows = allRows.filter((r: any) => r.is_negated);
         let observations: IntakeObservation[] = [];
+        let negated: string[] = [];
+        if (negRows.length) {
+            const { data: cat } = await supabase.from("observables").select("id, label").in("id", negRows.map((r: any) => Number(r.observable_id)));
+            negated = (cat ?? []).map((o: any) => String(o.label));
+        }
         if (rows.length) {
             const ids = [...new Set(rows.map((r: any) => Number(r.observable_id)))];
             const { data: catalogue } = await supabase
@@ -105,6 +114,7 @@ export async function fetchVisitIntake(visitId: string): Promise<VisitIntake> {
         return {
             visitId,
             observations,
+            negated,
             vitals: measurementsToVitals(measureRes.data ?? []),
             attachmentCount: attachRes.count ?? 0,
         };
@@ -156,7 +166,7 @@ export async function fetchIntakePreviews(visitIds: string[]): Promise<Map<strin
 
     try {
         const [obsRes, measureRes, attachRes] = await Promise.all([
-            supabase.from("visit_observations").select("visit_id, observable_id").in("visit_id", visitIds),
+            supabase.from("visit_observations").select("visit_id, observable_id").in("visit_id", visitIds).eq("is_negated", false),
             supabase.from("visit_measurements").select("visit_id, measure_key, value_num, value_text").in("visit_id", visitIds),
             supabase.from("visit_attachments").select("visit_id").in("visit_id", visitIds),
         ]);

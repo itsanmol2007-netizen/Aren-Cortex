@@ -60,6 +60,8 @@ export interface ConsultIntelligenceArgs {
      * delete-and-reinsert reason as the durations above.
      */
     observableSites?: Map<number, SiteRef[]>;
+    /** asked about and absent — saved alongside, never read by the engine */
+    negatedObservableIds?: number[];
     /**
      * Region signals (SITE_KNEE…) for every place established in this visit
      * — sited findings, body-map marks, assessment and intervention sites.
@@ -128,7 +130,7 @@ const EMPTY_BY_TYPE = (): Record<IntentType, PersonalizedIntent[]> => ({
 });
 
 export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIntelligence {
-    const { data, visitId, observableIds, observableSources, observableDurations, observableSites, siteSignals, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
+    const { data, visitId, observableIds, observableSources, observableDurations, observableSites, negatedObservableIds, siteSignals, vitals, ageYears, ageMonths, sex, acceptedIntentIds, hospitalId } = args;
     // Identity-stable keys: both arrive rebuilt from memos upstream, and the
     // engine run and the write should follow what they SAY, not their identity.
     const siteSignalsKey = (siteSignals ?? []).join(",");
@@ -440,6 +442,9 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
     durationsRef.current = observableDurations;
     const sitesRef = useRef(observableSites);
     sitesRef.current = observableSites;
+    const negatedRef = useRef(negatedObservableIds);
+    negatedRef.current = negatedObservableIds;
+    const negatedKey = (negatedObservableIds ?? []).join(",");
     useEffect(() => {
         if (!visitId || !built) return;
         if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -451,6 +456,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
                 sources: sourcesRef.current,
                 durations: durationsRef.current,
                 sites: sitesRef.current,
+                negatedIds: negatedRef.current,
             }).catch((e) => console.warn("visit input persist (non-fatal):", e));
         }, 600);
         return () => {
@@ -459,7 +465,7 @@ export function useConsultIntelligence(args: ConsultIntelligenceArgs): ConsultIn
         // A place changing is a write on its own (the chips did not change,
         // where one was found did).
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [visitId, built, sitesKey]);
+    }, [visitId, built, sitesKey, negatedKey]);
 
     return {
         result,

@@ -74,6 +74,8 @@ export interface ChartDraft {
     symptomDurations?: [string, number][];
     /** label -> where each local finding was found (entries, same reason). */
     findingSites?: [string, SiteRef[]][];
+    /** what was asked about and is absent ("no fever") */
+    negated?: string[];
 }
 
 /** `useConsultPlan`'s own in-progress-only fields — the ones its `reset()`

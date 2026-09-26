@@ -103,6 +103,8 @@ interface ReviewModalProps {
   procedures?: { text: string; status: "performed" | "planned"; due?: string | null }[];
   continuingCare?: string[];
   examNotes?: string[];
+  /** asked about and absent — printed under the complaints */
+  negatives?: string[];
   /** how the symptom behaves — pre-formatted lines, physiotherapy Phase 1.
    *  Doctor-facing review only, per plan §5 — never printed on the Rx. */
   storySummary?: string[];
@@ -233,7 +235,7 @@ export default function ReviewModal({
   patient, visitId, prescriptionRef,
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
-  followUpDays, adviceNotes, therapyNotes, exerciseLines = [], diagnoses, results, procedures, continuingCare, examNotes,
+  followUpDays, adviceNotes, therapyNotes, exerciseLines = [], diagnoses, results, procedures, continuingCare, examNotes, negatives,
   storySummary = [], goalSummary = [],
   doctor, hospital, vitals, isSaving, saveLabel, sent = false,
   whatsappPhase = "idle", whatsappError, seedCharges,
@@ -631,6 +633,7 @@ export default function ReviewModal({
             procedures={procedures}
             continuingCare={continuingCare}
             examNotes={examNotes}
+            negatives={negatives}
             doctor={doctor}
             hospital={hospital}
             vitals={vitals}
@@ -753,6 +756,7 @@ export default function ReviewModal({
                   procedures={procedures}
                   continuingCare={continuingCare}
                   examNotes={examNotes}
+            negatives={negatives}
                   doctor={doctor}
                   hospital={hospital}
                   vitals={vitals}

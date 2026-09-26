@@ -531,12 +531,18 @@ export function PublicPrescriptionPage() {
                     </div>
                 </div>
 
-                {(rx.symptoms.length || rx.findings.length || assessmentText) ? (
+                {(rx.symptoms.length || rx.findings.length || rx.negatives?.length || assessmentText) ? (
                     <Section icon={Stethoscope} title={labels.findings} bold={boldWeight} tone="slate">
                         <div className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
                             {rx.symptoms.length > 0 && (
                                 <ClinicalLine label={labels.complaints} text={rx.symptoms.join(", ")} />
                             )}
+                            {rx.negatives?.length ? (
+                                <ClinicalLine
+                                    label={labels.absent}
+                                    text={rx.negatives.map((n) => (/^[A-Z][a-z]/.test(n) ? n.charAt(0).toLowerCase() + n.slice(1) : n)).join(", ")}
+                                />
+                            ) : null}
                             {rx.findings.length > 0 && (
                                 <ClinicalLine label={labels.findings} text={rx.findings.join(", ")} alert />
                             )}

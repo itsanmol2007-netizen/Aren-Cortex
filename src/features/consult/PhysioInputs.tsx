@@ -114,6 +114,10 @@ interface Props {
     /** assessments made at a site, for the body map summary */
     siteAssessments?: { label: string; site: SiteRef | null }[];
     onOpenBodyMap: () => void;
+    /** asked about and absent ("no fever") — see ClinicalCommandBar's onNegate */
+    negated?: string[];
+    onNegate?: (o: Observable) => void;
+    onNegatedRemove?: (label: string) => void;
 }
 
 export function PhysioInputs({
@@ -125,7 +129,7 @@ export function PhysioInputs({
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
     story, onStoryChange, goals, lastGoalScores, todayGoalScores,
     onGoalScoreChange, onAddGoal, onRetireGoal,
-    examination, markedSites, siteAssessments, onOpenBodyMap,
+    examination, markedSites, siteAssessments, onOpenBodyMap, negated, onNegate, onNegatedRemove,
 }: Props) {
     // Identical to GeneralOpdInputs — see that file's own comment for why
     // this lives here rather than inside CaseSheet or ClinicalCommandBar.
@@ -162,6 +166,8 @@ export function PhysioInputs({
                 onStoryAdd={(it) => onStoryChange(addToStory(story, it))}
                 onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
                 onStoryNote={(text) => onStoryChange(addStoryNote(story, text))}
+                onNegate={onNegate}
+                negated={negated ? new Set(negated) : undefined}
                 leadComplaint={leadComplaint}
                 siteKnown={knownSites}
                 onSiteChange={onSiteChange}
@@ -192,6 +198,8 @@ export function PhysioInputs({
                     story={story}
                     onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
                     storyNotes={storyNotes(story)}
+                    negated={negated}
+                    onNegatedRemove={onNegatedRemove}
                     onStoryNoteRemove={(i) => onStoryChange(removeStoryNote(story, i))}
                     onFocusSearch={() => searchRef?.current?.focus()}
                 />

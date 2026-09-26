@@ -47,7 +47,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, ClipboardList, MapPin, PenLine, Plus, Search, X } from "lucide-react";
+import { Ban, Check, ClipboardList, MapPin, PenLine, Plus, Search, X } from "lucide-react";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
@@ -360,7 +360,9 @@ type BarResult =
     /** Where the local finding just added was found — the where-slot. */
     | { t: "site"; key: string; finding: string; hit: SiteHit }
     /** Anything typed as a sentence, kept word for word on the story. */
-    | { t: "note"; key: string; text: string };
+    | { t: "note"; key: string; text: string }
+    /** "no fever": asked about and absent. */
+    | { t: "absent"; key: string; o: Observable };
 
 interface BarProps {
     observables: Observable[];
@@ -463,6 +465,23 @@ interface BarProps {
      * so a catalogue search is never pre-empted. Absent: no note row.
      */
     onStoryNote?: (text: string) => void;
+    /**
+     * ── PERTINENT NEGATIVES (2026-09-27) ──────────────────────────────────
+     *
+     * "no fever", "denies trauma", "without redness": the words after the
+     * negation are searched like any query and offered as "Absent", which
+     * records the observable as asked-about-and-absent (never as present).
+     */
+    onNegate?: (o: Observable) => void;
+    /** labels already recorded absent, so a row shows a tick */
+    negated?: Set<string>;
+}
+
+/** "no fever" / "denies trauma" / "without redness" → "fever" etc. */
+const NEGATION = /^(?:no|not|nil|denies|deny|denied|without|absent|negative for|non)\s+(.{2,})$/i;
+function negationOf(query: string): string | null {
+    const m = query.trim().match(NEGATION);
+    return m ? m[1].trim() : null;
 }
 
 /**
@@ -474,7 +493,7 @@ export function ClinicalCommandBar({
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
     templates, onApplyTemplate,
     durationCandidates, durationsByLabel, onDurationAnswer, preferSystems, preferDomain,
-    siteKnown, onSiteChange, onStoryNote,
+    siteKnown, onSiteChange, onStoryNote, onNegate, negated,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -488,6 +507,8 @@ export function ClinicalCommandBar({
     const stripRef = useRef<HTMLDivElement>(null);
 
     const obsResults = useCatalogueSearch(observables, query, preferSystems, preferDomain);
+    const negQuery = onNegate ? negationOf(query) ?? "" : "";
+    const negResults = useCatalogueSearch(observables, negQuery, preferSystems, preferDomain);
     const storyOn = !!(story && onStoryAdd);
 
     /**
@@ -846,8 +867,18 @@ export function ClinicalCommandBar({
      * begins with what was typed (so "fell from bike yesterday" + Enter keeps
      * it), trails otherwise (so "knee pain" + Enter still takes the chip).
      */
+    const absentRows = useMemo<BarResult[]>(
+        () => (negQuery ? negResults.slice(0, 5).map((o) => ({ t: "absent" as const, key: `x:${o.id}`, o })) : []),
+        [negQuery, negResults],
+    );
+
     const results = useMemo<BarResult[]>(() => {
         const q = query.trim();
+        if (absentRows.length) {
+            // "no fever" is a negative first; the sentence note stays last.
+            const note: BarResult[] = onStoryNote && looksLikeNote(q) ? [{ t: "note", key: `n:${q.toLowerCase()}`, text: q }] : [];
+            return [...absentRows, ...searchResults, ...note];
+        }
         if (!onStoryNote || !looksLikeNote(q)) return searchResults;
         const note: BarResult = { t: "note", key: `n:${q.toLowerCase()}`, text: q };
         const lower = q.toLowerCase();
@@ -864,7 +895,7 @@ export function ClinicalCommandBar({
             return l.startsWith(lower) || (parsed(r) && !!l && lower.startsWith(l));
         });
         return startsWith ? [...searchResults, note] : [note, ...searchResults];
-    }, [searchResults, query, onStoryNote]);
+    }, [searchResults, query, onStoryNote, absentRows]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
@@ -964,6 +995,7 @@ export function ClinicalCommandBar({
         }
         else if (r.t === "template") onApplyTemplate?.(r.tpl.id);
         else if (r.t === "note") onStoryNote?.(r.text);
+        else if (r.t === "absent") onNegate?.(r.o);
         else if (r.t === "duration") {
             onDurationAnswer?.(r.complaint, r.choice.days);
             setHistory((h) => [...h, { kind: "duration", label: r.complaint }]);
@@ -1092,13 +1124,14 @@ export function ClinicalCommandBar({
                         // A story item is never "already on the sheet" — the
                         // search filters those out at source (`searchStory`),
                         // so only observables can come back ticked.
-                        const on = r.t === "obs" && onSheet.has(r.o.label);
+                        const on = (r.t === "obs" && onSheet.has(r.o.label)) || (r.t === "absent" && !!negated?.has(r.o.label));
                         const label = r.t === "obs" ? r.o.label
                             : r.t === "template" ? r.tpl.name
                                 : r.t === "duration" ? r.choice.label
                                     : r.t === "site" ? r.hit.label
                                         : r.t === "note" ? r.text
-                                            : r.it.label;
+                                            : r.t === "absent" ? `No ${r.o.label.charAt(0).toLowerCase()}${r.o.label.slice(1)}`
+                                                : r.it.label;
                         return (
                             <button
                                 key={r.key}
@@ -1151,7 +1184,8 @@ export function ClinicalCommandBar({
                                     (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] " : "") +
                                     (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "") +
                                     (r.t === "site" ? "border-l-2 border-l-[var(--cs-teal)] " : "") +
-                                    (r.t === "note" ? "border-l-2 border-l-[#a855f7] " : "")
+                                    (r.t === "note" ? "border-l-2 border-l-[#a855f7] " : "") +
+                                    (r.t === "absent" ? "border-l-2 border-l-[#64748b] " : "")
                                 }
                             >
                                 {r.t === "site" && (
@@ -1159,6 +1193,9 @@ export function ClinicalCommandBar({
                                 )}
                                 {r.t === "note" && (
                                     <PenLine size={13} aria-hidden="true" className="flex-none text-[#9333ea]" />
+                                )}
+                                {r.t === "absent" && (
+                                    <Ban size={13} aria-hidden="true" className="flex-none text-[#64748b]" />
                                 )}
                                 <span className={"min-w-0 flex-1 truncate" + (r.t === "site" ? " font-semibold" : "")}>
                                     {on && <span aria-hidden="true">✓ </span>}
@@ -1202,7 +1239,8 @@ export function ClinicalCommandBar({
                                             : r.t === "template" ? "bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
                                                 : r.t === "site" ? "bg-[#dbf4eb] text-[#0b6a62]"
                                                     : r.t === "note" ? "bg-[#f3e8ff] text-[#7e22ce]"
-                                                        : "bg-[#eaf0fb] text-[#2c4a7c]")
+                                                        : r.t === "absent" ? "bg-[#eef1f5] text-[#475569]"
+                                                            : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
                                     {r.t === "obs" ? KIND_BADGE[r.o.kind]
@@ -1210,7 +1248,8 @@ export function ClinicalCommandBar({
                                             : r.t === "duration" ? "duration"
                                                 : r.t === "site" ? "where"
                                                     : r.t === "note" ? "story"
-                                                        : r.it.dimension.toLowerCase()}
+                                                        : r.t === "absent" ? "absent"
+                                                            : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );
@@ -1303,7 +1342,7 @@ export function ClinicalCommandBar({
                         placeholder={
                             siteSlot ? `Where is it? Type a place, e.g. kn or lower back. Space to skip`
                             : durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
-                                : !storyOn ? (onStoryNote ? "Add symptoms, findings, history, or type what happened…" : "Add clinical information (symptoms, findings, history…)")
+                                : !storyOn ? (onStoryNote ? "Add symptoms, findings, history, \"no fever\", or type what happened…" : "Add clinical information (symptoms, findings, history…)")
                                 : !leadComplaint ? "What happened? Start with the complaint…"
                                     // A slot names the question in the pill beside the
                                     // caret, so a placeholder would only repeat it.
@@ -1976,6 +2015,9 @@ interface SheetProps {
      *  sentence each, closing the Story row; see BarProps.onStoryNote */
     storyNotes?: string[];
     onStoryNoteRemove?: (index: number) => void;
+    /** asked about and absent ("Fever"), shown as "No fever"; see BarProps.onNegate */
+    negated?: string[];
+    onNegatedRemove?: (label: string) => void;
     /**
      * Lands focus in the command bar's search input — the empty sheet's own
      * "+" (2026-08-28). `ClinicalCommandBar` and `CaseSheet` are siblings on
@@ -1991,6 +2033,7 @@ export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
     storyChips = [], story: storyOf, onStoryRemove, storyNotes = [], onStoryNoteRemove, onFocusSearch,
+    negated = [], onNegatedRemove,
     detailWorthyLabels, onSetOnsetNote, autoOpenOnsetLabel, onAutoOpenOnsetHandled,
     knownSites = [], onSetFindingSites, autoOpenSiteLabel, onAutoOpenSiteHandled,
 }: SheetProps) {
@@ -2095,15 +2138,15 @@ export function CaseSheet({
                     Case Sheet
                 </h2>
                 <AnimatePresence>
-                    {entries.length + storyChips.length + storyNotes.length > 0 && (
+                    {entries.length + storyChips.length + storyNotes.length + negated.length > 0 && (
                         <motion.span
-                            key={entries.length + storyChips.length + storyNotes.length}
+                            key={entries.length + storyChips.length + storyNotes.length + negated.length}
                             initial={reduce ? false : { opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={popEase}
                             className="ml-auto flex-none rounded-[7px] bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[12.5px] font-semibold text-[var(--cs-blue)]"
                         >
-                            {entries.length + storyChips.length + storyNotes.length} recorded
+                            {entries.length + storyChips.length + storyNotes.length + negated.length} recorded
                         </motion.span>
                     )}
                 </AnimatePresence>
@@ -2114,7 +2157,7 @@ export function CaseSheet({
                 the card "showed its shape", which only produced three rows of
                 grey saying nothing. Nothing has been recorded, so the card
                 should look like nothing has been recorded. */}
-            {entries.length === 0 && storyChips.length === 0 && storyNotes.length === 0 && (
+            {entries.length === 0 && storyChips.length === 0 && storyNotes.length === 0 && negated.length === 0 && (
                 <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-4 text-center">
                     {/* The drawing stays exactly as it was — only a small "+"
                         rides its corner now (2026-08-28), a real affordance
@@ -2445,6 +2488,34 @@ export function CaseSheet({
                         </div>
                     </motion.div>
                 ))}
+                {/* What was asked about and is absent — its own row, in a
+                    quiet slate so "no fever" never reads as a fever. */}
+                {negated.length > 0 && (
+                    <div className="flex items-start gap-2.5 px-4 py-[3px]">
+                        <span className="w-[9.5em] flex-none whitespace-nowrap pt-[6px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
+                            Absent
+                        </span>
+                        <div className="flex flex-1 flex-wrap content-start gap-[6px]">
+                            {negated.map((label) => (
+                                <span
+                                    key={label}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d5dbe5] bg-[#f4f6f9] px-2 py-[4px] text-[12.5px] font-semibold text-[#475569]"
+                                >
+                                    No {label.charAt(0).toLowerCase() + label.slice(1)}
+                                    <button
+                                        type="button"
+                                        onClick={() => onNegatedRemove?.(label)}
+                                        disabled={disabled}
+                                        aria-label={`Remove "no ${label.toLowerCase()}"`}
+                                        className="grid size-[14px] place-items-center rounded border-0 bg-transparent p-0 text-[14px] leading-none text-current opacity-45 transition hover:bg-black/10 hover:opacity-100"
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Set apart by a hairline, because a thing to CHECK and a thing you

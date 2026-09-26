@@ -84,6 +84,8 @@ export interface PublicRxData {
     } | null;
     patient: { name: string; age: number | null; gender: string | null };
     symptoms: string[];
+    /** asked about and absent ("Fever") — older pages send none */
+    negatives?: string[];
     findings: string[];
     diagnosisText: string | null;
     /** structured assessments with place and details (newer visits); preferred over diagnosisText */

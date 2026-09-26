@@ -1855,6 +1855,8 @@ export interface PersistVisitInputOpts {
      * undefined, the visit's stored sites are not touched at all.
      */
     sites?: Map<number, SiteRef[]>;
+    /** asked about and absent ("no fever") — rows with `is_negated` */
+    negatedIds?: number[];
 }
 
 /**
@@ -1884,6 +1886,18 @@ async function persistVisitInputNow(opts: PersistVisitInputOpts): Promise<void> 
             }))
         );
         if (error) throw new Error(`visit_observations: ${error.message}`);
+    }
+    // Absent is its own row; an observable present on the chart wins (the
+    // (visit, observable) pair is unique).
+    const present = new Set(opts.observableIds);
+    const negated = [...new Set(opts.negatedIds ?? [])].filter((id) => !present.has(id));
+    if (negated.length) {
+        const { error } = await supabase.from("visit_observations").insert(
+            negated.map((observable_id) => ({
+                visit_id: opts.visitId, observable_id, is_negated: true, source: DB_SOURCE.doctor, duration_days: null,
+            }))
+        );
+        if (error) throw new Error(`visit_observations (negated): ${error.message}`);
     }
 
     if (opts.sites) {

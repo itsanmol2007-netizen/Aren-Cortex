@@ -90,6 +90,11 @@ export interface PrescriptionDocumentProps {
      * normal is a record, not the red warning an abnormal finding is.
      */
     examNotes?: string[];
+    /**
+     * Asked about and absent ("Fever", "Recent injury / trauma"), printed as
+     * one plain line under the complaints: "No: fever, recent injury / trauma".
+     */
+    negatives?: string[];
     doctor?: DoctorShape | null;
     hospital?: DBHospital | null;
     vitals?: Vitals;
@@ -199,6 +204,7 @@ function StandardDocument({
     procedures,
     continuingCare = [],
     examNotes = [],
+    negatives = [],
     doctor,
     hospital,
     vitals,
@@ -560,9 +566,9 @@ function StandardDocument({
             )}
 
             {/* ── Complaints & Findings ── */}
-            {(symptoms.length > 0 || findings.length > 0 || examNotes.length > 0) && (
+            {(symptoms.length > 0 || findings.length > 0 || examNotes.length > 0 || negatives.length > 0) && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                    {symptoms.length > 0 && (
+                    {(symptoms.length > 0 || negatives.length > 0) && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
                             <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                                 {t.complaints}
@@ -570,6 +576,11 @@ function StandardDocument({
                             {symptoms.map((s) => (
                                 <div key={s} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>• {s}</div>
                             ))}
+                            {negatives.length > 0 && (
+                                <div style={{ fontSize: bodySize, color: "#555", marginTop: symptoms.length ? 4 : 0 }}>
+                                    <b style={{ color: rx.ink }}>{t.absent}:</b> {absentLine(negatives)}
+                                </div>
+                            )}
                         </div>
                     )}
                     {(findings.length > 0 || examNotes.length > 0) && (
@@ -973,6 +984,7 @@ function ThermalDocument({
     procedures,
     continuingCare = [],
     examNotes = [],
+    negatives = [],
     doctor,
     hospital,
     date,
@@ -1051,10 +1063,11 @@ function ThermalDocument({
             {divider}
 
             {/* Complaints */}
-            {symptoms.length > 0 && (
+            {(symptoms.length > 0 || negatives.length > 0) && (
                 <>
                     <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.complaints}</div>
                     {symptoms.map((s) => <div key={s} style={th}>- {s}</div>)}
+                    {negatives.length > 0 && <div style={th}>{t.absent}: {absentLine(negatives)}</div>}
                     {divider}
                 </>
             )}
@@ -1243,6 +1256,11 @@ function ThermalDocument({
 }
 
 // ─── Exported wrapper ─────────────────────────────────────────────────────────
+
+/** "Fever", "Recent injury / trauma" → "fever, recent injury / trauma" */
+function absentLine(labels: string[]): string {
+    return labels.map((l) => (/^[A-Z][a-z]/.test(l) ? l.charAt(0).toLowerCase() + l.slice(1) : l)).join(", ");
+}
 
 export default function PrescriptionDocument(props: PrescriptionDocumentProps) {
     if (props.format === "thermal") {

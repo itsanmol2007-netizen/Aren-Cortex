@@ -172,6 +172,22 @@ export interface ConsultChart {
     origin?: ChipOrigin;
   }[]) => void;
 
+  // ── Pertinent negatives (2026-09-27) ──────────────────────────────────
+  /**
+   * What was asked about and is ABSENT: "no fever", "no redness", "no
+   * recent trauma". A list of its own, never a flag on the chart above, so
+   * nothing that reads the chart as present (the engine, Related, the
+   * printed complaints) can mistake an absent fever for a fever. Saved as
+   * `visit_observations.is_negated`.
+   */
+  negatedLabels: string[];
+  /** The same keyed the way `visit_observations` needs it. */
+  negatedObservableIds: number[];
+  /** Mark absent (or take back). Marking a present chip absent moves it. */
+  setNegated: (o: Observable, on: boolean) => void;
+  /** Put a reopened visit's recorded negatives back (additive). */
+  seedNegated: (labels: string[]) => void;
+
   // ── Mutating it ───────────────────────────────────────────────────────
   handleSymptomToggle: (label: string) => void;
   handleFindingToggle: (label: string) => void;
@@ -219,6 +235,7 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
   const [symptomDurations, setSymptomDurations] = useState<Map<string, number>>(new Map());
   const [onsetNotes, setOnsetNotes] = useState<Map<string, string>>(new Map());
   const [findingSites, setFindingSitesMap] = useState<Map<string, SiteRef[]>>(new Map());
+  const [negatedLabels, setNegatedLabels] = useState<string[]>([]);
 
   /** Patient context — pregnancy, comorbidities, exposures. */
   const historyLabels = useMemo(
@@ -388,6 +405,8 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
   // The doctor stops choosing a container, and the routing that used to be
   // their decision becomes a lookup on data that was always there.
   const handleObservableToggle = useCallback((o: Observable) => {
+    // Present now, so no longer absent.
+    setNegatedLabels((curr) => (curr.includes(o.label) ? curr.filter((l) => l !== o.label) : curr));
     if (o.kind === "finding") handleFindingToggle(o.label);
     else if (o.kind === "history") handleContextToggle(o.label);
     else handleSymptomToggle(o.label);
@@ -623,7 +642,35 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     });
   }, []);
 
+  const negatedObservableIds = useMemo(
+    () => negatedLabels.map((l) => observableByLabel.get(l)).filter((id): id is number => id !== undefined),
+    [negatedLabels, observableByLabel],
+  );
+
+  const setNegated = useCallback((o: Observable, on: boolean) => {
+    if (on) {
+      // Absent now: off the chart as present, with its place and duration.
+      setSelectedSymptoms((curr) => curr.filter((l) => l !== o.label));
+      setSelectedSymptomsWithIntensity((curr) => curr.filter((x) => x.name !== o.label));
+      setSelectedFindings((curr) => curr.filter((l) => l !== o.label));
+      setFindingSitesMap((curr) => {
+        if (!curr.has(o.label)) return curr;
+        const next = new Map(curr);
+        next.delete(o.label);
+        return next;
+      });
+      setNegatedLabels((curr) => (curr.includes(o.label) ? curr : [...curr, o.label]));
+    } else {
+      setNegatedLabels((curr) => curr.filter((l) => l !== o.label));
+    }
+  }, []);
+
+  const seedNegated = useCallback((labels: string[]) => {
+    setNegatedLabels((curr) => [...curr, ...labels.filter((l) => !curr.includes(l))]);
+  }, []);
+
   const reset = useCallback(() => {
+    setNegatedLabels([]);
     setSelectedSymptomsWithIntensity([]);
     setVitals(emptyVitals);
     setSelectedSymptoms([]);
@@ -647,9 +694,11 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     setSymptomDurations(new Map());
     setOnsetNotes(new Map());
     setFindingSitesMap(new Map());
+    setNegatedLabels([]);
   }, []);
 
   const restoreChart = useCallback((draft: ChartDraft) => {
+    setNegatedLabels(draft.negated ?? []);
     setVitals(draft.vitals);
     setSelectedSymptoms(draft.selectedSymptoms);
     setSelectedSymptomsWithIntensity(draft.selectedSymptomsWithIntensity);
@@ -688,6 +737,11 @@ export function useConsultChart(observables: Observable[]): ConsultChart {
     toggleObservableAt,
     symptomsForRecord,
     findingsForRecord,
+
+    negatedLabels,
+    negatedObservableIds,
+    setNegated,
+    seedNegated,
 
     chipOrigins,
     observableSources,
