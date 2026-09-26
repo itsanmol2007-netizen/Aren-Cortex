@@ -3186,9 +3186,10 @@ function App() {
               hospitalId={identity.isReal ? identity.hospitalId : null}
               patientId={patient?.id ?? null}
               initial={resultDrafts.get(resultSheetFor.order.id) ?? draftFromResult(
-                resultsToday.get(resultSheetFor.order.id) ?? null, assessmentLines, diagnoses,
+                resultsToday.get(resultSheetFor.order.id) ?? resultSheetFor.order.resultText ?? null, assessmentLines, diagnoses,
               )}
-              editing={resultsToday.has(resultSheetFor.order.id)}
+              // A result from an earlier visit opens as an update of it.
+              editing={resultsToday.has(resultSheetFor.order.id) || !!resultSheetFor.order.resultText}
               onSave={(text, draft) => {
                 const orderId = resultSheetFor.order!.id;
                 setResultDrafts((cur) => new Map(cur).set(orderId, draft));
